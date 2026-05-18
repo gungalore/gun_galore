@@ -1,0 +1,25 @@
+// Gun Galore — Prisma schema.
+// Single source of truth for the database. Edit here, then run:
+//   npx prisma migrate dev --name <change_description>
+// See CLAUDE.md for the full data model that will be built up phase by phase.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Foundation models — minimal seed. Real models land per phase.
+// ---------------------------------------------------------------------------
+
+// HealthCheck exists only so the database has at least one table from day one
+// and `prisma migrate dev` produces a non-empty initial migration.
+// Safe to delete once we add real models (User, Listing, etc.).
+model HealthCheck {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+}
