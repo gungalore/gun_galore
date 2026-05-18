@@ -115,7 +115,7 @@ unfinished modules dark in production (see Feature Flags).
 
 ## Tech Stack
 
-- **Frontend:** Next.js 14 (App Router) + TypeScript + Tailwind
+- **Frontend:** Next.js 16 (App Router) + TypeScript + Tailwind
 - **Backend:** NestJS + TypeScript
 - **ORM:** Prisma
 - **Database:** PostgreSQL
