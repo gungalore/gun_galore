@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
+import { CloudinaryModule } from './cloudinary/cloudinary.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
-  imports: [],
+  imports: [CloudinaryModule, SearchModule],
   controllers: [AppController],
-  providers: [],
 })
 export class AppModule {}
