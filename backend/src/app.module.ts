@@ -3,6 +3,7 @@ import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { SearchModule } from './search/search.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { UsersModule } from './users/users.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ListingsModule } from './listings/listings.module';
@@ -17,6 +18,7 @@ import { AdminModule } from './admin/admin.module';
     PrismaModule,
     CloudinaryModule,
     SearchModule,
+    NotificationsModule,
     UsersModule,
     CategoriesModule,
     ListingsModule,

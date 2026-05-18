@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { FeeCalculator } from './fee.calculator';
 import { PeachService } from './peach.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ListingStatus, ShippingMethod } from '@prisma/client';
 
@@ -18,6 +19,7 @@ export class TransactionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fees: FeeCalculator,
+    private readonly notifications: NotificationsService,
     private readonly peach: PeachService,
   ) {}
 
@@ -199,7 +201,7 @@ export class TransactionsService {
     if (!tx.paidAt) throw new BadRequestException('Payment not confirmed yet');
     if (tx.dispatchedAt) throw new BadRequestException('Already dispatched');
 
-    return this.prisma.transaction.update({
+    const updated = await this.prisma.transaction.update({
       where: { id: transactionId },
       data: {
         dispatchedAt: new Date(),
@@ -208,6 +210,8 @@ export class TransactionsService {
         trackingReference: data.trackingReference,
       },
     });
+    void this.sendDispatchedNotification(transactionId);
+    return updated;
   }
 
   // ------------------------------------------------------------------
@@ -284,8 +288,8 @@ export class TransactionsService {
       }),
     ]);
 
-    // TODO (Phase 9 — Notifications): fire payout + delivery-confirmed notifications
     this.logger.log(`Transaction ${transactionId} delivery confirmed — payment released`);
+    void this.sendReleasedNotification(transactionId);
     return { released: true };
   }
 
@@ -314,9 +318,10 @@ export class TransactionsService {
       }),
     ]);
 
-    // TODO (Phase 8 — KYC): check seller KYC status here
-    // TODO (Phase 9 — Notifications): fire buyer + seller paid notifications
     this.logger.log(`Transaction ${txId} paid — listing ${listing.id} marked SOLD`);
+
+    // Fire-and-forget notifications
+    void this.sendSaleNotifications(txId);
   }
 
   private async revertListing(listingId: string) {
@@ -324,6 +329,81 @@ export class TransactionsService {
       where: { id: listingId },
       data: { status: 'ACTIVE' },
     });
+  }
+
+  private async sendSaleNotifications(txId: string) {
+    try {
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: txId },
+        include: {
+          listing: true,
+          buyer: true,
+          seller: true,
+        },
+      });
+      if (!tx) return;
+      const details = {
+        listingTitle: tx.listing.title,
+        listingId: tx.listingId,
+        transactionId: txId,
+        buyerEmail: tx.buyer.email,
+        buyerName: [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') || 'Buyer',
+        sellerEmail: tx.seller.email,
+        sellerName: [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') || 'Seller',
+        listingPrice: tx.listingPrice,
+        commissionZar: tx.commissionZar,
+        processingFee: tx.processingFee,
+        buyerTotal: tx.buyerTotal,
+        sellerPayout: tx.sellerPayout,
+        passFeeToBuyer: tx.passFeeToBuyer,
+        shippingMethod: tx.shippingMethod,
+      };
+      await Promise.all([
+        this.notifications.orderConfirmedBuyer(details),
+        this.notifications.newSaleSeller(details),
+      ]);
+    } catch (err) {
+      this.logger.error(`sendSaleNotifications failed for ${txId}: ${(err as Error).message}`);
+    }
+  }
+
+  private async sendDispatchedNotification(txId: string) {
+    try {
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: txId },
+        include: { listing: true, buyer: true },
+      });
+      if (!tx) return;
+      await this.notifications.itemDispatched({
+        listingTitle: tx.listing.title,
+        transactionId: txId,
+        buyerEmail: tx.buyer.email,
+        buyerName: [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') || 'Buyer',
+        trackingReference: tx.trackingReference,
+        shippingMethod: tx.shippingMethod,
+      });
+    } catch (err) {
+      this.logger.error(`sendDispatchedNotification failed for ${txId}: ${(err as Error).message}`);
+    }
+  }
+
+  private async sendReleasedNotification(txId: string) {
+    try {
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: txId },
+        include: { listing: true, seller: true },
+      });
+      if (!tx) return;
+      await this.notifications.paymentReleasedSeller({
+        sellerEmail: tx.seller.email,
+        sellerName: [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') || 'Seller',
+        listingTitle: tx.listing.title,
+        sellerPayout: tx.sellerPayout,
+        transactionId: txId,
+      });
+    } catch (err) {
+      this.logger.error(`sendReleasedNotification failed for ${txId}: ${(err as Error).message}`);
+    }
   }
 
   private validateShipping(isFirearm: boolean, method: ShippingMethod) {

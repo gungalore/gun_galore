@@ -40,6 +40,7 @@
     "meilisearch": "^0.58.0",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
+    "resend": "^6.12.3",
     "rxjs": "^7.8.1",
     "svix": "^1.93.0"
   },

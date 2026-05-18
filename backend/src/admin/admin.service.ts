@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { ListingReviewDto, ReviewAction } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   // ---------------------------------------------------------------
   // Stats
@@ -49,7 +53,7 @@ export class AdminService {
       throw new BadRequestException('Listing is not pending review');
 
     const newStatus = dto.action === ReviewAction.APPROVE ? 'ACTIVE' : 'CANCELLED';
-    return this.prisma.listing.update({
+    const updated = await this.prisma.listing.update({
       where: { id: listingId },
       data: {
         status: newStatus,
@@ -58,7 +62,21 @@ export class AdminService {
         adminOverrideReason: dto.reason ?? null,
         ...(newStatus === 'ACTIVE' ? { expiresAt: new Date(Date.now() + 60 * 24 * 3600_000) } : {}),
       },
+      include: { seller: { select: { email: true, firstName: true, lastName: true } } },
     });
+
+    const sellerDetails = {
+      listingTitle: updated.title,
+      listingId: updated.id,
+      sellerEmail: updated.seller.email,
+      sellerName: [updated.seller.firstName, updated.seller.lastName].filter(Boolean).join(' ') || 'Seller',
+      reason: dto.reason,
+    };
+    void (newStatus === 'ACTIVE'
+      ? this.notifications.listingApproved(sellerDetails)
+      : this.notifications.listingRejected(sellerDetails));
+
+    return updated;
   }
 
   // ---------------------------------------------------------------
@@ -166,10 +184,13 @@ export class AdminService {
   }
 
   async refundTransaction(txId: string, adminId: string, note?: string) {
-    const tx = await this.prisma.transaction.findUnique({ where: { id: txId } });
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: txId },
+      include: { listing: true, buyer: true },
+    });
     if (!tx) throw new NotFoundException('Transaction not found');
 
-    return this.prisma.transaction.update({
+    const updated = await this.prisma.transaction.update({
       where: { id: txId },
       data: {
         paymentStatus: 'REFUNDED',
@@ -178,5 +199,16 @@ export class AdminService {
         adminReviewedAt: new Date(),
       },
     });
+
+    void this.notifications.refundIssuedBuyer({
+      buyerEmail: tx.buyer.email,
+      buyerName: [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') || 'Buyer',
+      listingTitle: tx.listing.title,
+      buyerTotal: tx.buyerTotal,
+      transactionId: txId,
+      note,
+    });
+
+    return updated;
   }
 }
