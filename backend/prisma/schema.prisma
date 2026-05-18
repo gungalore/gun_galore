@@ -117,8 +117,9 @@ model User {
   sellerTier    SellerTier @default(NEW)
   trustScore    Int        @default(0)
   averageRating Float?
-  kycStatus     KycStatus  @default(NONE)
-  kycVerifiedAt DateTime?
+  kycStatus       KycStatus @default(NONE)
+  kycVerifiedAt   DateTime?
+  kycDocumentUrl  String?   // Cloudinary URL of uploaded ID document
   totalSales    Int        @default(0)
   isBanned      Boolean    @default(false)
   bannedAt      DateTime?

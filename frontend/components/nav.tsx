@@ -81,6 +81,7 @@ export function Nav() {
                         { href: '/my/orders', label: 'My Orders' },
                         { href: '/my/sales', label: 'My Sales' },
                         { href: '/dashboard', label: 'Dashboard' },
+                        { href: '/my/kyc', label: 'Verify Identity' },
                       ].map(({ href, label }) => (
                         <Link
                           key={href}

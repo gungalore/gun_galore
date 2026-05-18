@@ -192,6 +192,7 @@ export class ListingsService {
         seller: {
           select: {
             id: true,
+            clerkId: true,
             firstName: true,
             lastName: true,
             avatarUrl: true,

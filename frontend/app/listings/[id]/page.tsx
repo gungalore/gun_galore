@@ -10,6 +10,7 @@ import {
   TIER_LABELS,
   LISTING_TYPE_LABELS,
 } from '@/lib/utils';
+import SellerControls from './seller-controls';
 
 export async function generateMetadata({
   params,
@@ -218,9 +219,10 @@ export default async function ListingDetailPage({
           </p>
 
           {/* Seller */}
-          <div
-            className="rounded-[6px] p-3 text-sm"
-            style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+          <Link
+            href={`/sellers/${listing.seller.clerkId}`}
+            className="block rounded-[6px] p-3 text-sm"
+            style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', textDecoration: 'none' }}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -246,7 +248,12 @@ export default async function ListingDetailPage({
                 {TIER_LABELS[listing.seller.sellerTier]}
               </span>
             </div>
-          </div>
+            <SellerControls
+              listingId={listing.id}
+              sellerClerkId={listing.seller.clerkId}
+              status={listing.status}
+            />
+          </Link>
         </div>
       </div>
 

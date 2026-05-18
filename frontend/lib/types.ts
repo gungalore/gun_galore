@@ -32,10 +32,25 @@ export interface Category {
 
 export interface ListingSeller {
   id: string;
+  clerkId: string;
   firstName: string | null;
   lastName: string | null;
   avatarUrl: string | null;
   sellerTier: SellerTier;
+  totalSales: number;
+  createdAt: string;
+}
+
+export interface Me {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  sellerTier: SellerTier;
+  kycStatus: 'NONE' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+  kycVerifiedAt: string | null;
+  trustScore: number;
+  averageRating: number | null;
   totalSales: number;
   createdAt: string;
 }
