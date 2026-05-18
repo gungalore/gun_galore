@@ -4,8 +4,7 @@
 // See CLAUDE.md for the full data model built up phase by phase.
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -13,11 +12,162 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
-// Foundation model — minimal seed so the initial migration is non-empty.
-// Safe to remove once real models (User, Listing, etc.) are added in M1.
+// Enums
 // ---------------------------------------------------------------------------
 
-model HealthCheck {
+enum ListingType {
+  BUY_NOW
+  TAKE_A_SHOT
+  AUCTION
+}
+
+enum ListingStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  SOLD
+  CANCELLED
+  EXPIRED
+}
+
+enum Condition {
+  NEW
+  LIKE_NEW
+  GOOD
+  FAIR
+  POOR
+}
+
+enum SellerTier {
+  NEW
+  ESTABLISHED
+  TRUSTED
+  TOP_SELLER
+  DEALER
+}
+
+enum KycStatus {
+  NONE
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ClaudeDecision {
+  APPROVE
+  AUTO_FIX_AND_APPROVE
+  REJECT
+  HUMAN_REVIEW
+}
+
+enum Province {
+  EASTERN_CAPE
+  FREE_STATE
+  GAUTENG
+  KWAZULU_NATAL
+  LIMPOPO
+  MPUMALANGA
+  NORTH_WEST
+  NORTHERN_CAPE
+  WESTERN_CAPE
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String     @id @default(cuid())
+  clerkId       String     @unique
+  email         String     @unique
+  phone         String?
+  firstName     String?
+  lastName      String?
+  avatarUrl     String?
+  sellerTier    SellerTier @default(NEW)
+  trustScore    Int        @default(0)
+  kycStatus     KycStatus  @default(NONE)
+  kycVerifiedAt DateTime?
+  totalSales    Int        @default(0)
+  isBanned      Boolean    @default(false)
+  bannedAt      DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  listings Listing[]
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String
+  slug      String     @unique
+  parentId  String?
+  parent    Category?  @relation("SubCategories", fields: [parentId], references: [id])
+  children  Category[] @relation("SubCategories")
+  isFirearm Boolean    @default(false)
+  isActive  Boolean    @default(true)
+  sortOrder Int        @default(0)
+  createdAt DateTime   @default(now())
+
+  listings Listing[]
+}
+
+model Listing {
+  id         String        @id @default(cuid())
+  sellerId   String
+  seller     User          @relation(fields: [sellerId], references: [id])
+  categoryId String
+  category   Category      @relation(fields: [categoryId], references: [id])
+
+  title       String
+  description String
+  price       Int           // ZAR cents
+  listingType ListingType
+  status      ListingStatus @default(DRAFT)
+  condition   Condition
+  province    Province
+
+  isFirearm Boolean @default(false)
+  make      String?
+  model     String?
+  calibre   String?
+
+  autoAcceptThreshold Int? // ZAR cents; Take a Shot only
+
+  passFeeToBuyer Boolean @default(false)
+
+  claudeDecision            ClaudeDecision?
+  claudeConfidence          Float?
+  claudeReasons             String[]
+  claudeReviewedAt          DateTime?
+  claudeOriginalDescription String?
+  claudeAutoFixApplied      Boolean         @default(false)
+
+  adminReviewedById   String?
+  adminReviewedAt     DateTime?
+  adminOverrideReason String?
+
+  expiresAt DateTime?
+  soldAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  images ListingImage[]
+
+  @@index([status, listingType])
+  @@index([categoryId])
+  @@index([sellerId])
+}
+
+model ListingImage {
   id        String   @id @default(cuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  url       String
+  publicId  String
+  order     Int      @default(0)
+  isPrimary Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  @@index([listingId])
 }
