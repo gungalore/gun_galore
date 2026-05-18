@@ -697,15 +697,30 @@ Work on a feature branch; `deploy now` merges it into `main`.
 
 ## Current Status
 
-**Fresh rebuild — Foundation phase.**
+**M1 in progress — backend API complete, frontend next.**
 
-- [ ] New GitHub repo created; `.gitignore` (excluding `.env*` and
-      credential files) committed first.
+- [x] `.gitignore` committed first (excludes `.env*` and credential files).
+- [ ] New GitHub repo created and pushed (local git only so far).
 - [ ] All previously exposed credentials rotated.
-- [ ] Foundation scaffold (Next.js + NestJS + Prisma + Postgres +
-      Clerk + Meilisearch + Cloudinary).
-- [ ] M1 Listings.
+- [x] Foundation scaffold: Next.js 16 + NestJS 11 + Prisma 7 + Postgres 18
+      + Clerk v7 + Meilisearch (local Windows service) + Cloudinary.
+      Branch: `foundation`. Local only — not deployed.
+- [x] M1 backend: Prisma schema (User, Category, Listing, ListingImage +
+      7 enums), PrismaService (@prisma/adapter-pg — Prisma 7 requirement),
+      UsersModule (Clerk webhook sync), CategoriesModule (13 seeded
+      categories), ListingsModule (full CRUD + image upload + Meilisearch
+      sync). All on branch `foundation`.
+- [ ] M1 frontend: homepage listing grid, listing detail, create-listing form.
 - [ ] Remaining roadmap phases.
+
+**Prisma 7 notes (do not revert):**
+- Generator: `prisma-client-js` (NOT `prisma-client` — that generates ESM
+  which is incompatible with NestJS CommonJS output).
+- Runtime connection: `PrismaService` passes `adapter: new PrismaPg(DATABASE_URL)`
+  to `super()`. Prisma 7's WebAssembly engine requires an explicit driver
+  adapter; `new PrismaClient()` with no args throws.
+- CLI config: `backend/prisma.config.ts` (Prisma 7 requirement — `url` is
+  not allowed in `schema.prisma` datasource block).
 
 Pending external items: Peach Payments live credentials (confirm
 BANVR + tokenisation enabled); SA Post Office PO Box for
