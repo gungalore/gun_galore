@@ -11,6 +11,8 @@ const isPublicRoute = createRouteMatcher([
   '/about(.*)',
   '/buy-and-sell(.*)',
   '/welcome(.*)',
+  '/sellers(.*)', // public seller profiles
+  '/admin(.*)',   // admin uses its own JWT auth, not Clerk
 ]);
 
 export default clerkMiddleware(async (auth, request) => {

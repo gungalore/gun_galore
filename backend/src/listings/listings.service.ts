@@ -292,6 +292,20 @@ export class ListingsService {
     }
   }
 
+  async findMine(clerkId: string) {
+    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+    if (!user) return [];
+
+    return this.prisma.listing.findMany({
+      where: { sellerId: user.id },
+      include: {
+        images: { where: { isPrimary: true }, take: 1 },
+        category: { select: { id: true, name: true, slug: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   private async assertOwner(listingId: string, clerkId: string) {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not found');

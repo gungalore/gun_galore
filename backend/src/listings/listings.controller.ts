@@ -42,6 +42,12 @@ export class ListingsController {
 
   // --- Protected ---
 
+  @Get('mine')
+  @UseGuards(ClerkGuard)
+  mine(@CurrentUser() clerkId: string) {
+    return this.listingsService.findMine(clerkId);
+  }
+
   @Post()
   @UseGuards(ClerkGuard)
   create(@CurrentUser() clerkId: string, @Body() dto: CreateListingDto) {

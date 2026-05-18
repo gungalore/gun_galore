@@ -15,6 +15,11 @@ datasource db {
 // Enums
 // ---------------------------------------------------------------------------
 
+enum AdminRole {
+  ADMIN
+  SUPERADMIN
+}
+
 enum ListingType {
   BUY_NOW
   TAKE_A_SHOT
@@ -25,9 +30,18 @@ enum ListingStatus {
   DRAFT
   PENDING_REVIEW
   ACTIVE
+  PAYMENT_PENDING // reserved while buyer completes Peach checkout
   SOLD
   CANCELLED
   EXPIRED
+}
+
+enum PaymentStatus {
+  HELD                      // payment received, funds held until delivery confirmed
+  PENDING_ADMIN_VERIFICATION
+  RELEASED                  // payout sent to seller
+  DISPUTED
+  REFUNDED
 }
 
 enum Condition {
@@ -60,6 +74,22 @@ enum ClaudeDecision {
   HUMAN_REVIEW
 }
 
+enum ShippingMethod {
+  PUDO
+  TCG
+  DEALER_TRANSFER
+}
+
+enum ShippingStatus {
+  PENDING
+  COLLECTED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  DELIVERY_FAILED
+  RETURNED
+}
+
 enum Province {
   EASTERN_CAPE
   FREE_STATE
@@ -86,6 +116,7 @@ model User {
   avatarUrl     String?
   sellerTier    SellerTier @default(NEW)
   trustScore    Int        @default(0)
+  averageRating Float?
   kycStatus     KycStatus  @default(NONE)
   kycVerifiedAt DateTime?
   totalSales    Int        @default(0)
@@ -94,7 +125,11 @@ model User {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  listings Listing[]
+  listings           Listing[]
+  buyerTransactions  Transaction[] @relation("BuyerTransactions")
+  sellerTransactions Transaction[] @relation("SellerTransactions")
+  ratingsGiven       Rating[]      @relation("RatingsGiven")
+  ratingsReceived    Rating[]      @relation("RatingsReceived")
 }
 
 model Category {
@@ -109,7 +144,7 @@ model Category {
   sortOrder Int        @default(0)
   createdAt DateTime   @default(now())
 
-  listings Listing[]
+  listings     Listing[]
 }
 
 model Listing {
@@ -152,7 +187,8 @@ model Listing {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  images ListingImage[]
+  images       ListingImage[]
+  transactions Transaction[]
 
   @@index([status, listingType])
   @@index([categoryId])
@@ -170,4 +206,138 @@ model ListingImage {
   createdAt DateTime @default(now())
 
   @@index([listingId])
+}
+
+model Dealer {
+  id            String   @id @default(cuid())
+  name          String
+  licenceNumber String   @unique
+  address       String
+  suburb        String
+  city          String
+  province      Province
+  postalCode    String
+  lat           Float?
+  lng           Float?
+  phone         String?
+  email         String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transactions Transaction[]
+
+  @@index([province])
+  @@index([isActive])
+}
+
+model Transaction {
+  id       String @id @default(cuid())
+
+  // Parties
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id])
+  buyerId   String
+  buyer     User    @relation("BuyerTransactions", fields: [buyerId], references: [id])
+  sellerId  String
+  seller    User    @relation("SellerTransactions", fields: [sellerId], references: [id])
+
+  // Pricing — all ZAR cents, snapshot at point of sale
+  listingPrice   Int     // snapshot of listing.price
+  commissionZar  Int
+  processingFee  Int     // Peach fee (confirmed with Peach merchant agreement)
+  passFeeToBuyer Boolean // snapshot of listing.passFeeToBuyer
+  buyerTotal     Int     // what buyer is charged by Peach
+  sellerPayout   Int     // what seller receives after deductions
+
+  // Payment
+  paymentStatus   PaymentStatus @default(HELD)
+  peachCheckoutId String?
+  peachPaymentId  String?
+  peachResultCode String?
+  paidAt          DateTime?
+  releasedAt      DateTime?
+
+  // Shipping
+  shippingMethod    ShippingMethod?
+  shippingStatus    ShippingStatus?
+  trackingReference String?
+  dispatchedAt      DateTime?
+  deliveredAt       DateTime?
+
+  // Pudo locker-to-locker
+  pudoDropoffLockerId String? // seller's drop-off locker (set at dispatch)
+  pudoPickupLockerId  String? // buyer's chosen pickup locker
+  pudoTrackingCode    String?
+
+  // TCG door delivery
+  deliveryAddress Json? // { streetAddress, suburb, city, province, postalCode, contactName, contactPhone }
+  tcgWaybill      String?
+
+  // Firearm dealer transfer
+  dealerId String?
+  dealer   Dealer? @relation(fields: [dealerId], references: [id])
+
+  // KYC gate — populated when seller passes KYC after payment received
+  sellerKycClearedAt DateTime?
+
+  // Admin
+  adminNote         String?
+  adminReviewedById String?
+  adminReviewedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages            Message[]
+  rating              Rating?
+  confirmedDeliveryAt DateTime?
+
+  @@index([listingId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([paymentStatus])
+  @@index([peachPaymentId])
+}
+
+model AdminUser {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  role         AdminRole @default(ADMIN)
+  firstName    String?
+  lastName     String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Rating {
+  id            String      @id @default(cuid())
+  transactionId String      @unique
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  raterId       String
+  rater         User        @relation("RatingsGiven", fields: [raterId], references: [id])
+  ratedId       String
+  rated         User        @relation("RatingsReceived", fields: [ratedId], references: [id])
+  stars         Int         // 1–5
+  comment       String?
+  createdAt     DateTime    @default(now())
+
+  @@index([ratedId])
+}
+
+model Message {
+  id              String      @id @default(cuid())
+  transactionId   String
+  transaction     Transaction @relation(fields: [transactionId], references: [id])
+  senderClerkId   String
+  content         String
+  originalContent String?     // populated when content was auto-stripped by moderation
+  wasModerated    Boolean     @default(false)
+  readAt          DateTime?
+  createdAt       DateTime    @default(now())
+
+  @@index([transactionId, createdAt])
 }

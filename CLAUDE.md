@@ -453,6 +453,19 @@ them to enter it themselves in the Peach checkout.
 - New listings are reviewed by Claude before going live (see Claude
   AI Listing Moderation).
 
+**Listing expiry (LOCKED — Buy Now / Take a Shot only):**
+
+- A listing expires **60 days** after it goes live. Set an
+  `expiresAt` timestamp at publish.
+- A daily cron flips expired listings to state `EXPIRED`.
+- The `listing-expiring` email fires at **day 53** (7-day warning);
+  `listing-expired` fires at expiry. Both SMS + email per the
+  notification rule.
+- The seller can relist from an expired listing.
+- Auctions and competitions are NOT subject to this — they have
+  their own fixed end times. The 60-day rule applies only to
+  `BUY_NOW` and `TAKE_A_SHOT` listings.
+
 ---
 
 ## Auction System (M2)
@@ -594,6 +607,43 @@ the internal `shippingStatus`, fire notifications, always return
 
 ---
 
+## Email Templates
+
+The Claude Design handoff ships **63 finished HTML email
+templates**, one per platform event, in 12 groups (Account,
+Verification, Listings, Auctions, Offers, Payments, Fulfillment,
+Disputes, Competitions, Engagement, Penalties, Platform).
+
+**Rules:**
+
+- They live at
+  `backend/src/modules/notifications/templates/emails/`.
+- They are **final, production assets** — table-based, MSO/Outlook
+  fallbacks, inline-SVG logo, dark theme. Use them **as-is**. Do
+  NOT restyle, redesign, or regenerate them.
+- Each template uses bracketed placeholders — `[First Name]`,
+  `[Email]`, `[Date]`, `[link]`, etc. The notification service
+  loads the file and substitutes real values at send time.
+- All 63 are kept in the repo so they are available. A template is
+  only *wired* when a built feature needs it; unused templates sit
+  dormant — that is expected and fine.
+
+**Do NOT wire (no backing feature — leave dormant):**
+
+- `subscription-statement.html` ("Monthly statement") — Gun Galore
+  has **no subscription, billing, or statement model**. Commission
+  is per-transaction, absorb-only. This file exists for
+  completeness only. **Do not build any billing/statement feature
+  to feed it.**
+- `otp-2fa.html`, `new-device-login.html` — two-factor and
+  new-device alerts are handled by Clerk's built-in flows. These
+  branded versions stay dormant unless a custom flow is later
+  chosen.
+- `saved-search-results.html` — saved-search is not yet a scoped
+  feature; this template plugs in if/when it is built.
+
+---
+
 ## PWA
 
 **Phase 1 (build now): installability + offline only.**
@@ -697,7 +747,7 @@ Work on a feature branch; `deploy now` merges it into `main`.
 
 ## Current Status
 
-**M1 in progress — backend API complete, frontend next.**
+**M1–M6 complete locally. Next: Phase 7 Admin Panel.**
 
 - [x] `.gitignore` committed first (excludes `.env*` and credential files).
 - [ ] New GitHub repo created and pushed (local git only so far).
@@ -710,7 +760,36 @@ Work on a feature branch; `deploy now` merges it into `main`.
       UsersModule (Clerk webhook sync), CategoriesModule (13 seeded
       categories), ListingsModule (full CRUD + image upload + Meilisearch
       sync). All on branch `foundation`.
-- [ ] M1 frontend: homepage listing grid, listing detail, create-listing form.
+- [x] M1 frontend: homepage listing grid (server component, FilterBar client component),
+      listing detail page, create-listing form (Clerk auth, image upload). All pages
+      type-check clean. Routes: `/`, `/listings/[id]`, `/listings/new`.
+- [x] Shipping: ShippingModule (PudoService 24h locker cache, TcgService, DealersService),
+      ShippingService routing rules (firearm → DEALER_TRANSFER only), webhook handlers
+      (TCG + Pudo, public routes, always-200). Dealer model + migration + 5 test dealers seeded.
+      Frontend: LockerPicker, DealerPicker components ready for checkout.
+      Routes: GET /api/shipping/pudo/lockers, GET /api/shipping/dealers,
+      GET /api/shipping/options, POST /api/shipping/webhook/{tcg,pudo}.
+- [x] Payments: Peach embedded checkout, PaymentStatus flow (HELD→RELEASED), marginal
+      commission calculator (FeeCalculator), Transaction model + Dealer model, seller payouts.
+      Mock mode when PEACH_ENTITY_ID/PEACH_ACCESS_TOKEN not set. Both TypeScript clean.
+      Routes: POST /api/transactions, POST /api/transactions/:id/verify-result,
+      GET /api/transactions, GET /api/transactions/:id, POST /api/transactions/:id/dispatch,
+      POST /api/payments/webhook/peach.
+      Frontend: /checkout/[listingId] (server + client), /checkout/complete (result handler),
+      /transactions/[id] (order detail, buyer + seller views with dispatch button),
+      listing detail Buy Now CTA.
+- [x] Messaging: Message model + migration. MessagesModule (ModerationService using Claude Haiku —
+      APPROVE / STRIP contact info / BLOCK off-platform solicitation; fails open). REST API:
+      POST/GET /api/transactions/:id/messages, GET /api/messages/unread-count. Frontend:
+      MessageThread client component (5s poll, bubble UI, moderation notice) embedded in
+      transaction detail page. Both TypeScript clean.
+- [x] Ratings & Trust: Rating model + migration. RatingsModule (create rating, trust score calc —
+      6 components, marginal formula, all LOCKED). Tier auto-upgrade (NEW→ESTABLISHED→TRUSTED→
+      TOP_SELLER; DEALER sticky). confirm-delivery endpoint (buyer → releases payment, increments
+      totalSales). Frontend: ConfirmDeliveryButton, RatingWidget (star picker + comment),
+      /dashboard (trust score bar chart + recent ratings). Both builds + 7/7 endpoint tests clean.
+      **Build fixes also landed this phase**: nodenext→commonjs/node tsconfig, meilisearch ambient
+      shim, start:prod path corrected, checkout/complete Suspense fix.
 - [ ] Remaining roadmap phases.
 
 **Prisma 7 notes (do not revert):**
