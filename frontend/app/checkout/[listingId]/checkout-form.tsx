@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Script from 'next/script';
 import { useAuth } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Listing,
   FeeBreakdown,
@@ -68,6 +68,44 @@ function PriceRow({ label, value, highlight }: { label: string; value: number; h
 export function CheckoutForm({ listing }: { listing: Listing }) {
   const { getToken } = useAuth();
   const router = useRouter();
+
+  // SMS-link checkout: when the URL has ?t=<token>, this checkout
+  // page can be reached and acted on WITHOUT a Clerk session. The
+  // backend's ClerkOrTokenGuard accepts the token via query param
+  // on GET /users/me, PATCH /users/me, and POST /transactions.
+  // We just need to append it to URL paths instead of sending a
+  // Bearer header.
+  const searchParams = useSearchParams();
+  const actionToken = searchParams.get('t');
+
+  /**
+   * Build headers + URL for any API call that normally requires
+   * Clerk auth. When actionToken is present, we send the token via
+   * query param; otherwise we fetch a Clerk JWT and send Bearer.
+   *
+   * Returns the headers + the modified URL (with ?t= appended when
+   * applicable). The caller does fetch(url, { headers, ... }) as
+   * usual.
+   */
+  async function authedRequest(
+    path: string,
+  ): Promise<{ url: string; headers: HeadersInit }> {
+    if (actionToken) {
+      const sep = path.includes('?') ? '&' : '?';
+      return {
+        url: `${API_URL}${path}${sep}t=${encodeURIComponent(actionToken)}`,
+        headers: { 'Content-Type': 'application/json' },
+      };
+    }
+    const token = await getToken();
+    return {
+      url: `${API_URL}${path}`,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  }
 
   // Allowed methods = intersection of (legal for this listing class) and
   // (what the seller offered in the Sell form). Legacy listings with an
@@ -153,11 +191,8 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     let cancelled = false;
     (async () => {
       try {
-        const token = await getToken();
-        const res = await fetch(`${API_URL}/users/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: 'no-store',
-        });
+        const { url, headers } = await authedRequest('/users/me');
+        const res = await fetch(url, { headers, cache: 'no-store' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as Me;
         if (cancelled) return;
@@ -332,13 +367,10 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     setSavingAddr(true);
     setAddrError(null);
     try {
-      const token = await getToken();
-      const res = await fetch(`${API_URL}/users/me`, {
+      const { url, headers } = await authedRequest('/users/me');
+      const res = await fetch(url, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
         body: JSON.stringify({
           addrBuilding: captureAddr.building.trim() || null,
           addrStreet: captureAddr.street.trim() || null,
@@ -483,10 +515,10 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     setError(null);
 
     try {
-      const token = await getToken();
-      const res = await fetch(`${API_URL}/transactions`, {
+      const { url, headers } = await authedRequest('/transactions');
+      const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers,
         body: JSON.stringify(buildPayload()),
       });
 
@@ -581,7 +613,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           we'd be paying extra SMS to verify), we just store the
           number so dispatch/out-for-delivery SMS reaches them. The
           block disappears once me.phone is set on the next fetch. */}
-      {meLoaded && me && !me.phone && (
+      {meLoaded && me && !me.phone && !actionToken && (
         <BuyerPhoneCapture
           onSaved={(phone) => {
             // Optimistic local update so the block hides immediately
@@ -589,6 +621,33 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
             setMe({ ...me, phone });
           }}
         />
+      )}
+      {/* Token-flow buyers without a phone are an edge case (they
+          must have had a phone to receive the offer-accepted SMS in
+          the first place). If somehow it's missing, nudge them to
+          sign in instead of trying to capture via the public
+          token endpoint — phone capture stays Clerk-only for
+          security. */}
+      {meLoaded && me && !me.phone && actionToken && (
+        <div
+          className="rounded-[6px] p-4"
+          style={{
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--red)',
+            color: 'var(--text-secondary)',
+            fontSize: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          We need a phone number on file before checkout. Please{' '}
+          <a
+            href={`/sign-in?redirect_url=/checkout/${listing.id}`}
+            style={{ color: 'var(--red)', textDecoration: 'underline' }}
+          >
+            sign in
+          </a>{' '}
+          to add one, then return to this checkout.
+        </div>
       )}
 
       {/* Shipping method — show the seller's chosen options as radio

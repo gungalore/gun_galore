@@ -7,8 +7,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ActionTokensService } from '../actions/action-tokens.service';
 import { PlaceBidDto } from './dto/place-bid.dto';
 import { Prisma } from '@prisma/client';
+
+const APP_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+const AUCTION_WIN_CHECKOUT_TTL_HOURS = 24;
 
 // Tiered bid increments per CLAUDE.md (M2 Auction System).
 // Each entry is [upper bound (exclusive, ZAR cents), increment (ZAR cents)].
@@ -38,6 +42,10 @@ export class AuctionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    // @Global so no module import needed. Used to mint
+    // AUCTION_BID + CHECKOUT tokens so the recipient of the outbid
+    // / win SMS can act from the link without signing in.
+    private readonly actionTokens: ActionTokensService,
   ) {}
 
   // --- Public read endpoints --------------------------------------------
@@ -779,12 +787,30 @@ export class AuctionsService {
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
       const listing = await this.prisma.listing.findUnique({ where: { id: listingId } });
       if (!user || !listing) return;
+      // Mint an AUCTION_BID token so the outbid user can raise from
+      // the SMS link. Token expires at the auction's endTime (snipe
+      // extensions naturally extend the auction; we re-mint per
+      // outbid event so each SMS carries a fresh token aligned with
+      // the auction's current endTime at the moment we send).
+      const token = await this.actionTokens
+        .mint({
+          purpose: 'AUCTION_BID',
+          targetType: 'listing',
+          targetId: listing.id,
+          authorisedUserId: userId,
+          expiresAt: listing.endTime ?? new Date(Date.now() + 24 * 3600_000),
+        })
+        .catch((err) => {
+          this.logger.warn(`AUCTION_BID token mint failed: ${(err as Error).message}`);
+          return null;
+        });
       await this.notifications.bidOutbid(
         user.email,
         listing.title,
         newAmount,
         user.phone,
         listingId,
+        token ? `${APP_URL}/a/${token}` : undefined,
       );
     } catch (err) {
       this.logger.warn(`outbid notify failed: ${(err as Error).message}`);
@@ -796,12 +822,29 @@ export class AuctionsService {
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
       const listing = await this.prisma.listing.findUnique({ where: { id: listingId } });
       if (!user || !listing) return;
+      // Auction won → mint a CHECKOUT token for the winner so the
+      // SMS link drops them straight on the checkout page (no
+      // sign-in). 24h TTL matches the "pay within 24h" rule.
+      const token = await this.actionTokens
+        .mint({
+          purpose: 'CHECKOUT',
+          targetType: 'listing',
+          targetId: listing.id,
+          authorisedUserId: userId,
+          expiresAt: new Date(Date.now() + AUCTION_WIN_CHECKOUT_TTL_HOURS * 3600_000),
+          metadata: { auctionWinAmount: amount },
+        })
+        .catch((err) => {
+          this.logger.warn(`Auction-win CHECKOUT token mint failed: ${(err as Error).message}`);
+          return null;
+        });
       await this.notifications.auctionWon(
         user.email,
         listing.title,
         amount,
         user.phone,
         listingId,
+        token ? `${APP_URL}/a/${token}` : undefined,
       );
     } catch (err) {
       this.logger.warn(`auctionWon notify failed: ${(err as Error).message}`);

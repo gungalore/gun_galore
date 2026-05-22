@@ -16,6 +16,7 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { UseInterceptors } from '@nestjs/common';
 import type { Request } from 'express';
 import { ClerkGuard } from '../auth/clerk.guard';
+import { ClerkOrTokenGuard } from '../auth/clerk-or-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { TransactionsService } from './transactions.service';
 import { TrackingService } from '../shipping/tracking.service';
@@ -52,14 +53,33 @@ export class TransactionsController {
 
   // ---------------------------------------------------------------
   // Create transaction + Peach checkout (buyer)
+  //
+  // Accepts EITHER a Clerk session OR a CHECKOUT action token via
+  // ?t=<token>. When called via token, we double-check the token's
+  // targetId matches the body's listingId — otherwise a stolen
+  // token could be used to buy a DIFFERENT listing than the SMS
+  // intended (would be a high-value leak otherwise).
+  //
+  // The token is NOT consumed here. A CHECKOUT token spans several
+  // requests (load user, save address, this call) and we want it to
+  // stay valid through the whole flow. Consumption is a follow-up
+  // task; for v1 the token just naturally expires at its 24h TTL.
   // ---------------------------------------------------------------
   @Post()
-  @UseGuards(ClerkGuard)
+  @UseGuards(ClerkOrTokenGuard)
   async create(
     @CurrentUser() clerkId: string,
     @Body() dto: CreateTransactionDto,
-    @Req() req: Request,
+    @Req() req: Request & { viaActionToken?: boolean; actionTokenTargetId?: string },
   ) {
+    // Token-auth safety check — the token authorises checkout on
+    // ONE specific listing. Refuse if the body's listingId doesn't
+    // match (defence against SMS-link redirection / mix-up).
+    if (req.viaActionToken && req.actionTokenTargetId !== dto.listingId) {
+      throw new BadRequestException(
+        'This checkout link is for a different listing.',
+      );
+    }
     const frontendUrl =
       process.env.FRONTEND_URL ?? `${req.protocol}://${req.get('host') ?? 'localhost:3000'}`;
     return this.txService.create(clerkId, dto, frontendUrl);

@@ -351,6 +351,21 @@ model User {
   // `featuredUntil` is still in the future.
   featuredSlotBids FeaturedSlotBid[] @relation("FeaturedSlotBidder")
   featuredSlots    FeaturedSlot[]    @relation("FeaturedSlotOccupant")
+
+  // ── Zoho Books linkage ────────────────────────────────────────────
+  // The user's Contact record in Zoho Books. Created lazily the first
+  // time we need to invoice them (e.g. on their first sale that hits
+  // verification APPROVED). Once created, reused for every subsequent
+  // invoice/sales receipt so we don't duplicate contacts in Books.
+  // Null = not yet synced; presence = ready to invoice without a
+  // round-trip to create the contact.
+  zohoContactId String?
+
+  // ── ActionToken back-relation ────────────────────────────────────
+  // SMS-link action tokens that authorise this user (e.g. tokens that
+  // let them accept an offer / pay for a sale / raise a bid without
+  // needing a Clerk session). Cascade-deleted when the user is deleted.
+  actionTokensAuthorised ActionToken[] @relation("ActionTokensAuthorised")
 }
 
 model Category {
@@ -656,6 +671,28 @@ model Transaction {
   stockedAtDealerName     String?
   stockedAtDealerAddress  String?
   stockedAtDealerPhone    String?
+
+  // ── Zoho Books linkage ────────────────────────────────────────────
+  // Documents created in Books for this transaction:
+  //   - zohoCommissionInvoiceId: Gun Galore → Seller invoice for the
+  //     platform commission. Created on verification APPROVED.
+  //   - zohoCommissionPaymentId: the payment record that marks the
+  //     invoice paid. Created when the seller payout fires.
+  //   - zohoCreditNoteId: only set on refund — credit note against
+  //     the original commission invoice.
+  //
+  // zohoSyncStatus tracks the most recent attempt:
+  //   - null / 'IDLE': nothing has tried to sync yet
+  //   - 'PENDING': sync attempt in flight
+  //   - 'OK': latest attempt succeeded
+  //   - 'FAILED': latest attempt failed (see zohoSyncError + zohoSyncLastAttemptAt)
+  //   - 'SKIPPED': feature flag was off when the event fired
+  zohoCommissionInvoiceId String?
+  zohoCommissionPaymentId String?
+  zohoCreditNoteId        String?
+  zohoSyncStatus          String?
+  zohoSyncError           String?
+  zohoSyncLastAttemptAt   DateTime?
 
   // Admin
   adminNote         String?
@@ -1129,6 +1166,19 @@ model Ticket {
   postalEntryId String?
   postalEntry   PostalEntry? @relation(fields: [postalEntryId], references: [id])
 
+  // ── Zoho Books linkage ────────────────────────────────────────────
+  // When a buyer pays for N tickets in one Peach checkout, ONE Sales
+  // Receipt is created in Books covering the batch. All N tickets in
+  // that batch share the same zohoSalesReceiptId for traceability —
+  // the sync logic dedupes by peachCheckoutId so we don't issue
+  // multiple receipts for the same payment.
+  // Postal tickets (amountCents = 0) skip Books entirely — no money
+  // changed hands.
+  zohoSalesReceiptId    String?
+  zohoSyncStatus        String?
+  zohoSyncError         String?
+  zohoSyncLastAttemptAt DateTime?
+
   createdAt DateTime @default(now())
 
   @@index([raffleId, status])
@@ -1382,6 +1432,15 @@ model FeaturedSlotBid {
   // Back-relation for FeaturedAuction.winningBid.
   wonAuction FeaturedAuction? @relation("AuctionWinningBid")
 
+  // ── Zoho Books linkage ────────────────────────────────────────────
+  // Featured-slot fee invoice (Gun Galore → winning bidder) created
+  // when the bid wins + Peach captures payment. Only set on winning
+  // bids that actually paid (status = COMMITTED + paidAt set).
+  zohoInvoiceId         String?
+  zohoSyncStatus        String?
+  zohoSyncError         String?
+  zohoSyncLastAttemptAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1474,4 +1533,81 @@ model FeaturedSlotAuditEvent {
 
   @@index([slotId, createdAt])
   @@index([eventType, createdAt])
+}
+
+// =====================================================================
+// ActionToken — single-use, scoped tokens for SMS-link action pages
+// =====================================================================
+// Powers the /a/<token> pages: a buyer or seller gets an SMS with a
+// short link, taps it, and lands on a public page (no sign-in) that
+// lets them do exactly ONE thing — accept an offer, place a bid, pay
+// for an item they won, etc.
+//
+// Security model:
+//   - Token is 16 bytes of cryptographic random (128-bit), base64url
+//     encoded (~22 chars in the URL).
+//   - Each token is scoped to ONE action on ONE entity. An "accept
+//     offer" token can ONLY accept that one offer — it can't reject
+//     it, can't access other offers, can't read profile, can't act on
+//     other transactions.
+//   - One-time consume for mutating actions. Tokens for read-only or
+//     multi-load surfaces (e.g. CHECKOUT, where the user loads the
+//     page, fills in shipping, then submits payment) stay valid until
+//     the "terminal" action consumes them — for checkout that's the
+//     POST /transactions call.
+//   - Expiry = the underlying decision window. Offers expire in 24h
+//     so offer-decision tokens expire then too. Auction-bid tokens
+//     expire at the auction's endTime (auto-extends on snipe).
+//   - Brute-force lock: invalidAttempts >= 5 → token permanently dead
+//     even if not yet used. Prevents guessing valid tokens.
+//
+// Purposes:
+//   OFFER_DECISION   — seller decides on a fresh offer (accept/reject/counter)
+//   COUNTER_DECISION — buyer decides on seller's counter (accept/reject/counter-back)
+//   AUCTION_BID      — buyer raises bid after being outbid (single or auto-bid)
+//   CHECKOUT         — buyer pays for accepted offer / auction win / BUY_NOW
+//                      (wider read scope: loads user address/phone for pre-fill)
+model ActionToken {
+  id    String @id @default(cuid())
+  token String @unique // base64url(16 bytes random) — ~22 chars
+
+  // What this token authorises. See enum comment above for valid values.
+  // Plain string (not Prisma enum) so we can add purposes without a
+  // schema migration each time.
+  purpose String
+
+  // What the token acts on. targetType is a model name in lowercase:
+  // 'offer' | 'listing' | 'transaction'. targetId is that record's id.
+  targetType String
+  targetId   String
+
+  // Who the token authorises — when consumed, the underlying service
+  // call runs AS this user. Always a real Gun Galore user; never an
+  // anonymous session.
+  authorisedUserId String
+  authorisedUser   User   @relation("ActionTokensAuthorised", fields: [authorisedUserId], references: [id], onDelete: Cascade)
+
+  // Optional metadata for the action — e.g. for CHECKOUT we might
+  // store the listing's price snapshot at SMS send time so a price
+  // change between SMS and click can be detected. Free-form JSON.
+  metadataJson String?
+
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  // Failed resolution attempts — incremented on invalid/expired/locked
+  // POST attempts. Once >= 5 the token is permanently dead (even if
+  // it hadn't been used yet). Stops guess attacks.
+  invalidAttempts Int @default(0)
+
+  // Audit linkage — once the token is consumed, store the IP +
+  // user-agent of the consuming request for the admin audit trail.
+  consumedFromIp        String?
+  consumedFromUserAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([authorisedUserId, expiresAt])
+  @@index([targetType, targetId])
+  @@index([expiresAt])
 }

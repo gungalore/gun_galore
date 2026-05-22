@@ -15,6 +15,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ClerkGuard } from '../auth/clerk.guard';
+import { ClerkOrTokenGuard } from '../auth/clerk-or-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
@@ -24,8 +25,12 @@ import {
   ProfileCompleteDto,
 } from './users.service';
 
+// Per-method guards instead of class-level, so the two endpoints
+// reachable from the SMS-link checkout flow (GET + PATCH /me) can
+// accept EITHER a Clerk session OR a CHECKOUT action token, while
+// the more sensitive endpoints (KYC upload, profile-complete with
+// banking, phone OTP) stay Clerk-only.
 @Controller('users')
-@UseGuards(ClerkGuard)
 export class UsersController {
   constructor(
     private readonly prisma: PrismaService,
@@ -44,6 +49,7 @@ export class UsersController {
   // each contributes ~33% to the percent. Email isn't counted — it's
   // implicit (the seller can't reach this endpoint without it).
   @Get('me')
+  @UseGuards(ClerkOrTokenGuard) // accept Clerk OR ?t=<checkout-token>
   async me(@CurrentUser() clerkId: string) {
     const user = await this.prisma.user.findUnique({
       where: { clerkId },
@@ -103,6 +109,7 @@ export class UsersController {
   // Returned shape mirrors the UrgentNotification type on the frontend
   // exactly so the component doesn't need a translation layer.
   @Get('me/urgent')
+  @UseGuards(ClerkGuard)
   async urgent(@CurrentUser() clerkId: string) {
     const user = await this.prisma.user.findUnique({
       where: { clerkId },
@@ -202,6 +209,7 @@ export class UsersController {
   // Email + avatar + password live on Clerk; phone goes through its own
   // OTP-gated endpoints below.
   @Patch('me')
+  @UseGuards(ClerkOrTokenGuard) // accept Clerk OR ?t=<checkout-token>
   async updateMe(
     @CurrentUser() clerkId: string,
     @Body() patch: ProfileUpdate,
@@ -239,6 +247,7 @@ export class UsersController {
   // BadRequestException with the modal-displayable message on any
   // validation / AVS failure.
   @Post('me/profile-complete')
+  @UseGuards(ClerkGuard)
   completeProfile(
     @CurrentUser() clerkId: string,
     @Body() body: ProfileCompleteDto,
@@ -258,6 +267,7 @@ export class UsersController {
   // is what flips phoneVerified true, so seller features can keep
   // gating on that bit if they need real verification.
   @Post('me/buyer-phone')
+  @UseGuards(ClerkGuard)
   async saveBuyerPhone(
     @CurrentUser() clerkId: string,
     @Body() body: { phone?: string },
@@ -278,6 +288,7 @@ export class UsersController {
   // success. stub:true in dev means the SMS was logged rather than
   // actually sent (no SMSPortal config) — the code is in SmsLog.
   @Post('me/phone/request-otp')
+  @UseGuards(ClerkGuard)
   async requestPhoneOtp(
     @CurrentUser() clerkId: string,
     @Body() body: { phone?: string },
@@ -292,6 +303,7 @@ export class UsersController {
   // Body: { code: "1234" }
   // On success: { verified: true } and the phone is now marked verified.
   @Post('me/phone/verify')
+  @UseGuards(ClerkGuard)
   async verifyPhoneOtp(
     @CurrentUser() clerkId: string,
     @Body() body: { code?: string },
@@ -304,6 +316,7 @@ export class UsersController {
 
   // ─────────────────── KYC document upload (existing) ────────────────
   @Post('kyc')
+  @UseGuards(ClerkGuard)
   @UseInterceptors(FileInterceptor('document', { storage: memoryStorage() }))
   async submitKyc(
     @CurrentUser() clerkId: string,

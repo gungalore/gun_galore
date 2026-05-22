@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 
 /**
  * Dealer stock-in verification — when a firearm DEALER_TRANSFER
@@ -92,6 +93,11 @@ export class DealerVerificationService {
     private readonly prisma: PrismaService,
     private readonly cloudinary: CloudinaryService,
     private readonly notifications: NotificationsService,
+    // Zoho Books accounting integration. Posts the commission
+    // invoice + mark-paid the moment verification approves. Feature-
+    // flagged via ZOHO_BOOKS_ENABLED — when off, the service is
+    // injected but every method no-ops.
+    private readonly zohoBooks: ZohoBooksService,
   ) {
     const key = process.env.ANTHROPIC_API_KEY;
     this.client = key ? new Anthropic({ apiKey: key }) : null;
@@ -387,6 +393,17 @@ export class DealerVerificationService {
         dealerPhone: tx.stockedAtDealerPhone ?? '',
         sellerName,
       });
+
+      // ── Zoho Books accounting hooks ──────────────────────────────
+      // Create the commission invoice (Gun Galore → Seller) and
+      // immediately mark it paid from Client Funds Payable. Both
+      // are gated by ZOHO_BOOKS_ENABLED — feature-flagged so we
+      // can deploy this code without affecting Books until you're
+      // ready to flip it on. Both methods are no-throw; failures
+      // get persisted as zohoSyncStatus=FAILED on the transaction
+      // and surface in the admin panel for manual retry.
+      await this.zohoBooks.createCommissionInvoice(transactionId);
+      await this.zohoBooks.markCommissionInvoicePaid(transactionId);
     } catch (err) {
       this.logger.error(
         `releaseAndNotifyOnApproval failed for tx ${transactionId}: ${(err as Error).message}`,

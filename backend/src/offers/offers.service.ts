@@ -8,12 +8,15 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
+import { ActionTokensService } from '../actions/action-tokens.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { CounterOfferDto } from './dto/counter-offer.dto';
 import { OfferStatus } from '@prisma/client';
 
 const OFFER_TTL_HOURS = 48;
 const COUNTER_TTL_HOURS = 24;
+const CHECKOUT_TTL_HOURS = 24;
+const APP_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000';
 
 @Injectable()
 export class OffersService {
@@ -23,6 +26,11 @@ export class OffersService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly contactFilter: ContactDetailFilterService,
+    // ActionTokensService is @Global so no module-level import
+    // needed — we mint OFFER_DECISION / COUNTER_DECISION / CHECKOUT
+    // tokens at the moment each notification fires so the recipient
+    // can act from the SMS link without signing in.
+    private readonly actionTokens: ActionTokensService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -355,14 +363,31 @@ export class OffersService {
         },
       });
       if (!offer) return;
+      // Mint an OFFER_DECISION token so the seller can accept /
+      // reject / counter straight from the SMS link without
+      // signing in. Token expires when the offer does.
+      const token = await this.actionTokens
+        .mint({
+          purpose: 'OFFER_DECISION',
+          targetType: 'offer',
+          targetId: offer.id,
+          authorisedUserId: offer.listing.sellerId,
+          expiresAt: offer.expiresAt ?? new Date(Date.now() + OFFER_TTL_HOURS * 3600_000),
+        })
+        .catch((err) => {
+          this.logger.warn(`OFFER_DECISION token mint failed: ${(err as Error).message}`);
+          return null;
+        });
       await this.notifications.offerReceived({
         sellerEmail: offer.listing.seller.email,
         sellerName: offer.listing.seller.firstName ?? 'Seller',
+        sellerPhone: offer.listing.seller.phone,
         buyerName: `${offer.buyer.firstName ?? ''} ${offer.buyer.lastName ?? ''}`.trim() || 'A buyer',
         listingTitle: offer.listing.title,
         listingId: offer.listing.id,
         offerAmount: offer.offerAmount,
         offerId: offer.id,
+        actionUrl: token ? `${APP_URL}/a/${token}` : undefined,
       });
     } catch (err) {
       this.logger.error(`notifySellerOfOffer failed: ${(err as Error).message}`);
@@ -376,13 +401,31 @@ export class OffersService {
         include: { listing: true, buyer: true },
       });
       if (!offer) return;
+      // Offer accepted → mint a CHECKOUT token for the buyer so the
+      // SMS link drops them straight on the checkout page (no
+      // sign-in). 24h expiry matches the "pay within 24h" rule.
+      const token = await this.actionTokens
+        .mint({
+          purpose: 'CHECKOUT',
+          targetType: 'listing',
+          targetId: offer.listing.id,
+          authorisedUserId: offer.buyerId,
+          expiresAt: new Date(Date.now() + CHECKOUT_TTL_HOURS * 3600_000),
+          metadata: { offerId: offer.id, agreedAmount: offer.offerAmount },
+        })
+        .catch((err) => {
+          this.logger.warn(`CHECKOUT token mint failed: ${(err as Error).message}`);
+          return null;
+        });
       await this.notifications.offerAccepted({
         buyerEmail: offer.buyer.email,
         buyerName: offer.buyer.firstName ?? 'Buyer',
+        buyerPhone: offer.buyer.phone,
         listingTitle: offer.listing.title,
         listingId: offer.listing.id,
         acceptedAmount: offer.offerAmount,
         offerId: offer.id,
+        actionUrl: token ? `${APP_URL}/a/${token}` : undefined,
       });
     } catch (err) {
       this.logger.error(`notifyBuyerOfAccept failed: ${(err as Error).message}`);
@@ -415,15 +458,31 @@ export class OffersService {
         include: { listing: true, buyer: true },
       });
       if (!offer || !offer.counterAmount) return;
+      // Counter sent → mint a COUNTER_DECISION token for the buyer.
+      // Expires with the counter (24h).
+      const token = await this.actionTokens
+        .mint({
+          purpose: 'COUNTER_DECISION',
+          targetType: 'offer',
+          targetId: offer.id,
+          authorisedUserId: offer.buyerId,
+          expiresAt: offer.expiresAt ?? new Date(Date.now() + COUNTER_TTL_HOURS * 3600_000),
+        })
+        .catch((err) => {
+          this.logger.warn(`COUNTER_DECISION token mint failed: ${(err as Error).message}`);
+          return null;
+        });
       await this.notifications.offerCountered({
         buyerEmail: offer.buyer.email,
         buyerName: offer.buyer.firstName ?? 'Buyer',
+        buyerPhone: offer.buyer.phone,
         listingTitle: offer.listing.title,
         listingId: offer.listing.id,
         originalAmount: offer.offerAmount,
         counterAmount: offer.counterAmount,
         sellerNote: offer.sellerNote ?? undefined,
         offerId: offer.id,
+        actionUrl: token ? `${APP_URL}/a/${token}` : undefined,
       });
     } catch (err) {
       this.logger.error(`notifyBuyerOfCounter failed: ${(err as Error).message}`);

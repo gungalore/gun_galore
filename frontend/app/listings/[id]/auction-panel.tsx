@@ -5,19 +5,21 @@ import { useUser, useAuth, SignInButton } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { HelpTip } from '@/components/help-tip';
 import { HelpText } from '@/components/help-text';
+import {
+  BidStepper,
+  bidIncrement,
+  formatRandStrict,
+} from '@/components/bid-stepper';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
+// (bidIncrement, BidStepper, formatRandStrict moved to
+//  @/components/bid-stepper.tsx so the SMS-link /a/<token> page can
+//  share the same UI + tier table.)
 // Mirror of backend INCREMENT_TIERS (auctions.service.ts). Kept here so
 // the +/- stepper can locally step by the right amount without a round
 // trip per click. If the backend tiers change, this needs to match.
-function bidIncrement(currentAmount: number): number {
-  if (currentAmount < 100_000) return 5_000;      // <R1,000   → R50
-  if (currentAmount < 500_000) return 10_000;     // <R5,000   → R100
-  if (currentAmount < 1_000_000) return 25_000;   // <R10,000  → R250
-  if (currentAmount < 5_000_000) return 50_000;   // <R50,000  → R500
-  return 100_000;                                  // >=R50,000 → R1,000
-}
+// bidIncrement is now imported from @/components/bid-stepper
 
 interface AuctionState {
   id: string;
@@ -1006,92 +1008,6 @@ function BuyNowModal({
   );
 }
 
-// +/- value stepper. No typing — the value can ONLY change by the
-// tiered increment per click. Clamped at minCents on the way down so
-// the user can't go below the next legal bid. Long-press / hold-to-
-// repeat is intentionally NOT implemented — the increments are large
-// enough that single clicks are the right granularity, and
-// hold-to-repeat is an easy way to overshoot a comfortable bid.
-function BidStepper({
-  valueCents,
-  onChange,
-  minCents,
-}: {
-  valueCents: number;
-  onChange: (cents: number) => void;
-  minCents: number;
-}) {
-  const inc = bidIncrement(valueCents);
-  const canDecrement = valueCents - inc >= minCents;
-
-  return (
-    <div
-      className="rounded-[6px] p-4"
-      style={{
-        background: 'var(--bg-inset)',
-        border: '0.5px solid var(--border)',
-      }}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => canDecrement && onChange(valueCents - inc)}
-          disabled={!canDecrement}
-          aria-label="Decrease bid"
-          className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
-          style={{
-            background: canDecrement ? 'var(--bg-card)' : 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
-            color: canDecrement ? 'var(--text-primary)' : 'var(--text-tertiary)',
-            cursor: canDecrement ? 'pointer' : 'not-allowed',
-            fontWeight: 500,
-          }}
-        >
-          −
-        </button>
-        <div className="flex-1 text-center">
-          <div
-            className="text-2xl"
-            style={{
-              color: 'var(--red)',
-              fontWeight: 500,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {formatRandStrict(valueCents)}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => onChange(valueCents + inc)}
-          aria-label="Increase bid"
-          className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
-          style={{
-            background: 'var(--bg-card)',
-            border: '0.5px solid var(--border)',
-            color: 'var(--text-primary)',
-            cursor: 'pointer',
-            fontWeight: 500,
-          }}
-        >
-          +
-        </button>
-      </div>
-      <p
-        className="text-[11px] mt-3 text-center"
-        style={{ color: 'var(--text-tertiary)' }}
-      >
-        Steps by {formatRandStrict(inc)} · Minimum {formatRandStrict(minCents)}
-      </p>
-    </div>
-  );
-}
-
-// Always show R with two decimals on bid amounts so the stepper
-// doesn't visually wobble when you cross a whole-rand boundary.
-function formatRandStrict(cents: number): string {
-  return `R${(cents / 100).toLocaleString('en-ZA', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
+// BidStepper + formatRandStrict are now imported from
+// @/components/bid-stepper. Same UI + tier-table is reused on the
+// SMS-link /a/<token> auction page.

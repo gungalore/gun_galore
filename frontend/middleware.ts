@@ -27,10 +27,27 @@ const isPublicRoute = createRouteMatcher([
   '/firearms-compliance',
   '/cookies',
   '/legal',              // index of all legal docs + ECT § 43 disclosures
+  '/a/(.*)',             // SMS-link action pages — token in the URL IS the
+                         // auth credential. Each /a/<token> page resolves
+                         // server-side via /api/actions/:token and shows a
+                         // scoped UI for one single action. Never requires
+                         // a Clerk session.
 ]);
 
 export default clerkMiddleware(async (auth, request) => {
   if (isPublicRoute(request)) return;
+
+  // SMS-link checkout: /checkout/* requests carrying ?t=<token> are
+  // auth'd by the action token, not Clerk. The page + the
+  // backend's ClerkOrTokenGuard handle the token. We just need to
+  // bypass Clerk middleware here so an unauthenticated tap-from-SMS
+  // doesn't get bounced to the sign-in page.
+  if (
+    request.nextUrl.pathname.startsWith('/checkout/') &&
+    request.nextUrl.searchParams.has('t')
+  ) {
+    return;
+  }
 
   // Manual auth check + redirect — `auth.protect()` rewrites to a
   // Clerk handshake URL when the dev_browser cookie is missing, and

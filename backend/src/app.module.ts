@@ -28,6 +28,8 @@ import { FeaturedModule } from './featured/featured.module';
 import { TasksModule } from './tasks/tasks.module';
 import { KycModule } from './kyc/kyc.module';
 import { ReferenceNumberModule } from './common/reference-number.service';
+import { ZohoBooksModule } from './zoho/zoho-books.module';
+import { ActionTokensModule } from './actions/action-tokens.module';
 
 @Module({
   imports: [
@@ -69,6 +71,8 @@ import { ReferenceNumberModule } from './common/reference-number.service';
     TasksModule,
     KycModule,
     ReferenceNumberModule,
+    ZohoBooksModule,
+    ActionTokensModule,
   ],
   controllers: [AppController],
   providers: [
