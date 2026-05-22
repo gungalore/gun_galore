@@ -38,7 +38,15 @@ export async function GET(req: NextRequest) {
     return new NextResponse('Forbidden', { status: 403 });
   }
 
-  const response = NextResponse.redirect(new URL('/', req.url));
+  // Build redirect URL from forwarded headers so we don't send the
+  // browser to http://localhost:3000/ when running behind nginx +
+  // Cloudflare. req.url reflects the socket Next.js is listening on
+  // (localhost:3000), not the public hostname.
+  const host = req.headers.get('host') || 'gungalore.co.za';
+  const proto = req.headers.get('x-forwarded-proto') || 'https';
+  const target = `${proto}://${host}/`;
+
+  const response = NextResponse.redirect(target);
   response.cookies.set('gg-preview', secret, {
     httpOnly: true,
     secure: true,

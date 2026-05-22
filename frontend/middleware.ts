@@ -108,8 +108,21 @@ export default clerkMiddleware(async (auth, request) => {
   // is the more reliable behaviour.
   const { userId } = await auth();
   if (!userId) {
-    const signInUrl = new URL('/sign-in', request.url);
-    signInUrl.searchParams.set('redirect_url', request.url);
+    // Build the redirect URL from forwarded headers so we send the
+    // user to https://gungalore.co.za/sign-in, not localhost:3000/sign-in.
+    // request.url reflects the localhost socket Next.js is listening on,
+    // not the public hostname that nginx is proxying for.
+    const host = request.headers.get('host') || 'gungalore.co.za';
+    const proto = request.headers.get('x-forwarded-proto') || 'https';
+    const publicBase = `${proto}://${host}`;
+    const currentPath =
+      request.nextUrl.pathname + request.nextUrl.search;
+
+    const signInUrl = new URL('/sign-in', publicBase);
+    signInUrl.searchParams.set(
+      'redirect_url',
+      `${publicBase}${currentPath}`,
+    );
     return Response.redirect(signInUrl);
   }
 });
