@@ -44,3 +44,19 @@ body {
 * {
   box-shadow: none !important;
 }
+
+/* Kill the browser default spinner arrows on <input type="number">.
+   Gun Galore renders its own + / − controls via <NumberStepper> so
+   the inconsistent native UI never shows. Applies to ALL number
+   inputs, even ones that don't use the stepper — the native arrows
+   look out of place on the dark theme and behave differently across
+   browsers. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield; /* Firefox */
+  appearance: textfield;
+}

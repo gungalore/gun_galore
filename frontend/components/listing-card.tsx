@@ -1,3 +1,5 @@
+'use client';
+
 import Image from 'next/image';
 import Link from 'next/link';
 import { Listing } from '@/lib/types';
@@ -23,8 +25,11 @@ export function ListingCard({ listing }: { listing: Listing }) {
           (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card)';
         }}
       >
-        {/* 4:3 photo */}
-        <div className="relative" style={{ paddingBottom: '75%' }}>
+        {/* Photo. Aspect tightened to ~70% of the original 4:3 box
+            so card height shrinks (75% × 0.7 = 52.5%). Frees up
+            vertical real estate that the FeaturedRail uses on the
+            left of the grid without making cards-per-row change. */}
+        <div className="relative" style={{ paddingBottom: '52.5%' }}>
           {primaryImage ? (
             <Image
               src={primaryImage.url}
@@ -77,7 +82,12 @@ export function ListingCard({ listing }: { listing: Listing }) {
               className="text-base"
               style={{ color: 'var(--red)', fontWeight: 500 }}
             >
-              {formatPrice(listing.price)}
+              {/* For auctions, show the current bid (or starting bid if no bids yet). */}
+              {listing.listingType === 'AUCTION'
+                ? formatPrice(listing.currentBid ?? listing.price ?? 0)
+                : listing.price
+                  ? formatPrice(listing.price)
+                  : 'Make an offer'}
             </span>
             <span
               className="text-xs px-1.5 py-0.5 rounded-[3px]"
@@ -91,11 +101,67 @@ export function ListingCard({ listing }: { listing: Listing }) {
             </span>
           </div>
 
+          {/* Auction-specific meta — bid count + time remaining.
+              Snipe-protection extension means endTime can change, but
+              the card refreshes when the page re-fetches; we compute
+              "time remaining" relative to render and let the user click
+              into the listing for the live countdown. The chip turns
+              red when <1h so browsers can spot the urgent auctions
+              without expanding every card. */}
+          {listing.listingType === 'AUCTION' && (
+            <div
+              className="flex items-center justify-between text-xs mt-1"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              <span>
+                {listing.bidCount > 0
+                  ? `${listing.bidCount} bid${listing.bidCount === 1 ? '' : 's'}`
+                  : 'Starting bid'}
+              </span>
+              <AuctionTimeChip endTime={listing.endTime} />
+            </div>
+          )}
+
           <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)' }}>
             {listing.province.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
           </p>
         </div>
       </div>
     </Link>
+  );
+}
+
+// Compact "Ends in 2h 14m" chip. Red when <1h to draw the eye for
+// last-minute browsers. Renders nothing if endTime is missing or the
+// auction has already ended (the card itself transitions out of the
+// active grid in that case, but defensive).
+function AuctionTimeChip({ endTime }: { endTime: string | null | undefined }) {
+  if (!endTime) return null;
+  const msLeft = new Date(endTime).getTime() - Date.now();
+  if (msLeft <= 0) return null;
+
+  const hours = Math.floor(msLeft / 3600_000);
+  const mins = Math.floor((msLeft % 3600_000) / 60_000);
+  const days = Math.floor(hours / 24);
+
+  let label: string;
+  if (days >= 2) label = `${days}d`;
+  else if (hours >= 1) label = `${hours}h ${mins}m`;
+  else label = `${mins}m`;
+
+  const urgent = msLeft < 3600_000; // <1h
+
+  return (
+    <span
+      className="px-1.5 py-0.5 rounded-[3px]"
+      style={{
+        background: urgent ? 'rgba(200,16,46,0.10)' : 'var(--bg-inset)',
+        color: urgent ? 'var(--red)' : 'var(--text-secondary)',
+        fontWeight: urgent ? 500 : 400,
+        border: `0.5px solid ${urgent ? 'var(--red)' : 'var(--border)'}`,
+      }}
+    >
+      Ends in {label}
+    </span>
   );
 }

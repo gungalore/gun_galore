@@ -1,0 +1,193 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { PeachService } from './peach.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { TrackingService } from '../shipping/tracking.service';
+
+// Two thresholds for courier-shipped orders (PUDO / TCG only —
+// PRIVATE_ARRANGE has no dispatch step, DEALER_TRANSFER routes
+// through the dealer and not the SLA). Both measured from paidAt.
+const NUDGE_AFTER_HOURS = 48;
+const AUTO_REFUND_AFTER_DAYS = 7;
+
+@Injectable()
+export class DispatchSlaService {
+  private readonly logger = new Logger(DispatchSlaService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly peach: PeachService,
+    private readonly notifications: NotificationsService,
+    private readonly tracking: TrackingService,
+  ) {}
+
+  // ------------------------------------------------------------------
+  // 48h nudge — finds courier orders the seller hasn't dispatched
+  // yet and sends a one-shot reminder (SMS + email). Idempotent via
+  // dispatchNudgedAt — once stamped, the cron skips the row.
+  // ------------------------------------------------------------------
+  async nudgeStale(): Promise<{ scanned: number; nudged: number }> {
+    const cutoff = new Date(Date.now() - NUDGE_AFTER_HOURS * 60 * 60 * 1000);
+
+    const stale = await this.prisma.transaction.findMany({
+      where: {
+        paidAt: { lte: cutoff },
+        dispatchedAt: null,
+        dispatchNudgedAt: null,
+        paymentStatus: 'HELD',
+        shippingMethod: { in: ['PUDO', 'TCG'] },
+      },
+      include: {
+        listing: true,
+        seller: true,
+        buyer: true,
+      },
+      take: 100,
+    });
+
+    let nudged = 0;
+    for (const tx of stale) {
+      try {
+        await this.prisma.transaction.update({
+          where: { id: tx.id },
+          data: { dispatchNudgedAt: new Date() },
+        });
+        await this.notifications.dispatchNudgeSeller({
+          sellerEmail: tx.seller.email,
+          sellerPhone: tx.seller.phone,
+          sellerName:
+            [tx.seller.firstName, tx.seller.lastName]
+              .filter(Boolean)
+              .join(' ') || 'Seller',
+          listingTitle: tx.listing.title,
+          transactionId: tx.id,
+          hoursElapsed: NUDGE_AFTER_HOURS,
+          autoRefundDays: AUTO_REFUND_AFTER_DAYS,
+        });
+        nudged++;
+      } catch (err) {
+        this.logger.warn(
+          `dispatch nudge failed for ${tx.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return { scanned: stale.length, nudged };
+  }
+
+  // ------------------------------------------------------------------
+  // 7d auto-refund — courier orders that are still HELD and never
+  // dispatched. We Peach-refund, mark the transaction REFUNDED,
+  // re-activate the listing, strike the seller, and notify both
+  // parties. The seller's third strike is an AdminAlert for manual
+  // suspension review (not auto-banned — that's the operator's call).
+  // ------------------------------------------------------------------
+  async autoRefundStale(): Promise<{ scanned: number; refunded: number }> {
+    const cutoff = new Date(
+      Date.now() - AUTO_REFUND_AFTER_DAYS * 24 * 60 * 60 * 1000,
+    );
+
+    const stale = await this.prisma.transaction.findMany({
+      where: {
+        paidAt: { lte: cutoff },
+        dispatchedAt: null,
+        paymentStatus: 'HELD',
+        shippingMethod: { in: ['PUDO', 'TCG'] },
+      },
+      include: { listing: true, seller: true, buyer: true },
+      take: 50,
+    });
+
+    let refunded = 0;
+    for (const tx of stale) {
+      try {
+        const r = tx.peachPaymentId
+          ? await this.peach.refundPayment(tx.peachPaymentId, tx.buyerTotal)
+          : { success: true, resultCode: 'NO_PEACH_ID' };
+
+        if (!r.success) {
+          this.logger.warn(
+            `Auto-refund cron: Peach refund failed for ${tx.id} (${r.resultCode}) — leaving HELD for admin review`,
+          );
+          // Raise admin alert so a human can intervene + manually
+          // refund / contact the seller.
+          await this.prisma.adminAlert.create({
+            data: {
+              type: 'DISPATCH_SLA_REFUND_FAILED',
+              referenceId: tx.id,
+              urgent: true,
+              context: `Peach refund failed: ${r.resultCode} ${r.message ?? ''}`,
+            },
+          });
+          continue;
+        }
+
+        // Apply refund + strike + reactivate listing atomically.
+        await this.prisma.$transaction([
+          this.prisma.transaction.update({
+            where: { id: tx.id },
+            data: {
+              paymentStatus: 'REFUNDED',
+              releasedAt: null,
+            },
+          }),
+          this.prisma.listing.update({
+            where: { id: tx.listingId },
+            data: { status: 'ACTIVE', soldAt: null },
+          }),
+          this.prisma.user.update({
+            where: { id: tx.sellerId },
+            data: {
+              dispatchStrikes: { increment: 1 },
+              lastStrikeAt: new Date(),
+            },
+          }),
+        ]);
+
+        const sellerAfter = await this.prisma.user.findUnique({
+          where: { id: tx.sellerId },
+          select: { dispatchStrikes: true },
+        });
+        if ((sellerAfter?.dispatchStrikes ?? 0) >= 3) {
+          await this.prisma.adminAlert.create({
+            data: {
+              type: 'SELLER_DISPATCH_STRIKES_THRESHOLD',
+              referenceId: tx.sellerId,
+              urgent: true,
+              context: `Seller hit ${sellerAfter?.dispatchStrikes} dispatch strikes — review for suspension`,
+            },
+          });
+        }
+
+        void this.tracking.recordInternal(tx.id, 'AUTO_REFUNDED_NO_DISPATCH', {
+          message: `Auto-refunded after ${AUTO_REFUND_AFTER_DAYS} days without dispatch`,
+        });
+
+        await this.notifications.orderAutoRefunded({
+          listingTitle: tx.listing.title,
+          transactionId: tx.id,
+          buyerTotal: tx.buyerTotal,
+          buyer: {
+            email: tx.buyer.email,
+            firstName: tx.buyer.firstName,
+            phone: tx.buyer.phone,
+          },
+          seller: {
+            email: tx.seller.email,
+            firstName: tx.seller.firstName,
+            phone: tx.seller.phone,
+          },
+        });
+
+        refunded++;
+        this.logger.log(
+          `Auto-refunded transaction ${tx.id} — seller ${tx.sellerId} struck (${sellerAfter?.dispatchStrikes})`,
+        );
+      } catch (err) {
+        this.logger.error(
+          `auto-refund failed for ${tx.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return { scanned: stale.length, refunded };
+  }
+}

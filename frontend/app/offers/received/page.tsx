@@ -1,0 +1,124 @@
+import { auth } from '@clerk/nextjs/server';
+import { redirect } from 'next/navigation';
+import Link from 'next/link';
+import { Offer } from '@/lib/types';
+import { formatPrice } from '@/lib/utils';
+import ReceivedOfferActions from './received-offer-actions';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
+export default async function ReceivedOffersPage() {
+  const { userId, getToken } = await auth();
+  if (!userId) redirect('/sign-in?redirect_url=/offers/received');
+
+  const token = await getToken();
+  const res = await fetch(`${API_URL}/offers/received`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  const offers: Offer[] = res.ok ? await res.json() : [];
+
+  const pending = offers.filter((o) => o.status === 'PENDING');
+  const other = offers.filter((o) => o.status !== 'PENDING');
+
+  return (
+    <main className="max-w-[760px] mx-auto px-4 py-8">
+      <h1 className="text-xl font-medium mb-6" style={{ color: 'var(--text-primary)' }}>
+        Received Offers
+      </h1>
+
+      {offers.length === 0 && (
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+          No offers received yet.
+        </p>
+      )}
+
+      {pending.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-xs uppercase mb-3" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
+            Awaiting your response
+          </h2>
+          <div className="space-y-3">
+            {pending.map((offer) => <ReceivedOfferCard key={offer.id} offer={offer} />)}
+          </div>
+        </section>
+      )}
+
+      {other.length > 0 && (
+        <section>
+          <h2 className="text-xs uppercase mb-3" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
+            History
+          </h2>
+          <div className="space-y-3">
+            {other.map((offer) => <ReceivedOfferCard key={offer.id} offer={offer} />)}
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
+
+const STATUS_LABEL: Record<string, { label: string; color: string }> = {
+  PENDING:   { label: 'Pending', color: '#f59e0b' },
+  COUNTERED: { label: 'Countered', color: '#3b82f6' },
+  ACCEPTED:  { label: 'Accepted', color: '#22c55e' },
+  REJECTED:  { label: 'Rejected', color: 'var(--text-tertiary)' },
+  WITHDRAWN: { label: 'Withdrawn', color: 'var(--text-tertiary)' },
+  EXPIRED:   { label: 'Expired', color: 'var(--text-tertiary)' },
+  CONVERTED: { label: 'Sold', color: '#22c55e' },
+};
+
+function ReceivedOfferCard({ offer }: { offer: Offer }) {
+  const st = STATUS_LABEL[offer.status] ?? { label: offer.status, color: 'var(--text-tertiary)' };
+  // Username-only attribution per platform policy — real names exist
+  // only inside post-payment transaction details.
+  const buyerName = offer.buyer?.username ?? 'Anonymous buyer';
+
+  return (
+    <div
+      className="rounded-[8px] p-4"
+      style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+    >
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div>
+          <Link
+            href={`/listings/${offer.listing.id}`}
+            className="text-sm font-medium"
+            style={{ color: 'var(--text-primary)', textDecoration: 'none' }}
+          >
+            {offer.listing.title}
+          </Link>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+            from {buyerName} · {offer.buyer?.totalSales ?? 0} sale{(offer.buyer?.totalSales ?? 0) !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <span className="text-xs shrink-0" style={{ color: st.color }}>{st.label}</span>
+      </div>
+
+      <div className="flex gap-4 text-sm mb-3">
+        <div>
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Offer</p>
+          <p style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{formatPrice(offer.offerAmount)}</p>
+        </div>
+        {offer.counterAmount && (
+          <div>
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Your counter</p>
+            <p style={{ color: '#3b82f6', fontWeight: 500 }}>{formatPrice(offer.counterAmount)}</p>
+          </div>
+        )}
+      </div>
+
+      {offer.buyerNote && (
+        <p className="text-xs mb-3 italic" style={{ color: 'var(--text-tertiary)' }}>
+          &ldquo;{offer.buyerNote}&rdquo;
+        </p>
+      )}
+
+      {offer.status === 'PENDING' && (
+        <div style={{ borderTop: '0.5px solid var(--border)', paddingTop: '0.75rem' }}>
+          <ReceivedOfferActions offerId={offer.id} offerAmount={offer.offerAmount} />
+        </div>
+      )}
+    </div>
+  );
+}

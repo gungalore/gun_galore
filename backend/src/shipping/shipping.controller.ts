@@ -12,7 +12,10 @@ import {
 } from '@nestjs/common';
 import { PudoService } from './pudo.service';
 import { DealersService } from './dealers.service';
-import { ShippingService } from './shipping.service';
+import {
+  ShippingService,
+  type QuoteRequestBody,
+} from './shipping.service';
 import { LockerSearchDto } from './dto/locker-search.dto';
 import { DealerQueryDto } from './dto/dealer-query.dto';
 
@@ -27,11 +30,28 @@ export class ShippingController {
   ) {}
 
   // ---------------------------------------------------------------
-  // Pudo locker search — public, no auth required
+  // Pudo locker lookups — public, no auth required.
+  //   GET /shipping/pudo/lockers              → nearest-to-lat-lng list
+  //   GET /shipping/pudo/lockers/search?q=    → Meilisearch-backed search
   // ---------------------------------------------------------------
   @Get('pudo/lockers')
   findLockers(@Query() q: LockerSearchDto) {
-    return this.pudo.getNearbyLockers(q.lat, q.lng, q.radiusKm, q.limit);
+    return this.pudo.getNearbyLockers({
+      lat: q.lat,
+      lng: q.lng,
+      postalCode: q.postalCode,
+      radiusKm: q.radiusKm,
+      limit: q.limit,
+    });
+  }
+
+  @Get('pudo/lockers/search')
+  searchLockers(
+    @Query('q') q: string,
+    @Query('limit') limit?: string,
+  ) {
+    const cap = limit ? Math.min(parseInt(limit, 10) || 10, 50) : 10;
+    return this.pudo.searchLockers(q ?? '', cap);
   }
 
   // ---------------------------------------------------------------
@@ -55,6 +75,19 @@ export class ShippingController {
     return {
       methods: this.shipping.getDeliveryOptions(isFirearm === 'true'),
     };
+  }
+
+  // ---------------------------------------------------------------
+  // Live shipping rate for a listing. Called from the checkout form
+  // after the buyer selects a method + locker/address. The returned
+  // priceCents is what the checkout breakdown shows AND what we
+  // re-quote at transaction-create time so the buyer's card lands on
+  // the exact amount they saw. Public — listings are public anyway.
+  // ---------------------------------------------------------------
+  @Post('quote')
+  @HttpCode(200)
+  async quote(@Body() body: QuoteRequestBody) {
+    return this.shipping.quoteForListing(body);
   }
 
   // ---------------------------------------------------------------

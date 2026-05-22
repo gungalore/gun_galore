@@ -2,6 +2,9 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@clerk/nextjs/server';
 import { TrustDashboard, SellerTier } from '@/lib/types';
+import { PageBackground } from '@/components/page-background';
+import { PageReveal } from '@/components/page-reveal';
+import { SellerQuestionsCard } from './seller-questions-card';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -50,13 +53,33 @@ export default async function DashboardPage() {
   const data: TrustDashboard | null = res.ok ? await res.json() : null;
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-6">
+    <main
+      className="relative max-w-[1280px] mx-auto px-4 py-6"
+      style={{ zIndex: 1 }}
+    >
+      {/* House standard scenery — wrenches at low opacity tie this surface
+          to the rest of the seller's control-room pages (Edit Profile,
+          Profile). zIndex:1 on <main> keeps content above the fixed
+          background layers. */}
+      <PageBackground
+        imageSrc="/setting.jpg"
+        opacity={0.5}
+        tint={0.12}
+        vignette={0.7}
+      />
+
+      {/* Page header — OUTSIDE PageReveal so it renders at full opacity
+          immediately (per house standard: only body cards animate). */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>
           My Dashboard
         </h1>
+        {/* /transactions doesn't exist as an index page — the user-
+            facing list pages are /my/orders + /my/sales. Link to
+            /my/orders by default since the dashboard's CTA reads
+            "View orders". */}
         <Link
-          href="/transactions"
+          href="/my/orders"
           className="text-sm"
           style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }}
         >
@@ -69,9 +92,10 @@ export default async function DashboardPage() {
           Could not load dashboard data.
         </p>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+        <PageReveal className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
           {/* Trust score card */}
           <div
+            data-reveal
             className="rounded-[8px] p-5"
             style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
           >
@@ -124,6 +148,7 @@ export default async function DashboardPage() {
 
           {/* Recent ratings */}
           <div
+            data-reveal
             className="rounded-[8px] p-5"
             style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
           >
@@ -141,7 +166,7 @@ export default async function DashboardPage() {
                   <div key={r.id}>
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                        {r.rater.firstName ?? 'Buyer'} · {r.transaction.listing.title.slice(0, 30)}
+                        {r.rater.username ?? 'Anonymous'} · {r.transaction.listing.title.slice(0, 30)}
                       </span>
                       <span style={{ color: '#f59e0b', fontSize: '13px' }}>
                         {'★'.repeat(r.stars)}{'☆'.repeat(5 - r.stars)}
@@ -173,7 +198,14 @@ export default async function DashboardPage() {
               </div>
             )}
           </div>
-        </div>
+
+          {/* Buyer questions on this seller's listings — spans the full
+              grid width because the answer composer needs the horizontal
+              room. Self-fetches via /me/questions on mount. */}
+          <div className="lg:col-span-2">
+            <SellerQuestionsCard />
+          </div>
+        </PageReveal>
       )}
     </main>
   );

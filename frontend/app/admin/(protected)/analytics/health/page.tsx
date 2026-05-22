@@ -1,0 +1,333 @@
+import { cookies } from 'next/headers';
+import Link from 'next/link';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
+// Operational Health — second tab on /admin/analytics. Three blocks:
+//   1. KYC funnel drop-off
+//   2. Dispatch SLA distribution
+//   3. Refund risk sellers (≥ 2x marketplace baseline)
+// Each pulls its own backend endpoint; render-time SVG / DataList
+// keeps the bundle slim.
+
+interface KycStage {
+  stage: string;
+  count: number;
+}
+
+interface DispatchBucket {
+  bucket: string;
+  count: number;
+}
+
+interface RefundRiskSeller {
+  sellerId: string;
+  username: string | null;
+  email: string;
+  totalSales: number;
+  refundCount: number;
+  refundRate: number;
+  ppDifference: number;
+}
+
+async function fetchJson<T>(path: string, token: string): Promise<T | null> {
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+const BUCKET_LABEL: Record<string, string> = {
+  'under-24h': 'Under 24h',
+  '24-48h': '24–48h',
+  '48-72h': '48–72h',
+  pending: 'Still pending',
+  breached: 'Breached (>72h)',
+};
+
+const BUCKET_COLOR: Record<string, string> = {
+  'under-24h': '#22c55e',
+  '24-48h': '#22c55e',
+  '48-72h': '#f59e0b',
+  pending: '#f59e0b',
+  breached: 'var(--red)',
+};
+
+export default async function OpsHealthPage() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get('admin_token')?.value ?? '';
+  const [funnel, sla, risk] = await Promise.all([
+    fetchJson<KycStage[]>('/admin/analytics/kyc-funnel', token),
+    fetchJson<DispatchBucket[]>('/admin/analytics/dispatch-sla', token),
+    fetchJson<RefundRiskSeller[]>('/admin/analytics/refund-risk', token),
+  ]);
+
+  return (
+    <div>
+      <h1 className="text-lg font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+        Operational Health
+      </h1>
+
+      {/* Tab strip — Sales (existing analytics page) / Health (this one) */}
+      <div className="flex gap-2 mb-6">
+        <Link
+          href="/admin/analytics"
+          className="px-3 py-1.5 rounded-full text-xs"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            color: 'var(--text-secondary)',
+            textDecoration: 'none',
+          }}
+        >
+          Sales
+        </Link>
+        <span
+          className="px-3 py-1.5 rounded-full text-xs font-medium"
+          style={{ background: 'var(--red)', color: '#fff' }}
+        >
+          Operational Health
+        </span>
+      </div>
+
+      {/* ─── KYC funnel ─────────────────────────────────────────── */}
+      <Section
+        title="KYC funnel drop-off"
+        subtitle="Where sellers stall on the verification journey. Big drops between adjacent stages = friction to fix."
+      >
+        {!funnel || funnel.length === 0 ? (
+          <Empty message="No KYC data yet — no sellers have triggered the flow." />
+        ) : (
+          <KycFunnelChart stages={funnel} />
+        )}
+      </Section>
+
+      {/* ─── Dispatch SLA distribution ─────────────────────────── */}
+      <Section
+        title="Dispatch SLA distribution"
+        subtitle="How long sellers take from payment to dispatch confirmation. >72h is a breach (auto-refund cron fires)."
+      >
+        {!sla || sla.every((b) => b.count === 0) ? (
+          <Empty message="No dispatched courier transactions yet." />
+        ) : (
+          <SlaBarChart buckets={sla} />
+        )}
+      </Section>
+
+      {/* ─── Refund risk sellers ────────────────────────────────── */}
+      <Section
+        title="Refund-risk sellers"
+        subtitle="Sellers with refund rate ≥ 2× the marketplace baseline (filter: ≥3 sales)."
+      >
+        {!risk || risk.length === 0 ? (
+          <Empty message="No sellers above the risk threshold — healthy marketplace baseline." />
+        ) : (
+          <RefundRiskTable rows={risk} />
+        )}
+      </Section>
+    </div>
+  );
+}
+
+// ─── Subcomponents ──────────────────────────────────────────────────
+
+function KycFunnelChart({ stages }: { stages: KycStage[] }) {
+  const max = Math.max(...stages.map((s) => s.count), 1);
+  return (
+    <div
+      className="rounded-[8px] p-5 space-y-3"
+      style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+    >
+      {stages.map((s, i) => {
+        const pct = (s.count / max) * 100;
+        const prev = i > 0 ? stages[i - 1].count : null;
+        const dropPct =
+          prev !== null && prev > 0 ? ((prev - s.count) / prev) * 100 : null;
+        return (
+          <div key={s.stage}>
+            <div className="flex justify-between text-xs mb-1">
+              <span style={{ color: 'var(--text-secondary)' }}>{s.stage}</span>
+              <span style={{ color: 'var(--text-tertiary)' }}>
+                {s.count.toLocaleString('en-ZA')}
+                {dropPct !== null && dropPct > 0 && (
+                  <span style={{ color: dropPct > 30 ? 'var(--red)' : '#f59e0b', marginLeft: 8 }}>
+                    −{dropPct.toFixed(0)}%
+                  </span>
+                )}
+              </span>
+            </div>
+            <div
+              className="h-2 rounded-full overflow-hidden"
+              style={{ background: 'var(--bg-inset)' }}
+            >
+              <div
+                className="h-full"
+                style={{
+                  background: 'var(--red)',
+                  width: `${pct}%`,
+                  transition: 'width 200ms ease-out',
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SlaBarChart({ buckets }: { buckets: DispatchBucket[] }) {
+  const total = buckets.reduce((s, b) => s + b.count, 0);
+  return (
+    <div
+      className="rounded-[8px] p-5 space-y-3"
+      style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+    >
+      {buckets.map((b) => {
+        const pct = total > 0 ? (b.count / total) * 100 : 0;
+        return (
+          <div key={b.bucket}>
+            <div className="flex justify-between text-xs mb-1">
+              <span style={{ color: 'var(--text-secondary)' }}>
+                {BUCKET_LABEL[b.bucket] ?? b.bucket}
+              </span>
+              <span style={{ color: 'var(--text-tertiary)' }}>
+                {b.count.toLocaleString('en-ZA')} ({pct.toFixed(1)}%)
+              </span>
+            </div>
+            <div
+              className="h-2 rounded-full overflow-hidden"
+              style={{ background: 'var(--bg-inset)' }}
+            >
+              <div
+                className="h-full"
+                style={{
+                  background: BUCKET_COLOR[b.bucket] ?? 'var(--text-tertiary)',
+                  width: `${pct}%`,
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RefundRiskTable({ rows }: { rows: RefundRiskSeller[] }) {
+  return (
+    <div
+      className="rounded-[8px] overflow-hidden"
+      style={{ background: 'var(--bg-card)', border: '0.5px solid var(--red)' }}
+    >
+      <table className="w-full text-sm">
+        <thead>
+          <tr style={{ borderBottom: '0.5px solid var(--border)' }}>
+            <Th>Seller</Th>
+            <Th align="right">Sales</Th>
+            <Th align="right">Refunds</Th>
+            <Th align="right">Rate</Th>
+            <Th align="right">vs baseline</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr
+              key={r.sellerId}
+              style={
+                i < rows.length - 1
+                  ? { borderBottom: '0.5px solid var(--border)' }
+                  : undefined
+              }
+            >
+              <td className="px-4 py-3">
+                <Link
+                  href={`/admin/users/${r.sellerId}`}
+                  style={{ color: 'var(--text-primary)', textDecoration: 'none' }}
+                >
+                  @{r.username ?? 'anon'}
+                </Link>
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  {r.email}
+                </p>
+              </td>
+              <td className="px-4 py-3 text-right text-xs" style={{ color: 'var(--text-secondary)' }}>
+                {r.totalSales}
+              </td>
+              <td className="px-4 py-3 text-right text-xs" style={{ color: 'var(--text-secondary)' }}>
+                {r.refundCount}
+              </td>
+              <td className="px-4 py-3 text-right text-sm" style={{ color: 'var(--red)', fontWeight: 500 }}>
+                {(r.refundRate * 100).toFixed(1)}%
+              </td>
+              <td className="px-4 py-3 text-right">
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full"
+                  style={{ background: 'var(--red)18', color: 'var(--red)', fontWeight: 500 }}
+                >
+                  +{r.ppDifference.toFixed(1)}pp
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-6">
+      <div className="mb-2">
+        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+          {title}
+        </p>
+        {subtitle && (
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+            {subtitle}
+          </p>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
+  return (
+    <th
+      className="text-xs uppercase px-4 py-2"
+      style={{ color: 'var(--text-tertiary)', fontWeight: 500, textAlign: align }}
+    >
+      {children}
+    </th>
+  );
+}
+
+function Empty({ message }: { message: string }) {
+  return (
+    <div
+      className="rounded-[8px] p-6 text-center"
+      style={{ background: 'var(--bg-card)', border: '0.5px dashed var(--border)' }}
+    >
+      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+        {message}
+      </p>
+    </div>
+  );
+}

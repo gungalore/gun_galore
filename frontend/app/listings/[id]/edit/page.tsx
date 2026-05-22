@@ -50,7 +50,16 @@ export default function EditListingPage() {
     make: '',
     model: '',
     calibre: '',
+    // Auction-specific
+    reservePrice: '',
+    buyNowPrice: '',
+    // Take-a-Shot-specific
+    autoAcceptThreshold: '',
   });
+  // Existing images that have been queued for delete. We hide them
+  // from the visible thumbnail strip but only call DELETE on save —
+  // gives the user a chance to back out before clicking Save.
+  const [removedImageIds, setRemovedImageIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -68,12 +77,17 @@ export default function EditListingPage() {
         setForm({
           title: l.title,
           description: l.description,
-          price: String(l.price / 100),
+          price: l.price ? String(l.price / 100) : '',
           condition: l.condition,
           province: l.province,
           make: l.make ?? '',
           model: l.model ?? '',
           calibre: l.calibre ?? '',
+          reservePrice: l.reservePrice ? String(l.reservePrice / 100) : '',
+          buyNowPrice: l.buyNowPrice ? String(l.buyNowPrice / 100) : '',
+          autoAcceptThreshold: l.autoAcceptThreshold
+            ? String(l.autoAcceptThreshold / 100)
+            : '',
         });
       } finally {
         setLoading(false);
@@ -102,6 +116,19 @@ export default function EditListingPage() {
       if (form.make.trim()) body.make = form.make.trim();
       if (form.model.trim()) body.model = form.model.trim();
       if (form.calibre.trim()) body.calibre = form.calibre.trim();
+      // Auction + Take-a-Shot type-specific fields. We send them
+      // regardless of listingType — backend ignores irrelevant ones.
+      if (form.reservePrice.trim()) {
+        body.reservePrice = Math.round(parseFloat(form.reservePrice) * 100);
+      }
+      if (form.buyNowPrice.trim()) {
+        body.buyNowPrice = Math.round(parseFloat(form.buyNowPrice) * 100);
+      }
+      if (form.autoAcceptThreshold.trim()) {
+        body.autoAcceptThreshold = Math.round(
+          parseFloat(form.autoAcceptThreshold) * 100,
+        );
+      }
 
       const res = await fetch(`${API_URL}/listings/${id}`, {
         method: 'PATCH',
@@ -111,6 +138,18 @@ export default function EditListingPage() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message ?? `Error ${res.status}`);
+      }
+
+      // Delete photos that the seller removed in this session.
+      for (const imageId of removedImageIds) {
+        await fetch(`${API_URL}/listings/${id}/images/${imageId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => {
+          // Best-effort — if a delete fails, the listing edit still
+          // succeeds; the seller can retry the photo deletion from
+          // the listing detail page.
+        });
       }
 
       // Upload any new images
@@ -145,9 +184,30 @@ export default function EditListingPage() {
 
   return (
     <main className="max-w-[640px] mx-auto px-4 py-8">
-      <h1 className="text-xl mb-6" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+      <h1 className="text-xl mb-2" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
         Edit listing
       </h1>
+
+      {/* Re-audit callout — saving any change re-runs Claude
+          moderation, which can push the listing back into
+          PENDING_REVIEW briefly. Set expectations up front so a
+          seller doesn't panic when their ACTIVE listing disappears
+          from search for an hour. */}
+      <div
+        className="mb-5 px-3 py-2 rounded-[6px] text-xs flex items-center gap-2"
+        style={{
+          background: 'rgba(245,158,11,0.08)',
+          border: '0.5px solid #f59e0b',
+          color: 'var(--text-secondary)',
+        }}
+      >
+        <span style={{ color: '#f59e0b' }}>⚠</span>
+        <span>
+          Saving any change re-runs automated moderation. Your listing
+          may briefly return to <strong>Pending review</strong> while
+          Claude re-checks it.
+        </span>
+      </div>
 
       {error && (
         <div className="mb-4 px-4 py-3 rounded-[6px] text-sm" style={{ background: 'rgba(200,16,46,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}>
@@ -155,15 +215,71 @@ export default function EditListingPage() {
         </div>
       )}
 
-      {/* Existing images */}
+      {/* Existing images — each removable with an X button. Removals
+          are queued and committed on Save so the seller can undo
+          (refresh the page) until they hit Save. */}
       {listing.images.length > 0 && (
         <div className="mb-5">
-          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Current photos</p>
+          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+            Current photos · click × to remove
+          </p>
           <div className="flex gap-2 flex-wrap">
-            {listing.images.map((img) => (
-              <img key={img.id} src={img.url} alt="" className="w-20 h-20 rounded-[4px] object-cover" />
-            ))}
+            {listing.images
+              .filter((img) => !removedImageIds.has(img.id))
+              .map((img) => (
+                <div key={img.id} style={{ position: 'relative' }}>
+                  <img src={img.url} alt="" className="w-20 h-20 rounded-[4px] object-cover" />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRemovedImageIds((s) => {
+                        const next = new Set(s);
+                        next.add(img.id);
+                        return next;
+                      })
+                    }
+                    aria-label="Remove this photo"
+                    style={{
+                      position: 'absolute',
+                      top: -6,
+                      right: -6,
+                      width: 20,
+                      height: 20,
+                      borderRadius: '50%',
+                      background: 'var(--red)',
+                      color: '#fff',
+                      border: '0.5px solid var(--bg-page)',
+                      fontSize: 12,
+                      lineHeight: '18px',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
           </div>
+          {removedImageIds.size > 0 && (
+            <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+              {removedImageIds.size} photo{removedImageIds.size === 1 ? '' : 's'} marked for delete on save.{' '}
+              <button
+                type="button"
+                onClick={() => setRemovedImageIds(new Set())}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--red)',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  padding: 0,
+                  font: 'inherit',
+                }}
+              >
+                Undo
+              </button>
+            </p>
+          )}
         </div>
       )}
 
@@ -211,6 +327,69 @@ export default function EditListingPage() {
               <input type="text" value={form.calibre} onChange={(e) => set('calibre', e.target.value)} style={inputStyle} placeholder="e.g. 9mm" />
             </Field>
           </>
+        )}
+
+        {/* Auction-specific edit surface. Reserve + buyNow are
+            editable while the auction has no bids; the backend
+            rejects updates that would invalidate existing bids. */}
+        {listing.listingType === 'AUCTION' && (
+          <div
+            className="rounded-[6px] p-3 space-y-3"
+            style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+          >
+            <p className="text-xs uppercase" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
+              Auction options
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Reserve price (R)">
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.reservePrice}
+                  onChange={(e) => set('reservePrice', e.target.value)}
+                  style={inputStyle}
+                  placeholder="Optional"
+                />
+              </Field>
+              <Field label="Buy Now price (R)">
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.buyNowPrice}
+                  onChange={(e) => set('buyNowPrice', e.target.value)}
+                  style={inputStyle}
+                  placeholder="Optional"
+                />
+              </Field>
+            </div>
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Auction duration + listing type are locked once published. To
+              change those, cancel and relist.
+            </p>
+          </div>
+        )}
+
+        {/* Take-a-Shot threshold — only honoured for TAKE_A_SHOT
+            listings. Setting it auto-accepts any offer at-or-above. */}
+        {listing.listingType === 'TAKE_A_SHOT' && (
+          <Field label="Auto-accept offers at or above (R)">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={form.autoAcceptThreshold}
+              onChange={(e) => set('autoAcceptThreshold', e.target.value)}
+              style={inputStyle}
+              placeholder="Leave blank to review every offer manually"
+            />
+            {form.autoAcceptThreshold.trim() && (
+              <p className="text-xs mt-1" style={{ color: '#f59e0b' }}>
+                ⚠ Offers at or above R{form.autoAcceptThreshold} will be auto-accepted with no further review.
+              </p>
+            )}
+          </Field>
         )}
 
         <Field label="Add more photos (optional)">

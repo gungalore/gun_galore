@@ -7,11 +7,15 @@ import {
 } from '@nestjs/common';
 import { SellerTier } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import { CreateRatingDto } from './dto/create-rating.dto';
 
 @Injectable()
 export class RatingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly contactFilter: ContactDetailFilterService,
+  ) {}
 
   async create(transactionId: string, buyerClerkId: string, dto: CreateRatingDto) {
     const tx = await this.prisma.transaction.findUnique({
@@ -23,6 +27,20 @@ export class RatingsService {
     if (tx.rating) throw new ConflictException('Transaction already has a rating');
     if (tx.paymentStatus !== 'RELEASED')
       throw new BadRequestException('Can only rate after payment has been released');
+
+    // Rating comments are public on the seller's profile, so a contact
+    // detail in a comment routes around platform fees identically to a
+    // note-to-seller. Block before the DB write.
+    if (dto.comment) {
+      const check = await this.contactFilter.check(
+        dto.comment,
+        'rating-comment',
+        buyerClerkId,
+      );
+      if (!check.allowed) {
+        throw new BadRequestException(check.reason);
+      }
+    }
 
     const rating = await this.prisma.rating.create({
       data: {
@@ -48,7 +66,9 @@ export class RatingsService {
       where: { ratedId: user.id },
       orderBy: { createdAt: 'desc' },
       include: {
-        rater: { select: { firstName: true, lastName: true } },
+        // Username only — reviews are publicly visible on the seller
+        // profile, so we must not expose the rater's real name.
+        rater: { select: { username: true } },
         transaction: { select: { listing: { select: { title: true } } } },
       },
     });
@@ -64,7 +84,9 @@ export class RatingsService {
       orderBy: { createdAt: 'desc' },
       take: 10,
       include: {
-        rater: { select: { firstName: true, lastName: true } },
+        // Username only — reviews are publicly visible on the seller
+        // profile, so we must not expose the rater's real name.
+        rater: { select: { username: true } },
         transaction: { select: { listing: { select: { title: true } } } },
       },
     });

@@ -1,5 +1,6 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
+import { auth } from '@clerk/nextjs/server';
 import { apiFetch } from '@/lib/api';
 import { Listing } from '@/lib/types';
 import { formatPrice, CONDITION_LABELS } from '@/lib/utils';
@@ -31,13 +32,21 @@ export default async function CheckoutPage({
   if (listing.status !== 'ACTIVE') return notFound();
   if (listing.listingType !== 'BUY_NOW') return notFound();
 
+  // Self-buy guard. Backend rejects with 400 anyway, but landing
+  // here at all is confusing — kick them back to the listing detail
+  // so they see the "this is your own listing" chip instead.
+  const { userId } = await auth();
+  if (userId && userId === listing.seller.clerkId) {
+    redirect(`/listings/${listing.id}`);
+  }
+
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
       <Link href={`/listings/${listing.id}`} className="text-sm inline-block mb-6" style={{ color: 'var(--text-tertiary)' }}>
         ← Back to listing
       </Link>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8 items-start">
         {/* Left: listing summary */}
         <div
           className="rounded-[8px] p-5"
@@ -65,7 +74,7 @@ export default async function CheckoutPage({
                 {CONDITION_LABELS[listing.condition]} · {listing.category.name}
               </p>
               <p className="text-lg font-medium" style={{ color: 'var(--red)' }}>
-                {formatPrice(listing.price)}
+                {listing.price ? formatPrice(listing.price) : 'Make an offer'}
               </p>
             </div>
           </div>
@@ -97,8 +106,10 @@ export default async function CheckoutPage({
             <div className="flex items-center justify-between">
               <span style={{ color: 'var(--text-tertiary)' }}>Seller</span>
               <span style={{ color: 'var(--text-primary)' }}>
-                {listing.seller.firstName ?? 'Seller'}
-                {listing.seller.lastName ? ` ${listing.seller.lastName.charAt(0)}.` : ''}
+                {/* Platform policy — public-facing surfaces show the
+                    seller's username only, no @ prefix, never the
+                    real name. */}
+                {listing.seller.username ?? 'Anonymous seller'}
               </span>
             </div>
           </div>

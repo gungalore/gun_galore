@@ -9,7 +9,12 @@ interface ClerkUserData {
   phone_numbers: { phone_number: string }[];
   first_name: string | null;
   last_name: string | null;
+  username: string | null;
   image_url: string;
+  // Phone is captured at signup via the custom form and stored in
+  // unsafe_metadata so it's available before Clerk's phone-verification
+  // flow runs (which we skip — we only need the number for SMS/shipping).
+  unsafe_metadata?: { phone?: string };
 }
 
 interface ClerkWebhookEvent {
@@ -56,12 +61,19 @@ export class WebhooksController {
     this.logger.log(`Clerk webhook: ${type} for ${data.id}`);
 
     if (type === 'user.created' || type === 'user.updated') {
+      // Phone preference: verified phone_numbers > unsafe_metadata.phone.
+      // Our custom form stuffs the SA number into unsafe_metadata so it's
+      // available without going through Clerk's phone-verification step.
+      const phone =
+        data.phone_numbers[0]?.phone_number ?? data.unsafe_metadata?.phone;
+
       await this.usersService.upsertFromClerk({
         clerkId: data.id,
         email: data.email_addresses[0]?.email_address ?? '',
+        username: data.username ?? undefined,
         firstName: data.first_name ?? undefined,
         lastName: data.last_name ?? undefined,
-        phone: data.phone_numbers[0]?.phone_number ?? undefined,
+        phone: phone ?? undefined,
         avatarUrl: data.image_url ?? undefined,
       });
     }

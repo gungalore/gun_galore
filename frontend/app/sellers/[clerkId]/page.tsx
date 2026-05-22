@@ -18,7 +18,8 @@ interface SellerRating {
   stars: number;
   comment: string | null;
   createdAt: string;
-  rater: { firstName: string | null; lastName: string | null };
+  // Public-facing reviews — username only per platform policy.
+  rater: { username: string | null };
   transaction: { listing: { title: string } };
 }
 
@@ -31,7 +32,13 @@ export default async function SellerProfilePage({
 
   const [ratingsRes, listingsRes] = await Promise.all([
     fetch(`${API_URL}/ratings/seller/${clerkId}`, { cache: 'no-store' }),
-    fetch(`${API_URL}/listings?limit=8`, { cache: 'no-store' }),
+    // Scope by sellerClerkId so we only show THIS seller's active
+    // listings, not the platform's first-8 (which was the original
+    // bug — every seller profile showed the same global feed).
+    fetch(
+      `${API_URL}/listings?sellerClerkId=${encodeURIComponent(clerkId)}&limit=8`,
+      { cache: 'no-store' },
+    ),
   ]);
 
   if (!ratingsRes.ok) notFound();
@@ -108,7 +115,7 @@ export default async function SellerProfilePage({
                 <div key={r.id}>
                   <div className="flex items-center justify-between mb-0.5">
                     <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      {r.rater.firstName ?? 'Buyer'} · {r.transaction.listing.title.slice(0, 28)}
+                      {r.rater.username ?? 'Anonymous'} · {r.transaction.listing.title.slice(0, 28)}
                     </span>
                     <span style={{ color: '#f59e0b', fontSize: '12px' }}>
                       {'★'.repeat(r.stars)}{'☆'.repeat(5 - r.stars)}

@@ -1,12 +1,86 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useMemo, useRef, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
-import { Category } from '@/lib/types';
-import { CONDITION_LABELS, PROVINCE_LABELS } from '@/lib/utils';
+import { Category, Me } from '@/lib/types';
+import { CONDITION_LABELS } from '@/lib/utils';
+import { CategoryPicker } from '@/components/category-picker';
+import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
+import { PhotoDropzone } from '@/components/photo-dropzone';
+import { StepAccordion, StepStatus } from '@/components/step-accordion';
+import { PageBackground } from '@/components/page-background';
+import { PageReveal } from '@/components/page-reveal';
+import {
+  AddressAutocomplete,
+  type ParsedAddressComponents,
+} from '@/components/address-autocomplete';
+import {
+  ManualAddressFields,
+  emptyManualAddress,
+  type ManualAddressValue,
+} from '@/components/manual-address-fields';
+// NOTE: LockerPicker is intentionally NOT used on the Sell form. The
+// seller drops at ANY Pudo locker using a delivery PIN — there's no
+// need for them to pre-select a drop-off locker here. The picker lives
+// in the buyer-side checkout flow where the destination locker matters.
+import type { ShippingMethod } from '@/lib/types';
+import {
+  ListingPreviewModal,
+  PreviewResult,
+  PreviewSnapshot,
+} from '@/components/listing-preview-modal';
+import { ProfileCompletionModal } from '@/components/profile-completion-modal';
+import { HelpTip } from '@/components/help-tip';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
+// ─────────────────────────── Fee math ───────────────────────────────
+// Client-side mirror of backend/src/payments/fee.calculator.ts so we can
+// show the seller a live "you receive" preview without round-tripping
+// to the API on every keystroke. Keep this in sync with the BANDS +
+// MIN_COMMISSION_CENTS constants on the backend.
+
+const COMMISSION_BANDS: { limit: number; rate: number; label: string }[] = [
+  { limit: 500_000, rate: 0.09, label: 'First R5,000 at 9%' },
+  { limit: 1_500_000, rate: 0.07, label: 'R5,001–R20,000 at 7%' },
+  { limit: 8_000_000, rate: 0.05, label: 'R20,001–R100,000 at 5%' },
+  { limit: Infinity, rate: 0.03, label: 'Above R100,000 at 3%' },
+];
+const MIN_COMMISSION_CENTS = 3_000; // R30 floor — see backend fee.calculator.ts
+
+function calcCommissionCents(priceCents: number): number {
+  let commission = 0;
+  let remaining = priceCents;
+  for (const band of COMMISSION_BANDS) {
+    if (remaining <= 0) break;
+    const chunk = isFinite(band.limit)
+      ? Math.min(remaining, band.limit)
+      : remaining;
+    commission += chunk * band.rate;
+    remaining -= chunk;
+  }
+  const rounded = Math.max(0, Math.round(commission));
+  // R30 minimum platform fee — surfaced in PriceBreakdown so the seller
+  // knows up-front. Floor never exceeds the price itself.
+  if (priceCents > 0 && rounded < MIN_COMMISSION_CENTS) {
+    return Math.min(MIN_COMMISSION_CENTS, priceCents);
+  }
+  return rounded;
+}
+
+// Note: the buyer's payment-processing fee (Peach: 3.5% + R1.50) is
+// added to their checkout total and kept by the platform — the seller
+// never sees it, so the Sell form intentionally doesn't compute it here.
+
+function formatRand(cents: number): string {
+  return `R${(cents / 100).toLocaleString('en-ZA', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+// ─────────────────────────── Shared styles ───────────────────────────
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -14,27 +88,107 @@ const inputStyle: React.CSSProperties = {
   border: '0.5px solid var(--border)',
   color: 'var(--text-primary)',
   borderRadius: '6px',
-  padding: '8px 12px',
+  padding: '10px 12px',
   fontSize: '14px',
   outline: 'none',
 };
 
+// ─────────────────────────── Field wrapper ───────────────────────────
+
 function Field({
   label,
+  hint,
+  tip,
+  tipTitle,
+  required,
   children,
 }: {
   label: string;
+  hint?: string;
+  // Optional ⓘ explainer next to the label for jargon-y fields
+  // (Reserve, Proxy bid, Auto-accept). Hover-on-desktop, tap-to-lock
+  // on touch.
+  tip?: React.ReactNode;
+  tipTitle?: string;
+  required?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-        {label}
+      <label
+        className="block text-xs mb-2"
+        style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
+      >
+        <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+          {label}
+          {required && (
+            <span style={{ color: 'var(--red)', marginLeft: 4 }}>*</span>
+          )}
+          {tip && (
+            <HelpTip title={tipTitle ?? label} side="right">
+              {tip}
+            </HelpTip>
+          )}
+        </span>
       </label>
       {children}
+      {hint && (
+        <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)' }}>
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
+
+// Compact number input used by the parcel weight + dimensions grid in
+// step 3. Accepts digits + a single decimal point (whole + tenth-of-a-cm
+// is enough precision for box-fit calcs). Empty string is a valid state
+// while the seller is typing.
+function SmallNumberField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="block">
+      <span
+        className="block text-xs mb-1"
+        style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}
+      >
+        {label}
+      </span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={value}
+        onChange={(e) =>
+          onChange(e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'))
+        }
+        placeholder={placeholder}
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          background: 'var(--bg-inset)',
+          border: '0.5px solid var(--border)',
+          borderRadius: 6,
+          padding: '8px 10px',
+          fontSize: 13,
+          color: 'var(--text-primary)',
+          outline: 'none',
+        }}
+      />
+    </label>
+  );
+}
+
+// ─────────────────────────── Page ───────────────────────────────────
 
 export default function NewListingPage() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
@@ -45,6 +199,54 @@ export default function NewListingPage() {
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<File[]>([]);
 
+  // Description AI state — preview-box pattern (lifted from the old
+  // project). When `suggestion` is non-null we render a "Suggested
+  // description" box below the textarea with Use / Keep original buttons.
+  // We do NOT auto-replace the seller's text — they have to opt in.
+  const [enhancing, setEnhancing] = useState(false);
+  const [enhanceError, setEnhanceError] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+
+  // Preview / soft-block moderation flow.
+  // `previewResult` drives the modal display; null = modal closed.
+  // `auditResult` holds the latest moderation pass result — updated
+  // whenever the seller advances past Step 1 OR changes their photos.
+  // When the seller clicks Preview, we open the modal pointed at the
+  // cached auditResult instead of running another audit (saves a round
+  // trip and gives them instant feedback).
+  const [previewResult, setPreviewResult] = useState<PreviewResult | null>(null);
+  const [auditResult, setAuditResult] = useState<PreviewResult | null>(null);
+  const [auditing, setAuditing] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [previousAttemptHashes, setPreviousAttemptHashes] = useState<string[]>([]);
+
+  // Delivery + pickup-address state. Lives outside `form` because the
+  // shipping-methods array doesn't fit the flat string-map.
+  const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>([]);
+  const [pickupAddress, setPickupAddress] = useState<ManualAddressValue>(
+    emptyManualAddress,
+  );
+  // Coordinates come from Google Places autocomplete. We persist them on
+  // the listing so the buyer-side checkout can compute distance to the
+  // chosen Pudo destination locker. Null when the seller typed manually
+  // instead of picking a Google suggestion.
+  const [pickupLat, setPickupLat] = useState<number | null>(null);
+  const [pickupLng, setPickupLng] = useState<number | null>(null);
+
+  // Parcel weight + dimensions. Required for non-firearm listings — Pudo
+  // and TCG both need them to quote rates. Stored as strings here for
+  // forgiving input UX, parsed to numbers on submit. Weight in kilograms
+  // (the unit a seller intuits), dimensions in centimetres (matches
+  // Pudo's API). Empty for firearm listings (the courier API isn't used).
+  const [parcel, setParcel] = useState({
+    weightKg: '',
+    lengthCm: '',
+    widthCm: '',
+    heightCm: '',
+  });
+
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -53,12 +255,83 @@ export default function NewListingPage() {
     categoryId: '',
     condition: 'GOOD',
     province: 'GAUTENG',
-    passFeeToBuyer: false,
-    make: '',
-    model: '',
-    calibre: '',
+    // Buyer always pays the payment-processing fee — it's added to their
+    // total at checkout, and we keep it. The seller never sees this fee
+    // anywhere in the UI. Hardcoded so the API receives the right flag.
+    passFeeToBuyer: true,
     autoAcceptThreshold: '',
+    durationDays: '7',
+    reservePrice: '',
+    // Buy Now is opt-in. The checkbox below toggles whether the price
+    // input is visible AND whether the value is submitted — turning it
+    // off mid-form blanks the price so a stale value can't leak through.
+    offerBuyNow: false,
+    buyNowPrice: '',
   });
+
+  // ─── Draft persistence ──────────────────────────────────────────
+  // Multi-step accordion + photo upload + Claude moderation = the
+  // form is a long-haul commitment for sellers. Without this an
+  // accidental refresh wipes everything (which actually happens —
+  // photo-upload failures auto-delete the listing, the seller is
+  // then stuck retyping the description). Save everything except
+  // photos (File objects don't serialize) to localStorage on every
+  // change; restore on mount; clear on successful publish.
+  const draftKey = 'gg-listing-new-draft';
+  const [draftRestored, setDraftRestored] = useState(false);
+
+  // Restore on mount (one-shot ref so a re-render doesn't loop).
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return;
+      const d = JSON.parse(raw) as {
+        form?: typeof form;
+        parcel?: typeof parcel;
+        pickupAddress?: ManualAddressValue;
+        pickupLat?: number | null;
+        pickupLng?: number | null;
+      };
+      if (d.form) setForm(d.form);
+      if (d.parcel) setParcel(d.parcel);
+      if (d.pickupAddress) setPickupAddress(d.pickupAddress);
+      if (d.pickupLat !== undefined) setPickupLat(d.pickupLat);
+      if (d.pickupLng !== undefined) setPickupLng(d.pickupLng);
+      setDraftRestored(true);
+    } catch {
+      // Bad JSON / quota — ignore, start fresh.
+    }
+  }, []);
+
+  // Save on every change. Excludes photos (File[]) — those can't be
+  // serialised; the seller has to re-select on resume. The "draft
+  // restored" notice tells them this.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(
+        draftKey,
+        JSON.stringify({ form, parcel, pickupAddress, pickupLat, pickupLng }),
+      );
+    } catch {
+      // Quota / private mode — silent.
+    }
+  }, [form, parcel, pickupAddress, pickupLat, pickupLng]);
+
+  // Discard the draft (lets the seller force a clean slate).
+  function discardDraft() {
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {
+      // ignore
+    }
+    setDraftRestored(false);
+    window.location.reload();
+  }
 
   useEffect(() => {
     fetch(`${API_URL}/categories`)
@@ -75,42 +348,528 @@ export default function NewListingPage() {
     }
   }, [isLoaded, isSignedIn, router]);
 
+  // Prefill pickup address from the seller's saved profile address —
+  // they already typed it on /profile/edit (or during checkout), no
+  // reason to make them retype on every new listing. They can still
+  // edit the ManualAddressFields below if they want a different pickup
+  // point (e.g. a friend's place, an office). We only prefill if the
+  // user has BOTH an address AND coords saved (coords are needed for
+  // the rate / nearest-locker maths). One-shot on mount.
+  const prefilledRef = useRef(false);
+  // Full /users/me snapshot held client-side so we can check
+  // profileCompletedAt at publish time (decides whether to pop the
+  // ProfileCompletionModal before redirecting to the listing).
+  const [currentMe, setCurrentMe] = useState<Me | null>(null);
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await fetch(`${API_URL}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const me = (await res.json()) as Me;
+        if (cancelled) return;
+        setCurrentMe(me);
+        if (prefilledRef.current) return;
+        if (!me.addrStreet || me.addrLat == null || me.addrLng == null) {
+          // No saved address yet — leave the form blank, seller fills
+          // it from scratch. Profile/edit will save it next time.
+          return;
+        }
+        setPickupAddress({
+          building: me.addrBuilding ?? '',
+          street: me.addrStreet ?? '',
+          address2: me.addrAddress2 ?? '',
+          suburb: me.addrSuburb ?? '',
+          city: me.addrCity ?? '',
+          postalCode: me.addrPostalCode ?? '',
+          province: me.addrProvince ?? '',
+        });
+        setPickupLat(me.addrLat);
+        setPickupLng(me.addrLng);
+        // Sync the listing's province to the seller's profile province.
+        // Without this the form kept its hard-coded GAUTENG default and
+        // published listings showed the wrong province even when the
+        // seller's address was clearly in another province.
+        if (me.addrProvince) {
+          setForm((f) => ({ ...f, province: me.addrProvince! }));
+        }
+        prefilledRef.current = true;
+      } catch {
+        // Non-fatal — seller can still fill the form manually.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn, getToken]);
+
+  // Modal state — set when a listing publish succeeded AND the seller
+  // hasn't completed their profile yet. The router.push is deferred
+  // until they finish the modal.
+  const [pendingRedirectId, setPendingRedirectId] = useState<string | null>(
+    null,
+  );
+
   const selectedCategory = categories.find((c) => c.id === form.categoryId);
   const isFirearm = selectedCategory?.isFirearm ?? false;
+
+  // Parsed parcel as numbers — null if not yet entered. Used by oversize
+  // check + by buildListingPayload. Empty / NaN values stay null so the
+  // step-3 completion gate refuses to advance.
+  const parsedParcel = useMemo(() => {
+    const num = (s: string) => {
+      const n = parseFloat(s);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    return {
+      weightKg: num(parcel.weightKg),
+      lengthCm: num(parcel.lengthCm),
+      widthCm: num(parcel.widthCm),
+      heightCm: num(parcel.heightCm),
+    };
+  }, [parcel]);
+
+  // Pudo's largest L2L locker box is 60 × 41 × 69 cm at 20 kg. Anything
+  // beyond that physically can't ship via the locker network, so we hide
+  // the PUDO pill from the seller (TCG door-to-door still works). The
+  // check is orientation-agnostic — we sort parcel dims desc against the
+  // sorted box max and bail if any axis overshoots.
+  const PUDO_MAX_BOX_CM = [69, 60, 41] as const; // sorted desc
+  const PUDO_MAX_WEIGHT_KG = 20;
+  const isOversizeForPudo = useMemo(() => {
+    const { weightKg, lengthCm, widthCm, heightCm } = parsedParcel;
+    if (
+      lengthCm == null ||
+      widthCm == null ||
+      heightCm == null ||
+      weightKg == null
+    ) {
+      return false; // not enough info yet — don't lock the pill prematurely
+    }
+    if (weightKg > PUDO_MAX_WEIGHT_KG) return true;
+    const sorted = [lengthCm, widthCm, heightCm].sort((a, b) => b - a);
+    return (
+      sorted[0] > PUDO_MAX_BOX_CM[0] ||
+      sorted[1] > PUDO_MAX_BOX_CM[1] ||
+      sorted[2] > PUDO_MAX_BOX_CM[2]
+    );
+  }, [parsedParcel]);
+
+  // If the seller had PUDO selected and then types dimensions that push
+  // the parcel oversize, silently drop the PUDO pick — otherwise they'd
+  // sail through step 3 with an invalid combo and the buyer would hit
+  // "no rate available" at checkout.
+  useEffect(() => {
+    if (isOversizeForPudo && shippingMethods.includes('PUDO')) {
+      setShippingMethods((prev) => prev.filter((m) => m !== 'PUDO'));
+    }
+  }, [isOversizeForPudo, shippingMethods]);
+
+  // The delivery-method options change when the seller switches between
+  // a firearm and non-firearm category (PUDO + TCG vs DEALER_TRANSFER +
+  // PRIVATE_ARRANGE). Without this reset, a prior pick from the other
+  // set stays in shippingMethods and gets sent to the API alongside the
+  // new picks — the server then rejects with
+  // "shippingMethods must contain no more than 2 elements".
+  const lastIsFirearm = useRef(isFirearm);
+  useEffect(() => {
+    if (lastIsFirearm.current !== isFirearm) {
+      lastIsFirearm.current = isFirearm;
+      setShippingMethods([]);
+    }
+  }, [isFirearm]);
+
+  // ─────────────────── Step completion (drives the accordion) ───────────
+  // Each step's `isComplete` is a pure function of the form state.
+  // Four steps total: basics → selling → delivery+address → photos.
+  const stepComplete = useMemo(() => {
+    const step1 =
+      form.title.trim().length >= 5 &&
+      !!form.categoryId &&
+      !!form.condition &&
+      form.description.trim().length >= 10;
+
+    const hasPrice = parseFloat(form.price || '0') > 0;
+    const hasReserve = parseFloat(form.reservePrice || '0') > 0;
+    // Auction is valid if duration is picked AND we can derive a
+    // starting bid — either from a typed `price` (no-reserve mode)
+    // or from a typed `reservePrice` (the backend derives 70% of it).
+    const step2 =
+      form.listingType === 'TAKE_A_SHOT'
+        ? true // no price required
+        : form.listingType === 'AUCTION'
+          ? (hasPrice || hasReserve) && !!form.durationDays
+          : hasPrice;
+
+    // Step 3 — delivery + address. The seller picks ≥1 shipping method
+    // and fills the pickup address. NO locker selection here — for PUDO,
+    // the seller drops at any locker using a delivery PIN; the buyer
+    // picks the destination locker at checkout.
+    const addressFilled =
+      pickupAddress.street.trim().length > 0 &&
+      pickupAddress.suburb.trim().length > 0 &&
+      pickupAddress.city.trim().length > 0 &&
+      pickupAddress.postalCode.trim().length > 0 &&
+      pickupAddress.province.length > 0;
+    // Parcel weight + dims required for non-firearm so the courier API
+    // has something to quote against. Firearms skip this — DEALER_TRANSFER
+    // and PRIVATE_ARRANGE don't use Pudo/TCG.
+    const parcelFilled =
+      isFirearm ||
+      (parsedParcel.weightKg != null &&
+        parsedParcel.lengthCm != null &&
+        parsedParcel.widthCm != null &&
+        parsedParcel.heightCm != null);
+    const step3 =
+      shippingMethods.length > 0 && addressFilled && parcelFilled;
+
+    const step4 = images.length >= 1;
+
+    return { step1, step2, step3, step4 };
+  }, [form, images, pickupAddress, shippingMethods, parsedParcel, isFirearm]);
+
+  // Which step is "up next" — the first incomplete one. Drives the red
+  // "Up next" pill, NOT auto-expansion. Completing fields just unlocks
+  // the Continue button; the user has to click Continue to advance.
+  const activeStep: 1 | 2 | 3 | 4 = !stepComplete.step1
+    ? 1
+    : !stepComplete.step2
+      ? 2
+      : !stepComplete.step3
+        ? 3
+        : !stepComplete.step4
+          ? 4
+          : 4; // all done — leave step 4 active so seller can still edit photos
+
+  // Single source of truth for which step is currently expanded. Only one
+  // step is open at a time (classic accordion). Defaults to step 1.
+  // Filling out a step does NOT change this — only a Continue click or a
+  // user header click does.
+  const [expandedStep, setExpandedStep] = useState<1 | 2 | 3 | 4 | null>(1);
+  const isOpen = (n: number) => expandedStep === n;
+
+  function toggleStep(n: 1 | 2 | 3 | 4) {
+    if (statusFor(n) === 'locked') return;
+    setExpandedStep((prev) => (prev === n ? null : n));
+  }
+
+  function advanceFromStep(n: 1 | 2 | 3 | 4) {
+    if (!stepComplete[`step${n}` as keyof typeof stepComplete]) return;
+    const next = (n + 1) as 1 | 2 | 3 | 4 | 5;
+    if (next > 4) {
+      setExpandedStep(null);
+    } else {
+      setExpandedStep(next as 1 | 2 | 3 | 4);
+    }
+    // Continuing past Step 1 (the descriptive content) is the right
+    // moment to kick the moderation audit — fire-and-forget so the
+    // advance is instant for the seller. By the time they reach the
+    // Preview button, the result is usually already cached.
+    if (n === 1) {
+      void runAudit();
+    }
+  }
+
+  function statusFor(n: 1 | 2 | 3 | 4): StepStatus {
+    const key = `step${n}` as keyof typeof stepComplete;
+    if (stepComplete[key]) return 'complete';
+    for (let i = 1; i < n; i++) {
+      if (!stepComplete[`step${i}` as keyof typeof stepComplete]) return 'locked';
+    }
+    return 'active';
+  }
+
+  const allComplete =
+    stepComplete.step1 &&
+    stepComplete.step2 &&
+    stepComplete.step3 &&
+    stepComplete.step4;
 
   function set(key: string, value: string | boolean) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-
+  // Ask Claude (Sonnet) to refine the seller's description AND research
+  // factory specs. Returns plain text formatted as two bullet sections;
+  // we render it in a preview box below the textarea so the seller can
+  // compare it against their own words before swapping.
+  async function handleEnhance() {
+    if (!form.description.trim() || enhancing) return;
+    setEnhanceError(null);
+    setEnhancing(true);
     try {
       const token = await getToken();
-      const priceInCents = Math.round(parseFloat(form.price) * 100);
-
-      const body: Record<string, unknown> = {
-        title: form.title.trim(),
-        description: form.description.trim(),
-        price: priceInCents,
-        listingType: form.listingType,
-        categoryId: form.categoryId,
-        condition: form.condition,
-        province: form.province,
-        passFeeToBuyer: form.passFeeToBuyer,
-      };
-
-      if (form.make.trim()) body.make = form.make.trim();
-      if (form.model.trim()) body.model = form.model.trim();
-      if (form.calibre.trim()) body.calibre = form.calibre.trim();
-      if (form.autoAcceptThreshold) {
-        body.autoAcceptThreshold = Math.round(
-          parseFloat(form.autoAcceptThreshold) * 100,
-        );
+      const res = await fetch(`${API_URL}/listings/enhance-description`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          description: form.description,
+          title: form.title || undefined,
+          categoryId: form.categoryId || undefined,
+          condition: form.condition || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
+      const enhanced = typeof data.enhanced === 'string' ? data.enhanced : '';
+      if (enhanced && enhanced.trim() !== form.description.trim()) {
+        setSuggestion(enhanced);
+      } else {
+        setEnhanceError('Description already reads clearly. No changes suggested.');
       }
+    } catch (err) {
+      setEnhanceError(
+        err instanceof Error ? err.message : 'AI rewrite failed',
+      );
+    } finally {
+      setEnhancing(false);
+    }
+  }
 
+  // Seller accepted the AI's suggestion — copy it into the description
+  // and dismiss the preview box.
+  function handleUseSuggestion() {
+    if (suggestion === null) return;
+    set('description', suggestion);
+    setSuggestion(null);
+    setEnhanceError(null);
+  }
+
+  // Seller dismissed the AI's suggestion — drop the preview, keep the
+  // existing description as-is.
+  function handleKeepOriginal() {
+    setSuggestion(null);
+    setEnhanceError(null);
+  }
+
+  // Google Places picked an address → mirror its parsed components into
+  // our form fields so the seller can verify (and tweak if Google
+  // mis-located the building).
+  function handleAddressComponents(c: ParsedAddressComponents) {
+    setPickupAddress((prev) => ({
+      ...prev,
+      street: c.street ?? prev.street,
+      suburb: c.suburb ?? prev.suburb,
+      city: c.city ?? prev.city,
+      postalCode: c.postalCode ?? prev.postalCode,
+      // Convert Google's province name (e.g. "Western Cape") to our enum
+      // form ("WESTERN_CAPE"). Falls back to the previous value on miss.
+      province: c.province
+        ? (c.province.toUpperCase().replace(/[\s-]+/g, '_') as ManualAddressValue['province'])
+        : prev.province,
+    }));
+    setPickupLat(c.lat ?? null);
+    setPickupLng(c.lng ?? null);
+  }
+
+  // Build the JSON payload shared by /preview and /listings (POST). The two
+  // endpoints accept identical body shapes apart from previousAttemptHashes
+  // and imageCount, which are preview-only.
+  function buildListingPayload(): Record<string, unknown> {
+    const isTakeAShot = form.listingType === 'TAKE_A_SHOT';
+    // Province comes from the pickup address now (not a separate field on
+    // Step 1). Fall back to the form's default if the seller somehow
+    // didn't fill an address (shouldn't happen because step 3 gates it).
+    const province = pickupAddress.province || form.province;
+    const body: Record<string, unknown> = {
+      title: form.title.trim(),
+      description: form.description.trim(),
+      listingType: form.listingType,
+      categoryId: form.categoryId,
+      condition: form.condition,
+      province,
+      passFeeToBuyer: form.passFeeToBuyer,
+      // De-dupe defensively so a stale state can't ever send the API a
+      // duplicate (which would fail @ArrayMaxSize(2) on the DTO).
+      shippingMethods: Array.from(new Set(shippingMethods)),
+      pickupBuilding: pickupAddress.building.trim() || undefined,
+      pickupStreet: pickupAddress.street.trim() || undefined,
+      pickupAddress2: pickupAddress.address2.trim() || undefined,
+      pickupSuburb: pickupAddress.suburb.trim() || undefined,
+      pickupCity: pickupAddress.city.trim() || undefined,
+      pickupPostalCode: pickupAddress.postalCode.trim() || undefined,
+      pickupLat: pickupLat ?? undefined,
+      pickupLng: pickupLng ?? undefined,
+      // pickupPudoLockerId intentionally omitted — seller doesn't pre-pick
+      // a Pudo drop-off locker. They drop at any locker with the delivery
+      // PIN we issue at dispatch time.
+      // Parcel dimensions + weight — required by Pudo/TCG rates. Sent
+      // as integers in the units the schema stores (grams + cm). Skipped
+      // for firearms since dealer transfers don't use the courier API.
+      weightGrams: parsedParcel.weightKg
+        ? Math.round(parsedParcel.weightKg * 1000)
+        : undefined,
+      lengthCm: parsedParcel.lengthCm
+        ? Math.round(parsedParcel.lengthCm)
+        : undefined,
+      widthCm: parsedParcel.widthCm
+        ? Math.round(parsedParcel.widthCm)
+        : undefined,
+      heightCm: parsedParcel.heightCm
+        ? Math.round(parsedParcel.heightCm)
+        : undefined,
+    };
+    if (!isTakeAShot) {
+      body.price = Math.round(parseFloat(form.price) * 100);
+    }
+    if (form.autoAcceptThreshold) {
+      body.autoAcceptThreshold = Math.round(
+        parseFloat(form.autoAcceptThreshold) * 100,
+      );
+    }
+    if (form.listingType === 'AUCTION') {
+      body.durationDays = parseInt(form.durationDays, 10);
+      if (form.reservePrice) {
+        const reserveCents = Math.round(parseFloat(form.reservePrice) * 100);
+        body.reservePrice = reserveCents;
+        // Auction-with-reserve: starting bid is derived as 30% below
+        // the reserve (= 70% of reserve), rounded DOWN so we never start
+        // ABOVE the 30% mark. Whatever the seller typed into the
+        // starting-bid input is ignored on this path — the input is
+        // hidden anyway when a reserve is set.
+        body.price = Math.floor(reserveCents * 0.7);
+      }
+      // Only send buyNowPrice if the seller explicitly opted in.
+      if (form.offerBuyNow && form.buyNowPrice) {
+        body.buyNowPrice = Math.round(parseFloat(form.buyNowPrice) * 100);
+      }
+    }
+    return body;
+  }
+
+  // Read a File as a base64-encoded data URL, then strip the
+  // `data:image/...;base64,` prefix so we send only the payload.
+  // Returns { mediaType, data } in the shape the backend expects.
+  async function fileToBase64(
+    file: File,
+  ): Promise<{ mediaType: string; data: string }> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        if (typeof result !== 'string') {
+          reject(new Error('FileReader returned non-string'));
+          return;
+        }
+        // `data:image/jpeg;base64,XXXX` → { mediaType: 'image/jpeg', data: 'XXXX' }
+        const match = result.match(/^data:([^;]+);base64,(.+)$/);
+        if (!match) {
+          reject(new Error('Unexpected data URL format'));
+          return;
+        }
+        resolve({ mediaType: match[1], data: match[2] });
+      };
+      reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Shared audit routine. POSTs the current draft to /listings/preview
+  // and caches the result in `auditResult`. Triggered automatically when:
+  //   - the seller advances past Step 1 (text-only audit)
+  //   - they upload, remove, or reorder photos (vision audit)
+  // The Preview button below just shows whatever's already in
+  // auditResult so the modal opens instantly.
+  async function runAudit(): Promise<PreviewResult | null> {
+    if (auditing) return null;
+    // Step 1 must be complete before there's anything meaningful to
+    // audit. The Continue handler enforces this too but guard here.
+    if (!stepComplete.step1) return null;
+    setAuditing(true);
+    setAuditError(null);
+    try {
+      const token = await getToken();
+      const encodedImages = await Promise.all(images.map(fileToBase64));
+      const body = {
+        ...buildListingPayload(),
+        previousAttemptHashes,
+        imageCount: images.length,
+        images: encodedImages,
+      };
+      const res = await fetch(`${API_URL}/listings/preview`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const msg = Array.isArray(data.message)
+          ? data.message.join(', ')
+          : (data.message ?? `Error ${res.status}`);
+        throw new Error(msg);
+      }
+      const result = data as PreviewResult;
+      setAuditResult(result);
+      return result;
+    } catch (err) {
+      setAuditError(
+        err instanceof Error ? err.message : 'Review check failed',
+      );
+      return null;
+    } finally {
+      setAuditing(false);
+    }
+  }
+
+  // "Preview listing" — opens the modal with the latest audit result.
+  // If we haven't audited yet (rare — should auto-fire on Step 1
+  // continue), kick one off and open the modal when it lands.
+  async function handlePreview(e: FormEvent) {
+    e.preventDefault();
+    if (!allComplete) return;
+    setPreviewLoading(true);
+    setError(null);
+    setPublishError(null);
+    try {
+      const result = auditResult ?? (await runAudit());
+      if (result) setPreviewResult(result);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  // Confirmed publish from inside the modal. Creates the listing row
+  // then uploads each photo one-by-one. CRITICAL invariant: we MUST
+  // NOT redirect to the listing page if any image failed to upload —
+  // doing so leaves the seller on a photo-less listing. So:
+  //   1. Refuse to start without ≥1 staged image (UI guard mirrors
+  //      the server-side @Min(1) on imageCount).
+  //   2. Bail with a clear error if listing-create fails.
+  //   3. Upload each file in turn, halting on the first failure.
+  //   4. If any upload failed, delete the half-built listing so the
+  //      seller's "My Listings" doesn't fill up with ghost rows. The
+  //      modal stays open with an error + the seller can retry.
+  //   5. Only redirect when every image lands.
+  async function handlePublish(useCleanedDescription: boolean) {
+    if (!previewResult) return;
+    if (images.length === 0) {
+      setPublishError('Add at least one photo before publishing.');
+      return;
+    }
+    setSubmitting(true);
+    setPublishError(null);
+    const token = await getToken();
+    let createdListingId: string | null = null;
+    try {
+      const body = buildListingPayload();
+      // imageCount tells the backend the seller declared intent to
+      // upload N photos. The @Min(1) DTO rule blocks zero-photo
+      // submissions. Photos themselves stream up below.
+      body.imageCount = images.length;
+      if (useCleanedDescription && previewResult.cleanedDescription) {
+        body.description = previewResult.cleanedDescription;
+      }
       const res = await fetch(`${API_URL}/listings`, {
         method: 'POST',
         headers: {
@@ -119,7 +878,6 @@ export default function NewListingPage() {
         },
         body: JSON.stringify(body),
       });
-
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         const msg = Array.isArray(err.message)
@@ -127,40 +885,225 @@ export default function NewListingPage() {
           : (err.message ?? `Error ${res.status}`);
         throw new Error(msg);
       }
-
       const listing = await res.json();
+      createdListingId = listing.id;
 
+      // Per-image upload with res.ok check — the old loop swallowed
+      // 4xx/5xx silently and still redirected, leaving the seller on
+      // a photo-less listing. Track which file failed so the error
+      // message points at the right one.
+      let uploaded = 0;
       for (const file of images) {
         const fd = new FormData();
-        fd.append('file', file);
-        await fetch(`${API_URL}/listings/${listing.id}/images`, {
+        // IMPORTANT: backend FileInterceptor expects the multipart
+        // field name `image` (see backend ListingsController). The
+        // old code sent `file` which Multer silently dropped — the
+        // request 200'd as an empty upload and listings published
+        // with zero photos.
+        fd.append('image', file);
+        const up = await fetch(`${API_URL}/listings/${listing.id}/images`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body: fd,
         });
+        if (!up.ok) {
+          const errBody = await up.json().catch(() => ({}));
+          const detail =
+            (errBody && (errBody as { message?: string }).message) ||
+            `${up.status}`;
+          throw new Error(
+            `Photo ${uploaded + 1} of ${images.length} (${file.name}) ` +
+              `failed to upload — ${detail}.`,
+          );
+        }
+        uploaded += 1;
       }
 
+      // Successful publish — clear the localStorage draft so the
+      // form starts fresh on the seller's next listing.
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {
+        // ignore
+      }
+
+      // Gate: if the seller still owes us the post-publish profile
+      // (banking + ID + name), show the hard-wall modal BEFORE we
+      // redirect to the listing. They'll redirect only once they
+      // submit it successfully. If they've already completed it on
+      // a previous listing, this is a no-op and we redirect now.
+      if (currentMe && !currentMe.profileCompletedAt) {
+        setPendingRedirectId(listing.id);
+        setSubmitting(false);
+        return;
+      }
       router.push(`/listings/${listing.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      // Half-built listing cleanup: if create() succeeded but some
+      // image upload failed mid-way, delete the listing so it doesn't
+      // sit forever as a photo-less ghost. Fire-and-forget — if cleanup
+      // also fails, we still want to surface the original error to the
+      // seller; admin can purge the orphan separately.
+      const wasRolledBack = !!createdListingId;
+      if (createdListingId) {
+        void fetch(`${API_URL}/listings/${createdListingId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => undefined);
+      }
+      const baseMsg =
+        err instanceof Error ? err.message : 'Publish failed — try again';
+      // Explicit rollback notice so the seller knows the half-built
+      // listing was binned (vs. silently existing). Reassurance that
+      // their typed form data is preserved courtesy of the draft
+      // persistence above.
+      setPublishError(
+        wasRolledBack
+          ? `${baseMsg} The half-built listing was rolled back so it doesn't sit photo-less. Your typed details are saved on this device — re-select your photos and click Publish again.`
+          : baseMsg,
+      );
       setSubmitting(false);
     }
   }
 
+  // Closing the preview modal — if the verdict was REJECT, stash the
+  // attemptHash so a 2nd attempt with the same sins is hard-blocked
+  // server-side.
+  function handleClosePreview() {
+    if (
+      previewResult?.decision === 'REJECT' &&
+      previewResult.attemptHash &&
+      !previousAttemptHashes.includes(previewResult.attemptHash)
+    ) {
+      setPreviousAttemptHashes((prev) => [...prev, previewResult.attemptHash]);
+    }
+    setPreviewResult(null);
+    setPublishError(null);
+  }
+
+  // Object URLs for the staged photos so the preview modal can render them
+  // without needing to upload first. Revoke on cleanup to avoid leaks.
+  const imageBlobs = useMemo(
+    () => images.map((f) => URL.createObjectURL(f)),
+    [images],
+  );
+  useEffect(() => {
+    return () => {
+      imageBlobs.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [imageBlobs]);
+
+  // Re-audit whenever the seller's photos change. Debounced 900ms so
+  // rapid-fire uploads (drag of 3 files at once) collapse into a single
+  // audit. Only fires once Step 1 is complete — there's nothing useful
+  // to moderate before the seller has typed the description.
+  useEffect(() => {
+    if (!stepComplete.step1) return;
+    const t = setTimeout(() => {
+      void runAudit();
+    }, 900);
+    return () => clearTimeout(t);
+    // We intentionally ONLY depend on `images` here, not on stepComplete
+    // or runAudit — those change every render. The Step-1 Continue
+    // handler covers the case where step1 just transitioned to complete.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [images]);
+
+  // Reveal handled by <PageReveal> below — same house-standard 0.5s
+  // delay + 1.0s duration we use on every other page. The previous
+  // GSAP-driven timeline kept getting killed mid-flight by React 19
+  // strict-mode's setup → cleanup → setup cycle, which left the
+  // header/sections/sidebar permanently stuck at opacity:0 (the
+  // `from()` state). PageReveal uses a scoped CSS keyframe that
+  // can't be cancelled mid-animation.
+
   if (!isLoaded || !isSignedIn) return null;
 
   return (
-    <main className="max-w-[640px] mx-auto px-4 py-8">
-      <h1
-        className="text-xl mb-6"
-        style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-      >
-        Create listing
-      </h1>
+    <main
+      className="relative max-w-[1280px] mx-auto px-4 py-8 sm:py-12"
+      style={{ zIndex: 1 }}
+    >
+      {/* SA banknotes scenery behind the form, with a black vignette +
+          dark tint so it stays "felt, not seen". File lives at
+          public/sell-bg.jpeg. */}
+      <PageBackground imageSrc="/sell-bg.jpeg" opacity={0.25} />
 
+      <PageReveal variant="slide-up">
+      {/* Page header */}
+      <header data-reveal className="mb-8 max-w-[760px]">
+        <p
+          className="text-xs uppercase mb-2"
+          style={{
+            color: 'var(--red)',
+            letterSpacing: '0.18em',
+            fontWeight: 500,
+          }}
+        >
+          Sell on Gun Galore
+        </p>
+        <h1
+          className="text-3xl sm:text-4xl mb-2"
+          style={{
+            color: 'var(--text-primary)',
+            fontWeight: 500,
+            letterSpacing: '-0.02em',
+          }}
+        >
+          Create a listing
+        </h1>
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          Honest titles and crisp photos sell faster. Required fields marked{' '}
+          <span style={{ color: 'var(--red)' }}>*</span>.
+        </p>
+      </header>
+
+      {/* Draft restored notice — appears when a previous session's
+          form data was loaded from localStorage. Reminds the seller
+          that photos still need to be re-selected (File objects don't
+          serialise). Dismiss button discards the draft. */}
+      {draftRestored && (
+        <div
+          className="mb-6 px-4 py-3 rounded-[6px] text-sm max-w-[760px]"
+          style={{
+            background: 'rgba(47,158,107,0.10)',
+            border: '0.5px solid rgba(47,158,107,0.45)',
+            color: 'var(--text-primary)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
+            lineHeight: 1.5,
+          }}
+        >
+          <span>
+            <strong style={{ color: '#2f9e6b' }}>Draft restored</strong> —
+            your previously typed details are back. You&apos;ll need to
+            re-select photos before you can publish.
+          </span>
+          <button
+            type="button"
+            onClick={discardDraft}
+            style={{
+              background: 'transparent',
+              color: 'var(--text-tertiary)',
+              border: 'none',
+              fontSize: 12,
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              flexShrink: 0,
+              padding: '2px 6px',
+            }}
+          >
+            Discard draft
+          </button>
+        </div>
+      )}
+
+      {/* Top-of-form error */}
       {error && (
         <div
-          className="mb-4 px-4 py-3 rounded-[6px] text-sm"
+          className="mb-6 px-4 py-3 rounded-[6px] text-sm max-w-[760px]"
           style={{
             background: 'rgba(200,16,46,0.08)',
             border: '0.5px solid var(--red)',
@@ -171,200 +1114,1217 @@ export default function NewListingPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Field label="Title">
-          <input
-            type="text"
-            required
-            minLength={5}
-            maxLength={200}
-            value={form.title}
-            onChange={(e) => set('title', e.target.value)}
-            style={inputStyle}
-            placeholder="e.g. Glock 17 Gen 5 — excellent condition"
-          />
-        </Field>
-
-        <Field label="Category">
-          <select
-            required
-            value={form.categoryId}
-            onChange={(e) => set('categoryId', e.target.value)}
-            style={inputStyle}
+      <form
+        data-reveal
+        onSubmit={handlePreview}
+        className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6"
+      >
+        {/* ───── Form column ───── */}
+        <div className="space-y-3 max-w-[820px]">
+          {/* Step 1 — About this item (basics + condition + firearm details) */}
+          <StepAccordion
+            number={1}
+            title="About this item"
+            description="Tell buyers what it is, what shape it's in, and what makes it interesting."
+            status={statusFor(1)}
+            expanded={isOpen(1)}
+            onToggle={() => toggleStep(1)}
+            summary={
+              stepComplete.step1
+                ? `${form.title.trim()} · ${selectedCategory?.name ?? ''} · ${CONDITION_LABELS[form.condition as keyof typeof CONDITION_LABELS]}`.slice(0, 100)
+                : undefined
+            }
+            onContinue={() => advanceFromStep(1)}
+            continueDisabled={!stepComplete.step1}
           >
-            <option value="">Select category…</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Description">
-          <textarea
-            required
-            minLength={10}
-            maxLength={5000}
-            rows={5}
-            value={form.description}
-            onChange={(e) => set('description', e.target.value)}
-            style={{ ...inputStyle, resize: 'vertical' }}
-            placeholder="Describe the item honestly. Include wear, modifications, and any included accessories."
-          />
-        </Field>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Price (R)">
-            <input
-              type="number"
-              required
-              min={1}
-              step="0.01"
-              value={form.price}
-              onChange={(e) => set('price', e.target.value)}
-              style={inputStyle}
-              placeholder="0.00"
-            />
-          </Field>
-
-          <Field label="Listing type">
-            <select
-              value={form.listingType}
-              onChange={(e) => set('listingType', e.target.value)}
-              style={inputStyle}
-            >
-              <option value="BUY_NOW">Buy Now</option>
-              <option value="TAKE_A_SHOT">Take a Shot</option>
-            </select>
-          </Field>
-        </div>
-
-        {form.listingType === 'TAKE_A_SHOT' && (
-          <Field label="Auto-accept threshold (R) — optional">
-            <input
-              type="number"
-              min={1}
-              step="0.01"
-              value={form.autoAcceptThreshold}
-              onChange={(e) => set('autoAcceptThreshold', e.target.value)}
-              style={inputStyle}
-              placeholder="Auto-accept any offer above this amount"
-            />
-          </Field>
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Condition">
-            <select
-              value={form.condition}
-              onChange={(e) => set('condition', e.target.value)}
-              style={inputStyle}
-            >
-              {Object.entries(CONDITION_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Province">
-            <select
-              value={form.province}
-              onChange={(e) => set('province', e.target.value)}
-              style={inputStyle}
-            >
-              {Object.entries(PROVINCE_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-
-        {isFirearm && (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Make">
-                <input
-                  type="text"
-                  value={form.make}
-                  onChange={(e) => set('make', e.target.value)}
-                  style={inputStyle}
-                  placeholder="e.g. Glock"
-                />
-              </Field>
-              <Field label="Model">
-                <input
-                  type="text"
-                  value={form.model}
-                  onChange={(e) => set('model', e.target.value)}
-                  style={inputStyle}
-                  placeholder="e.g. 17 Gen 5"
-                />
-              </Field>
-            </div>
-            <Field label="Calibre">
+            <Field label="Title" required>
               <input
                 type="text"
-                value={form.calibre}
-                onChange={(e) => set('calibre', e.target.value)}
+                required
+                minLength={5}
+                maxLength={200}
+                value={form.title}
+                onChange={(e) => set('title', e.target.value)}
                 style={inputStyle}
-                placeholder="e.g. 9mm"
+                placeholder="e.g. Glock 17 Gen 5 — excellent condition"
               />
             </Field>
-          </>
-        )}
 
-        <Field label="Photos (optional)">
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            multiple
-            onChange={(e) => setImages(Array.from(e.target.files ?? []))}
-            style={{ ...inputStyle, padding: '6px 12px', cursor: 'pointer' }}
-          />
-          {images.length > 0 && (
-            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-              {images.length} file{images.length !== 1 ? 's' : ''} selected
-            </p>
-          )}
-        </Field>
+            <Field
+              label="Category"
+              required
+              hint="Pick the closest top category, then the sub-type."
+            >
+              <CategoryPicker
+                categories={categories}
+                value={form.categoryId || null}
+                onChange={(id) => set('categoryId', id)}
+                secondhandOnly
+              />
+            </Field>
 
-        <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            id="passFeeToBuyer"
-            checked={form.passFeeToBuyer}
-            onChange={(e) => set('passFeeToBuyer', e.target.checked)}
-            style={{ cursor: 'pointer' }}
-          />
-          <label
-            htmlFor="passFeeToBuyer"
-            className="text-sm"
-            style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}
+            <Field label="Condition" required>
+              <PillGroup
+                value={form.condition as keyof typeof CONDITION_LABELS}
+                onChange={(v) => set('condition', v)}
+                options={(
+                  Object.entries(CONDITION_LABELS) as [
+                    keyof typeof CONDITION_LABELS,
+                    string,
+                  ][]
+                ).map(([k, v]) => ({ value: k, label: v }))}
+              />
+            </Field>
+
+            {/* Province isn't asked here — we'll derive it from the
+                seller's pickup address once the delivery section lands.
+                Until then, form.province stays on its default. */}
+
+            {/* No separate make/model/calibre inputs — the AI extracts those
+                from the title + description when it polishes the listing,
+                and the backend infers isFirearm from the category. */}
+
+            <Field label="Description" required>
+              <textarea
+                required
+                minLength={10}
+                maxLength={5000}
+                rows={5}
+                value={form.description}
+                onChange={(e) => {
+                  set('description', e.target.value);
+                  // If the seller starts editing again, drop the AI
+                  // suggestion preview — they're going their own way.
+                  if (suggestion !== null) setSuggestion(null);
+                }}
+                style={{ ...inputStyle, resize: 'vertical' }}
+                placeholder="Describe the item honestly. Include wear, modifications, round count, included accessories, and anything else a serious buyer would ask about."
+              />
+
+              {/* AI tools row — only show the Refine button when there's
+                  no active suggestion (the suggestion box has its own
+                  Use this / Keep original buttons). */}
+              {suggestion === null && (
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={handleEnhance}
+                    disabled={enhancing || form.description.trim().length < 10}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-[6px] text-xs transition-opacity"
+                    style={{
+                      background: 'transparent',
+                      color: 'var(--red)',
+                      border: '0.5px solid var(--red)',
+                      fontWeight: 500,
+                      cursor:
+                        enhancing || form.description.trim().length < 10
+                          ? 'not-allowed'
+                          : 'pointer',
+                      opacity:
+                        enhancing || form.description.trim().length < 10
+                          ? 0.5
+                          : 1,
+                    }}
+                  >
+                    {/* Sparkle icon */}
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden
+                    >
+                      <path d="M10 1l1.6 4.4L16 7l-4.4 1.6L10 13l-1.6-4.4L4 7l4.4-1.6L10 1zM4 13l.8 2.2L7 16l-2.2.8L4 19l-.8-2.2L1 16l2.2-.8L4 13zM16 12l.5 1.5L18 14l-1.5.5L16 16l-.5-1.5L14 14l1.5-.5L16 12z" />
+                    </svg>
+                    {enhancing
+                      ? 'Researching…'
+                      : 'Polish + add specs'}
+                  </button>
+                </div>
+              )}
+
+              {enhanceError && (
+                <p
+                  className="text-xs mt-2"
+                  style={{
+                    color: enhanceError.startsWith('Description already')
+                      ? 'var(--text-tertiary)'
+                      : 'var(--red)',
+                  }}
+                >
+                  {enhanceError}
+                </p>
+              )}
+
+              {/* Suggestion preview — only when Claude returned something
+                  different from the seller's draft. Two bullet sections
+                  (seller bullets + Specs & details) shown verbatim. */}
+              {suggestion && (
+                <div
+                  className="mt-3 rounded-[6px] p-4"
+                  style={{
+                    background: 'var(--bg-inset)',
+                    border: '0.5px solid var(--border)',
+                  }}
+                >
+                  <p
+                    className="text-xs uppercase mb-2"
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      letterSpacing: '0.1em',
+                      fontWeight: 500,
+                    }}
+                  >
+                    Suggested wording
+                  </p>
+                  <div
+                    className="text-sm"
+                    style={{
+                      color: 'var(--text-primary)',
+                      lineHeight: 1.6,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {suggestion}
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      type="button"
+                      onClick={handleUseSuggestion}
+                      className="px-4 py-2 rounded-[6px] text-xs"
+                      style={{
+                        background: 'var(--red)',
+                        color: '#fff',
+                        border: 'none',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Use this
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleKeepOriginal}
+                      className="px-4 py-2 rounded-[6px] text-xs"
+                      style={{
+                        background: 'transparent',
+                        color: 'var(--text-secondary)',
+                        border: '0.5px solid var(--border)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Keep original
+                    </button>
+                  </div>
+                </div>
+              )}
+            </Field>
+          </StepAccordion>
+
+          {/* Step 2 — Listing type + pricing */}
+          <StepAccordion
+            number={2}
+            title="How are you selling?"
+            description="Each option has different rules. You can always change later."
+            status={statusFor(2)}
+            expanded={isOpen(2)}
+            onToggle={() => toggleStep(2)}
+            summary={
+              stepComplete.step2
+                ? `${
+                    form.listingType === 'BUY_NOW'
+                      ? 'Marketplace'
+                      : form.listingType === 'AUCTION'
+                        ? 'Auction'
+                        : 'Take a Shot'
+                  }${form.price ? ` · R${form.price}` : ''}`
+                : undefined
+            }
+            onContinue={() => advanceFromStep(2)}
+            continueDisabled={!stepComplete.step2}
           >
-            Pass payment processing fee to buyer
-          </label>
+            <Field
+              label="Listing type"
+              required
+              tipTitle="Three ways to sell"
+              tip={
+                <>
+                  <strong>Marketplace:</strong> fixed price, buyer hits Buy
+                  and pays. Fastest sale. <br />
+                  <strong>Auction:</strong> timed bidding with snipe
+                  protection. Best for items where value is uncertain.
+                  <br />
+                  <strong>Take a Shot:</strong> buyers send offers; you
+                  accept, decline, or counter once. Good when you&apos;re
+                  open to negotiation.
+                </>
+              }
+            >
+              <PillGroup
+                value={
+                  form.listingType as 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT'
+                }
+                onChange={(v) => set('listingType', v)}
+                options={[
+                  { value: 'BUY_NOW', label: 'Marketplace' },
+                  { value: 'AUCTION', label: 'Auction' },
+                  { value: 'TAKE_A_SHOT', label: 'Take a Shot' },
+                ]}
+              />
+            </Field>
+
+            {/* Per-type explanation banner */}
+            {form.listingType === 'BUY_NOW' && (
+              <ExplainBanner
+                title="Marketplace"
+                body="Fixed price. Buyer pays the listed amount and you ship. Fastest path to sale."
+              />
+            )}
+            {form.listingType === 'AUCTION' && (
+              <ExplainBanner
+                title="Auction"
+                body="Timed bidding. Bidders set a max; the system bids the minimum increment for them. Bids in the last 2 minutes extend the end time by 2 minutes."
+              />
+            )}
+            {form.listingType === 'TAKE_A_SHOT' && (
+              <ExplainBanner
+                title="Take a Shot"
+                body="Buyers name their price. You get one counter-offer. Optional hidden auto-accept threshold lets the system close instantly."
+              />
+            )}
+
+            {/* ─── Pricing UI per surface ──────────────────────────
+                BUY_NOW  → single Price input.
+                AUCTION  → see auction block below; starting bid is
+                           either typed (no-reserve) or derived from
+                           the reserve at 70% (with-reserve).
+                TAKE_A_SHOT → handled separately under its own block. */}
+            {form.listingType === 'BUY_NOW' && (
+              <Field
+                label="Price"
+                required
+                hint="Whole rands. Cents are accepted but rarely used."
+              >
+                <div style={{ position: 'relative' }}>
+                  <span
+                    style={{
+                      position: 'absolute',
+                      left: 12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: 'var(--text-tertiary)',
+                      fontSize: 14,
+                    }}
+                  >
+                    R
+                  </span>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    step="0.01"
+                    value={form.price}
+                    onChange={(e) => set('price', e.target.value)}
+                    style={{ ...inputStyle, paddingLeft: 26 }}
+                    placeholder="0.00"
+                  />
+                </div>
+                <PriceBreakdown
+                  priceCents={Math.round((parseFloat(form.price) || 0) * 100)}
+                />
+              </Field>
+            )}
+
+            {/* Auction block — Duration + Reserve + Starting bid.
+                When the seller sets a reserve, the starting bid is
+                hidden + derived as floor(reserve * 0.7). When they
+                leave reserve blank, they type the starting bid
+                directly. Buy Now removed per operator decision. */}
+            {form.listingType === 'AUCTION' && (
+              <>
+                <Field label="Duration" required>
+                  <PillGroup
+                    value={form.durationDays}
+                    onChange={(v) => set('durationDays', v)}
+                    options={[
+                      { value: '3', label: '3 days' },
+                      { value: '5', label: '5 days' },
+                      { value: '7', label: '7 days' },
+                      { value: '14', label: '14 days' },
+                    ]}
+                  />
+                </Field>
+
+                <Field
+                  label="Reserve price"
+                  hint="Hidden from bidders. Leave blank for no reserve — you'll then type the starting bid directly below."
+                  tip={
+                    <>
+                      The lowest price you&apos;ll accept. Hidden from
+                      bidders. Bids count toward closing the sale only
+                      once they meet this number. When set, the starting
+                      bid is automatically 30% below your reserve so
+                      bidding can start low without giving the number
+                      away.
+                    </>
+                  }
+                >
+                  <PriceInput
+                    value={form.reservePrice}
+                    onChange={(v) => set('reservePrice', v)}
+                    placeholder="No reserve"
+                  />
+                </Field>
+
+                {/* Buy Now — opt-in. Seller ticks the box, then types
+                    the price. Unticking blanks the value so we don't
+                    submit a stale figure if they change their mind. */}
+                <div>
+                  <label
+                    className="flex items-start gap-2 cursor-pointer"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.offerBuyNow}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setForm((f) => ({
+                          ...f,
+                          offerBuyNow: checked,
+                          buyNowPrice: checked ? f.buyNowPrice : '',
+                        }));
+                      }}
+                      style={{
+                        accentColor: 'var(--red)',
+                        marginTop: 3,
+                      }}
+                    />
+                    <span className="text-sm">
+                      Offer Buy Now
+                      <span
+                        className="block text-xs mt-0.5"
+                        style={{ color: 'var(--text-tertiary)' }}
+                      >
+                        Lets a buyer skip bidding and buy outright — only
+                        honoured while no bids have landed.
+                      </span>
+                    </span>
+                  </label>
+
+                  {form.offerBuyNow && (
+                    <div className="mt-3 ml-6">
+                      <Field
+                        label="Buy Now price"
+                        hint="Shown on the listing as 'Buy Now — R{X}'. Must exceed the starting bid."
+                      >
+                        <PriceInput
+                          value={form.buyNowPrice}
+                          onChange={(v) => set('buyNowPrice', v)}
+                          placeholder="0.00"
+                        />
+                      </Field>
+                    </div>
+                  )}
+                </div>
+
+                {form.reservePrice ? (
+                  // ─── Reserve set → starting bid is derived ────
+                  (() => {
+                    const reserveCents = Math.round(
+                      parseFloat(form.reservePrice || '0') * 100,
+                    );
+                    const startCents = Math.floor(reserveCents * 0.7);
+                    return (
+                      <div
+                        style={{
+                          background: 'var(--bg-inset)',
+                          border: '0.5px solid var(--border)',
+                          borderRadius: 6,
+                          padding: '12px 14px',
+                        }}
+                      >
+                        <p
+                          className="text-xs uppercase mb-1"
+                          style={{
+                            color: 'var(--text-tertiary)',
+                            letterSpacing: '0.05em',
+                          }}
+                        >
+                          Starting bid (calculated)
+                        </p>
+                        <p
+                          className="text-lg"
+                          style={{
+                            color: 'var(--text-primary)',
+                            fontWeight: 500,
+                          }}
+                        >
+                          R{(startCents / 100).toLocaleString('en-ZA', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </p>
+                        <p
+                          className="text-xs mt-1 mb-3"
+                          style={{ color: 'var(--text-tertiary)' }}
+                        >
+                          Set at 30% below your reserve. Buyers see this
+                          as the opening bid; we never reveal the
+                          reserve itself.
+                        </p>
+                        {/* Payout preview is computed on the RESERVE,
+                            not the starting bid. The starting bid is a
+                            hook to get bidding going — what the seller
+                            actually cares about is what they'll receive
+                            IF the auction reaches reserve. */}
+                        <p
+                          className="text-xs uppercase mb-1 mt-4"
+                          style={{
+                            color: 'var(--text-tertiary)',
+                            letterSpacing: '0.05em',
+                          }}
+                        >
+                          If the auction reaches your reserve of R
+                          {(reserveCents / 100).toLocaleString('en-ZA', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </p>
+                        <PriceBreakdown priceCents={reserveCents} />
+                      </div>
+                    );
+                  })()
+                ) : (
+                  // ─── No reserve → seller types starting bid ──
+                  <Field
+                    label="Starting bid"
+                    required
+                    hint="Whole rands. Cents are accepted but rarely used."
+                  >
+                    <div style={{ position: 'relative' }}>
+                      <span
+                        style={{
+                          position: 'absolute',
+                          left: 12,
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          color: 'var(--text-tertiary)',
+                          fontSize: 14,
+                        }}
+                      >
+                        R
+                      </span>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        step="0.01"
+                        value={form.price}
+                        onChange={(e) => set('price', e.target.value)}
+                        style={{ ...inputStyle, paddingLeft: 26 }}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <PriceBreakdown
+                      priceCents={Math.round(
+                        (parseFloat(form.price) || 0) * 100,
+                      )}
+                    />
+                  </Field>
+                )}
+              </>
+            )}
+
+            {/* Take a Shot extras */}
+            {form.listingType === 'TAKE_A_SHOT' && (
+              <Field
+                label="Auto-accept threshold"
+                hint="Hidden from buyers. Any offer at or above this amount is accepted instantly."
+                tip={
+                  <>
+                    A private floor that closes the sale automatically.
+                    If a buyer offers at or above this number, the
+                    system accepts on your behalf and sends them
+                    straight to checkout — no waiting for you to log
+                    in. Leave blank if you want to review every offer
+                    yourself.
+                  </>
+                }
+              >
+                <PriceInput
+                  value={form.autoAcceptThreshold}
+                  onChange={(v) => set('autoAcceptThreshold', v)}
+                  placeholder="Optional"
+                />
+                {/* Explicit "this is binding" warning only when the
+                    seller actually sets a value — the warning would
+                    be noise if the field is blank. */}
+                {form.autoAcceptThreshold && (
+                  <p
+                    className="text-xs mt-2 px-2 py-1.5 rounded"
+                    style={{
+                      background: 'rgba(245,158,11,0.10)',
+                      border: '0.5px solid rgba(245,158,11,0.40)',
+                      color: 'var(--text-secondary)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    <strong style={{ color: '#f59e0b' }}>Heads up —</strong>{' '}
+                    offers at or above this price become binding
+                    sales the moment the buyer hits send. You
+                    won&apos;t review them. Leave blank if you want to
+                    accept every offer manually.
+                  </p>
+                )}
+              </Field>
+            )}
+          </StepAccordion>
+
+          {/* Step 3 — Delivery & address */}
+          <StepAccordion
+            number={3}
+            title="Delivery & address"
+            description={
+              isFirearm
+                ? 'Firearms must move through a SAPS-licensed dealer. Pick one or both arrangement options below, then add your pickup address.'
+                : 'Pick which couriers you offer, then add the pickup address. We use it to suggest your nearest Pudo locker.'
+            }
+            status={statusFor(3)}
+            expanded={isOpen(3)}
+            onToggle={() => toggleStep(3)}
+            summary={
+              stepComplete.step3
+                ? `${shippingMethods.length} method${shippingMethods.length === 1 ? '' : 's'} · ${pickupAddress.city || 'pickup set'}`
+                : undefined
+            }
+            onContinue={() => advanceFromStep(3)}
+            continueDisabled={!stepComplete.step3}
+          >
+            {/* Parcel info — captured first so the delivery picker below
+                can disable PUDO if the parcel overshoots locker limits.
+                Hidden for firearms because DEALER_TRANSFER and
+                PRIVATE_ARRANGE don't use the courier API. */}
+            {!isFirearm && (
+              <Field
+                label="Parcel weight & size"
+                required
+                hint="We use this to quote real Pudo / TCG rates at checkout. Pudo's largest locker box is 60 × 41 × 69 cm at 20 kg — anything bigger ships TCG door-to-door."
+                tip={
+                  <>
+                    Used to quote couriers in real time. Pudo (locker
+                    drops) is cheapest and capped at 60 × 41 × 69 cm /
+                    20 kg. Anything bigger or heavier ships via TCG
+                    door-to-door.
+                  </>
+                }
+              >
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <SmallNumberField
+                    label="Weight (kg)"
+                    value={parcel.weightKg}
+                    onChange={(v) => setParcel((p) => ({ ...p, weightKg: v }))}
+                    placeholder="2.5"
+                  />
+                  <SmallNumberField
+                    label="Length (cm)"
+                    value={parcel.lengthCm}
+                    onChange={(v) => setParcel((p) => ({ ...p, lengthCm: v }))}
+                    placeholder="40"
+                  />
+                  <SmallNumberField
+                    label="Width (cm)"
+                    value={parcel.widthCm}
+                    onChange={(v) => setParcel((p) => ({ ...p, widthCm: v }))}
+                    placeholder="30"
+                  />
+                  <SmallNumberField
+                    label="Height (cm)"
+                    value={parcel.heightCm}
+                    onChange={(v) => setParcel((p) => ({ ...p, heightCm: v }))}
+                    placeholder="10"
+                  />
+                </div>
+                {isOversizeForPudo && (
+                  <p
+                    className="text-xs mt-2"
+                    style={{
+                      color: '#f59e0b',
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    Too big for a Pudo locker — only door-to-door (TCG)
+                    will be offered to buyers. Buyers will see this listing
+                    as &ldquo;courier only&rdquo;.
+                  </p>
+                )}
+              </Field>
+            )}
+
+            <Field
+              label="Delivery options"
+              required
+              tipTitle="Delivery options"
+              tip={
+                isFirearm ? (
+                  <>
+                    <strong>Dealer-stocked transfer:</strong> you drop the
+                    firearm at your registered dealer, the buyer collects
+                    from theirs. Both must be SAPS-licensed. <br />
+                    <strong>Arrange privately:</strong> you and the buyer
+                    meet at a dealer to do the licence transfer in person.
+                    Use this for local sales.
+                  </>
+                ) : (
+                  <>
+                    <strong>Pudo locker-to-locker:</strong> cheapest. You
+                    drop at any Pudo locker, buyer picks any locker to
+                    collect. Self-service, 24/7. Capped at 60 × 41 × 69 cm
+                    / 20 kg. <br />
+                    <strong>The Courier Guy (TCG):</strong> door-to-door
+                    pickup and delivery. Pricier but works for any size or
+                    weight.
+                  </>
+                )
+              }
+            >
+              <MultiSelectPillGroup<ShippingMethod>
+                value={shippingMethods}
+                onChange={setShippingMethods}
+                options={
+                  isFirearm
+                    ? [
+                        {
+                          value: 'DEALER_TRANSFER',
+                          label: 'Dealer-stocked transfer',
+                          description:
+                            'You drop with your dealer; buyer collects from theirs.',
+                        },
+                        {
+                          value: 'PRIVATE_ARRANGE',
+                          label: 'Arrange privately',
+                          description:
+                            'Buyer + seller meet at a dealer to do the transfer in person.',
+                        },
+                      ]
+                    : [
+                        {
+                          value: 'PUDO',
+                          label: isOversizeForPudo
+                            ? 'Pudo locker (unavailable — too large)'
+                            : 'Pudo locker-to-locker',
+                          description: isOversizeForPudo
+                            ? 'Parcel exceeds Pudo locker box limits.'
+                            : 'Self-service drop & collect.',
+                          disabled: isOversizeForPudo,
+                        },
+                        {
+                          value: 'TCG',
+                          label: 'The Courier Guy',
+                          description: 'Door-to-door courier.',
+                        },
+                      ]
+                }
+              />
+            </Field>
+
+            <Field
+              label="Pickup address"
+              required
+              hint="Search for your address, then check the details below."
+            >
+              <AddressAutocomplete
+                value={
+                  pickupAddress.street
+                    ? `${pickupAddress.street}${pickupAddress.suburb ? `, ${pickupAddress.suburb}` : ''}`
+                    : ''
+                }
+                onChange={(addr) => {
+                  // Free-text typing in the autocomplete box mirrors into
+                  // street if Google hasn't picked anything yet.
+                  if (!pickupAddress.street) {
+                    setPickupAddress((p) => ({ ...p, street: addr }));
+                  }
+                }}
+                onComponents={handleAddressComponents}
+              />
+              <div className="mt-3">
+                <ManualAddressFields
+                  value={pickupAddress}
+                  onChange={setPickupAddress}
+                  idPrefix="pickup"
+                />
+              </div>
+            </Field>
+
+            {/* Friendly note for PUDO sellers — no locker selection here.
+                The seller drops at any Pudo locker using the delivery PIN
+                that gets issued at dispatch. */}
+            {shippingMethods.includes('PUDO') && (
+              <p
+                className="text-xs"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  lineHeight: 1.5,
+                }}
+              >
+                Pudo drop-off: once the listing sells you'll get a delivery
+                PIN — take the parcel to any Pudo locker, scan the PIN, and
+                load it. The buyer picks the destination locker at checkout.
+              </p>
+            )}
+          </StepAccordion>
+
+          {/* Step 4 — Photos */}
+          <StepAccordion
+            number={4}
+            title="Photos"
+            description="Buyers click photos first. Bright, sharp, multiple angles. 1–5 photos, drag to reorder."
+            status={statusFor(4)}
+            expanded={isOpen(4)}
+            onToggle={() => toggleStep(4)}
+            summary={
+              stepComplete.step4
+                ? `${images.length} photo${images.length === 1 ? '' : 's'} — cover: ${images[0]?.name ?? '—'}`
+                : undefined
+            }
+            hideContinue
+          >
+            <PhotoDropzone
+              files={images}
+              onChange={setImages}
+              minFiles={1}
+              maxFiles={5}
+            />
+          </StepAccordion>
+
+          {/* Preview listing — enabled once every step is complete.
+              The audit usually already ran in the background (on Step 1
+              Continue + on photo change), so clicking this just opens
+              the modal with the cached verdict. */}
+          {(() => {
+            const disabled =
+              previewLoading || submitting || auditing || !allComplete;
+            const completedCount = [
+              stepComplete.step1,
+              stepComplete.step2,
+              stepComplete.step3,
+              stepComplete.step4,
+            ].filter(Boolean).length;
+            // Number of issues the cached audit raised. We only count
+            // when the decision is NOT a clean APPROVE — auto-fix /
+            // human-review / reject all warrant the seller's attention.
+            const issueCount =
+              auditResult && auditResult.decision !== 'APPROVE'
+                ? auditResult.reasons.length
+                : 0;
+            const previewBtnLabel = previewLoading
+              ? 'Opening preview…'
+              : auditing
+                ? 'Checking…'
+                : allComplete
+                  ? issueCount > 0
+                    ? `Preview listing (${issueCount} ${issueCount === 1 ? 'issue' : 'issues'})`
+                    : 'Preview listing'
+                  : `Complete all 4 steps (${completedCount}/4)`;
+            return (
+              <div className="mt-2">
+                <div className="flex gap-3 items-start">
+                  <button
+                    type="submit"
+                    disabled={disabled}
+                    className="flex-1 py-3.5 rounded-[6px] text-sm transition-opacity"
+                    style={{
+                      background: disabled
+                        ? 'var(--bg-inset)'
+                        : issueCount > 0
+                          ? '#f59e0b'
+                          : 'var(--red)',
+                      color: disabled ? 'var(--text-tertiary)' : '#fff',
+                      fontWeight: 500,
+                      cursor: disabled ? 'not-allowed' : 'pointer',
+                      border: 'none',
+                    }}
+                  >
+                    {previewBtnLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => router.back()}
+                    className="px-5 py-3.5 rounded-[6px] text-sm"
+                    style={{
+                      background: 'transparent',
+                      color: 'var(--text-secondary)',
+                      border: '0.5px solid var(--border)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {!allComplete && (
+                  <p
+                    className="text-xs mt-2 text-center"
+                    style={{ color: 'var(--text-tertiary)' }}
+                  >
+                    Fill out all four steps above to enable review. We&apos;ll
+                    check your listing before it goes live.
+                  </p>
+                )}
+                {previousAttemptHashes.length > 0 && (
+                  <p
+                    className="text-xs mt-2 text-center"
+                    style={{ color: '#f59e0b' }}
+                  >
+                    Attempt {previousAttemptHashes.length + 1} — make sure
+                    you fixed the issues from your last review.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full py-3 rounded-[6px] text-sm"
+        {/* ───── Sidebar ───── */}
+        <aside className="hidden lg:block">
+          <div
+            className="sticky top-20 rounded-[8px] p-5 space-y-5"
+            style={{
+              background: 'var(--bg-card)',
+              border: '0.5px solid var(--border)',
+            }}
+          >
+            <div>
+              <p
+                className="text-xs uppercase mb-3"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  letterSpacing: '0.1em',
+                }}
+              >
+                Tips for a faster sale
+              </p>
+              <ul
+                className="text-xs space-y-2"
+                style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}
+              >
+                <li>
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    Be specific.
+                  </strong>{' '}
+                  Detailed titles beat generic ones — include the make,
+                  model, year, and condition where relevant.
+                </li>
+                <li>
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    Photograph in daylight.
+                  </strong>{' '}
+                  Plain background, several angles, any flaws shown clearly.
+                </li>
+                <li>
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    Be honest about condition.
+                  </strong>{' '}
+                  Disclose wear, scratches, or missing parts upfront — it
+                  builds trust and avoids returns.
+                </li>
+                <li>
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    No contact info in the description.
+                  </strong>{' '}
+                  Phone numbers and emails are auto-stripped to keep
+                  every sale on-platform and protected.
+                </li>
+              </ul>
+            </div>
+
+            <hr style={{ border: 'none', borderTop: '0.5px solid var(--border)' }} />
+
+            <div>
+              <p
+                className="text-xs uppercase mb-3"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  letterSpacing: '0.1em',
+                }}
+              >
+                How you get paid
+              </p>
+              <ol
+                className="text-xs space-y-2"
+                style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}
+              >
+                <li>
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    Buyer pays, funds are held.
+                  </strong>{' '}
+                  When the sale closes, payment is held safely by Gun
+                  Galore — neither side can pull out.
+                </li>
+                <li>
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    You dispatch.
+                  </strong>{' '}
+                  Ship within 48 hours via Pudo or The Courier Guy, or
+                  drop at your dealer for firearm transfers.
+                </li>
+                <li>
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    Buyer confirms delivery.
+                  </strong>{' '}
+                  Once they accept the item, payment is released —
+                  usually within a day of arrival.
+                </li>
+                <li>
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    Payout to your bank.
+                  </strong>{' '}
+                  Funds land in your verified bank account within 2-3
+                  business days of release. Fees (and our commission)
+                  are deducted automatically.
+                </li>
+              </ol>
+            </div>
+          </div>
+        </aside>
+      </form>
+      </PageReveal>
+
+      {/* Preview modal — driven by previewResult from POST /listings/preview */}
+      {previewResult && (
+        <ListingPreviewModal
+          preview={previewResult}
+          snapshot={
+            {
+              title: form.title.trim(),
+              description: form.description.trim(),
+              price: form.price,
+              listingType: form.listingType as PreviewSnapshot['listingType'],
+              condition: form.condition as PreviewSnapshot['condition'],
+              province: form.province as PreviewSnapshot['province'],
+              make: '',
+              model: '',
+              calibre: '',
+              category: selectedCategory,
+              imageBlobs,
+            } satisfies PreviewSnapshot
+          }
+          publishing={submitting}
+          publishError={publishError}
+          onEdit={handleClosePreview}
+          onPublish={handlePublish}
+        />
+      )}
+
+      {/* Post-publish profile-completion gate. Pops when the listing
+          is created AND the seller hasn't completed their profile
+          (banking + ID + name). Cannot be dismissed — onComplete is
+          the only exit, and it triggers the deferred redirect to the
+          newly-published listing. */}
+      {pendingRedirectId && currentMe && (
+        <ProfileCompletionModal
+          me={currentMe}
+          onComplete={() => {
+            const id = pendingRedirectId;
+            setPendingRedirectId(null);
+            router.push(`/listings/${id}`);
+          }}
+        />
+      )}
+    </main>
+  );
+}
+
+// ─────────────────────────── Small sub-components ────────────────────
+
+// Live breakdown of what the seller actually receives. The payment
+// processing fee is paid by the BUYER at checkout (and we keep it), so
+// the seller never sees it in this breakdown — only the tiered platform
+// commission comes off the listing price.
+function PriceBreakdown({ priceCents }: { priceCents: number }) {
+  if (priceCents <= 0) return null;
+  const commission = calcCommissionCents(priceCents);
+  const payout = Math.max(0, priceCents - commission);
+  const commissionPct = ((commission / priceCents) * 100).toFixed(1);
+  // Tell the seller when the R30 minimum kicked in so they don't think
+  // the band rate is broken — common on cheap (< ~R350) listings.
+  const hitMinimum =
+    commission === MIN_COMMISSION_CENTS &&
+    commission > calcUnflooredCommissionCents(priceCents);
+
+  return (
+    <div
+      className="rounded-[6px] p-4 mt-3"
+      style={{
+        background: 'var(--bg-inset)',
+        border: '0.5px solid var(--border)',
+      }}
+    >
+      <p
+        className="text-xs uppercase mb-3"
+        style={{
+          color: 'var(--text-tertiary)',
+          letterSpacing: '0.08em',
+        }}
+      >
+        You receive
+      </p>
+      <BreakdownRow label="Listing price" value={formatRand(priceCents)} />
+      <BreakdownRow
+        label={
+          hitMinimum
+            ? 'Platform commission (R30 minimum)'
+            : `Platform commission (~${commissionPct}%, tiered)`
+        }
+        value={`− ${formatRand(commission)}`}
+        muted
+      />
+      <div
+        className="flex justify-between items-baseline pt-2 mt-2"
+        style={{ borderTop: '0.5px solid var(--border)' }}
+      >
+        <span
+          className="text-sm"
+          style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
+        >
+          Your payout
+        </span>
+        <span
+          className="text-base"
           style={{
-            background: submitting ? 'var(--bg-inset)' : 'var(--red)',
-            color: submitting ? 'var(--text-tertiary)' : '#fff',
+            color: 'var(--text-primary)',
             fontWeight: 500,
-            cursor: submitting ? 'not-allowed' : 'pointer',
-            border: 'none',
           }}
         >
-          {submitting ? 'Creating…' : 'Create listing'}
-        </button>
-      </form>
-    </main>
+          {formatRand(payout)}
+        </span>
+      </div>
+      <div
+        className="text-xs mt-3 pt-3"
+        style={{
+          color: 'var(--text-tertiary)',
+          lineHeight: 1.55,
+          borderTop: '0.5px solid var(--border)',
+        }}
+      >
+        <p
+          className="mb-1"
+          style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
+        >
+          How the platform fee works
+        </p>
+        <ul style={{ listStyle: 'disc', paddingLeft: 18, margin: 0 }}>
+          {COMMISSION_BANDS.map((b) => (
+            <li key={b.label}>{b.label}</li>
+          ))}
+          <li>
+            Minimum platform fee:{' '}
+            <span style={{ color: 'var(--text-secondary)' }}>
+              R{(MIN_COMMISSION_CENTS / 100).toFixed(0)} per sale
+            </span>
+          </li>
+          <li>
+            Top Seller tier gets a 0.5% discount once you qualify.
+          </li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// Same commission math as calcCommissionCents but WITHOUT the R30 floor,
+// used by PriceBreakdown to detect when the floor kicked in (so we can
+// surface "R30 minimum" instead of a percentage label that looks weird
+// for tiny listings).
+function calcUnflooredCommissionCents(priceCents: number): number {
+  let commission = 0;
+  let remaining = priceCents;
+  for (const band of COMMISSION_BANDS) {
+    if (remaining <= 0) break;
+    const chunk = isFinite(band.limit)
+      ? Math.min(remaining, band.limit)
+      : remaining;
+    commission += chunk * band.rate;
+    remaining -= chunk;
+  }
+  return Math.max(0, Math.round(commission));
+}
+
+function BreakdownRow({
+  label,
+  value,
+  muted,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex justify-between text-xs py-1">
+      <span style={{ color: 'var(--text-tertiary)' }}>{label}</span>
+      <span
+        style={{
+          color: muted ? 'var(--text-secondary)' : 'var(--text-primary)',
+          fontFamily: 'inherit',
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function ExplainBanner({ title, body }: { title: string; body: string }) {
+  return (
+    <div
+      className="rounded-[6px] px-4 py-3 text-xs"
+      style={{
+        background: 'var(--bg-inset)',
+        border: '0.5px solid var(--border)',
+        color: 'var(--text-tertiary)',
+        lineHeight: 1.6,
+      }}
+    >
+      <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+        {title}
+      </span>{' '}
+      — {body}
+    </div>
+  );
+}
+
+function PriceInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <span
+        style={{
+          position: 'absolute',
+          left: 12,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          color: 'var(--text-tertiary)',
+          fontSize: 14,
+        }}
+      >
+        R
+      </span>
+      <input
+        type="number"
+        min={1}
+        step="0.01"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ ...inputStyle, paddingLeft: 26 }}
+        placeholder={placeholder}
+      />
+    </div>
   );
 }

@@ -216,6 +216,19 @@ never printed.
 10. **No public seller profile page** and **no dealer directory
     page.** Seller reputation surfaces only as the tier badge and
     rating on the listing itself.
+11. **Never expose real names to other users.** All public-facing
+    surfaces (bid history, listing seller card, offers, reviews,
+    Q&A, featured-slot occupants, "high bidder" displays, /my/sales
+    buyer attribution) show the user's `username` only — never
+    `firstName` / `lastName` / initials, never with an `@` prefix.
+    Real names exist only inside KYC flows, paid-transaction
+    internals (dealer transfer paperwork, dispatch addresses),
+    PRIVATE_ARRANGE post-consent contact-reveal, admin panels, and
+    the signed-in user seeing their own data. Fallback for users
+    without a username: "Anonymous bidder" / "Anonymous seller" —
+    never a first name. Usernames exist specifically to stop
+    platform users finding each other on social media and bypassing
+    Gun Galore.
 
 ---
 
@@ -265,13 +278,16 @@ stabilised before the next.
 13. **Claude AI Listing Moderation** — every new listing reviewed
     by Claude before going live.
 14. **Webhooks** — TCG + Pudo shipping webhooks.
-15. **PWA Phase 1** — installability + offline.
+15. **PWA Phases A–C** — installability + icons + conservative SW
+    with offline fallback (done; see PWA section for state).
 16. **SEO**.
 17. **Odoo accounting integration**.
 18. **M3 New Store**, then **M4 Swap** — after M1/M2/M5 are live and
     stable.
 
-PWA Phase 2 (push notifications) is deferred to its own later phase.
+PWA Phase D (web push notifications) and Phase E (install-prompt
+UX polish, image + API caching strategies layered onto the
+conservative SW) are deferred to their own later phases.
 
 ---
 
@@ -316,6 +332,33 @@ visible, never hidden in a hamburger on desktop.
 `dealers` — these features are dropped. Every other route maps to a
 feature in this document.
 
+### Page background + reveal animation (HOUSE STANDARD)
+
+Every signed-in page (Sell, Profile, Edit Profile, surface views like
+Marketplace/Auctions/Take a Shot/Competitions, Dashboard, all
+sub-pages we add later) wraps its `<main>` with these two components:
+
+```tsx
+<main className="relative ..." style={{ zIndex: 1 }}>
+  <PageBackground imageSrc="/<scene>.jpg" opacity={0.18} />
+  <PageReveal>
+    {/* sections, each with `data-reveal` */}
+  </PageReveal>
+</main>
+```
+
+- `<PageBackground>` is a faint full-viewport photo with a dark tint
+  and radial vignette. Use whichever scene fits the route (`/setting.jpg`
+  for settings, `/marketplace.jpg` for the marketplace surface, etc.).
+  Opacity `0.18` is the house value — don't bump without a reason.
+- `<PageReveal>` defaults to `delay=0.5`, `duration=2.5`, `variant="random"`.
+  Don't pass these unless a specific page needs to override. The random
+  variant means the user sees a fresh keyframe (`slide-up`,
+  `scale-in`, `slide-right`, or `blur-in`) per page-load.
+- Mark every direct-child block that should animate with the
+  `data-reveal` attribute. The scoped CSS matches by `:nth-of-type` and
+  ramps each element's `animation-delay` by `stagger` (default 0.18s).
+
 ---
 
 ## Logo Rules — Never Break These
@@ -329,24 +372,36 @@ feature in this document.
 
 ---
 
-## Commission Model (LOCKED)
+## Commission Model
 
 Marginal tiers, tax-bracket style — implemented in
-`backend/src/modules/payments/fee.calculator.ts`:
+`backend/src/payments/fee.calculator.ts`. Reduced 2026-05-20 by 1pp
+across the board and a R30 minimum platform fee was added.
 
 | Band | Rate |
 |------|------|
-| First R5,000 | 10% |
-| R5,001 – R20,000 | 8% |
-| R20,001 – R100,000 | 6% |
-| Above R100,000 | 4% |
+| First R5,000 | 9% |
+| R5,001 – R20,000 | 7% |
+| R20,001 – R100,000 | 5% |
+| Above R100,000 | 3% |
 
-- No minimum fees.
-- **Absorb-only model:** commission is always deducted from the
+- **Minimum platform fee:** R30 per sale. Floor never exceeds the
+  listing price itself.
+- **Absorb-only commission:** commission is always deducted from the
   seller's payout.
-- The seller's only fee choice at listing creation is who pays the
-  payment-processing fee — `passFeeToBuyer` (Boolean).
+- **The BUYER pays the payment-processing fee** (Peach's
+  ~3.5% + R1.50). It is added to the buyer's total at checkout, and
+  the platform keeps it — no part of it flows back to the seller.
+  `passFeeToBuyer` on `Listing` is hardcoded `true` in the Sell form;
+  it is not exposed in the UI.
+- **Never show the processing fee to the seller** anywhere — not in
+  the Sell-form breakdown, the order page, the payout statement, or
+  the trust dashboard. From the seller's perspective the only
+  deduction is the platform commission.
 - Top Seller tier gets a 0.5% commission discount.
+- The Sell form shows a live "you receive" breakdown below the price
+  input: `Listing price − Platform commission = Your payout`.
+  Nothing else.
 
 ---
 
@@ -488,6 +543,101 @@ them to enter it themselves in the Peach checkout.
 - **Non-payment** → strike; the offer passes to the next bidder
   above reserve only. Three strikes → suspension.
 - Watchlist + alerts supported.
+
+### Proxy resolution rules (LOCKED)
+
+- **eBay-style dual-row history.** When a bid triggers an existing
+  proxy to counter, the system writes TWO `Bid` rows in the same
+  transaction: the new bidder's actual attempt + a separate row for
+  the proxy holder's auto-counter (attributed to them, not the
+  loser). Symmetrically, when a new bidder beats an existing proxy,
+  the system writes the loser's "last stand" row at their max
+  BEFORE the winner's row. `bidCount` increments by 2 on dual-row
+  events so the count matches visible rows. Legacy pre-fix rows
+  (where `amount > maxAmount`) are detectable via the
+  `wasCountered` flag exposed in the auction state API.
+- **One-shot ("Place Bid") respects existing proxies.** Posting
+  R150 cannot defeat a stored max of R500 — the proxy auto-counters
+  and the one-shot bidder is outbid at the visible amount the
+  proxy can reach. Place Bid only wins if its amount strictly
+  exceeds `prevHighMax`.
+- **Ties (equal max) go to the earlier bidder.** Falls through to
+  the proxy-counter branch; both rows recorded at the tied amount.
+- **OUTBID banner** on listing detail when the signed-in user
+  previously bid but is no longer the high bidder. Copy
+  distinguishes "matched your max — ties go to whoever bid first"
+  vs "went above your max", so the user knows which raise will help.
+- **Cancel proxy:** `POST /api/auctions/:listingId/cancel-proxy`
+  writes a new Bid row with `amount = maxAmount = current visible`,
+  leaving the user as high bidder but with zero proxy headroom.
+  Reversible — they re-raise via Auto Bid.
+- **Per-user proxy state:** `GET /api/auctions/:listingId/me`
+  returns `{ hasBid, maxAmount, isHighBidder, proxyActive }`.
+  Drives the green "Auto Bid · ACTIVE · R{maxAmount} (Raise)"
+  button label on the listing detail page.
+- **Current high bidder name** is included in `getAuctionState`
+  response as `currentBidderName` (username only — never real name).
+  Drives the "High bidder: You ✓ / @username" line under the
+  current bid amount.
+
+---
+
+## Featured Slots (Ad Surface)
+
+A paid placement system, separate from the M2 auction module —
+sellers bid for one of 10 rotating advertising slots that surface
+on every browse page (rail) and the homepage. Built across
+`backend/src/featured/` + `frontend/app/featured/` +
+`frontend/components/featured-rail.tsx`.
+
+### Slot lifecycle
+
+`VACANT → AUCTION_RUNNING → BIND_WINDOW → OCCUPIED → VACANT` —
+managed by the per-minute `featuredTick` cron in
+`tasks.service.ts`.
+
+- **Auction opens** the moment a slot becomes vacant (no scheduled
+  pre-auction). `closesAt` starts as null — the 24h countdown only
+  begins on the first bid (`bidWindowSec`, default 86400).
+- **Subsequent bids do NOT reset the timer.** Highest bid wins at
+  the timer's expiry.
+- **Bind window** opens for 15 min (`bindWindowSec`, default 900)
+  after the auction closes. The winner picks one of their ACTIVE
+  listings — any `listingType` (BUY_NOW / AUCTION / TAKE_A_SHOT) is
+  valid. If they don't bind, the slot cascades to the runner-up.
+- **Featured duration** is tiered by bid amount: R100 = 1d,
+  R200 = 2d, R300 = 5d, R400 = 7d, R500 = 14d. Bid amount snaps
+  DOWN to the nearest tier. Stored as `t1AmountCents/t1DurationSec`
+  … `t5AmountCents/t5DurationSec` in `FeaturedSlotConfig`.
+- **Sold listing frees the slot early** — cron detects SOLD
+  listings bound to a slot and flips the slot to VACANT before
+  `featuredUntil`.
+
+### Frontend surfaces
+
+- **Featured rail** (`<FeaturedRail>`) — vertical scrolling
+  sidebar on browse pages, mobile becomes horizontal scroller.
+  Continuous CSS keyframe scroll, hover-paused.
+- **Homepage grid** — replaces the live-listings grid on the bare
+  landing page (`showHero` branch). Horizontal scroll, all 10
+  slots rendered always (empty slots show "Featured spot
+  available — Place a bid →" placeholder).
+- **Seller bid page** (`/featured/bid`) — slot grid, tier table,
+  bid modal with stepper, bind modal with 50px-tall row picker
+  styled like the rail card.
+- **Admin panel** (`/admin/featured`) — slot overview, per-slot
+  detail with force-evict / manual-award / shift-until /
+  close-auction-early, revenue dashboard, settings, banned bidders,
+  audit log.
+
+### Admin: manual award accepts EITHER form
+
+`POST /api/admin/featured/slots/:id/manual-award` accepts the
+listing's CUID or its human-readable `referenceNumber`
+(`UM000123` / `AU000045` / `TS000007`). Backend resolves either —
+admin can paste the visible chip from the listing detail page.
+
+---
 
 ---
 
@@ -646,26 +796,87 @@ Disputes, Competitions, Engagement, Penalties, Platform).
 
 ## PWA
 
-**Phase 1 (build now): installability + offline only.**
+Built in phases. Library choice: **Serwist** (not Workbox/next-pwa,
+neither plays nicely with Next 16 + App Router). Theme color `#0f0f0f`
+(not brand red — the dark background reads better as the
+Android status bar / Chrome tab tint).
 
-- Web App Manifest — theme `#C8102E`, background `#0f0f0f`,
-  `standalone`, `en-ZA`.
-- App icons in all sizes + maskable variants + apple-touch-icon,
-  generated from the brand mark via sharp
-  (`/frontend/scripts/generate-pwa-icons.ts` →
-  `/frontend/public/icons/`).
-- Workbox service worker: StaleWhileRevalidate for static,
-  CacheFirst for images, NetworkFirst (3s timeout) for API.
-- **Never cache:** `/api/payments`, `/api/auth`, `/checkout`,
-  `/verify`, `/admin`, raffle entry, offers, bids.
-- Branded `offline.html`; service worker registered in production
-  only; new-version update banner.
-- Custom install prompt — shown after 3 page visits OR 2 minutes;
-  14-day dismissal via `localStorage` (this is a real Next.js app,
-  so `localStorage` is fine here). iOS shows manual
-  Add-to-Home-Screen instructions.
+### Phase A — Installable (done)
 
-**Phase 2 (deferred): push notifications.**
+- `app/manifest.ts` → `/manifest.webmanifest`. `name`,
+  `short_name`, `description`, `start_url: '/'`, `display:
+  'standalone'`, `orientation: 'portrait'`, `theme_color:
+  '#0f0f0f'`, `background_color: '#0f0f0f'`, `lang: 'en-ZA'`,
+  `categories: ['shopping', 'sports', 'lifestyle']`.
+- `app/layout.tsx` exports `metadata` + `viewport` with
+  `appleWebApp` (iOS Add-to-Home-Screen), `applicationName`,
+  `formatDetection.telephone = false`, `viewport.themeColor` for
+  both colour schemes, and the `icons` block (favicon + apple-
+  touch-icon emission).
+
+### Phase B — Real icons (done)
+
+Five PNG variants generated from a single source image by
+`frontend/scripts/generate-pwa-icons.ts` (uses `sharp`, already a
+transitive dep via Next):
+
+- `public/icon-192.png`, `public/icon-512.png` (standard, alpha
+  preserved).
+- `public/icon-maskable-192.png`, `public/icon-maskable-512.png`
+  (inner-80% safe zone, brand `#0f0f0f` fills the outer 20% so
+  Android adaptive masks crop cleanly).
+- `public/apple-icon-180.png` (inner-90%, brand bg padded — iOS
+  rounds corners itself).
+
+Source dropped at `frontend/public/icon-source.png` (or `.svg`,
+`.jpg`, `.jpeg`, or `frontend/icon-source.*`). Script overwrites
+outputs in place — re-run any time the brand mark changes.
+
+### Phase C — Service worker (CONSERVATIVE, done)
+
+- Packages: `@serwist/next`, `serwist`.
+- `app/sw.ts` is the source worker, compiled to `public/sw.js` at
+  build time via the Serwist Webpack plugin.
+- **Conservative caching only** — Serwist's `defaultCache`
+  (Google Fonts + fingerprinted JS/CSS bundles). NO HTML caching,
+  NO API caching, NO image caching at this stage. Minimal risk
+  surface — avoids the "buyer saw stale auction price" failure
+  mode.
+- Offline fallback at `/offline` (precached, served for any
+  navigation that fails when offline). Brand-styled, no API calls.
+- `skipWaiting + clientsClaim + navigationPreload` enabled — new
+  SW versions activate on next nav, not after every tab closes.
+- `next.config.mjs` wraps with `withSerwist`. Empty
+  `turbopack: {}` config silences the Next-16 "build is using
+  Turbopack with a webpack config" conflict. SW is **disabled in
+  dev** (`NODE_ENV !== 'production'`) — Turbopack doesn't run the
+  Webpack plugin AND caching in dev would break HMR.
+- **Remote kill switch:** set `NEXT_PUBLIC_DISABLE_PWA=true` at
+  build time. Skips SW generation entirely; existing installed
+  SWs continue serving stale until the next visit, when the new
+  build will register an empty / no-op worker (work needed if we
+  ever ship a buggy worker and need to back it out without a full
+  redeploy).
+- `middleware.ts` adds `/offline` and `/sw.js` to the public
+  routes list so Clerk doesn't `protect-rewrite` them.
+- `tsconfig.json` includes `webworker` lib so the SW source
+  type-checks.
+
+### Out of scope (later phases)
+
+- **Image + API caching strategies** — to be added incrementally
+  after the conservative SW is shipped + tested. Plan:
+  stale-while-revalidate for Cloudinary images, network-first
+  short cache for `/api/*` GETs, network-only for writes, never
+  touch anything containing `clerk`.
+- **Web push notifications** (Phase D) — VAPID + PushSubscription
+  table + opt-in UX. Deferred until value is clear over existing
+  Urgent Notifications strip + email/SMS.
+- **Install-prompt UX with deferral logic** (Phase E) — shown
+  after 3 visits OR 2 minutes, 14-day dismissal via localStorage,
+  iOS manual instructions.
+- **iOS splash screens** — apple-touch-icon already covers the
+  default behaviour.
 
 ---
 
@@ -747,7 +958,10 @@ Work on a feature branch; `deploy now` merges it into `main`.
 
 ## Current Status
 
-**M1–M6 complete locally. Next: Phase 7 Admin Panel.**
+**Phases 1–14 complete plus Featured Slots system, sitewide UX
+hardening, auction proxy hardening, KYC no-webcam handoff, and PWA
+Phases A–C (conservative SW). End-to-end test still deferred. Next:
+End-to-end test + PWA Phase D (push notifications) when prioritised.**
 
 - [x] `.gitignore` committed first (excludes `.env*` and credential files).
 - [ ] New GitHub repo created and pushed (local git only so far).
@@ -790,7 +1004,209 @@ Work on a feature branch; `deploy now` merges it into `main`.
       /dashboard (trust score bar chart + recent ratings). Both builds + 7/7 endpoint tests clean.
       **Build fixes also landed this phase**: nodenext→commonjs/node tsconfig, meilisearch ambient
       shim, start:prod path corrected, checkout/complete Suspense fix.
-- [ ] Remaining roadmap phases.
+- [x] Admin Panel: AdminUser model + AdminAuthService (bcrypt + JWT, 8h expiry, separate
+      from Clerk), AdminJwtGuard + SuperadminGuard. Routes: POST /api/admin/auth/login,
+      GET /api/admin/auth/me, GET /api/admin/stats, /api/admin/listings (PENDING_REVIEW
+      queue + review action), /api/admin/users (search + ban toggle),
+      /api/admin/transactions (payment status tabs). Frontend route group
+      `app/admin/(protected)/` with sidebar layout; pages: Overview (4 stat cards),
+      Listings (moderation queue), Users, Transactions. Login page outside the protected
+      group at `/admin/login`. Cookie-based auth (`admin_token`). Seed creates
+      `admin@gungalore.co.za` / `Admin@GunGalore1!` SUPERADMIN.
+- [x] KYC: VerifyNow integration scaffolded — POST /api/users/kyc accepts ID document
+      upload (Cloudinary) → flips kycStatus to PENDING. Admin reviews manually via the
+      Users admin page. Frontend `/my/kyc` page with file picker + status display.
+      VerifyNow API binding is stubbed (no live key yet).
+- [x] Notifications: NotificationsService with Resend SMTP integration (fails open when
+      RESEND_API_KEY unset — emails are no-ops in dev). Branded dark-theme HTML email
+      layout. Methods cover all events: orderPaid, paymentReleased, refunded, disputed,
+      shippingDispatched, listingPublished, offerReceived/Accepted/Rejected/Countered,
+      counterAccepted/Rejected, bidPlaced/Outbid/auctionWon/auctionEndedForSeller,
+      raffleEntryConfirmed/WinnerPicked/BackupPromoted/MinNotMet. SMSPortal binding
+      deferred.
+- [x] **M2 Auctions (Phase 10)**: Bid model + AuctionWatch model + currentBid/reservePrice/
+      buyNowPrice/endTime/bidCount/reserveMet fields on Listing. AuctionsService with
+      full proxy-bid resolution (3-case: new max wins / lower max bumps visible / same
+      bidder raises ceiling), tiered increments (R50/R100/R250/R500/R1,000), snipe
+      protection (2 min extension), reserve flag, Buy Now only-while-zero-bids gate,
+      end-auctions cron (every minute), strike on non-payment (3 strikes → ban).
+      Routes: GET /api/auctions/:listingId, POST /api/auctions/:listingId/bids,
+      POST /api/auctions/:listingId/buy-now, GET /api/auctions/me/bids,
+      POST/DELETE /api/auctions/:listingId/watch. Frontend: AuctionPanel client
+      component (5s polling, live countdown, reserve indicator, proxy bid form, bid
+      history), `/listings/new` form auction branch (duration/reserve/buy-now),
+      `/my/bids` page (Live/Won/Closed). Smoke-tested with 3-bidder scenario
+      end-to-end + visual verification.
+- [x] **Take a Shot (Phase 11)**: Offer model + COUNTERED status, nullable price on
+      Listing for TAKE_A_SHOT, autoAcceptThreshold field. OffersService with submit
+      (auto-accept if ≥ threshold), accept/reject/counter (one counter only),
+      accept-counter / reject-counter / withdraw; offers cron expires PENDING/COUNTERED
+      after TTL (48h pending, 24h counter). Endpoints all under `/api/offers/...`.
+      Frontend: OfferPanel (sign-in gate, R-prefixed amount + note), `/my/offers`
+      buyer view, `/offers/received` seller view, `/checkout/offer/[offerId]` separate
+      flow that uses `counterAmount ?? offerAmount`. Transaction creation atomically
+      marks the offer CONVERTED.
+- [x] **M5 Competitions (Phase 12)**: Raffle + Ticket + RaffleWinner + PostalEntry +
+      RaffleSellerApplication + RaffleAuditEvent + Setting models. RafflesService
+      with full lifecycle (DRAFT → ACTIVE → CLOSED_AWAITING_DRAW → DRAWN → CLAIMED,
+      with auto-cancel on MIN_NOT_MET), verifiable draw (`crypto.randomBytes(32)` +
+      SHA-256 + rejection-sampled mod → 1 winner + 2 backups), skill-gated buy flow,
+      24h cooling window between endTime and drawAt, 7d claim windows with backup
+      promotion. Crons: close expired (every minute), run draws (every 5 min), expire
+      claims (every hour). Endpoints: GET /api/raffles, GET /api/raffles/:id,
+      GET /api/raffles/:id/proof, POST /api/raffles/:id/tickets, POST /api/raffles/wins/:id/claim,
+      GET /api/raffles/me/{tickets,wins}, admin: /api/admin/raffles CRUD + audit + run-draw,
+      /api/admin/raffles/postal-entries. Frontend pages: `/competitions` (list),
+      `/competitions/[id]` (detail + EnterPanel with skill question), `/admin/competitions`
+      (list), `/admin/competitions/create` (form + live revenue calculator),
+      `/admin/competitions/[id]/audit` (verifiable draw proof + event log),
+      `/admin/postal-entries`, `/dashboard/raffle-wins` (claim flow), `/my/tickets`.
+      End-to-end draw smoke-tested (150 paid + 2 postal → 3 winners with verifiable seed).
+      **Deferred this phase**: Peach checkout wiring for tickets (dev auto-confirm in
+      place), PDF generation (pdfkit) for postal forms, Claude-generated skill questions,
+      min-not-met automatic refund cron, seller-application intake UI (model exists,
+      `raffle_seller_applications_enabled` flag-gated off).
+- [x] **Claude AI Listing Moderation (Phase 13)**: SettingsModule (Setting key/value
+      table — already in schema; typed accessors for 7 flags with safe defaults).
+      ModerationModule with ListingModerationService — uses `@anthropic-ai/sdk`
+      (Haiku model, vision-enabled), system prompt encodes the policy from
+      CLAUDE.md verbatim. Outcomes mapped to ListingStatus:
+      APPROVE / AUTO_FIX_AND_APPROVE → ACTIVE, REJECT → CANCELLED,
+      HUMAN_REVIEW → PENDING_REVIEW. Local regex fallback in
+      `stripContactInfo()` runs on top of Claude's cleaned description as a
+      defence-in-depth (strips emails, phones, URLs, social handles, WhatsApp
+      phrases). Safety nets applied AFTER Claude's call:
+      (1) price >= `high_value_review_threshold` (R20k) → bumped to HUMAN_REVIEW,
+      (2) new seller's first N firearm listings (default 3) → HUMAN_REVIEW,
+      (3) APPROVE with confidence < `claude_confidence_threshold` (0.85) →
+      HUMAN_REVIEW. Fail-open: any Anthropic API error or missing key routes
+      to HUMAN_REVIEW with a "manual review queued" reason. ListingsService
+      stores `claudeDecision`, `claudeConfidence`, `claudeReasons`,
+      `claudeReviewedAt`, `claudeOriginalDescription`, `claudeAutoFixApplied`;
+      pending/rejected listings are NOT indexed in Meilisearch.
+      Frontend: admin moderation queue shows colour-coded decision pill
+      (APPROVE green / AUTO-FIX blue / REJECT red / HUMAN REVIEW amber) with
+      confidence %, 3-bullet reasoning summary, and a "✎ Contact info stripped"
+      indicator on auto-fixed listings. Seller-only `ModerationBanner` on
+      listing detail page surfaces PENDING_REVIEW / REJECT / AUTO_FIX state.
+      Smoke-tested: local regex stripping (2 samples), offline-mode behaviour
+      (HUMAN_REVIEW fallback), settings table read/write. Bug fix: admin
+      listings page now handles null price (TAKE_A_SHOT) and converts
+      cents → rand correctly. Live Anthropic call deferred until
+      ANTHROPIC_API_KEY is added to backend/.env.
+- [x] **Webhooks polish (Phase 14)**: ShippingService now actually applies
+      webhook events to transactions. New helpers: `findTransactionByTrackingNumber`
+      (shared TCG/Pudo lookup) and `applyShippingUpdate(transactionId, newStatus)`
+      which is fully idempotent — refuses backward transitions via the
+      `STATUS_RANK` precedence table (PENDING < COLLECTED < IN_TRANSIT <
+      OUT_FOR_DELIVERY < DELIVERED/FAILED/RETURNED), no-ops on same-status
+      events, and stamps `dispatchedAt` (first forward move past PENDING) +
+      `deliveredAt` (DELIVERED) exactly once. Both TCG + Pudo handlers now
+      look up the transaction and call `applyShippingUpdate`. Notifications
+      fire per transition: `shippingDispatched`, `shippingOutForDelivery`,
+      `shippingDelivered`, `shippingFailed` (new methods added to
+      NotificationsService). Peach webhook gets HMAC scaffold:
+      `peach.verifyWebhookSignature(rawBody, signature)` uses
+      `PEACH_WEBHOOK_SECRET` with HMAC-SHA256 and `timingSafeEqual`; fails
+      open when the secret isn't configured (dev mode). Controller reads
+      `x-peach-signature` / `x-signature` headers and rejects bad signatures
+      silently while still returning 200 (CLAUDE.md rule). Smoke-tested:
+      unknown waybill → 200 noop, real waybill → status applied, repeated
+      event → idempotent no-op, backward event (COLLECTED after DELIVERED) →
+      refused with logged warning.
+- [x] **Featured Slots system**: full ad-bidding feature — 6 new
+      Prisma models (FeaturedSlot, FeaturedAuction, FeaturedSlotBid,
+      FeaturedSlotConfig, FeaturedSlotBidderBan,
+      FeaturedSlotAuditEvent), 5 enums (FeaturedSlotStatus,
+      FeaturedAuctionStatus, FeaturedAuctionKind, FeaturedBidStatus,
+      FeaturedTier T1-T5), FeaturedService + 3 controllers
+      (public/seller/admin). Auction opens on vacant, 24h timer
+      starts on first bid, 15-min bind window picks any ACTIVE
+      listing (BUY_NOW / AUCTION / TAKE_A_SHOT all valid),
+      tier-snapped duration (R100/1d → R500/14d). Per-minute cron
+      drives all transitions. Frontend: `<FeaturedRail>` sidebar
+      (vertical desktop, horizontal mobile, continuous scroll,
+      hover-paused), homepage horizontal scroll grid replacing
+      live-listings on the bare landing, `/featured/bid` seller
+      page (slot grid + bid modal stepper + bind modal with
+      50px-tall rail-styled row picker), full admin panel under
+      `/admin/featured` (slots / revenue / settings / banned
+      bidders / audit). Manual award accepts either CUID or
+      reference number (UM000123).
+- [x] **Sitewide UX hardening**:
+      - **Help system** — `<HelpText>` (always-visible inline
+        hint) + `<HelpTip>` (on-demand ⓘ popover, hover desktop /
+        tap mobile, click-outside + ESC dismiss). Swept across
+        featured/bid, listing detail + auction-panel, listings/new,
+        kyc/verify, profile/edit.
+      - **Urgent Notifications strip** — 35px sticky band below
+        the nav, self-fetches `GET /api/users/me/urgent` every 60s
+        and renders coloured pills for: KYC required, auction wins
+        awaiting payment (with countdown), accepted offers awaiting
+        payment (with countdown), sales paid + waiting on dispatch.
+        Hidden when signed-out. The old `<KycBanner>` was removed —
+        the urgent strip subsumes it.
+      - **5 UX quick wins** — bordered empty-state CTAs on all
+        /my/* dashboards, active-page indicator (red left-border)
+        in the Account dropdown, distinct green/grey Active/Closed
+        pills on offer + bid cards, Clerk `<SignInButton>` modal
+        triggers replacing dead "Sign in to bid" boxes on listings,
+        shimmer loading skeleton on /featured/bid.
+      - **/my/bids extension** — new `GET /api/featured/me/bids`
+        endpoint + `<FeaturedBidCard>` component. Featured-slot bids
+        now show alongside auction bids, split into Live / Won —
+        bind now / Closed.
+      - **"Escrow" term banned** — full repo sweep (UI, code
+        comments, email bodies, the lot). Replaced with "funds
+        held" / "payment held" / "payment protection" /
+        "payment released". Rule #1 in Absolute Rules.
+      - **Real names off public surfaces** — sweep removed
+        firstName/lastName from public-facing Prisma selects
+        (listings, ratings, offers, featured, auctions,
+        listing-questions) and frontend displays (sellers/[id],
+        offers/received, dashboard, my/sales, my/orders, listing
+        detail seller card, questions panel, checkout seller chip,
+        featured/bid top-bid, transactions detail buyer/seller line).
+        Username only, no `@` prefix. Rule #11.
+      - **Competition detail layout** mirrors listing detail —
+        ImageGallery (zoom + thumbnails + lightbox) in left column,
+        all text in right column.
+      - **Bind modal redesign** — 50px-tall rows matching the
+        FeaturedRail card aesthetic (subtle red→gold glow, 36px
+        thumbnail, single-line title).
+- [x] **Auction proxy bidding hardening**: see Auction System >
+      "Proxy resolution rules (LOCKED)". Killed the one-shot
+      bypass bug (Place Bid could defeat existing proxies), added
+      eBay-style dual-row history (proxy counters get their own
+      Bid row attributed to the proxy holder), added
+      `proxyExhausted` last-stand rows for Auto Bid duels, added
+      explicit OUTBID banner with tie/exceed copy distinction,
+      added Cancel-proxy endpoint + UI link, added
+      `GET /api/auctions/:listingId/me` per-user state endpoint
+      driving the "Auto Bid · ACTIVE · Rxxx (Raise)" button label,
+      added `currentBidderName` to auction state + "High bidder:
+      You ✓" line. Bid history shows usernames only (no `@`
+      prefix) and tags legacy single-row proxy events with
+      "proxy counter".
+- [x] **KYC no-webcam handoff**: `qrcode.react` dependency added.
+      When `cameraUnavailable` is detected at the selfie step,
+      page now renders a `<CameraUnavailableHandoff>` block —
+      large QR code pointing at `/kyc/verify` (with `returnTo`
+      preserved), brief instruction, and a `mailto:` fallback link
+      for users with no smartphone at all. File upload was
+      considered + rejected — defeats the liveness check.
+- [x] **PWA Phases A–C (conservative)**: see PWA section above
+      for full detail. Manifest + meta tags (Phase A), 5 PNG icon
+      variants generated by `scripts/generate-pwa-icons.ts` from a
+      source image (Phase B), Serwist service worker with
+      defaultCache-only conservative caching + `/offline` fallback
+      + remote kill switch (Phase C). Image / API caching
+      strategies and web push deferred to Phases D / E.
+- [ ] End-to-end test (deferred per user direction).
+- [ ] PWA Phases D / E: web push notifications + install-prompt
+      UX polish. Layered onto the existing SW when prioritised.
+- [ ] Remaining roadmap phases: 16 SEO, 17 Odoo, 18 M3 Store /
+      M4 Swap.
 
 **Prisma 7 notes (do not revert):**
 - Generator: `prisma-client-js` (NOT `prisma-client` — that generates ESM

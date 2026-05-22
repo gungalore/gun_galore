@@ -32,10 +32,37 @@ export default async function MyOrdersPage() {
       </h1>
 
       {transactions.length === 0 ? (
-        <div className="text-center py-20 text-sm" style={{ color: 'var(--text-tertiary)' }}>
-          No orders yet.{' '}
-          <Link href="/" style={{ color: 'var(--red)' }}>
-            Browse listings →
+        <div
+          className="rounded-[8px] py-12 px-6 text-center"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px dashed var(--border)',
+          }}
+        >
+          <p
+            className="text-base mb-2"
+            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+          >
+            No orders yet
+          </p>
+          <p
+            className="text-sm mb-5"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            When you buy something on Gun Galore, your order will show
+            up here with shipping updates and dispatch details.
+          </p>
+          <Link
+            href="/"
+            className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+            style={{
+              background: 'var(--red)',
+              color: '#fff',
+              fontWeight: 500,
+              textDecoration: 'none',
+            }}
+          >
+            Browse the marketplace →
           </Link>
         </div>
       ) : (
@@ -54,7 +81,7 @@ export default async function MyOrdersPage() {
               {tx.listing.images?.[0] && (
                 <img
                   src={tx.listing.images[0].url}
-                  alt=""
+                  alt={tx.listing.title}
                   className="w-14 h-14 rounded-[6px] object-cover shrink-0"
                 />
               )}
@@ -63,7 +90,7 @@ export default async function MyOrdersPage() {
                   {tx.listing.title}
                 </p>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                  Seller: {[tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') || 'Unknown'}
+                  Seller: {tx.seller.username ?? 'Anonymous'}
                   {' · '}{new Date(tx.createdAt).toLocaleDateString('en-ZA')}
                 </p>
               </div>

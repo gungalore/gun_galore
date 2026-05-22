@@ -1,47 +1,189 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
+import { SmsService } from '../sms/sms.service';
 
 // Fails open — emails are fire-and-forget; never block the main flow.
 
 const FROM = 'Gun Galore <noreply@gungalore.co.za>';
-const BRAND_RED = '#c0392b';
-const BG = '#0f0f0f';
-const CARD = '#1a1a1a';
-const TEXT = '#e5e5e5';
-const MUTED = '#888';
 
-function layout(body: string) {
+// ─── Brand tokens (matched to the site theme) ─────────────────────────
+const TOKEN = {
+  bgPage: '#0f0f0f',
+  bgCard: '#1a1a1a',
+  bgInset: '#262626',
+  border: '#2a2a2a',
+  textPrimary: '#f5f5f5',
+  textSecondary: '#b8b8b8',
+  textTertiary: '#888888',
+  red: '#C8102E',
+  successText: '#2f9e6b',
+  successBg: 'rgba(47,158,107,0.12)',
+  pendingText: '#f59e0b',
+  pendingBg: 'rgba(245,158,11,0.12)',
+  errorText: '#ef4444',
+  errorBg: 'rgba(239,68,68,0.12)',
+};
+
+// ─── Master email template ────────────────────────────────────────────
+//
+// EVERY transactional email goes through this one helper. The old
+// approach (60+ per-event template files on disk + a Handlebars-ish
+// renderer + inline `layout()` fallbacks) drifted out of sync, had
+// double-R bugs, stuck `[n]` placeholders, broke when Nest CLI didn't
+// copy .html assets, and rendered as a white card on iOS Mail because
+// dark-theme HTML email is fragile.
+//
+// This replaces all of that with one HTML structure in code. Site
+// theme tokens (TOKEN above) are pasted inline. Dark-mode lockdown
+// uses every known technique stacked: color-scheme meta, !important
+// on every colour, prefers-color-scheme:light overridden to dark,
+// [data-ogsc] Outlook hooks, and the Gmail-specific u + body marker.
+//
+// One source of truth. One place to fix.
+
+interface EmailRow {
+  label: string;
+  value: string;
+}
+
+interface EmailCta {
+  label: string;
+  url: string;
+}
+
+interface EmailContent {
+  /** Short headline, big sans-serif. No HTML. */
+  headline: string;
+  /** Body — `<strong>` and inline links are OK; no block elements. */
+  body: string;
+  /** Optional pill above the headline. */
+  status?: { tone: 'success' | 'pending' | 'error'; label: string };
+  /** Optional labelled rows shown below the body (Reference, Amount, etc). */
+  rows?: EmailRow[];
+  /** Single primary action button. Optional — info-only emails skip it. */
+  cta?: EmailCta;
+  /** Quiet line below the CTA (e.g. "Or reply to this email"). */
+  footnote?: string;
+  /** Preheader shown in the inbox preview; never rendered visible. */
+  preheader?: string;
+}
+
+function renderEmail(c: EmailContent, logoUrl: string): string {
+  const statusBlock = c.status
+    ? statusPill(c.status.tone, c.status.label)
+    : '';
+  const rowsBlock = c.rows && c.rows.length > 0 ? rowsTable(c.rows) : '';
+  const ctaBlock = c.cta ? ctaButton(c.cta) : '';
+  const footnoteBlock = c.footnote
+    ? `<p style="margin:18px 0 0;font-size:12px;color:${TOKEN.textTertiary} !important;line-height:1.5;">${c.footnote}</p>`
+    : '';
+  const preheader = c.preheader
+    ? `<div style="display:none !important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;max-height:0;max-width:0;overflow:hidden;mso-hide:all;">${c.preheader}</div>`
+    : '';
+
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gun Galore</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="color-scheme" content="dark only">
+  <meta name="supported-color-schemes" content="dark only">
+  <!--[if mso]>
+  <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
+  <![endif]-->
+  <title>Gun Galore</title>
+  <style type="text/css">
+    /* Aggressive dark-mode lockdown. Even with all of this, Gmail
+       may strip the style block on some configs — inline styles
+       carry !important too, which is the actual safety net. */
+    :root {
+      color-scheme: dark only !important;
+      supported-color-schemes: dark only !important;
+    }
+    body, table, td, div, p, a, span { -webkit-font-smoothing: antialiased; }
+    body {
+      background-color: ${TOKEN.bgPage} !important;
+      color: ${TOKEN.textPrimary} !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background-color: ${TOKEN.bgPage} !important; color: ${TOKEN.textPrimary} !important; }
+      .gg-card { background-color: ${TOKEN.bgCard} !important; }
+    }
+    /* Force dark even when client picked light — iOS Mail respects
+       this when color-scheme=dark is also declared. */
+    @media (prefers-color-scheme: light) {
+      body { background-color: ${TOKEN.bgPage} !important; color: ${TOKEN.textPrimary} !important; }
+      .gg-card { background-color: ${TOKEN.bgCard} !important; }
+    }
+    /* Outlook.com webmail / Outlook for Mac */
+    [data-ogsc] body { background-color: ${TOKEN.bgPage} !important; color: ${TOKEN.textPrimary} !important; }
+    [data-ogsc] .gg-card { background-color: ${TOKEN.bgCard} !important; }
+    [data-ogsb] body { background-color: ${TOKEN.bgPage} !important; }
+    [data-ogsb] .gg-card { background-color: ${TOKEN.bgCard} !important; }
+    /* Gmail dark-mode hook */
+    u + .gg-body, .gg-body {
+      background-color: ${TOKEN.bgPage} !important;
+      color: ${TOKEN.textPrimary} !important;
+    }
+  </style>
 </head>
-<body style="margin:0;padding:0;background:${BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:${BG};padding:40px 0;">
-    <tr><td align="center">
-      <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
-        <!-- Header -->
+<body class="gg-body" style="margin:0 !important;padding:0 !important;background-color:${TOKEN.bgPage} !important;color:${TOKEN.textPrimary} !important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,'Helvetica Neue',Arial,sans-serif;">
+  ${preheader}
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color:${TOKEN.bgPage} !important;border-collapse:collapse;">
+    <tr><td align="center" style="padding:0;">
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" style="max-width:600px;width:100%;border-collapse:collapse;">
+
+        <!-- Logo header. Image + MSO-only text fallback. Alt text
+             shows when the recipient's client blocks remote images. -->
         <tr>
-          <td style="padding:0 0 24px 0;">
-            <span style="font-size:18px;font-weight:600;color:${TEXT};letter-spacing:-0.01em;">
-              Gun<span style="color:${BRAND_RED}">·</span>Galore
-            </span>
+          <td align="center" style="background-color:${TOKEN.bgPage} !important;padding:28px 32px;border-bottom:1px solid ${TOKEN.border};">
+            <!--[if mso]>
+            <span style="font-family:Arial,sans-serif;font-size:20px;font-weight:700;color:#ffffff;letter-spacing:0.12em;">GUN GALORE</span>
+            <![endif]-->
+            <!--[if !mso]><!-->
+            <img src="${logoUrl}" alt="Gun Galore" width="180" height="36"
+                 style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;height:36px;width:180px;" />
+            <!--<![endif]-->
           </td>
         </tr>
-        <!-- Card -->
+
+        <tr><td style="height:24px;background-color:${TOKEN.bgPage} !important;font-size:0;line-height:0;">&nbsp;</td></tr>
+
+        <!-- Content card -->
         <tr>
-          <td style="background:${CARD};border-radius:10px;border:0.5px solid #2a2a2a;padding:32px;">
-            ${body}
+          <td style="padding:0 24px;">
+            <table role="presentation" class="gg-card" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color:${TOKEN.bgCard} !important;border:1px solid ${TOKEN.border};border-radius:8px;border-collapse:separate;">
+              <tr><td style="padding:32px;">
+                ${statusBlock}
+                <h1 style="margin:0 0 16px;font-size:22px;font-weight:500;color:${TOKEN.textPrimary} !important;letter-spacing:-0.01em;line-height:1.3;">${escapeHtml(c.headline)}</h1>
+                <div style="font-size:15px;color:${TOKEN.textPrimary} !important;line-height:1.6;">${c.body}</div>
+                ${rowsBlock}
+                ${ctaBlock}
+                ${footnoteBlock}
+              </td></tr>
+            </table>
           </td>
         </tr>
+
+        <tr><td style="height:24px;background-color:${TOKEN.bgPage} !important;font-size:0;line-height:0;">&nbsp;</td></tr>
+
         <!-- Footer -->
         <tr>
-          <td style="padding:24px 0 0 0;text-align:center;font-size:11px;color:${MUTED};">
-            Gun Galore SA · Firearms Marketplace · <a href="https://gungalore.co.za" style="color:${MUTED};">gungalore.co.za</a>
+          <td style="padding:0 24px 40px;background-color:${TOKEN.bgPage} !important;">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border-top:1px solid ${TOKEN.border};">
+              <tr><td style="height:24px;font-size:0;line-height:0;">&nbsp;</td></tr>
+              <tr><td align="center"><p style="margin:0;font-size:12px;color:${TOKEN.textTertiary} !important;line-height:1.5;">Gun Galore (Pty) Ltd &middot; South Africa</p></td></tr>
+              <tr><td align="center" style="padding-top:6px;"><a href="mailto:support@gungalore.co.za" style="font-size:12px;color:${TOKEN.red} !important;text-decoration:none;">support@gungalore.co.za</a></td></tr>
+              <tr><td align="center" style="padding-top:10px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">Transactional email related to your Gun Galore account.</p></td></tr>
+              <tr><td align="center" style="padding-top:4px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">&copy; ${new Date().getFullYear()} Gun Galore. All rights reserved.</p></td></tr>
+            </table>
           </td>
         </tr>
+
       </table>
     </td></tr>
   </table>
@@ -49,31 +191,62 @@ function layout(body: string) {
 </html>`;
 }
 
-function h1(text: string) {
-  return `<h1 style="margin:0 0 16px;font-size:22px;font-weight:600;color:${TEXT};letter-spacing:-0.02em;">${text}</h1>`;
+function statusPill(tone: 'success' | 'pending' | 'error', label: string): string {
+  const [text, bg] = tone === 'success'
+    ? [TOKEN.successText, TOKEN.successBg]
+    : tone === 'pending'
+      ? [TOKEN.pendingText, TOKEN.pendingBg]
+      : [TOKEN.errorText, TOKEN.errorBg];
+  const icon = tone === 'success' ? '&#10003;' : tone === 'pending' ? '&#9203;' : '&#10005;';
+  return `<table role="presentation" border="0" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 20px 0;">
+    <tr><td style="background-color:${bg} !important;border:1px solid ${text};border-radius:20px;padding:5px 14px;">
+      <span style="font-size:12px;color:${text} !important;font-weight:500;letter-spacing:0.02em;">${icon}&nbsp; ${escapeHtml(label)}</span>
+    </td></tr>
+  </table>`;
 }
 
-function p(text: string) {
-  return `<p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:${MUTED};">${text}</p>`;
+function rowsTable(rows: EmailRow[]): string {
+  const trs = rows
+    .map(
+      (r) => `<tr>
+        <td style="padding:8px 0;width:170px;vertical-align:top;">
+          <span style="font-size:11px;color:${TOKEN.textTertiary} !important;text-transform:uppercase;letter-spacing:0.06em;">${escapeHtml(r.label)}</span>
+        </td>
+        <td style="padding:8px 0;vertical-align:top;">
+          <span style="font-size:14px;color:${TOKEN.textPrimary} !important;font-weight:500;">${escapeHtml(r.value)}</span>
+        </td>
+      </tr>`,
+    )
+    .join('');
+  return `<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;margin-top:24px;padding-top:16px;border-top:1px solid ${TOKEN.border};">
+    ${trs}
+  </table>`;
 }
 
-function strong(text: string) {
-  return `<span style="color:${TEXT};font-weight:500;">${text}</span>`;
+function ctaButton(cta: EmailCta): string {
+  return `<table role="presentation" border="0" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:28px 0 0 0;">
+    <tr><td style="background-color:${TOKEN.red} !important;border-radius:6px;">
+      <a href="${cta.url}" target="_blank" style="display:inline-block;color:#ffffff !important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Arial,sans-serif;font-size:15px;font-weight:500;text-decoration:none;padding:14px 32px;border-radius:6px;min-width:220px;text-align:center;letter-spacing:-0.01em;">${escapeHtml(cta.label)}</a>
+    </td></tr>
+  </table>`;
 }
 
-function divider() {
-  return `<div style="border-top:0.5px solid #2a2a2a;margin:20px 0;"></div>`;
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-function button(label: string, url: string) {
-  return `<a href="${url}" style="display:inline-block;margin-top:8px;padding:10px 20px;background:${BRAND_RED};color:#fff;border-radius:6px;font-size:13px;font-weight:500;text-decoration:none;">${label}</a>`;
-}
-
-function amountRow(label: string, value: string) {
-  return `<tr>
-    <td style="padding:4px 0;font-size:13px;color:${MUTED};">${label}</td>
-    <td style="padding:4px 0;font-size:13px;color:${TEXT};text-align:right;">${value}</td>
-  </tr>`;
+// Inline-emphasis helper kept simple — call sites pass user-supplied
+// strings, and the body field is rendered as raw HTML so we can
+// inject `<strong>` highlights for prices and item titles. We do
+// NOT escape inside `body` — callers must escape user input before
+// wrapping in `<strong>` (use `escapeHtml()` for that).
+function b(text: string): string {
+  return `<strong style="color:${TOKEN.textPrimary} !important;font-weight:600;">${escapeHtml(text)}</strong>`;
 }
 
 function formatRand(cents: number) {
@@ -86,8 +259,10 @@ export interface SaleDetails {
   transactionId: string;
   buyerEmail: string;
   buyerName: string;
+  buyerPhone?: string | null;
   sellerEmail: string;
   sellerName: string;
+  sellerPhone?: string | null;
   listingPrice: number;
   commissionZar: number;
   processingFee: number;
@@ -102,6 +277,7 @@ export interface DispatchDetails {
   transactionId: string;
   buyerEmail: string;
   buyerName: string;
+  buyerPhone?: string | null;
   trackingReference: string | null;
   shippingMethod: string | null;
 }
@@ -120,11 +296,23 @@ export class NotificationsService {
   private readonly resend: Resend | null;
   private readonly appUrl: string;
 
-  constructor() {
+  constructor(private readonly sms: SmsService) {
     const key = process.env.RESEND_API_KEY;
     this.resend = key ? new Resend(key) : null;
     this.appUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
     if (!key) this.logger.warn('RESEND_API_KEY not set — emails disabled');
+  }
+
+  // Wrap the pure renderEmail() helper with the logo URL injection so
+  // every method call site is a clean `this.email({...})` rather than
+  // having to remember to pass logoUrl. Defaults to the PUBLIC prod
+  // URL because dev recipients (iOS Mail on a phone, Gmail in a
+  // browser) can't reach localhost:3000. Override via EMAIL_LOGO_URL
+  // when you want to point at a Cloudinary copy.
+  private email(content: EmailContent): string {
+    const logoUrl =
+      process.env.EMAIL_LOGO_URL ?? 'https://gungalore.co.za/email-logo.png';
+    return renderEmail(content, logoUrl);
   }
 
   // ---------------------------------------------------------------
@@ -132,20 +320,29 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   async orderConfirmedBuyer(d: SaleDetails) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    const html = layout(
-      h1('Order confirmed') +
-      p(`Hi ${strong(d.buyerName)}, your purchase of ${strong(d.listingTitle)} has been confirmed. The seller has been notified and will dispatch your item soon.`) +
-      divider() +
-      `<table width="100%" cellpadding="0" cellspacing="0">
-        ${amountRow('Listing price', formatRand(d.listingPrice))}
-        ${!d.passFeeToBuyer ? '' : amountRow('Processing fee', formatRand(d.processingFee))}
-        ${amountRow('Total paid', formatRand(d.buyerTotal))}
-      </table>` +
-      divider() +
-      p(`Shipping method: ${strong(d.shippingMethod?.replace(/_/g, ' ') ?? 'TBD')}`) +
-      button('View order', txUrl),
-    );
+    const rows: { label: string; value: string }[] = [
+      { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+      { label: 'Listing price', value: formatRand(d.listingPrice) },
+    ];
+    if (d.passFeeToBuyer) {
+      rows.push({ label: 'Processing fee', value: formatRand(d.processingFee) });
+    }
+    rows.push({ label: 'Total paid', value: formatRand(d.buyerTotal) });
+    rows.push({ label: 'Shipping method', value: prettyShippingMethod(d.shippingMethod) });
+    const html = this.email({
+      status: { tone: 'success', label: 'Order confirmed' },
+      headline: 'Order confirmed',
+      body: `Hi ${b(d.buyerName)}, your purchase of ${b(d.listingTitle)} has been confirmed. The seller has been notified and will dispatch your item soon.`,
+      rows,
+      cta: { label: 'View order', url: txUrl },
+      preheader: `Order confirmed — ${d.listingTitle}`,
+    });
     await this.send(d.buyerEmail, 'Order confirmed — ' + d.listingTitle, html);
+    await this.sendSms(
+      d.buyerPhone,
+      `Gun Galore: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. We'll SMS again when it's dispatched.`,
+      `order-confirmed-${d.transactionId}`,
+    );
   }
 
   // ---------------------------------------------------------------
@@ -153,21 +350,152 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   async newSaleSeller(d: SaleDetails) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    const html = layout(
-      h1('You have a new sale!') +
-      p(`Hi ${strong(d.sellerName)}, someone has bought your listing ${strong(d.listingTitle)}. Payment is held in escrow — pack and dispatch as soon as possible.`) +
-      divider() +
-      `<table width="100%" cellpadding="0" cellspacing="0">
-        ${amountRow('Sale price', formatRand(d.listingPrice))}
-        ${amountRow('Commission', '-' + formatRand(d.commissionZar))}
-        ${amountRow('Your payout', formatRand(d.sellerPayout))}
-      </table>` +
-      divider() +
-      p(`Shipping method: ${strong(d.shippingMethod?.replace(/_/g, ' ') ?? 'TBD')}`) +
-      p('Once the buyer confirms delivery, payment will be released to you automatically.') +
-      button('View sale', txUrl),
-    );
+    // Firearm DEALER_TRANSFER triggers the SAPS 534 + stock register
+    // + firearm-serial photo flow — we tell the seller about it up
+    // front so they can prepare and the dealer can fill the form in
+    // block letters at the counter (most-common cause of delay).
+    const isDealerTransfer = d.shippingMethod === 'DEALER_TRANSFER';
+    const bodyText = isDealerTransfer
+      ? `Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by Gun Galore. Once you transfer the firearm to the chosen dealer, you'll need to upload 3 photos so we can verify the stock-in before releasing your payout:
+<ol style="margin: 12px 0; padding-left: 22px; line-height: 1.7;">
+  <li>The completed <b>SAPS 534</b> form (<b>BLOCK LETTERS ONLY</b> — our verification bot can't read cursive)</li>
+  <li>The <b>last line</b> of the dealer's stock register (only your entry — no other customers' details)</li>
+  <li>The <b>firearm with its serial number visible</b>, next to a slip of paper showing the order reference</li>
+</ol>
+<p style="margin: 8px 0; font-size: 13px; color: #666;">Ask the dealer to print in BLOCK LETTERS — that lets our automated check pass instantly. Cursive or unclear writing means a 48-hour human review before payout.</p>`
+      : `Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by Gun Galore — pack and dispatch as soon as possible. Once the buyer confirms delivery, payment will be released to you automatically.`;
+
+    const html = this.email({
+      status: { tone: 'success', label: 'New sale' },
+      headline: 'You have a new sale',
+      body: bodyText,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Sale price', value: formatRand(d.listingPrice) },
+        { label: 'Commission', value: '-' + formatRand(d.commissionZar) },
+        { label: 'Your payout', value: formatRand(d.sellerPayout) },
+        { label: 'Shipping method', value: prettyShippingMethod(d.shippingMethod) },
+      ],
+      cta: { label: 'View sale', url: txUrl },
+      preheader: `New sale — ${d.listingTitle}`,
+    });
     await this.send(d.sellerEmail, 'New sale: ' + d.listingTitle, html);
+    await this.sendSms(
+      d.sellerPhone,
+      isDealerTransfer
+        ? `Gun Galore: New sale ${truncate(d.listingTitle, 30)} - R${(d.sellerPayout / 100).toFixed(0)}. After dealer transfer, upload 3 photos (SAPS 534 BLOCK LETTERS) to release payout. See email.`
+        : `Gun Galore: New sale! ${truncate(d.listingTitle, 40)} - R${(d.sellerPayout / 100).toFixed(0)} payout pending dispatch. Check email for details.`,
+      `new-sale-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Seller: dealer-verification approved (payout will release)
+  // ---------------------------------------------------------------
+  async dealerVerificationApproved(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone: string | null;
+    listingTitle: string;
+    transactionId: string;
+    sellerPayout: number;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const html = this.email({
+      status: { tone: 'success', label: 'Verified' },
+      headline: 'Dealer stock-in verified',
+      body: `Hi ${b(d.sellerName)}, our verification check passed for the dealer stock-in on ${b(d.listingTitle)}. Your payout of ${b(formatRand(d.sellerPayout))} is now being released to your verified bank account — allow 2–3 business days to reflect. We've sent the buyer the dealer's contact details so they can arrange their inter-dealer transfer with you directly.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Your payout', value: formatRand(d.sellerPayout) },
+      ],
+      cta: { label: 'View transaction', url: txUrl },
+      preheader: 'Dealer verification approved — payout released',
+    });
+    await this.send(d.sellerEmail, 'Dealer verification approved: ' + d.listingTitle, html);
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: Dealer stock-in approved for ${truncate(d.listingTitle, 30)}. Payout R${(d.sellerPayout / 100).toFixed(0)} on the way (2-3 days).`,
+      `dv-approved-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Buyer: firearm stocked at dealer — Gun Galore's job is done.
+  // Sent the moment dealer verification approves. Includes the
+  // dealer's name + address + phone so the buyer knows where their
+  // firearm is and can arrange the inter-dealer transfer (or
+  // collection) directly with the seller.
+  // ---------------------------------------------------------------
+  async firearmStockedAtDealerBuyer(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone: string | null;
+    listingTitle: string;
+    transactionId: string;
+    dealerName: string;
+    dealerAddress: string;
+    dealerPhone: string;
+    sellerName: string;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const html = this.email({
+      status: { tone: 'success', label: 'Dealer-stocked' },
+      headline: 'Your firearm has been booked into stock',
+      body: `Hi ${b(d.buyerName)}, the seller (${b(d.sellerName)}) has dropped ${b(d.listingTitle)} with their SAPS-licensed dealer and we've verified the SAPS 534 + stock-register paperwork. The firearm is now legally in the dealer's stock register at the address below. We've released the funds to the seller — Gun Galore's part of this transaction is done. From here, please liaise with the seller directly to arrange the inter-dealer transfer to your own dealer (or your preferred collection method).`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Dealer name', value: d.dealerName },
+        { label: 'Dealer address', value: d.dealerAddress },
+        { label: 'Dealer phone', value: d.dealerPhone },
+      ],
+      cta: { label: 'View transaction', url: txUrl },
+      preheader: `Your firearm is at ${truncate(d.dealerName, 60)}`,
+    });
+    await this.send(
+      d.buyerEmail,
+      'Firearm stocked at dealer: ' + d.listingTitle,
+      html,
+    );
+    await this.sendSms(
+      d.buyerPhone,
+      `Gun Galore: Your ${truncate(d.listingTitle, 25)} is booked into stock at ${truncate(d.dealerName, 30)} (${d.dealerPhone}). Contact the seller to arrange your transfer.`,
+      `stocked-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Seller: dealer-verification rejected — must reshoot
+  // ---------------------------------------------------------------
+  async dealerVerificationRejected(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone: string | null;
+    listingTitle: string;
+    transactionId: string;
+    reason?: string;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}/dealer-verification`;
+    const reasonLine = d.reason
+      ? `<p style="margin: 8px 0;"><b>Admin note:</b> ${d.reason}</p>`
+      : '';
+    const html = this.email({
+      status: { tone: 'pending', label: 'Reshoot needed' },
+      headline: 'Dealer verification — please reshoot',
+      body: `Hi ${b(d.sellerName)}, our verification check couldn't approve the photos for ${b(d.listingTitle)}. Please retake the photos and upload again. ${reasonLine}<p style="margin-top: 10px;"><b>Most common cause:</b> the SAPS 534 form was not filled in BLOCK LETTERS. Ask the dealer to redo the form in capital letters — our automated check cannot reliably read cursive or mixed-case handwriting and that means up to 48 hours of human review before your payout.</p>`,
+      cta: { label: 'Upload photos again', url: txUrl },
+      preheader: 'Reshoot dealer photos',
+    });
+    await this.send(
+      d.sellerEmail,
+      'Dealer verification needs reshoot: ' + d.listingTitle,
+      html,
+    );
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: Dealer photos rejected for ${truncate(d.listingTitle, 28)}. Most common cause: SAPS 534 not in BLOCK LETTERS. Reshoot needed.`,
+      `dv-rejected-${d.transactionId}`,
+    );
   }
 
   // ---------------------------------------------------------------
@@ -175,47 +503,102 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   async itemDispatched(d: DispatchDetails) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    const html = layout(
-      h1('Your item is on its way') +
-      p(`Hi ${strong(d.buyerName)}, your purchase of ${strong(d.listingTitle)} has been dispatched by the seller.`) +
-      (d.trackingReference
-        ? p(`Tracking reference: ${strong(d.trackingReference)}`)
-        : '') +
-      p(`Shipping method: ${strong(d.shippingMethod?.replace(/_/g, ' ') ?? 'TBD')}`) +
-      divider() +
-      p('Once you receive your item, please confirm delivery so that payment can be released to the seller.') +
-      button('View order & confirm delivery', txUrl),
-    );
+    const rows: { label: string; value: string }[] = [
+      { label: 'Courier', value: prettyCourier(d.shippingMethod) },
+    ];
+    if (d.trackingReference) {
+      rows.push({ label: 'Tracking', value: d.trackingReference });
+    }
+    const html = this.email({
+      status: { tone: 'success', label: 'Dispatched' },
+      headline: 'Your order is on its way',
+      body: `Hi ${b(d.buyerName)}, your purchase of ${b(d.listingTitle)} has been dispatched by the seller. Follow the parcel's progress on your order page — carrier scans land on the live tracking timeline as they happen. Once you receive your item, please confirm delivery so payment can be released to the seller.`,
+      rows,
+      cta: { label: 'Track & confirm delivery', url: txUrl },
+      preheader: `Dispatched — ${d.listingTitle}`,
+    });
     await this.send(d.buyerEmail, 'Dispatched: ' + d.listingTitle, html);
+    // SMS body deep-links to the transaction page where the tracking
+    // timeline lives. The title is truncated hard so the URL fits in
+    // a single 160-char segment even with a long tracking reference.
+    await this.sendSms(
+      d.buyerPhone,
+      `Gun Galore: ${truncate(d.listingTitle, 30)} dispatched.${d.trackingReference ? ' Ref: ' + d.trackingReference + '.' : ''} Track: ${txUrl}`,
+      `dispatched-${d.transactionId}`,
+    );
   }
 
   // ---------------------------------------------------------------
   // Seller: payment released
   // ---------------------------------------------------------------
-  async paymentReleasedSeller(d: { sellerEmail: string; sellerName: string; listingTitle: string; sellerPayout: number; transactionId: string }) {
+  async paymentReleasedSeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    sellerPayout: number;
+    transactionId: string;
+  }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    const html = layout(
-      h1('Your payout is on the way') +
-      p(`Hi ${strong(d.sellerName)}, the buyer has confirmed delivery of ${strong(d.listingTitle)}. Your payout of ${strong(formatRand(d.sellerPayout))} will be processed within 2–3 business days.`) +
-      divider() +
-      button('View sale', txUrl),
-    );
+    const html = this.email({
+      status: { tone: 'success', label: 'Payment released' },
+      headline: 'Payment released',
+      body: `Hi ${b(d.sellerName)}, the buyer has confirmed delivery of ${b(d.listingTitle)}. Your payout of ${b(formatRand(d.sellerPayout))} will be processed within 2–3 business days.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Your payout', value: formatRand(d.sellerPayout) },
+        { label: 'Date', value: formatDateShort(new Date()) },
+      ],
+      cta: { label: 'View sale', url: `${this.appUrl}/dashboard` },
+      preheader: `Payout of ${formatRand(d.sellerPayout)} on the way`,
+    });
     await this.send(d.sellerEmail, 'Payout confirmed — ' + d.listingTitle, html);
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: Payout of R${(d.sellerPayout / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} is on the way. Allow 2-3 business days.`,
+      `payout-${d.transactionId}`,
+    );
   }
 
   // ---------------------------------------------------------------
   // Buyer: refund issued
   // ---------------------------------------------------------------
-  async refundIssuedBuyer(d: { buyerEmail: string; buyerName: string; listingTitle: string; buyerTotal: number; transactionId: string; note?: string | null }) {
+  async refundIssuedBuyer(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone?: string | null;
+    listingTitle: string;
+    buyerTotal: number;
+    transactionId: string;
+    note?: string | null;
+  }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    const html = layout(
-      h1('Your refund has been issued') +
-      p(`Hi ${strong(d.buyerName)}, a refund of ${strong(formatRand(d.buyerTotal))} for ${strong(d.listingTitle)} has been issued. Please allow 5–10 business days for it to appear on your statement.`) +
-      (d.note ? divider() + p(`Note from admin: ${strong(d.note)}`) : '') +
-      divider() +
-      button('View order', txUrl),
-    );
+    const body =
+      `Hi ${b(d.buyerName)}, a refund of ${b(formatRand(d.buyerTotal))} for ${b(d.listingTitle)} has been issued. Please allow 5–10 business days for it to appear on your statement.` +
+      (d.note ? `<br><br>Note from admin: ${b(d.note)}` : '');
+    const html = this.email({
+      status: { tone: 'success', label: 'Refunded' },
+      headline: 'Refund issued',
+      body,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Amount', value: formatRand(d.buyerTotal) },
+        { label: 'Refund destination', value: 'Original payment card' },
+      ],
+      cta: { label: 'View order', url: txUrl },
+      preheader: `Refund of ${formatRand(d.buyerTotal)} issued`,
+    });
     await this.send(d.buyerEmail, 'Refund issued — ' + d.listingTitle, html);
+    // Refunds are financial events — per CLAUDE.md every notifiable
+    // event fires BOTH SMS + email. Skips silently if buyerPhone is
+    // null (legacy buyer rows from before the phone-capture flow).
+    if (d.buyerPhone) {
+      await this.sendSms(
+        d.buyerPhone,
+        `Gun Galore: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow 5-10 business days.`,
+        `refund-${d.transactionId}`,
+      );
+    }
   }
 
   // ---------------------------------------------------------------
@@ -223,12 +606,13 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   async listingApproved(d: ListingDecisionDetails) {
     const listingUrl = `${this.appUrl}/listings/${d.listingId}`;
-    const html = layout(
-      h1('Listing approved') +
-      p(`Hi ${strong(d.sellerName)}, your listing ${strong(d.listingTitle)} has been reviewed and approved. It is now live on the marketplace.`) +
-      divider() +
-      button('View listing', listingUrl),
-    );
+    const html = this.email({
+      status: { tone: 'success', label: 'Approved' },
+      headline: 'Listing approved',
+      body: `Hi ${b(d.sellerName)}, your listing ${b(d.listingTitle)} has been reviewed and approved. It is now live on the marketplace.`,
+      cta: { label: 'View listing', url: listingUrl },
+      preheader: `${d.listingTitle} is live`,
+    });
     await this.send(d.sellerEmail, 'Listing approved: ' + d.listingTitle, html);
   }
 
@@ -236,17 +620,702 @@ export class NotificationsService {
   // Seller: listing rejected
   // ---------------------------------------------------------------
   async listingRejected(d: ListingDecisionDetails) {
-    const html = layout(
-      h1('Listing not approved') +
-      p(`Hi ${strong(d.sellerName)}, your listing ${strong(d.listingTitle)} was not approved for the following reason:`) +
-      (d.reason
-        ? `<p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${TEXT};background:#2a2a2a;padding:12px;border-radius:6px;border-left:3px solid ${BRAND_RED};">${d.reason}</p>`
-        : p('No reason provided.')) +
-      divider() +
-      p('You may edit your listing and resubmit for review, or contact support if you believe this is an error.') +
-      button('My listings', `${this.appUrl}/my/listings`),
-    );
+    const editUrl = `${this.appUrl}/listings/${d.listingId}/edit`;
+    const reason = d.reason ?? 'No reason provided.';
+    const html = this.email({
+      status: { tone: 'error', label: 'Not approved' },
+      headline: 'Listing not approved',
+      body: `Hi ${b(d.sellerName)}, your listing ${b(d.listingTitle)} was not approved. Reason: ${b(reason)}<br><br>You may edit your listing and resubmit for review, or contact support if you believe this is an error.`,
+      cta: { label: 'Edit listing', url: editUrl },
+      preheader: `${d.listingTitle} was not approved`,
+    });
     await this.send(d.sellerEmail, 'Listing not approved: ' + d.listingTitle, html);
+  }
+
+  // Admin took down a listing AFTER it was already live (different
+  // from listingRejected, which fires during initial moderation).
+  // The wording emphasises that the listing is gone + invites appeal
+  // via support. Reason is mandatory at the service layer so the
+  // template can always assume it's there.
+  async listingRemovedByAdmin(d: {
+    sellerEmail: string;
+    sellerName: string;
+    listingTitle: string;
+    listingId: string;
+    reason: string;
+  }) {
+    const myListingsUrl = `${this.appUrl}/my/listings`;
+    const html = this.email({
+      status: { tone: 'error', label: 'Removed' },
+      headline: 'Listing removed',
+      body: `Hi ${b(d.sellerName)}, an admin has removed your listing ${b(d.listingTitle)} from the marketplace. Reason: ${b(d.reason)}<br><br>If you believe this was a mistake, reply to this email or contact support@gungalore.co.za and an admin will review the takedown. The listing will not return automatically.`,
+      cta: { label: 'Open my listings', url: myListingsUrl },
+      preheader: `${d.listingTitle} was removed by an admin`,
+    });
+    await this.send(
+      d.sellerEmail,
+      'Listing removed: ' + d.listingTitle,
+      html,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Offer notifications
+  // ---------------------------------------------------------------
+  async offerReceived(d: { sellerEmail: string; sellerName: string; buyerName: string; listingTitle: string; listingId: string; offerAmount: number; offerId: string }) {
+    const url = `${this.appUrl}/offers/received`;
+    const html = this.email({
+      status: { tone: 'pending', label: 'New offer' },
+      headline: 'New offer',
+      body: `Hi ${b(d.sellerName)}, ${b(d.buyerName)} has made an offer on your listing ${b(d.listingTitle)}. You can accept, reject, or make a single counter-offer. The offer expires in 48 hours.`,
+      rows: [
+        { label: 'Item', value: d.listingTitle },
+        { label: 'Offer amount', value: formatRand(d.offerAmount) },
+      ],
+      cta: { label: 'View offer', url },
+      preheader: `${d.buyerName} offered ${formatRand(d.offerAmount)}`,
+    });
+    await this.send(d.sellerEmail, 'New offer on: ' + d.listingTitle, html);
+  }
+
+  async offerAccepted(d: { buyerEmail: string; buyerName: string; listingTitle: string; listingId: string; acceptedAmount: number; offerId: string }) {
+    const url = `${this.appUrl}/checkout/offer/${d.offerId}`;
+    const html = this.email({
+      status: { tone: 'success', label: 'Accepted' },
+      headline: 'Your offer was accepted',
+      body: `Hi ${b(d.buyerName)}, your offer of ${b(formatRand(d.acceptedAmount))} on ${b(d.listingTitle)} has been accepted. Complete your checkout within 24 hours to secure the item.`,
+      cta: { label: 'Complete checkout', url },
+      preheader: `Your ${formatRand(d.acceptedAmount)} offer was accepted`,
+    });
+    await this.send(d.buyerEmail, 'Offer accepted — ' + d.listingTitle, html);
+  }
+
+  async offerRejected(d: { buyerEmail: string; buyerName: string; listingTitle: string; listingId: string; offerId: string }) {
+    const url = `${this.appUrl}/listings/${d.listingId}`;
+    const html = this.email({
+      status: { tone: 'error', label: 'Declined' },
+      headline: 'Offer declined',
+      body: `Hi ${b(d.buyerName)}, the seller has declined your offer on ${b(d.listingTitle)}.`,
+      cta: { label: 'View listing', url },
+      preheader: `Offer declined — ${d.listingTitle}`,
+    });
+    await this.send(d.buyerEmail, 'Offer declined — ' + d.listingTitle, html);
+  }
+
+  async offerCountered(d: { buyerEmail: string; buyerName: string; listingTitle: string; listingId: string; originalAmount: number; counterAmount: number; sellerNote?: string; offerId: string }) {
+    const url = `${this.appUrl}/my/offers`;
+    const rows: { label: string; value: string }[] = [
+      { label: 'Item', value: d.listingTitle },
+      { label: 'Your offer', value: formatRand(d.originalAmount) },
+      { label: 'Seller counter', value: formatRand(d.counterAmount) },
+    ];
+    if (d.sellerNote) {
+      rows.push({ label: 'Seller note', value: d.sellerNote });
+    }
+    const html = this.email({
+      status: { tone: 'pending', label: 'Counter-offer' },
+      headline: 'Counter-offer received',
+      body: `Hi ${b(d.buyerName)}, the seller has countered your offer on ${b(d.listingTitle)}. You can accept or reject the counter. This is the final offer and it expires in 24 hours.`,
+      rows,
+      cta: { label: 'Respond to counter', url },
+      preheader: `Seller countered at ${formatRand(d.counterAmount)}`,
+    });
+    await this.send(d.buyerEmail, 'Counter-offer on: ' + d.listingTitle, html);
+  }
+
+  async counterAccepted(d: { sellerEmail: string; sellerName: string; buyerName: string; listingTitle: string; listingId: string; counterAmount: number; offerId: string }) {
+    const html = this.email({
+      status: { tone: 'success', label: 'Counter accepted' },
+      headline: 'Counter accepted',
+      body: `Hi ${b(d.sellerName)}, ${b(d.buyerName)} has accepted your counter-offer of ${b(formatRand(d.counterAmount))} on ${b(d.listingTitle)}. They will complete checkout within 24 hours.`,
+      cta: { label: 'View received offers', url: `${this.appUrl}/offers/received` },
+      preheader: `${d.buyerName} accepted your counter`,
+    });
+    await this.send(d.sellerEmail, 'Counter accepted — ' + d.listingTitle, html);
+  }
+
+  async counterRejected(d: { sellerEmail: string; sellerName: string; buyerName: string; listingTitle: string; listingId: string; offerId: string }) {
+    const html = this.email({
+      status: { tone: 'error', label: 'Counter declined' },
+      headline: 'Counter declined',
+      body: `Hi ${b(d.sellerName)}, ${b(d.buyerName)} has declined your counter-offer on ${b(d.listingTitle)}. The listing remains active.`,
+      cta: { label: 'View listing', url: `${this.appUrl}/listings/${d.listingId}` },
+      preheader: `${d.buyerName} declined your counter`,
+    });
+    await this.send(d.sellerEmail, 'Counter declined — ' + d.listingTitle, html);
+  }
+
+  // ---------------------------------------------------------------
+  // Auction notifications
+  // ---------------------------------------------------------------
+
+  async bidPlaced(
+    sellerEmail: string,
+    listingTitle: string,
+    amount: number,
+    sellerPhone?: string | null,
+    listingId?: string,
+  ) {
+    const url = `${this.appUrl}`;
+    const html = this.email({
+      status: { tone: 'pending', label: 'New bid' },
+      headline: 'New bid on your auction',
+      body: `A new bid of ${b(formatRand(amount))} has been placed on ${b(listingTitle)}. You will receive another email when the auction ends.`,
+      cta: { label: 'View listing', url },
+      preheader: `${formatRand(amount)} bid on ${listingTitle}`,
+    });
+    await this.send(sellerEmail, 'New bid: ' + listingTitle, html);
+    if (sellerPhone) {
+      await this.sendSms(
+        sellerPhone,
+        `Gun Galore: New bid R${(amount / 100).toFixed(0)} on ${truncate(listingTitle, 40)}.`,
+        `bid-${listingId ?? 'x'}-${amount}`,
+      );
+    }
+  }
+
+  async bidOutbid(
+    buyerEmail: string,
+    listingTitle: string,
+    newAmount: number,
+    buyerPhone?: string | null,
+    listingId?: string,
+  ) {
+    const url = `${this.appUrl}`;
+    const html = this.email({
+      status: { tone: 'error', label: 'Outbid' },
+      headline: "You've been outbid",
+      body: `Another bidder has overtaken you on ${b(listingTitle)}. The current high bid is now ${b(formatRand(newAmount))}. You can raise your maximum bid to take the lead — the system will only bid up to that amount on your behalf.`,
+      cta: { label: 'Raise your bid', url },
+      preheader: `Outbid — high bid is now ${formatRand(newAmount)}`,
+    });
+    await this.send(buyerEmail, 'Outbid on: ' + listingTitle, html);
+    if (buyerPhone) {
+      await this.sendSms(
+        buyerPhone,
+        `Gun Galore: Outbid on ${truncate(listingTitle, 30)} — current bid R${(newAmount / 100).toFixed(0)}.`,
+        `outbid-${listingId ?? 'x'}-${newAmount}`,
+      );
+    }
+  }
+
+  async auctionWon(
+    winnerEmail: string,
+    listingTitle: string,
+    amount: number,
+    winnerPhone?: string | null,
+    listingId?: string,
+  ) {
+    const url = `${this.appUrl}/my/bids`;
+    const html = this.email({
+      status: { tone: 'success', label: 'Auction won' },
+      headline: 'You won.',
+      body: `Congratulations — you won ${b(listingTitle)} with a high bid of ${b(formatRand(amount))}. You have 24 hours to complete checkout. After that, the auction may be offered to the next highest bidder and a strike may be applied to your account.`,
+      cta: { label: 'Complete checkout', url },
+      preheader: `You won ${listingTitle} for ${formatRand(amount)}`,
+    });
+    await this.send(winnerEmail, 'You won — ' + listingTitle, html);
+    if (winnerPhone) {
+      await this.sendSms(
+        winnerPhone,
+        `Gun Galore: You WON ${truncate(listingTitle, 30)} for R${(amount / 100).toFixed(0)}. 24h to pay: ${this.appUrl}/my/bids`,
+        `auction-won-${listingId ?? 'x'}`,
+      );
+    }
+  }
+
+  // The three auction-ended outcomes route to three different
+  // templates so the seller's email matches the outcome exactly
+  // (sold / reserve not met / no bids). NO_RESERVE and NO_BIDS
+  // each have a dedicated template; WON falls back to the inline
+  // layout (no dedicated seller-side won template — sale-confirmed
+  // is the buyer-side one).
+  async auctionEndedForSeller(
+    sellerEmail: string,
+    listingTitle: string,
+    outcome: 'WON' | 'NO_RESERVE' | 'NO_BIDS',
+    amount: number,
+  ) {
+    const ctaUrl = `${this.appUrl}/dashboard`;
+    let html: string;
+    let subject: string;
+    switch (outcome) {
+      case 'WON':
+        subject = 'Auction sold — ' + listingTitle;
+        html = this.email({
+          status: { tone: 'success', label: 'Auction sold' },
+          headline: 'Auction sold',
+          body: `Your auction ${b(listingTitle)} sold for ${b(formatRand(amount))}. The buyer has 24 hours to complete payment.`,
+          cta: { label: 'View dashboard', url: ctaUrl },
+          preheader: `Sold for ${formatRand(amount)}`,
+        });
+        break;
+      case 'NO_RESERVE':
+        subject = 'Reserve not met — ' + listingTitle;
+        html = this.email({
+          status: { tone: 'pending', label: 'Reserve not met' },
+          headline: 'Reserve not met',
+          body: `Bidding closed on ${b(listingTitle)} at ${b(formatRand(amount))}, which did not meet your reserve. You can accept the high bid, counter, or relist.`,
+          cta: { label: 'View dashboard', url: ctaUrl },
+          preheader: `Highest bid ${formatRand(amount)} — below reserve`,
+        });
+        break;
+      case 'NO_BIDS':
+        subject = 'No bids — ' + listingTitle;
+        html = this.email({
+          status: { tone: 'error', label: 'No bids' },
+          headline: 'No bids — relist?',
+          body: `${b(listingTitle)} ended with no bids. You can relist with a lower starting price.`,
+          cta: { label: 'View dashboard', url: ctaUrl },
+          preheader: `${listingTitle} closed with no bids`,
+        });
+        break;
+    }
+    await this.send(sellerEmail, subject, html);
+  }
+
+  // ---------------------------------------------------------------
+  // Shipping status notifications (called by webhook handlers)
+  // ---------------------------------------------------------------
+
+  async shippingDispatched(buyerEmail: string, buyerName: string, listingTitle: string, transactionId: string) {
+    const html = this.email({
+      status: { tone: 'success', label: 'Dispatched' },
+      headline: 'Dispatched',
+      body: `Hi ${b(buyerName)}, ${b(listingTitle)} is on its way. We'll email you again when it's out for delivery.`,
+      cta: { label: 'Track order', url: `${this.appUrl}/transactions/${transactionId}` },
+      preheader: `${listingTitle} is on its way`,
+    });
+    await this.send(buyerEmail, 'Dispatched — ' + listingTitle, html);
+  }
+
+  async shippingOutForDelivery(buyerEmail: string, buyerName: string, listingTitle: string, transactionId: string) {
+    const html = this.email({
+      status: { tone: 'pending', label: 'Out for delivery' },
+      headline: 'Out for delivery today',
+      body: `Hi ${b(buyerName)}, ${b(listingTitle)} is out for delivery. Please be available to receive it.`,
+      cta: { label: 'Track order', url: `${this.appUrl}/transactions/${transactionId}` },
+      preheader: `${listingTitle} is out for delivery today`,
+    });
+    await this.send(buyerEmail, 'Out for delivery — ' + listingTitle, html);
+  }
+
+  async shippingDelivered(buyerEmail: string, buyerName: string, listingTitle: string, transactionId: string) {
+    const url = `${this.appUrl}/transactions/${transactionId}`;
+    const html = this.email({
+      status: { tone: 'success', label: 'Delivered' },
+      headline: 'Delivered',
+      body: `Hi ${b(buyerName)}, your ${b(listingTitle)} has been delivered. Please confirm receipt in your dashboard so the seller can be paid. You have 7 days to confirm — after that, the payment will auto-release.`,
+      cta: { label: 'Confirm receipt', url },
+      preheader: `${listingTitle} was delivered`,
+    });
+    await this.send(buyerEmail, 'Delivered — ' + listingTitle, html);
+  }
+
+  async shippingFailed(buyerEmail: string, buyerName: string, listingTitle: string, transactionId: string) {
+    const html = this.email({
+      status: { tone: 'error', label: 'Delivery failed' },
+      headline: 'Delivery failed',
+      body: `Hi ${b(buyerName)}, we couldn't deliver ${b(listingTitle)}. The courier will retry. If you need to update your address or have questions, contact support.`,
+      cta: { label: 'View order', url: `${this.appUrl}/transactions/${transactionId}` },
+      preheader: `Delivery of ${listingTitle} failed`,
+    });
+    await this.send(buyerEmail, 'Delivery failed — ' + listingTitle, html);
+  }
+
+  // ---------------------------------------------------------------
+  // Raffle notifications
+  // ---------------------------------------------------------------
+
+  async raffleEntryConfirmed(buyerEmail: string, raffleTitle: string, ticketCount: number, refCodes: string[]) {
+    const url = `${this.appUrl}/my/tickets`;
+    const shownRefs = refCodes.slice(0, 25);
+    const refsList = shownRefs.join(', ');
+    const refsLine = shownRefs.length > 0
+      ? `<br><br>Reference codes: ${b(refsList)}`
+      : '';
+    const html = this.email({
+      status: { tone: 'success', label: 'Tickets confirmed' },
+      headline: 'Tickets confirmed',
+      body: `You're in. ${b(String(ticketCount))} ticket${ticketCount === 1 ? '' : 's'} for ${b(raffleTitle)} ${ticketCount === 1 ? 'is' : 'are'} confirmed.${refsLine}`,
+      rows: [
+        { label: 'Tickets', value: String(ticketCount) },
+        { label: 'Date', value: formatDateShort(new Date()) },
+      ],
+      cta: { label: 'My tickets', url },
+      preheader: `${ticketCount} ticket${ticketCount === 1 ? '' : 's'} for ${raffleTitle}`,
+    });
+    await this.send(buyerEmail, 'Entry confirmed — ' + raffleTitle, html);
+  }
+
+  async raffleWinnerPicked(winnerEmail: string, raffleTitle: string, position: number, claimDeadline: Date) {
+    const place = position === 1 ? 'WINNER' : `Backup #${position - 1}`;
+    const url = `${this.appUrl}/dashboard/raffle-wins`;
+    const isWinner = position === 1;
+    const deadlineStr = claimDeadline.toLocaleString('en-ZA');
+    const html = this.email({
+      status: isWinner
+        ? { tone: 'success', label: 'Winner' }
+        : { tone: 'pending', label: 'Backup pick' },
+      headline: isWinner ? 'You won!' : `You're a ${place}`,
+      body: `You've been drawn as ${b(place)} on ${b(raffleTitle)}. Confirm your claim before the deadline below. If you do not claim within the window, the next backup is promoted automatically.`,
+      rows: [
+        { label: 'Raffle', value: raffleTitle },
+        { label: 'Claim deadline', value: deadlineStr },
+      ],
+      cta: { label: 'Claim prize', url },
+      preheader: isWinner ? `You won ${raffleTitle}` : `Backup pick for ${raffleTitle}`,
+    });
+    await this.send(winnerEmail, (isWinner ? 'You won — ' : 'Backup pick — ') + raffleTitle, html);
+  }
+
+  async raffleBackupPromoted(winnerEmail: string, raffleId: string, claimDeadline: Date) {
+    const url = `${this.appUrl}/dashboard/raffle-wins`;
+    const deadlineStr = claimDeadline.toLocaleString('en-ZA');
+    const html = this.email({
+      status: { tone: 'success', label: 'Promoted' },
+      headline: 'Promoted to winner',
+      body: `The primary winner did not claim their prize. You're up — confirm your claim before the deadline below.`,
+      rows: [
+        { label: 'Claim deadline', value: deadlineStr },
+      ],
+      cta: { label: 'Claim prize', url },
+      preheader: 'Backup promoted — claim your prize',
+    });
+    await this.send(winnerEmail, 'Backup promoted to winner', html);
+  }
+
+  async raffleMinNotMet(
+    buyerEmail: string,
+    raffleTitle: string,
+    buyerPhone?: string | null,
+    raffleId?: string,
+  ) {
+    const html = this.email({
+      status: { tone: 'error', label: 'Cancelled' },
+      headline: 'Raffle cancelled',
+      body: `Sadly, ${b(raffleTitle)} did not sell enough tickets to draw. Your payment will be refunded in full within 5–7 working days. Sorry about that — we will run another shot at it soon.`,
+      preheader: `${raffleTitle} cancelled — full refund coming`,
+    });
+    await this.send(buyerEmail, 'Refund — ' + raffleTitle, html);
+    if (buyerPhone) {
+      await this.sendSms(
+        buyerPhone,
+        `Gun Galore: ${truncate(raffleTitle, 40)} cancelled (not enough tickets). Full refund in 5-7 days.`,
+        `raffle-min-${raffleId ?? 'x'}`,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Admin: VerifyNow credit balance dropped below threshold
+  // ---------------------------------------------------------------
+  // Outbound nudge so the operator can top up credits before sellers
+  // get blocked. Sent to every active admin's User.email — the same
+  // function returns the body so we can also push it through SMS.
+  async adminLowVerifyNowCredits(
+    adminEmail: string,
+    adminName: string,
+    available: number,
+    threshold: number,
+  ) {
+    const url = `${this.appUrl}/admin/kyc`;
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'VerifyNow credits low',
+      body: `Hi ${b(adminName)}, your VerifyNow account has ${b(String(available))} credits remaining — below the ${b(String(threshold))}-credit alert threshold. New KYC verifications will start failing once you hit zero. Top up via the VerifyNow dashboard before that happens.`,
+      rows: [
+        { label: 'Available', value: String(available) },
+        { label: 'Threshold', value: String(threshold) },
+      ],
+      cta: { label: 'View KYC credits panel', url },
+      preheader: `${available} VerifyNow credits remaining`,
+    });
+    await this.send(
+      adminEmail,
+      `VerifyNow credits low — ${available} remaining`,
+      html,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // ---------------------------------------------------------------
+  // Dispatch SLA — 48h since payment, seller hasn't dispatched yet.
+  // One-shot nudge with the auto-refund deadline spelled out so the
+  // seller knows what happens if they ignore it.
+  // ---------------------------------------------------------------
+  async dispatchNudgeSeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+    hoursElapsed: number;
+    autoRefundDays: number;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Please dispatch your sold item',
+      body: `Hi ${b(d.sellerName)}, it's been ${b(d.hoursElapsed + 'h')} since the buyer paid for ${b(d.listingTitle)} and the parcel hasn't been dispatched yet. Dispatch within the next ${b(d.autoRefundDays + ' days')} or the order will be automatically refunded to the buyer and a strike added to your account. If you can't ship for any reason, message support so we can refund the buyer cleanly.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Time elapsed', value: `${d.hoursElapsed}h` },
+        { label: 'Auto-refund in', value: `${d.autoRefundDays} days` },
+      ],
+      cta: { label: 'Mark as dispatched', url: txUrl },
+      preheader: `Dispatch ${d.listingTitle} or it'll be auto-refunded`,
+    });
+    await this.send(
+      d.sellerEmail,
+      'Action needed: dispatch ' + d.listingTitle,
+      html,
+    );
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: ${truncate(d.listingTitle, 30)} still not dispatched (${d.hoursElapsed}h). Auto-refund in ${d.autoRefundDays}d. Ship now: ${txUrl}`,
+      `dispatch-nudge-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Dispatch SLA — auto-refund fired. Two emails (buyer gets the
+  // "good news, your money is back" message; seller gets the strike
+  // warning).
+  // ---------------------------------------------------------------
+  async orderAutoRefunded(d: {
+    listingTitle: string;
+    transactionId: string;
+    buyerTotal: number;
+    buyer: { email: string; firstName: string | null; phone: string | null };
+    seller: { email: string; firstName: string | null; phone: string | null };
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const buyerName = d.buyer.firstName ?? 'Buyer';
+    const sellerName = d.seller.firstName ?? 'Seller';
+
+    const buyerHtml = this.email({
+      status: { tone: 'success', label: 'Refunded' },
+      headline: 'Order refunded',
+      body: `Hi ${b(buyerName)}, the seller of ${b(d.listingTitle)} didn't dispatch within our 7-day window. We've refunded ${b(formatRand(d.buyerTotal))} back to your card. The funds should reflect in 3–7 working days. Sorry for the trouble — the listing is back on the marketplace if you want to browse alternatives.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Amount', value: formatRand(d.buyerTotal) },
+      ],
+      cta: { label: 'Browse listings', url: `${this.appUrl}/` },
+      preheader: `Refunded ${formatRand(d.buyerTotal)} for ${d.listingTitle}`,
+    });
+    await this.send(
+      d.buyer.email,
+      'Refunded: ' + d.listingTitle,
+      buyerHtml,
+    );
+    await this.sendSms(
+      d.buyer.phone,
+      `Gun Galore: ${truncate(d.listingTitle, 30)} not dispatched. Refunded ${formatRand(d.buyerTotal)} to your card.`,
+      `auto-refund-buyer-${d.transactionId}`,
+    );
+
+    const sellerHtml = this.email({
+      status: { tone: 'error', label: 'Strike added' },
+      headline: 'Auto-refund issued — strike added',
+      body: `Hi ${b(sellerName)}, you didn't dispatch ${b(d.listingTitle)} within the 7-day window. The buyer has been refunded and a dispatch strike has been added to your account. Three strikes triggers a manual review and possible suspension. If something genuinely went wrong, contact support before it happens again.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+      ],
+      cta: { label: 'Open order', url: txUrl },
+      preheader: `${d.listingTitle} auto-refunded — strike added`,
+    });
+    await this.send(
+      d.seller.email,
+      'Auto-refund: ' + d.listingTitle,
+      sellerHtml,
+    );
+    await this.sendSms(
+      d.seller.phone,
+      `Gun Galore: ${truncate(d.listingTitle, 30)} auto-refunded (no dispatch). Strike added.`,
+      `auto-refund-seller-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // PRIVATE_ARRANGE — buyer waived payment protection + opted into a peer
+  // arrangement. Two emails go out (one to each party) with the
+  // OTHER party's contact details so they can coordinate the SAPS
+  // dealer meet. Buyer also gets an SMS with the seller's name +
+  // phone since that's the bit they'll act on first.
+  // ---------------------------------------------------------------
+  async privateArrangeContactReveal(d: {
+    listingTitle: string;
+    transactionId: string;
+    buyer: {
+      email: string;
+      firstName: string | null;
+      lastName: string | null;
+      phone: string | null;
+    };
+    seller: {
+      email: string;
+      firstName: string | null;
+      lastName: string | null;
+      phone: string | null;
+    };
+    sellerPayout: number;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const buyerName =
+      [d.buyer.firstName, d.buyer.lastName].filter(Boolean).join(' ') || 'Buyer';
+    const sellerName =
+      [d.seller.firstName, d.seller.lastName].filter(Boolean).join(' ') || 'Seller';
+
+    // Email to the BUYER — reveals SELLER details.
+    const buyerRows: { label: string; value: string }[] = [
+      { label: 'Seller name', value: sellerName },
+    ];
+    if (d.seller.phone) {
+      buyerRows.push({ label: 'Seller phone', value: d.seller.phone });
+    }
+    buyerRows.push({ label: 'Seller email', value: d.seller.email });
+    const buyerHtml = this.email({
+      status: { tone: 'success', label: 'Contact revealed' },
+      headline: 'Contact details revealed',
+      body: `Hi ${b(buyerName)}, your purchase of ${b(d.listingTitle)} is confirmed and the seller has been paid. To complete the legal transfer, contact the seller and arrange a date + SAPS-licensed dealer between you both. Remember: the dealer paperwork is what transfers ownership legally — don't hand over cash or take possession outside a licensed dealer's premises.`,
+      rows: buyerRows,
+      cta: { label: 'View order', url: txUrl },
+      preheader: `Seller contact details for ${d.listingTitle}`,
+    });
+    await this.send(
+      d.buyer.email,
+      'Contact details for your purchase — ' + d.listingTitle,
+      buyerHtml,
+    );
+    await this.sendSms(
+      d.buyer.phone,
+      `Gun Galore: Contact ${sellerName}${d.seller.phone ? ' on ' + d.seller.phone : ''} to arrange the dealer meet for ${truncate(d.listingTitle, 30)}.`,
+      `pa-buyer-${d.transactionId}`,
+    );
+
+    // Email to the SELLER — reveals BUYER details + payout note.
+    const sellerRows: { label: string; value: string }[] = [
+      { label: 'Buyer name', value: buyerName },
+    ];
+    if (d.buyer.phone) {
+      sellerRows.push({ label: 'Buyer phone', value: d.buyer.phone });
+    }
+    sellerRows.push({ label: 'Buyer email', value: d.buyer.email });
+    sellerRows.push({ label: 'Payout', value: formatRand(d.sellerPayout) });
+    const sellerHtml = this.email({
+      status: { tone: 'success', label: 'Contact revealed' },
+      headline: 'Contact details revealed',
+      body: `Hi ${b(sellerName)}, ${b(buyerName)} has bought your listing ${b(d.listingTitle)} as a Private Arrangement. Payment of ${b(formatRand(d.sellerPayout))} has been released to your account immediately (no payment-protection hold). Coordinate a SAPS-licensed dealer between you and complete the legal transfer paperwork — don't hand the item over outside a licensed dealer's premises.`,
+      rows: sellerRows,
+      cta: { label: 'View sale', url: txUrl },
+      preheader: `${buyerName} bought ${d.listingTitle} — payment released`,
+    });
+    await this.send(
+      d.seller.email,
+      'New sale (Private Arrangement) — ' + d.listingTitle,
+      sellerHtml,
+    );
+    await this.sendSms(
+      d.seller.phone,
+      `Gun Galore: ${truncate(d.listingTitle, 30)} sold to ${buyerName}${d.buyer.phone ? ' (' + d.buyer.phone + ')' : ''}. Payment released. Arrange the dealer meet.`,
+      `pa-seller-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Q&A — buyer asked a product question that needs a seller reply
+  // (i.e. neither moderation nor the auto-answer dedup resolved it).
+  // Fire-and-forget; never blocks the buyer's submit. SMS keeps the
+  // body short so the seller can answer from their phone via the
+  // dashboard link.
+  // ---------------------------------------------------------------
+  async listingQuestionForSeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    listingId: string;
+    question: string;
+  }) {
+    const url = `${this.appUrl}/dashboard?tab=questions`;
+    const html = this.email({
+      status: { tone: 'pending', label: 'New question' },
+      headline: 'Buyer has a question',
+      body: `Hi ${b(d.sellerName)}, someone is asking about your listing ${b(d.listingTitle)}: ${b(d.question)}<br><br>Answer it from your dashboard. Quick replies keep the listing fresh — future buyers will see your answer too.`,
+      cta: { label: 'Answer in dashboard', url },
+      preheader: `New question on ${d.listingTitle}`,
+    });
+    await this.send(d.sellerEmail, 'Question on your listing — ' + d.listingTitle, html);
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: New question on ${truncate(d.listingTitle, 30)}. Reply: ${url}`,
+      `listing-question-${d.listingId}`,
+    );
+  }
+
+  // KYC (VerifyNow) — required / approved / rejected
+  // ---------------------------------------------------------------
+  // Seller's first buyer just kicked off a purchase. Until they verify
+  // via VerifyNow, their payout is held. We do NOT block the buyer's
+  // checkout — only the seller's payout side is gated.
+  async sellerKycRequired(sellerEmail: string, sellerName: string) {
+    const url = `${this.appUrl}/kyc/verify`;
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Verify your identity to release your payout',
+      body: `Hi ${b(sellerName)}, congratulations — your first sale is on its way. Before we can release the funds, we need to verify your identity. This is a quick two-step process: first, confirm your SA ID number (we cross-check it against Home Affairs); second, take a quick selfie so we can match it to your ID photo. The whole thing takes about a minute. Your buyer's payment is safely held until you're done.`,
+      cta: { label: 'Verify identity now', url },
+      preheader: 'Verify your identity to release your payout',
+    });
+    await this.send(sellerEmail, 'Action needed: verify your identity', html);
+  }
+
+  // Verification succeeded — pending payout can now move forward.
+  async sellerKycApproved(sellerEmail: string, sellerName: string) {
+    const html = this.email({
+      status: { tone: 'success', label: 'Verified' },
+      headline: 'Identity verified',
+      body: `Hi ${b(sellerName)}, your identity has been verified. Your pending sale can now proceed — pack and dispatch as soon as you're ready.`,
+      cta: { label: 'Go to dashboard', url: `${this.appUrl}/dashboard` },
+      preheader: 'Your identity has been verified',
+    });
+    await this.send(sellerEmail, 'Identity verified — Gun Galore', html);
+  }
+
+  // Face-match failed — link them back so they can retry with better
+  // lighting. After 3 fails an admin alert is raised separately.
+  async sellerKycRejected(
+    sellerEmail: string,
+    sellerName: string,
+    reason: string,
+    attempt: number = 1,
+  ) {
+    const url = `${this.appUrl}/kyc/verify`;
+    const html = this.email({
+      status: { tone: 'error', label: 'Not approved' },
+      headline: "Identity verification didn't pass",
+      body: `Hi ${b(sellerName)}, ${b(reason)}<br><br>Try again from your account — better lighting and a clear, full-face selfie usually does the trick.`,
+      cta: { label: 'Try again', url },
+      preheader: "Identity verification didn't pass — try again",
+    });
+    await this.send(sellerEmail, 'Identity verification — try again', html);
+  }
+
+  // ---------------------------------------------------------------
+  // Public broadcast hooks — the admin broadcast page uses these to
+  // send a one-off email or SMS to an arbitrary address. Same
+  // fail-open semantics as the private helpers, but exposed so other
+  // services (admin comms) can use them without re-implementing the
+  // Resend / SMSPortal client wiring.
+  // ---------------------------------------------------------------
+  async sendBroadcastEmail(to: string, subject: string, html: string) {
+    return this.send(to, subject, html);
+  }
+
+  async sendBroadcastSms(to: string, message: string, reference: string) {
+    return this.sendSms(to, message, reference);
   }
 
   // ---------------------------------------------------------------
@@ -261,4 +1330,71 @@ export class NotificationsService {
       this.logger.error(`Email failed → ${to} "${subject}": ${(err as Error).message}`);
     }
   }
+
+  // Wrap SmsService so each shipping-notification call site doesn't
+  // have to repeat the null-check + try/catch. Always fails open —
+  // SMS hiccups must never block the rest of the order flow. Skips
+  // entirely when `to` is missing (user without a phone) so we don't
+  // burn SMSPortal credits on no-ops.
+  private async sendSms(
+    to: string | null | undefined,
+    message: string,
+    reference: string,
+  ) {
+    if (!to || to.trim().length === 0) return;
+    try {
+      await this.sms.sendSms({ to: to.trim(), message, reference });
+    } catch (err) {
+      this.logger.warn(
+        `SMS failed → ${to} (${reference}): ${(err as Error).message}`,
+      );
+    }
+  }
+}
+
+// SMS segments are 160 chars (or 70 for GSM-extended). Long listing
+// titles eat budget fast — trim with an ellipsis so messages stay in
+// one segment per send.
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + '…';
+}
+
+// Friendly shipping-method label for emails. The template literal
+// rendering elsewhere shows "PUDO_LOCKER" / "DEALER_TRANSFER" which
+// looks raw; this turns them into something a buyer recognises.
+function prettyShippingMethod(method: string | null | undefined): string {
+  if (!method) return 'TBD';
+  switch (method) {
+    case 'PUDO':
+      return 'Pudo Locker';
+    case 'TCG':
+      return 'Door delivery (The Courier Guy)';
+    case 'DEALER_TRANSFER':
+      return 'Licensed dealer transfer';
+    case 'PRIVATE_ARRANGE':
+      return 'Private dealer arrangement';
+    default:
+      return method.replace(/_/g, ' ').toLowerCase();
+  }
+}
+
+// Same idea but specifically for the "courier" slot on the
+// sale-shipped template — PUDO / TCG are the only realistic values
+// once we're at the dispatched stage. Anything else collapses to a
+// generic label.
+function prettyCourier(method: string | null | undefined): string {
+  if (method === 'PUDO') return 'Pudo';
+  if (method === 'TCG') return 'The Courier Guy';
+  return 'Courier';
+}
+
+// Human-readable short date used by templates' "Date" / "Listed on"
+// rows. Kept SA-locale so it matches the rest of the UI.
+function formatDateShort(d: Date): string {
+  return d.toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }

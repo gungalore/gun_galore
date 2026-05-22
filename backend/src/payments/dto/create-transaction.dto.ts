@@ -3,6 +3,8 @@ import {
   IsEnum,
   IsOptional,
   IsNotEmpty,
+  IsBoolean,
+  Equals,
   ValidateIf,
   ValidateNested,
   IsPostalCode,
@@ -12,9 +14,19 @@ import { Type } from 'class-transformer';
 import { ShippingMethod } from '@prisma/client';
 
 export class DeliveryAddressDto {
+  // Optional complex / unit / building identifier — same as ManualAddressFields.
+  @IsOptional()
+  @IsString()
+  building?: string;
+
   @IsString()
   @IsNotEmpty()
   streetAddress: string;
+
+  // Optional second address line (e.g. "Apt 4B", "Behind reception").
+  @IsOptional()
+  @IsString()
+  address2?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -32,23 +44,30 @@ export class DeliveryAddressDto {
   @MinLength(4)
   postalCode: string;
 
-  @IsString()
-  @IsNotEmpty()
-  contactName: string;
+  // Contact name + phone deliberately NOT collected on this DTO — the
+  // backend pulls them from User.firstName/lastName + User.phone when
+  // building the TCG shipment request. This keeps the checkout form
+  // smaller and means the buyer can't accidentally ship to a typo'd
+  // phone number.
 
-  @IsString()
-  @IsNotEmpty()
-  contactPhone: string;
+  // Coords are optional here — they're not required to BOOK a shipment,
+  // only to QUOTE one (and the quote-time call passes them separately).
+  @IsOptional()
+  lat?: number;
 
   @IsOptional()
-  @IsString()
-  contactEmail?: string;
+  lng?: number;
 }
 
 export class CreateTransactionDto {
   @IsString()
   @IsNotEmpty()
   listingId: string;
+
+  // When checking out from an accepted offer (TAKE_A_SHOT)
+  @IsOptional()
+  @IsString()
+  offerId?: string;
 
   @IsEnum(ShippingMethod)
   shippingMethod: ShippingMethod;
@@ -70,4 +89,17 @@ export class CreateTransactionDto {
   @IsString()
   @IsNotEmpty()
   dealerId?: string;
+
+  // PRIVATE_ARRANGE: explicit consent flag — the buyer ticked both
+  // boxes and typed "I UNDERSTAND" on the consent screen. Must be
+  // `true` (not just present) for PRIVATE_ARRANGE submissions. The
+  // controller / service refuses the transaction without it, so a
+  // direct API caller can't accidentally trigger an immediate payout.
+  @ValidateIf((o) => o.shippingMethod === 'PRIVATE_ARRANGE')
+  @IsBoolean()
+  @Equals(true, {
+    message:
+      'Private arrangement requires explicit consent — tick the boxes on the checkout screen.',
+  })
+  privateArrangeConsent?: boolean;
 }

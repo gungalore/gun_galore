@@ -1,14 +1,42 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-export interface TcgAddress {
+// TCG (The Courier Guy) door-to-door quote + shipment integration.
+// IMPORTANT: TCG and Pudo are SEPARATE businesses with SEPARATE wallets
+// and SEPARATE rate cards, even though TCG owns Pudo. Pudo's API
+// returns wholesale-merchant rates (~R200 minimum for a small parcel
+// cross-province); TCG's own retail-customer API returns much
+// cheaper rates (R123 for the same shipment) because they sell
+// flat-rate "Economy" tiers Pudo doesn't expose.
+//
+// Use:
+//   - PudoService.quoteL2L → locker-to-locker (Pudo network)
+//   - TcgService.getQuote  → door-to-door (TCG retail rates)
+//
+// TCG API docs (Postman collection): runs on Shiplogic-style endpoints
+// at api.portal.thecourierguy.co.za. Auth is Bearer <TCG_API_KEY>.
+
+export interface TcgResidentialAddress {
+  /** Street + number; required. */
   streetAddress: string;
+  /** Suburb / sub-locality — sent as `local_area`. */
   suburb: string;
+  /** City / town. */
   city: string;
+  /** SA province as a long-form name (e.g. "Western Cape", "Gauteng").
+   *  Shiplogic accepts both the long name and the 2-letter abbreviation;
+   *  the long name is what TCG's own examples use. */
   province: string;
+  /** 4-digit SA postal code. */
   postalCode: string;
-  contactName: string;
-  contactPhone: string;
-  contactEmail?: string;
+  /** Coordinates — Shiplogic uses these for distance + suburb
+   *  validation; omit and the API may still quote but routing
+   *  accuracy drops. */
+  lat?: number;
+  lng?: number;
+  /** "residential" or "business". Defaults to residential. */
+  type?: 'residential' | 'business';
+  /** Company name when type==='business'. */
+  company?: string;
 }
 
 export interface TcgParcel {
@@ -20,122 +48,170 @@ export interface TcgParcel {
 }
 
 export interface TcgQuote {
+  /** Service-level code, e.g. "ECO" / "OVN". Echo back into create-shipment
+   *  to lock the chosen tier without re-quoting. */
   serviceCode: string;
+  /** Human-friendly name, e.g. "Economy (4000)" / "Overnight". */
   serviceName: string;
-  priceZarCents: number;
+  /** ZAR cents, VAT-INCLUSIVE (matches what Peach charges the buyer). */
+  priceCents: number;
+  /** Promised transit days, 1–14. Approximate — TCG returns delivery
+   *  date ranges; we round to the upper bound. */
   estimatedDays: number;
 }
 
-export interface TcgShipment {
-  waybillNumber: string;
-  collectionDate: string;
-  trackingUrl: string;
+// Subset of the Shiplogic /rates response we actually read. Full
+// schema in the TCG Postman collection.
+interface RawRate {
+  rate: number; // VAT-inclusive
+  rate_excluding_vat?: number;
+  service_level: {
+    code: string;
+    name: string;
+    description?: string;
+    delivery_date_from?: string;
+    delivery_date_to?: string;
+  };
 }
 
 @Injectable()
 export class TcgService {
   private readonly logger = new Logger(TcgService.name);
-  // TODO: verify base URL from TCG API documentation
-  private readonly baseUrl = process.env.TCG_API_BASE_URL ?? 'https://api.thecourierguy.co.za';
 
-  private get headers() {
-    return {
-      'Content-Type': 'application/json',
-      apikey: process.env.TCG_API_KEY ?? '',
-    };
+  /** Base URL — TCG's branded portal endpoint. Override via env in
+   *  case the operator points us at a Shiplogic-direct or sandbox
+   *  base later. */
+  private get baseUrl(): string {
+    return (
+      process.env.TCG_BASE_URL ??
+      'https://api.portal.thecourierguy.co.za'
+    );
   }
 
+  private get apiKey(): string {
+    return process.env.TCG_API_KEY ?? '';
+  }
+
+  get isConfigured(): boolean {
+    return this.apiKey.length > 0;
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Rate quote — POST /rates. Returns the CHEAPEST available service
+  // for the requested parcel + addresses (typically ECO). Returns
+  // null if TCG can't quote the route (e.g. invalid postal code,
+  // parcel below minimum weight, or service simply unavailable).
+  //
+  // Why we only return the cheapest: per operator decision, Gun
+  // Galore always ships the cheapest D2D option with default
+  // liability cover — no premium speed tiers. The full rate list is
+  // logged at debug for audit but never surfaced to the buyer.
+  // ──────────────────────────────────────────────────────────────────
   async getQuote(
-    from: Pick<TcgAddress, 'postalCode'>,
-    to: Pick<TcgAddress, 'postalCode'>,
-    parcels: TcgParcel[],
-  ): Promise<TcgQuote[]> {
-    if (!process.env.TCG_API_KEY) throw new Error('TCG_API_KEY not configured');
-
-    // TODO: verify exact endpoint + request shape from TCG API docs
-    const res = await fetch(`${this.baseUrl}/api/getQuote`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({
-        collectionPostalCode: from.postalCode,
-        deliveryPostalCode: to.postalCode,
-        parcels: parcels.map((p) => ({
-          weight: p.weightKg,
-          length: p.lengthCm,
-          width: p.widthCm,
-          height: p.heightCm,
-        })),
-      }),
-    });
-
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`TCG quote error ${res.status}: ${body}`);
+    from: TcgResidentialAddress,
+    to: TcgResidentialAddress,
+    parcel: TcgParcel,
+    declaredValueCents: number,
+  ): Promise<TcgQuote | null> {
+    if (!this.isConfigured) {
+      this.logger.warn('TCG_API_KEY not set — door-to-door quote unavailable');
+      return null;
     }
 
-    const data = await res.json();
-    // TODO: map response to TcgQuote[] — shape depends on TCG's actual response
-    return (data.services ?? data).map((s: any) => ({
-      serviceCode: s.serviceCode ?? s.code,
-      serviceName: s.serviceName ?? s.name,
-      priceZarCents: Math.round((s.price ?? s.amount) * 100),
-      estimatedDays: s.transitDays ?? s.estimatedDays ?? 2,
-    }));
-  }
+    const body = {
+      collection_address: mapAddress(from),
+      delivery_address: mapAddress(to),
+      parcels: [
+        {
+          submitted_length_cm: parcel.lengthCm,
+          submitted_width_cm: parcel.widthCm,
+          submitted_height_cm: parcel.heightCm,
+          submitted_weight_kg: parcel.weightKg,
+          parcel_description:
+            parcel.description ?? 'Gun Galore marketplace parcel',
+        },
+      ],
+      declared_value: Math.max(0, Math.round(declaredValueCents / 100)),
+    };
 
-  async createShipment(data: {
-    collection: TcgAddress;
-    delivery: TcgAddress;
-    parcels: TcgParcel[];
-    serviceCode: string;
-    reference: string;
-    specialInstructions?: string;
-  }): Promise<TcgShipment> {
-    if (!process.env.TCG_API_KEY) throw new Error('TCG_API_KEY not configured');
-
-    // TODO: verify exact endpoint + request shape from TCG API docs
-    const res = await fetch(`${this.baseUrl}/api/shipment`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({
-        serviceType: data.serviceCode,
-        reference: data.reference,
-        specialInstructions: data.specialInstructions,
-        collectionAddress: this.mapAddress(data.collection),
-        deliveryAddress: this.mapAddress(data.delivery),
-        parcels: data.parcels.map((p) => ({
-          weight: p.weightKg,
-          length: p.lengthCm,
-          width: p.widthCm,
-          height: p.heightCm,
-          description: p.description,
-        })),
-      }),
-    });
-
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`TCG shipment error ${res.status}: ${body}`);
+    let raw: { rates?: RawRate[]; message?: string } | null = null;
+    try {
+      const res = await fetch(`${this.baseUrl}/rates`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        this.logger.warn(
+          `TCG rates API ${res.status}: ${text.slice(0, 200)}`,
+        );
+        return null;
+      }
+      raw = (await res.json()) as { rates?: RawRate[]; message?: string };
+    } catch (err) {
+      this.logger.warn(
+        `TCG rates fetch failed: ${(err as Error).message}`,
+      );
+      return null;
     }
 
-    const json = await res.json();
-    return {
-      waybillNumber: json.waybillNumber ?? json.waybill,
-      collectionDate: json.collectionDate,
-      trackingUrl: json.trackingUrl ?? `https://www.thecourierguy.co.za/tracking?waybill=${json.waybillNumber}`,
-    };
-  }
+    if (!raw || !Array.isArray(raw.rates) || raw.rates.length === 0) {
+      this.logger.warn(
+        `TCG rates returned no usable rates (message: ${raw?.message ?? 'none'})`,
+      );
+      return null;
+    }
 
-  private mapAddress(a: TcgAddress) {
+    // Sort ascending by VAT-inclusive rate, return the cheapest.
+    // Single-line debug log lets us audit which tier was picked + what
+    // alternatives existed if the operator ever queries a specific
+    // shipment.
+    const sorted = [...raw.rates].sort((a, b) => a.rate - b.rate);
+    this.logger.debug(
+      `TCG rates (cheapest first): ${sorted
+        .map((r) => `${r.service_level.code}=R${r.rate.toFixed(2)}`)
+        .join(', ')}`,
+    );
+    const winner = sorted[0];
+
     return {
-      streetAddress: a.streetAddress,
-      suburb: a.suburb,
-      city: a.city,
-      province: a.province,
-      postalCode: a.postalCode,
-      contactName: a.contactName,
-      contactNumber: a.contactPhone,
-      contactEmail: a.contactEmail,
+      serviceCode: winner.service_level.code,
+      serviceName: winner.service_level.name,
+      priceCents: Math.round(winner.rate * 100),
+      estimatedDays: parseDays(winner.service_level.description) ?? 4,
     };
   }
+}
+
+// ────────────────────────── helpers ────────────────────────────────
+
+function mapAddress(addr: TcgResidentialAddress): Record<string, unknown> {
+  return {
+    type: addr.type ?? 'residential',
+    company: addr.company ?? undefined,
+    street_address: addr.streetAddress,
+    local_area: addr.suburb,
+    city: addr.city,
+    zone: addr.province,
+    country: 'ZA',
+    code: addr.postalCode,
+    lat: addr.lat,
+    lng: addr.lng,
+  };
+}
+
+// Parse "Expect delivery between 3 - 4 business days." → 4.
+// Returns null when the string doesn't match — caller falls back.
+function parseDays(description?: string): number | null {
+  if (!description) return null;
+  const m = description.match(/(\d+)\s*[-–to]+\s*(\d+)\s*business\s*days/i);
+  if (m) return parseInt(m[2], 10);
+  const single = description.match(/(\d+)\s*business\s*days?/i);
+  if (single) return parseInt(single[1], 10);
+  return null;
 }

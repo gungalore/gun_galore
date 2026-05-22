@@ -16,8 +16,27 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 enum AdminRole {
+  // Legacy tier — kept so existing rows don't break. Treat as
+  // MONITORING_ADMIN going forward (read-only).
   ADMIN
+  // Top tier — can create other admins, modify KYC overrides, etc.
+  // Maps to the user-facing "Full admin" label in the UI.
   SUPERADMIN
+  // Read-only tier — sees the dashboard, listings, transactions, KYC
+  // credit balance, but can't take destructive actions. Maps to the
+  // user-facing "Monitoring admin" label. (Currently not enforced on
+  // individual endpoints yet — that gate work is tracked separately.)
+  MONITORING_ADMIN
+}
+
+enum OfferStatus {
+  PENDING // awaiting seller response (48h TTL)
+  COUNTERED // seller made a counter-offer; buyer must respond within 24h
+  ACCEPTED // seller accepted original offer
+  REJECTED // seller declined
+  WITHDRAWN // buyer withdrew before seller responded
+  EXPIRED // TTL elapsed without response
+  CONVERTED // transaction created from this offer
 }
 
 enum ListingType {
@@ -37,9 +56,9 @@ enum ListingStatus {
 }
 
 enum PaymentStatus {
-  HELD                      // payment received, funds held until delivery confirmed
+  HELD // payment received, funds held until delivery confirmed
   PENDING_ADMIN_VERIFICATION
-  RELEASED                  // payout sent to seller
+  RELEASED // payout sent to seller
   DISPUTED
   REFUNDED
 }
@@ -75,9 +94,10 @@ enum ClaudeDecision {
 }
 
 enum ShippingMethod {
-  PUDO
-  TCG
-  DEALER_TRANSFER
+  PUDO // Pudo locker-to-locker (non-firearm)
+  TCG // The Courier Guy door-to-door (non-firearm)
+  DEALER_TRANSFER // Routed through a SAPS-licensed dealer (firearm — buyer picks dealer at checkout)
+  PRIVATE_ARRANGE // Buyer + seller arrange in-person legal transfer (firearm — pair go to a dealer themselves)
 }
 
 enum ShippingStatus {
@@ -102,62 +122,283 @@ enum Province {
   WESTERN_CAPE
 }
 
+enum RaffleStatus {
+  DRAFT // admin building it
+  ACTIVE // tickets on sale
+  CLOSED_AWAITING_DRAW // timer ended, in 24h cooling window
+  DRAWN // winner picked, in claim window
+  CLAIMED // winner claimed prize
+  CANCELLED_MIN_NOT_MET // refunding all entrants
+  CANCELLED_BY_ADMIN // killed manually
+  EXPIRED_UNCLAIMED // all winners failed to claim in window
+}
+
+enum TicketStatus {
+  PENDING_PAYMENT // checkout started, awaiting Peach confirmation
+  CONFIRMED // payment captured, ticket in the draw
+  REFUNDED // returned to buyer (min-not-met)
+  POSTAL // free-entry route, no payment
+}
+
+enum ItemSource {
+  PLATFORM_OWNED // platform-supplied prize
+  SELLER_APPLICATION // seller wants the platform to raffle it
+}
+
+// Pre-purchase product-only Q&A on a listing. There is NO buyer/seller
+// messaging on Gun Galore — the only sanctioned pre-sale dialog is this
+// structured, Claude-moderated Q&A on the listing page itself.
+enum ListingQuestionStatus {
+  PENDING_MODERATION // submitted, awaiting Claude pass 1 (moderation)
+  REJECTED_BY_MODERATION // Claude rejected (off-topic / contact details / negotiation)
+  AWAITING_SELLER_ANSWER // moderation passed, no prior Q matched — seller notified
+  AUTO_ANSWERED // Claude found a recent matching prior Q + reused the seller's answer
+  ANSWERED_BY_SELLER // seller answered manually via the dashboard
+  HIDDEN // admin or seller hid this Q&A row from the public panel
+}
+
+// Featured-slot system (paid placement on the left rail). 10 slots
+// rotate via per-slot auctions. See FeaturedSlot model below.
+enum FeaturedSlotStatus {
+  VACANT // no occupant + no active auction (cold start only)
+  AUCTION_RUNNING // pre-auction is open, no current occupant yet
+  BIND_WINDOW // auction closed, winner has 15 min to pick a listing
+  OCCUPIED // listing bound, featured live until featuredUntil
+}
+
+enum FeaturedAuctionStatus {
+  OPEN // accepting bids
+  CLOSED_AWARDED // closed with a winner
+  CLOSED_NO_BIDS // closed with zero bids — slot reopens an ad-hoc auction
+  CANCELLED_BY_ADMIN // admin killed the auction
+}
+
+// Why the auction was opened — affects duration (24h scheduled vs 2h ad-hoc).
+enum FeaturedAuctionKind {
+  SCHEDULED // opens 24h before the predecessor's featuredUntil
+  AD_HOC // listing sold mid-feature OR cold-start vacancy
+}
+
+enum FeaturedBidStatus {
+  ACTIVE // outstanding, may still win
+  WON // this bid won its auction (Peach charge pending)
+  LOST // outbid before auction close
+  WITHDRAWN // bidder pulled before auction close (if allowed)
+  REFUNDED // won + paid + later refunded (e.g. admin force-evict)
+}
+
+// Five tiers map a bid amount to a featured duration. The amounts +
+// durations are CONFIGURABLE via FeaturedSlotConfig — these enum
+// names are stable label-free discriminators (display labels come
+// from the config row, not the enum, so re-pricing doesn't require
+// a schema migration).
+enum FeaturedTier {
+  T1
+  T2
+  T3
+  T4
+  T5
+}
+
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
 
 model User {
-  id            String     @id @default(cuid())
-  clerkId       String     @unique
-  email         String     @unique
-  phone         String?
-  firstName     String?
-  lastName      String?
-  avatarUrl     String?
-  sellerTier    SellerTier @default(NEW)
-  trustScore    Int        @default(0)
-  averageRating Float?
-  kycStatus       KycStatus @default(NONE)
-  kycVerifiedAt   DateTime?
-  kycDocumentUrl  String?   // Cloudinary URL of uploaded ID document
-  totalSales    Int        @default(0)
-  isBanned      Boolean    @default(false)
-  bannedAt      DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id                String     @id @default(cuid())
+  clerkId           String     @unique
+  email             String     @unique
+  // Public-facing handle. Lowercased + unique. Optional until first set so we
+  // can backfill existing Clerk-only users without breaking them.
+  username          String?    @unique
+  phone             String?
+  // Phone-verification state. We send a 4-digit OTP via SMSPortal when the
+  // seller changes their phone; phoneVerified flips to true once they
+  // submit the matching code. phoneOtpHash stores a sha256 of the
+  // active code so the raw number never sits on disk.
+  phoneVerified     Boolean    @default(false)
+  phoneOtpHash      String?
+  phoneOtpExpiresAt DateTime?
+  firstName         String?
+  lastName          String?
+  avatarUrl         String?
+  // Personal / shipping address — distinct from per-listing pickup
+  // address on `Listing`. Edited from /profile/edit.
+  addrBuilding      String?
+  addrStreet        String?
+  addrAddress2      String?
+  addrSuburb        String?
+  addrCity          String?
+  addrPostalCode    String?
+  addrProvince      Province?
+  addrLat           Float?
+  addrLng           Float?
+  sellerTier        SellerTier @default(NEW)
+  trustScore        Int        @default(0)
+  averageRating     Float?
+  kycStatus         KycStatus  @default(NONE)
+  kycVerifiedAt     DateTime?
+  kycDocumentUrl    String? // Cloudinary URL of uploaded ID document (LEGACY — old manual flow)
+
+  // ─────────────── VerifyNow KYC flow ───────────────
+  // Triggered automatically when the first buyer kicks off a purchase
+  // on one of this seller's listings. The seller is then prompted via
+  // SMS + email + in-app banner to complete VerifyNow (SA ID lookup +
+  // selfie face-match). Manual KYC entry from /profile has been removed.
+  //
+  // kycRequiredAt = when the first sale forced verification. Once set,
+  // the in-app banner stays visible until kycStatus === VERIFIED.
+  kycRequiredAt             DateTime?
+  // POPIA consent must be explicit before any Home Affairs lookup. Set
+  // when the seller ticks the consent box on /kyc/verify.
+  kycConsentGivenAt         DateTime?
+  // Home Affairs SA ID lookup passed (firstName/lastName already
+  // populated from that response). Selfie still pending.
+  kycIdVerifiedAt           DateTime?
+  // Total face-match attempts. ≥3 fails → AdminAlert is raised and
+  // the seller is told to contact support.
+  kycAttempts               Int       @default(0)
+  kycFaceMatchScore         Float?
+  kycFaceMatchStatus        String?
+  kycVerifyNowTransactionId String?
+  // SHA-256 hash of the SA ID number (salted with ID_HASH_SECRET).
+  // Stored ONLY as a hash so the raw 13-digit ID never lands on disk
+  // — POPIA-friendly + lets us detect "this ID is already in use" by
+  // hash collision check before calling VerifyNow. Unique at the DB
+  // level so a duplicate registration physically can't land.
+  kycIdHash                 String?   @unique
+  // SA ID number stored AES-GCM encrypted at rest. Set when the
+  // seller completes their profile (modal pops up after their first
+  // listing publishes). On first sale, KycService decrypts it and
+  // runs the VerifyNow Home Affairs lookup — the seller only does
+  // the selfie face-match step. After KYC passes we PURGE this
+  // column (set null) and keep only kycIdHash long-term; the
+  // encrypted blob is transient PII we don't keep around.
+  // Encryption key derives from ID_HASH_SECRET via HKDF in
+  // backend/src/common/id-crypto.ts.
+  idNumberEncrypted         String?
+  totalSales                Int       @default(0)
+  isBanned                  Boolean   @default(false)
+  bannedAt                  DateTime?
+
+  // Seller "Complete profile" gate — set when the seller submits the
+  // post-first-publish profile modal (name/surname/username/phone/
+  // address/ID/banking). Read on payout to ensure we have everything
+  // required to disburse funds. Sellers can keep listing more items
+  // without re-doing this; payout is what actually blocks until set.
+  profileCompletedAt DateTime?
+
+  // Banking — collected on the profile modal, validated against
+  // Peach AVS (Account Verification Service) on save. All fields
+  // null until the seller fills them in. We DON'T encrypt these at
+  // rest; SA bank account numbers aren't classed as PII under POPIA
+  // the same way an ID number is, and we need the plaintext to run
+  // future payouts via Peach.
+  bankName           String?
+  bankAccountHolder  String?
+  bankAccountNumber  String?
+  bankBranchCode     String?
+  bankAccountType    String? // "cheque" | "savings" | "transmission"
+  // Stamp set when Peach AVS returns "match" on the bank details.
+  // We re-run AVS on every save (per operator decision) so this
+  // always reflects the most recent confirmation.
+  bankVerifiedAt     DateTime?
+  // Last raw Peach AVS response code, for audit if a payout fails
+  // and we need to trace why.
+  bankAvsResult      String?
+
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  // Auction system — non-payment strikes
+  auctionStrikes Int       @default(0)
+  lastStrikeAt   DateTime?
+
+  // Dispatch SLA strikes — incremented when the 7d auto-refund cron
+  // fires on a courier-shipped order this seller failed to dispatch
+  // within the window. Three strikes are the operator threshold for
+  // a manual review / suspension. Lives separately from auction
+  // strikes because the rules + consequences are different.
+  dispatchStrikes Int @default(0)
 
   listings           Listing[]
-  buyerTransactions  Transaction[] @relation("BuyerTransactions")
-  sellerTransactions Transaction[] @relation("SellerTransactions")
-  ratingsGiven       Rating[]      @relation("RatingsGiven")
-  ratingsReceived    Rating[]      @relation("RatingsReceived")
+  buyerTransactions  Transaction[]  @relation("BuyerTransactions")
+  sellerTransactions Transaction[]  @relation("SellerTransactions")
+  ratingsGiven       Rating[]       @relation("RatingsGiven")
+  ratingsReceived    Rating[]       @relation("RatingsReceived")
+  offersPlaced       Offer[]        @relation("BuyerOffers")
+  bidsPlaced         Bid[]          @relation("BidderBids")
+  highBidOnListings  Listing[]      @relation("CurrentHighBidder")
+  contactDetailRejections ContactDetailRejection[]
+  watchlist          AuctionWatch[]
+
+  // Q&A on listings — back-relations for "questions I've asked" and
+  // "questions I've answered" (the latter is virtually always the
+  // seller of the listing the question is on).
+  askedListingQuestions    ListingQuestion[] @relation("AskedQuestions")
+  answeredListingQuestions ListingQuestion[] @relation("AnsweredQuestions")
+
+  // Raffles
+  raffleTickets            Ticket[]
+  raffleWinsAsWinner       RaffleWinner[]            @relation("WinnerUser")
+  raffleSellerApplications RaffleSellerApplication[]
+
+  // Featured slot system — back-relations.
+  // `featuredSlotBids` is every bid this user has ever placed on a
+  // featured slot auction (active, won, or lost). `featuredSlots` is
+  // the (zero or more) slots this user currently occupies — populated
+  // when their bid won + they bound a listing to it + the slot's
+  // `featuredUntil` is still in the future.
+  featuredSlotBids FeaturedSlotBid[] @relation("FeaturedSlotBidder")
+  featuredSlots    FeaturedSlot[]    @relation("FeaturedSlotOccupant")
 }
 
 model Category {
-  id        String     @id @default(cuid())
-  name      String
-  slug      String     @unique
-  parentId  String?
-  parent    Category?  @relation("SubCategories", fields: [parentId], references: [id])
-  children  Category[] @relation("SubCategories")
-  isFirearm Boolean    @default(false)
-  isActive  Boolean    @default(true)
-  sortOrder Int        @default(0)
-  createdAt DateTime   @default(now())
+  id                  String     @id @default(cuid())
+  name                String
+  slug                String     @unique
+  parentId            String?
+  parent              Category?  @relation("SubCategories", fields: [parentId], references: [id])
+  children            Category[] @relation("SubCategories")
+  // True when this category contains items legally classified as firearms
+  // (the Firearms parent + all its children, plus Barrels under Gun Smithing).
+  isFirearm           Boolean    @default(false)
+  // Subset of isFirearm — these MUST ship via licensed-dealer transfer.
+  // SAPS regulation: firearms + barrels cannot move between individuals
+  // without dealer paperwork.
+  requiresLicence     Boolean    @default(false)
+  // Whether this category appears on the used marketplace (Sell form +
+  // marketplace filters). False for live-ammo categories.
+  availableSecondhand Boolean    @default(true)
+  // Whether this category appears on the dealer New Store (M3 phase).
+  availableNewStore   Boolean    @default(false)
+  isActive            Boolean    @default(true)
+  sortOrder           Int        @default(0)
+  createdAt           DateTime   @default(now())
 
-  listings     Listing[]
+  listings Listing[]
 }
 
 model Listing {
-  id         String        @id @default(cuid())
+  id              String  @id @default(cuid())
+  // Human-trackable reference shown to buyers + sellers (e.g. UM000123,
+  // AU000045, TS000007). Prefix encodes listingType:
+  //   UM = Used marketplace (BUY_NOW)
+  //   AU = Auction          (AUCTION)
+  //   TS = Take a Shot      (TAKE_A_SHOT)
+  // Assigned at create time via ReferenceCounter — see
+  // listings/reference.helper.ts. Nullable so legacy rows can be
+  // back-filled in a separate pass without blocking the migration.
+  referenceNumber String? @unique
+
   sellerId   String
-  seller     User          @relation(fields: [sellerId], references: [id])
+  seller     User     @relation(fields: [sellerId], references: [id])
   categoryId String
-  category   Category      @relation(fields: [categoryId], references: [id])
+  category   Category @relation(fields: [categoryId], references: [id])
 
   title       String
   description String
-  price       Int           // ZAR cents
+  price       Int? // ZAR cents; null for TAKE_A_SHOT listings
   listingType ListingType
   status      ListingStatus @default(DRAFT)
   condition   Condition
@@ -168,9 +409,61 @@ model Listing {
   model     String?
   calibre   String?
 
+  // Parcel weight + dimensions captured by the seller in the Sell form.
+  // Required for non-firearm listings (Pudo + TCG need them to quote
+  // rates). Firearm listings can leave them null because DEALER_TRANSFER
+  // and PRIVATE_ARRANGE don't use the courier API. Pudo's largest L2L
+  // locker box is 60×41×69 cm at 20 kg — anything beyond that forces
+  // TCG door-to-door (the Sell form hides the PUDO option when over).
+  weightGrams Int?
+  lengthCm    Int?
+  widthCm     Int?
+  heightCm    Int?
+
   autoAcceptThreshold Int? // ZAR cents; Take a Shot only
 
+  // ----- AUCTION-specific fields -----
+  // price (above) = starting bid for AUCTION listings
+  reservePrice    Int? // optional hidden reserve; never exposed publicly
+  buyNowPrice     Int? // optional Buy Now price — only honoured while bidCount == 0
+  isFeatured      Boolean   @default(false) // R150 paid placement
+  currentBid      Int? // current visible high bid in ZAR cents
+  currentBidderId String? // current high bidder
+  currentBidder   User?     @relation("CurrentHighBidder", fields: [currentBidderId], references: [id])
+  bidCount        Int       @default(0)
+  reserveMet      Boolean   @default(false)
+  startTime       DateTime?
+  endTime         DateTime? // may be extended by snipe protection
+  durationDays    Int? // 3 / 5 / 7 / 14 — snapshot of seller's choice
+  endedAt         DateTime? // when the end-cron processed this auction
+
+  // LOCKED per CLAUDE.md — seller always absorbs the processing fee.
+  // Field is kept for backwards compatibility with old rows but is no
+  // longer surfaced in the Sell form.
   passFeeToBuyer Boolean @default(false)
+
+  // Seller-offered shipping methods. For non-firearm listings this is
+  // some non-empty subset of [PUDO, TCG]. For firearm / barrel listings
+  // it's a subset of [DEALER_TRANSFER, PRIVATE_ARRANGE]. The buyer picks
+  // ONE of these at checkout and that pick lands on Transaction.shippingMethod.
+  shippingMethods ShippingMethod[] @default([])
+
+  // Seller pickup address (where Pudo/TCG collect from, or where the
+  // private/dealer-transfer hand-off originates). Captured at listing
+  // time. Auto-filled from Google Places autocomplete when available.
+  pickupBuilding   String?
+  pickupStreet     String?
+  pickupAddress2   String?
+  pickupSuburb     String?
+  pickupCity       String?
+  pickupPostalCode String?
+  pickupLat        Float?
+  pickupLng        Float?
+
+  // Seller's preferred Pudo locker (set when shippingMethods includes
+  // PUDO). Auto-suggested from pickupLat/pickupLng → nearest 3 lockers,
+  // or overridden by the seller from a Meilisearch lookup.
+  pickupPudoLockerId String?
 
   claudeDecision            ClaudeDecision?
   claudeConfidence          Float?
@@ -190,10 +483,21 @@ model Listing {
 
   images       ListingImage[]
   transactions Transaction[]
+  offers       Offer[]
+  bids         Bid[]
+  watchers     AuctionWatch[]
+  questions    ListingQuestion[]
+
+  // Featured-slot back-relation. When a seller wins a featured slot
+  // auction + binds this listing to it, the slot's
+  // `currentListingId` points here. Optional 1:1 (a listing is in
+  // ≤1 slot at a time, a slot has ≤1 listing).
+  featuredInSlot FeaturedSlot? @relation("FeaturedSlotListing")
 
   @@index([status, listingType])
   @@index([categoryId])
   @@index([sellerId])
+  @@index([endTime])
 }
 
 model ListingImage {
@@ -233,7 +537,7 @@ model Dealer {
 }
 
 model Transaction {
-  id       String @id @default(cuid())
+  id String @id @default(cuid())
 
   // Parties
   listingId String
@@ -244,12 +548,22 @@ model Transaction {
   seller    User    @relation("SellerTransactions", fields: [sellerId], references: [id])
 
   // Pricing — all ZAR cents, snapshot at point of sale
-  listingPrice   Int     // snapshot of listing.price
-  commissionZar  Int
-  processingFee  Int     // Peach fee (confirmed with Peach merchant agreement)
-  passFeeToBuyer Boolean // snapshot of listing.passFeeToBuyer
-  buyerTotal     Int     // what buyer is charged by Peach
-  sellerPayout   Int     // what seller receives after deductions
+  listingPrice        Int // snapshot of listing.price
+  commissionZar       Int
+  processingFee       Int // Peach fee (3.5% + R1.50 fixed, ×1.15 VAT)
+  // Shipping cost the buyer paid, sourced from a live Pudo / TCG rate
+  // quote at checkout. Zero for firearm listings (DEALER_TRANSFER and
+  // PRIVATE_ARRANGE don't use the courier API). Stored separately from
+  // buyerTotal so we can show the breakdown later + remit to the
+  // courier without re-computing.
+  shippingCost        Int     @default(0)
+  // Service level snapshot — "L2LXS - ECO" / "D2DM - ECO" etc. Comes
+  // straight from Pudo's response so we can pass it back into the
+  // shipment-create call without re-fetching the quote.
+  shippingServiceCode String?
+  passFeeToBuyer      Boolean // snapshot of listing.passFeeToBuyer
+  buyerTotal          Int // what buyer is charged by Peach
+  sellerPayout        Int // what seller receives after deductions
 
   // Payment
   paymentStatus   PaymentStatus @default(HELD)
@@ -272,7 +586,7 @@ model Transaction {
   pudoTrackingCode    String?
 
   // TCG door delivery
-  deliveryAddress Json? // { streetAddress, suburb, city, province, postalCode, contactName, contactPhone }
+  deliveryAddress Json? // { building?, streetAddress, address2?, suburb, city, province, postalCode, lat?, lng? } — contactName + contactPhone resolved from User at shipment-creation time
   tcgWaybill      String?
 
   // Firearm dealer transfer
@@ -281,6 +595,67 @@ model Transaction {
 
   // KYC gate — populated when seller passes KYC after payment received
   sellerKycClearedAt DateTime?
+
+  // Dispatch SLA — set the first (and only) time the 48h nudge cron
+  // sends a "please dispatch" reminder to the seller. Idempotency
+  // guard so the cron doesn't spam them every 10 min after the
+  // window passes.
+  dispatchNudgedAt DateTime?
+
+  // PRIVATE_ARRANGE explicit consent. The buyer ticked two checkboxes
+  // and typed "I UNDERSTAND" at checkout to acknowledge that payment
+  // protection ends at payment capture — the seller is paid
+  // immediately and contact details are revealed to both parties so
+  // they can coordinate the dealer meet. Without this column being
+  // set, the immediate-payout branch in markPaid() refuses to fire
+  // (defence in depth against a buyer hitting the API without going
+  // through the consent screen).
+  privateArrangeAcceptedAt DateTime?
+
+  // ─── Dealer-stock-in verification (firearm DEALER_TRANSFER only) ──
+  // When the firearm is delivered to the chosen SAPS-licensed dealer,
+  // the seller uploads 3 photos (SAPS 534 form, last line of dealer's
+  // stock register, firearm with serial visible). Claude vision scans
+  // them against a rubric and writes the result here. Payout release
+  // for firearm DEALER_TRANSFER transactions is gated on
+  // dealerVerificationStatus = 'APPROVED'.
+  //
+  // Status lifecycle:
+  //   null               — not applicable (non-firearm, or PRIVATE_ARRANGE)
+  //   PENDING_UPLOAD     — seller hasn't submitted photos yet
+  //   PENDING_CLAUDE     — photos uploaded, Claude scan in progress
+  //   PENDING_ADMIN_REVIEW — Claude returned 50-79% confidence, admin must review
+  //   APPROVED           — auto (≥80% all criteria) or admin override
+  //   REJECTED           — auto (<50% on any criterion) or admin reject; seller must reshoot
+  //
+  // The Cloudinary URLs are nullable so admin can render whichever
+  // ones uploaded successfully (one-or-two-failed retry path).
+  saps534PhotoUrl              String?
+  stockRegisterPhotoUrl        String?
+  firearmSerialPhotoUrl        String?
+  dealerVerificationStatus     String?
+  // 0..100, weighted average of per-criterion confidence scores.
+  dealerVerificationScore      Float?
+  // Full structured JSON returned by Claude — per-criterion scores +
+  // extracted values + issues list. Stored verbatim for audit + so
+  // the admin panel can re-render Claude's reasoning without a re-run.
+  dealerVerificationFindings   Json?
+  dealerVerifiedAt             DateTime?
+  // Stock-register entry number the dealer (or seller) types in, for
+  // SAPS audit cross-reference. Optional — not always available at
+  // upload time.
+  dealerStockRegisterRef       String?
+
+  // ── Stocked-at dealer contact (sent to buyer on payout release) ──
+  // When verification approves, Gun Galore's job ends. We notify the
+  // buyer of WHERE the firearm is — the dealer the seller dropped it
+  // at — so the buyer can arrange their own inter-dealer transfer or
+  // collection. Captured on the seller's verification upload form
+  // alongside the 3 photos; surfaced on the buyer's transaction page
+  // and in the payout-released notification email/SMS.
+  stockedAtDealerName     String?
+  stockedAtDealerAddress  String?
+  stockedAtDealerPhone    String?
 
   // Admin
   adminNote         String?
@@ -291,6 +666,7 @@ model Transaction {
   updatedAt DateTime @updatedAt
 
   messages            Message[]
+  trackingEvents      TrackingEvent[]
   rating              Rating?
   confirmedDeliveryAt DateTime?
 
@@ -301,6 +677,124 @@ model Transaction {
   @@index([peachPaymentId])
 }
 
+// Append-only timeline of shipping + payment milestones per Transaction.
+// Powers the buyer/seller-facing tracking UI on /transactions/[id].
+//
+// Two writers:
+//   1. Internal flow — we record a row at each state change we own
+//      (paid, dispatched, delivered confirmed, payout released). These
+//      rows have source=INTERNAL.
+//   2. Polling cron — every 10 min the cron asks Pudo (and later TCG)
+//      for the parcel's tracking_events, maps carrier statuses to our
+//      internal status via status-map.ts, then appends any events we
+//      haven't seen yet. These rows have source=PUDO or source=TCG.
+//
+// Idempotency: the @@unique([transactionId, status, occurredAt]) tuple
+// stops the cron from inserting the same carrier event twice if it
+// re-appears in a later poll. occurredAt is the carrier's timestamp
+// (or now() for internal events); recordedAt is when our system first
+// observed it. status uses the collapsed internal vocabulary from
+// status-map.ts (PUDO_PIN_ISSUED, PARCEL_DROPPED_OFF, AT_LOCKER, etc).
+model TrackingEvent {
+  id            String      @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  // Collapsed internal vocabulary (see status-map.ts). Free string so
+  // we don't have to migrate the schema each time a new carrier status
+  // gets added to the map.
+  status    String
+  // Raw carrier value before mapping ("ARRIVED_AT_LOCKER" / "Out For
+  // Delivery" / etc). Null for INTERNAL-sourced events.
+  rawStatus String?
+  // INTERNAL | PUDO | TCG — who reported this event.
+  source    String
+  // Human-readable line shown on the timeline. Optional; the UI falls
+  // back to a per-status default when null.
+  message   String?
+
+  // When the event happened from the carrier's perspective (or our
+  // system's clock for INTERNAL events). Used for sort order on the
+  // timeline + as part of the idempotency key.
+  occurredAt DateTime
+  // When our system first wrote this row.
+  recordedAt DateTime @default(now())
+
+  @@unique([transactionId, status, occurredAt])
+  @@index([transactionId])
+}
+
+// Self-improving FAQ panel that sits on every listing's detail page.
+// Replaces buyer/seller messaging entirely — see CLAUDE.md and the
+// design note in chat history. Two Claude passes per question:
+//
+//   Pass 1 (Haiku — moderation): is this a product-info question?
+//     Reject anything off-topic, contact-detail-leaking, or trying to
+//     negotiate price (price moves through the Offer system, not
+//     Q&A). Rejected rows stay in the table for audit but never go
+//     public.
+//
+//   Pass 2 (Sonnet — semantic dedup): if pass 1 passed, look at all
+//     prior ANSWERED_BY_SELLER rows for this listing within the last
+//     30 days. If one semantically matches, auto-publish the answer
+//     using the seller's prior reply (rewritten in fresh voice) and
+//     set autoAnsweredFromQuestionId for traceability. If no match,
+//     status → AWAITING_SELLER_ANSWER and the seller is notified.
+//
+// Sellers can flag an AI answer as "not right" → invalidates the
+// source Q so it won't auto-answer again, and the seller writes a
+// fresh manual reply. Buyers can flag any public row → admin review.
+model ListingQuestion {
+  id        String  @id @default(cuid())
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  askerId   String
+  asker     User    @relation("AskedQuestions", fields: [askerId], references: [id])
+
+  question String
+
+  // Claude pass 1 — moderation. APPROVE / REJECT and the public-facing
+  // reason ("Keep it to product details", etc).
+  questionDecision String? // 'APPROVE' | 'REJECT'
+  questionReason   String?
+
+  status ListingQuestionStatus @default(PENDING_MODERATION)
+
+  // Answer fields — populated when a seller answers manually OR when
+  // Claude auto-answers from a prior Q. answeredByUserId is null in
+  // the auto-answer case (the asker still attributes it to "Gun
+  // Galore AI" in the UI).
+  answer           String?
+  answeredByUserId String?
+  answeredByUser   User?     @relation("AnsweredQuestions", fields: [answeredByUserId], references: [id])
+  answeredAt       DateTime?
+
+  // When the answer came from Claude pass 2 — this points at the
+  // source ListingQuestion whose seller-written answer we re-used.
+  // Lets us surface "based on a prior question" in the UI + lets the
+  // seller invalidate the source if the AI got it wrong.
+  autoAnsweredFromQuestionId String?
+  autoAnsweredFrom           ListingQuestion?  @relation("AutoAnswerSource", fields: [autoAnsweredFromQuestionId], references: [id])
+  autoAnswers                ListingQuestion[] @relation("AutoAnswerSource")
+
+  // Seller pressed "this isn't right" on an AI-published answer →
+  // we set invalidatedAt on the SOURCE Q (the one Claude reused),
+  // which excludes it from future dedup matches. The bad AI answer
+  // gets status=HIDDEN until the seller writes a fresh reply.
+  invalidatedAt DateTime?
+
+  // Public-panel state + abuse signal.
+  reportedCount Int     @default(0)
+  isPublic      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([listingId, status])
+  @@index([askerId])
+  @@index([answeredByUserId])
+}
+
 model AdminUser {
   id           String    @id @default(cuid())
   email        String    @unique
@@ -308,10 +802,103 @@ model AdminUser {
   role         AdminRole @default(ADMIN)
   firstName    String?
   lastName     String?
+  // Optional link to the Clerk user record (mirrored into our User
+  // table). When set, outbound alerts (SMS + email) are pulled from
+  // User.phone / User.email so we never duplicate contact info between
+  // tables. Nullable so the seed superadmin (and any legacy admin
+  // created before Clerk-linkage) keeps working with email+password.
+  clerkId      String?   @unique
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+
+  // Back-relation for AdminAuditEvent.adminUser (every audit row is
+  // attributed to the admin who triggered it).
+  auditEvents  AdminAuditEvent[]
+}
+
+// Cross-resource audit trail for every destructive admin action.
+// Each row is one admin operation: who did it, when, on what, what
+// changed (oldValue → newValue), and the reason they typed at the
+// time. Read-only from the UI; only inserted by AdminAuditService.
+// Domain-specific audit tables (RaffleAuditEvent, FeaturedSlotAuditEvent)
+// stay as-is for module-specific event types; this table captures the
+// broad ops surface — user bans / tier changes / KYC overrides /
+// transaction refunds / etc.
+model AdminAuditEvent {
+  id            String   @id @default(cuid())
+  adminUserId   String
+  adminUser     AdminUser @relation(fields: [adminUserId], references: [id])
+  // Free-form action verb — e.g. "USER_BAN", "USER_UNBAN",
+  // "USER_TIER_CHANGE", "USER_KYC_OVERRIDE", "TRANSACTION_REFUND",
+  // "LISTING_FORCE_HIDE". String not enum so new actions don't need
+  // schema migrations.
+  action        String
+  // Resource being acted upon — usually a User.id, Transaction.id,
+  // Listing.id. Nullable for actions that don't have a single target.
+  resourceType  String?  // 'User' | 'Transaction' | 'Listing' | 'Raffle' | ...
+  resourceId    String?
+  // Snapshot of what changed. Both nullable so single-direction
+  // events (e.g. force-hide a listing) can record just newValue.
+  oldValue      String?  // JSON-stringified
+  newValue      String?  // JSON-stringified
+  // Reason the admin typed in the confirmation dialog. NOT nullable
+  // for any USER_* / TRANSACTION_* / LISTING_* action; the service
+  // enforces this at insert time.
+  reason        String
+  createdAt     DateTime @default(now())
+
+  @@index([adminUserId, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+}
+
+// Free-form audit channel for ops to see and act on. Currently raised
+// by the KYC service when a seller fails face-match 3+ times in a row —
+// the next step is for an admin to call them or override the decision
+// manually. `type` is a free string (e.g. "KYC_REPEATED_FAILURE") so
+// new categories can be added without a schema change. `referenceId`
+// is whatever the row is about (usually a User.id).
+model AdminAlert {
+  id          String    @id @default(cuid())
+  type        String
+  referenceId String?
+  context     String?
+  urgent      Boolean   @default(false)
+  resolved    Boolean   @default(false)
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([type])
+  @@index([resolved])
+}
+
+// Persisted record of every contact-detail filter block. Powers:
+//   - command-center "fee bypass attempts (7d)" attention card
+//   - /admin/trust-safety queue (grouped by user, with sample text)
+//   - repeat-offender detection (≥N rejections in window → ban candidate)
+//
+// Stored even when we don't know the user (e.g. failed clerkId lookup)
+// — userId nullable, sampleText capped at 200 chars to avoid storing
+// the whole flagged note when a buyer pastes a long block.
+//
+// `channel` is a free string (offer-note, counter-note, rating-comment,
+// future: message-content) so new wire-in sites don't need a migration.
+// `category` mirrors the ContactDetailFilterService RejectCategory
+// enum: phone | email | url | social-platform | off-platform-coordination | address.
+model ContactDetailRejection {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  channel    String
+  category   String
+  sampleText String
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@index([category])
 }
 
 model Rating {
@@ -322,7 +909,7 @@ model Rating {
   rater         User        @relation("RatingsGiven", fields: [raterId], references: [id])
   ratedId       String
   rated         User        @relation("RatingsReceived", fields: [ratedId], references: [id])
-  stars         Int         // 1–5
+  stars         Int // 1–5
   comment       String?
   createdAt     DateTime    @default(now())
 
@@ -335,10 +922,556 @@ model Message {
   transaction     Transaction @relation(fields: [transactionId], references: [id])
   senderClerkId   String
   content         String
-  originalContent String?     // populated when content was auto-stripped by moderation
+  originalContent String? // populated when content was auto-stripped by moderation
   wasModerated    Boolean     @default(false)
   readAt          DateTime?
   createdAt       DateTime    @default(now())
 
   @@index([transactionId, createdAt])
+}
+
+model Offer {
+  id        String  @id @default(cuid())
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id])
+  buyerId   String
+  buyer     User    @relation("BuyerOffers", fields: [buyerId], references: [id])
+
+  offerAmount   Int // ZAR cents — buyer's initial offer
+  counterAmount Int? // ZAR cents — seller's counter (one only)
+  buyerNote     String?
+  sellerNote    String?
+  status        OfferStatus @default(PENDING)
+
+  // buyer has 24h to respond to a counter
+  expiresAt DateTime
+
+  // link to transaction once CONVERTED
+  transactionId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([listingId, buyerId]) // one active offer per buyer per listing
+  @@index([listingId])
+  @@index([buyerId])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Auction system — Bid + AuctionWatch
+// ---------------------------------------------------------------------------
+
+model Bid {
+  id        String  @id @default(cuid())
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  bidderId  String
+  bidder    User    @relation("BidderBids", fields: [bidderId], references: [id])
+
+  // Public visible bid amount in ZAR cents (what other users see in history).
+  // The bidder's true max (proxy) is held separately and never exposed.
+  amount    Int
+  maxAmount Int // private — auto-bid ceiling
+
+  // Snapshot of whether THIS bid won the auction once it ended.
+  // Set by the end-auctions cron; null while auction is live.
+  isWinner Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([listingId, createdAt])
+  @@index([bidderId])
+}
+
+model AuctionWatch {
+  id        String   @id @default(cuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([listingId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Raffles / Competitions (M5)
+// ---------------------------------------------------------------------------
+
+model Raffle {
+  id              String  @id @default(cuid())
+  // Human-trackable reference shown alongside the prize (RAxxxxxx).
+  // Assigned at create-time the same way Listings are. Nullable for
+  // back-fill compatibility.
+  referenceNumber String? @unique
+
+  title       String
+  description String
+  // LEGACY single-image URL — kept for back-compat reads. The new
+  // multi-image flow writes to the RaffleImage relation below; the
+  // public detail page reads `images[0]` as the cover.
+  imageUrl    String?
+
+  // Item being raffled. Item is platform-owned by default — sellers can
+  // apply via RaffleSellerApplication, gated by the feature flag.
+  itemSource     ItemSource @default(PLATFORM_OWNED)
+
+  // Pricing model — three operator inputs:
+  //   * itemValueCents   = the prize's selling price (what we'd list it at)
+  //   * itemCostCents    = what we paid to acquire the prize
+  //   * ticketPriceCents = per-ticket charge
+  // targetTicketCount is auto-derived on create as
+  //   ceil(itemValueCents / ticketPriceCents) — sell-out exactly covers
+  // the prize price, anything beyond that is operator margin (margin =
+  // itemValueCents - itemCostCents). Stored on the row so all the
+  // downstream code that reads target (progress bar, sold-out trigger,
+  // refund-all) keeps working without per-query division.
+  itemValueCents     Int // selling price of the prize (ZAR cents)
+  itemCostCents      Int @default(0) // what we paid for the prize
+  ticketPriceCents   Int
+  targetTicketCount  Int // derived = ceil(itemValueCents / ticketPriceCents)
+
+  // Sold counts (cheap to read on the public detail page)
+  ticketsSoldPaid   Int @default(0) // CONFIRMED tickets only
+  ticketsSoldPostal Int @default(0) // POSTAL entries (free)
+
+  // Multiple-choice question gate (CPA Section 36 game-of-skill leg).
+  // Always 4 options; correct answer is ALWAYS C (operator decision —
+  // simpler than tracking per-raffle correct-answer state). Buyers
+  // can't progress to payment until they've answered, and the
+  // backend rejects ticket purchases with answer != 'C'. Frontend
+  // greys out the Pay button until any radio is picked.
+  question  String
+  optionA   String
+  optionB   String
+  optionC   String // ALWAYS the correct answer (hardcoded — see RafflesService)
+  optionD   String
+
+  // Timeline. End-time was dropped per operator request — raffles
+  // run until all tickets sell out. Cooling-window draw still applies
+  // (drawAt = ticketsSoldPaid+ticketsSoldPostal hits targetTicketCount + 24h).
+  startTime     DateTime
+  // 24h cooling window between sell-out and drawAt
+  drawAt        DateTime?
+  drawnAt       DateTime?
+  // Claim window depends on tier — see /admin/competitions/create
+  claimDeadline DateTime?
+
+  // Status machine
+  status RaffleStatus @default(DRAFT)
+
+  // Draw verification
+  drawSeed        String? // hex of crypto.randomBytes(32)
+  drawSeedHash    String? // SHA-256 of drawSeed — published before draw if pre-commit used
+  winningTicketId String?
+
+  // Re-raffle lineage
+  parentRaffleId   String?
+  parent           Raffle?  @relation("ReRaffle", fields: [parentRaffleId], references: [id])
+  children         Raffle[] @relation("ReRaffle")
+  relistGeneration Int      @default(0) // 0 = original, 1 = first re-raffle, ...
+
+  createdByAdminId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tickets Ticket[]
+  winners RaffleWinner[]
+  events  RaffleAuditEvent[]
+  images  RaffleImage[]
+
+  @@index([status])
+  @@index([drawAt])
+}
+
+// Multi-image upload for raffles — mirrors ListingImage so the
+// frontend can reuse the same upload + gallery components. First
+// uploaded image becomes the cover (isPrimary). Cascade-deleted with
+// the raffle. Cloudinary handles the actual files (folder: raffles/).
+model RaffleImage {
+  id        String   @id @default(cuid())
+  raffleId  String
+  raffle    Raffle   @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  url       String
+  publicId  String
+  order     Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([raffleId])
+}
+
+model Ticket {
+  id String @id @default(cuid())
+
+  raffleId String
+  raffle   Raffle @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+
+  // Paid tickets have buyerId + transactionId. Postal tickets have postalEntryId.
+  buyerId String?
+  buyer   User?   @relation(fields: [buyerId], references: [id])
+
+  ticketNumber  Int // sequential within a raffle (1, 2, 3, …)
+  referenceCode String @unique // 8-char alphanumeric reference, used on PDFs and postal forms
+
+  status TicketStatus @default(PENDING_PAYMENT)
+
+  // Payment reference (for refund/reconciliation)
+  amountCents     Int       @default(0) // 0 for postal
+  peachCheckoutId String?
+  peachPaymentId  String?
+  paidAt          DateTime?
+  refundedAt      DateTime?
+
+  // Postal-entry tie (set when status = POSTAL)
+  postalEntryId String?
+  postalEntry   PostalEntry? @relation(fields: [postalEntryId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([raffleId, status])
+  @@index([buyerId])
+}
+
+model RaffleWinner {
+  id String @id @default(cuid())
+
+  raffleId String
+  raffle   Raffle @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+
+  // The user who won (or null for postal winner — we contact via the postal entry).
+  userId   String?
+  user     User?   @relation("WinnerUser", fields: [userId], references: [id])
+  ticketId String
+
+  // 1 = primary, 2 = first backup, 3 = second backup
+  position Int
+
+  // Per-tier claim window (snapshot at draw time)
+  claimDeadline DateTime
+  claimedAt     DateTime?
+  // FORFEITED when the claim window lapses without action
+  forfeitedAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([raffleId, position])
+  @@index([raffleId])
+}
+
+model PostalEntry {
+  id String @id @default(cuid())
+
+  raffleId String
+
+  // Reference code on the posted PDF form
+  referenceCode String @unique
+
+  // Free-text postal contact captured by admin from the envelope
+  firstName String
+  lastName  String
+  phone     String?
+  email     String?
+  address   String?
+
+  // Admin who keyed the entry
+  enteredByAdminId String
+  enteredAt        DateTime @default(now())
+
+  tickets Ticket[]
+
+  @@index([raffleId])
+}
+
+model RaffleSellerApplication {
+  id String @id @default(cuid())
+
+  applicantId String
+  applicant   User   @relation(fields: [applicantId], references: [id])
+
+  title          String
+  description    String
+  itemValueCents Int
+  imageUrl       String?
+
+  status    String  @default("PENDING") // PENDING / APPROVED / REJECTED
+  adminNote String?
+
+  reviewedByAdminId String?
+  reviewedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+model RaffleAuditEvent {
+  id       String @id @default(cuid())
+  raffleId String
+  raffle   Raffle @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+
+  // e.g. CREATED, OPENED, TICKET_SOLD, POSTAL_ENTRY_ADDED, MIN_NOT_MET,
+  // DRAW_RUN, WINNER_CLAIMED, WINNER_FORFEIT, BACKUP_PROMOTED, RELISTED, CANCELLED
+  eventType String
+
+  // Free-form payload — JSON string for forward-compat (Prisma 7 native JSON
+  // varies per adapter; we keep a string to avoid surprises).
+  payloadJson String?
+
+  actorUserId  String?
+  actorAdminId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([raffleId, createdAt])
+  @@index([eventType])
+}
+
+// Single-row settings table for feature flags + global config.
+// Looked up by key. Values are strings (parse as needed).
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// Atomic counter for per-prefix reference numbers (UM / AU / TS / RA).
+// Used by ListingsService + RafflesService to allocate the next number
+// at create time. Increment is done via Prisma's atomic { increment: 1 }
+// inside an upsert so concurrent creates don't collide on the same
+// number. One row per prefix; created on first allocation.
+model ReferenceCounter {
+  prefix    String   @id // 'UM' | 'AU' | 'TS' | 'RA'
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+// Outbound SMS audit log — every send (whether real, stubbed, or
+// failed) writes a row here. We use it for debugging delivery issues
+// and to prove a verification code was actually dispatched. Each row
+// is tied to a free-text reference (e.g. "phone-change-USERID") so we
+// can group all attempts for a single flow.
+model SmsLog {
+  id        String   @id @default(cuid())
+  to        String // E.164-normalised destination ("+27...")
+  message   String
+  reference String?
+  status    String // 'SENT' | 'FAILED' | 'STUB'
+  messageId String? // SMSPortal's id, when available
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([reference])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Featured-slot system (paid left-rail placement)
+//
+// 10 hard-allocated slots rotate via per-slot auctions. Each slot has:
+//   - A current occupant (a listing + seller + featuredUntil) when filled
+//   - A pre-auction that opens 24h before the occupant's featuredUntil,
+//     closes at featuredUntil sharp, winner takes over with zero gap
+//   - An ad-hoc 2h auction if the slot frees unexpectedly (occupant's
+//     listing sold mid-feature, or admin force-evicted)
+//
+// Seller flow: bid first → win → 15-min bind window to pick an active
+// listing → Peach charged → listing goes featured for the tier duration.
+// Losers walk away (no rollover). One seller can hold multiple slots.
+// ---------------------------------------------------------------------------
+
+model FeaturedSlot {
+  id String @id @default(cuid())
+
+  // 1-10. Hard-allocated at seed. The rail's vertical order matches this.
+  slotNumber Int @unique
+
+  status FeaturedSlotStatus @default(VACANT)
+
+  // The listing currently displayed in this slot (null when VACANT or
+  // AUCTION_RUNNING or BIND_WINDOW with the winner not yet bound).
+  currentListingId String?  @unique
+  currentListing   Listing? @relation("FeaturedSlotListing", fields: [currentListingId], references: [id])
+
+  // Quick-lookup denormalisation — the seller who owns the current
+  // listing. Also used to enforce "can't bid on a slot you own".
+  currentSellerId String?
+  currentSeller   User?   @relation("FeaturedSlotOccupant", fields: [currentSellerId], references: [id])
+
+  // When the current occupant's featured time ends. Cron tick promotes
+  // the next auction's winner at this exact moment.
+  featuredUntil DateTime?
+
+  // Auction tracking. `currentAuctionId` is the auction that's either
+  // OPEN now (pre-auction or ad-hoc) or recently closed and in the
+  // BIND_WINDOW phase. Cron creates new auctions as slots free up.
+  currentAuctionId String?            @unique
+  currentAuction   FeaturedAuction?   @relation("SlotCurrentAuction", fields: [currentAuctionId], references: [id])
+  auctions         FeaturedAuction[]  @relation("SlotAuctions")
+  events           FeaturedSlotAuditEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([featuredUntil])
+}
+
+model FeaturedAuction {
+  id String @id @default(cuid())
+
+  slotId String
+  slot   FeaturedSlot @relation("SlotAuctions", fields: [slotId], references: [id], onDelete: Cascade)
+
+  // The back-relation for FeaturedSlot.currentAuction (1:1 to a single
+  // auction at any time). Listed without fields so Prisma can wire it.
+  slotAsCurrent FeaturedSlot? @relation("SlotCurrentAuction")
+
+  kind   FeaturedAuctionKind
+  status FeaturedAuctionStatus @default(OPEN)
+
+  // The auction OPENS the moment the slot becomes vacant (closesAt
+  // null = waiting for first bid). On the first bid, the bid handler
+  // sets closesAt = now + bidWindowSec (24h by default). Subsequent
+  // bids during the window do NOT reset it — the winner is whoever
+  // has the highest bid when the timer hits zero.
+  openedAt DateTime  @default(now())
+  closesAt DateTime?
+  closedAt DateTime?
+
+  // Snapshot of the winning bid once closed. Null while OPEN.
+  winningBidId String?          @unique
+  winningBid   FeaturedSlotBid? @relation("AuctionWinningBid", fields: [winningBidId], references: [id])
+
+  bids FeaturedSlotBid[] @relation("AuctionBids")
+
+  @@index([slotId, status])
+  @@index([closesAt])
+}
+
+model FeaturedSlotBid {
+  id String @id @default(cuid())
+
+  auctionId String
+  auction   FeaturedAuction @relation("AuctionBids", fields: [auctionId], references: [id], onDelete: Cascade)
+
+  bidderId String
+  bidder   User   @relation("FeaturedSlotBidder", fields: [bidderId], references: [id])
+
+  // ZAR cents. Backend snaps to nearest tier on submit.
+  amountCents Int
+  tier        FeaturedTier
+
+  status FeaturedBidStatus @default(ACTIVE)
+
+  // Set when the bid wins + Peach is charged (= COMMITTED). Lets admin
+  // refund cleanly via the Peach payment ID.
+  peachPaymentId String?
+  paidAt         DateTime?
+
+  // If the winner doesn't bind a listing within the 15-min bind window
+  // we cascade to the next-highest bid. `cascadedFromId` records the
+  // forfeited bid we replaced. Read-only audit trail.
+  cascadedFromId String?  @unique
+  cascadedFrom   FeaturedSlotBid? @relation("BidCascade", fields: [cascadedFromId], references: [id])
+  cascadedTo     FeaturedSlotBid? @relation("BidCascade")
+
+  // Back-relation for FeaturedAuction.winningBid.
+  wonAuction FeaturedAuction? @relation("AuctionWinningBid")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([auctionId, amountCents])
+  @@index([bidderId, status])
+}
+
+// Operator-editable configuration so tier prices + durations + bid floor
+// can change WITHOUT a code deploy. Singleton row (id="default" always).
+// Admin Settings tab writes through.
+model FeaturedSlotConfig {
+  id String @id @default("default")
+
+  // Number of slots — default 10. Changing this needs a follow-up
+  // migration to add/remove FeaturedSlot rows; UI gates the change
+  // behind a confirm dialog.
+  slotCount Int @default(10)
+
+  // Bid floor in ZAR cents. Default 10000 (R100).
+  bidFloorCents Int @default(10000)
+
+  // Tier amounts in ZAR cents + duration in seconds. Five tiers, all
+  // editable. Defaults match the agreed table:
+  //   T1 R100 = 86400s   (1d)
+  //   T2 R200 = 172800s  (2d)
+  //   T3 R300 = 432000s  (5d)
+  //   T4 R400 = 604800s  (7d)
+  //   T5 R500 = 1209600s (14d)
+  t1AmountCents Int @default(10000)
+  t1DurationSec Int @default(86400)
+  t2AmountCents Int @default(20000)
+  t2DurationSec Int @default(172800)
+  t3AmountCents Int @default(30000)
+  t3DurationSec Int @default(432000)
+  t4AmountCents Int @default(40000)
+  t4DurationSec Int @default(604800)
+  t5AmountCents Int @default(50000)
+  t5DurationSec Int @default(1209600)
+
+  // How long the auction stays open AFTER the first bid lands. The
+  // auction itself opens the moment the slot becomes vacant, but
+  // sits at closesAt=null (waiting for a first bid). When the first
+  // bid lands, closesAt is set to now + bidWindowSec. Subsequent
+  // bids during the window don't reset it.
+  bidWindowSec Int @default(86400) // 24h
+
+  // 15-min bind window the winner has to pick a listing.
+  bindWindowSec Int @default(900)
+
+  updatedAt   DateTime @updatedAt
+  updatedByAdminId String?
+}
+
+// Admin can permanently bar a user from bidding on featured slots
+// (e.g. spam, payment-default repeat offender, abuse). Separate from
+// the listing-side `isBanned` flag so featured-slot bans don't kill
+// the user's whole account.
+model FeaturedSlotBidderBan {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  reason    String
+  bannedByAdminId String
+  createdAt DateTime @default(now())
+}
+
+// Audit log — every featured-slot event. Lets the operator answer
+// "who got that slot at 14:32 yesterday and how much did they pay?"
+// without leaving the admin panel.
+//
+// Event types (free-text for forward-compat):
+//   AUCTION_OPENED, BID_PLACED, AUCTION_CLOSED, BIND_WINDOW_OPENED,
+//   LISTING_BOUND, BIND_WINDOW_EXPIRED, CASCADED_TO_RUNNER_UP,
+//   FEATURED_LIVE, FEATURED_EXPIRED, LISTING_SOLD_FREES_SLOT,
+//   FORCE_EVICTED, MANUALLY_AWARDED, REFUND_ISSUED, CONFIG_CHANGED,
+//   BIDDER_BANNED, BIDDER_UNBANNED
+model FeaturedSlotAuditEvent {
+  id       String @id @default(cuid())
+  slotId   String?
+  slot     FeaturedSlot? @relation(fields: [slotId], references: [id])
+
+  eventType String
+  payloadJson String? // JSON-encoded payload; freeform per eventType
+
+  // Who fired this. EITHER a user (bidder action) OR an admin
+  // (override action). System cron events have both null.
+  actorUserId  String?
+  actorAdminId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([slotId, createdAt])
+  @@index([eventType, createdAt])
 }

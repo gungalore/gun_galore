@@ -5,8 +5,9 @@ import { Transaction, PaymentStatus, ShippingStatus } from '@/lib/types';
 import { formatPrice, PROVINCE_LABELS } from '@/lib/utils';
 import { DispatchButton } from './dispatch-button';
 import { ConfirmDeliveryButton } from './confirm-delivery-button';
+import { RaiseDisputeButton } from './raise-dispute-button';
 import { RatingWidget } from './rating-widget';
-import { MessageThread } from './message-thread';
+import { TrackingTimeline } from './tracking-timeline';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -25,6 +26,21 @@ const PAYMENT_STATUS_COLOR: Record<PaymentStatus, string> = {
   DISPUTED: 'var(--red)',
   REFUNDED: 'var(--text-tertiary)',
 };
+
+// Carrier deep-link patterns. Returns null for methods that don't
+// have a public tracking URL (DEALER_TRANSFER doesn't, PRIVATE_ARRANGE
+// doesn't ship at all). PUDO and TCG both have public lookup pages
+// that accept the reference as a query param.
+function trackingUrl(
+  method: string | null | undefined,
+  reference: string | null | undefined,
+): string | null {
+  if (!method || !reference) return null;
+  const ref = encodeURIComponent(reference.trim());
+  if (method === 'PUDO') return `https://www.pudo.co.za/tracking?tracking=${ref}`;
+  if (method === 'TCG') return `https://www.thecourierguy.co.za/track-a-parcel?waybill=${ref}`;
+  return null;
+}
 
 const SHIPPING_STATUS_LABEL: Record<ShippingStatus, string> = {
   PENDING: 'Awaiting dispatch',
@@ -62,13 +78,28 @@ export default async function TransactionPage({
   const listing = tx.listing;
   const primaryImage = listing.images.find((i) => i.isPrimary) ?? listing.images[0];
 
+  // PRIVATE_ARRANGE has no dispatch / confirm-delivery cycle — payment
+  // releases immediately on capture (see TransactionsService
+  // .maybeImmediatePayout). The buttons below are courier-flow only.
+  const isPrivateArrange = tx.shippingMethod === 'PRIVATE_ARRANGE';
+
   const canDispatch =
+    !isPrivateArrange &&
     isSeller &&
     tx.paymentStatus === 'HELD' &&
     tx.shippingStatus === 'PENDING' &&
     !tx.dispatchedAt;
 
+  // For firearm DEALER_TRANSFER, payout no longer depends on the
+  // buyer pressing "Confirm delivery" — funds auto-release when the
+  // seller's dealer-stock-in verification is APPROVED. So hide the
+  // button entirely on that flow; the buyer instead gets a "your
+  // firearm is at <dealer>" panel once the verification approves.
+  const isFirearmDealerTransfer =
+    !!tx.listing?.isFirearm && tx.shippingMethod === 'DEALER_TRANSFER';
   const canConfirmDelivery =
+    !isPrivateArrange &&
+    !isFirearmDealerTransfer &&
     isBuyer &&
     tx.paymentStatus === 'HELD' &&
     !!tx.dispatchedAt &&
@@ -121,15 +152,94 @@ export default async function TransactionPage({
               </p>
               {isSeller ? (
                 <p style={{ color: 'var(--text-secondary)' }}>
-                  Buyer: {tx.buyer.firstName ?? 'Buyer'} {tx.buyer.lastName ?? ''}
+                  Buyer: {tx.buyer.username ?? 'Anonymous'}
                 </p>
               ) : (
                 <p style={{ color: 'var(--text-secondary)' }}>
-                  Seller: {tx.seller.firstName ?? 'Seller'} {tx.seller.lastName?.charAt(0) ?? ''}{tx.seller.lastName ? '.' : ''}
+                  Seller: {tx.seller.username ?? 'Anonymous'}
                 </p>
               )}
             </div>
           </div>
+
+          {/* PRIVATE_ARRANGE contact-reveal card. Only renders for paid
+              PRIVATE_ARRANGE transactions — non-PA orders have the
+              other party's phone/email blanked in the API response so
+              we can't accidentally leak details by misreading state. */}
+          {tx.shippingMethod === 'PRIVATE_ARRANGE' && !!tx.privateArrangeAcceptedAt && tx.paymentStatus === 'RELEASED' && (
+            <div
+              className="rounded-[8px] p-4 text-sm space-y-2"
+              style={{
+                background: 'rgba(200,16,46,0.06)',
+                border: '0.5px solid var(--red)',
+              }}
+            >
+              <p
+                className="text-xs uppercase"
+                style={{
+                  color: 'var(--red)',
+                  letterSpacing: '0.05em',
+                  fontWeight: 600,
+                }}
+              >
+                {isBuyer ? 'Seller contact' : 'Buyer contact'}
+              </p>
+              <p style={{ color: 'var(--text-secondary)' }}>
+                {isBuyer
+                  ? "You waived payment protection at checkout — payment has been released. Contact the seller to arrange a SAPS-licensed dealer meet."
+                  : "The buyer accepted private arrangement — your payout has been released. Coordinate the dealer meet with them."}
+              </p>
+              {(() => {
+                const them = isBuyer ? tx.seller : tx.buyer;
+                const fullName =
+                  [them.firstName, them.lastName].filter(Boolean).join(' ') ||
+                  (isBuyer ? 'Seller' : 'Buyer');
+                return (
+                  <div
+                    className="rounded-[6px] p-3"
+                    style={{
+                      background: 'var(--bg-inset)',
+                      border: '0.5px solid var(--border)',
+                    }}
+                  >
+                    <p style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                      {fullName}
+                    </p>
+                    {them.phone && (
+                      <p
+                        className="mt-1"
+                        style={{
+                          color: 'var(--text-secondary)',
+                          fontFamily: 'ui-monospace, monospace',
+                        }}
+                      >
+                        {them.phone}
+                      </p>
+                    )}
+                    {them.email && (
+                      <p
+                        style={{
+                          color: 'var(--text-secondary)',
+                          fontFamily: 'ui-monospace, monospace',
+                          fontSize: 13,
+                        }}
+                      >
+                        {them.email}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+              <p
+                className="text-xs"
+                style={{ color: 'var(--text-tertiary)', lineHeight: 1.55 }}
+              >
+                Complete the transfer at a SAPS-licensed dealer. Don&apos;t hand the
+                item over outside a licensed dealer&apos;s premises — the
+                paperwork is what transfers ownership legally.
+              </p>
+            </div>
+          )}
 
           {/* Shipping */}
           <div
@@ -165,9 +275,30 @@ export default async function TransactionPage({
               {tx.trackingReference && (
                 <div className="flex justify-between">
                   <span style={{ color: 'var(--text-tertiary)' }}>Tracking</span>
-                  <span style={{ color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '12px' }}>
-                    {tx.trackingReference}
-                  </span>
+                  {/* Deep-link to the carrier's public tracking page
+                      so the buyer can check parcel status without
+                      copy-pasting. Falls back to plain monospaced text
+                      if the shipping method doesn't have a known
+                      tracking URL pattern. */}
+                  {trackingUrl(tx.shippingMethod, tx.trackingReference) ? (
+                    <a
+                      href={trackingUrl(tx.shippingMethod, tx.trackingReference)!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        color: 'var(--red)',
+                        fontFamily: 'monospace',
+                        fontSize: '12px',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      {tx.trackingReference} ↗
+                    </a>
+                  ) : (
+                    <span style={{ color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '12px' }}>
+                      {tx.trackingReference}
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -198,21 +329,91 @@ export default async function TransactionPage({
                 </div>
               )}
             </div>
+
+            {/* Tracking timeline — append-only event log fed by both
+                internal milestones AND the 10-min Pudo polling cron. */}
+            <div
+              className="mt-4 pt-4"
+              style={{ borderTop: '0.5px solid var(--border-divider)' }}
+            >
+              <p
+                className="text-xs uppercase mb-3"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                Tracking
+              </p>
+              <TrackingTimeline transactionId={tx.id} />
+            </div>
           </div>
 
-          {/* Buyer: confirm delivery */}
+          {/* Buyer: confirm delivery OR raise a dispute. Both surface
+              while the payment is HELD and the seller has dispatched.
+              The dispute path is the escape hatch when the item is
+              damaged / wrong / never arrived — confirm-delivery is
+              irreversible (releases payout) so the buyer needs a
+              visible alternative before they get pressured into it. */}
           {canConfirmDelivery && (
             <div
-              className="rounded-[8px] p-4"
+              className="rounded-[8px] p-4 space-y-3"
               style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
             >
-              <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-                Have you received the item?
+              <div>
+                <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                  Have you received the item?
+                </p>
+                <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                  Confirming delivery releases payment to the seller and is final. If there's an issue, raise a dispute instead — payment stays held while we review.
+                </p>
+                <ConfirmDeliveryButton transactionId={tx.id} />
+              </div>
+              <RaiseDisputeButton transactionId={tx.id} />
+            </div>
+          )}
+
+          {/* Buyer: standalone dispute panel if we're past confirm
+              window for some reason but still HELD + dispatched (e.g.,
+              modal flow couldn't proceed, or someone wants to dispute
+              before pressing confirm). Identical control surface. */}
+          {!canConfirmDelivery &&
+            isBuyer &&
+            tx.paymentStatus === 'HELD' &&
+            !!tx.dispatchedAt &&
+            !tx.confirmedDeliveryAt && (
+              <div
+                className="rounded-[8px] p-4"
+                style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+              >
+                <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                  Issue with this order?
+                </p>
+                <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                  Payment stays held while admin reviews.
+                </p>
+                <RaiseDisputeButton transactionId={tx.id} />
+              </div>
+            )}
+
+          {/* DISPUTED banner — shown to both parties once a dispute is
+              raised. Replaces the action buttons (those gate on HELD). */}
+          {tx.paymentStatus === 'DISPUTED' && (
+            <div
+              className="rounded-[8px] p-4"
+              style={{
+                background: 'rgba(200,16,46,0.06)',
+                border: '0.5px solid var(--red)',
+              }}
+            >
+              <p className="text-sm font-medium mb-1" style={{ color: 'var(--red)' }}>
+                Dispute raised — admin is reviewing
               </p>
-              <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
-                Confirming delivery releases payment to the seller.
+              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                {isBuyer
+                  ? "Your payment is held while we investigate. We'll contact you within 48 hours with next steps. Please don't confirm delivery until the dispute is resolved."
+                  : 'The buyer has raised a dispute. Payment is paused while admin reviews. You will be contacted with the outcome.'}
               </p>
-              <ConfirmDeliveryButton transactionId={tx.id} />
             </div>
           )}
 
@@ -229,6 +430,89 @@ export default async function TransactionPage({
             </div>
           )}
 
+          {/* Dispatch SLA countdown — visible to the seller while
+              their courier order is awaiting dispatch. Backend
+              dispatch-sla.service.ts nudges at 48h after paidAt and
+              auto-refunds (with strike) at 7 days. Without this
+              banner the seller has no in-app warning until the
+              auto-refund email lands. */}
+          {canDispatch && tx.paidAt && (tx.shippingMethod === 'PUDO' || tx.shippingMethod === 'TCG') && (() => {
+            const paid = new Date(tx.paidAt).getTime();
+            const nudgeAt = paid + 48 * 60 * 60 * 1000;
+            const refundAt = paid + 7 * 24 * 60 * 60 * 1000;
+            const now = Date.now();
+            const msToRefund = refundAt - now;
+            const hoursToRefund = Math.max(0, Math.floor(msToRefund / 3_600_000));
+            const isOverdue = now > nudgeAt;
+            const isCritical = hoursToRefund <= 24;
+            const tone = isCritical
+              ? { bg: 'rgba(200,16,46,0.10)', border: 'var(--red)', label: 'var(--red)' }
+              : isOverdue
+                ? { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.55)', label: '#f59e0b' }
+                : { bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.35)', label: '#f59e0b' };
+            const dateFmt = (ms: number) =>
+              new Date(ms).toLocaleString('en-ZA', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+            return (
+              <div
+                className="rounded-[8px] px-4 py-3"
+                style={{
+                  background: tone.bg,
+                  border: `0.5px solid ${tone.border}`,
+                  lineHeight: 1.55,
+                }}
+              >
+                <p
+                  className="text-xs uppercase mb-1"
+                  style={{
+                    color: tone.label,
+                    letterSpacing: '0.06em',
+                    fontWeight: 600,
+                  }}
+                >
+                  {isCritical
+                    ? `Dispatch deadline — ${hoursToRefund}h left`
+                    : isOverdue
+                      ? 'Dispatch overdue'
+                      : 'Dispatch deadline'}
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  {isOverdue ? (
+                    <>
+                      You should have dispatched by{' '}
+                      <span style={{ color: 'var(--text-primary)' }}>
+                        {dateFmt(nudgeAt)}
+                      </span>
+                      . If the item isn&apos;t dispatched by{' '}
+                      <strong style={{ color: 'var(--text-primary)' }}>
+                        {dateFmt(refundAt)}
+                      </strong>{' '}
+                      the buyer is automatically refunded and a
+                      cancellation strike lands on your account.
+                    </>
+                  ) : (
+                    <>
+                      Dispatch by{' '}
+                      <strong style={{ color: 'var(--text-primary)' }}>
+                        {dateFmt(nudgeAt)}
+                      </strong>{' '}
+                      to stay on track. Auto-refund + strike at{' '}
+                      <span style={{ color: 'var(--text-primary)' }}>
+                        {dateFmt(refundAt)}
+                      </span>
+                      .
+                    </>
+                  )}
+                </p>
+              </div>
+            );
+          })()}
+
           {/* Seller dispatch */}
           {canDispatch && (
             <div
@@ -244,6 +528,151 @@ export default async function TransactionPage({
               <DispatchButton tx={tx} />
             </div>
           )}
+
+          {/* Seller dealer-verification entry point — only for firearm
+              DEALER_TRANSFER transactions that have been dispatched
+              but not yet verified. This is the SAPS 534 photo-pack
+              flow that gates payout release. */}
+          {isSeller &&
+            tx.shippingMethod === 'DEALER_TRANSFER' &&
+            !!tx.dispatchedAt &&
+            (tx.dealerVerificationStatus === null ||
+              tx.dealerVerificationStatus === 'PENDING_UPLOAD' ||
+              tx.dealerVerificationStatus === 'REJECTED') && (
+              <div
+                className="rounded-[8px] p-4"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: `0.5px solid ${tx.dealerVerificationStatus === 'REJECTED' ? 'var(--red)' : '#f59e0b'}`,
+                }}
+              >
+                <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                  {tx.dealerVerificationStatus === 'REJECTED'
+                    ? 'Verification was rejected — please reshoot'
+                    : 'Confirm firearm delivered to dealer'}
+                </p>
+                <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
+                  Your payout is held until we&apos;ve confirmed the firearm
+                  is booked into the dealer&apos;s stock. Upload 3 photos
+                  (SAPS 534 form, dealer&apos;s stock register last line,
+                  firearm with serial). Our bot scans them; clear photos +
+                  block letters mean instant approval and payout.
+                </p>
+                <Link
+                  href={`/transactions/${tx.id}/dealer-verification`}
+                  className="inline-block py-2.5 px-4 rounded-[6px] text-sm"
+                  style={{
+                    background: 'var(--red)',
+                    color: '#fff',
+                    fontWeight: 500,
+                    textDecoration: 'none',
+                  }}
+                >
+                  {tx.dealerVerificationStatus === 'REJECTED'
+                    ? 'Reshoot and re-upload →'
+                    : 'Upload verification photos →'}
+                </Link>
+              </div>
+            )}
+
+          {/* In-progress / approved / under-review status banner for
+              both buyer and seller to see the same state. */}
+          {tx.shippingMethod === 'DEALER_TRANSFER' &&
+            tx.dealerVerificationStatus &&
+            tx.dealerVerificationStatus !== 'PENDING_UPLOAD' && (
+              <DealerVerificationStatusBanner status={tx.dealerVerificationStatus} />
+            )}
+
+          {/* Buyer-facing dealer details panel — shown to the BUYER
+              once the verification has approved and we know where
+              the firearm has been booked into stock. This is the
+              hand-off moment: Gun Galore is done with the
+              transaction, the buyer contacts the seller and the
+              dealer directly to arrange the inter-dealer transfer
+              onwards. Surfaces alongside the released-payment block
+              on the right. */}
+          {isBuyer &&
+            isFirearmDealerTransfer &&
+            tx.dealerVerificationStatus === 'APPROVED' &&
+            tx.stockedAtDealerName && (
+              <div
+                className="rounded-[8px] p-4"
+                style={{
+                  background: 'rgba(34,197,94,0.06)',
+                  border: '0.5px solid rgba(34,197,94,0.45)',
+                }}
+              >
+                <p
+                  className="text-sm font-medium mb-1"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Your firearm is booked into stock
+                </p>
+                <p
+                  className="text-xs mb-3"
+                  style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+                >
+                  The seller has dropped the firearm at the dealer
+                  below and we&apos;ve verified the SAPS 534 +
+                  stock-register paperwork. From here, contact the
+                  seller to arrange the inter-dealer transfer to your
+                  own dealer (or your preferred collection method).
+                  Gun Galore&apos;s part of this transaction is
+                  complete.
+                </p>
+                <div
+                  className="rounded-[6px] p-3 text-sm space-y-1.5"
+                  style={{
+                    background: 'var(--bg-card)',
+                    border: '0.5px solid var(--border)',
+                  }}
+                >
+                  <div>
+                    <span
+                      className="text-xs uppercase tracking-wider mr-2"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
+                      Dealer
+                    </span>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                      {tx.stockedAtDealerName}
+                    </span>
+                  </div>
+                  {tx.stockedAtDealerAddress && (
+                    <div>
+                      <span
+                        className="text-xs uppercase tracking-wider mr-2"
+                        style={{ color: 'var(--text-tertiary)' }}
+                      >
+                        Address
+                      </span>
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        {tx.stockedAtDealerAddress}
+                      </span>
+                    </div>
+                  )}
+                  {tx.stockedAtDealerPhone && (
+                    <div>
+                      <span
+                        className="text-xs uppercase tracking-wider mr-2"
+                        style={{ color: 'var(--text-tertiary)' }}
+                      >
+                        Phone
+                      </span>
+                      <a
+                        href={`tel:${tx.stockedAtDealerPhone}`}
+                        style={{
+                          color: 'var(--text-primary)',
+                          textDecoration: 'underline',
+                        }}
+                      >
+                        {tx.stockedAtDealerPhone}
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
         </div>
 
         {/* Right: payment summary */}
@@ -325,18 +754,63 @@ export default async function TransactionPage({
         </div>
       </div>
 
-      {/* Message thread */}
-      <div
-        className="mt-8 rounded-[8px] overflow-hidden"
-        style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
-      >
-        <div className="px-4 pt-4 pb-2">
-          <p className="text-xs uppercase" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
-            Messages
-          </p>
-        </div>
-        <MessageThread transactionId={tx.id} myClerkId={userId} />
-      </div>
+      {/* Buyer/seller messaging has been removed — pre-purchase
+          questions live on the listing's Q&A panel, PRIVATE_ARRANGE
+          swaps contact details on the contact-reveal card above, and
+          the SLA cron handles every legitimate "where's my parcel"
+          touchpoint without a chat. */}
     </main>
+  );
+}
+
+// Compact status banner for the dealer-verification stage. Renders
+// for both buyer and seller so they see the same state.
+function DealerVerificationStatusBanner({ status }: { status: string }) {
+  const [colour, title, body] = (() => {
+    if (status === 'PENDING_CLAUDE') {
+      return [
+        '#f59e0b',
+        'Verification in progress',
+        'Our bot is scanning the photos. This usually takes under a minute.',
+      ];
+    }
+    if (status === 'PENDING_ADMIN_REVIEW') {
+      return [
+        '#f59e0b',
+        'Sent for human review',
+        'A team member is checking the photos. We aim to confirm within 48 hours. You will receive an email and SMS once verification completes.',
+      ];
+    }
+    if (status === 'APPROVED') {
+      return [
+        '#22c55e',
+        'Dealer-stock verification approved',
+        'Payment will be released to the seller. Buyer can now collect from the dealer with their licence paperwork.',
+      ];
+    }
+    return [
+      'var(--red)',
+      'Verification rejected',
+      'The photos did not pass automated verification. The seller will be asked to reshoot.',
+    ];
+  })();
+  return (
+    <div
+      className="rounded-[8px] p-4"
+      style={{
+        background: 'var(--bg-card)',
+        border: `0.5px solid ${colour}`,
+      }}
+    >
+      <p
+        className="text-sm font-medium mb-1"
+        style={{ color: colour as string }}
+      >
+        {title}
+      </p>
+      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+        {body}
+      </p>
+    </div>
   );
 }

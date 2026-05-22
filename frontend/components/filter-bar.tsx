@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { Category } from '@/lib/types';
 import { PROVINCE_LABELS, CONDITION_LABELS } from '@/lib/utils';
+import { LiveSearch } from '@/components/live-search';
 
 interface FilterParams {
   q?: string;
@@ -44,28 +45,17 @@ export function FilterBar({
 
   return (
     <div className="flex flex-wrap gap-2 items-center">
-      <input
-        type="search"
+      {/* Live typeahead — talks to /listings?q=…, Meilisearch handles
+          typo tolerance (1 typo for 5–8 char terms, 2 for ≥9). Selecting
+          a hit navigates to its listing; pressing Enter falls through to
+          the full results page at /?q=…, same as the old input. */}
+      <LiveSearch
         placeholder="Search listings…"
-        defaultValue={currentParams.q ?? ''}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            push({ q: (e.target as HTMLInputElement).value || undefined });
-          }
-        }}
-        className="flex-1 min-w-[180px]"
-        style={{
-          background: 'var(--bg-inset)',
-          border: '0.5px solid var(--border)',
-          color: 'var(--text-primary)',
-          borderRadius: '6px',
-          padding: '7px 10px',
-          fontSize: '13px',
-          outline: 'none',
-        }}
+        className="flex-1 min-w-[200px]"
       />
 
       <select
+        aria-label="Filter by category"
         value={currentParams.categoryId ?? ''}
         onChange={(e) => push({ categoryId: e.target.value || undefined })}
         style={selectStyle}
@@ -79,6 +69,7 @@ export function FilterBar({
       </select>
 
       <select
+        aria-label="Filter by province"
         value={currentParams.province ?? ''}
         onChange={(e) => push({ province: e.target.value || undefined })}
         style={selectStyle}
@@ -92,6 +83,7 @@ export function FilterBar({
       </select>
 
       <select
+        aria-label="Filter by condition"
         value={currentParams.condition ?? ''}
         onChange={(e) => push({ condition: e.target.value || undefined })}
         style={selectStyle}
@@ -105,16 +97,19 @@ export function FilterBar({
       </select>
 
       <select
+        aria-label="Filter by listing type"
         value={currentParams.listingType ?? ''}
         onChange={(e) => push({ listingType: e.target.value || undefined })}
         style={selectStyle}
       >
         <option value="">All types</option>
-        <option value="BUY_NOW">Buy Now</option>
+        <option value="BUY_NOW">Marketplace</option>
+        <option value="AUCTION">Auction</option>
         <option value="TAKE_A_SHOT">Take a Shot</option>
       </select>
 
       <select
+        aria-label="Sort results"
         value={currentParams.sort ?? ''}
         onChange={(e) => push({ sort: e.target.value || undefined })}
         style={selectStyle}

@@ -4,6 +4,7 @@ import { Meilisearch, Index, SearchParams, SearchResponse, RecordAny } from 'mei
 // Index names used across the platform
 export const INDEXES = {
   LISTINGS: 'listings',
+  PUDO_LOCKERS: 'pudo_lockers',
 } as const;
 
 @Injectable()
@@ -57,6 +58,22 @@ export class SearchService implements OnModuleInit {
       'calibre',
       'categoryName',
     ]);
+
+    // Pudo locker index — indexed on first cache refresh by PudoService.
+    // Searchable by name / suburb / city / postal code so the seller can
+    // type "Sandton" or "8001" and find the locker they want.
+    await this.client
+      .createIndex(INDEXES.PUDO_LOCKERS, { primaryKey: 'lockerId' })
+      .catch(() => null);
+    const lockersIndex = this.client.index(INDEXES.PUDO_LOCKERS);
+    await lockersIndex.updateFilterableAttributes(['province', 'city']);
+    await lockersIndex.updateSearchableAttributes([
+      'name',
+      'suburb',
+      'city',
+      'postalCode',
+      'lockerId',
+    ]);
   }
 
   private index(name: string): Index | null {
@@ -79,6 +96,18 @@ export class SearchService implements OnModuleInit {
     const idx = this.index(indexName);
     if (!idx) return;
     await idx.deleteDocument(documentId);
+  }
+
+  /**
+   * Wipe every document from an index without dropping the index itself
+   * (so filterable/searchable attribute settings are preserved). Used by
+   * the Pudo refresher to clear stale Pickup Point / Kiosk rows before
+   * re-uploading the filtered Locker-only set.
+   */
+  async deleteAllDocuments(indexName: string): Promise<void> {
+    const idx = this.index(indexName);
+    if (!idx) return;
+    await idx.deleteAllDocuments();
   }
 
   async search<T extends RecordAny = RecordAny>(

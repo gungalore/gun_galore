@@ -27,6 +27,14 @@ export class BrowseListingsDto {
   @IsEnum(Province)
   province?: Province;
 
+  // Filter to a single seller's listings (public — used by the
+  // seller-profile page to show "this seller's active listings").
+  // We accept Clerk's ID here because that's what the public URLs
+  // use; the service resolves it to the local User.id internally.
+  @IsOptional()
+  @IsString()
+  sellerClerkId?: string;
+
   // ZAR cents
   @IsOptional()
   @Type(() => Number)

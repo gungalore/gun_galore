@@ -46,7 +46,7 @@ export default async function MySalesPage() {
         {tx.listing.images?.[0] && (
           <img
             src={tx.listing.images[0].url}
-            alt=""
+            alt={tx.listing.title}
             className="w-14 h-14 rounded-[6px] object-cover shrink-0"
           />
         )}
@@ -55,7 +55,7 @@ export default async function MySalesPage() {
             {tx.listing.title}
           </p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Buyer: {[tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') || 'Unknown'}
+            Buyer: {tx.buyer.username ?? 'Anonymous'}
             {' · '}{new Date(tx.createdAt).toLocaleDateString('en-ZA')}
           </p>
         </div>
@@ -87,8 +87,52 @@ export default async function MySalesPage() {
       </h1>
 
       {transactions.length === 0 ? (
-        <div className="text-center py-20 text-sm" style={{ color: 'var(--text-tertiary)' }}>
-          No sales yet.
+        <div
+          className="rounded-[8px] py-12 px-6 text-center"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px dashed var(--border)',
+          }}
+        >
+          <p
+            className="text-base mb-2"
+            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+          >
+            No sales yet
+          </p>
+          <p
+            className="text-sm mb-5"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            Once a buyer pays for one of your listings, the sale lands
+            here with dispatch instructions and payout status.
+          </p>
+          <div className="flex gap-2 justify-center flex-wrap">
+            <Link
+              href="/listings/new"
+              className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+              style={{
+                background: 'var(--red)',
+                color: '#fff',
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
+            >
+              Create a listing →
+            </Link>
+            <Link
+              href="/my/listings"
+              className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+              style={{
+                background: 'var(--bg-inset)',
+                color: 'var(--text-secondary)',
+                border: '0.5px solid var(--border)',
+                textDecoration: 'none',
+              }}
+            >
+              View my listings
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="space-y-6">
