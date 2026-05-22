@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { ListingReviewDto, ReviewAction } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -21,6 +22,10 @@ export class AdminService {
     private readonly notifications: NotificationsService,
     private readonly listings: ListingsService,
     private readonly audit: AdminAuditService,
+    // @Global so no module import. Used by refundTransaction() to
+    // post a Credit Note to Books reversing the original commission
+    // invoice.
+    private readonly zohoBooks: ZohoBooksService,
   ) {}
 
   // ---------------------------------------------------------------
@@ -1032,6 +1037,13 @@ export class AdminService {
       transactionId: txId,
       note,
     });
+
+    // Zoho Books: post a Credit Note against the original commission
+    // invoice so the seller's open balance reverses. No-op if the
+    // transaction never had a commission invoice (PRIVATE_ARRANGE or
+    // pre-verification refunds). Feature-flagged — safe to call when
+    // ZOHO_BOOKS_ENABLED is off.
+    void this.zohoBooks.createCommissionCreditNote(txId, note);
 
     return updated;
   }

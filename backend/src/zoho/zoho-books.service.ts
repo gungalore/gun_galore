@@ -672,33 +672,430 @@ export class ZohoBooksService {
   }
 
   /**
-   * Credit Note: reverses a commission invoice on refund.
-   * Called by ZB-6 when a refund is issued.
+   * Credit Note for refund: reverses the commission invoice when a
+   * transaction is refunded by admin.
+   *
+   * Books semantics:
+   *   - Credit Note is a tax document (the inverse of an Invoice)
+   *   - Created against the seller (same contact as the original
+   *     invoice), with one line item mirroring the commission
+   *   - We then APPLY the credit note to the original invoice so
+   *     Books shows the invoice as cancelled/refunded
+   *
+   * Idempotent: skips if zohoCreditNoteId already set.
+   *
+   * Skipped (with logged reason) if:
+   *   - No original commission invoice exists (PRIVATE_ARRANGE
+   *     refunds, or refunds of transactions that never reached
+   *     verification-approved state)
+   *   - Feature flag is off
+   *
+   * Never throws — failures persist as zohoSyncStatus=FAILED so
+   * admin can retry from the dossier.
    */
-  async createCommissionCreditNote(_transactionId: string): Promise<void> {
-    if (!this.isEnabled()) return;
-    this.logger.debug('createCommissionCreditNote not yet wired (ZB-6)');
-  }
-
-  /**
-   * Sales Receipt for a raffle ticket purchase (one receipt per
-   * peachCheckoutId, covering all tickets bought in the batch).
-   * Called by ZB-7.
-   */
-  async createRaffleTicketSalesReceipt(
-    _peachCheckoutId: string,
+  async createCommissionCreditNote(
+    transactionId: string,
+    refundReason?: string,
   ): Promise<void> {
     if (!this.isEnabled()) return;
-    this.logger.debug('createRaffleTicketSalesReceipt not yet wired (ZB-7)');
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        seller: { select: { id: true, email: true } },
+        listing: { select: { title: true, referenceNumber: true } },
+      },
+    });
+    if (!tx) return;
+    if (tx.zohoCreditNoteId) return; // already credited
+    if (!tx.zohoCommissionInvoiceId) {
+      await this.markSkipped(
+        transactionId,
+        'No commission invoice to credit (refund pre-approval or PRIVATE_ARRANGE)',
+      );
+      return;
+    }
+
+    try {
+      const contactId = await this.ensureContact(tx.seller.id, tx.seller.email);
+      if (!contactId) {
+        throw new Error('Could not resolve Books contact for seller');
+      }
+      const commissionAccountId = await this.getAccountIdByName(
+        'Commission Revenue',
+      );
+      if (!commissionAccountId) {
+        throw new Error(
+          'Commission Revenue account not found in Books chart-of-accounts',
+        );
+      }
+
+      const commissionRand = tx.commissionZar / 100;
+      const orderRef = tx.listing.referenceNumber ?? tx.id.slice(-8).toUpperCase();
+      const reason = (refundReason ?? 'Transaction refunded by admin').slice(0, 200);
+      const reference = `Refund — ${orderRef} (reversing commission of ${this.formatRand(commissionRand)})`;
+      const today = new Date().toISOString().slice(0, 10);
+
+      type CreateCreditNoteResp = {
+        creditnote?: { creditnote_id?: string; creditnote_number?: string };
+        message?: string;
+      };
+      const payload = {
+        customer_id: contactId,
+        reference_number: reference,
+        date: today,
+        line_items: [
+          {
+            name: 'Platform Fee — refund',
+            description: `${orderRef} — ${tx.listing.title} (${reason})`,
+            rate: commissionRand,
+            quantity: 1,
+            account_id: commissionAccountId,
+          },
+        ],
+        notes: `${reference}.\nGun Galore transaction reference: ${orderRef}\nReason: ${reason}`,
+      };
+
+      const resp = await this.request<CreateCreditNoteResp>(
+        'POST',
+        '/creditnotes',
+        payload,
+      );
+
+      const creditNoteId = resp.creditnote?.creditnote_id;
+      if (!creditNoteId) {
+        throw new Error(
+          `Books credit-note create returned no creditnote_id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+
+      // Apply the credit note against the original invoice so Books
+      // shows the invoice as effectively cancelled — without this,
+      // both rows sit independently and the seller's open-balance
+      // doesn't zero out.
+      try {
+        await this.request<{ message?: string }>(
+          'POST',
+          `/creditnotes/${creditNoteId}/invoices`,
+          {
+            invoices: [
+              {
+                invoice_id: tx.zohoCommissionInvoiceId,
+                amount_applied: commissionRand,
+              },
+            ],
+          },
+        );
+      } catch (applyErr) {
+        // Non-fatal — the credit note exists, admin can manually
+        // apply it from the Books UI if this step failed. Log it
+        // but don't reverse the whole operation.
+        this.logger.warn(
+          `Credit note ${creditNoteId} created but apply-to-invoice failed: ${(applyErr as Error).message}`,
+        );
+      }
+
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: {
+          zohoCreditNoteId: creditNoteId,
+          zohoSyncStatus: 'OK',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Created refund credit note ${resp.creditnote?.creditnote_number ?? creditNoteId} for tx ${transactionId} (R${commissionRand.toFixed(2)})`,
+      );
+    } catch (err) {
+      await this.markFailed(transactionId, err as Error);
+    }
   }
 
   /**
-   * Invoice for a featured-slot fee. Called by ZB-8 when a winning
-   * bid is committed (Peach captures the payment).
+   * Sales Receipt for a raffle ticket purchase.
+   *
+   * Raffles are NOT marketplace — Gun Galore IS the seller, the
+   * buyer is the customer. So the Books document is a Sales Receipt
+   * (paid invoice in one step), not the commission invoice flow we
+   * use for marketplace sales.
+   *
+   * Called from RafflesService.confirmTickets() with the list of
+   * Ticket.id values that were just confirmed in one batch (one
+   * Peach payment = one receipt covering N tickets).
+   *
+   * Idempotent — if ANY of the tickets in the batch already has a
+   * zohoSalesReceiptId we treat the batch as done (the batch was
+   * synced previously) and no-op.
+   *
+   * Never throws — failures persist as zohoSyncStatus=FAILED on
+   * each ticket so admin can retry from the dossier.
    */
-  async createFeaturedSlotInvoice(_bidId: string): Promise<void> {
+  async createRaffleTicketSalesReceipt(
+    ticketIds: string[],
+  ): Promise<void> {
+    if (!this.isEnabled() || ticketIds.length === 0) return;
+
+    const tickets = await this.prisma.ticket.findMany({
+      where: { id: { in: ticketIds } },
+      include: {
+        buyer: { select: { id: true, email: true, username: true, firstName: true, lastName: true } },
+        raffle: { select: { id: true, title: true, referenceNumber: true } },
+      },
+    });
+    if (tickets.length === 0) return;
+
+    // Idempotency — if any ticket already has a receipt ID, the
+    // batch has already been synced. No-op.
+    if (tickets.some((t) => t.zohoSalesReceiptId)) return;
+
+    // Postal tickets (amountCents = 0) skip Books — no money changed
+    // hands, no accounting entry needed.
+    const paidTickets = tickets.filter((t) => t.amountCents > 0);
+    if (paidTickets.length === 0) return;
+
+    // Sanity — all tickets in the batch should share the same buyer
+    // and raffle (set by confirmTickets() — one peachPaymentId batch
+    // = one buyer + one raffle).
+    const buyer = paidTickets[0].buyer;
+    const raffle = paidTickets[0].raffle;
+    if (!buyer || !raffle) return;
+    const totalCents = paidTickets.reduce((s, t) => s + t.amountCents, 0);
+    const totalRand = totalCents / 100;
+    const unitRand = paidTickets[0].amountCents / 100;
+    const raffleRef = raffle.referenceNumber ?? raffle.id.slice(-8).toUpperCase();
+
+    try {
+      const contactId = await this.ensureContact(buyer.id, buyer.email);
+      if (!contactId) {
+        throw new Error('Could not resolve Books contact for buyer');
+      }
+      const raffleAccountId = await this.getAccountIdByName(
+        'Raffle Ticket Revenue',
+      );
+      if (!raffleAccountId) {
+        throw new Error(
+          'Raffle Ticket Revenue account not found in Books chart-of-accounts',
+        );
+      }
+      // Deposit-to: Bank — Peach Pending (where Peach captures, before
+      // settling to FNB). Falls back to FNB Business if Peach Pending
+      // doesn't exist in the user's CoA.
+      const depositAccountId =
+        (await this.getAccountIdByName('Bank — Peach Pending')) ??
+        (await this.getAccountIdByName('Bank — FNB Business'));
+      if (!depositAccountId) {
+        throw new Error(
+          'No deposit account found in Books (need "Bank — Peach Pending" or "Bank — FNB Business")',
+        );
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const reference = `Raffle ticket purchase — ${raffleRef} (${paidTickets.length} ${paidTickets.length === 1 ? 'ticket' : 'tickets'})`;
+
+      type CreateSalesReceiptResp = {
+        salesreceipt?: { salesreceipt_id?: string; salesreceipt_number?: string };
+        message?: string;
+      };
+      const payload = {
+        customer_id: contactId,
+        reference_number: reference,
+        date: today,
+        line_items: [
+          {
+            name: 'Raffle Ticket',
+            description: `${raffleRef} — ${raffle.title} (x${paidTickets.length})`,
+            rate: unitRand,
+            quantity: paidTickets.length,
+            account_id: raffleAccountId,
+          },
+        ],
+        // Sales Receipts are paid-at-issue — deposit_to is the
+        // account that holds the cash.
+        payment_mode: 'Other',
+        deposit_to_account_id: depositAccountId,
+        notes: `${reference}.\nTotal: R${totalRand.toFixed(2)} (${paidTickets.length} x R${unitRand.toFixed(2)})`,
+      };
+
+      const resp = await this.request<CreateSalesReceiptResp>(
+        'POST',
+        '/salesreceipts',
+        payload,
+      );
+
+      const receiptId = resp.salesreceipt?.salesreceipt_id;
+      if (!receiptId) {
+        throw new Error(
+          `Books sales-receipt create returned no salesreceipt_id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+
+      // Stamp the receipt ID on every ticket in the batch so we
+      // can look up the receipt from any one of them.
+      await this.prisma.ticket.updateMany({
+        where: { id: { in: paidTickets.map((t) => t.id) } },
+        data: {
+          zohoSalesReceiptId: receiptId,
+          zohoSyncStatus: 'OK',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Created raffle sales receipt ${resp.salesreceipt?.salesreceipt_number ?? receiptId} (R${totalRand.toFixed(2)}, ${paidTickets.length} tickets, raffle ${raffleRef})`,
+      );
+    } catch (err) {
+      await this.markRaffleTicketsFailed(
+        paidTickets.map((t) => t.id),
+        err as Error,
+      );
+    }
+  }
+
+  private async markRaffleTicketsFailed(
+    ticketIds: string[],
+    err: Error,
+  ): Promise<void> {
+    const message = err.message.slice(0, 1000);
+    this.logger.error(
+      `Zoho Books raffle sync FAILED for tickets [${ticketIds.length}]: ${message}`,
+    );
+    try {
+      await this.prisma.ticket.updateMany({
+        where: { id: { in: ticketIds } },
+        data: {
+          zohoSyncStatus: 'FAILED',
+          zohoSyncError: message,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+    } catch (writeErr) {
+      this.logger.error(
+        `Could not write FAILED status to tickets: ${(writeErr as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Invoice for a featured-slot fee.
+   *
+   * Called from FeaturedService.bindListingToSlot() once the winning
+   * bid is committed (status=WON, paidAt set). Issues the seller a
+   * paid invoice for the slot fee — analogous to the commission
+   * invoice flow but for featured-listing service revenue.
+   *
+   * Idempotent — skips if zohoInvoiceId already set on the bid.
+   * Never throws — failures stamp FAILED on the bid row.
+   */
+  async createFeaturedSlotInvoice(bidId: string): Promise<void> {
     if (!this.isEnabled()) return;
-    this.logger.debug('createFeaturedSlotInvoice not yet wired (ZB-8)');
+
+    const bid = await this.prisma.featuredSlotBid.findUnique({
+      where: { id: bidId },
+      include: {
+        bidder: { select: { id: true, email: true } },
+        auction: { select: { slotId: true } },
+      },
+    });
+    if (!bid) return;
+    if (bid.zohoInvoiceId) return;
+    if (bid.amountCents <= 0) return;
+
+    try {
+      const contactId = await this.ensureContact(bid.bidder.id, bid.bidder.email);
+      if (!contactId) {
+        throw new Error('Could not resolve Books contact for winning bidder');
+      }
+      const featuredAccountId = await this.getAccountIdByName(
+        'Featured-Slot Revenue',
+      );
+      if (!featuredAccountId) {
+        throw new Error(
+          'Featured-Slot Revenue account not found in Books chart-of-accounts',
+        );
+      }
+      const depositAccountId =
+        (await this.getAccountIdByName('Bank — Peach Pending')) ??
+        (await this.getAccountIdByName('Bank — FNB Business'));
+
+      const feeRand = bid.amountCents / 100;
+      const today = new Date().toISOString().slice(0, 10);
+      const bidRef = bid.id.slice(-8).toUpperCase();
+      const reference = `Featured-slot ${bid.tier} — slot ${bid.auction?.slotId ?? 'unknown'} — bid ${bidRef}`;
+
+      // Featured-slot fees are paid at the moment the bid commits
+      // (the seller's card was already charged by Peach). So we use
+      // a Sales Receipt (paid-at-issue) — same pattern as raffle
+      // tickets, not the marketplace commission-invoice + mark-paid
+      // two-step.
+      type CreateSalesReceiptResp = {
+        salesreceipt?: { salesreceipt_id?: string; salesreceipt_number?: string };
+        message?: string;
+      };
+      const payload: Record<string, unknown> = {
+        customer_id: contactId,
+        reference_number: reference,
+        date: today,
+        line_items: [
+          {
+            name: 'Featured-Slot Fee',
+            description: `${bid.tier} tier — slot ${bid.auction?.slotId ?? 'unknown'} — bid ${bidRef}`,
+            rate: feeRand,
+            quantity: 1,
+            account_id: featuredAccountId,
+          },
+        ],
+        payment_mode: 'Other',
+        notes: reference,
+      };
+      if (depositAccountId) {
+        payload.deposit_to_account_id = depositAccountId;
+      }
+
+      const resp = await this.request<CreateSalesReceiptResp>(
+        'POST',
+        '/salesreceipts',
+        payload,
+      );
+
+      const receiptId = resp.salesreceipt?.salesreceipt_id;
+      if (!receiptId) {
+        throw new Error(
+          `Books featured-slot receipt create returned no id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+
+      await this.prisma.featuredSlotBid.update({
+        where: { id: bidId },
+        data: {
+          zohoInvoiceId: receiptId,
+          zohoSyncStatus: 'OK',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Created featured-slot receipt ${resp.salesreceipt?.salesreceipt_number ?? receiptId} (R${feeRand.toFixed(2)}, bid ${bidRef})`,
+      );
+    } catch (err) {
+      const message = (err as Error).message.slice(0, 1000);
+      this.logger.error(
+        `Featured-slot Books sync FAILED for bid ${bidId}: ${message}`,
+      );
+      try {
+        await this.prisma.featuredSlotBid.update({
+          where: { id: bidId },
+          data: {
+            zohoSyncStatus: 'FAILED',
+            zohoSyncError: message,
+            zohoSyncLastAttemptAt: new Date(),
+          },
+        });
+      } catch (writeErr) {
+        this.logger.error(
+          `Could not write FAILED status to bid ${bidId}: ${(writeErr as Error).message}`,
+        );
+      }
+    }
   }
 
   // ─── Health check ────────────────────────────────────────────────

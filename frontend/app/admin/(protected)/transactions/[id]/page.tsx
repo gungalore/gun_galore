@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import DossierActions from './dossier-actions';
 import DealerVerificationPanel from './dealer-verification-panel';
+import { ZohoSyncPanel } from './zoho-sync-panel';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -47,6 +48,16 @@ interface TransactionDossier {
     dealerVerificationFindings: unknown;
     dealerVerifiedAt: string | null;
     dealerStockRegisterRef: string | null;
+    // Zoho Books sync state — populated by ZohoBooksService when
+    // the commission invoice + payment + (optional) credit note
+    // are posted. zohoSyncStatus is 'OK' | 'PENDING' | 'FAILED' |
+    // 'SKIPPED' | null. Drives the admin sync-status panel + retry button.
+    zohoCommissionInvoiceId: string | null;
+    zohoCommissionPaymentId: string | null;
+    zohoCreditNoteId: string | null;
+    zohoSyncStatus: string | null;
+    zohoSyncError: string | null;
+    zohoSyncLastAttemptAt: string | null;
     adminNote: string | null;
     adminReviewedById: string | null;
     adminReviewedAt: string | null;
@@ -419,6 +430,16 @@ export default async function TransactionDossierPage({
             stockRegisterRef={t.dealerStockRegisterRef}
             verifiedAt={t.dealerVerifiedAt}
           />
+        </Section>
+      )}
+
+      {/* ─── Zoho Books sync status ─ */}
+      {(t.zohoSyncStatus || t.zohoCommissionInvoiceId) && (
+        <Section
+          title="Zoho Books"
+          subtitle="Accounting integration: commission invoice, mark-paid, and (on refund) credit note. Auto-posted from dealer-verification and admin-refund flows."
+        >
+          <ZohoSyncPanel tx={t} />
         </Section>
       )}
 

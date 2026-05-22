@@ -35,13 +35,21 @@ import { SuperadminGuard } from './guards/superadmin.guard';
 import { KycModule } from '../kyc/kyc.module';
 import { ListingsModule } from '../listings/listings.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { ZohoBooksModule } from '../zoho/zoho-books.module';
 
 @Module({
   // KycModule for AdminKycController; ListingsModule so reviewListing
   // can re-index the listing in Meilisearch after the admin approve/
   // reject decision; PaymentsModule so the admin tx dossier
-  // controller can call DealerVerificationService.adminOverride.
-  imports: [JwtModule.register({}), KycModule, ListingsModule, PaymentsModule],
+  // controller can call DealerVerificationService.adminOverride;
+  // ZohoBooksModule for the Credit Note posted from refundTransaction.
+  imports: [
+    JwtModule.register({}),
+    KycModule,
+    ListingsModule,
+    PaymentsModule,
+    ZohoBooksModule,
+  ],
   providers: [
     AdminAuthService,
     AdminService,

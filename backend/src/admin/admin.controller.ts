@@ -11,6 +11,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { DealerVerificationService } from '../payments/dealer-verification.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { Throttle } from '@nestjs/throttler';
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
 import { SuperadminGuard } from './guards/superadmin.guard';
@@ -230,6 +231,11 @@ export class AdminTransactionsController {
   constructor(
     private readonly adminService: AdminService,
     private readonly dealerVerification: DealerVerificationService,
+    // ZohoBooksService used by the /zoho-retry endpoint — admin
+    // dossier's "Retry Books sync" button calls it to re-fire the
+    // commission-invoice + mark-paid hooks when the first attempt
+    // failed (e.g. transient API blip).
+    private readonly zohoBooks: ZohoBooksService,
   ) {}
 
   @Get()
@@ -305,6 +311,19 @@ export class AdminTransactionsController {
       admin.sub,
       body.reason ?? '',
     );
+  }
+
+  // ── Zoho Books retry — re-fires the commission-invoice + mark-paid
+  // hooks for a transaction whose previous sync attempt failed.
+  // Called from the admin dossier's ZohoSyncPanel "Retry" button.
+  // Idempotent in the ZohoBooksService itself — skips if already
+  // posted, so safe to click multiple times.
+  @Post(':id/zoho-retry')
+  @HttpCode(200)
+  async retryZohoSync(@Param('id') id: string) {
+    await this.zohoBooks.createCommissionInvoice(id);
+    await this.zohoBooks.markCommissionInvoicePaid(id);
+    return { triggered: true };
   }
 }
 

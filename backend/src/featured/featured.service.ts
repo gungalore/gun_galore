@@ -15,6 +15,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PeachService } from '../payments/peach.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 
 // Featured-slot service.
 //
@@ -40,6 +41,10 @@ export class FeaturedService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly peach: PeachService,
+    // @Global — used by bindListingToSlot() to post a Sales Receipt
+    // to Books for the featured-slot fee. Feature-flagged so it's
+    // a no-op until ZOHO_BOOKS_ENABLED=true.
+    private readonly zohoBooks: ZohoBooksService,
   ) {}
 
   // ─── Config helpers ─────────────────────────────────────────────────
@@ -491,6 +496,13 @@ export class FeaturedService {
         listingId: listing.id,
         featuredUntil: featuredUntil.toISOString(),
       });
+
+      // Zoho Books: post a Sales Receipt for the slot fee. Fire-and-
+      // forget outside the DB transaction — Books failures don't
+      // block the binding. Note: we use winningBid.id (captured
+      // above) because by the time this fires, the bid has already
+      // been updated to status=WON.
+      void this.zohoBooks.createFeaturedSlotInvoice(winningBid.id);
 
       return { featuredUntil };
     });

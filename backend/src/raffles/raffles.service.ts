@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { PeachService } from '../payments/peach.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { CreateRaffleDto } from './dto/create-raffle.dto';
 import { BuyTicketsDto } from './dto/buy-tickets.dto';
 import { PostalEntryDto } from './dto/postal-entry.dto';
@@ -57,6 +58,10 @@ export class RafflesService {
     private readonly cloudinary: CloudinaryService,
     private readonly peach: PeachService,
     private readonly referenceNumbers: ReferenceNumberService,
+    // @Global — used by confirmTickets() to post a Sales Receipt
+    // to Books for each confirmed ticket batch. Feature-flagged so
+    // it's a no-op until ZOHO_BOOKS_ENABLED=true.
+    private readonly zohoBooks: ZohoBooksService,
   ) {}
 
   // -------------------------------------------------------------------
@@ -407,6 +412,12 @@ export class RafflesService {
         await this.recordEvent(raffleId, 'SOLD_OUT', { drawAt: drawAt.toISOString() });
       }
     });
+
+    // Zoho Books: create a Sales Receipt for the confirmed batch.
+    // Outside the DB transaction — Books shouldn't block the ticket
+    // confirmation. Fire-and-forget; failures stamp FAILED status on
+    // the ticket rows so admin can retry.
+    void this.zohoBooks.createRaffleTicketSalesReceipt(ticketIds);
   }
 
   // -------------------------------------------------------------------

@@ -164,6 +164,20 @@ export class AdminHealthService {
         method: 'HEAD',
         requiresEnv: ['ANTHROPIC_API_KEY'],
       },
+      {
+        // Zoho Books — accounting integration. Probes the public API
+        // host; we don't use a credential-authenticated probe here
+        // (other services in this list also probe base hosts only).
+        // The deeper "can we actually auth + see our org" check
+        // lives in ZohoBooksService.healthCheck() and could be added
+        // as a separate row later if needed.
+        name: 'Zoho Books',
+        url:
+          process.env.ZOHO_BOOKS_API_DOMAIN ?? 'https://www.zohoapis.com',
+        category: 'comms',
+        method: 'HEAD',
+        requiresEnv: ['ZOHO_BOOKS_REFRESH_TOKEN'],
+      },
     ];
 
     return Promise.all(

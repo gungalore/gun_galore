@@ -8,11 +8,13 @@ import {
 } from './featured.controller';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { PaymentsModule } from '../payments/payments.module';
+import { ZohoBooksModule } from '../zoho/zoho-books.module';
 
 @Module({
   // JwtModule for AdminJwtGuard. PaymentsModule for Peach refunds on
-  // admin force-evict.
-  imports: [JwtModule.register({}), PaymentsModule],
+  // admin force-evict. ZohoBooksModule for the featured-slot fee
+  // Sales Receipt posted from bindListingToSlot().
+  imports: [JwtModule.register({}), PaymentsModule, ZohoBooksModule],
   controllers: [
     FeaturedPublicController,
     FeaturedSellerController,
