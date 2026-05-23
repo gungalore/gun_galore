@@ -3,6 +3,7 @@ import { ClerkProvider } from '@clerk/nextjs';
 import { PublicNav, PublicFooter } from '@/components/public-chrome';
 import { UrgentNotifications } from '@/components/urgent-notifications';
 import { InstallPrompt } from '@/components/install-prompt';
+import { SwKillSwitch } from '@/components/sw-killswitch';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -61,6 +62,12 @@ export default function RootLayout({
               (the admin layout owns its own chrome) so the public
               Nav and ECT § 43 footer only render on the buyer/
               seller-facing pages. */}
+          {/* SW kill switch — when NEXT_PUBLIC_DISABLE_PWA=true,
+              unregisters any cached service worker on the user's
+              browser and clears its caches. Runs as the page loads
+              so a single visit cleans up after a shipped-broken SW.
+              No-op when the env var is unset. */}
+          <SwKillSwitch />
           <PublicNav />
           <UrgentNotifications />
           {children}
