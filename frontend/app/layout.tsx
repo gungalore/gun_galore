@@ -10,16 +10,26 @@ import { MobileSearchBar } from '@/components/mobile-search-bar';
 import { StickyFeaturedStrip } from '@/components/sticky-featured-strip';
 import './globals.css';
 
-// Inline script that runs BEFORE first paint and sets
-// `data-standalone="true"` on <html> whenever the page is running as
-// an installed PWA. Two signals because no single API covers all
-// browsers (Safari iOS still uses the legacy `navigator.standalone`).
+// Inline script that runs BEFORE first paint and:
+//   1. Sets `data-standalone="true"` on <html> whenever the page is
+//      running as an installed PWA. Two signals because no single
+//      API covers all browsers (Safari iOS still uses the legacy
+//      `navigator.standalone`).
+//   2. In standalone mode ONLY, rewrites the viewport meta tag to
+//      lock pinch-zoom + double-tap-zoom (`maximum-scale=1,
+//      user-scalable=no`). Browser-mobile users keep zoom for
+//      accessibility — only the installed app feels like a static
+//      native window.
 //
-// Critical that this runs before paint — without it the top nav (which
-// CSS hides via `html[data-standalone='true'] [data-public-nav]`)
-// flashes for one frame on launch before the React useStandalone()
-// hook re-renders. Inline-string script in <head> avoids that flash.
-const STANDALONE_DETECT_SCRIPT = `(function(){try{var m=window.matchMedia&&window.matchMedia('(display-mode: standalone)');var s=(m&&m.matches)||window.navigator.standalone===true;if(s){document.documentElement.dataset.standalone='true';}if(m&&m.addEventListener){m.addEventListener('change',function(e){if(e.matches){document.documentElement.dataset.standalone='true';}else{delete document.documentElement.dataset.standalone;}});}}catch(_){}})();`;
+// Critical that this runs before paint — without it the top nav
+// (hidden via `html[data-standalone='true'] [data-public-nav]`)
+// flashes for one frame on launch, and the viewport rewrite would
+// arrive after the OS has already cached the initial zoomable layout.
+//
+// Listens for display-mode changes so toggling between window modes
+// (rare but possible on Chrome desktop) updates both the attribute
+// AND the viewport rule consistently.
+const STANDALONE_DETECT_SCRIPT = `(function(){var BROWSER='width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover';var LOCKED='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';function applyVP(s){var v=document.querySelector('meta[name=viewport]');if(!v){v=document.createElement('meta');v.setAttribute('name','viewport');document.head.appendChild(v);}v.setAttribute('content',s?LOCKED:BROWSER);}try{var m=window.matchMedia&&window.matchMedia('(display-mode: standalone)');var s=(m&&m.matches)||window.navigator.standalone===true;if(s){document.documentElement.dataset.standalone='true';}applyVP(s);if(m&&m.addEventListener){m.addEventListener('change',function(e){var ns=e.matches||window.navigator.standalone===true;if(ns){document.documentElement.dataset.standalone='true';}else{delete document.documentElement.dataset.standalone;}applyVP(ns);});}}catch(_){}})();`;
 
 export const metadata: Metadata = {
   title: 'Gun Galore — SA Firearms Marketplace',
@@ -56,8 +66,16 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  // Lets the user pinch-zoom — accessibility. We don't lock zoom.
+  // Browser-mobile users can pinch-zoom (accessibility — WCAG 1.4.4).
+  // The inline pre-paint script in layout.tsx overrides this to
+  // `maximum-scale=1, user-scalable=no` when the page is running as
+  // an installed PWA, so the standalone app feels like a static
+  // native window. See STANDALONE_DETECT_SCRIPT.
   maximumScale: 5,
+  // viewport-fit=cover lets `env(safe-area-inset-*)` resolve to the
+  // real notch / home-indicator insets on iOS. Without this, iOS Safari
+  // returns 0 for the safe-area-inset values even on notch phones.
+  viewportFit: 'cover',
   themeColor: [
     { media: '(prefers-color-scheme: dark)', color: '#0f0f0f' },
     { media: '(prefers-color-scheme: light)', color: '#0f0f0f' },

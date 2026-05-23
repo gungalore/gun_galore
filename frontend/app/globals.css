@@ -83,6 +83,16 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* In standalone mode, block pinch-zoom + double-tap-zoom gestures at
+   the gesture layer too. The viewport meta rewrite in the pre-paint
+   script in layout.tsx already locks zoom via `maximum-scale=1`, but
+   touch-action is belt-and-braces — it prevents the gesture handlers
+   from even firing, which feels snappier than the OS animating a
+   blocked zoom-in. Browser-mobile users keep all gestures. */
+html[data-standalone='true'] {
+  touch-action: pan-x pan-y;
+}
+
 /* iOS Safari auto-zooms when a form input is focused if the input's
    computed font-size is < 16px. We use 13-14px text everywhere in the
    UI, so this rule scopes the font-size bump to mobile widths only —
