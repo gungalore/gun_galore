@@ -14,6 +14,7 @@ export function Nav() {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Pick the best name to display. Order of preference:
@@ -42,260 +43,445 @@ export function Nav() {
     return () => document.removeEventListener('mousedown', close);
   }, []);
 
+  // Close the mobile drawer on route change.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll when the mobile drawer is open.
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileOpen]);
+
+  // Shopping surfaces — shared between desktop nav row and mobile drawer.
+  const SHOP_LINKS = [
+    { href: '/?listingType=BUY_NOW', label: 'Marketplace' },
+    { href: '/?listingType=AUCTION', label: 'Auctions' },
+    { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
+    { href: '/competitions', label: 'Competitions' },
+  ];
+
+  // Account menu items — shared between desktop dropdown and mobile drawer.
+  const ACCOUNT_LINKS = [
+    { href: '/profile', label: 'View profile', primary: true },
+    { href: '/my/listings', label: 'My Listings' },
+    { href: '/my/orders', label: 'My Orders' },
+    { href: '/my/sales', label: 'My Sales' },
+    { href: '/my/offers', label: 'My Offers' },
+    { href: '/my/bids', label: 'My Bids' },
+    { href: '/my/tickets', label: 'My Tickets' },
+    { href: '/dashboard/raffle-wins', label: 'My Wins' },
+    { href: '/offers/received', label: 'Received Offers' },
+    { href: '/dashboard', label: 'Dashboard' },
+  ];
+
   return (
-    <nav
-      className="sticky top-0 z-50"
-      style={{
-        background: 'var(--bg-deep)',
-        borderBottom: '0.5px solid var(--border)',
-      }}
-    >
-      <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center gap-6">
-        {/* Logo — full wordmark SVG. The spec locks the 5:1 aspect ratio;
-            44px tall is the nav-bar size per CLAUDE.md. */}
-        <Link href="/" className="shrink-0 flex items-center" aria-label="Gun Galore">
-          <Image
-            src="/logo.svg"
-            alt="Gun Galore"
-            width={220}
-            height={44}
-            priority
-            style={{ height: 44, width: 'auto' }}
-          />
-        </Link>
-
-        {/* Primary nav — four shopping surfaces. Marketplace = BUY_NOW
-            listings, Auctions = AUCTION, Take a Shot = TAKE_A_SHOT, and
-            Competitions is its own page. Hidden on mobile to give the
-            search bar room; mobile users get to these from the homepage
-            hero/grid filters and the section cards. */}
-        <div className="hidden md:flex items-center gap-5 text-sm shrink-0">
-          <Link
-            href="/?listingType=BUY_NOW"
-            style={{ color: 'var(--text-secondary)' }}
-            className="hover:text-[#f5f5f5] transition-colors"
-          >
-            Marketplace
+    <>
+      <nav
+        className="sticky top-0 z-50"
+        style={{
+          background: 'var(--bg-deep)',
+          borderBottom: '0.5px solid var(--border)',
+        }}
+      >
+        <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center gap-6">
+          {/* Logo */}
+          <Link href="/" className="shrink-0 flex items-center" aria-label="Gun Galore">
+            <Image
+              src="/logo.svg"
+              alt="Gun Galore"
+              width={220}
+              height={44}
+              priority
+              style={{ height: 44, width: 'auto' }}
+            />
           </Link>
-          <Link
-            href="/?listingType=AUCTION"
-            style={{ color: 'var(--text-secondary)' }}
-            className="hover:text-[#f5f5f5] transition-colors"
-          >
-            Auctions
-          </Link>
-          <Link
-            href="/?listingType=TAKE_A_SHOT"
-            style={{ color: 'var(--text-secondary)' }}
-            className="hover:text-[#f5f5f5] transition-colors"
-          >
-            Take a Shot
-          </Link>
-          <Link
-            href="/competitions"
-            style={{ color: 'var(--text-secondary)' }}
-            className="hover:text-[#f5f5f5] transition-colors"
-          >
-            Competitions
-          </Link>
-        </div>
 
-        {/* Live search — typeahead over the listings index. Flex-1 so
-            it absorbs whatever horizontal space is left after the logo,
-            page links (desktop only), and right-side actions. Capped at
-            420px on wide screens so it doesn't look comically long when
-            the user has acres of real estate. */}
-        <div className="flex-1 max-w-[420px]">
-          <LiveSearch placeholder="Search listings…" />
-        </div>
+          {/* Primary nav — four shopping surfaces. Desktop only; mobile
+              users get these via the hamburger menu on the right. */}
+          <div className="hidden md:flex items-center gap-5 text-sm shrink-0">
+            {SHOP_LINKS.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                style={{ color: 'var(--text-secondary)' }}
+                className="hover:text-[#f5f5f5] transition-colors"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
 
-        {/* Right side */}
-        {isLoaded && (
-          <div className="flex items-center gap-3">
-            <Link
-              href="/listings/new"
-              className="text-sm px-3 py-1.5 rounded-[6px] transition-colors"
-              style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
-            >
-              Sell
-            </Link>
+          {/* Live search — desktop only. On mobile it lives inside the
+              hamburger drawer so the nav stays uncluttered + the Sell
+              CTA + hamburger don't get pushed off-screen. */}
+          <div className="hidden md:block flex-1 max-w-[420px]">
+            <LiveSearch placeholder="Search listings…" />
+          </div>
 
-            {isSignedIn ? (
-              <div className="flex items-center gap-2">
-                {/* Wishlist icon removed — the join table + heart
-                    toggle on listing cards aren't built yet, and
-                    advertising a feature whose page literally says
-                    "coming soon" makes the rest of the surface feel
-                    half-finished. Re-add the heart here when the
-                    wishlist join table + card toggle ship. */}
+          {/* Right side */}
+          {isLoaded && (
+            <div className="flex items-center gap-2 sm:gap-3 ml-auto md:ml-0">
+              <Link
+                href="/listings/new"
+                className="text-sm px-3 py-1.5 rounded-[6px] transition-colors"
+                style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+              >
+                Sell
+              </Link>
 
-                {/* Messages icon removed — there is no buyer/seller
-                    messaging on Gun Galore. Pre-purchase Q&A lives on
-                    the listing page; PRIVATE_ARRANGE swaps contact
-                    details on payment. */}
-
-                {/* Ambient profile-completion ring — sits next to the
-                    user chip. Renders a small percent circle while the
-                    user has missing fields (name / verified phone /
-                    address with coords); hides itself at 100%. Clicking
-                    pops a tooltip with deep-links to /profile/edit.
-                    Drives the "complete your profile" UX without ever
-                    blocking the seller or popping a modal. */}
-                <ProfileCompletionRing />
-
-                {/* Display name — shows on every page since the nav
-                    lives in the root layout. Links to /profile so it
-                    doubles as a shortcut. Hidden on very narrow viewports
-                    to keep the icons + dropdown fitting. */}
-                {displayName && (
-                  <Link
-                    href="/profile"
-                    className="hidden sm:inline text-sm transition-colors"
-                    style={{
-                      color: 'var(--text-secondary)',
-                      textDecoration: 'none',
-                      maxWidth: 160,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title={displayName}
-                  >
-                    {displayName}
-                  </Link>
-                )}
-
-                {/* Account dropdown */}
-                <div className="relative" ref={menuRef}>
-                  <button
-                    onClick={() => setMenuOpen((o) => !o)}
-                    className="text-sm px-2.5 py-1.5 rounded-[6px]"
-                    style={{ color: 'var(--text-secondary)', border: '0.5px solid var(--border)' }}
-                  >
-                    Account ▾
-                  </button>
-                  {menuOpen && (
-                    <div
-                      className="absolute right-0 mt-1 w-48 rounded-[8px] py-1 z-50"
-                      style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}
-                    >
-                      {[
-                        // "View profile" is intentionally first — primary entry
-                        // point to the full profile page (separated from the
-                        // rest by a divider for visual hierarchy).
-                        { href: '/profile', label: 'View profile', primary: true },
-                        { href: '/my/listings', label: 'My Listings' },
-                        { href: '/my/orders', label: 'My Orders' },
-                        { href: '/my/sales', label: 'My Sales' },
-                        { href: '/my/offers', label: 'My Offers' },
-                        { href: '/my/bids', label: 'My Bids' },
-                        { href: '/my/tickets', label: 'My Tickets' },
-                        { href: '/dashboard/raffle-wins', label: 'My Wins' },
-                        { href: '/offers/received', label: 'Received Offers' },
-                        { href: '/dashboard', label: 'Dashboard' },
-                        // 'Verify Identity' is NOT exposed here on purpose.
-                        // Each /kyc/verify run burns a VerifyNow lookup (real
-                        // money), so KYC is only triggered when the platform
-                        // actually needs it — first sale for a seller, winning
-                        // a high-value raffle, etc. — never by a curious user
-                        // clicking from a menu.
-                      ].map(({ href, label, primary }) => {
-                        // Highlight the active item so the user
-                        // always knows which dashboard they're on.
-                        // Path comparison is exact for /profile (so
-                        // /profile/edit doesn't also light up) and
-                        // prefix for /my/* + /dashboard/* + /offers/*
-                        // so nested routes still highlight their parent.
-                        const isActive = (() => {
-                          if (!pathname) return false;
-                          if (href === '/profile') return pathname === '/profile';
-                          return (
-                            pathname === href || pathname.startsWith(href + '/')
-                          );
-                        })();
-                        return (
-                          <Link
-                            key={href}
-                            href={href}
-                            onClick={() => setMenuOpen(false)}
-                            className="block px-3 py-2 text-sm transition-colors"
-                            style={{
-                              color: isActive
-                                ? '#fff'
-                                : primary
-                                  ? 'var(--text-primary)'
-                                  : 'var(--text-secondary)',
-                              background: isActive
-                                ? 'rgba(200,16,46,0.14)'
-                                : 'transparent',
-                              borderLeft: isActive
-                                ? '2px solid var(--red)'
-                                : '2px solid transparent',
-                              paddingLeft: isActive ? 10 : 12,
-                              textDecoration: 'none',
-                              fontWeight: isActive || primary ? 500 : 400,
-                              borderBottom: primary
-                                ? '0.5px solid var(--border)'
-                                : undefined,
-                              marginBottom: primary ? 4 : undefined,
-                              paddingBottom: primary ? 10 : undefined,
-                            }}
-                          >
-                            {label}
-                          </Link>
-                        );
-                      })}
-
-                      {/* Sign out — separated by a divider, in red so it
-                          reads as the destructive/exit action. The Clerk
-                          <UserButton /> popup is unreliable in our dev
-                          env so this is the primary sign-out path. */}
-                      <div
+              {/* Desktop sign-in / account chip. Mobile uses hamburger. */}
+              <div className="hidden md:flex items-center gap-3">
+                {isSignedIn ? (
+                  <>
+                    <ProfileCompletionRing />
+                    {displayName && (
+                      <Link
+                        href="/profile"
+                        className="hidden sm:inline text-sm transition-colors"
                         style={{
-                          borderTop: '0.5px solid var(--border)',
-                          marginTop: 4,
-                          paddingTop: 4,
+                          color: 'var(--text-secondary)',
+                          textDecoration: 'none',
+                          maxWidth: 160,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title={displayName}
+                      >
+                        {displayName}
+                      </Link>
+                    )}
+                    <div className="relative" ref={menuRef}>
+                      <button
+                        onClick={() => setMenuOpen((o) => !o)}
+                        className="text-sm px-2.5 py-1.5 rounded-[6px]"
+                        style={{
+                          color: 'var(--text-secondary)',
+                          border: '0.5px solid var(--border)',
                         }}
                       >
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            setMenuOpen(false);
-                            await signOut();
-                            router.push('/');
-                          }}
-                          className="block w-full text-left px-3 py-2 text-sm transition-colors"
+                        Account ▾
+                      </button>
+                      {menuOpen && (
+                        <div
+                          className="absolute right-0 mt-1 w-48 rounded-[8px] py-1 z-50"
                           style={{
-                            color: 'var(--red)',
-                            background: 'transparent',
-                            border: 'none',
-                            cursor: 'pointer',
+                            background: 'var(--bg-card)',
+                            border: '0.5px solid var(--border)',
+                            boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
                           }}
                         >
-                          Sign out
-                        </button>
-                      </div>
+                          {ACCOUNT_LINKS.map(({ href, label, primary }) => {
+                            const isActive = (() => {
+                              if (!pathname) return false;
+                              if (href === '/profile')
+                                return pathname === '/profile';
+                              return (
+                                pathname === href ||
+                                pathname.startsWith(href + '/')
+                              );
+                            })();
+                            return (
+                              <Link
+                                key={href}
+                                href={href}
+                                onClick={() => setMenuOpen(false)}
+                                className="block px-3 py-2 text-sm transition-colors"
+                                style={{
+                                  color: isActive
+                                    ? '#fff'
+                                    : primary
+                                      ? 'var(--text-primary)'
+                                      : 'var(--text-secondary)',
+                                  background: isActive
+                                    ? 'rgba(200,16,46,0.14)'
+                                    : 'transparent',
+                                  borderLeft: isActive
+                                    ? '2px solid var(--red)'
+                                    : '2px solid transparent',
+                                  paddingLeft: isActive ? 10 : 12,
+                                  textDecoration: 'none',
+                                  fontWeight: isActive || primary ? 500 : 400,
+                                  borderBottom: primary
+                                    ? '0.5px solid var(--border)'
+                                    : undefined,
+                                  marginBottom: primary ? 4 : undefined,
+                                  paddingBottom: primary ? 10 : undefined,
+                                }}
+                              >
+                                {label}
+                              </Link>
+                            );
+                          })}
+                          <div
+                            style={{
+                              borderTop: '0.5px solid var(--border)',
+                              marginTop: 4,
+                              paddingTop: 4,
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setMenuOpen(false);
+                                await signOut();
+                                router.push('/');
+                              }}
+                              className="block w-full text-left px-3 py-2 text-sm transition-colors"
+                              style={{
+                                color: 'var(--red)',
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Sign out
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <UserButton />
+                    <UserButton />
+                  </>
+                ) : (
+                  <SignInButton mode="modal">
+                    <button
+                      className="text-sm px-3 py-1.5 rounded-[6px]"
+                      style={{
+                        color: 'var(--text-secondary)',
+                        border: '0.5px solid var(--border)',
+                      }}
+                    >
+                      Sign in
+                    </button>
+                  </SignInButton>
+                )}
               </div>
-            ) : (
-              <SignInButton mode="modal">
-                <button
-                  className="text-sm px-3 py-1.5 rounded-[6px]"
-                  style={{
-                    color: 'var(--text-secondary)',
-                    border: '0.5px solid var(--border)',
-                  }}
+
+              {/* Mobile hamburger — opens the drawer below. md:hidden so it
+                  only shows on phones / narrow tablets where the page links
+                  + search + sign-in have all been pushed into the drawer. */}
+              <button
+                type="button"
+                onClick={() => setMobileOpen(true)}
+                className="md:hidden p-2 rounded-[6px]"
+                style={{
+                  color: 'var(--text-secondary)',
+                  border: '0.5px solid var(--border)',
+                }}
+                aria-label="Open menu"
+              >
+                {/* 3-bar hamburger icon as inline SVG so we don't add an
+                    icon-library dependency just for one glyph. */}
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
                 >
-                  Sign in
-                </button>
-              </SignInButton>
-            )}
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
+      </nav>
+
+      {/* ─── Mobile drawer ──────────────────────────────────────────────
+          Full-height slide-in from the right. Contains everything that's
+          hidden from the mobile nav: search, page links, sign-in/account.
+          z-50 nav has z-50; backdrop + panel above at z-[60] / z-[70]. */}
+      {mobileOpen && (
+        <>
+          {/* Backdrop */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="md:hidden fixed inset-0 z-[60]"
+            style={{ background: 'rgba(0,0,0,0.55)', cursor: 'default' }}
+            aria-label="Close menu"
+          />
+
+          {/* Slide-in panel */}
+          <div
+            className="md:hidden fixed top-0 right-0 bottom-0 z-[70] overflow-y-auto"
+            style={{
+              width: 'min(86vw, 360px)',
+              background: 'var(--bg-deep)',
+              borderLeft: '0.5px solid var(--border)',
+              boxShadow: '-8px 0 32px rgba(0,0,0,0.6)',
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Site menu"
+          >
+            {/* Drawer header — logo on left, close button on right */}
+            <div
+              className="flex items-center justify-between px-4 h-14"
+              style={{ borderBottom: '0.5px solid var(--border)' }}
+            >
+              <Image
+                src="/logo.svg"
+                alt="Gun Galore"
+                width={160}
+                height={32}
+                style={{ height: 32, width: 'auto' }}
+              />
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                className="p-2 rounded-[6px]"
+                style={{ color: 'var(--text-secondary)' }}
+                aria-label="Close menu"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="px-4 py-4" style={{ borderBottom: '0.5px solid var(--border)' }}>
+              <LiveSearch placeholder="Search listings…" />
+            </div>
+
+            {/* Shop section */}
+            <div className="px-4 py-4">
+              <p
+                className="text-xs uppercase mb-2"
+                style={{ color: 'var(--text-tertiary)', letterSpacing: '0.08em' }}
+              >
+                Shop
+              </p>
+              <nav className="flex flex-col gap-1">
+                {SHOP_LINKS.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="px-3 py-3 rounded-[6px] text-base"
+                    style={{
+                      color: 'var(--text-primary)',
+                      textDecoration: 'none',
+                      background: 'transparent',
+                    }}
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </nav>
+            </div>
+
+            {/* Account section — what's shown depends on sign-in state */}
+            <div
+              className="px-4 py-4"
+              style={{ borderTop: '0.5px solid var(--border)' }}
+            >
+              <p
+                className="text-xs uppercase mb-2"
+                style={{ color: 'var(--text-tertiary)', letterSpacing: '0.08em' }}
+              >
+                Account
+              </p>
+              {isSignedIn ? (
+                <>
+                  {displayName && (
+                    <p
+                      className="px-3 pb-2 text-sm"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
+                      Signed in as <span style={{ color: 'var(--text-primary)' }}>{displayName}</span>
+                    </p>
+                  )}
+                  <nav className="flex flex-col gap-1">
+                    {ACCOUNT_LINKS.map(({ href, label, primary }) => (
+                      <Link
+                        key={href}
+                        href={href}
+                        className="px-3 py-3 rounded-[6px] text-base"
+                        style={{
+                          color: primary
+                            ? 'var(--text-primary)'
+                            : 'var(--text-secondary)',
+                          textDecoration: 'none',
+                          fontWeight: primary ? 500 : 400,
+                          borderBottom: primary
+                            ? '0.5px solid var(--border)'
+                            : undefined,
+                          marginBottom: primary ? 6 : undefined,
+                          paddingBottom: primary ? 12 : undefined,
+                        }}
+                      >
+                        {label}
+                      </Link>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setMobileOpen(false);
+                        await signOut();
+                        router.push('/');
+                      }}
+                      className="px-3 py-3 rounded-[6px] text-base text-left mt-2"
+                      style={{
+                        color: 'var(--red)',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        borderTop: '0.5px solid var(--border)',
+                      }}
+                    >
+                      Sign out
+                    </button>
+                  </nav>
+                </>
+              ) : (
+                <SignInButton mode="modal">
+                  <button
+                    type="button"
+                    onClick={() => setMobileOpen(false)}
+                    className="w-full px-3 py-3 rounded-[6px] text-base"
+                    style={{
+                      background: 'var(--red)',
+                      color: '#fff',
+                      border: 'none',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Sign in
+                  </button>
+                </SignInButton>
+              )}
+            </div>
           </div>
-        )}
-      </div>
-    </nav>
+        </>
+      )}
+    </>
   );
 }
