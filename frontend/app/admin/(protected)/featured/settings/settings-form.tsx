@@ -2,19 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { adminFetch } from '@/lib/admin-auth';
 import type { FeaturedConfig } from './page';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getAdminToken(): string {
-  if (typeof document === 'undefined') return '';
-  return (
-    document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('gg_admin_sess='))
-      ?.split('=')[1] ?? ''
-  );
-}
 
 // All cents fields display + edit as Rand (whole-rand integers only,
 // rounded up on submit). All seconds fields stay as seconds with a
@@ -147,13 +136,9 @@ export function SettingsForm({ initial }: { initial: FeaturedConfig }) {
         payload[f.key] = n;
       }
 
-      const token = getAdminToken();
-      const res = await fetch(`${API_URL}/admin/featured/config`, {
+      const res = await adminFetch(`/admin/featured/config`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));

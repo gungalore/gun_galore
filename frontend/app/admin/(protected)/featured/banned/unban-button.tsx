@@ -2,18 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getAdminToken(): string {
-  if (typeof document === 'undefined') return '';
-  return (
-    document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('gg_admin_sess='))
-      ?.split('=')[1] ?? ''
-  );
-}
+import { adminFetch } from '@/lib/admin-auth';
 
 // Single-click unban — no modal. The audit log captures the operator's
 // admin id, and bans are reversible, so a confirmation prompt would be
@@ -27,13 +16,9 @@ export function UnbanButton({ userId }: { userId: string }) {
     setBusy(true);
     setError(null);
     try {
-      const token = getAdminToken();
-      const res = await fetch(
-        `${API_URL}/admin/featured/banned-bidders/${userId}`,
-        {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        },
+      const res = await adminFetch(
+        `/admin/featured/banned-bidders/${userId}`,
+        { method: 'DELETE' },
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));

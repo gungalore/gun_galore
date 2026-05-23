@@ -2,18 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getAdminToken(): string {
-  if (typeof document === 'undefined') return '';
-  return (
-    document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('gg_admin_sess='))
-      ?.split('=')[1] ?? ''
-  );
-}
+import { adminFetch } from '@/lib/admin-auth';
 
 // Manual award skips the auction + bid flow and gives a slot to a
 // listing for free. Use case: comping a promised slot after a botched
@@ -47,15 +36,11 @@ export function ManualAwardButton({
     setBusy(true);
     setError(null);
     try {
-      const token = getAdminToken();
-      const res = await fetch(
-        `${API_URL}/admin/featured/slots/${slotId}/manual-award`,
+      const res = await adminFetch(
+        `/admin/featured/slots/${slotId}/manual-award`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             listingId: listingId.trim(),
             durationSeconds: seconds,

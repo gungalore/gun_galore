@@ -2,8 +2,7 @@
 
 import { useEffect, useState, FormEvent } from 'react';
 import { Raffle } from '@/lib/types';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { adminFetch } from '@/lib/admin-auth';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -15,16 +14,6 @@ const inputStyle: React.CSSProperties = {
   fontSize: '14px',
   outline: 'none',
 };
-
-function getAdminToken(): string | null {
-  if (typeof document === 'undefined') return null;
-  return (
-    document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('gg_admin_sess='))
-      ?.split('=')[1] ?? null
-  );
-}
 
 export default function PostalEntriesPage() {
   const [raffles, setRaffles] = useState<Raffle[]>([]);
@@ -43,10 +32,7 @@ export default function PostalEntriesPage() {
 
   useEffect(() => {
     // We list all admin raffles via the admin endpoint
-    const token = getAdminToken();
-    fetch(`${API_URL}/admin/raffles`, {
-      headers: { Authorization: `Bearer ${token ?? ''}` },
-    })
+    adminFetch(`/admin/raffles`)
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setRaffles(Array.isArray(data) ? data : []))
       .catch(() => setRaffles([]));
@@ -61,13 +47,9 @@ export default function PostalEntriesPage() {
     setSubmitting(true);
     setMessage(null);
     try {
-      const token = getAdminToken();
-      const res = await fetch(`${API_URL}/admin/raffles/postal-entries`, {
+      const res = await adminFetch(`/admin/raffles/postal-entries`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token ?? ''}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           raffleId: form.raffleId,
           referenceCode: form.referenceCode.toUpperCase(),

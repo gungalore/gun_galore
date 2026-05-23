@@ -11,8 +11,7 @@
 
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { adminFetch } from '@/lib/admin-auth';
 
 interface Category {
   id: string;
@@ -26,10 +25,6 @@ interface Category {
   isActive: boolean;
   sortOrder: number;
   _count: { listings: number };
-}
-
-function getToken() {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
 }
 
 export default function CategoriesTree({ initial }: { initial: Category[] }) {
@@ -56,12 +51,9 @@ export default function CategoriesTree({ initial }: { initial: Category[] }) {
       `${newActive ? 'Reactivate' : 'Deactivate'} "${c.name}"? Briefly explain why for the audit log (≥3 chars):`,
     );
     if (!reason || reason.trim().length < 3) return;
-    await fetch(`${API_URL}/admin/categories/${c.id}`, {
+    await adminFetch(`/admin/categories/${c.id}`, {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${getToken()}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isActive: newActive, reason: reason.trim() }),
     });
     router.refresh();
@@ -279,14 +271,11 @@ function CategoryFormModal({
       }
       const url =
         mode === 'create'
-          ? `${API_URL}/admin/categories`
-          : `${API_URL}/admin/categories/${category!.id}`;
-      const res = await fetch(url, {
+          ? `/admin/categories`
+          : `/admin/categories/${category!.id}`;
+      const res = await adminFetch(url, {
         method: mode === 'create' ? 'POST' : 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!res.ok) {

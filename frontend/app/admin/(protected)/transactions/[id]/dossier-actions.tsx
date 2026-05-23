@@ -18,12 +18,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getToken() {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
-}
+import { adminFetch } from '@/lib/admin-auth';
 
 type Action =
   | { kind: 'release' }
@@ -88,12 +83,9 @@ export default function DossierActions({ txId, paymentStatus }: Props) {
             ? JSON.stringify({ reason: reason.trim() })
             : JSON.stringify({ note: reason.trim() });
 
-      const res = await fetch(`${API_URL}${path}`, {
+      const res = await adminFetch(path, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body,
       });
       if (!res.ok) {

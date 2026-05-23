@@ -2,12 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getToken() {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
-}
+import { adminFetch } from '@/lib/admin-auth';
 
 // Admin take-down for ANY listing (ACTIVE, PENDING_REVIEW, SOLD,
 // EXPIRED — anything except already-CANCELLED). Soft-deletes via
@@ -36,12 +31,9 @@ export default function DeleteListingButton({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/admin/listings/${listingId}/delete`, {
+      const res = await adminFetch(`/admin/listings/${listingId}/delete`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: reason.trim() }),
       });
       if (!res.ok) {

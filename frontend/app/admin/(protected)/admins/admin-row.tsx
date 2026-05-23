@@ -2,13 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { adminFetch } from '@/lib/admin-auth';
 import type { AdminRecord } from './page';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getAdminToken(): string {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
-}
 
 // Maps the on-disk enum value to the user-facing label.
 function roleLabel(role: AdminRecord['role']): string {
@@ -45,12 +40,9 @@ export default function AdminRow({ admin, canManage, isSelf }: Props) {
     setError(null);
     setBusy('role');
     try {
-      const res = await fetch(`${API_URL}/admin/admins/${admin.id}/role`, {
+      const res = await adminFetch(`/admin/admins/${admin.id}/role`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getAdminToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role }),
       });
       if (!res.ok) {
@@ -70,12 +62,9 @@ export default function AdminRow({ admin, canManage, isSelf }: Props) {
     setError(null);
     setBusy('deactivate');
     try {
-      const res = await fetch(
-        `${API_URL}/admin/admins/${admin.id}/deactivate`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${getAdminToken()}` },
-        },
+      const res = await adminFetch(
+        `/admin/admins/${admin.id}/deactivate`,
+        { method: 'POST' },
       );
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { message?: string };

@@ -12,13 +12,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { adminFetch } from '@/lib/admin-auth';
 import UserActions from './user-actions';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getToken() {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
-}
 
 interface User {
   id: string;
@@ -72,12 +67,9 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/admin/users/bulk-ban`, {
+      const res = await adminFetch(`/admin/users/bulk-ban`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userIds: Array.from(selected),
           reason: reason.trim(),

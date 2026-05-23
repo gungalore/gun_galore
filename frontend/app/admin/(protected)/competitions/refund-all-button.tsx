@@ -2,18 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getAdminToken(): string {
-  if (typeof document === 'undefined') return '';
-  return (
-    document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('gg_admin_sess='))
-      ?.split('=')[1] ?? ''
-  );
-}
+import { adminFetch } from '@/lib/admin-auth';
 
 // Admin-only "Refund all buyers" button. Confirms by requiring the
 // operator to type the raffle's RAxxxxxx reference number — a destructive
@@ -48,13 +37,9 @@ export function RefundAllButton({
     setBusy(true);
     setError(null);
     try {
-      const token = getAdminToken();
-      const res = await fetch(`${API_URL}/admin/raffles/${raffleId}/refund-all`, {
+      const res = await adminFetch(`/admin/raffles/${raffleId}/refund-all`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ typedReference: typed.trim() }),
       });
       const data = await res.json();

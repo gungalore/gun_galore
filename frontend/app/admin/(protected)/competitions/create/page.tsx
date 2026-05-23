@@ -3,8 +3,7 @@
 import { useState, FormEvent, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { PhotoDropzone } from '@/components/photo-dropzone';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { adminFetch } from '@/lib/admin-auth';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -45,16 +44,6 @@ function formatRand(cents: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
-}
-
-function getAdminToken(): string {
-  if (typeof document === 'undefined') return '';
-  return (
-    document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('gg_admin_sess='))
-      ?.split('=')[1] ?? ''
-  );
 }
 
 export default function CreateCompetitionPage() {
@@ -140,13 +129,9 @@ export default function CreateCompetitionPage() {
         startTime: new Date(form.startTime).toISOString(),
       };
 
-      const adminToken = getAdminToken();
-      const res = await fetch(`${API_URL}/admin/raffles`, {
+      const res = await adminFetch(`/admin/raffles`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
 
@@ -165,11 +150,10 @@ export default function CreateCompetitionPage() {
       for (const file of photos) {
         const fd = new FormData();
         fd.append('image', file);
-        const up = await fetch(
-          `${API_URL}/admin/raffles/${raffleId}/images`,
+        const up = await adminFetch(
+          `/admin/raffles/${raffleId}/images`,
           {
             method: 'POST',
-            headers: { Authorization: `Bearer ${adminToken}` },
             body: fd,
           },
         );

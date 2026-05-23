@@ -11,8 +11,7 @@
 
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { adminFetch } from '@/lib/admin-auth';
 
 const PROVINCES = [
   'EASTERN_CAPE',
@@ -41,10 +40,6 @@ interface Dealer {
   lng: number | null;
   isActive: boolean;
   _count: { transactions: number };
-}
-
-function getToken() {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
 }
 
 const inputStyle: React.CSSProperties = {
@@ -266,14 +261,11 @@ function DealerFormModal({
 
       const url =
         mode === 'create'
-          ? `${API_URL}/admin/dealers`
-          : `${API_URL}/admin/dealers/${dealer!.id}`;
-      const res = await fetch(url, {
+          ? `/admin/dealers`
+          : `/admin/dealers/${dealer!.id}`;
+      const res = await adminFetch(url, {
         method: mode === 'create' ? 'POST' : 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!res.ok) {

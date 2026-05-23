@@ -10,12 +10,7 @@
 // query params would force a full page reload per change.
 
 import { useState } from 'react';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getToken() {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
-}
+import { adminFetch } from '@/lib/admin-auth';
 
 type Channel = 'email' | 'sms';
 type Segment =
@@ -60,12 +55,9 @@ export default function BroadcastPage() {
     setError(null);
     setPreviewCount(null);
     try {
-      const res = await fetch(`${API_URL}/admin/broadcast/preview`, {
+      const res = await adminFetch(`/admin/broadcast/preview`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ audience: buildAudience(), channel }),
       });
       const data = (await res.json().catch(() => ({}))) as { count?: number; message?: string };
@@ -82,12 +74,9 @@ export default function BroadcastPage() {
     setSending(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/admin/broadcast/send`, {
+      const res = await adminFetch(`/admin/broadcast/send`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           audience: buildAudience(),
           channel,

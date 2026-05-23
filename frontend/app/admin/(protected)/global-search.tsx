@@ -7,8 +7,7 @@
 
 import { useState, useEffect, useRef, useMemo, KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { adminFetch } from '@/lib/admin-auth';
 
 interface SearchResult {
   users: {
@@ -34,10 +33,6 @@ interface SearchResult {
     createdAt: string;
     listing: { title: string; referenceNumber: string | null };
   }[];
-}
-
-function getToken() {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
 }
 
 export default function GlobalSearch() {
@@ -79,9 +74,8 @@ export default function GlobalSearch() {
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(
-          `${API_URL}/admin/search?q=${encodeURIComponent(q.trim())}`,
-          { headers: { Authorization: `Bearer ${getToken()}` } },
+        const res = await adminFetch(
+          `/admin/search?q=${encodeURIComponent(q.trim())}`,
         );
         if (res.ok) {
           const data = (await res.json()) as SearchResult;

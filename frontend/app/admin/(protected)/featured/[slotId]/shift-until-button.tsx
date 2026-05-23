@@ -2,18 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getAdminToken(): string {
-  if (typeof document === 'undefined') return '';
-  return (
-    document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('gg_admin_sess='))
-      ?.split('=')[1] ?? ''
-  );
-}
+import { adminFetch } from '@/lib/admin-auth';
 
 // Shift the featuredUntil timestamp by N seconds — positive extends,
 // negative shortens. Most common usage: comp +1 day after a platform
@@ -50,15 +39,11 @@ export function ShiftUntilButton({
     setBusy(true);
     setError(null);
     try {
-      const token = getAdminToken();
-      const res = await fetch(
-        `${API_URL}/admin/featured/slots/${slotId}/shift-until`,
+      const res = await adminFetch(
+        `/admin/featured/slots/${slotId}/shift-until`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             deltaSeconds: delta,
             reason: reason.trim(),

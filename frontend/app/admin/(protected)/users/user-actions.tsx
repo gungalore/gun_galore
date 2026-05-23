@@ -2,15 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { adminFetch } from '@/lib/admin-auth';
 
 const TIERS = ['NEW', 'ESTABLISHED', 'TRUSTED', 'TOP_SELLER', 'DEALER'];
 const KYC_STATUSES = ['PENDING', 'SUBMITTED', 'VERIFIED', 'REJECTED'];
-
-function getToken() {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
-}
 
 // Destructive admin actions on a user now require:
 //   1. A typed reason (audit log — backend enforces ≥3 chars).
@@ -227,12 +222,9 @@ function ConfirmModal({
       if (confirm.kind === 'tier') body.sellerTier = confirm.value;
       if (confirm.kind === 'kyc') body.kycStatus = confirm.value;
 
-      const res = await fetch(`${API_URL}/admin/users/${userId}`, {
+      const res = await adminFetch(`/admin/users/${userId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!res.ok) {

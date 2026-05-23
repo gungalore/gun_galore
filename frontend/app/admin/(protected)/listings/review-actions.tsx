@@ -2,12 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getToken() {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
-}
+import { adminFetch } from '@/lib/admin-auth';
 
 export default function ReviewActions({ listingId }: { listingId: string }) {
   const router = useRouter();
@@ -18,12 +13,9 @@ export default function ReviewActions({ listingId }: { listingId: string }) {
   async function doReview(action: 'APPROVE' | 'REJECT') {
     setBusy(true);
     try {
-      await fetch(`${API_URL}/admin/listings/${listingId}/review`, {
+      await adminFetch(`/admin/listings/${listingId}/review`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, reason: reason || undefined }),
       });
       router.refresh();

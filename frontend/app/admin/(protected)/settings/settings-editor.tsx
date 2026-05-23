@@ -13,8 +13,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { adminFetch } from '@/lib/admin-auth';
 
 interface Flag {
   key: string;
@@ -24,10 +23,6 @@ interface Flag {
   type: 'boolean' | 'number' | 'text' | 'percent';
   default: string;
   currentValue: string;
-}
-
-function getToken() {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
 }
 
 export default function SettingsEditor({ flags }: { flags: Flag[] }) {
@@ -96,12 +91,9 @@ function FlagRow({ flag, last }: { flag: Flag; last: boolean }) {
     setError(null);
     setSaved(false);
     try {
-      const res = await fetch(`${API_URL}/admin/settings/${flag.key}`, {
+      const res = await adminFetch(`/admin/settings/${flag.key}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value, reason: reason.trim() }),
       });
       if (!res.ok) {

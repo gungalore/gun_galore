@@ -2,18 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getAdminToken(): string {
-  if (typeof document === 'undefined') return '';
-  return (
-    document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('gg_admin_sess='))
-      ?.split('=')[1] ?? ''
-  );
-}
+import { adminFetch } from '@/lib/admin-auth';
 
 // Inline form at the top of the Banned tab. Banned bidders are blocked
 // from placing new bids on featured slots; the backend also voids any
@@ -35,13 +24,9 @@ export function BanForm() {
     setError(null);
     setSuccess(false);
     try {
-      const token = getAdminToken();
-      const res = await fetch(`${API_URL}/admin/featured/banned-bidders`, {
+      const res = await adminFetch(`/admin/featured/banned-bidders`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: userId.trim(), reason: reason.trim() }),
       });
       const data = await res.json().catch(() => ({}));

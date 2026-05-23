@@ -2,12 +2,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-function getAdminToken(): string {
-  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
-}
+import { adminFetch } from '@/lib/admin-auth';
 
 // Form is rendered only when the current admin is SUPERADMIN (the
 // parent server component decides). It still 403s server-side as a
@@ -32,12 +27,9 @@ export default function CreateAdminForm() {
     setSuccess(null);
     setBusy(true);
     try {
-      const res = await fetch(`${API_URL}/admin/admins`, {
+      const res = await adminFetch(`/admin/admins`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getAdminToken()}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), role }),
       });
       const body = (await res.json().catch(() => ({}))) as { message?: string };
