@@ -57,33 +57,13 @@ const isComingSoonBypassRoute = createRouteMatcher([
 const COMING_SOON_COOKIE = 'gg-preview';
 
 export default clerkMiddleware(async (auth, request) => {
-  // ── Admin auth gate (runs FIRST so it short-circuits everything) ───
+  // ── No middleware-level admin auth gate ────────────────────────────
   //
-  // Layout-level redirect proved unreliable in Next 16 — the layout's
-  // `if (!token) redirect('/admin/login')` was silently failing (page
-  // rendered without sidebar instead of bouncing). Doing it here in
-  // middleware is bulletproof: NextResponse.redirect short-circuits the
-  // request before any page renders.
-  //
-  // Allowed without gg_admin_sess cookie:
-  //   /admin/login        the login page itself (avoids redirect loop)
-  //   /admin/logout       so users can sign out from any state
-  const adminPath = request.nextUrl.pathname;
-  const isAdminGated =
-    adminPath.startsWith('/admin') &&
-    adminPath !== '/admin/login' &&
-    adminPath !== '/admin/logout';
-
-  if (isAdminGated) {
-    const hasAdminToken = !!request.cookies.get('gg_admin_sess')?.value;
-    if (!hasAdminToken) {
-      const host =
-        request.headers.get('host') ?? 'gungalore.co.za';
-      const proto =
-        request.headers.get('x-forwarded-proto') ?? 'https';
-      return NextResponse.redirect(`${proto}://${host}/admin/login`);
-    }
-  }
+  // Cookie-based gating proved unreliable across browsers (some configs
+  // silently drop the admin session cookie regardless of attrs). Admin
+  // pages are now client components that read a JWT from localStorage
+  // via lib/admin-auth and bounce themselves to /admin/login if it's
+  // missing. Middleware just gets out of the way.
 
   // ── Coming-soon gate (runs BEFORE Clerk auth) ─────────────────────
   //

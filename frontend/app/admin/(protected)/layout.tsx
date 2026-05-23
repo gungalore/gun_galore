@@ -1,14 +1,12 @@
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import GlobalSearch from './global-search';
 import SidebarNav from './sidebar-nav';
 
-export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value;
-  if (!token) redirect('/admin/login');
-
+// Auth gate removed — moved to client-side localStorage check inside
+// each admin page (see lib/admin-auth.requireAdminToken). The layout
+// just renders chrome unconditionally; pages bounce themselves to
+// /admin/login if the token is missing.
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--bg-page)' }}>
       {/* Sidebar */}

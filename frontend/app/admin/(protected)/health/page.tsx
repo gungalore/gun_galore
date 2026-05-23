@@ -1,21 +1,19 @@
-import { cookies } from 'next/headers';
+'use client';
 
-// Server-side fetches must NOT hit the public Cloudflare URL —
-// that loopback (Next.js → CDN → our own nginx) hangs/fails in
-// some configurations. Prefer INTERNAL_API_URL (set to localhost
-// on the server). Falls back to the public URL for completeness.
-const API_URL =
-  process.env.INTERNAL_API_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  'http://localhost:3001/api';
+// Client-side admin health monitor. Reads JWT from localStorage (via
+// lib/admin-auth) and fetches all three probe endpoints in parallel.
+// Was originally a server component that read the JWT from a cookie —
+// cookie-based auth proved unreliable across browsers, so this page
+// (and other admin pages going forward) does its own client-side
+// auth + fetch.
+
+import { useEffect, useState } from 'react';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 
 interface Service {
   name: string;
   url: string;
   category: 'payment' | 'shipping' | 'kyc' | 'media' | 'search' | 'auth' | 'comms';
-  // "not-configured" = operator hasn't set the env this service needs.
-  // Distinct from "down" because the runtime gracefully disables the
-  // feature when its env is missing — it's not broken, it's off.
   status: 'up' | 'degraded' | 'down' | 'not-configured' | 'unknown';
   latencyMs: number | null;
   httpStatus: number | null;
@@ -35,22 +33,6 @@ interface QueueDepth {
   count: number;
   thresholdWarn: number;
   thresholdAlarm: number;
-}
-
-async function fetchJson<T>(path: string, token: string): Promise<T | null> {
-  try {
-    const res = await fetch(`${API_URL}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-      // The /services endpoint can take up to 5s per probe × parallel.
-      // Don't let Next time us out before the backend resolves.
-      next: { revalidate: 0 },
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
 }
 
 function ago(iso: string | null): string {
@@ -83,14 +65,32 @@ const CATEGORY_LABEL: Record<Service['category'], string> = {
   comms: 'Comms',
 };
 
-export default async function HealthPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
-  const [services, crons, queues] = await Promise.all([
-    fetchJson<Service[]>('/admin/health/services', token),
-    fetchJson<CronStatus[]>('/admin/health/crons', token),
-    fetchJson<QueueDepth[]>('/admin/health/queues', token),
-  ]);
+export default function HealthPage() {
+  const [services, setServices] = useState<Service[] | null>(null);
+  const [crons, setCrons] = useState<CronStatus[] | null>(null);
+  const [queues, setQueues] = useState<QueueDepth[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return; // redirects if no token
+
+    let cancelled = false;
+    (async () => {
+      const [sRes, cRes, qRes] = await Promise.all([
+        adminFetch('/admin/health/services'),
+        adminFetch('/admin/health/crons'),
+        adminFetch('/admin/health/queues'),
+      ]);
+      if (cancelled) return;
+      if (sRes.ok) setServices(await sRes.json());
+      if (cRes.ok) setCrons(await cRes.json());
+      if (qRes.ok) setQueues(await qRes.json());
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Group services by category for easier visual scanning.
   const byCategory = new Map<string, Service[]>();
@@ -103,13 +103,10 @@ export default async function HealthPage() {
   }
 
   const downCount = services?.filter((s) => s.status === 'down').length ?? 0;
-  const degradedCount = services?.filter((s) => s.status === 'degraded').length ?? 0;
+  const degradedCount =
+    services?.filter((s) => s.status === 'degraded').length ?? 0;
   const notConfiguredCount =
     services?.filter((s) => s.status === 'not-configured').length ?? 0;
-  // Split cron not-OK counts so the headline matches what the table
-  // shows: "stale" badges are red because the cron should have run by
-  // now and didn't; "never" badges are amber because they're waiting
-  // for their first run (totally normal right after a backend restart).
   const staleCrons = crons?.filter((c) => c.status === 'stale').length ?? 0;
   const neverRunCrons = crons?.filter((c) => c.status === 'never').length ?? 0;
 
@@ -120,7 +117,9 @@ export default async function HealthPage() {
           System Health
         </h1>
         <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          Live probes · 5s timeout each · refresh by reloading the page
+          {loading
+            ? 'Loading live probes...'
+            : 'Live probes · 5s timeout each · refresh by reloading the page'}
         </p>
       </div>
 
@@ -136,29 +135,20 @@ export default async function HealthPage() {
           value={degradedCount}
           tone={degradedCount > 0 ? 'warn' : 'ok'}
         />
-        <SummaryCard
-          label="Not configured"
-          value={notConfiguredCount}
-          // Not configured = informational, never an alarm. Worth
-          // surfacing so the operator can spot a forgotten env var.
-          tone="ok"
-        />
+        <SummaryCard label="Not configured" value={notConfiguredCount} tone="ok" />
         <SummaryCard
           label={neverRunCrons > 0 ? 'Crons stale / never run' : 'Stale crons'}
           value={staleCrons + neverRunCrons}
-          // Only red if a cron is actually overdue (stale). "Never run"
-          // counts as amber because right after a restart every cron
-          // hasn't fired yet — that's expected, not broken.
           tone={staleCrons > 0 ? 'alarm' : neverRunCrons > 0 ? 'warn' : 'ok'}
         />
       </div>
 
       {neverRunCrons > 0 && staleCrons === 0 && (
-        <p
-          className="text-xs mb-5"
-          style={{ color: 'var(--text-tertiary)' }}
-        >
-          ℹ {neverRunCrons} cron{neverRunCrons === 1 ? '' : 's'} haven't run yet — likely the backend restarted recently. They'll flip to "ok" after their next scheduled fire. Hourly jobs may take up to 60 min to appear.
+        <p className="text-xs mb-5" style={{ color: 'var(--text-tertiary)' }}>
+          ℹ {neverRunCrons} cron{neverRunCrons === 1 ? '' : 's'} haven&apos;t run
+          yet — likely the backend restarted recently. They&apos;ll flip to
+          &quot;ok&quot; after their next scheduled fire. Hourly jobs may take up
+          to 60 min to appear.
         </p>
       )}
 
@@ -168,14 +158,17 @@ export default async function HealthPage() {
         subtitle="HEAD/GET probes — any 2xx/4xx response means the host is reachable; 5xx = degraded; timeout = down."
       >
         {!services ? (
-          <Empty message="Could not load service probes." />
+          <Empty message={loading ? 'Loading...' : 'Could not load service probes.'} />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {Array.from(byCategory.entries()).map(([cat, items]) => (
               <div
                 key={cat}
                 className="rounded-[8px] p-4"
-                style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '0.5px solid var(--border)',
+                }}
               >
                 <p
                   className="text-xs uppercase tracking-wider mb-3"
@@ -185,19 +178,13 @@ export default async function HealthPage() {
                 </p>
                 <div className="space-y-2">
                   {items.map((s) => (
-                    <div
-                      key={s.name}
-                      className="flex items-center gap-3 text-sm"
-                    >
+                    <div key={s.name} className="flex items-center gap-3 text-sm">
                       <span
                         className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
                         style={{ background: STATUS_COLOR[s.status] }}
                       />
                       <div className="flex-1 min-w-0">
-                        <p
-                          className="truncate"
-                          style={{ color: 'var(--text-primary)' }}
-                        >
+                        <p className="truncate" style={{ color: 'var(--text-primary)' }}>
                           {s.name}
                         </p>
                         <p
@@ -228,11 +215,14 @@ export default async function HealthPage() {
         subtitle="Each job updates its last-run timestamp on completion. 'Stale' = hasn't run in 3× its expected interval."
       >
         {!crons ? (
-          <Empty message="Could not load cron status." />
+          <Empty message={loading ? 'Loading...' : 'Could not load cron status.'} />
         ) : (
           <div
             className="rounded-[8px] overflow-hidden"
-            style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+            style={{
+              background: 'var(--bg-card)',
+              border: '0.5px solid var(--border)',
+            }}
           >
             <table className="w-full text-sm">
               <thead>
@@ -256,10 +246,16 @@ export default async function HealthPage() {
                     <td className="px-4 py-2.5" style={{ color: 'var(--text-primary)' }}>
                       {c.name}
                     </td>
-                    <td className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    <td
+                      className="px-4 py-2.5 text-xs"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
                       {c.schedule}
                     </td>
-                    <td className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    <td
+                      className="px-4 py-2.5 text-xs"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
                       {ago(c.lastRunAt)}
                     </td>
                     <td className="px-4 py-2.5">
@@ -288,7 +284,7 @@ export default async function HealthPage() {
         subtitle="Work waiting to be done. Colour reflects threshold (green / amber / red)."
       >
         {!queues ? (
-          <Empty message="Could not load queue depths." />
+          <Empty message={loading ? 'Loading...' : 'Could not load queue depths.'} />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {queues.map((q) => {
@@ -298,7 +294,14 @@ export default async function HealthPage() {
                   : q.count >= q.thresholdWarn
                     ? 'warn'
                     : 'ok';
-              return <SummaryCard key={q.label} label={q.label} value={q.count} tone={tone} />;
+              return (
+                <SummaryCard
+                  key={q.label}
+                  label={q.label}
+                  value={q.count}
+                  tone={tone}
+                />
+              );
             })}
           </div>
         )}
@@ -322,7 +325,8 @@ function SummaryCard({
       : tone === 'warn'
         ? '#f59e0b'
         : 'var(--text-primary)';
-  const border = tone === 'alarm' ? 'var(--red)' : tone === 'warn' ? '#f59e0b' : 'var(--border)';
+  const border =
+    tone === 'alarm' ? 'var(--red)' : tone === 'warn' ? '#f59e0b' : 'var(--border)';
   return (
     <div
       className="rounded-[8px] p-4"

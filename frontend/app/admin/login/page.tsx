@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { setAdminToken } from '@/lib/admin-auth';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -32,13 +33,18 @@ export default function AdminLoginPage() {
         return;
       }
       const { token } = await res.json();
-      // The backend already set gg_admin_sess via httpOnly Set-Cookie —
-      // that's the authoritative cookie. We also set a JS cookie as a
-      // belt-and-braces fallback (in case the browser strips the
-      // server-set one). Add Secure flag — some strict browser configs
-      // silently reject non-Secure cookies on HTTPS origins.
+      // Primary storage: localStorage (bypasses all cookie-blocking
+      // browser configs we've hit). Each admin page reads from here
+      // via lib/admin-auth.adminFetch().
+      setAdminToken(token);
+      // Secondary: also try to set the JS cookie. Works in most
+      // environments and lets server-component admin pages (legacy)
+      // still gate via cookies(). Privacy-extension envs ignore this
+      // silently — the localStorage path covers them.
       const secure = location.protocol === 'https:' ? '; Secure' : '';
-      document.cookie = `gg_admin_sess=${token}; path=/; max-age=${8 * 3600}; SameSite=Lax${secure}`;
+      try {
+        document.cookie = `gg_admin_sess=${token}; path=/; max-age=${8 * 3600}; SameSite=Lax${secure}`;
+      } catch {}
       router.push('/admin');
     } catch {
       setError('Network error');
