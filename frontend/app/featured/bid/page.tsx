@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { HelpTip } from '@/components/help-tip';
 import { HelpText } from '@/components/help-text';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // ─── Types ────────────────────────────────────────────────────────────
 type Tier = 'T1' | 'T2' | 'T3' | 'T4' | 'T5';

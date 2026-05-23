@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import RefreshButton from './refresh-button';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // Mirrors the backend's CachedBalance shape.
 interface CachedBalance {

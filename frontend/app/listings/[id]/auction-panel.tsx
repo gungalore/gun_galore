@@ -11,7 +11,7 @@ import {
   formatRandStrict,
 } from '@/components/bid-stepper';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // (bidIncrement, BidStepper, formatRandStrict moved to
 //  @/components/bid-stepper.tsx so the SMS-link /a/<token> page can

@@ -8,7 +8,7 @@ import { formatPrice } from '@/lib/utils';
 import { FeeBreakdown, ShippingMethod } from '@/lib/types';
 import { LockerPicker, PudoLocker } from '@/components/locker-picker';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 interface CreateTxResponse {
   transactionId: string;

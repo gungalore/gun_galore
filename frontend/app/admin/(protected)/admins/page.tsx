@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 import CreateAdminForm from './create-admin-form';
 import AdminRow from './admin-row';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // Mirror of AdminUser select shape returned by GET /admin/admins.
 export interface AdminRecord {

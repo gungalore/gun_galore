@@ -6,7 +6,7 @@ import { useAuth } from '@clerk/nextjs';
 import { Listing } from '@/lib/types';
 import { CONDITION_LABELS, PROVINCE_LABELS } from '@/lib/utils';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',

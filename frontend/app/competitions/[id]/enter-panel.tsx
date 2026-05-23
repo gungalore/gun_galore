@@ -3,7 +3,7 @@
 import { useState, FormEvent } from 'react';
 import { useUser, useAuth } from '@clerk/nextjs';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 function formatRand(cents: number) {
   return `R${(cents / 100).toLocaleString('en-ZA', {

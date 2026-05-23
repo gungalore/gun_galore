@@ -7,7 +7,7 @@ import { ManualAwardButton } from './manual-award-button';
 import { ShiftUntilButton } from './shift-until-button';
 import { CloseAuctionEarlyButton } from './close-auction-early-button';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 type SlotStatus = 'VACANT' | 'AUCTION_RUNNING' | 'BIND_WINDOW' | 'OCCUPIED';
 type AuctionStatus = 'OPEN' | 'CLOSED_AWARDED' | 'CLOSED_NO_BIDS' | 'CANCELLED_BY_ADMIN';

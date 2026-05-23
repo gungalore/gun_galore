@@ -6,7 +6,7 @@ import { Offer } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
 import OfferActions from './offer-actions';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   PENDING:   { label: 'Awaiting seller', color: '#f59e0b' },

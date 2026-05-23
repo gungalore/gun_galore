@@ -33,7 +33,7 @@ import {
 import { ProfileCompletionModal } from '@/components/profile-completion-modal';
 import { HelpTip } from '@/components/help-tip';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // ─────────────────────────── Fee math ───────────────────────────────
 // Client-side mirror of backend/src/payments/fee.calculator.ts so we can

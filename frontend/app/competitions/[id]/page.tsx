@@ -9,7 +9,7 @@ import FreeEntryButton from './free-entry-button';
 // close, and 2× zoom toggle. No reason to reinvent it for raffles.
 import { ImageGallery } from '@/app/listings/[id]/image-gallery';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 export async function generateMetadata({
   params,

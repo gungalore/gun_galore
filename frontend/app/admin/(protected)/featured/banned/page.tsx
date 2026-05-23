@@ -3,7 +3,7 @@ import { FeaturedTabs } from '../tabs';
 import { BanForm } from './ban-form';
 import { UnbanButton } from './unban-button';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 interface BannedBidder {
   id: string;

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // Free postal-entry route per CPA Section 36. Clicking the button
 // downloads a pre-filled PDF form for this specific raffle and opens

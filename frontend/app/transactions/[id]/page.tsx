@@ -9,7 +9,7 @@ import { RaiseDisputeButton } from './raise-dispute-button';
 import { RatingWidget } from './rating-widget';
 import { TrackingTimeline } from './tracking-timeline';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
   HELD: 'Payment held',

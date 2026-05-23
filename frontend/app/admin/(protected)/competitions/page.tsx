@@ -4,7 +4,7 @@ import { AdminRaffleRow } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
 import { RefundAllButton } from './refund-all-button';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 const STATUS_COLOR: Record<string, string> = {
   DRAFT: 'var(--text-tertiary)',

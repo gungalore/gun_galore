@@ -3,7 +3,7 @@ import Link from 'next/link';
 import UserActions from './user-actions';
 import BulkUsersTable from './bulk-users';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 interface User {
   id: string;

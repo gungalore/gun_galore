@@ -5,7 +5,7 @@ import DossierActions from './dossier-actions';
 import DealerVerificationPanel from './dealer-verification-panel';
 import { ZohoSyncPanel } from './zoho-sync-panel';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // ─── Types ───────────────────────────────────────────────────────────
 

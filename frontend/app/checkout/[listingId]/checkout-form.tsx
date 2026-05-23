@@ -23,7 +23,7 @@ import {
   type ManualAddressValue,
 } from '@/components/manual-address-fields';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 interface CreateTxResponse {
   transactionId: string;
