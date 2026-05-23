@@ -16,7 +16,16 @@ import { SiteFooter } from '@/components/site-footer';
 export function PublicNav() {
   const pathname = usePathname();
   if (pathname.startsWith('/admin')) return null;
-  return <Nav />;
+  // data-public-nav wrapper lets globals.css hide the whole thing in
+  // standalone-PWA mode (`html[data-standalone='true'] [data-public-nav]`).
+  // We deliberately keep it server-renderable — no useStandalone here —
+  // so initial HTML matches for browser-mobile users and the CSS does
+  // the hide on first paint via the pre-paint script in layout.tsx.
+  return (
+    <div data-public-nav>
+      <Nav />
+    </div>
+  );
 }
 
 export function PublicFooter() {
@@ -24,5 +33,9 @@ export function PublicFooter() {
   // Hide on admin pages (own chrome) and on the offline fallback (PWA).
   if (pathname.startsWith('/admin')) return null;
   if (pathname === '/offline') return null;
-  return <SiteFooter />;
+  return (
+    <div data-public-footer>
+      <SiteFooter />
+    </div>
+  );
 }

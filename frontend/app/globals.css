@@ -60,3 +60,98 @@ input[type='number'] {
   -moz-appearance: textfield; /* Firefox */
   appearance: textfield;
 }
+
+/* ─── PWA / app-feel polish (Phase C) ───────────────────────────────
+   These rules make the installed-PWA experience read as "an app"
+   instead of "a web page in fullscreen". Most apply universally
+   (cheap wins for mobile-browser users too); a few are gated on
+   `html[data-standalone="true"]` which is set by the inline script
+   in app/layout.tsx whenever the app is running as an installed PWA.
+   ───────────────────────────────────────────────────────────────── */
+
+/* Kill the default iOS grey tap-highlight flash. Buttons / links can
+   still opt back in via their own :active styles where useful. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Stop iOS rubber-band overscroll bouncing the entire page. Individual
+   scroll containers that genuinely need their own scroll physics can
+   set `overscroll-behavior: auto` to opt back in. */
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
+/* iOS Safari auto-zooms when a form input is focused if the input's
+   computed font-size is < 16px. We use 13-14px text everywhere in the
+   UI, so this rule scopes the font-size bump to mobile widths only —
+   keeps desktop UI dense while killing the zoom-in-on-tap behaviour
+   that screams "this is a web form". */
+@media (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* In browser mode (not standalone), reserve room at the bottom of the
+   body for the iOS home-indicator area when present. In standalone
+   the bottom tab bar handles its own safe-area padding, so we don't
+   double-pad. */
+html:not([data-standalone='true']) body {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* When installed as a PWA we hide the top public nav + the legal
+   footer (the bottom tab bar replaces them). The detection script in
+   app/layout.tsx sets the data-standalone attr before paint, so this
+   never flashes the wrong layout on first render. */
+html[data-standalone='true'] [data-public-nav],
+html[data-standalone='true'] [data-public-footer] {
+  display: none;
+}
+
+/* Leave room at the bottom of every scrollable page for the fixed
+   bottom tab bar in standalone mode (60pt nav + safe-area padding).
+   Without this the last item in any list sits behind the tab bar. */
+html[data-standalone='true'] body {
+  padding-bottom: calc(60px + env(safe-area-inset-bottom));
+}
+
+/* Prevent text-selection on nav / tab-bar / button chrome — these are
+   tappable surfaces, not content. Body content (listings, descriptions,
+   addresses, etc.) stays selectable for copy-paste. */
+.app-chrome,
+.app-chrome * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ─── Next 16 View Transitions ─────────────────────────────────────
+   Browser-native slide between routes. Safari < 18.0 and any other
+   non-supporting browser silently ignore these rules and the page
+   swap is instant (graceful degradation). We only enable transitions
+   in standalone mode — they feel out of place in a browser tab. */
+@keyframes gg-vt-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes gg-vt-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+html[data-standalone='true']::view-transition-old(root) {
+  animation: gg-vt-fade-out 180ms ease-out forwards;
+}
+html[data-standalone='true']::view-transition-new(root) {
+  animation: gg-vt-slide-in 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
