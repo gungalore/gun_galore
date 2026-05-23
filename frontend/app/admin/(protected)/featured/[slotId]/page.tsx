@@ -1,13 +1,15 @@
-import { cookies } from 'next/headers';
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { FeaturedTabs } from '../tabs';
 import { ForceEvictButton } from './force-evict-button';
 import { ManualAwardButton } from './manual-award-button';
 import { ShiftUntilButton } from './shift-until-button';
 import { CloseAuctionEarlyButton } from './close-auction-early-button';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 type SlotStatus = 'VACANT' | 'AUCTION_RUNNING' | 'BIND_WINDOW' | 'OCCUPIED';
 type AuctionStatus = 'OPEN' | 'CLOSED_AWARDED' | 'CLOSED_NO_BIDS' | 'CANCELLED_BY_ADMIN';
@@ -44,33 +46,39 @@ interface AuditEvent {
   createdAt: string;
 }
 
-export default async function AdminFeaturedSlotDetailPage({
-  params,
-}: {
-  params: Promise<{ slotId: string }>;
-}) {
-  const { slotId } = await params;
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminFeaturedSlotDetailPage() {
+  const params = useParams<{ slotId: string }>();
+  const slotId = params?.slotId ?? '';
 
-  // Fetch all slots + filter to find ours — the backend's slots endpoint
-  // returns the whole rail, and there's no per-slot GET. Cheaper than
-  // another round-trip and keeps the page on one endpoint.
-  const [slotsRes, auditRes] = await Promise.all([
-    fetch(`${API_URL}/admin/featured/slots`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    }),
-    fetch(`${API_URL}/admin/featured/audit?slotId=${slotId}&limit=200`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    }),
-  ]);
-  const slots: AdminSlot[] = slotsRes.ok ? await slotsRes.json() : [];
+  const [slots, setSlots] = useState<AdminSlot[]>([]);
+  const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    if (!slotId) return;
+    let cancelled = false;
+    (async () => {
+      // Fetch all slots + filter to find ours — the backend's slots endpoint
+      // returns the whole rail, and there's no per-slot GET. Cheaper than
+      // another round-trip and keeps the page on one endpoint.
+      const [slotsRes, auditRes] = await Promise.all([
+        adminFetch('/admin/featured/slots'),
+        adminFetch(`/admin/featured/audit?slotId=${slotId}&limit=200`),
+      ]);
+      if (cancelled) return;
+      if (slotsRes.ok) setSlots(await slotsRes.json());
+      if (auditRes.ok) setEvents(await auditRes.json());
+      setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slotId]);
+
   const slot = slots.find((s) => s.id === slotId);
-  const events: AuditEvent[] = auditRes.ok ? await auditRes.json() : [];
 
-  if (!slot) {
+  if (loaded && !slot) {
     return (
       <div>
         <h1
@@ -89,6 +97,23 @@ export default async function AdminFeaturedSlotDetailPage({
         </Link>
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
           Slot not found.
+        </p>
+      </div>
+    );
+  }
+
+  if (!slot) {
+    return (
+      <div>
+        <h1
+          className="text-xl mb-4"
+          style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+        >
+          Featured Slots
+        </h1>
+        <FeaturedTabs current="slots" />
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+          Loading…
         </p>
       </div>
     );

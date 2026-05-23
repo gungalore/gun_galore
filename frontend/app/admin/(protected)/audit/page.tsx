@@ -1,6 +1,8 @@
-import { cookies } from 'next/headers';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 
 // Read-only chronological view of every destructive admin action
 // recorded by AdminAuditService. Rows can be filtered by adminUserId
@@ -30,28 +32,34 @@ interface AuditResponse {
   offset: number;
 }
 
-export default async function AdminAuditPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ offset?: string; resourceType?: string }>;
-}) {
-  const params = await searchParams;
-  const offset = params.offset ?? '0';
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminAuditPage() {
+  const searchParams = useSearchParams();
+  const offset = searchParams.get('offset') ?? '0';
+  const resourceType = searchParams.get('resourceType') ?? undefined;
 
-  const qs = new URLSearchParams();
-  qs.set('offset', offset);
-  qs.set('limit', '50');
-  if (params.resourceType) qs.set('resourceType', params.resourceType);
-
-  const res = await fetch(`${API_URL}/admin/audit?${qs}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
+  const [data, setData] = useState<AuditResponse>({
+    rows: [],
+    total: 0,
+    limit: 50,
+    offset: 0,
   });
-  const data: AuditResponse = res.ok
-    ? await res.json()
-    : { rows: [], total: 0, limit: 50, offset: 0 };
+
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const qs = new URLSearchParams();
+      qs.set('offset', offset);
+      qs.set('limit', '50');
+      if (resourceType) qs.set('resourceType', resourceType);
+      const res = await adminFetch(`/admin/audit?${qs}`);
+      if (cancelled) return;
+      if (res.ok) setData(await res.json());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [offset, resourceType]);
 
   const currentOffset = parseInt(offset, 10) || 0;
   const hasPrev = currentOffset > 0;
@@ -78,7 +86,7 @@ export default async function AdminAuditPage({
         <FilterPill
           label="All"
           href="/admin/audit"
-          active={!params.resourceType}
+          active={!resourceType}
         />
         {['User', 'Transaction', 'Listing', 'Raffle', 'FeaturedSlot'].map(
           (rt) => (
@@ -86,7 +94,7 @@ export default async function AdminAuditPage({
               key={rt}
               label={rt}
               href={`/admin/audit?resourceType=${rt}`}
-              active={params.resourceType === rt}
+              active={resourceType === rt}
             />
           ),
         )}
@@ -105,7 +113,7 @@ export default async function AdminAuditPage({
             style={{ color: 'var(--text-tertiary)' }}
           >
             No audit events recorded yet
-            {params.resourceType ? ` for ${params.resourceType}` : ''}.
+            {resourceType ? ` for ${resourceType}` : ''}.
           </p>
         </div>
       ) : (
@@ -227,7 +235,7 @@ export default async function AdminAuditPage({
           <div className="flex gap-2">
             {hasPrev && (
               <a
-                href={`/admin/audit?${params.resourceType ? `resourceType=${params.resourceType}&` : ''}offset=${Math.max(0, currentOffset - data.limit)}`}
+                href={`/admin/audit?${resourceType ? `resourceType=${resourceType}&` : ''}offset=${Math.max(0, currentOffset - data.limit)}`}
                 className="px-3 py-1 rounded text-xs"
                 style={{
                   border: '0.5px solid var(--border)',
@@ -239,7 +247,7 @@ export default async function AdminAuditPage({
             )}
             {hasNext && (
               <a
-                href={`/admin/audit?${params.resourceType ? `resourceType=${params.resourceType}&` : ''}offset=${currentOffset + data.limit}`}
+                href={`/admin/audit?${resourceType ? `resourceType=${resourceType}&` : ''}offset=${currentOffset + data.limit}`}
                 className="px-3 py-1 rounded text-xs"
                 style={{
                   border: '0.5px solid var(--border)',

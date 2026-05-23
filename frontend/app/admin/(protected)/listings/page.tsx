@@ -1,8 +1,12 @@
-import { cookies } from 'next/headers';
-import Link from 'next/link';
-import BulkListingsTable from './bulk-listings-table';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import BulkListingsTable from './bulk-listings-table';
+import ReviewActions from './review-actions';
+import DeleteListingButton from './delete-button';
 
 interface Listing {
   id: string;
@@ -55,23 +59,30 @@ interface ListingsResponse {
   limit: number;
 }
 
-import ReviewActions from './review-actions';
-import DeleteListingButton from './delete-button';
+export default function AdminListingsPage() {
+  const searchParams = useSearchParams();
+  const status = searchParams.get('status') ?? 'PENDING_REVIEW';
+  const page = searchParams.get('page') ?? '1';
 
-export default async function AdminListingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ status?: string; page?: string }>;
-}) {
-  const { status = 'PENDING_REVIEW', page = '1' } = await searchParams;
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+  const [data, setData] = useState<ListingsResponse | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
-  const res = await fetch(
-    `${API_URL}/admin/listings?status=${status}&page=${page}&limit=20`,
-    { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
-  );
-  const data: ListingsResponse | null = res.ok ? await res.json() : null;
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const res = await adminFetch(
+        `/admin/listings?status=${status}&page=${page}&limit=20`,
+      );
+      if (cancelled) return;
+      if (res.ok) setData(await res.json());
+      else setData(null);
+      setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [status, page]);
 
   // All terminal statuses an admin might need to audit. Was previously
   // only the 3 "live workflow" statuses — meant historic SOLD, EXPIRED,
@@ -111,7 +122,9 @@ export default async function AdminListingsPage({
         ))}
       </div>
 
-      {!data ? (
+      {!loaded ? (
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Loading...</p>
+      ) : !data ? (
         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Failed to load listings.</p>
       ) : data.listings.length === 0 ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No listings in this queue.</p>

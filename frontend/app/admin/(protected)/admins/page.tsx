@@ -1,8 +1,9 @@
-import { cookies } from 'next/headers';
+'use client';
+
+import { useEffect, useState } from 'react';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import CreateAdminForm from './create-admin-form';
 import AdminRow from './admin-row';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // Mirror of AdminUser select shape returned by GET /admin/admins.
 export interface AdminRecord {
@@ -25,27 +26,33 @@ interface MeResponse {
   lastName: string | null;
 }
 
-export default async function AdminAdminsPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminAdminsPage() {
+  const [admins, setAdmins] = useState<AdminRecord[]>([]);
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
-  // Fetch the admin list AND the current admin's identity in parallel.
-  // We need /me to decide whether to render the "Create admin" form
-  // (only SUPERADMIN sees it). The list is open to all admins so they
-  // can audit who else has access.
-  const [adminsRes, meRes] = await Promise.all([
-    fetch(`${API_URL}/admin/admins`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    }),
-    fetch(`${API_URL}/admin/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    }),
-  ]);
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      // Fetch the admin list AND the current admin's identity in parallel.
+      // We need /me to decide whether to render the "Create admin" form
+      // (only SUPERADMIN sees it). The list is open to all admins so they
+      // can audit who else has access.
+      const [adminsRes, meRes] = await Promise.all([
+        adminFetch('/admin/admins'),
+        adminFetch('/admin/auth/me'),
+      ]);
+      if (cancelled) return;
+      if (adminsRes.ok) setAdmins(await adminsRes.json());
+      if (meRes.ok) setMe(await meRes.json());
+      setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const admins: AdminRecord[] = adminsRes.ok ? await adminsRes.json() : [];
-  const me: MeResponse | null = meRes.ok ? await meRes.json() : null;
   const canManage = me?.role === 'SUPERADMIN';
 
   return (
@@ -91,7 +98,7 @@ export default async function AdminAdminsPage() {
           <span style={{ textAlign: 'right' }}>Status</span>
         </div>
 
-        {admins.length === 0 ? (
+        {loaded && admins.length === 0 ? (
           <div
             className="px-5 py-6 text-sm"
             style={{ color: 'var(--text-tertiary)' }}

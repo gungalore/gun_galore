@@ -1,7 +1,8 @@
-import { cookies } from 'next/headers';
-import Link from 'next/link';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 
 // ─── Types matching backend response ────────────────────────────────
 
@@ -71,34 +72,33 @@ const EVENT_VISUAL: Record<string, { icon: string; color: string }> = {
   OFFER_SUBMITTED: { icon: '$', color: '#3b82f6' },
 };
 
-// ─── Fetch helper ───────────────────────────────────────────────────
-
-async function fetchAdmin<T>(path: string, token: string): Promise<T | null> {
-  try {
-    const res = await fetch(`${API_URL}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-}
-
 // ─── Page ───────────────────────────────────────────────────────────
 
-export default async function AdminCommandCenterPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminCommandCenterPage() {
+  const [attention, setAttention] = useState<AttentionQueue | null>(null);
+  const [pulse, setPulse] = useState<TodayPulse | null>(null);
+  const [activity, setActivity] = useState<ActivityEvent[] | null>(null);
 
-  // Parallel-fetch every panel — they're independent and the page
-  // can't render anything useful until all three return.
-  const [attention, pulse, activity] = await Promise.all([
-    fetchAdmin<AttentionQueue>('/admin/command/attention-queue', token),
-    fetchAdmin<TodayPulse>('/admin/command/today-pulse', token),
-    fetchAdmin<ActivityEvent[]>('/admin/command/activity-feed?limit=30', token),
-  ]);
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      // Parallel-fetch every panel — they're independent and the page
+      // can't render anything useful until all three return.
+      const [aRes, pRes, evRes] = await Promise.all([
+        adminFetch('/admin/command/attention-queue'),
+        adminFetch('/admin/command/today-pulse'),
+        adminFetch('/admin/command/activity-feed?limit=30'),
+      ]);
+      if (cancelled) return;
+      if (aRes.ok) setAttention(await aRes.json());
+      if (pRes.ok) setPulse(await pRes.json());
+      if (evRes.ok) setActivity(await evRes.json());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Compute the visible attention cards. Each one knows its deep-link,
   // its urgency tier, and whether it has zero rows (we still render

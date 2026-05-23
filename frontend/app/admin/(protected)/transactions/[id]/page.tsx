@@ -1,11 +1,12 @@
-import { cookies } from 'next/headers';
-import { notFound } from 'next/navigation';
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import DossierActions from './dossier-actions';
 import DealerVerificationPanel from './dealer-verification-panel';
 import { ZohoSyncPanel } from './zoho-sync-panel';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -174,31 +175,54 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
-async function fetchTransaction(id: string, token: string): Promise<TransactionDossier | null> {
-  try {
-    const res = await fetch(`${API_URL}/admin/transactions/${id}/dossier`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as TransactionDossier;
-  } catch {
-    return null;
-  }
-}
-
 // ─── Page ───────────────────────────────────────────────────────────
 
-export default async function TransactionDossierPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
-  const d = await fetchTransaction(id, token);
-  if (!d) return notFound();
+export default function TransactionDossierPage() {
+  const params = useParams<{ id: string }>();
+  const id = params?.id ?? '';
+
+  const [d, setD] = useState<TransactionDossier | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await adminFetch(`/admin/transactions/${id}/dossier`);
+        if (cancelled) return;
+        if (res.ok) setD((await res.json()) as TransactionDossier);
+        else setD(null);
+      } catch {
+        if (!cancelled) setD(null);
+      }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  if (!loaded) {
+    return (
+      <div>
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+          Loading…
+        </p>
+      </div>
+    );
+  }
+
+  if (!d) {
+    return (
+      <div>
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+          Transaction not found.
+        </p>
+      </div>
+    );
+  }
 
   const t = d.transaction;
 

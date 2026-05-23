@@ -1,7 +1,8 @@
-import { cookies } from 'next/headers';
-import CategoriesTree from './categories-tree';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import CategoriesTree from './categories-tree';
 
 interface Category {
   id: string;
@@ -17,20 +18,27 @@ interface Category {
   _count: { listings: number };
 }
 
-export default async function CategoriesPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function CategoriesPage() {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
-  let categories: Category[] = [];
-  try {
-    const res = await fetch(`${API_URL}/admin/categories`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (res.ok) categories = await res.json();
-  } catch {
-    /* empty list will render */
-  }
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await adminFetch('/admin/categories');
+        if (cancelled) return;
+        if (res.ok) setCategories(await res.json());
+      } catch {
+        /* empty list will render */
+      }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div>
@@ -49,7 +57,7 @@ export default async function CategoriesPage() {
         intact. Renaming a category re-slugs the public URL.
       </p>
 
-      <CategoriesTree initial={categories} />
+      {loaded && <CategoriesTree initial={categories} />}
     </div>
   );
 }

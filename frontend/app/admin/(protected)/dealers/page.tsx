@@ -1,7 +1,9 @@
-import { cookies } from 'next/headers';
-import DealersTable from './dealers-table';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import DealersTable from './dealers-table';
 
 interface Dealer {
   id: string;
@@ -20,34 +22,39 @@ interface Dealer {
   _count: { transactions: number };
 }
 
-export default async function DealersPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ search?: string; includeInactive?: string }>;
-}) {
-  const sp = await searchParams;
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function DealersPage() {
+  const searchParams = useSearchParams();
+  const search = searchParams.get('search') ?? undefined;
+  const includeInactive = searchParams.get('includeInactive') ?? undefined;
 
-  const params = new URLSearchParams();
-  if (sp.search) params.set('search', sp.search);
-  if (sp.includeInactive) params.set('includeInactive', sp.includeInactive);
+  const [dealers, setDealers] = useState<Dealer[]>([]);
+  const [count, setCount] = useState(0);
+  const [loaded, setLoaded] = useState(false);
 
-  let dealers: Dealer[] = [];
-  let count = 0;
-  try {
-    const res = await fetch(`${API_URL}/admin/dealers?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (res.ok) {
-      const data = await res.json();
-      dealers = data.rows;
-      count = data.count;
-    }
-  } catch {
-    // empty list will render
-  }
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (includeInactive) params.set('includeInactive', includeInactive);
+      try {
+        const res = await adminFetch(`/admin/dealers?${params.toString()}`);
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          setDealers(data.rows);
+          setCount(data.count);
+        }
+      } catch {
+        // empty list will render
+      }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [search, includeInactive]);
 
   return (
     <div>
@@ -66,7 +73,7 @@ export default async function DealersPage({
         (firearms only). Verify the licence before adding.
       </p>
 
-      <DealersTable initialDealers={dealers} />
+      {loaded && <DealersTable initialDealers={dealers} />}
     </div>
   );
 }

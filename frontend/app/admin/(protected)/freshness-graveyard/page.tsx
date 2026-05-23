@@ -1,7 +1,9 @@
-import { cookies } from 'next/headers';
-import Link from 'next/link';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 
 interface Row {
   id: string;
@@ -22,29 +24,33 @@ function formatRand(cents: number | null): string {
   return `R${(cents / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
 }
 
-async function fetchRows(token: string, minAgeDays: number): Promise<Row[] | null> {
-  try {
-    const res = await fetch(
-      `${API_URL}/admin/analytics/freshness-graveyard?minAgeDays=${minAgeDays}&limit=100`,
-      { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
-    );
-    if (!res.ok) return null;
-    return (await res.json()) as Row[];
-  } catch {
-    return null;
-  }
-}
+export default function FreshnessGraveyardPage() {
+  const searchParams = useSearchParams();
+  const rawMinAge = searchParams.get('minAgeDays');
+  const parsedMinAge = rawMinAge ? parseInt(rawMinAge, 10) : 30;
+  const minAgeDays = Number.isFinite(parsedMinAge) ? parsedMinAge : 30;
 
-export default async function FreshnessGraveyardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ minAgeDays?: string }>;
-}) {
-  const sp = await searchParams;
-  const minAgeDays = sp.minAgeDays ? parseInt(sp.minAgeDays, 10) : 30;
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
-  const rows = await fetchRows(token, Number.isFinite(minAgeDays) ? minAgeDays : 30);
+  const [rows, setRows] = useState<Row[] | null>(null);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await adminFetch(
+          `/admin/analytics/freshness-graveyard?minAgeDays=${minAgeDays}&limit=100`,
+        );
+        if (cancelled) return;
+        if (res.ok) setRows((await res.json()) as Row[]);
+        else setRows(null);
+      } catch {
+        if (!cancelled) setRows(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [minAgeDays]);
 
   const ageOptions = [30, 60, 90, 180];
 

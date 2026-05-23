@@ -1,27 +1,39 @@
-import { cookies } from 'next/headers';
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { RaffleAuditEvent, DrawProof } from '@/lib/types';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
-export default async function CompetitionAuditPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function CompetitionAuditPage() {
+  const params = useParams<{ id: string }>();
+  const id = params?.id ?? '';
 
-  const [eventsRes, proofRes] = await Promise.all([
-    fetch(`${API_URL}/admin/raffles/${id}/audit`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    }),
-    fetch(`${API_URL}/raffles/${id}/proof`, { cache: 'no-store' }),
-  ]);
-  const events: RaffleAuditEvent[] = eventsRes.ok ? await eventsRes.json() : [];
-  const proof: DrawProof | null = proofRes.ok ? await proofRes.json() : null;
+  const [events, setEvents] = useState<RaffleAuditEvent[]>([]);
+  const [proof, setProof] = useState<DrawProof | null>(null);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      const [eventsRes, proofRes] = await Promise.all([
+        adminFetch(`/admin/raffles/${id}/audit`),
+        // Proof endpoint is public — use plain fetch so it doesn't get
+        // an auth header it doesn't need.
+        fetch(`${API_URL}/raffles/${id}/proof`, { cache: 'no-store' }),
+      ]);
+      if (cancelled) return;
+      if (eventsRes.ok) setEvents(await eventsRes.json());
+      if (proofRes.ok) setProof(await proofRes.json());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   return (
     <div>

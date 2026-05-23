@@ -1,9 +1,10 @@
-import { cookies } from 'next/headers';
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { FeaturedTabs } from './tabs';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 type SlotStatus = 'VACANT' | 'AUCTION_RUNNING' | 'BIND_WINDOW' | 'OCCUPIED';
 type AuctionStatus = 'OPEN' | 'CLOSED_AWARDED' | 'CLOSED_NO_BIDS' | 'CANCELLED_BY_ADMIN';
@@ -30,15 +31,24 @@ interface AdminSlot {
   };
 }
 
-export default async function AdminFeaturedSlotsPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminFeaturedSlotsPage() {
+  const [slots, setSlots] = useState<AdminSlot[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
-  const res = await fetch(`${API_URL}/admin/featured/slots`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
-  const slots: AdminSlot[] = res.ok ? await res.json() : [];
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const res = await adminFetch('/admin/featured/slots');
+      if (cancelled) return;
+      if (res.ok) setSlots(await res.json());
+      setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Backend doesn't guarantee order — sort by slotNumber for stable rendering.
   const sorted = [...slots].sort((a, b) => a.slotNumber - b.slotNumber);
 
@@ -52,7 +62,7 @@ export default async function AdminFeaturedSlotsPage() {
       </h1>
       <FeaturedTabs current="slots" />
 
-      {sorted.length === 0 ? (
+      {loaded && sorted.length === 0 ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
           No slots configured.
         </p>

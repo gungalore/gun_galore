@@ -1,10 +1,11 @@
-import { cookies } from 'next/headers';
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminRaffleRow } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
 import { RefundAllButton } from './refund-all-button';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 const STATUS_COLOR: Record<string, string> = {
   DRAFT: 'var(--text-tertiary)',
@@ -17,15 +18,23 @@ const STATUS_COLOR: Record<string, string> = {
   EXPIRED_UNCLAIMED: 'var(--text-tertiary)',
 };
 
-export default async function AdminCompetitionsPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminCompetitionsPage() {
+  const [raffles, setRaffles] = useState<AdminRaffleRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
-  const res = await fetch(`${API_URL}/admin/raffles`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
-  const raffles: AdminRaffleRow[] = res.ok ? await res.json() : [];
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const res = await adminFetch('/admin/raffles');
+      if (cancelled) return;
+      if (res.ok) setRaffles(await res.json());
+      setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div>
@@ -50,7 +59,7 @@ export default async function AdminCompetitionsPage() {
         </Link>
       </div>
 
-      {raffles.length === 0 ? (
+      {loaded && raffles.length === 0 ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
           No competitions yet.
         </p>

@@ -1,9 +1,10 @@
-import { cookies } from 'next/headers';
-import { notFound } from 'next/navigation';
-import Link from 'next/link';
-import UserActions from '../user-actions';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import UserActions from '../user-actions';
 
 // ─── Types — kept loose because the backend returns a rich object ────
 // with optional fields we want to render conditionally. `any`-ish typing
@@ -186,35 +187,56 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
-async function fetchDossier(id: string, token: string): Promise<Dossier | null> {
-  try {
-    const res = await fetch(`${API_URL}/admin/users/${id}/dossier`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as Dossier;
-  } catch {
-    return null;
-  }
-}
-
 // ─── Page ───────────────────────────────────────────────────────────
 
-export default async function UserDossierPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
-  const d = await fetchDossier(id, token);
-  if (!d) return notFound();
+export default function UserDossierPage() {
+  const params = useParams<{ id: string }>();
+  const id = params?.id ?? '';
+
+  const [d, setD] = useState<Dossier | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await adminFetch(`/admin/users/${id}/dossier`);
+        if (cancelled) return;
+        if (res.ok) setD((await res.json()) as Dossier);
+        else setD(null);
+      } catch {
+        if (!cancelled) setD(null);
+      }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  if (!loaded) {
+    return (
+      <div>
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+          Loading…
+        </p>
+      </div>
+    );
+  }
+
+  if (!d) {
+    return (
+      <div>
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+          User not found.
+        </p>
+      </div>
+    );
+  }
 
   const u = d.user;
-  const displayName =
-    u.username ?? [u.firstName, u.lastName].filter(Boolean).join(' ') ?? u.email;
   const initials = (u.username ?? u.email).slice(0, 2).toUpperCase();
 
   return (

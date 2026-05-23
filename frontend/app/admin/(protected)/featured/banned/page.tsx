@@ -1,9 +1,10 @@
-import { cookies } from 'next/headers';
+'use client';
+
+import { useEffect, useState } from 'react';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { FeaturedTabs } from '../tabs';
 import { BanForm } from './ban-form';
 import { UnbanButton } from './unban-button';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 interface BannedBidder {
   id: string;
@@ -13,15 +14,21 @@ interface BannedBidder {
   createdAt: string;
 }
 
-export default async function AdminFeaturedBannedPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminFeaturedBannedPage() {
+  const [banned, setBanned] = useState<BannedBidder[]>([]);
 
-  const res = await fetch(`${API_URL}/admin/featured/banned-bidders`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
-  const banned: BannedBidder[] = res.ok ? await res.json() : [];
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const res = await adminFetch('/admin/featured/banned-bidders');
+      if (cancelled) return;
+      if (res.ok) setBanned(await res.json());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div>

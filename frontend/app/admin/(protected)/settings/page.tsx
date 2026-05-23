@@ -1,7 +1,8 @@
-import { cookies } from 'next/headers';
-import SettingsEditor from './settings-editor';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import SettingsEditor from './settings-editor';
 
 interface Flag {
   key: string;
@@ -13,19 +14,27 @@ interface Flag {
   currentValue: string;
 }
 
-export default async function SettingsPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
-  let flags: Flag[] = [];
-  try {
-    const res = await fetch(`${API_URL}/admin/settings`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (res.ok) flags = await res.json();
-  } catch {
-    // empty list will render
-  }
+export default function SettingsPage() {
+  const [flags, setFlags] = useState<Flag[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await adminFetch('/admin/settings');
+        if (cancelled) return;
+        if (res.ok) setFlags(await res.json());
+      } catch {
+        // empty list will render
+      }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div>
@@ -45,7 +54,7 @@ export default async function SettingsPage() {
         save so the audit log captures <em>why</em> the value moved.
       </p>
 
-      <SettingsEditor flags={flags} />
+      {loaded && <SettingsEditor flags={flags} />}
     </div>
   );
 }

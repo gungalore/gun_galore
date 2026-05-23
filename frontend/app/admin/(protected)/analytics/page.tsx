@@ -1,5 +1,9 @@
-import { cookies } from 'next/headers';
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import PeriodSwitcher from './period-switcher';
 import {
   KpiCard,
@@ -7,8 +11,6 @@ import {
   CategoryBarChart,
   ListingTypeDonut,
 } from './charts';
-
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // ─── Types matching backend response shapes ─────────────────────────
 
@@ -80,53 +82,53 @@ function formatCount(n: number): string {
   return n.toLocaleString('en-ZA');
 }
 
-// ─── Fetch helper ───────────────────────────────────────────────────
-//
-// All endpoints are server-rendered with no-store caching so the page
-// always reflects the latest DB state. Returns null on auth/network
-// failure so the page can degrade to "could not load" instead of
-// throwing during render.
-async function fetchAdmin<T>(path: string, token: string): Promise<T | null> {
-  try {
-    const res = await fetch(`${API_URL}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-}
-
 // ─── Page ───────────────────────────────────────────────────────────
 
-export default async function AnalyticsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ period?: string; bucket?: string }>;
-}) {
-  const sp = await searchParams;
-  const period = sp.period ?? '30d';
-  const bucket = sp.bucket ?? 'day';
+export default function AnalyticsPage() {
+  const searchParams = useSearchParams();
+  const period = searchParams.get('period') ?? '30d';
+  const bucket = searchParams.get('bucket') ?? 'day';
   const qs = `?period=${period}`;
 
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+  const [overview, setOverview] = useState<OverviewKpis | null>(null);
+  const [timeSeries, setTimeSeries] = useState<TimeSeriesPoint[] | null>(null);
+  const [byType, setByType] = useState<ByListingType[] | null>(null);
+  const [byCategory, setByCategory] = useState<ByCategory[] | null>(null);
+  const [topMakes, setTopMakes] = useState<TopMakeModel[] | null>(null);
+  const [timeToSale, setTimeToSale] = useState<TimeToSale[] | null>(null);
 
-  // Fire every analytics call in parallel — they're all independent
-  // and the page can't render anything useful until they all land.
-  const [overview, timeSeries, byType, byCategory, topMakes, timeToSale] = await Promise.all([
-    fetchAdmin<OverviewKpis>(`/admin/analytics/overview${qs}`, token),
-    fetchAdmin<TimeSeriesPoint[]>(
-      `/admin/analytics/time-series${qs}&bucket=${bucket}`,
-      token,
-    ),
-    fetchAdmin<ByListingType[]>(`/admin/analytics/by-listing-type${qs}`, token),
-    fetchAdmin<ByCategory[]>(`/admin/analytics/by-category${qs}`, token),
-    fetchAdmin<TopMakeModel[]>(`/admin/analytics/top-make-model${qs}`, token),
-    fetchAdmin<TimeToSale[]>(`/admin/analytics/time-to-sale${qs}`, token),
-  ]);
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      // Fire every analytics call in parallel — they're all independent
+      // and the page can't render anything useful until they all land.
+      const [oRes, tsRes, btRes, bcRes, tmRes, ttsRes] = await Promise.all([
+        adminFetch(`/admin/analytics/overview${qs}`),
+        adminFetch(`/admin/analytics/time-series${qs}&bucket=${bucket}`),
+        adminFetch(`/admin/analytics/by-listing-type${qs}`),
+        adminFetch(`/admin/analytics/by-category${qs}`),
+        adminFetch(`/admin/analytics/top-make-model${qs}`),
+        adminFetch(`/admin/analytics/time-to-sale${qs}`),
+      ]);
+      if (cancelled) return;
+      if (oRes.ok) setOverview(await oRes.json());
+      else setOverview(null);
+      if (tsRes.ok) setTimeSeries(await tsRes.json());
+      else setTimeSeries(null);
+      if (btRes.ok) setByType(await btRes.json());
+      else setByType(null);
+      if (bcRes.ok) setByCategory(await bcRes.json());
+      else setByCategory(null);
+      if (tmRes.ok) setTopMakes(await tmRes.json());
+      else setTopMakes(null);
+      if (ttsRes.ok) setTimeToSale(await ttsRes.json());
+      else setTimeToSale(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [qs, bucket]);
 
   // Header strip stays even when downstream calls fail so the user can
   // still flip period to try again.

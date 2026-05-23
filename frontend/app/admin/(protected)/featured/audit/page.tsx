@@ -1,8 +1,10 @@
-import { cookies } from 'next/headers';
-import Link from 'next/link';
-import { FeaturedTabs } from '../tabs';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { FeaturedTabs } from '../tabs';
 
 interface AuditEvent {
   id: string;
@@ -29,28 +31,29 @@ const EVENT_TYPES = [
   'BIDDER_BANNED',
 ];
 
-export default async function AdminFeaturedAuditPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ slotId?: string; eventType?: string }>;
-}) {
-  const { slotId, eventType } = await searchParams;
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminFeaturedAuditPage() {
+  const searchParams = useSearchParams();
+  const slotId = searchParams.get('slotId') ?? undefined;
+  const eventType = searchParams.get('eventType') ?? undefined;
 
-  const qs = new URLSearchParams();
-  if (slotId) qs.set('slotId', slotId);
-  if (eventType) qs.set('eventType', eventType);
-  qs.set('limit', '200');
+  const [events, setEvents] = useState<AuditEvent[]>([]);
 
-  const res = await fetch(
-    `${API_URL}/admin/featured/audit?${qs.toString()}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    },
-  );
-  const events: AuditEvent[] = res.ok ? await res.json() : [];
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const qs = new URLSearchParams();
+      if (slotId) qs.set('slotId', slotId);
+      if (eventType) qs.set('eventType', eventType);
+      qs.set('limit', '200');
+      const res = await adminFetch(`/admin/featured/audit?${qs.toString()}`);
+      if (cancelled) return;
+      if (res.ok) setEvents(await res.json());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slotId, eventType]);
 
   return (
     <div>

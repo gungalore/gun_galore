@@ -1,7 +1,8 @@
-import { cookies } from 'next/headers';
-import Link from 'next/link';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 
 // Operational Health — second tab on /admin/analytics. Three blocks:
 //   1. KYC funnel drop-off
@@ -30,19 +31,6 @@ interface RefundRiskSeller {
   ppDifference: number;
 }
 
-async function fetchJson<T>(path: string, token: string): Promise<T | null> {
-  try {
-    const res = await fetch(`${API_URL}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-}
-
 const BUCKET_LABEL: Record<string, string> = {
   'under-24h': 'Under 24h',
   '24-48h': '24–48h',
@@ -59,14 +47,29 @@ const BUCKET_COLOR: Record<string, string> = {
   breached: 'var(--red)',
 };
 
-export default async function OpsHealthPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
-  const [funnel, sla, risk] = await Promise.all([
-    fetchJson<KycStage[]>('/admin/analytics/kyc-funnel', token),
-    fetchJson<DispatchBucket[]>('/admin/analytics/dispatch-sla', token),
-    fetchJson<RefundRiskSeller[]>('/admin/analytics/refund-risk', token),
-  ]);
+export default function OpsHealthPage() {
+  const [funnel, setFunnel] = useState<KycStage[] | null>(null);
+  const [sla, setSla] = useState<DispatchBucket[] | null>(null);
+  const [risk, setRisk] = useState<RefundRiskSeller[] | null>(null);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const [fRes, sRes, rRes] = await Promise.all([
+        adminFetch('/admin/analytics/kyc-funnel'),
+        adminFetch('/admin/analytics/dispatch-sla'),
+        adminFetch('/admin/analytics/refund-risk'),
+      ]);
+      if (cancelled) return;
+      if (fRes.ok) setFunnel(await fRes.json());
+      if (sRes.ok) setSla(await sRes.json());
+      if (rRes.ok) setRisk(await rRes.json());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div>

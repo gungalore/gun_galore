@@ -1,8 +1,9 @@
-import { cookies } from 'next/headers';
-import { notFound } from 'next/navigation';
-import Link from 'next/link';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -182,31 +183,54 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
-async function fetchListing(id: string, token: string): Promise<ListingDossier | null> {
-  try {
-    const res = await fetch(`${API_URL}/admin/listings/${id}/dossier`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as ListingDossier;
-  } catch {
-    return null;
-  }
-}
-
 // ─── Page ───────────────────────────────────────────────────────────
 
-export default async function ListingDossierPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
-  const d = await fetchListing(id, token);
-  if (!d) return notFound();
+export default function ListingDossierPage() {
+  const params = useParams<{ id: string }>();
+  const id = params?.id ?? '';
+
+  const [d, setD] = useState<ListingDossier | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await adminFetch(`/admin/listings/${id}/dossier`);
+        if (cancelled) return;
+        if (res.ok) setD((await res.json()) as ListingDossier);
+        else setD(null);
+      } catch {
+        if (!cancelled) setD(null);
+      }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  if (!loaded) {
+    return (
+      <div>
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+          Loading…
+        </p>
+      </div>
+    );
+  }
+
+  if (!d) {
+    return (
+      <div>
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+          Listing not found.
+        </p>
+      </div>
+    );
+  }
 
   const l = d.listing;
   const primaryImage = l.images.find((i) => i.isPrimary) ?? l.images[0];

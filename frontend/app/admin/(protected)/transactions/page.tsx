@@ -1,8 +1,10 @@
-import { cookies } from 'next/headers';
-import Link from 'next/link';
-import TransactionActions from './transaction-actions';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import TransactionActions from './transaction-actions';
 
 interface Tx {
   id: string;
@@ -23,20 +25,30 @@ interface TxResponse {
 
 const STATUS_TABS = ['PENDING_ADMIN_VERIFICATION', 'HELD', 'RELEASED', 'REFUNDED'];
 
-export default async function AdminTransactionsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ status?: string; page?: string }>;
-}) {
-  const { status = 'PENDING_ADMIN_VERIFICATION', page = '1' } = await searchParams;
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminTransactionsPage() {
+  const searchParams = useSearchParams();
+  const status = searchParams.get('status') ?? 'PENDING_ADMIN_VERIFICATION';
+  const page = searchParams.get('page') ?? '1';
 
-  const res = await fetch(
-    `${API_URL}/admin/transactions?status=${status}&page=${page}&limit=20`,
-    { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
-  );
-  const data: TxResponse | null = res.ok ? await res.json() : null;
+  const [data, setData] = useState<TxResponse | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const res = await adminFetch(
+        `/admin/transactions?status=${status}&page=${page}&limit=20`,
+      );
+      if (cancelled) return;
+      if (res.ok) setData(await res.json());
+      else setData(null);
+      setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [status, page]);
 
   function name(p: { firstName: string | null; lastName: string | null; email: string }) {
     return [p.firstName, p.lastName].filter(Boolean).join(' ') || p.email;
@@ -66,7 +78,9 @@ export default async function AdminTransactionsPage({
         ))}
       </div>
 
-      {!data ? (
+      {!loaded ? (
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Loading...</p>
+      ) : !data ? (
         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Failed to load transactions.</p>
       ) : data.transactions.length === 0 ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No transactions in this status.</p>

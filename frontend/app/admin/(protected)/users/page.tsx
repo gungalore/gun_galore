@@ -1,9 +1,9 @@
-import { cookies } from 'next/headers';
-import Link from 'next/link';
-import UserActions from './user-actions';
-import BulkUsersTable from './bulk-users';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import BulkUsersTable from './bulk-users';
 
 interface User {
   id: string;
@@ -27,19 +27,34 @@ interface UsersResponse {
   limit: number;
 }
 
-export default async function AdminUsersPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ search?: string; page?: string; kyc?: string; filter?: string }>;
-}) {
-  const { search = '', page = '1', kyc, filter } = await searchParams;
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminUsersPage() {
+  const searchParams = useSearchParams();
+  const search = searchParams.get('search') ?? '';
+  const page = searchParams.get('page') ?? '1';
+  const kyc = searchParams.get('kyc') ?? undefined;
+  const filter = searchParams.get('filter') ?? undefined;
 
-  const params = new URLSearchParams({ page, limit: '30' });
-  if (search) params.set('search', search);
-  if (kyc) params.set('kyc', kyc);
-  if (filter) params.set('filter', filter);
+  const [data, setData] = useState<UsersResponse | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const params = new URLSearchParams({ page, limit: '30' });
+      if (search) params.set('search', search);
+      if (kyc) params.set('kyc', kyc);
+      if (filter) params.set('filter', filter);
+      const res = await adminFetch(`/admin/users?${params}`);
+      if (cancelled) return;
+      if (res.ok) setData(await res.json());
+      else setData(null);
+      setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [search, page, kyc, filter]);
 
   // Active filter label for the empty-state + chip strip. Only one
   // active at a time today; refactor when we add multi-filter.
@@ -51,12 +66,6 @@ export default async function AdminUsersPage({
         : filter === 'dealers'
           ? { key: 'dealers', label: 'Dealers' }
           : null;
-
-  const res = await fetch(`${API_URL}/admin/users?${params}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
-  const data: UsersResponse | null = res.ok ? await res.json() : null;
 
   return (
     <div>
@@ -117,7 +126,9 @@ export default async function AdminUsersPage({
         )}
       </form>
 
-      {!data ? (
+      {!loaded ? (
+        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Loading...</p>
+      ) : !data ? (
         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Failed to load users.</p>
       ) : data.users.length === 0 ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No users found.</p>

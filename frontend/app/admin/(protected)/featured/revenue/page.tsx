@@ -1,7 +1,8 @@
-import { cookies } from 'next/headers';
-import { FeaturedTabs } from '../tabs';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { FeaturedTabs } from '../tabs';
 
 interface RevenueSummary {
   totalCents: number;
@@ -19,15 +20,23 @@ function formatRand(cents: number): string {
   })}`;
 }
 
-export default async function AdminFeaturedRevenuePage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminFeaturedRevenuePage() {
+  const [summary, setSummary] = useState<RevenueSummary | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
-  const res = await fetch(`${API_URL}/admin/featured/revenue`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
-  const summary: RevenueSummary | null = res.ok ? await res.json() : null;
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const res = await adminFetch('/admin/featured/revenue');
+      if (cancelled) return;
+      if (res.ok) setSummary(await res.json());
+      setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div>
@@ -39,11 +48,11 @@ export default async function AdminFeaturedRevenuePage() {
       </h1>
       <FeaturedTabs current="revenue" />
 
-      {!summary ? (
+      {loaded && !summary ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
           Could not load revenue data.
         </p>
-      ) : (
+      ) : summary ? (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
             <StatCard
@@ -138,7 +147,7 @@ export default async function AdminFeaturedRevenuePage() {
             )}
           </div>
         </>
-      )}
+      ) : null}
     </div>
   );
 }

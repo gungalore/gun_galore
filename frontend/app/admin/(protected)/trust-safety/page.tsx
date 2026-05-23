@@ -1,7 +1,8 @@
-import { cookies } from 'next/headers';
-import Link from 'next/link';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 
 interface Rejection {
   id: string;
@@ -56,27 +57,29 @@ const CATEGORY_COLOR: Record<string, string> = {
   address: '#f59e0b',
 };
 
-async function fetchJson<T>(path: string, token: string): Promise<T | null> {
-  try {
-    const res = await fetch(`${API_URL}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-}
+export default function TrustSafetyPage() {
+  const [rejections, setRejections] = useState<Rejection[] | null>(null);
+  const [repeats, setRepeats] = useState<RepeatOffender[] | null>(null);
+  const [reports, setReports] = useState<ReportedQuestion[] | null>(null);
 
-export default async function TrustSafetyPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
-  const [rejections, repeats, reports] = await Promise.all([
-    fetchJson<Rejection[]>('/admin/trust-safety/rejections', token),
-    fetchJson<RepeatOffender[]>('/admin/trust-safety/repeat-offenders', token),
-    fetchJson<ReportedQuestion[]>('/admin/trust-safety/reported-questions', token),
-  ]);
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const [rRes, oRes, qRes] = await Promise.all([
+        adminFetch('/admin/trust-safety/rejections'),
+        adminFetch('/admin/trust-safety/repeat-offenders'),
+        adminFetch('/admin/trust-safety/reported-questions'),
+      ]);
+      if (cancelled) return;
+      if (rRes.ok) setRejections(await rRes.json());
+      if (oRes.ok) setRepeats(await oRes.json());
+      if (qRes.ok) setReports(await qRes.json());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div>

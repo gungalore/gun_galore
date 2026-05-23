@@ -1,7 +1,8 @@
-import { cookies } from 'next/headers';
-import RefreshButton from './refresh-button';
+'use client';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+import { useEffect, useState } from 'react';
+import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import RefreshButton from './refresh-button';
 
 // Mirrors the backend's CachedBalance shape.
 interface CachedBalance {
@@ -29,18 +30,24 @@ function fmtRelative(iso: string): string {
 // At <50 credits we tint the card red so the admin notices.
 const LOW_BALANCE = 50;
 
-export default async function AdminKycPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
+export default function AdminKycPage() {
+  const [data, setData] = useState<BalanceResponse | null>(null);
 
-  const res = await fetch(`${API_URL}/admin/kyc/balance`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
+  useEffect(() => {
+    if (!requireAdminToken()) return;
+    let cancelled = false;
+    (async () => {
+      const res = await adminFetch('/admin/kyc/balance');
+      if (cancelled) return;
+      if (res.ok) setData(await res.json());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const data: BalanceResponse | null = res.ok ? await res.json() : null;
   const bal = data?.balance ?? null;
-  const mode = (process.env.VERIFYNOW_MODE ?? 'sandbox').toLowerCase();
+  const mode = (process.env.NEXT_PUBLIC_VERIFYNOW_MODE ?? 'sandbox').toLowerCase();
   const low = bal !== null && bal.available < LOW_BALANCE;
 
   return (

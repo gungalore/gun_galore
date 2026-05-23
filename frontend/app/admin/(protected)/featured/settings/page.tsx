@@ -1,7 +1,10 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import { FeaturedTabs } from '../tabs';
 import { SettingsForm } from './settings-form';
 
-const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 export interface FeaturedConfig {
   slotCount: number;
@@ -21,11 +24,28 @@ export interface FeaturedConfig {
   bindWindowSec: number;
 }
 
-export default async function AdminFeaturedSettingsPage() {
-  // Public endpoint — no auth required to read. The settings form
-  // POSTs back to the admin endpoint, which IS auth-gated.
-  const res = await fetch(`${API_URL}/featured/config`, { cache: 'no-store' });
-  const config: FeaturedConfig | null = res.ok ? await res.json() : null;
+export default function AdminFeaturedSettingsPage() {
+  const [config, setConfig] = useState<FeaturedConfig | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    // Public endpoint — no auth required to read. The settings form
+    // POSTs back to the admin endpoint, which IS auth-gated.
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/featured/config`, { cache: 'no-store' });
+        if (cancelled) return;
+        if (res.ok) setConfig(await res.json());
+      } catch {
+        // empty state will render
+      }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div>
@@ -37,13 +57,13 @@ export default async function AdminFeaturedSettingsPage() {
       </h1>
       <FeaturedTabs current="settings" />
 
-      {!config ? (
+      {loaded && !config ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
           Could not load current configuration.
         </p>
-      ) : (
+      ) : config ? (
         <SettingsForm initial={config} />
-      )}
+      ) : null}
     </div>
   );
 }
