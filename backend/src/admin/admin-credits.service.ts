@@ -38,7 +38,7 @@ const FETCH_TIMEOUT_MS = 5000;
 // One uniform shape every fetcher returns. Matches what the cron writes
 // to CreditSnapshot (minus the auto-generated id).
 export interface CreditSnapshotResult {
-  service: 'smsportal' | 'verifynow' | 'cloudinary' | 'anthropic' | 'pudo';
+  service: 'smsportal' | 'verifynow' | 'cloudinary' | 'anthropic' | 'pudo' | 'tcg';
   balance: number | null;
   unit: string | null;
   metadata: Record<string, unknown> | null;
@@ -580,6 +580,108 @@ export class AdminCreditsService {
   // settled rejections are converted to error rows on the way out.
   // Returns the array in a stable order so the UI grid is predictable.
   // -------------------------------------------------------------------
+  // ─── TCG (The Courier Guy) ──────────────────────────────────────────
+  //
+  // TCG runs on Shiplogic at api.portal.thecourierguy.co.za with a
+  // simple Bearer auth (TCG_API_KEY). Their billing API exposes the
+  // prepaid wallet balance via GET /v2/account-balance. If you're on
+  // a post-paid contract this returns 0 / null — that's expected, just
+  // disable the alert toggle in that case.
+  async fetchTcg(): Promise<CreditSnapshotResult> {
+    const fetchedAt = new Date();
+    const apiKey = process.env.TCG_API_KEY;
+    const baseUrl =
+      process.env.TCG_BASE_URL ?? 'https://api.portal.thecourierguy.co.za';
+
+    if (!apiKey) {
+      return {
+        service: 'tcg',
+        balance: null,
+        unit: 'ZAR',
+        metadata: null,
+        fetchedAt,
+        error: 'TCG_API_KEY not configured',
+      };
+    }
+
+    try {
+      // Shiplogic exposes /v2/account-balance for prepaid accounts.
+      // Some accounts may also use /v2/account so we fall back to that
+      // if the primary 404s.
+      let res = await fetch(`${baseUrl}/v2/account-balance`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+
+      if (res.status === 404) {
+        res = await fetch(`${baseUrl}/v2/account`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: 'application/json',
+          },
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+      }
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        return {
+          service: 'tcg',
+          balance: null,
+          unit: 'ZAR',
+          metadata: { httpStatus: res.status, body: text.slice(0, 300) },
+          fetchedAt,
+          error:
+            res.status === 404
+              ? 'No balance endpoint on this TCG plan — likely post-paid'
+              : `HTTP ${res.status}`,
+        };
+      }
+
+      const raw = (await res.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+
+      // Shiplogic isn't consistent across plans — probe the most likely
+      // field names. balance, account_balance, available_balance, etc.
+      // Falls back to null with raw payload so the operator can map.
+      const balanceCandidate =
+        (raw.balance as number | undefined) ??
+        (raw.account_balance as number | undefined) ??
+        (raw.available_balance as number | undefined) ??
+        (raw.wallet_balance as number | undefined) ??
+        ((raw.account as { balance?: number } | undefined)?.balance) ??
+        null;
+
+      return {
+        service: 'tcg',
+        balance: typeof balanceCandidate === 'number' ? balanceCandidate : null,
+        unit: 'ZAR',
+        metadata: { raw },
+        fetchedAt,
+        error:
+          balanceCandidate == null
+            ? 'Balance field missing — see raw metadata for mapping'
+            : undefined,
+      };
+    } catch (err) {
+      return {
+        service: 'tcg',
+        balance: null,
+        unit: 'ZAR',
+        metadata: null,
+        fetchedAt,
+        error: (err as Error).message,
+      };
+    }
+  }
+
   async fetchAll(): Promise<CreditSnapshotResult[]> {
     const settled = await Promise.allSettled([
       this.fetchSmsPortal(),
@@ -587,6 +689,7 @@ export class AdminCreditsService {
       this.fetchCloudinary(),
       this.fetchAnthropic(),
       this.fetchPudo(),
+      this.fetchTcg(),
     ]);
 
     const services: CreditSnapshotResult['service'][] = [
@@ -595,6 +698,7 @@ export class AdminCreditsService {
       'cloudinary',
       'anthropic',
       'pudo',
+      'tcg',
     ];
 
     return settled.map((s, i): CreditSnapshotResult => {
