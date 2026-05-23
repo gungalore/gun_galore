@@ -17,18 +17,28 @@ export default function AdminLoginPage() {
     setError('');
     setLoading(true);
     try {
+      // credentials: 'include' so the browser stores the httpOnly
+      // Set-Cookie the backend now sends. Without this, fetch's default
+      // (same-origin) usually works for our same-origin API, but include
+      // is explicit + safe for any future cross-origin variant.
       const res = await fetch(`${API_URL}/admin/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
+        credentials: 'include',
       });
       if (!res.ok) {
         setError('Invalid credentials');
         return;
       }
       const { token } = await res.json();
-      // Store in a cookie accessible to server components
-      document.cookie = `admin_token=${token}; path=/; max-age=${8 * 3600}; SameSite=Lax`;
+      // The backend already set admin_token via httpOnly Set-Cookie —
+      // that's the authoritative cookie. We also set a JS cookie as a
+      // belt-and-braces fallback (in case the browser strips the
+      // server-set one). Add Secure flag — some strict browser configs
+      // silently reject non-Secure cookies on HTTPS origins.
+      const secure = location.protocol === 'https:' ? '; Secure' : '';
+      document.cookie = `admin_token=${token}; path=/; max-age=${8 * 3600}; SameSite=Lax${secure}`;
       router.push('/admin');
     } catch {
       setError('Network error');
