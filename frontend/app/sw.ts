@@ -148,12 +148,19 @@ const serwist = new Serwist({
     entries: [
       {
         url: '/offline',
-        matcher: ({ request, url }) =>
-          request.destination === 'document' &&
-          !url.pathname.startsWith('/admin') &&
-          !url.pathname.startsWith('/a/') &&
-          !url.pathname.startsWith('/checkout') &&
-          !url.pathname.startsWith('/preview'),
+        matcher: ({ request }) => {
+          if (request.destination !== 'document') return false;
+          // Fallback matcher only gets `request`, not `url` — derive
+          // pathname from request.url to apply the same carve-outs as
+          // the network-only routes above.
+          const path = new URL(request.url).pathname;
+          return (
+            !path.startsWith('/admin') &&
+            !path.startsWith('/a/') &&
+            !path.startsWith('/checkout') &&
+            !path.startsWith('/preview')
+          );
+        },
       },
     ],
   },
