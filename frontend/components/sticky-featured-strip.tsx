@@ -231,28 +231,29 @@ export function StickyFeaturedStrip() {
 }
 
 // ─── One compact card ─────────────────────────────────────────────
-// Sized ~30% smaller than the existing mobile FeaturedRail card
-// (200×100 → 140×64 with proportionally smaller padding, image, text).
+// Sized to read clearly at a glance on the bottom strip — 182×83
+// with a 55×55 cover image. (Earlier draft was 140×64; user asked
+// for ~30% larger so the cards stop feeling like an afterthought.)
 //
 // Occupied slot → clickable listing card with cover photo + price.
 // Vacant / auction-running slot → dashed "bid for this spot" nudge
 // linking to /featured/bid (same fallback as the inline rail).
 function StickyCard({ slot }: { slot: RailSlot }) {
   const featuredGlow =
-    '0 0 12px rgba(232, 181, 58, 0.30),' +
-    ' 0 0 4px rgba(200, 16, 46, 0.28)';
+    '0 0 14px rgba(232, 181, 58, 0.32),' +
+    ' 0 0 5px rgba(200, 16, 46, 0.30)';
 
   const baseStyle: React.CSSProperties = {
-    width: 140,
-    height: 64,
-    padding: 6,
-    borderRadius: 6,
+    width: 182,
+    height: 83,
+    padding: 8,
+    borderRadius: 8,
     background: 'var(--bg-card)',
     border: '0.5px solid var(--border)',
     boxShadow: featuredGlow,
     textDecoration: 'none',
     display: 'flex',
-    gap: 7,
+    gap: 9,
     flexShrink: 0,
   };
 
@@ -263,10 +264,10 @@ function StickyCard({ slot }: { slot: RailSlot }) {
       <Link href={`/listings/${l.id}`} style={baseStyle}>
         <div
           style={{
-            width: 42,
-            height: 42,
+            width: 55,
+            height: 55,
             flexShrink: 0,
-            borderRadius: 4,
+            borderRadius: 5,
             overflow: 'hidden',
             background: 'var(--bg-inset)',
             position: 'relative',
@@ -279,14 +280,14 @@ function StickyCard({ slot }: { slot: RailSlot }) {
               alt={l.title}
               fill
               className="object-cover"
-              sizes="42px"
+              sizes="55px"
             />
           ) : null}
         </div>
         <div style={{ flex: 1, minWidth: 0, alignSelf: 'center' }}>
           <div
             style={{
-              fontSize: 10.5,
+              fontSize: 13.5,
               lineHeight: 1.2,
               color: 'var(--text-primary)',
               fontWeight: 500,
@@ -300,8 +301,8 @@ function StickyCard({ slot }: { slot: RailSlot }) {
           </div>
           <div
             style={{
-              fontSize: 9.5,
-              marginTop: 2,
+              fontSize: 12,
+              marginTop: 3,
               color: 'var(--red)',
               fontWeight: 600,
             }}
@@ -325,12 +326,12 @@ function StickyCard({ slot }: { slot: RailSlot }) {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 2,
+        gap: 3,
       }}
     >
       <div
         style={{
-          fontSize: 9,
+          fontSize: 11.5,
           fontWeight: 600,
           letterSpacing: '0.08em',
           color: 'var(--text-tertiary)',
@@ -341,7 +342,7 @@ function StickyCard({ slot }: { slot: RailSlot }) {
       </div>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 14,
           color: 'var(--red)',
           fontWeight: 600,
         }}

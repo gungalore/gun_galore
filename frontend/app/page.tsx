@@ -166,7 +166,10 @@ export default async function HomePage({
           it stays on Marketplace / Auctions / Take a Shot / Competitions
           / listing detail. */}
       {showHero ? (
-        <section className="max-w-[1280px] mx-auto px-4 py-10">
+        <section
+          data-featured-home-section
+          className="max-w-[1280px] mx-auto px-4 py-10"
+        >
           {/* Centered "Featured" header with red→gold gradient fill
               + warm drop-shadow glow (matches the card glow). Hairline
               gradient rules on either side give it a premium catalog
