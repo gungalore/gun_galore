@@ -6,6 +6,7 @@ import { SignInButton, UserButton, useUser, useClerk } from '@clerk/nextjs';
 import { useRouter, usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import { ProfileCompletionRing } from '@/components/profile-completion-ring';
+import { LiveSearch } from '@/components/live-search';
 
 export function Nav() {
   const { isSignedIn, isLoaded, user } = useUser();
@@ -65,10 +66,10 @@ export function Nav() {
 
         {/* Primary nav — four shopping surfaces. Marketplace = BUY_NOW
             listings, Auctions = AUCTION, Take a Shot = TAKE_A_SHOT, and
-            Competitions is its own page. The hero is reserved for the bare
-            "/" landing — clicking any surface link drops the hero so the
-            user lands directly on the filtered results. */}
-        <div className="flex items-center gap-5 flex-1 text-sm">
+            Competitions is its own page. Hidden on mobile to give the
+            search bar room; mobile users get to these from the homepage
+            hero/grid filters and the section cards. */}
+        <div className="hidden md:flex items-center gap-5 text-sm shrink-0">
           <Link
             href="/?listingType=BUY_NOW"
             style={{ color: 'var(--text-secondary)' }}
@@ -97,6 +98,15 @@ export function Nav() {
           >
             Competitions
           </Link>
+        </div>
+
+        {/* Live search — typeahead over the listings index. Flex-1 so
+            it absorbs whatever horizontal space is left after the logo,
+            page links (desktop only), and right-side actions. Capped at
+            420px on wide screens so it doesn't look comically long when
+            the user has acres of real estate. */}
+        <div className="flex-1 max-w-[420px]">
+          <LiveSearch placeholder="Search listings…" />
         </div>
 
         {/* Right side */}

@@ -49,23 +49,18 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
 };
 
-function TypeBadge({ t }: { t: SearchHit['listingType'] }) {
-  const label =
-    t === 'BUY_NOW' ? 'Buy Now' : t === 'AUCTION' ? 'Auction' : 'Take a Shot';
-  return (
-    <span
-      style={{
-        fontSize: 10,
-        color: 'var(--text-tertiary)',
-        background: 'var(--bg-deep)',
-        border: '0.5px solid var(--border)',
-        borderRadius: 3,
-        padding: '1px 5px',
-      }}
-    >
-      {label}
-    </span>
-  );
+function typeLabel(t: SearchHit['listingType']): string {
+  if (t === 'BUY_NOW') return 'Buy Now';
+  if (t === 'AUCTION') return 'Auction';
+  return 'Take a Shot';
+}
+
+// Each module gets a small colour accent so the user can scan results
+// and tell at a glance which buying surface they belong to.
+function typeColor(t: SearchHit['listingType']): string {
+  if (t === 'AUCTION') return '#f59e0b'; // amber — time-sensitive
+  if (t === 'TAKE_A_SHOT') return '#a78bfa'; // violet — offer-based
+  return 'var(--text-secondary)'; // BUY_NOW — neutral
 }
 
 export function LiveSearch({
@@ -216,15 +211,17 @@ export function LiveSearch({
                         gap: 12,
                         padding: '10px 14px',
                         textDecoration: 'none',
-                        borderBottom: '0.5px solid var(--border-divider, var(--border))',
+                        borderBottom:
+                          '0.5px solid var(--border-divider, var(--border))',
                       }}
                     >
+                      {/* Cover image — square thumbnail, left */}
                       <div
                         style={{
-                          width: 40,
-                          height: 40,
+                          width: 52,
+                          height: 52,
                           flexShrink: 0,
-                          borderRadius: 4,
+                          borderRadius: 6,
                           background: 'var(--bg-inset)',
                           overflow: 'hidden',
                           display: 'flex',
@@ -254,56 +251,54 @@ export function LiveSearch({
                           </span>
                         )}
                       </div>
+
+                      {/* Right column — title on top, module type below */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
                           style={{
-                            display: 'flex',
-                            gap: 6,
-                            alignItems: 'center',
-                            marginBottom: 2,
-                          }}
-                        >
-                          {h.referenceNumber && (
-                            <span
-                              style={{
-                                fontFamily: 'ui-monospace, monospace',
-                                fontSize: 10,
-                                color: 'var(--text-tertiary)',
-                              }}
-                            >
-                              {h.referenceNumber}
-                            </span>
-                          )}
-                          <TypeBadge t={h.listingType} />
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 13,
+                            fontSize: 14,
                             color: 'var(--text-primary)',
                             fontWeight: 500,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
+                            marginBottom: 3,
                           }}
                         >
                           {h.title}
                         </div>
                         <div
-                          style={{ fontSize: 11, color: 'var(--text-tertiary)' }}
+                          style={{
+                            fontSize: 11,
+                            color: typeColor(h.listingType),
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                          }}
                         >
-                          {h.category.name}
+                          <span style={{ fontWeight: 500 }}>
+                            {typeLabel(h.listingType)}
+                          </span>
+                          <span style={{ color: 'var(--text-tertiary)' }}>
+                            · {h.category.name}
+                          </span>
                         </div>
                       </div>
-                      <div
-                        style={{
-                          fontSize: 13,
-                          color: 'var(--red)',
-                          fontWeight: 500,
-                          flexShrink: 0,
-                        }}
-                      >
-                        {h.price ? formatPrice(h.price) : '—'}
-                      </div>
+
+                      {/* Price — right edge, small + muted so the title
+                          stays dominant. */}
+                      {h.price && (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: 'var(--text-secondary)',
+                            fontWeight: 500,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {formatPrice(h.price)}
+                        </div>
+                      )}
                     </Link>
                   </li>
                 );
