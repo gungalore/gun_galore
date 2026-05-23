@@ -11,15 +11,17 @@
 // for browser-mobile users — they continue using the existing
 // hamburger drawer in nav.tsx.
 //
-// Five tabs:
-//   1. Browse    → /
-//   2. Auctions  → /?listingType=AUCTION
-//   3. Sell      → /listings/new   (centred, brand-red accent)
-//   4. My        → /dashboard (signed-in) / /sign-in (signed-out)
-//   5. More      → opens a bottom-sheet drawer with everything else
+// Four tabs (one row, well-spaced):
+//   1. Shop  → opens a bottom sheet with 5 shopping surfaces:
+//              All listings / Marketplace / Auctions / Take a Shot /
+//              Competitions. Tap any row → navigate to that surface.
+//   2. Sell  → /listings/new (centred, brand-red accent)
+//   3. My    → /dashboard (signed-in) / /sign-in (signed-out)
+//   4. More  → bottom sheet with secondary destinations (Wishlist,
+//              account links, legal).
 //
 // Active-route highlighting via usePathname() + a search-aware match
-// helper (so /?listingType=AUCTION lights up the Auctions tab even
+// helper (so /?listingType=AUCTION lights up the Shop tab even
 // though the pathname is just '/').
 
 import Link from 'next/link';
@@ -37,20 +39,27 @@ interface Tab {
   // Centred-prominent tabs (currently just Sell) get red-accented
   // styling and slightly larger.
   prominent?: boolean;
-  // 'more' opens the sheet instead of navigating.
-  action?: 'more';
+  // 'shop' / 'more' opens a sheet instead of navigating.
+  action?: 'shop' | 'more';
 }
 
 // Inline SVG icons — no extra dep. 24×24 viewbox, currentColor stroke
 // so the active state can tint via `color: var(--red)`.
-function IconHome() {
+function IconShop() {
+  // Shopping-bag silhouette — universal "browse / shop" affordance.
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path
-        d="M3 11.5L12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-8.5z"
+        d="M5 8h14l-1 12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 8z"
         stroke="currentColor"
         strokeWidth="1.6"
         strokeLinejoin="round"
+      />
+      <path
+        d="M9 8V6a3 3 0 0 1 6 0v2"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
       />
     </svg>
   );
@@ -66,6 +75,55 @@ function IconGavel() {
         strokeLinejoin="round"
       />
       <path d="M4 20h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconList() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4 6h16M4 12h16M4 18h16"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+function IconCart() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 5h2l2.5 11a2 2 0 0 0 2 1.6h7.5a2 2 0 0 0 2-1.5L21 9H7"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="10" cy="20" r="1.4" fill="currentColor" />
+      <circle cx="17" cy="20" r="1.4" fill="currentColor" />
+    </svg>
+  );
+}
+function IconTarget() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+    </svg>
+  );
+}
+function IconTrophy() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M7 4h10v4a5 5 0 0 1-10 0V4zM7 6H5a2 2 0 0 0 2 2m10-2h2a2 2 0 0 1-2 2M10 16h4l1 4H9l1-4z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -110,17 +168,19 @@ export function BottomTabBar() {
   const searchParams = useSearchParams();
   const { isSignedIn } = useUser();
   const { signOut } = useClerk();
+  const [shopOpen, setShopOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
-  // Auto-close the More sheet on route change (mirrors the mobile-drawer
+  // Auto-close any open sheet on route change (mirrors the mobile-drawer
   // behaviour in nav.tsx).
   useEffect(() => {
+    setShopOpen(false);
     setMoreOpen(false);
   }, [pathname]);
 
-  // Body-scroll lock while the More sheet is open.
+  // Body-scroll lock while either sheet is open.
   useEffect(() => {
-    if (moreOpen) {
+    if (shopOpen || moreOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -128,7 +188,7 @@ export function BottomTabBar() {
     return () => {
       document.body.style.overflow = '';
     };
-  }, [moreOpen]);
+  }, [shopOpen, moreOpen]);
 
   // Server HTML stays identical to browser-mobile — the tab bar only
   // exists for installed PWA users. The CSS rule that pads the body
@@ -136,19 +196,18 @@ export function BottomTabBar() {
   // still applies regardless so the layout is consistent.
   if (!isStandalone) return null;
 
+  // "Shop" tab is active on any of the 4 shopping surfaces + the
+  // competitions route (i.e. anywhere the picker would point to).
+  const isShopSurface =
+    pathname === '/' || pathname.startsWith('/competitions');
+
   const tabs: Tab[] = [
     {
-      key: 'browse',
-      label: 'Browse',
-      href: '/',
-      isActive: (p, s) =>
-        p === '/' && (!s.get('listingType') || s.get('listingType') === 'BUY_NOW'),
-    },
-    {
-      key: 'auctions',
-      label: 'Auctions',
-      href: '/?listingType=AUCTION',
-      isActive: (p, s) => p === '/' && s.get('listingType') === 'AUCTION',
+      key: 'shop',
+      label: 'Shop',
+      href: '#shop',
+      isActive: () => shopOpen || isShopSurface,
+      action: 'shop',
     },
     {
       key: 'sell',
@@ -174,10 +233,8 @@ export function BottomTabBar() {
 
   function renderIcon(key: string) {
     switch (key) {
-      case 'browse':
-        return <IconHome />;
-      case 'auctions':
-        return <IconGavel />;
+      case 'shop':
+        return <IconShop />;
       case 'sell':
         return <IconPlus />;
       case 'my':
@@ -209,7 +266,7 @@ export function BottomTabBar() {
         <ul
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(5, 1fr)',
+            gridTemplateColumns: 'repeat(4, 1fr)',
             margin: 0,
             padding: 0,
             listStyle: 'none',
@@ -267,12 +324,18 @@ export function BottomTabBar() {
 
             return (
               <li key={tab.key} style={{ height: '100%' }}>
-                {tab.action === 'more' ? (
+                {tab.action ? (
                   <button
                     type="button"
-                    onClick={() => setMoreOpen(true)}
-                    aria-label="More"
-                    aria-expanded={moreOpen}
+                    onClick={() =>
+                      tab.action === 'shop'
+                        ? setShopOpen(true)
+                        : setMoreOpen(true)
+                    }
+                    aria-label={tab.label}
+                    aria-expanded={
+                      tab.action === 'shop' ? shopOpen : moreOpen
+                    }
                     style={{
                       width: '100%',
                       height: '100%',
@@ -303,6 +366,14 @@ export function BottomTabBar() {
         </ul>
       </nav>
 
+      {shopOpen && (
+        <ShopSheet
+          pathname={pathname}
+          searchParams={searchParams}
+          onClose={() => setShopOpen(false)}
+        />
+      )}
+
       {moreOpen && (
         <MoreSheet
           isSignedIn={!!isSignedIn}
@@ -315,6 +386,208 @@ export function BottomTabBar() {
         />
       )}
     </>
+  );
+}
+
+// ─── Shop sheet — picker for the 5 shopping surfaces ──────────────
+// Replaces the old separate Browse + Auctions tabs with one entry
+// point that surfaces all four shopping modes (plus the unfiltered
+// "All listings" view) with equal weight. Patterned after the App
+// Store's "Today / Games / Apps / ..." section selector.
+function ShopSheet({
+  pathname,
+  searchParams,
+  onClose,
+}: {
+  pathname: string;
+  searchParams: URLSearchParams;
+  onClose: () => void;
+}) {
+  // Source of truth for the picker. Order = how prominent we want
+  // each surface to be. Taglines mirror those in app/page.tsx
+  // (SURFACE_TITLES) so the picker and the destination header speak
+  // the same language.
+  const surfaces: Array<{
+    key: string;
+    href: string;
+    title: string;
+    tagline: string;
+    icon: React.ReactNode;
+    isActive: boolean;
+  }> = [
+    {
+      key: 'all',
+      href: '/',
+      title: 'All listings',
+      tagline: 'Everything on sale right now, across every surface',
+      icon: <IconList />,
+      isActive: pathname === '/' && !searchParams.get('listingType'),
+    },
+    {
+      key: 'marketplace',
+      href: '/?listingType=BUY_NOW',
+      title: 'Marketplace',
+      tagline: 'Used firearms and gear — pay the listed price and go',
+      icon: <IconCart />,
+      isActive:
+        pathname === '/' && searchParams.get('listingType') === 'BUY_NOW',
+    },
+    {
+      key: 'auctions',
+      href: '/?listingType=AUCTION',
+      title: 'Auctions',
+      tagline: 'Timed bidding with proxy bids and snipe protection',
+      icon: <IconGavel />,
+      isActive:
+        pathname === '/' && searchParams.get('listingType') === 'AUCTION',
+    },
+    {
+      key: 'takeashot',
+      href: '/?listingType=TAKE_A_SHOT',
+      title: 'Take a Shot',
+      tagline: 'Make an offer — sellers can accept, counter once, or decline',
+      icon: <IconTarget />,
+      isActive:
+        pathname === '/' && searchParams.get('listingType') === 'TAKE_A_SHOT',
+    },
+    {
+      key: 'competitions',
+      href: '/competitions',
+      title: 'Competitions',
+      tagline: 'Win prizes via raffle tickets — paid or free postal entry',
+      icon: <IconTrophy />,
+      isActive: pathname.startsWith('/competitions'),
+    },
+  ];
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 56,
+        background: 'rgba(0, 0, 0, 0.6)',
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-label="Shop"
+        aria-modal="true"
+        style={{
+          width: '100%',
+          maxHeight: '85dvh',
+          overflowY: 'auto',
+          background: 'var(--bg-card)',
+          borderTop: '0.5px solid var(--border)',
+          borderTopLeftRadius: 16,
+          borderTopRightRadius: 16,
+          paddingTop: 6,
+          paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
+          animation: 'gg-sheet-up 240ms cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
+            width: 44,
+            height: 4,
+            borderRadius: 2,
+            background: 'var(--border-hover)',
+            margin: '8px auto 8px',
+          }}
+        />
+        <p
+          style={{
+            padding: '4px 20px 12px',
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: 0.6,
+            textTransform: 'uppercase',
+            color: 'var(--text-tertiary)',
+            margin: 0,
+          }}
+        >
+          Choose a surface
+        </p>
+
+        <ul style={{ listStyle: 'none', margin: 0, padding: '0 12px' }}>
+          {surfaces.map((s) => (
+            <li key={s.key} style={{ marginBottom: 6 }}>
+              <Link
+                href={s.href}
+                onClick={onClose}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  padding: '14px 16px',
+                  borderRadius: 10,
+                  background: s.isActive
+                    ? 'rgba(200, 16, 46, 0.10)'
+                    : 'var(--bg-inset)',
+                  border: `0.5px solid ${
+                    s.isActive ? 'rgba(200, 16, 46, 0.40)' : 'var(--border)'
+                  }`,
+                  color: 'var(--text-primary)',
+                  textDecoration: 'none',
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 8,
+                    background: s.isActive
+                      ? 'rgba(200, 16, 46, 0.20)'
+                      : 'var(--bg-card)',
+                    color: s.isActive
+                      ? 'var(--red)'
+                      : 'var(--text-secondary)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  {s.icon}
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span
+                    style={{
+                      display: 'block',
+                      fontSize: 15,
+                      fontWeight: 600,
+                      color: s.isActive
+                        ? 'var(--red)'
+                        : 'var(--text-primary)',
+                      marginBottom: 2,
+                    }}
+                  >
+                    {s.title}
+                  </span>
+                  <span
+                    style={{
+                      display: 'block',
+                      fontSize: 12,
+                      color: 'var(--text-secondary)',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {s.tagline}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
   );
 }
 

@@ -120,6 +120,23 @@ html[data-standalone='true'] body {
   padding-bottom: calc(60px + env(safe-area-inset-bottom));
 }
 
+/* When the sticky featured strip is mounted (only on the 5 shopping
+   surface pages in standalone mode), extend the bottom padding to
+   clear the strip too. Otherwise the last row of listings sits behind
+   it. Strip is ~84pt tall (header band + card row). The strip itself
+   sets body[data-has-sticky-strip="true"] on mount and removes the
+   attribute on unmount. */
+html[data-standalone='true'] body[data-has-sticky-strip='true'] {
+  padding-bottom: calc(60px + 84px + env(safe-area-inset-bottom));
+}
+
+/* Suppress the inline mobile FeaturedRail in standalone mode — the
+   StickyFeaturedStrip (which hugs the bottom tab bar) covers the
+   same data more compactly, so showing both is redundant. */
+html[data-standalone='true'] [data-featured-rail-inline] {
+  display: none;
+}
+
 /* Prevent text-selection on nav / tab-bar / button chrome — these are
    tappable surfaces, not content. Body content (listings, descriptions,
    addresses, etc.) stays selectable for copy-paste. */

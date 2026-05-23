@@ -7,6 +7,7 @@ import { InstallPrompt } from '@/components/install-prompt';
 import { SwKillSwitch } from '@/components/sw-killswitch';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { MobileSearchBar } from '@/components/mobile-search-bar';
+import { StickyFeaturedStrip } from '@/components/sticky-featured-strip';
 import './globals.css';
 
 // Inline script that runs BEFORE first paint and sets
@@ -120,6 +121,10 @@ export default function RootLayout({
           <UrgentNotifications />
           {children}
           <PublicFooter />
+          {/* Sticky featured-listings strip — hugs the bottom tab bar
+              on the 5 shopping-surface pages in standalone mode.
+              Self-gates on standalone + pathname. */}
+          <StickyFeaturedStrip />
           {/* Bottom tab bar — installed-PWA users only. Renders null
               in browser-mobile mode so server HTML stays identical
               and the existing hamburger drawer in nav.tsx is what

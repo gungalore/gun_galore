@@ -228,8 +228,14 @@ export function FeaturedRail() {
 
       {/* ─── Mobile: horizontal pinned scroller at top ───────────
           Sits inside the main flow above the page content. Same
-          loop technique but rotated horizontal. */}
+          loop technique but rotated horizontal.
+          Hidden in standalone-PWA mode — there the StickyFeaturedStrip
+          (mounted in the layout) hugs the bottom tab bar instead, so
+          rendering this inline rail too would surface the same
+          featured slots twice on the homepage. CSS rule lives in
+          globals.css: `html[data-standalone='true'] [data-featured-rail-inline] { display: none }`. */}
       <div
+        data-featured-rail-inline
         className="lg:hidden mb-6"
         style={{
           borderTop: '0.5px solid var(--border)',
