@@ -36,9 +36,10 @@ interface Tab {
   href: string;
   // Returns true when the active route belongs to this tab.
   isActive: (pathname: string, search: URLSearchParams) => boolean;
-  // Centred-prominent tabs (currently just Sell) get red-accented
-  // styling and slightly larger.
-  prominent?: boolean;
+  // Accent tabs (currently just Sell) keep brand-red iconography even
+  // when not the active route — signals "primary action" without
+  // breaking the even 4-column grid.
+  accent?: boolean;
   // 'shop' / 'more' opens a sheet instead of navigating.
   action?: 'shop' | 'more';
 }
@@ -214,7 +215,7 @@ export function BottomTabBar() {
       label: 'Sell',
       href: '/listings/new',
       isActive: (p) => p.startsWith('/listings/new'),
-      prominent: true,
+      accent: true,
     },
     {
       key: 'my',
@@ -275,11 +276,13 @@ export function BottomTabBar() {
         >
           {tabs.map((tab) => {
             const active = tab.isActive(pathname, searchParams);
-            const color = active
+            // Active tab → brand red, regardless of accent state.
+            // Accent tab (Sell) → brand red even when inactive, so it
+            // reads as the primary action across the bar.
+            // Everything else → muted tertiary.
+            const color = active || tab.accent
               ? 'var(--red)'
-              : tab.prominent
-                ? 'var(--text-primary)'
-                : 'var(--text-tertiary)';
+              : 'var(--text-tertiary)';
 
             const inner = (
               <span
@@ -292,32 +295,12 @@ export function BottomTabBar() {
                   height: '100%',
                   color,
                   fontSize: 10.5,
-                  fontWeight: active ? 600 : 500,
+                  fontWeight: active || tab.accent ? 600 : 500,
                   letterSpacing: 0.1,
                   textDecoration: 'none',
                 }}
               >
-                {tab.prominent ? (
-                  <span
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: '50%',
-                      background: 'var(--red)',
-                      color: '#fff',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginTop: -8,
-                      // Slight raised effect — gives the central action visual weight.
-                      boxShadow: '0 4px 12px rgba(200, 16, 46, 0.4)',
-                    }}
-                  >
-                    {renderIcon(tab.key)}
-                  </span>
-                ) : (
-                  renderIcon(tab.key)
-                )}
+                {renderIcon(tab.key)}
                 <span>{tab.label}</span>
               </span>
             );

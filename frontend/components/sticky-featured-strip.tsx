@@ -128,12 +128,14 @@ export function StickyFeaturedStrip() {
   if (!eligible) return null;
   if (!slots || slots.length === 0) return null;
 
-  // Filter to only OCCUPIED slots (the ones with a clickable listing).
-  // Empty / auction-only slots aren't useful in this compact strip —
-  // the user can still bid for spots via the inline FeaturedRail (which
-  // we don't hide; both can coexist on the homepage).
-  const live = slots.filter((s) => s.currentListing);
-  if (live.length === 0) return null;
+  // Show all 10 slots — occupied slots render as clickable listing
+  // cards, vacant / auction-running slots render as "bid for this
+  // spot" nudges linking to /featured/bid. Same behaviour as the
+  // existing mobile FeaturedRail. (Earlier version filtered to
+  // occupied-only, which produced an empty strip when no listings
+  // had won featured spots yet — exactly the state of the rail on
+  // a fresh site.)
+  const live = slots;
 
   return (
     <aside
@@ -230,78 +232,121 @@ export function StickyFeaturedStrip() {
 
 // ─── One compact card ─────────────────────────────────────────────
 // Sized ~30% smaller than the existing mobile FeaturedRail card
-// (200×100 → 140×70 with proportionally smaller padding, image, text).
+// (200×100 → 140×64 with proportionally smaller padding, image, text).
+//
+// Occupied slot → clickable listing card with cover photo + price.
+// Vacant / auction-running slot → dashed "bid for this spot" nudge
+// linking to /featured/bid (same fallback as the inline rail).
 function StickyCard({ slot }: { slot: RailSlot }) {
-  const l = slot.currentListing!; // we filtered to OCCUPIED already
-  const cover = l.images[0]?.url;
   const featuredGlow =
     '0 0 12px rgba(232, 181, 58, 0.30),' +
     ' 0 0 4px rgba(200, 16, 46, 0.28)';
 
+  const baseStyle: React.CSSProperties = {
+    width: 140,
+    height: 64,
+    padding: 6,
+    borderRadius: 6,
+    background: 'var(--bg-card)',
+    border: '0.5px solid var(--border)',
+    boxShadow: featuredGlow,
+    textDecoration: 'none',
+    display: 'flex',
+    gap: 7,
+    flexShrink: 0,
+  };
+
+  if (slot.currentListing) {
+    const l = slot.currentListing;
+    const cover = l.images[0]?.url;
+    return (
+      <Link href={`/listings/${l.id}`} style={baseStyle}>
+        <div
+          style={{
+            width: 42,
+            height: 42,
+            flexShrink: 0,
+            borderRadius: 4,
+            overflow: 'hidden',
+            background: 'var(--bg-inset)',
+            position: 'relative',
+            alignSelf: 'center',
+          }}
+        >
+          {cover ? (
+            <Image
+              src={cover}
+              alt={l.title}
+              fill
+              className="object-cover"
+              sizes="42px"
+            />
+          ) : null}
+        </div>
+        <div style={{ flex: 1, minWidth: 0, alignSelf: 'center' }}>
+          <div
+            style={{
+              fontSize: 10.5,
+              lineHeight: 1.2,
+              color: 'var(--text-primary)',
+              fontWeight: 500,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}
+          >
+            {l.title}
+          </div>
+          <div
+            style={{
+              fontSize: 9.5,
+              marginTop: 2,
+              color: 'var(--red)',
+              fontWeight: 600,
+            }}
+          >
+            {listingHeadline(l)}
+          </div>
+        </div>
+      </Link>
+    );
+  }
+
+  // Vacant / auction-open — dashed border + "bid for this spot" nudge.
+  // Centred single-column layout: no image, just slot number + CTA.
   return (
     <Link
-      href={`/listings/${l.id}`}
+      href="/featured/bid"
       style={{
-        width: 140,
-        height: 64,
-        padding: 6,
-        borderRadius: 6,
-        background: 'var(--bg-card)',
-        border: '0.5px solid var(--border)',
-        boxShadow: featuredGlow,
-        textDecoration: 'none',
-        display: 'flex',
-        gap: 7,
-        flexShrink: 0,
+        ...baseStyle,
+        background: 'var(--bg-inset)',
+        borderStyle: 'dashed',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 2,
       }}
     >
       <div
         style={{
-          width: 42,
-          height: 42,
-          flexShrink: 0,
-          borderRadius: 4,
-          overflow: 'hidden',
-          background: 'var(--bg-inset)',
-          position: 'relative',
-          alignSelf: 'center',
+          fontSize: 9,
+          fontWeight: 600,
+          letterSpacing: '0.08em',
+          color: 'var(--text-tertiary)',
+          textTransform: 'uppercase',
         }}
       >
-        {cover ? (
-          <Image
-            src={cover}
-            alt={l.title}
-            fill
-            className="object-cover"
-            sizes="42px"
-          />
-        ) : null}
+        Slot #{slot.slotNumber}
       </div>
-      <div style={{ flex: 1, minWidth: 0, alignSelf: 'center' }}>
-        <div
-          style={{
-            fontSize: 10.5,
-            lineHeight: 1.2,
-            color: 'var(--text-primary)',
-            fontWeight: 500,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
-          {l.title}
-        </div>
-        <div
-          style={{
-            fontSize: 9.5,
-            marginTop: 2,
-            color: 'var(--red)',
-            fontWeight: 600,
-          }}
-        >
-          {listingHeadline(l)}
-        </div>
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--red)',
+          fontWeight: 600,
+        }}
+      >
+        Bid for this spot →
       </div>
     </Link>
   );
