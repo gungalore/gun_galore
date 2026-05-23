@@ -1,6 +1,13 @@
 import { cookies } from 'next/headers';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+// Server-side fetches must NOT hit the public Cloudflare URL —
+// that loopback (Next.js → CDN → our own nginx) hangs/fails in
+// some configurations. Prefer INTERNAL_API_URL (set to localhost
+// on the server). Falls back to the public URL for completeness.
+const API_URL =
+  process.env.INTERNAL_API_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  'http://localhost:3001/api';
 
 interface Service {
   name: string;
