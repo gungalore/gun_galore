@@ -542,11 +542,18 @@ function ShopSheet({
   }> = [
     {
       key: 'all',
-      href: '/',
+      // Explicit sort=newest disables the curated Featured-landing on
+      // page.tsx (showHero condition excludes when sort is set) so the
+      // user lands on the actual all-listings grid sorted latest-first.
+      // The grid mounts a SortToggle that lets them flip to price_asc.
+      href: '/?sort=newest',
       title: 'All listings',
       tagline: 'Everything on sale right now, across every surface',
       icon: <IconList />,
-      isActive: pathname === '/' && !searchParams.get('listingType'),
+      isActive:
+        pathname === '/' &&
+        !searchParams.get('listingType') &&
+        !!searchParams.get('sort'),
     },
     {
       key: 'marketplace',

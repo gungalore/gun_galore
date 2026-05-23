@@ -7,6 +7,7 @@ import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
 import { SignedInWelcome } from '@/components/signed-in-welcome';
+import { SortToggle } from '@/components/sort-toggle';
 
 interface SearchParams {
   q?: string;
@@ -41,6 +42,15 @@ const DEFAULT_SURFACE = {
   subtitle: 'Everything on sale right now, across the four shopping surfaces',
 };
 
+// The "All listings" entry from the Shop sheet routes here with a
+// sort param set (default sort=newest). Different copy from
+// DEFAULT_SURFACE because the user has actively asked to see
+// everything chronologically rather than a curated landing.
+const ALL_LISTINGS_SURFACE = {
+  title: 'All listings',
+  subtitle: 'Everything on the marketplace — Marketplace, Auctions and Take a Shot combined',
+};
+
 // Per-page metadata so the browser tab + Open Graph reflect the surface.
 export async function generateMetadata({
   searchParams,
@@ -64,14 +74,22 @@ export default async function HomePage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
+  // Pick the header copy that matches the current view:
+  //   * listingType param → that surface's copy (Marketplace / Auctions / Take a Shot)
+  //   * sort param without listingType → ALL_LISTINGS_SURFACE
+  //     (user came from Shop → "All listings" — explicit cross-surface browse)
+  //   * everything else → DEFAULT_SURFACE
   const surface = params.listingType
     ? (SURFACE_TITLES[params.listingType] ?? DEFAULT_SURFACE)
-    : DEFAULT_SURFACE;
+    : params.sort
+      ? ALL_LISTINGS_SURFACE
+      : DEFAULT_SURFACE;
 
   // Only show the hero on the bare homepage. As soon as the user has
-  // picked a surface (or any other filter), the hero hides — the user has
-  // already committed to browsing.
-  const showHero = !params.listingType && !params.q && !params.categoryId;
+  // picked a surface, sort, search query, or category, hide the hero —
+  // they've committed to browsing and want to see results.
+  const showHero =
+    !params.listingType && !params.q && !params.categoryId && !params.sort;
 
   // Per-surface background scenery + reveal animation.
   // Each surface that opts in gets its own photo + reveal variant so the
@@ -352,6 +370,16 @@ export default async function HomePage({
               {browse.total !== 1 ? 's' : ''}
             </p>
           </div>
+        </div>
+
+        {/* SortToggle — quick segmented switch between
+            "Latest first" (newest) and "Cheapest first" (price_asc).
+            Sits above the FilterBar (which still has its 3-option
+            select including price_desc) as a more visible thumb-target
+            for the two sort modes most buyers actually use. Both write
+            to the same ?sort= param so they stay in sync. */}
+        <div data-reveal style={{ marginBottom: 10 }}>
+          <SortToggle />
         </div>
 
         <div data-reveal>
