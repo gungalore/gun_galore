@@ -1071,6 +1071,57 @@ export class NotificationsService {
     await this.send(winnerEmail, 'Backup promoted to winner', html);
   }
 
+  // ---------------------------------------------------------------
+  // Raffle prize dispatched — winner notification
+  // ---------------------------------------------------------------
+  //
+  // Sent the moment an admin clicks "Mark as dispatched" in the
+  // per-raffle dossier. Two channels (SMS + email) because raffle wins
+  // are high-stakes events the user has been refreshing /dashboard for
+  // — they should not need to ask the admin for tracking info.
+  //
+  // The carrier link below is a best-effort deep-link to the courier's
+  // own tracker. We only render the link for carriers we recognise so
+  // a typo'd carrier label can't ship a broken URL. Unknown carriers
+  // fall through to a plain "Tracking: REF" line — still useful.
+  async raffleWinnerPrizeDispatched(opts: {
+    winnerEmail: string;
+    winnerPhone?: string | null;
+    raffleTitle: string;
+    trackingRef: string;
+    carrierLabel?: string | null;
+  }) {
+    const { winnerEmail, winnerPhone, raffleTitle, trackingRef } = opts;
+    const carrier = opts.carrierLabel?.trim() || 'Courier';
+    const trackingUrl = carrierTrackingUrl(opts.carrierLabel, trackingRef);
+
+    const rows: { label: string; value: string }[] = [
+      { label: 'Tracking ref', value: trackingRef },
+      { label: 'Carrier', value: carrier },
+    ];
+    const cta = trackingUrl
+      ? { label: 'Track parcel', url: trackingUrl }
+      : undefined;
+
+    const html = this.email({
+      status: { tone: 'success', label: 'Dispatched' },
+      headline: 'Your raffle prize is on the way',
+      body: `Great news — your prize from ${b(raffleTitle)} has been dispatched. Use the tracking reference below to follow it via ${b(carrier)}.`,
+      rows,
+      cta,
+      preheader: `Prize dispatched — tracking ${trackingRef}`,
+    });
+    await this.send(winnerEmail, 'Your prize has been dispatched — ' + raffleTitle, html);
+
+    // SMS — single segment if at all possible. Truncate the raffle
+    // title aggressively so the tracking ref is never cut off.
+    await this.sendSms(
+      winnerPhone,
+      `Gun Galore: Your prize for "${truncate(raffleTitle, 30)}" is on the way! Tracking: ${trackingRef} (${carrier})`,
+      `raffle-dispatched-${trackingRef}`,
+    );
+  }
+
   async raffleMinNotMet(
     buyerEmail: string,
     raffleTitle: string,
@@ -1473,6 +1524,33 @@ function prettyCourier(method: string | null | undefined): string {
   if (method === 'PUDO') return 'Pudo';
   if (method === 'TCG') return 'The Courier Guy';
   return 'Courier';
+}
+
+// Best-effort deep-link into the carrier's own tracking page for a
+// dispatched raffle prize. Admin keys in the carrier label freeform,
+// so we match a few common synonyms. Returns null when we don't know
+// the carrier — caller renders a tracking-ref-only email in that case.
+function carrierTrackingUrl(
+  label: string | null | undefined,
+  ref: string,
+): string | null {
+  if (!label) return null;
+  const normalised = label.trim().toLowerCase();
+  const encoded = encodeURIComponent(ref);
+  if (normalised.includes('pudo')) {
+    return `https://www.pudo.co.za/tracking?waybill=${encoded}`;
+  }
+  if (
+    normalised.includes('courier guy') ||
+    normalised === 'tcg' ||
+    normalised === 'the courier guy'
+  ) {
+    return `https://www.thecourierguy.co.za/tracking?ref=${encoded}`;
+  }
+  if (normalised.includes('aramex')) {
+    return `https://www.aramex.co.za/tools/track?l=${encoded}`;
+  }
+  return null;
 }
 
 // Human-readable short date used by templates' "Date" / "Listed on"

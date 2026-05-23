@@ -1205,10 +1205,29 @@ model RaffleWinner {
   // FORFEITED when the claim window lapses without action
   forfeitedAt   DateTime?
 
+  // Prize dispatch tracking. Set when an admin marks the prize as
+  // dispatched via /admin/competitions/[id]. NULL until dispatched.
+  // Order of events for the primary winner:
+  //   1. position=1 row created on draw     → notify user
+  //   2. user clicks Claim                   → claimedAt set
+  //   3. admin courier-bundles the prize, then marks it dispatched
+  //      via the admin dossier — this stamps all five fields below in
+  //      one shot + sends the buyer their tracking info.
+  // The Command-Center attention queue uses the index to surface
+  // "claimed but not dispatched yet" winners as a TO-DO for admins.
+  prizeDispatchedAt        DateTime?
+  prizeTrackingRef         String?   // courier tracking number (Pudo / TCG / other)
+  prizeCarrierLabel        String?   // 'Pudo' | 'The Courier Guy' | 'Aramex' | 'Other' (freeform)
+  prizeDispatchedByAdminId String?   // AdminUser.id of who marked dispatched
+  prizeDispatchNote        String?   // optional admin note (e.g. waybill #, condition)
+
   createdAt DateTime @default(now())
 
   @@unique([raffleId, position])
   @@index([raffleId])
+  // Lets the Command Center attention queue fast-count "claimed but
+  // not dispatched" winners with a single covered index lookup.
+  @@index([prizeDispatchedAt])
 }
 
 model PostalEntry {

@@ -172,6 +172,29 @@ export class RafflesAdminController {
     return this.raffles.getAuditEvents(id);
   }
 
+  // Full winner dossier for the per-raffle admin page. Returns the
+  // raffle metadata + every winner row with the high-PII fields admins
+  // need to physically ship the prize (real name, phone, address).
+  // Admin-guarded — never expose this shape to buyer-facing endpoints.
+  @Get(':id/winners')
+  winners(@Param('id') id: string) {
+    return this.raffles.getWinnersForAdmin(id);
+  }
+
+  // Mark a winner's prize as dispatched. Triggered by the "Mark as
+  // dispatched" button in the per-raffle dossier. Body is a small DTO
+  // with the courier tracking reference (required) + an optional
+  // carrier label + free-text note. Service-side enforces idempotency
+  // and notifies the winner via SMS + email.
+  @Post('winners/:winnerId/dispatch')
+  dispatch(
+    @CurrentAdmin() admin: { sub: string },
+    @Param('winnerId') winnerId: string,
+    @Body() body: { trackingRef: string; carrierLabel?: string; note?: string },
+  ) {
+    return this.raffles.markWinnerPrizeDispatched(winnerId, admin.sub, body);
+  }
+
   // Force a draw — for testing in dev. In prod this is invoked by cron.
   @Post(':id/run-draw')
   runDraw(@Param('id') id: string) {

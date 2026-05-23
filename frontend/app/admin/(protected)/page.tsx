@@ -14,6 +14,13 @@ interface AttentionQueue {
   disputedPayments: number;
   unresolvedAlerts: number;
   feeBypassAttempts7d: number;
+  // Raffle winners whose prize has been claimed but not yet dispatched —
+  // alarm-grade, since the winner is actively waiting on us.
+  rafflesPendingDispatch: number;
+  // Newly-drawn raffles where the primary winner has not yet claimed.
+  // Info-grade for now; we surface it as a separate card on the
+  // dashboard so the operator can prep the parcel ahead of time.
+  rafflesNewlyDrawn: number;
 }
 
 interface TodayPulse {
@@ -155,6 +162,30 @@ export default function AdminCommandCenterPage() {
           tone: attention.unresolvedAlerts > 0 ? 'warn' : 'calm',
           hint: 'System-raised flags',
         },
+        // Raffle prize dispatch — primary winner has claimed but the
+        // operator has not stamped the parcel as shipped yet. Tone is
+        // 'urgent' when > 0 (spec calls it "alarm") because the user is
+        // refreshing /dashboard/raffle-wins waiting for tracking info.
+        // Deep-links into the competitions list with the
+        // Needs-dispatch tab pre-selected via a query string.
+        {
+          label: 'Raffle prizes to dispatch',
+          value: attention.rafflesPendingDispatch,
+          href: '/admin/competitions?tab=dispatch',
+          tone: attention.rafflesPendingDispatch > 0 ? 'urgent' : 'calm',
+          hint: 'Claimed but not shipped',
+        },
+        // Newly drawn raffles — primary winner has been picked but
+        // hasn't claimed yet. Calm/warn so it doesn't compete with the
+        // dispatch alarm card; same destination because the dossier
+        // shows BOTH states once the operator drills in.
+        {
+          label: 'Newly drawn raffles',
+          value: attention.rafflesNewlyDrawn,
+          href: '/admin/competitions?tab=drawn',
+          tone: attention.rafflesNewlyDrawn > 0 ? 'warn' : 'calm',
+          hint: 'Winner picked, awaiting claim',
+        },
       ]
     : [];
 
@@ -169,9 +200,13 @@ export default function AdminCommandCenterPage() {
         </p>
       </div>
 
-      {/* ─── ATTENTION QUEUE — 6 clickable cards ───────────────── */}
+      {/* ─── ATTENTION QUEUE — 8 clickable cards ─────────────────
+          Bumped from 6 to 8 with the addition of the raffle prize-
+          dispatch + newly-drawn cards. We use grid-cols-4 at the lg
+          breakpoint so two rows of four wrap evenly instead of an
+          awkward 6+2. */}
       {attention ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
           {attentionCards.map((c) => (
             <AttentionCard key={c.label} {...c} />
           ))}

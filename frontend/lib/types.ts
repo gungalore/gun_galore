@@ -394,6 +394,61 @@ export interface AdminRaffleRow extends Raffle {
   createdAt: string;
   updatedAt: string;
   _count: { tickets: number; winners: number };
+  // Mini-summary of every winner so the competitions list can render
+  // Drawn / Needs-dispatch tabs without a per-row second fetch.
+  // PII-safe: only username + state timestamps; real names live behind
+  // the per-raffle /admin/raffles/:id/winners dossier endpoint.
+  winners: {
+    id: string;
+    position: number;
+    claimedAt: string | null;
+    forfeitedAt: string | null;
+    prizeDispatchedAt: string | null;
+    user: { username: string | null } | null;
+  }[];
+}
+
+// Full winner dossier returned by GET /admin/raffles/:id/winners.
+// Contains the high-PII shipping fields admins need — keep this off
+// any buyer-facing surface.
+export interface AdminRaffleWinnerDossier {
+  raffle: {
+    id: string;
+    title: string;
+    referenceNumber: string | null;
+    status: string;
+  };
+  winners: {
+    id: string;
+    raffleId: string;
+    userId: string | null;
+    ticketId: string;
+    position: number;
+    claimDeadline: string;
+    claimedAt: string | null;
+    forfeitedAt: string | null;
+    prizeDispatchedAt: string | null;
+    prizeTrackingRef: string | null;
+    prizeCarrierLabel: string | null;
+    prizeDispatchedByAdminId: string | null;
+    prizeDispatchNote: string | null;
+    createdAt: string;
+    user: {
+      id: string;
+      username: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      email: string;
+      phone: string | null;
+      addrBuilding: string | null;
+      addrStreet: string | null;
+      addrAddress2: string | null;
+      addrSuburb: string | null;
+      addrCity: string | null;
+      addrProvince: string | null;
+      addrPostalCode: string | null;
+    } | null;
+  }[];
 }
 
 export interface DrawProof {

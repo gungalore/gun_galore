@@ -866,6 +866,12 @@ export class RafflesService {
   }
 
   async listForAdmin() {
+    // Pull a compact summary of every winner alongside each raffle so
+    // the competitions index page can render Drawn / Needs-dispatch
+    // tabs without a per-row second fetch. We deliberately only ship
+    // username + a couple of timestamps here; the full dossier
+    // (real-name + phone + address) lives behind the per-raffle
+    // /admin/raffles/:id/winners endpoint.
     return this.prisma.raffle.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
@@ -874,8 +880,162 @@ export class RafflesService {
           select: { id: true, url: true, order: true, isPrimary: true },
           orderBy: { order: 'asc' },
         },
+        winners: {
+          orderBy: { position: 'asc' },
+          select: {
+            id: true,
+            position: true,
+            claimedAt: true,
+            forfeitedAt: true,
+            prizeDispatchedAt: true,
+            // Public-safe handle for the list view. Real names are
+            // never shipped to the client on the list page.
+            user: { select: { username: true } },
+          },
+        },
       },
     });
+  }
+
+  // -------------------------------------------------------------------
+  // Admin: full winner dossier for one raffle
+  // -------------------------------------------------------------------
+  //
+  // Powers the per-raffle dossier page (/admin/competitions/[id]).
+  // Returns up to three winners (position 1 = primary, 2/3 = backups)
+  // with EVERYTHING the operator needs to physically ship the prize:
+  //   - real name + email + phone (admin-only fields)
+  //   - shipping address (User.addr* columns, not the per-listing
+  //     pickup address that lives on Listing)
+  //   - claim/forfeit/dispatch state + timestamps + tracking info
+  //   - the winning ticket id (so the audit log can be cross-referenced)
+  //
+  // This is a high-PII endpoint — admin guard is enforced on the
+  // controller route. Never reuse this shape for buyer-facing surfaces.
+  async getWinnersForAdmin(raffleId: string) {
+    const raffle = await this.prisma.raffle.findUnique({
+      where: { id: raffleId },
+      select: { id: true, title: true, referenceNumber: true, status: true },
+    });
+    if (!raffle) throw new NotFoundException('Raffle not found');
+
+    const winners = await this.prisma.raffleWinner.findMany({
+      where: { raffleId },
+      orderBy: { position: 'asc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            // Personal shipping address (per profile, not per listing).
+            // Schema uses `addr*` prefix; the original spec referenced
+            // addressLine1/suburb/etc. — we map to the actual columns.
+            addrBuilding: true,
+            addrStreet: true,
+            addrAddress2: true,
+            addrSuburb: true,
+            addrCity: true,
+            addrProvince: true,
+            addrPostalCode: true,
+          },
+        },
+      },
+    });
+
+    return { raffle, winners };
+  }
+
+  // -------------------------------------------------------------------
+  // Admin: mark a winner's prize as dispatched
+  // -------------------------------------------------------------------
+  //
+  // Called from the per-raffle dossier's "Mark as dispatched" modal.
+  // Single source of truth for everything that flips when a prize ships:
+  //   - stamps prizeDispatchedAt + tracking metadata
+  //   - records who did it (audit + dossier reverse-lookup)
+  //   - notifies the winner via SMS + email (best-effort, fail-open)
+  //   - appends a PRIZE_DISPATCHED row to RaffleAuditEvent
+  //
+  // Idempotency: refuses if already dispatched (prevents double-SMS
+  // and double-audit rows when the admin double-clicks the button).
+  // Refuses if winner is forfeited (you can't ship to a forfeited
+  // backup — promote the next one first).
+  async markWinnerPrizeDispatched(
+    winnerId: string,
+    adminId: string,
+    dto: { trackingRef: string; carrierLabel?: string; note?: string },
+  ) {
+    const trackingRef = (dto.trackingRef ?? '').trim();
+    if (trackingRef.length === 0) {
+      throw new BadRequestException('Tracking reference is required');
+    }
+
+    const winner = await this.prisma.raffleWinner.findUnique({
+      where: { id: winnerId },
+      include: {
+        user: { select: { id: true, email: true, phone: true, username: true } },
+        raffle: { select: { id: true, title: true } },
+      },
+    });
+    if (!winner) throw new NotFoundException('Winner not found');
+    if (winner.prizeDispatchedAt) {
+      throw new BadRequestException('Prize already marked as dispatched');
+    }
+    if (winner.forfeitedAt) {
+      throw new BadRequestException(
+        'Winner has forfeited — promote the backup before dispatching',
+      );
+    }
+
+    const dispatchedAt = new Date();
+    await this.prisma.raffleWinner.update({
+      where: { id: winnerId },
+      data: {
+        prizeDispatchedAt: dispatchedAt,
+        prizeTrackingRef: trackingRef,
+        prizeCarrierLabel: dto.carrierLabel?.trim() || null,
+        prizeDispatchedByAdminId: adminId,
+        prizeDispatchNote: dto.note?.trim() || null,
+      },
+    });
+
+    // Audit trail — separate try/catch in recordEvent so an audit-log
+    // failure can't undo the dispatch stamp above.
+    await this.recordEvent(
+      winner.raffleId,
+      'PRIZE_DISPATCHED',
+      {
+        winnerId,
+        position: winner.position,
+        trackingRef,
+        carrierLabel: dto.carrierLabel ?? null,
+        note: dto.note ?? null,
+      },
+      undefined,
+      adminId,
+    );
+
+    // Notify the winner — fail-open, never block the dispatch.
+    if (winner.userId && winner.user) {
+      void this.notifications.raffleWinnerPrizeDispatched({
+        winnerEmail: winner.user.email,
+        winnerPhone: winner.user.phone,
+        raffleTitle: winner.raffle.title,
+        trackingRef,
+        carrierLabel: dto.carrierLabel ?? null,
+      });
+    }
+
+    return {
+      winnerId,
+      prizeDispatchedAt: dispatchedAt,
+      prizeTrackingRef: trackingRef,
+      prizeCarrierLabel: dto.carrierLabel ?? null,
+    };
   }
 
   async getDrawProof(raffleId: string) {
