@@ -8,8 +8,10 @@ import {
   Query,
   UseGuards,
   HttpCode,
+  Res,
   BadRequestException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { DealerVerificationService } from '../payments/dealer-verification.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { Throttle } from '@nestjs/throttler';
@@ -64,8 +66,37 @@ export class AdminAuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
   @HttpCode(200)
-  login(@Body() dto: AdminLoginDto) {
-    return this.authService.login(dto);
+  async login(
+    @Body() dto: AdminLoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.login(dto);
+    // Set the JWT as an HTTP-only Secure cookie so the browser handles
+    // it server-side (more reliable than document.cookie which was
+    // failing to persist across navigations for some users). passthrough
+    // keeps Nest's normal JSON response — we just piggyback Set-Cookie.
+    res.cookie('admin_token', result.token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 8 * 60 * 60 * 1000, // 8 hours, matches JWT expiry
+    });
+    return result;
+  }
+
+  @Post('logout')
+  @HttpCode(200)
+  logout(@Res({ passthrough: true }) res: Response) {
+    // Clear the cookie so the browser stops sending it. Matching attrs
+    // are required for some browsers to recognise the clear.
+    res.clearCookie('admin_token', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+    });
+    return { ok: true };
   }
 
   @Get('me')
