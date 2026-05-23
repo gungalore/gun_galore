@@ -26,7 +26,9 @@ const ITEMS = [
   { href: '/admin/categories', label: 'Categories' },
   { href: '/admin/settings', label: 'Settings' },
   { href: '/admin/broadcast', label: 'Broadcast' },
-  { href: '/admin/kyc', label: 'KYC Credits' },
+  // /admin/kyc removed from sidebar — VerifyNow balance + trend chart +
+  // threshold alerts are all covered by /admin/credits now. The page
+  // file is kept around in case anything deep-links to it.
   { href: '/admin/audit', label: 'Audit Log' },
   { href: '/admin/admins', label: 'Admins' },
 ];
