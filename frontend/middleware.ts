@@ -56,36 +56,34 @@ const isComingSoonBypassRoute = createRouteMatcher([
 
 const COMING_SOON_COOKIE = 'gg-preview';
 
-// Admin auth gate. Layout-level redirect proved unreliable in Next 16
-// — the layout's `if (!token) redirect('/admin/login')` was silently
-// failing (page rendered without sidebar instead of bouncing). Doing
-// it here in middleware is the bulletproof path: middleware redirects
-// short-circuit the request before any page render.
-//
-// Allowed without admin_token cookie:
-//   /admin/login        the login page itself (avoids redirect loop)
-//   /admin/logout       so users can sign out from any state
-function adminAuthGate(request: Request): Response | null {
-  const url = new URL(request.url);
-  if (!url.pathname.startsWith('/admin')) return null;
-  if (url.pathname === '/admin/login') return null;
-  if (url.pathname === '/admin/logout') return null;
-
-  const cookieHeader = request.headers.get('cookie') ?? '';
-  const hasAdminToken = /(?:^|;\s*)admin_token=([^;\s]+)/.test(cookieHeader);
-  if (hasAdminToken) return null;
-
-  // Build the absolute redirect URL from forwarded headers so we send
-  // the user to https://gungalore.co.za/admin/login, not localhost.
-  const host = request.headers.get('host') ?? 'gungalore.co.za';
-  const proto = request.headers.get('x-forwarded-proto') ?? 'https';
-  return Response.redirect(`${proto}://${host}/admin/login`);
-}
-
 export default clerkMiddleware(async (auth, request) => {
   // ── Admin auth gate (runs FIRST so it short-circuits everything) ───
-  const adminBounce = adminAuthGate(request);
-  if (adminBounce) return adminBounce;
+  //
+  // Layout-level redirect proved unreliable in Next 16 — the layout's
+  // `if (!token) redirect('/admin/login')` was silently failing (page
+  // rendered without sidebar instead of bouncing). Doing it here in
+  // middleware is bulletproof: NextResponse.redirect short-circuits the
+  // request before any page renders.
+  //
+  // Allowed without admin_token cookie:
+  //   /admin/login        the login page itself (avoids redirect loop)
+  //   /admin/logout       so users can sign out from any state
+  const adminPath = request.nextUrl.pathname;
+  const isAdminGated =
+    adminPath.startsWith('/admin') &&
+    adminPath !== '/admin/login' &&
+    adminPath !== '/admin/logout';
+
+  if (isAdminGated) {
+    const hasAdminToken = !!request.cookies.get('admin_token')?.value;
+    if (!hasAdminToken) {
+      const host =
+        request.headers.get('host') ?? 'gungalore.co.za';
+      const proto =
+        request.headers.get('x-forwarded-proto') ?? 'https';
+      return NextResponse.redirect(`${proto}://${host}/admin/login`);
+    }
+  }
 
   // ── Coming-soon gate (runs BEFORE Clerk auth) ─────────────────────
   //
