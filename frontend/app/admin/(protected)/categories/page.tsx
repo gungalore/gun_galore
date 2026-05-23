@@ -19,7 +19,7 @@ interface Category {
 
 export default async function CategoriesPage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   let categories: Category[] = [];
   try {

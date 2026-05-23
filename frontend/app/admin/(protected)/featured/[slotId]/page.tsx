@@ -51,7 +51,7 @@ export default async function AdminFeaturedSlotDetailPage({
 }) {
   const { slotId } = await params;
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   // Fetch all slots + filter to find ours — the backend's slots endpoint
   // returns the whole rail, and there's no per-slot GET. Cheaper than

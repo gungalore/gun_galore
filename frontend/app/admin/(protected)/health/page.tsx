@@ -85,7 +85,7 @@ const CATEGORY_LABEL: Record<Service['category'], string> = {
 
 export default async function HealthPage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
   const [services, crons, queues] = await Promise.all([
     fetchJson<Service[]>('/admin/health/services', token),
     fetchJson<CronStatus[]>('/admin/health/crons', token),

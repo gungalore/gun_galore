@@ -6,7 +6,7 @@ import SidebarNav from './sidebar-nav';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value;
+  const token = cookieStore.get('gg_admin_sess')?.value;
   if (!token) redirect('/admin/login');
 
   return (

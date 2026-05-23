@@ -75,7 +75,7 @@ export class AdminAuthController {
     // it server-side (more reliable than document.cookie which was
     // failing to persist across navigations for some users). passthrough
     // keeps Nest's normal JSON response — we just piggyback Set-Cookie.
-    res.cookie('admin_token', result.token, {
+    res.cookie('gg_admin_sess', result.token, {
       httpOnly: true,
       secure: true,
       sameSite: 'lax',
@@ -90,7 +90,7 @@ export class AdminAuthController {
   logout(@Res({ passthrough: true }) res: Response) {
     // Clear the cookie so the browser stops sending it. Matching attrs
     // are required for some browsers to recognise the clear.
-    res.clearCookie('admin_token', {
+    res.clearCookie('gg_admin_sess', {
       httpOnly: true,
       secure: true,
       sameSite: 'lax',

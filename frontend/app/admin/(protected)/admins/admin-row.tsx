@@ -7,7 +7,7 @@ import type { AdminRecord } from './page';
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 function getAdminToken(): string {
-  return document.cookie.match(/admin_token=([^;]+)/)?.[1] ?? '';
+  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
 }
 
 // Maps the on-disk enum value to the user-facing label.

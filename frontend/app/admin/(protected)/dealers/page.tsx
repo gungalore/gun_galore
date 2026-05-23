@@ -27,7 +27,7 @@ export default async function DealersPage({
 }) {
   const sp = await searchParams;
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   const params = new URLSearchParams();
   if (sp.search) params.set('search', sp.search);

@@ -196,7 +196,7 @@ export default async function TransactionDossierPage({
 }) {
   const { id } = await params;
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
   const d = await fetchTransaction(id, token);
   if (!d) return notFound();
 

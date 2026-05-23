@@ -43,7 +43,7 @@ export default async function FreshnessGraveyardPage({
   const sp = await searchParams;
   const minAgeDays = sp.minAgeDays ? parseInt(sp.minAgeDays, 10) : 30;
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
   const rows = await fetchRows(token, Number.isFinite(minAgeDays) ? minAgeDays : 30);
 
   const ageOptions = [30, 60, 90, 180];

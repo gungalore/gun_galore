@@ -112,7 +112,7 @@ export default async function AnalyticsPage({
   const qs = `?period=${period}`;
 
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   // Fire every analytics call in parallel — they're all independent
   // and the page can't render anything useful until they all land.

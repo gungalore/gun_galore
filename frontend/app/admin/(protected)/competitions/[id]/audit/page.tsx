@@ -11,7 +11,7 @@ export default async function CompetitionAuditPage({
 }) {
   const { id } = await params;
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   const [eventsRes, proofRes] = await Promise.all([
     fetch(`${API_URL}/admin/raffles/${id}/audit`, {

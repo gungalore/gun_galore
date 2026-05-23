@@ -65,7 +65,7 @@ export default async function AdminListingsPage({
 }) {
   const { status = 'PENDING_REVIEW', page = '1' } = await searchParams;
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   const res = await fetch(
     `${API_URL}/admin/listings?status=${status}&page=${page}&limit=20`,

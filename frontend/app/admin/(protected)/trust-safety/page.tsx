@@ -71,7 +71,7 @@ async function fetchJson<T>(path: string, token: string): Promise<T | null> {
 
 export default async function TrustSafetyPage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
   const [rejections, repeats, reports] = await Promise.all([
     fetchJson<Rejection[]>('/admin/trust-safety/rejections', token),
     fetchJson<RepeatOffender[]>('/admin/trust-safety/repeat-offenders', token),

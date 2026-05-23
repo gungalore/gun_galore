@@ -90,7 +90,7 @@ async function fetchAdmin<T>(path: string, token: string): Promise<T | null> {
 
 export default async function AdminCommandCenterPage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   // Parallel-fetch every panel — they're independent and the page
   // can't render anything useful until all three return.

@@ -50,7 +50,7 @@ export default function CookiesPage() {
           {[
             ['__session', 'Clerk', 'Your authenticated session — keeps you signed in across pages', 'Session (deleted when you sign out)'],
             ['__client_uat', 'Clerk', 'Helps Clerk detect when your session was last active', 'Up to 30 days'],
-            ['admin_token', 'GunGalore', 'Admin-only — JWT for the admin panel session', 'Up to 8 hours'],
+            ['gg_admin_sess', 'GunGalore', 'Admin-only — JWT for the admin panel session', 'Up to 8 hours'],
             ['theme', 'GunGalore', 'Remembers your light/dark theme preference', 'Up to 1 year'],
             ['NEXT_LOCALE', 'Next.js', 'Remembers the language variant you selected', 'Up to 1 year'],
           ].map(([cookie, by, purpose, retention], i) => (

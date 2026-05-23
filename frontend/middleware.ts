@@ -65,7 +65,7 @@ export default clerkMiddleware(async (auth, request) => {
   // middleware is bulletproof: NextResponse.redirect short-circuits the
   // request before any page renders.
   //
-  // Allowed without admin_token cookie:
+  // Allowed without gg_admin_sess cookie:
   //   /admin/login        the login page itself (avoids redirect loop)
   //   /admin/logout       so users can sign out from any state
   const adminPath = request.nextUrl.pathname;
@@ -75,7 +75,7 @@ export default clerkMiddleware(async (auth, request) => {
     adminPath !== '/admin/logout';
 
   if (isAdminGated) {
-    const hasAdminToken = !!request.cookies.get('admin_token')?.value;
+    const hasAdminToken = !!request.cookies.get('gg_admin_sess')?.value;
     if (!hasAdminToken) {
       const host =
         request.headers.get('host') ?? 'gungalore.co.za';

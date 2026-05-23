@@ -61,7 +61,7 @@ const BUCKET_COLOR: Record<string, string> = {
 
 export default async function OpsHealthPage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
   const [funnel, sla, risk] = await Promise.all([
     fetchJson<KycStage[]>('/admin/analytics/kyc-funnel', token),
     fetchJson<DispatchBucket[]>('/admin/analytics/dispatch-sla', token),

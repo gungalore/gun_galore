@@ -31,7 +31,7 @@ const LOW_BALANCE = 50;
 
 export default async function AdminKycPage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   const res = await fetch(`${API_URL}/admin/kyc/balance`, {
     headers: { Authorization: `Bearer ${token}` },

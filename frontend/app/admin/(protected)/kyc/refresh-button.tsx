@@ -9,7 +9,7 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 // flow — matches the pattern used by review-actions.tsx and
 // transaction-actions.tsx elsewhere in the admin panel.
 function getAdminToken(): string {
-  return document.cookie.match(/admin_token=([^;]+)/)?.[1] ?? '';
+  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
 }
 
 export default function RefreshButton() {

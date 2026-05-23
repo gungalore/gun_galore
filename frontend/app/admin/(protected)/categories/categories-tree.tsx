@@ -29,7 +29,7 @@ interface Category {
 }
 
 function getToken() {
-  return document.cookie.match(/admin_token=([^;]+)/)?.[1] ?? '';
+  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
 }
 
 export default function CategoriesTree({ initial }: { initial: Category[] }) {

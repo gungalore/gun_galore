@@ -32,13 +32,13 @@ export default function AdminLoginPage() {
         return;
       }
       const { token } = await res.json();
-      // The backend already set admin_token via httpOnly Set-Cookie —
+      // The backend already set gg_admin_sess via httpOnly Set-Cookie —
       // that's the authoritative cookie. We also set a JS cookie as a
       // belt-and-braces fallback (in case the browser strips the
       // server-set one). Add Secure flag — some strict browser configs
       // silently reject non-Secure cookies on HTTPS origins.
       const secure = location.protocol === 'https:' ? '; Secure' : '';
-      document.cookie = `admin_token=${token}; path=/; max-age=${8 * 3600}; SameSite=Lax${secure}`;
+      document.cookie = `gg_admin_sess=${token}; path=/; max-age=${8 * 3600}; SameSite=Lax${secure}`;
       router.push('/admin');
     } catch {
       setError('Network error');

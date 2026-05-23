@@ -32,7 +32,7 @@ interface AdminSlot {
 
 export default async function AdminFeaturedSlotsPage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   const res = await fetch(`${API_URL}/admin/featured/slots`, {
     headers: { Authorization: `Bearer ${token}` },

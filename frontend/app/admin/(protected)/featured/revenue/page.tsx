@@ -21,7 +21,7 @@ function formatRand(cents: number): string {
 
 export default async function AdminFeaturedRevenuePage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   const res = await fetch(`${API_URL}/admin/featured/revenue`, {
     headers: { Authorization: `Bearer ${token}` },

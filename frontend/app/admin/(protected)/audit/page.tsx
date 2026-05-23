@@ -38,7 +38,7 @@ export default async function AdminAuditPage({
   const params = await searchParams;
   const offset = params.offset ?? '0';
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   const qs = new URLSearchParams();
   qs.set('offset', offset);

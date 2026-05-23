@@ -9,7 +9,7 @@ const TIERS = ['NEW', 'ESTABLISHED', 'TRUSTED', 'TOP_SELLER', 'DEALER'];
 const KYC_STATUSES = ['PENDING', 'SUBMITTED', 'VERIFIED', 'REJECTED'];
 
 function getToken() {
-  return document.cookie.match(/admin_token=([^;]+)/)?.[1] ?? '';
+  return document.cookie.match(/gg_admin_sess=([^;]+)/)?.[1] ?? '';
 }
 
 // Destructive admin actions on a user now require:

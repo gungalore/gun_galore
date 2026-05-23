@@ -36,7 +36,7 @@ export default async function AdminFeaturedAuditPage({
 }) {
   const { slotId, eventType } = await searchParams;
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   const qs = new URLSearchParams();
   if (slotId) qs.set('slotId', slotId);

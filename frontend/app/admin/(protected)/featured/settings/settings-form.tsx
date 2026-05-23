@@ -11,7 +11,7 @@ function getAdminToken(): string {
   return (
     document.cookie
       .split('; ')
-      .find((c) => c.startsWith('admin_token='))
+      .find((c) => c.startsWith('gg_admin_sess='))
       ?.split('=')[1] ?? ''
   );
 }

@@ -27,7 +27,7 @@ interface MeResponse {
 
 export default async function AdminAdminsPage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   // Fetch the admin list AND the current admin's identity in parallel.
   // We need /me to decide whether to render the "Create admin" form

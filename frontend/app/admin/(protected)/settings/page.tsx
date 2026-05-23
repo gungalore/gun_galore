@@ -15,7 +15,7 @@ interface Flag {
 
 export default async function SettingsPage() {
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
   let flags: Flag[] = [];
   try {
     const res = await fetch(`${API_URL}/admin/settings`, {

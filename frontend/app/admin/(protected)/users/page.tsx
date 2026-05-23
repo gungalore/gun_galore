@@ -34,7 +34,7 @@ export default async function AdminUsersPage({
 }) {
   const { search = '', page = '1', kyc, filter } = await searchParams;
   const cookieStore = await cookies();
-  const token = cookieStore.get('admin_token')?.value ?? '';
+  const token = cookieStore.get('gg_admin_sess')?.value ?? '';
 
   const params = new URLSearchParams({ page, limit: '30' });
   if (search) params.set('search', search);
