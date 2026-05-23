@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { InstallAnimation } from './install-animation';
 
 // Floating "Install Gun Galore" button. Listens for the browser's
 // beforeinstallprompt event (Chrome / Edge / Samsung / Opera on
@@ -216,80 +217,100 @@ export function InstallPrompt() {
       </div>
 
       {/* iOS instruction modal — Safari can't trigger install
-          programmatically, so the user has to do it themselves. We
-          render a one-time hint with the actual gesture spelled out. */}
+          programmatically, so the user has to do it themselves. The
+          animated walkthrough (4-scene loop showing the exact taps in
+          Safari) is the centrepiece; the written steps underneath are
+          a fallback for users with reduced-motion or who want to skim
+          while the animation cycles. */}
       {iosHintOpen && (
         <div
           role="dialog"
           aria-modal="true"
+          aria-label="How to install Gun Galore on iPhone"
           onClick={() => setIosHintOpen(false)}
           style={{
             position: 'fixed',
             inset: 0,
             zIndex: 61,
-            background: 'rgba(0,0,0,0.6)',
+            background: 'rgba(0,0,0,0.78)',
             display: 'flex',
-            alignItems: 'flex-end',
+            alignItems: 'center',
             justifyContent: 'center',
-            padding: 16,
+            padding: 12,
+            overflowY: 'auto',
+            // Respect iOS notch / home-indicator.
+            paddingTop: 'max(12px, env(safe-area-inset-top))',
+            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              maxWidth: 380,
+              maxWidth: 420,
               width: '100%',
-              padding: 20,
-              borderRadius: 12,
+              padding: 16,
+              borderRadius: 14,
               background: 'var(--bg-card)',
               border: '0.5px solid var(--border)',
               color: 'var(--text-primary)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+              // Cap modal at viewport height so the animation always fits
+              // even on shorter phones (e.g. iPhone SE).
+              maxHeight: 'calc(100dvh - 24px)',
             }}
           >
-            <p
+            {/* Animated walkthrough — sized to dominate the modal while
+                leaving room for the headline + Got-it button on phones
+                as short as 568px (iPhone SE). 9:16 aspect ratio matches
+                the design stage exactly. */}
+            <div
               style={{
-                fontSize: 15,
-                fontWeight: 500,
-                marginBottom: 12,
+                width: '100%',
+                aspectRatio: '9 / 16',
+                maxHeight: '62dvh',
+                margin: '0 auto',
               }}
             >
-              Add Gun Galore to your home screen
-            </p>
-            <ol
-              style={{
-                paddingLeft: 18,
-                fontSize: 13,
-                color: 'var(--text-secondary)',
-                lineHeight: 1.6,
-              }}
-            >
-              <li>
-                Tap the <strong style={{ color: 'var(--text-primary)' }}>Share</strong> icon
-                at the bottom of Safari (the square with the up-arrow).
-              </li>
-              <li>
-                Scroll down and tap{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>Add to Home Screen</strong>.
-              </li>
-              <li>
-                Tap <strong style={{ color: 'var(--text-primary)' }}>Add</strong> in the top
-                right. The Gun Galore icon will appear on your home
-                screen.
-              </li>
-            </ol>
+              <InstallAnimation />
+            </div>
+
+            <div>
+              <p
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  marginBottom: 4,
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Add Gun Galore to your home screen
+              </p>
+              <p
+                style={{
+                  fontSize: 12.5,
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.5,
+                  margin: 0,
+                }}
+              >
+                In Safari: ⋯ More → Share → Add to Home Screen → Add.
+              </p>
+            </div>
+
             <button
               type="button"
               onClick={() => setIosHintOpen(false)}
               style={{
-                marginTop: 16,
                 width: '100%',
                 background: 'var(--red)',
                 color: '#fff',
                 border: 'none',
-                padding: '10px 14px',
-                borderRadius: 6,
-                fontSize: 13,
-                fontWeight: 500,
+                padding: '11px 14px',
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
                 cursor: 'pointer',
               }}
             >
