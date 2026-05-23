@@ -7,7 +7,6 @@ import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
 import { SignedInWelcome } from '@/components/signed-in-welcome';
-import { SortToggle } from '@/components/sort-toggle';
 
 interface SearchParams {
   q?: string;
@@ -370,16 +369,6 @@ export default async function HomePage({
               {browse.total !== 1 ? 's' : ''}
             </p>
           </div>
-        </div>
-
-        {/* SortToggle — quick segmented switch between
-            "Latest first" (newest) and "Cheapest first" (price_asc).
-            Sits above the FilterBar (which still has its 3-option
-            select including price_desc) as a more visible thumb-target
-            for the two sort modes most buyers actually use. Both write
-            to the same ?sort= param so they stay in sync. */}
-        <div data-reveal style={{ marginBottom: 10 }}>
-          <SortToggle />
         </div>
 
         <div data-reveal>
