@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminCreditsService } from './admin-credits.service';
 
 /**
  * Powers the redesigned admin overview ("command center"). Three
@@ -28,7 +29,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export interface AttentionQueue {
   pendingListings: number;
   pendingPayments: number;
-  kycStalled: number;        // kycRequiredAt > 24h ago && !verified
+  kycStalled: number; // kycRequiredAt > 24h ago && !verified
   dispatchSlaAtRisk: number; // paid > 24h ago && !dispatched
   disputedPayments: number;
   unresolvedAlerts: number;
@@ -42,6 +43,12 @@ export interface AttentionQueue {
   // it yet. INFO-grade: harmless until the claim window lapses, but
   // useful so the admin can prep the parcel ahead of time.
   rafflesNewlyDrawn: number;
+  // External-service credits at or below the operator-configured
+  // alarm threshold. Sourced from CreditSnapshot (most recent row per
+  // service) compared to CreditThreshold.alarmThreshold. ALARM-grade
+  // — a live service running on empty silently breaks user-facing
+  // flows (OTP not received, image upload 4xx, KYC stuck spinner).
+  creditsBelowAlarm: number;
 }
 
 export interface TodayPulse {
@@ -67,18 +74,25 @@ export type ActivityEventType =
   | 'OFFER_SUBMITTED';
 
 export interface ActivityEvent {
-  id: string;            // unique per source — prefixed so the union doesn't collide
+  id: string; // unique per source — prefixed so the union doesn't collide
   type: ActivityEventType;
-  title: string;         // one-line "what happened"
-  subtitle?: string;     // optional context
-  href?: string;         // admin-side deep link
+  title: string; // one-line "what happened"
+  subtitle?: string; // optional context
+  href?: string; // admin-side deep link
   occurredAt: Date;
   urgent?: boolean;
 }
 
 @Injectable()
 export class AdminCommandCenterService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Used purely for the `creditsBelowAlarm` count surfaced in the
+    // attention queue. AdminCreditsService is registered as a provider
+    // of AdminModule already, so DI hands us the same singleton the
+    // /admin/credits page uses.
+    private readonly adminCredits: AdminCreditsService,
+  ) {}
 
   // -------------------------------------------------------------------
   // Attention queue — every number here should be CLICKABLE on the
@@ -102,6 +116,7 @@ export class AdminCommandCenterService {
       feeBypassAttempts7d,
       rafflesPendingDispatch,
       rafflesNewlyDrawn,
+      creditsBelowAlarm,
     ] = await Promise.all([
       this.prisma.listing.count({ where: { status: 'PENDING_REVIEW' } }),
       this.prisma.transaction.count({
@@ -151,6 +166,11 @@ export class AdminCommandCenterService {
           prizeDispatchedAt: null,
         },
       }),
+      // External services at/below their alarm threshold. Delegated to
+      // AdminCreditsService so the per-service comparison logic lives
+      // in one place. Returns 0 when the operator hasn't configured
+      // any thresholds yet (so the card stays calm by default).
+      this.adminCredits.countServicesBelowAlarm(),
     ]);
 
     return {
@@ -163,6 +183,7 @@ export class AdminCommandCenterService {
       feeBypassAttempts7d,
       rafflesPendingDispatch,
       rafflesNewlyDrawn,
+      creditsBelowAlarm,
     };
   }
 
@@ -445,9 +466,10 @@ export class AdminCommandCenterService {
         type: 'ADMIN_ACTION',
         title: `${a.action.replace(/_/g, ' ').toLowerCase()}`,
         subtitle: `${a.adminUser.email}${a.resourceType ? ` · ${a.resourceType}` : ''}`,
-        href: a.resourceType && a.resourceId
-          ? `/admin/${a.resourceType.toLowerCase()}s/${a.resourceId}`
-          : '/admin/audit',
+        href:
+          a.resourceType && a.resourceId
+            ? `/admin/${a.resourceType.toLowerCase()}s/${a.resourceId}`
+            : '/admin/audit',
         occurredAt: a.createdAt,
       });
     }
@@ -515,7 +537,10 @@ function startOfTodaySast(): Date {
     sastNow.getUTCFullYear(),
     sastNow.getUTCMonth(),
     sastNow.getUTCDate(),
-    0, 0, 0, 0,
+    0,
+    0,
+    0,
+    0,
   );
   return new Date(sastMidnightSastClock - 2 * 3600 * 1000);
 }

@@ -183,3 +183,10 @@ public/uploads/
 *.tgz
 *.7z
 *.rar
+
+# Design reference build artefact (1.7MB HTML) — regenerate via agent
+gungalore-design-reference.html
+
+# Photo source folder for design reference (not part of the app)
+design-photos/
+

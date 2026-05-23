@@ -1630,3 +1630,69 @@ model ActionToken {
   @@index([targetType, targetId])
   @@index([expiresAt])
 }
+
+// =====================================================================
+// External-service credit monitoring
+// =====================================================================
+// Gun Galore depends on several paid external services (SMSPortal for
+// OTPs, VerifyNow for KYC, Cloudinary for media, Anthropic for the
+// listing-review agent, Pudo for shipping). Each of those bills against
+// a per-account credit/balance pool — if any of them runs dry mid-flow
+// the user-facing experience silently breaks (OTP never arrives, KYC
+// hangs, image upload returns a 4xx, etc).
+//
+// The cron in TasksService.pollCreditBalances() polls every service
+// every 15 minutes and stores one row here per service per poll. The
+// /admin/credits page reads this table to render the live grid + the
+// 30-day trend chart per service. Threshold-breach alerts are driven
+// by the CreditThreshold table below and dedup'd by lastWarn/Alarm
+// timestamps so we don't spam the operator.
+//
+// `balance` is the primary numeric metric — credits remaining (SMS,
+// KYC), rand remaining (VerifyNow ZAR balance), credit units
+// (Cloudinary), USD spend over the trailing 24h (Anthropic — note this
+// is SPEND not BALANCE, so the threshold logic is inverted). `unit`
+// stores the human-readable unit string. Service-specific extras
+// (storage GB, transformations used, etc) go in `metadata` so we can
+// add new dimensions without a schema migration.
+//
+// `error` is populated when the fetch fails — the row still gets
+// written so the admin trend chart shows a gap rather than a silent
+// drop. `balance` is NULL on error.
+model CreditSnapshot {
+  id        String   @id @default(cuid())
+  // Service identifier — matches the `service` column in CreditThreshold.
+  // String (not enum) so adding a new service doesn't need a migration.
+  // Known values: 'smsportal' | 'verifynow' | 'cloudinary' | 'anthropic' | 'pudo'
+  service   String
+  balance   Float? // primary numeric metric; NULL when the fetch failed
+  unit      String? // 'sms' | 'lookup' | 'ZAR' | 'USD' | 'credits' | 'GB'
+  metadata  Json? // service-specific extras (raw response, storage, etc)
+  fetchedAt DateTime @default(now())
+  error     String? // populated when the fetch failed — for debugging
+
+  // Compound index supports the per-service trend chart query
+  // (WHERE service = X ORDER BY fetchedAt DESC LIMIT ...).
+  @@index([service, fetchedAt])
+}
+
+// Operator-configurable thresholds per service. The poll cron checks
+// each snapshot against the threshold for that service: if balance
+// drops below warnThreshold the operator gets an email; below
+// alarmThreshold both email + SMS fire. Both alerts dedup on a 6h
+// window via lastWarnAlertAt / lastAlarmAlertAt so a balance hovering
+// just under the threshold doesn't spam.
+//
+// `enabled = false` short-circuits the check entirely — useful when
+// the operator knows credits are temporarily low and doesn't want to
+// be paged about it.
+model CreditThreshold {
+  id               String    @id @default(cuid())
+  service          String    @unique // FK by convention to CreditSnapshot.service
+  warnThreshold    Float? // amber alert — email only
+  alarmThreshold   Float? // red alert — email + SMS
+  lastWarnAlertAt  DateTime? // dedup so warn doesn't fire more than once per 6h
+  lastAlarmAlertAt DateTime? // dedup so alarm doesn't fire more than once per 6h
+  enabled          Boolean   @default(true)
+  updatedAt        DateTime  @updatedAt
+}

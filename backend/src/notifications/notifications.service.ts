@@ -69,9 +69,7 @@ interface EmailContent {
 }
 
 function renderEmail(c: EmailContent, logoUrl: string): string {
-  const statusBlock = c.status
-    ? statusPill(c.status.tone, c.status.label)
-    : '';
+  const statusBlock = c.status ? statusPill(c.status.tone, c.status.label) : '';
   const rowsBlock = c.rows && c.rows.length > 0 ? rowsTable(c.rows) : '';
   const ctaBlock = c.cta ? ctaButton(c.cta) : '';
   const footnoteBlock = c.footnote
@@ -191,13 +189,22 @@ function renderEmail(c: EmailContent, logoUrl: string): string {
 </html>`;
 }
 
-function statusPill(tone: 'success' | 'pending' | 'error', label: string): string {
-  const [text, bg] = tone === 'success'
-    ? [TOKEN.successText, TOKEN.successBg]
-    : tone === 'pending'
-      ? [TOKEN.pendingText, TOKEN.pendingBg]
-      : [TOKEN.errorText, TOKEN.errorBg];
-  const icon = tone === 'success' ? '&#10003;' : tone === 'pending' ? '&#9203;' : '&#10005;';
+function statusPill(
+  tone: 'success' | 'pending' | 'error',
+  label: string,
+): string {
+  const [text, bg] =
+    tone === 'success'
+      ? [TOKEN.successText, TOKEN.successBg]
+      : tone === 'pending'
+        ? [TOKEN.pendingText, TOKEN.pendingBg]
+        : [TOKEN.errorText, TOKEN.errorBg];
+  const icon =
+    tone === 'success'
+      ? '&#10003;'
+      : tone === 'pending'
+        ? '&#9203;'
+        : '&#10005;';
   return `<table role="presentation" border="0" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 20px 0;">
     <tr><td style="background-color:${bg} !important;border:1px solid ${text};border-radius:20px;padding:5px 14px;">
       <span style="font-size:12px;color:${text} !important;font-weight:500;letter-spacing:0.02em;">${icon}&nbsp; ${escapeHtml(label)}</span>
@@ -325,10 +332,16 @@ export class NotificationsService {
       { label: 'Listing price', value: formatRand(d.listingPrice) },
     ];
     if (d.passFeeToBuyer) {
-      rows.push({ label: 'Processing fee', value: formatRand(d.processingFee) });
+      rows.push({
+        label: 'Processing fee',
+        value: formatRand(d.processingFee),
+      });
     }
     rows.push({ label: 'Total paid', value: formatRand(d.buyerTotal) });
-    rows.push({ label: 'Shipping method', value: prettyShippingMethod(d.shippingMethod) });
+    rows.push({
+      label: 'Shipping method',
+      value: prettyShippingMethod(d.shippingMethod),
+    });
     const html = this.email({
       status: { tone: 'success', label: 'Order confirmed' },
       headline: 'Order confirmed',
@@ -374,7 +387,10 @@ export class NotificationsService {
         { label: 'Sale price', value: formatRand(d.listingPrice) },
         { label: 'Commission', value: '-' + formatRand(d.commissionZar) },
         { label: 'Your payout', value: formatRand(d.sellerPayout) },
-        { label: 'Shipping method', value: prettyShippingMethod(d.shippingMethod) },
+        {
+          label: 'Shipping method',
+          value: prettyShippingMethod(d.shippingMethod),
+        },
       ],
       cta: { label: 'View sale', url: txUrl },
       preheader: `New sale — ${d.listingTitle}`,
@@ -412,7 +428,11 @@ export class NotificationsService {
       cta: { label: 'View transaction', url: txUrl },
       preheader: 'Dealer verification approved — payout released',
     });
-    await this.send(d.sellerEmail, 'Dealer verification approved: ' + d.listingTitle, html);
+    await this.send(
+      d.sellerEmail,
+      'Dealer verification approved: ' + d.listingTitle,
+      html,
+    );
     await this.sendSms(
       d.sellerPhone,
       `Gun Galore: Dealer stock-in approved for ${truncate(d.listingTitle, 30)}. Payout R${(d.sellerPayout / 100).toFixed(0)} on the way (2-3 days).`,
@@ -552,7 +572,11 @@ export class NotificationsService {
       cta: { label: 'View sale', url: `${this.appUrl}/dashboard` },
       preheader: `Payout of ${formatRand(d.sellerPayout)} on the way`,
     });
-    await this.send(d.sellerEmail, 'Payout confirmed — ' + d.listingTitle, html);
+    await this.send(
+      d.sellerEmail,
+      'Payout confirmed — ' + d.listingTitle,
+      html,
+    );
     await this.sendSms(
       d.sellerPhone,
       `Gun Galore: Payout of R${(d.sellerPayout / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} is on the way. Allow 2-3 business days.`,
@@ -629,7 +653,11 @@ export class NotificationsService {
       cta: { label: 'Edit listing', url: editUrl },
       preheader: `${d.listingTitle} was not approved`,
     });
-    await this.send(d.sellerEmail, 'Listing not approved: ' + d.listingTitle, html);
+    await this.send(
+      d.sellerEmail,
+      'Listing not approved: ' + d.listingTitle,
+      html,
+    );
   }
 
   // Admin took down a listing AFTER it was already live (different
@@ -652,11 +680,7 @@ export class NotificationsService {
       cta: { label: 'Open my listings', url: myListingsUrl },
       preheader: `${d.listingTitle} was removed by an admin`,
     });
-    await this.send(
-      d.sellerEmail,
-      'Listing removed: ' + d.listingTitle,
-      html,
-    );
+    await this.send(d.sellerEmail, 'Listing removed: ' + d.listingTitle, html);
   }
 
   // ---------------------------------------------------------------
@@ -740,7 +764,13 @@ export class NotificationsService {
     }
   }
 
-  async offerRejected(d: { buyerEmail: string; buyerName: string; listingTitle: string; listingId: string; offerId: string }) {
+  async offerRejected(d: {
+    buyerEmail: string;
+    buyerName: string;
+    listingTitle: string;
+    listingId: string;
+    offerId: string;
+  }) {
     const url = `${this.appUrl}/listings/${d.listingId}`;
     const html = this.email({
       status: { tone: 'error', label: 'Declined' },
@@ -796,26 +826,55 @@ export class NotificationsService {
     }
   }
 
-  async counterAccepted(d: { sellerEmail: string; sellerName: string; buyerName: string; listingTitle: string; listingId: string; counterAmount: number; offerId: string }) {
+  async counterAccepted(d: {
+    sellerEmail: string;
+    sellerName: string;
+    buyerName: string;
+    listingTitle: string;
+    listingId: string;
+    counterAmount: number;
+    offerId: string;
+  }) {
     const html = this.email({
       status: { tone: 'success', label: 'Counter accepted' },
       headline: 'Counter accepted',
       body: `Hi ${b(d.sellerName)}, ${b(d.buyerName)} has accepted your counter-offer of ${b(formatRand(d.counterAmount))} on ${b(d.listingTitle)}. They will complete checkout within 24 hours.`,
-      cta: { label: 'View received offers', url: `${this.appUrl}/offers/received` },
+      cta: {
+        label: 'View received offers',
+        url: `${this.appUrl}/offers/received`,
+      },
       preheader: `${d.buyerName} accepted your counter`,
     });
-    await this.send(d.sellerEmail, 'Counter accepted — ' + d.listingTitle, html);
+    await this.send(
+      d.sellerEmail,
+      'Counter accepted — ' + d.listingTitle,
+      html,
+    );
   }
 
-  async counterRejected(d: { sellerEmail: string; sellerName: string; buyerName: string; listingTitle: string; listingId: string; offerId: string }) {
+  async counterRejected(d: {
+    sellerEmail: string;
+    sellerName: string;
+    buyerName: string;
+    listingTitle: string;
+    listingId: string;
+    offerId: string;
+  }) {
     const html = this.email({
       status: { tone: 'error', label: 'Counter declined' },
       headline: 'Counter declined',
       body: `Hi ${b(d.sellerName)}, ${b(d.buyerName)} has declined your counter-offer on ${b(d.listingTitle)}. The listing remains active.`,
-      cta: { label: 'View listing', url: `${this.appUrl}/listings/${d.listingId}` },
+      cta: {
+        label: 'View listing',
+        url: `${this.appUrl}/listings/${d.listingId}`,
+      },
       preheader: `${d.buyerName} declined your counter`,
     });
-    await this.send(d.sellerEmail, 'Counter declined — ' + d.listingTitle, html);
+    await this.send(
+      d.sellerEmail,
+      'Counter declined — ' + d.listingTitle,
+      html,
+    );
   }
 
   // ---------------------------------------------------------------
@@ -861,7 +920,9 @@ export class NotificationsService {
      */
     actionUrl?: string,
   ) {
-    const url = actionUrl ?? (listingId ? `${this.appUrl}/listings/${listingId}` : this.appUrl);
+    const url =
+      actionUrl ??
+      (listingId ? `${this.appUrl}/listings/${listingId}` : this.appUrl);
     const html = this.email({
       status: { tone: 'error', label: 'Outbid' },
       headline: "You've been outbid",
@@ -874,7 +935,11 @@ export class NotificationsService {
       const smsBody = actionUrl
         ? `Gun Galore: Outbid on ${truncate(listingTitle, 26)} — high R${(newAmount / 100).toFixed(0)}. Raise: ${actionUrl}`
         : `Gun Galore: Outbid on ${truncate(listingTitle, 30)} — current bid R${(newAmount / 100).toFixed(0)}.`;
-      await this.sendSms(buyerPhone, smsBody, `outbid-${listingId ?? 'x'}-${newAmount}`);
+      await this.sendSms(
+        buyerPhone,
+        smsBody,
+        `outbid-${listingId ?? 'x'}-${newAmount}`,
+      );
     }
   }
 
@@ -964,29 +1029,50 @@ export class NotificationsService {
   // Shipping status notifications (called by webhook handlers)
   // ---------------------------------------------------------------
 
-  async shippingDispatched(buyerEmail: string, buyerName: string, listingTitle: string, transactionId: string) {
+  async shippingDispatched(
+    buyerEmail: string,
+    buyerName: string,
+    listingTitle: string,
+    transactionId: string,
+  ) {
     const html = this.email({
       status: { tone: 'success', label: 'Dispatched' },
       headline: 'Dispatched',
       body: `Hi ${b(buyerName)}, ${b(listingTitle)} is on its way. We'll email you again when it's out for delivery.`,
-      cta: { label: 'Track order', url: `${this.appUrl}/transactions/${transactionId}` },
+      cta: {
+        label: 'Track order',
+        url: `${this.appUrl}/transactions/${transactionId}`,
+      },
       preheader: `${listingTitle} is on its way`,
     });
     await this.send(buyerEmail, 'Dispatched — ' + listingTitle, html);
   }
 
-  async shippingOutForDelivery(buyerEmail: string, buyerName: string, listingTitle: string, transactionId: string) {
+  async shippingOutForDelivery(
+    buyerEmail: string,
+    buyerName: string,
+    listingTitle: string,
+    transactionId: string,
+  ) {
     const html = this.email({
       status: { tone: 'pending', label: 'Out for delivery' },
       headline: 'Out for delivery today',
       body: `Hi ${b(buyerName)}, ${b(listingTitle)} is out for delivery. Please be available to receive it.`,
-      cta: { label: 'Track order', url: `${this.appUrl}/transactions/${transactionId}` },
+      cta: {
+        label: 'Track order',
+        url: `${this.appUrl}/transactions/${transactionId}`,
+      },
       preheader: `${listingTitle} is out for delivery today`,
     });
     await this.send(buyerEmail, 'Out for delivery — ' + listingTitle, html);
   }
 
-  async shippingDelivered(buyerEmail: string, buyerName: string, listingTitle: string, transactionId: string) {
+  async shippingDelivered(
+    buyerEmail: string,
+    buyerName: string,
+    listingTitle: string,
+    transactionId: string,
+  ) {
     const url = `${this.appUrl}/transactions/${transactionId}`;
     const html = this.email({
       status: { tone: 'success', label: 'Delivered' },
@@ -998,12 +1084,20 @@ export class NotificationsService {
     await this.send(buyerEmail, 'Delivered — ' + listingTitle, html);
   }
 
-  async shippingFailed(buyerEmail: string, buyerName: string, listingTitle: string, transactionId: string) {
+  async shippingFailed(
+    buyerEmail: string,
+    buyerName: string,
+    listingTitle: string,
+    transactionId: string,
+  ) {
     const html = this.email({
       status: { tone: 'error', label: 'Delivery failed' },
       headline: 'Delivery failed',
       body: `Hi ${b(buyerName)}, we couldn't deliver ${b(listingTitle)}. The courier will retry. If you need to update your address or have questions, contact support.`,
-      cta: { label: 'View order', url: `${this.appUrl}/transactions/${transactionId}` },
+      cta: {
+        label: 'View order',
+        url: `${this.appUrl}/transactions/${transactionId}`,
+      },
       preheader: `Delivery of ${listingTitle} failed`,
     });
     await this.send(buyerEmail, 'Delivery failed — ' + listingTitle, html);
@@ -1013,13 +1107,17 @@ export class NotificationsService {
   // Raffle notifications
   // ---------------------------------------------------------------
 
-  async raffleEntryConfirmed(buyerEmail: string, raffleTitle: string, ticketCount: number, refCodes: string[]) {
+  async raffleEntryConfirmed(
+    buyerEmail: string,
+    raffleTitle: string,
+    ticketCount: number,
+    refCodes: string[],
+  ) {
     const url = `${this.appUrl}/my/tickets`;
     const shownRefs = refCodes.slice(0, 25);
     const refsList = shownRefs.join(', ');
-    const refsLine = shownRefs.length > 0
-      ? `<br><br>Reference codes: ${b(refsList)}`
-      : '';
+    const refsLine =
+      shownRefs.length > 0 ? `<br><br>Reference codes: ${b(refsList)}` : '';
     const html = this.email({
       status: { tone: 'success', label: 'Tickets confirmed' },
       headline: 'Tickets confirmed',
@@ -1034,7 +1132,12 @@ export class NotificationsService {
     await this.send(buyerEmail, 'Entry confirmed — ' + raffleTitle, html);
   }
 
-  async raffleWinnerPicked(winnerEmail: string, raffleTitle: string, position: number, claimDeadline: Date) {
+  async raffleWinnerPicked(
+    winnerEmail: string,
+    raffleTitle: string,
+    position: number,
+    claimDeadline: Date,
+  ) {
     const place = position === 1 ? 'WINNER' : `Backup #${position - 1}`;
     const url = `${this.appUrl}/dashboard/raffle-wins`;
     const isWinner = position === 1;
@@ -1050,21 +1153,29 @@ export class NotificationsService {
         { label: 'Claim deadline', value: deadlineStr },
       ],
       cta: { label: 'Claim prize', url },
-      preheader: isWinner ? `You won ${raffleTitle}` : `Backup pick for ${raffleTitle}`,
+      preheader: isWinner
+        ? `You won ${raffleTitle}`
+        : `Backup pick for ${raffleTitle}`,
     });
-    await this.send(winnerEmail, (isWinner ? 'You won — ' : 'Backup pick — ') + raffleTitle, html);
+    await this.send(
+      winnerEmail,
+      (isWinner ? 'You won — ' : 'Backup pick — ') + raffleTitle,
+      html,
+    );
   }
 
-  async raffleBackupPromoted(winnerEmail: string, raffleId: string, claimDeadline: Date) {
+  async raffleBackupPromoted(
+    winnerEmail: string,
+    raffleId: string,
+    claimDeadline: Date,
+  ) {
     const url = `${this.appUrl}/dashboard/raffle-wins`;
     const deadlineStr = claimDeadline.toLocaleString('en-ZA');
     const html = this.email({
       status: { tone: 'success', label: 'Promoted' },
       headline: 'Promoted to winner',
       body: `The primary winner did not claim their prize. You're up — confirm your claim before the deadline below.`,
-      rows: [
-        { label: 'Claim deadline', value: deadlineStr },
-      ],
+      rows: [{ label: 'Claim deadline', value: deadlineStr }],
       cta: { label: 'Claim prize', url },
       preheader: 'Backup promoted — claim your prize',
     });
@@ -1111,7 +1222,11 @@ export class NotificationsService {
       cta,
       preheader: `Prize dispatched — tracking ${trackingRef}`,
     });
-    await this.send(winnerEmail, 'Your prize has been dispatched — ' + raffleTitle, html);
+    await this.send(
+      winnerEmail,
+      'Your prize has been dispatched — ' + raffleTitle,
+      html,
+    );
 
     // SMS — single segment if at all possible. Truncate the raffle
     // title aggressively so the tracking ref is never cut off.
@@ -1173,6 +1288,67 @@ export class NotificationsService {
       `VerifyNow credits low — ${available} remaining`,
       html,
     );
+  }
+
+  // ---------------------------------------------------------------
+  // Admin: generic credit-low alert (any monitored service).
+  // ---------------------------------------------------------------
+  // Driven by the /admin/credits monitoring system (CreditThreshold
+  // table). The 15-min poll cron calls this when an external service
+  // (SMSPortal / VerifyNow / Cloudinary / Anthropic / Pudo) crosses
+  // the operator-configured warn or alarm line.
+  //
+  // severity:
+  //   - 'warn'  — email only (amber). One per service per 6h.
+  //   - 'alarm' — email + SMS (red).   One per service per 6h.
+  //
+  // SMS is sent via the caller (it already has the operator's phone
+  // from the AdminUser join); this method only renders the email and
+  // returns the SMS body string for the caller to feed into sendSms.
+  // That way we don't re-fetch admin contact rows here.
+  async creditAlert(d: {
+    adminEmail: string;
+    adminName: string;
+    service: string;
+    balance: number;
+    unit: string;
+    severity: 'warn' | 'alarm';
+    threshold: number;
+  }): Promise<string> {
+    const url = `${this.appUrl}/admin/credits`;
+    const isAlarm = d.severity === 'alarm';
+    const friendlyService = prettyServiceName(d.service);
+    const dot = isAlarm ? '🔴' : '🟡';
+    const headline = isAlarm
+      ? `${friendlyService} credits CRITICAL`
+      : `${friendlyService} credits low`;
+
+    const html = this.email({
+      status: {
+        tone: isAlarm ? 'error' : 'pending',
+        label: isAlarm ? 'Critical' : 'Action needed',
+      },
+      headline,
+      body: `Hi ${b(d.adminName)}, the ${b(friendlyService)} service is at ${b(`${d.balance} ${d.unit}`)} — ${isAlarm ? 'BELOW the alarm threshold' : 'below the warn threshold'} of ${b(`${d.threshold} ${d.unit}`)}. Top up before live testing or production traffic hits this service.`,
+      rows: [
+        { label: 'Service', value: friendlyService },
+        { label: 'Current balance', value: `${d.balance} ${d.unit}` },
+        { label: 'Threshold', value: `${d.threshold} ${d.unit}` },
+        { label: 'Severity', value: isAlarm ? 'ALARM' : 'WARN' },
+      ],
+      cta: { label: 'Open credits dashboard', url },
+      preheader: `${friendlyService} at ${d.balance} ${d.unit} — ${d.severity}`,
+    });
+
+    await this.send(
+      d.adminEmail,
+      `${dot} ${friendlyService} credits at ${d.balance} ${d.unit}`,
+      html,
+    );
+
+    // SMS body — kept under 160 chars for single-segment delivery so
+    // the alarm reaches the operator's lock screen without truncation.
+    return `Gun Galore: ${friendlyService} credits at ${d.balance} ${d.unit}. Top up: ${url}`;
   }
 
   // ---------------------------------------------------------------
@@ -1242,11 +1418,7 @@ export class NotificationsService {
       cta: { label: 'Browse listings', url: `${this.appUrl}/` },
       preheader: `Refunded ${formatRand(d.buyerTotal)} for ${d.listingTitle}`,
     });
-    await this.send(
-      d.buyer.email,
-      'Refunded: ' + d.listingTitle,
-      buyerHtml,
-    );
+    await this.send(d.buyer.email, 'Refunded: ' + d.listingTitle, buyerHtml);
     await this.sendSms(
       d.buyer.phone,
       `Gun Galore: ${truncate(d.listingTitle, 30)} not dispatched. Refunded ${formatRand(d.buyerTotal)} to your card.`,
@@ -1301,9 +1473,11 @@ export class NotificationsService {
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
     const buyerName =
-      [d.buyer.firstName, d.buyer.lastName].filter(Boolean).join(' ') || 'Buyer';
+      [d.buyer.firstName, d.buyer.lastName].filter(Boolean).join(' ') ||
+      'Buyer';
     const sellerName =
-      [d.seller.firstName, d.seller.lastName].filter(Boolean).join(' ') || 'Seller';
+      [d.seller.firstName, d.seller.lastName].filter(Boolean).join(' ') ||
+      'Seller';
 
     // Email to the BUYER — reveals SELLER details.
     const buyerRows: { label: string; value: string }[] = [
@@ -1384,7 +1558,11 @@ export class NotificationsService {
       cta: { label: 'Answer in dashboard', url },
       preheader: `New question on ${d.listingTitle}`,
     });
-    await this.send(d.sellerEmail, 'Question on your listing — ' + d.listingTitle, html);
+    await this.send(
+      d.sellerEmail,
+      'Question on your listing — ' + d.listingTitle,
+      html,
+    );
     await this.sendSms(
       d.sellerPhone,
       `Gun Galore: New question on ${truncate(d.listingTitle, 30)}. Reply: ${url}`,
@@ -1464,7 +1642,9 @@ export class NotificationsService {
       await this.resend.emails.send({ from: FROM, to, subject, html });
       this.logger.debug(`Email sent → ${to} "${subject}"`);
     } catch (err) {
-      this.logger.error(`Email failed → ${to} "${subject}": ${(err as Error).message}`);
+      this.logger.error(
+        `Email failed → ${to} "${subject}": ${(err as Error).message}`,
+      );
     }
   }
 
@@ -1551,6 +1731,27 @@ function carrierTrackingUrl(
     return `https://www.aramex.co.za/tools/track?l=${encoded}`;
   }
   return null;
+}
+
+// Pretty service name for credit-alert emails/SMS. We store the
+// service key as a lowercase slug ('smsportal', 'verifynow', etc.) in
+// CreditSnapshot.service for stable joins, but the operator should
+// see the brand name in their inbox / SMS.
+function prettyServiceName(slug: string): string {
+  switch (slug) {
+    case 'smsportal':
+      return 'SMSPortal';
+    case 'verifynow':
+      return 'VerifyNow';
+    case 'cloudinary':
+      return 'Cloudinary';
+    case 'anthropic':
+      return 'Anthropic';
+    case 'pudo':
+      return 'Pudo';
+    default:
+      return slug;
+  }
 }
 
 // Human-readable short date used by templates' "Date" / "Listed on"

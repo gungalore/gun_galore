@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Patch,
+  Put,
   Body,
   Param,
   Query,
@@ -35,6 +36,7 @@ import {
 import { AdminCommandCenterService } from './admin-command-center.service';
 import { AdminTrustSafetyService } from './admin-trust-safety.service';
 import { AdminHealthService } from './admin-health.service';
+import { AdminCreditsService } from './admin-credits.service';
 import {
   AdminDealersService,
   CreateDealerDto,
@@ -135,7 +137,11 @@ export class AdminListingsController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.adminService.getListings(status, Number(page) || 1, Number(limit) || 20);
+    return this.adminService.getListings(
+      status,
+      Number(page) || 1,
+      Number(limit) || 20,
+    );
   }
 
   // Dossier — listing + every relation an admin needs to assess it:
@@ -163,7 +169,12 @@ export class AdminListingsController {
     @CurrentAdmin() admin: { sub: string },
     @Body() body: { listingIds?: string[]; action?: string; reason?: string },
   ) {
-    const action = body.action === 'APPROVE' ? 'APPROVE' : body.action === 'REJECT' ? 'REJECT' : null;
+    const action =
+      body.action === 'APPROVE'
+        ? 'APPROVE'
+        : body.action === 'REJECT'
+          ? 'REJECT'
+          : null;
     if (!action) {
       throw new Error('action must be APPROVE or REJECT');
     }
@@ -275,7 +286,11 @@ export class AdminTransactionsController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.adminService.getTransactions(status, Number(page) || 1, Number(limit) || 20);
+    return this.adminService.getTransactions(
+      status,
+      Number(page) || 1,
+      Number(limit) || 20,
+    );
   }
 
   // Dossier — parties, listing, payment + shipping timeline, messages,
@@ -313,7 +328,11 @@ export class AdminTransactionsController {
     @CurrentAdmin() admin: { sub: string },
     @Body() body: { reason?: string },
   ) {
-    return this.adminService.resolveDisputeRelease(id, admin.sub, body.reason ?? '');
+    return this.adminService.resolveDisputeRelease(
+      id,
+      admin.sub,
+      body.reason ?? '',
+    );
   }
 
   // Dealer-verification override. Admin reviews Claude's findings +
@@ -378,10 +397,7 @@ export class AdminAdminsController {
   @Post()
   @UseGuards(SuperadminGuard)
   @HttpCode(201)
-  create(
-    @Body() dto: CreateAdminDto,
-    @CurrentAdmin() admin: { sub: string },
-  ) {
+  create(@Body() dto: CreateAdminDto, @CurrentAdmin() admin: { sub: string }) {
     return this.adminService.createAdmin(dto.email, dto.role, admin.sub);
   }
 
@@ -398,10 +414,7 @@ export class AdminAdminsController {
   @Post(':id/deactivate')
   @UseGuards(SuperadminGuard)
   @HttpCode(200)
-  deactivate(
-    @Param('id') id: string,
-    @CurrentAdmin() admin: { sub: string },
-  ) {
+  deactivate(@Param('id') id: string, @CurrentAdmin() admin: { sub: string }) {
     return this.adminService.deactivateAdmin(id, admin.sub);
   }
 }
@@ -493,7 +506,13 @@ export class AdminAnalyticsController {
   // Normaliser — falls back to 30d for anything unrecognised so the
   // dashboard always renders something.
   private resolvePeriod(p?: string): AnalyticsPeriod {
-    if (p === '7d' || p === '30d' || p === '90d' || p === '365d' || p === 'all') {
+    if (
+      p === '7d' ||
+      p === '30d' ||
+      p === '90d' ||
+      p === '365d' ||
+      p === 'all'
+    ) {
       return p;
     }
     return '30d';
@@ -624,10 +643,7 @@ export class AdminDealersController {
 
   @Post()
   @HttpCode(201)
-  create(
-    @CurrentAdmin() admin: { sub: string },
-    @Body() dto: CreateDealerDto,
-  ) {
+  create(@CurrentAdmin() admin: { sub: string }, @Body() dto: CreateDealerDto) {
     return this.dealers.create(admin.sub, dto);
   }
 
@@ -664,10 +680,7 @@ export class AdminBroadcastController {
   // Actually send. Body: BroadcastDto
   @Post('send')
   @HttpCode(200)
-  send(
-    @CurrentAdmin() admin: { sub: string },
-    @Body() dto: BroadcastDto,
-  ) {
+  send(@CurrentAdmin() admin: { sub: string }, @Body() dto: BroadcastDto) {
     return this.broadcast.send(admin.sub, dto);
   }
 }
@@ -694,7 +707,12 @@ export class AdminSettingsController {
     @CurrentAdmin() admin: { sub: string },
     @Body() body: { value?: string; reason?: string },
   ) {
-    return this.settings.update(admin.sub, key, body.value ?? '', body.reason ?? '');
+    return this.settings.update(
+      admin.sub,
+      key,
+      body.value ?? '',
+      body.reason ?? '',
+    );
   }
 }
 
@@ -783,5 +801,73 @@ export class AdminTrustSafetyController {
   @Get('reported-questions')
   reportedQuestions() {
     return this.ts.reportedQuestions();
+  }
+}
+
+// ---------------------------------------------------------------
+// External-service credit balances. Five endpoints:
+//   GET /admin/credits/snapshot            — live fetch all services
+//   GET /admin/credits/history?service=&days= — per-service trend data
+//   GET /admin/credits/thresholds          — list current thresholds
+//   PUT /admin/credits/thresholds/:service — upsert threshold for one
+//   POST /admin/credits/:service/test       — fire a non-billing probe
+//
+// Cron-written snapshots accumulate in CreditSnapshot every 15 min;
+// the page reads them for the chart and uses snapshot for the grid.
+// All routes guarded by AdminJwtGuard (matches the rest of admin).
+// ---------------------------------------------------------------
+@Controller('admin/credits')
+@UseGuards(AdminJwtGuard)
+export class AdminCreditsController {
+  constructor(private readonly credits: AdminCreditsService) {}
+
+  // Live fetch — bypasses CreditSnapshot, hits every API right now.
+  // Used by the "Refresh" button on the credits page. Always returns
+  // an array (one entry per service) even when some fetches fail.
+  @Get('snapshot')
+  snapshot() {
+    return this.credits.fetchAll();
+  }
+
+  // Time-series for one service. `days` defaults to 30, capped at 365
+  // and floored at 1 inside the service.
+  @Get('history')
+  history(@Query('service') service?: string, @Query('days') days?: string) {
+    if (!service) {
+      throw new BadRequestException('service query param is required');
+    }
+    const parsedDays = days ? parseInt(days, 10) : 30;
+    return this.credits.history(
+      service,
+      Number.isFinite(parsedDays) ? parsedDays : 30,
+    );
+  }
+
+  @Get('thresholds')
+  thresholds() {
+    return this.credits.listThresholds();
+  }
+
+  // Upsert thresholds for one service. Body validates loosely — the
+  // service layer normalises nulls and defaults `enabled` to true.
+  @Put('thresholds/:service')
+  async updateThreshold(
+    @Param('service') service: string,
+    @Body()
+    body: {
+      warnThreshold?: number | null;
+      alarmThreshold?: number | null;
+      enabled?: boolean;
+    },
+  ) {
+    return this.credits.upsertThreshold(service, body);
+  }
+
+  // Test endpoint — fires a non-billing probe per service. Returns
+  // { ok, detail } so the UI can show a single-line result.
+  @Post(':service/test')
+  @HttpCode(200)
+  test(@Param('service') service: string) {
+    return this.credits.testService(service);
   }
 }

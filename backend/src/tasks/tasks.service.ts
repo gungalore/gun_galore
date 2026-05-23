@@ -8,6 +8,16 @@ import { KycService } from '../kyc/kyc.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { DispatchSlaService } from '../payments/dispatch-sla.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminCreditsService } from '../admin/admin-credits.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { SmsService } from '../sms/sms.service';
+
+// Threshold-alert dedup window. Once we've fired an alert at any
+// severity for a given service, we won't fire ANOTHER alert at the
+// same severity for that service until this window elapses. Stops
+// the 15-min cron from spamming the operator while the balance
+// hovers just under the line.
+const CREDIT_ALERT_DEDUP_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 @Injectable()
 export class TasksService {
@@ -22,6 +32,9 @@ export class TasksService {
     private readonly trackingService: TrackingService,
     private readonly dispatchSla: DispatchSlaService,
     private readonly prisma: PrismaService,
+    private readonly adminCredits: AdminCreditsService,
+    private readonly notifications: NotificationsService,
+    private readonly sms: SmsService,
   ) {}
 
   // Stamp the Setting table with this cron's last successful run.
@@ -217,9 +230,7 @@ export class TasksService {
         );
       }
     } catch (err) {
-      this.logger.warn(
-        `Pudo tracking poll failed: ${(err as Error).message}`,
-      );
+      this.logger.warn(`Pudo tracking poll failed: ${(err as Error).message}`);
     }
     await this.recordCronRun('shipping-poll');
   }
@@ -239,9 +250,7 @@ export class TasksService {
         );
       }
     } catch (err) {
-      this.logger.warn(
-        `Dispatch SLA nudge failed: ${(err as Error).message}`,
-      );
+      this.logger.warn(`Dispatch SLA nudge failed: ${(err as Error).message}`);
     }
     try {
       const refund = await this.dispatchSla.autoRefundStale();
@@ -256,5 +265,219 @@ export class TasksService {
       );
     }
     await this.recordCronRun('dispatch-sla');
+  }
+
+  // ─── Credit-balance poll ───────────────────────────────────────
+  // Every 15 minutes, fetch every monitored external service's
+  // balance, write a CreditSnapshot row, and fire an alert if any
+  // service has dropped under its operator-configured threshold.
+  //
+  // Why poll instead of webhook:
+  //   - None of these services push balance updates. We have to ask.
+  //   - 15 min is the right cadence — fast enough that the operator
+  //     finds out before a sustained burst eats the buffer, slow
+  //     enough that we're not hammering 5 external APIs every minute.
+  //
+  // Failure modes are handled inside adminCredits.fetchAll() — the
+  // method never throws and never blocks. Every result is written
+  // (even errors — they appear as rows with balance=null + error
+  // populated, which keeps the trend chart honest about gaps).
+  // Raw 15-min cron expression — @nestjs/schedule's CronExpression enum
+  // doesn't ship EVERY_15_MINUTES (it jumps from EVERY_10 to EVERY_30).
+  @Cron('0 */15 * * * *')
+  async pollCreditBalances() {
+    let results: Awaited<ReturnType<typeof this.adminCredits.fetchAll>> = [];
+    try {
+      results = await this.adminCredits.fetchAll();
+    } catch (err) {
+      this.logger.error(
+        `pollCreditBalances: fetchAll threw (shouldn't happen): ${(err as Error).message}`,
+      );
+      await this.recordCronRun('credit-poll');
+      return;
+    }
+
+    // Write a snapshot row for every result — even errored ones, so
+    // the chart shows gaps rather than silently dropping points.
+    for (const r of results) {
+      try {
+        await this.prisma.creditSnapshot.create({
+          data: {
+            service: r.service,
+            balance: r.balance,
+            unit: r.unit,
+            metadata: r.metadata as object | undefined,
+            error: r.error,
+            fetchedAt: r.fetchedAt,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Failed to write CreditSnapshot for ${r.service}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // Check each result against its threshold. Failures here are
+    // logged but never abort the loop — one borked service's alert
+    // path must not stop the others from being checked.
+    for (const r of results) {
+      if (r.balance == null) continue; // no fresh balance → no alert
+      try {
+        await this.checkCreditThreshold(r.service, r.balance, r.unit ?? '');
+      } catch (err) {
+        this.logger.warn(
+          `Credit threshold check for ${r.service} failed: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    await this.recordCronRun('credit-poll');
+  }
+
+  // Check the latest balance against the operator-configured threshold
+  // for one service. Fires alerts (with 6h dedup) when crossed.
+  //
+  // NOTE on Anthropic: for that service the "balance" is SPEND (USD
+  // over 24h) not balance-remaining, so the comparison is conceptually
+  // "are we OVER the limit?". For now we apply the same `balance <=
+  // threshold` rule — the operator should set Anthropic's thresholds
+  // to NEGATIVE numbers if they want spend-cap behaviour, or leave
+  // them null (which the next clause handles). A follow-up could add
+  // a `direction` column to CreditThreshold; until then, the operator
+  // can leave Anthropic thresholds unset and rely on the trend chart.
+  private async checkCreditThreshold(
+    service: string,
+    balance: number,
+    unit: string,
+  ): Promise<void> {
+    const threshold = await this.prisma.creditThreshold.findUnique({
+      where: { service },
+    });
+    if (!threshold || !threshold.enabled) return;
+
+    const now = new Date();
+
+    // Alarm comes first — if both are tripped, the alarm path also
+    // serves as the warn path (no point sending two emails).
+    if (
+      threshold.alarmThreshold != null &&
+      balance <= threshold.alarmThreshold
+    ) {
+      const lastAlarm = threshold.lastAlarmAlertAt;
+      if (
+        !lastAlarm ||
+        now.getTime() - lastAlarm.getTime() >= CREDIT_ALERT_DEDUP_MS
+      ) {
+        await this.fanOutCreditAlert(
+          service,
+          balance,
+          unit,
+          'alarm',
+          threshold.alarmThreshold,
+        );
+        await this.prisma.creditThreshold.update({
+          where: { service },
+          data: { lastAlarmAlertAt: now },
+        });
+      }
+      return;
+    }
+
+    if (threshold.warnThreshold != null && balance <= threshold.warnThreshold) {
+      const lastWarn = threshold.lastWarnAlertAt;
+      if (
+        !lastWarn ||
+        now.getTime() - lastWarn.getTime() >= CREDIT_ALERT_DEDUP_MS
+      ) {
+        await this.fanOutCreditAlert(
+          service,
+          balance,
+          unit,
+          'warn',
+          threshold.warnThreshold,
+        );
+        await this.prisma.creditThreshold.update({
+          where: { service },
+          data: { lastWarnAlertAt: now },
+        });
+      }
+    }
+  }
+
+  // Fan an alert out to every active superadmin. Resolves the SUPERADMIN
+  // AdminUser rows, joins to their linked User row for phone (when
+  // available), emails everyone, and SMSes everyone (alarm only).
+  // Best-effort — individual send failures are logged not thrown.
+  private async fanOutCreditAlert(
+    service: string,
+    balance: number,
+    unit: string,
+    severity: 'warn' | 'alarm',
+    threshold: number,
+  ): Promise<void> {
+    const admins = await this.prisma.adminUser.findMany({
+      where: { isActive: true, role: 'SUPERADMIN' },
+      select: { id: true, clerkId: true, email: true, firstName: true },
+    });
+    if (admins.length === 0) {
+      this.logger.warn(
+        `Credit alert (${service} ${severity}) but no active SUPERADMIN to notify`,
+      );
+      return;
+    }
+
+    const clerkIds = admins.map((a) => a.clerkId).filter(Boolean) as string[];
+    const linkedUsers = clerkIds.length
+      ? await this.prisma.user.findMany({
+          where: { clerkId: { in: clerkIds } },
+          select: {
+            clerkId: true,
+            email: true,
+            phone: true,
+            firstName: true,
+          },
+        })
+      : [];
+    const userByClerkId = new Map(
+      linkedUsers.map((u) => [u.clerkId, u] as const),
+    );
+
+    for (const admin of admins) {
+      const linked = admin.clerkId
+        ? userByClerkId.get(admin.clerkId)
+        : undefined;
+      const email = linked?.email ?? admin.email;
+      const phone = linked?.phone ?? null;
+      const name = linked?.firstName ?? admin.firstName ?? 'Admin';
+
+      try {
+        const smsBody = await this.notifications.creditAlert({
+          adminEmail: email,
+          adminName: name,
+          service,
+          balance,
+          unit,
+          severity,
+          threshold,
+        });
+        // SMS only for alarms — warn is email-only by design.
+        if (severity === 'alarm' && phone) {
+          await this.sms.sendSms({
+            to: phone,
+            message: smsBody,
+            reference: `credit-${service}-${severity}-${admin.id}`,
+          });
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Credit alert send to admin ${admin.id} failed: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `Credit alert dispatched: service=${service} severity=${severity} balance=${balance}${unit ? ' ' + unit : ''} threshold=${threshold} admins=${admins.length}`,
+    );
   }
 }

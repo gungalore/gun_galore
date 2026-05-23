@@ -8,8 +8,12 @@ import { FeaturedModule } from '../featured/featured.module';
 import { KycModule } from '../kyc/kyc.module';
 import { ShippingModule } from '../shipping/shipping.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { AdminModule } from '../admin/admin.module';
 
 @Module({
+  // AdminModule is imported so we can inject AdminCreditsService into
+  // TasksService.pollCreditBalances (the 15-min credit-poll cron).
+  // AdminModule exports AdminCreditsService for this purpose.
   imports: [
     ScheduleModule.forRoot(),
     OffersModule,
@@ -19,6 +23,7 @@ import { PaymentsModule } from '../payments/payments.module';
     KycModule,
     ShippingModule,
     PaymentsModule,
+    AdminModule,
   ],
   providers: [TasksService],
 })

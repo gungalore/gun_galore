@@ -21,6 +21,10 @@ interface AttentionQueue {
   // Info-grade for now; we surface it as a separate card on the
   // dashboard so the operator can prep the parcel ahead of time.
   rafflesNewlyDrawn: number;
+  // External-service credits (SMSPortal, VerifyNow, Cloudinary,
+  // Anthropic, Pudo) at/below the operator-configured alarm threshold.
+  // Alarm-grade — a service running on empty silently breaks user flows.
+  creditsBelowAlarm: number;
 }
 
 interface TodayPulse {
@@ -185,6 +189,16 @@ export default function AdminCommandCenterPage() {
           href: '/admin/competitions?tab=drawn',
           tone: attention.rafflesNewlyDrawn > 0 ? 'warn' : 'calm',
           hint: 'Winner picked, awaiting claim',
+        },
+        // Service credits below alarm — silent-failure risk. SMS/email
+        // alerts also fire from the cron, but this card keeps the
+        // dashboard scan honest in case the operator missed them.
+        {
+          label: 'Service credits low',
+          value: attention.creditsBelowAlarm,
+          href: '/admin/credits',
+          tone: attention.creditsBelowAlarm > 0 ? 'urgent' : 'calm',
+          hint: 'Below alarm threshold',
         },
       ]
     : [];

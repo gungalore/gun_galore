@@ -14,6 +14,7 @@ const ITEMS = [
   { href: '/admin/analytics', label: 'Analytics' },
   { href: '/admin/trust-safety', label: 'Trust & Safety' },
   { href: '/admin/health', label: 'System Health' },
+  { href: '/admin/credits', label: 'Credits' },
   { href: '/admin/freshness-graveyard', label: 'Freshness' },
   { href: '/admin/listings', label: 'Listings' },
   { href: '/admin/users', label: 'Users' },

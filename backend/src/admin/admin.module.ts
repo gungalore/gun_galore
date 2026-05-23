@@ -7,6 +7,7 @@ import { AdminAnalyticsService } from './admin-analytics.service';
 import { AdminCommandCenterService } from './admin-command-center.service';
 import { AdminTrustSafetyService } from './admin-trust-safety.service';
 import { AdminHealthService } from './admin-health.service';
+import { AdminCreditsService } from './admin-credits.service';
 import { AdminDealersService } from './admin-dealers.service';
 import { AdminCategoriesService } from './admin-categories.service';
 import { AdminSettingsService } from './admin-settings.service';
@@ -25,6 +26,7 @@ import {
   AdminSearchController,
   AdminTrustSafetyController,
   AdminHealthController,
+  AdminCreditsController,
   AdminDealersController,
   AdminCategoriesController,
   AdminSettingsController,
@@ -58,6 +60,7 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
     AdminCommandCenterService,
     AdminTrustSafetyService,
     AdminHealthService,
+    AdminCreditsService,
     AdminDealersService,
     AdminCategoriesService,
     AdminSettingsService,
@@ -79,10 +82,15 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
     AdminSearchController,
     AdminTrustSafetyController,
     AdminHealthController,
+    AdminCreditsController,
     AdminDealersController,
     AdminCategoriesController,
     AdminSettingsController,
     AdminBroadcastController,
   ],
+  // Export AdminCreditsService so TasksModule's pollCreditBalances
+  // cron can inject it without us having to declare the service in
+  // two places (which would create two instances + risk drift).
+  exports: [AdminCreditsService],
 })
 export class AdminModule {}
