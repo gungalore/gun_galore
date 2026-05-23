@@ -23,7 +23,12 @@
 
 import { defaultCache } from '@serwist/next/worker';
 import type { PrecacheEntry, RuntimeCaching, SerwistGlobalConfig } from 'serwist';
-import { Serwist, ExpirationPlugin, StaleWhileRevalidate } from 'serwist';
+import {
+  Serwist,
+  ExpirationPlugin,
+  StaleWhileRevalidate,
+  NetworkOnly,
+} from 'serwist';
 
 // Tell TypeScript this is the service worker's global scope.
 declare global {
@@ -35,6 +40,39 @@ declare global {
 }
 
 declare const self: ServiceWorkerGlobalScope;
+
+// CRITICAL: bypass the service worker entirely for admin routes,
+// backend API, Clerk, and Peach. These must always hit the network
+// fresh — admin data is real-time, API responses contain auth state,
+// Clerk does its own dance with cookies, Peach is a payment provider.
+// Putting these BEFORE every other rule (including defaultCache and
+// the navigation fallback) ensures nothing else can intercept them.
+const networkOnlyRoutes: RuntimeCaching[] = [
+  {
+    matcher: ({ url }) => url.pathname.startsWith('/admin'),
+    handler: new NetworkOnly(),
+  },
+  {
+    matcher: ({ url }) => url.pathname.startsWith('/api/'),
+    handler: new NetworkOnly(),
+  },
+  {
+    matcher: ({ url }) =>
+      url.hostname.includes('clerk') ||
+      url.pathname.startsWith('/sign-in') ||
+      url.pathname.startsWith('/sign-up') ||
+      url.pathname.startsWith('/sso-callback'),
+    handler: new NetworkOnly(),
+  },
+  {
+    // Token-gated SMS action pages — single-use auth, must be fresh.
+    matcher: ({ url }) =>
+      url.pathname.startsWith('/a/') ||
+      url.pathname.startsWith('/preview') ||
+      url.pathname.startsWith('/checkout'),
+    handler: new NetworkOnly(),
+  },
+];
 
 // Custom image + asset caches layered ON TOP of Serwist's defaultCache.
 // Each entry uses its own named cache so we can expire/inspect them
@@ -97,17 +135,25 @@ const serwist = new Serwist({
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
-  // Image rules MUST come before defaultCache — Serwist evaluates
-  // routes in order and first match wins. defaultCache has a generic
-  // image matcher that would intercept Cloudinary otherwise.
-  runtimeCaching: [...imageCaching, ...defaultCache],
+  // Order matters — Serwist evaluates routes top-down, first match
+  // wins. Network-only rules MUST come first so admin/api/auth always
+  // bypass caching entirely. Image rules come next so Cloudinary
+  // doesn't get intercepted by defaultCache's generic image matcher.
+  runtimeCaching: [...networkOnlyRoutes, ...imageCaching, ...defaultCache],
   // Navigation fallback — when offline and the page isn't cached,
   // serve /offline instead of the browser's default network error.
+  // Carved out: admin pages never fall back (they must error visibly
+  // so the operator knows the backend is down, not show a stale page).
   fallbacks: {
     entries: [
       {
         url: '/offline',
-        matcher: ({ request }) => request.destination === 'document',
+        matcher: ({ request, url }) =>
+          request.destination === 'document' &&
+          !url.pathname.startsWith('/admin') &&
+          !url.pathname.startsWith('/a/') &&
+          !url.pathname.startsWith('/checkout') &&
+          !url.pathname.startsWith('/preview'),
       },
     ],
   },
