@@ -11,14 +11,18 @@
 // for browser-mobile users — they continue using the existing
 // hamburger drawer in nav.tsx.
 //
-// Four tabs (one row, well-spaced):
-//   1. Shop  → opens a bottom sheet with 5 shopping surfaces:
-//              All listings / Marketplace / Auctions / Take a Shot /
-//              Competitions. Tap any row → navigate to that surface.
-//   2. Sell  → /listings/new (centred, brand-red accent)
-//   3. My    → /dashboard (signed-in) / /sign-in (signed-out)
-//   4. More  → bottom sheet with secondary destinations (Wishlist,
-//              account links, legal).
+// Five tabs — Sell sits dead-centre (position 3) so the raised FAB
+// styling reads symmetric:
+//   1. Shop    → opens a bottom sheet with 5 shopping surfaces:
+//                All listings / Marketplace / Auctions / Take a Shot /
+//                Competitions.
+//   2. Search  → opens a bottom sheet with the LiveSearch input so
+//                users can search from any screen.
+//   3. Sell    → /listings/new (centred, raised red FAB — the
+//                prominent primary action).
+//   4. My      → /dashboard (signed-in) / /sign-in (signed-out).
+//   5. More    → bottom sheet with secondary destinations (Wishlist,
+//                account links, legal).
 //
 // Active-route highlighting via usePathname() + a search-aware match
 // helper (so /?listingType=AUCTION lights up the Shop tab even
@@ -29,6 +33,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { SignInButton, useUser, useClerk } from '@clerk/nextjs';
 import { useStandalone } from '@/lib/use-standalone';
+import { LiveSearch } from '@/components/live-search';
 
 interface Tab {
   key: string;
@@ -36,12 +41,11 @@ interface Tab {
   href: string;
   // Returns true when the active route belongs to this tab.
   isActive: (pathname: string, search: URLSearchParams) => boolean;
-  // Accent tabs (currently just Sell) keep brand-red iconography even
-  // when not the active route — signals "primary action" without
-  // breaking the even 4-column grid.
-  accent?: boolean;
-  // 'shop' / 'more' opens a sheet instead of navigating.
-  action?: 'shop' | 'more';
+  // Centred-prominent tabs (currently just Sell) get the raised
+  // circular-FAB treatment. Only works at 5 tabs (position 3 = 50%).
+  prominent?: boolean;
+  // 'shop' / 'search' / 'more' open sheets instead of navigating.
+  action?: 'shop' | 'search' | 'more';
 }
 
 // Inline SVG icons — no extra dep. 24×24 viewbox, currentColor stroke
@@ -162,6 +166,19 @@ function IconMore() {
     </svg>
   );
 }
+function IconSearch() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M16 16l4 4"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 export function BottomTabBar() {
   const isStandalone = useStandalone();
@@ -170,18 +187,20 @@ export function BottomTabBar() {
   const { isSignedIn } = useUser();
   const { signOut } = useClerk();
   const [shopOpen, setShopOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
   // Auto-close any open sheet on route change (mirrors the mobile-drawer
   // behaviour in nav.tsx).
   useEffect(() => {
     setShopOpen(false);
+    setSearchOpen(false);
     setMoreOpen(false);
   }, [pathname]);
 
-  // Body-scroll lock while either sheet is open.
+  // Body-scroll lock while any sheet is open.
   useEffect(() => {
-    if (shopOpen || moreOpen) {
+    if (shopOpen || searchOpen || moreOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -189,7 +208,7 @@ export function BottomTabBar() {
     return () => {
       document.body.style.overflow = '';
     };
-  }, [shopOpen, moreOpen]);
+  }, [shopOpen, searchOpen, moreOpen]);
 
   // Server HTML stays identical to browser-mobile — the tab bar only
   // exists for installed PWA users. The CSS rule that pads the body
@@ -211,11 +230,18 @@ export function BottomTabBar() {
       action: 'shop',
     },
     {
+      key: 'search',
+      label: 'Search',
+      href: '#search',
+      isActive: () => searchOpen,
+      action: 'search',
+    },
+    {
       key: 'sell',
       label: 'Sell',
       href: '/listings/new',
       isActive: (p) => p.startsWith('/listings/new'),
-      accent: true,
+      prominent: true,
     },
     {
       key: 'my',
@@ -236,6 +262,8 @@ export function BottomTabBar() {
     switch (key) {
       case 'shop':
         return <IconShop />;
+      case 'search':
+        return <IconSearch />;
       case 'sell':
         return <IconPlus />;
       case 'my':
@@ -267,7 +295,7 @@ export function BottomTabBar() {
         <ul
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: 'repeat(5, 1fr)',
             margin: 0,
             padding: 0,
             listStyle: 'none',
@@ -276,13 +304,11 @@ export function BottomTabBar() {
         >
           {tabs.map((tab) => {
             const active = tab.isActive(pathname, searchParams);
-            // Active tab → brand red, regardless of accent state.
-            // Accent tab (Sell) → brand red even when inactive, so it
-            // reads as the primary action across the bar.
-            // Everything else → muted tertiary.
-            const color = active || tab.accent
+            const color = active
               ? 'var(--red)'
-              : 'var(--text-tertiary)';
+              : tab.prominent
+                ? 'var(--text-primary)'
+                : 'var(--text-tertiary)';
 
             const inner = (
               <span
@@ -295,12 +321,32 @@ export function BottomTabBar() {
                   height: '100%',
                   color,
                   fontSize: 10.5,
-                  fontWeight: active || tab.accent ? 600 : 500,
+                  fontWeight: active ? 600 : 500,
                   letterSpacing: 0.1,
                   textDecoration: 'none',
                 }}
               >
-                {renderIcon(tab.key)}
+                {tab.prominent ? (
+                  <span
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: '50%',
+                      background: 'var(--red)',
+                      color: '#fff',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginTop: -8,
+                      // Raised effect — gives the central primary action visual weight.
+                      boxShadow: '0 4px 12px rgba(200, 16, 46, 0.4)',
+                    }}
+                  >
+                    {renderIcon(tab.key)}
+                  </span>
+                ) : (
+                  renderIcon(tab.key)
+                )}
                 <span>{tab.label}</span>
               </span>
             );
@@ -310,14 +356,18 @@ export function BottomTabBar() {
                 {tab.action ? (
                   <button
                     type="button"
-                    onClick={() =>
-                      tab.action === 'shop'
-                        ? setShopOpen(true)
-                        : setMoreOpen(true)
-                    }
+                    onClick={() => {
+                      if (tab.action === 'shop') setShopOpen(true);
+                      else if (tab.action === 'search') setSearchOpen(true);
+                      else if (tab.action === 'more') setMoreOpen(true);
+                    }}
                     aria-label={tab.label}
                     aria-expanded={
-                      tab.action === 'shop' ? shopOpen : moreOpen
+                      tab.action === 'shop'
+                        ? shopOpen
+                        : tab.action === 'search'
+                          ? searchOpen
+                          : moreOpen
                     }
                     style={{
                       width: '100%',
@@ -357,6 +407,10 @@ export function BottomTabBar() {
         />
       )}
 
+      {searchOpen && (
+        <SearchSheet onClose={() => setSearchOpen(false)} />
+      )}
+
       {moreOpen && (
         <MoreSheet
           isSignedIn={!!isSignedIn}
@@ -369,6 +423,94 @@ export function BottomTabBar() {
         />
       )}
     </>
+  );
+}
+
+// ─── Search sheet — full-width search input from any screen ─────────
+// Wraps the existing LiveSearch component (the same one mounted in
+// the top nav for browser users + the standalone-only MobileSearchBar
+// on the homepage). Keeps search behaviour identical across the whole
+// app — autocomplete, debounce, hit ranking all unchanged. The sheet
+// auto-closes on result-tap via the pathname-change effect at the
+// top of BottomTabBar.
+function SearchSheet({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 56,
+        background: 'rgba(0, 0, 0, 0.6)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        // Sheet anchors to the top of the screen so the keyboard
+        // doesn't overlap the input on iOS.
+        paddingTop: 'max(16px, env(safe-area-inset-top))',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-label="Search"
+        aria-modal="true"
+        style={{
+          width: '100%',
+          maxWidth: 560,
+          margin: '0 12px',
+          padding: 14,
+          background: 'var(--bg-card)',
+          border: '0.5px solid var(--border)',
+          borderRadius: 12,
+          animation: 'gg-sheet-down 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 10,
+          }}
+        >
+          <p
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: 0.6,
+              textTransform: 'uppercase',
+              color: 'var(--text-tertiary)',
+              margin: 0,
+            }}
+          >
+            Search
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close search"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              fontSize: 14,
+              cursor: 'pointer',
+              padding: '4px 8px',
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+        <LiveSearch placeholder="Search listings, sellers, categories…" />
+      </div>
+      <style>{`
+        @keyframes gg-sheet-down {
+          from { transform: translateY(-12px); opacity: 0; }
+          to   { transform: translateY(0); opacity: 1; }
+        }
+      `}</style>
+    </div>
   );
 }
 
