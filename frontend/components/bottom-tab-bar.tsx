@@ -34,6 +34,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
 import { useStandalone } from '@/lib/use-standalone';
+import { useScrollDirection } from '@/lib/use-scroll-direction';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -194,9 +195,27 @@ export function BottomTabBar() {
   const { isSignedIn } = useUser();
   const { getToken } = useAuth();
   const { signOut } = useClerk();
+  const scrollDir = useScrollDirection();
   const [shopOpen, setShopOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [alertsCount, setAlertsCount] = useState<number>(0);
+
+  // Hide the tab bar when the user is scrolling DOWN (give them more
+  // reading room) and re-show when they scroll back up — standard
+  // native-iOS app pattern (Safari does this with its tab bar too).
+  // Always show when a sheet is open so the bar doesn't disappear
+  // mid-interaction. `data-bottom-chrome-hidden` is mirrored onto
+  // <body> so the sticky featured strip can hide in sync.
+  const sheetOpen = shopOpen || moreOpen;
+  const hideChrome = scrollDir === 'down' && !sheetOpen;
+
+  useEffect(() => {
+    if (hideChrome) {
+      document.body.dataset.bottomChromeHidden = 'true';
+    } else {
+      delete document.body.dataset.bottomChromeHidden;
+    }
+  }, [hideChrome]);
 
   // Auto-close any open sheet on route change (mirrors the mobile-drawer
   // behaviour in nav.tsx).
@@ -367,6 +386,14 @@ export function BottomTabBar() {
           borderTop: '0.5px solid var(--border)',
           // Pad below the home indicator so the tappable row sits above it.
           paddingBottom: 'env(safe-area-inset-bottom)',
+          // Auto-hide on downward scroll. translateY by 100% + the
+          // safe-area inset so it slides fully off-screen including
+          // the padding below the home indicator.
+          transform: hideChrome
+            ? 'translateY(calc(100% + env(safe-area-inset-bottom)))'
+            : 'translateY(0)',
+          transition: 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+          willChange: 'transform',
         }}
       >
         <ul

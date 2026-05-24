@@ -26,6 +26,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useStandalone } from '@/lib/use-standalone';
+import { useScrollDirection } from '@/lib/use-scroll-direction';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -86,6 +87,11 @@ export function StickyFeaturedStrip() {
   const isStandalone = useStandalone();
   const pathname = usePathname();
   const eligible = isStandalone && shouldShow(pathname);
+  const scrollDir = useScrollDirection();
+  // Hide in sync with the bottom tab bar when the user scrolls down.
+  // Same threshold (managed by useScrollDirection — always show above
+  // 80px from the top).
+  const hideChrome = scrollDir === 'down';
 
   const [slots, setSlots] = useState<RailSlot[] | null>(null);
 
@@ -153,6 +159,14 @@ export function StickyFeaturedStrip() {
         borderTop: '0.5px solid var(--border)',
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
+        // Hide-on-scroll-down sync with the bottom tab bar. Strip
+        // height is ~110pt; slide down by tab-bar-offset + strip
+        // height + safe-area so it fully disappears off-screen.
+        transform: hideChrome
+          ? 'translateY(calc(60px + 110px + env(safe-area-inset-bottom)))'
+          : 'translateY(0)',
+        transition: 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+        willChange: 'transform',
       }}
     >
       {/* Tiny header band — labels the strip + offers a "bid for spot"
