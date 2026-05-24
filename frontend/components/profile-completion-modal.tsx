@@ -185,52 +185,91 @@ export function ProfileCompletionModal({
   async function submit() {
     setSubmitting(true);
     setError(null);
+    const token = await getToken();
+    const body = JSON.stringify({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      username: username.trim().toLowerCase(),
+      // Strip whitespace so "+27 82 123 4567" still passes
+      // backend validation. Mirrors the readiness check.
+      phone: phone.trim().replace(/\s/g, ''),
+      addrBuilding: addr.building.trim() || null,
+      addrStreet: addr.street.trim(),
+      addrAddress2: addr.address2.trim() || null,
+      addrSuburb: addr.suburb.trim(),
+      addrCity: addr.city.trim(),
+      addrPostalCode: addr.postalCode.trim(),
+      addrProvince: addr.province as Province,
+      addrLat: lat,
+      addrLng: lng,
+      idNumber: idNumber.replace(/\s/g, ''),
+      bankName: bankName.trim(),
+      bankAccountHolder: bankAccountHolder.trim(),
+      bankAccountNumber: bankAccountNumber.trim(),
+      bankBranchCode: bankBranchCode.trim(),
+      bankAccountType,
+    });
+
+    // Verify-success fallback: if the POST drops mid-flight (iOS Safari
+    // surfaces "Load failed" when it cancels a request — common in PWAs
+    // when the SW updates, the user backgrounds the app, or the
+    // connection blips), check whether the server actually applied the
+    // change anyway. We re-fetch /users/me and look at profileCompletedAt.
+    // If it's set, treat as success rather than making the user re-submit
+    // (which has happened — the operator hit "Load failed" twice while
+    // the backend logged two successful Profile completed events).
+    async function profileNowComplete(): Promise<boolean> {
+      try {
+        const r = await fetch(`${API_URL}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!r.ok) return false;
+        const me = (await r.json()) as { profileCompletedAt?: string | null };
+        return Boolean(me.profileCompletedAt);
+      } catch {
+        return false;
+      }
+    }
+
     try {
-      const token = await getToken();
       const res = await fetch(`${API_URL}/users/me/profile-complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          username: username.trim().toLowerCase(),
-          // Strip whitespace so "+27 82 123 4567" still passes
-          // backend validation. Mirrors the readiness check.
-          phone: phone.trim().replace(/\s/g, ''),
-          addrBuilding: addr.building.trim() || null,
-          addrStreet: addr.street.trim(),
-          addrAddress2: addr.address2.trim() || null,
-          addrSuburb: addr.suburb.trim(),
-          addrCity: addr.city.trim(),
-          addrPostalCode: addr.postalCode.trim(),
-          addrProvince: addr.province as Province,
-          addrLat: lat,
-          addrLng: lng,
-          idNumber: idNumber.replace(/\s/g, ''),
-          bankName: bankName.trim(),
-          bankAccountHolder: bankAccountHolder.trim(),
-          bankAccountNumber: bankAccountNumber.trim(),
-          bankBranchCode: bankBranchCode.trim(),
-          bankAccountType,
-        }),
+        body,
+        // keepalive lets iOS Safari hold the request open across short
+        // app-backgrounding events that would otherwise cancel it.
+        keepalive: true,
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
+        // 4xx with a real body — show the server's message verbatim.
+        const errBody = (await res.json().catch(() => ({}))) as {
           message?: string;
         };
-        setError(body.message ?? `Save failed (${res.status})`);
+        setError(errBody.message ?? `Save failed (${res.status})`);
         return;
       }
-      // Clear the localStorage draft on successful save — next visit
-      // (e.g. revisiting profile/edit later) should start from saved
-      // server state, not a stale draft.
       clearDraft(draftKey);
       onComplete();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Network error');
+      // Network error — the POST may have completed server-side even
+      // though we never got the response. Verify before showing an
+      // error, so the user doesn't see "Load failed" on a save that
+      // actually worked.
+      const completed = await profileNowComplete();
+      if (completed) {
+        clearDraft(draftKey);
+        onComplete();
+        return;
+      }
+      setError(
+        err instanceof Error
+          ? `${err.message} — please try again`
+          : 'Network error — please try again',
+      );
     } finally {
       setSubmitting(false);
     }
