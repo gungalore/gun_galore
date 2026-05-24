@@ -27,6 +27,39 @@
 
 import { useEffect, useState } from 'react';
 
+// sessionStorage key — stamped right before `window.location.reload()`
+// in the Reload click handler. On the next page load, the SW activation
+// fires `controllerchange` immediately (Serwist runs skipWaiting +
+// clientsClaim), and without this gate the banner would pop back up
+// the moment the user lands. We suppress it for 60s after a click
+// so the user gets a clean reloaded view. We also remember the SW
+// "version" hash we activated, so a SECOND update landing within the
+// 60s window still shows the banner (rare but possible mid-deploy).
+const RELOAD_FLAG_KEY = 'gg-sw-reload-at';
+const SUPPRESS_MS = 60_000;
+
+function isInRecentReloadWindow(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = window.sessionStorage.getItem(RELOAD_FLAG_KEY);
+    if (!raw) return false;
+    const stamp = parseInt(raw, 10);
+    if (!Number.isFinite(stamp)) return false;
+    return Date.now() - stamp < SUPPRESS_MS;
+  } catch {
+    return false;
+  }
+}
+
+function markReloading() {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(RELOAD_FLAG_KEY, String(Date.now()));
+  } catch {
+    /* private mode / quota — silent */
+  }
+}
+
 export function SwUpdateBanner() {
   const [updateReady, setUpdateReady] = useState(false);
   const [reloading, setReloading] = useState(false);
@@ -35,10 +68,19 @@ export function SwUpdateBanner() {
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     let cancelled = false;
+    // True for the first 60s after the user clicked Reload — the
+    // initial `controllerchange` event after reload would otherwise
+    // re-show the banner. We still arm the listener; we just suppress
+    // setUpdateReady during the window.
+    const inReloadWindow = isInRecentReloadWindow();
 
     function trackInstallation(reg: ServiceWorkerRegistration) {
       // Already a waiting worker? — user landed on a stale page.
-      if (reg.waiting && navigator.serviceWorker.controller) {
+      if (
+        !inReloadWindow &&
+        reg.waiting &&
+        navigator.serviceWorker.controller
+      ) {
         setUpdateReady(true);
       }
       reg.addEventListener('updatefound', () => {
@@ -51,7 +93,9 @@ export function SwUpdateBanner() {
             // an update, not a fresh install).
             navigator.serviceWorker.controller
           ) {
-            if (!cancelled) setUpdateReady(true);
+            if (!cancelled && !isInRecentReloadWindow()) {
+              setUpdateReady(true);
+            }
           }
         });
       });
@@ -71,9 +115,12 @@ export function SwUpdateBanner() {
     // SW after the user has been browsing for a while, this fires
     // and we'd want to nudge them to reload.
     function onControllerChange() {
-      // Skip on the very first controllerchange if the page had no
-      // prior controller (initial-install case).
-      if (!cancelled) setUpdateReady(true);
+      // Suppress if the user just clicked Reload — the controllerchange
+      // that fires on the freshly-reloaded page is the SAME update they
+      // already acknowledged.
+      if (cancelled) return;
+      if (isInRecentReloadWindow()) return;
+      setUpdateReady(true);
     }
     navigator.serviceWorker.addEventListener(
       'controllerchange',
@@ -124,6 +171,14 @@ export function SwUpdateBanner() {
         onClick={() => {
           if (reloading) return;
           setReloading(true);
+          // Hide the banner immediately so the user gets visual
+          // feedback even before the reload completes (network can
+          // take a second on flaky mobile). Pair it with the
+          // sessionStorage flag so the freshly-reloaded page also
+          // suppresses the banner for 60s — otherwise the
+          // controllerchange that fires post-reload would re-show it.
+          setDismissed(true);
+          markReloading();
           // Hard reload — Service Worker has already activated; we
           // just need the page to fetch the new bundles.
           window.location.reload();
