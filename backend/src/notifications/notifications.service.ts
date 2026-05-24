@@ -731,6 +731,18 @@ export class NotificationsService {
     transactionId: string;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    // In-app inbox: informational — dismissible.
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'payment_released',
+      title: 'Funds released',
+      body: `${formatRand(d.sellerPayout)} on its way to your bank (${d.listingTitle})`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+    });
     const html = this.email({
       status: { tone: 'success', label: 'Payment released' },
       headline: 'Payment released',
@@ -801,6 +813,18 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   async listingApproved(d: ListingDecisionDetails) {
     const listingUrl = `${this.appUrl}/listings/${d.listingId}`;
+    // In-app inbox: informational — dismissible.
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'listing_approved',
+      title: 'Listing approved',
+      body: `${d.listingTitle} is now live on the marketplace.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'sold',
+      linkedType: 'listing',
+      linkedId: d.listingId,
+      dismissible: true,
+    });
     const html = this.email({
       status: { tone: 'success', label: 'Approved' },
       headline: 'Listing approved',
@@ -817,6 +841,19 @@ export class NotificationsService {
   async listingRejected(d: ListingDecisionDetails) {
     const editUrl = `${this.appUrl}/listings/${d.listingId}/edit`;
     const reason = d.reason ?? 'No reason provided.';
+    // In-app inbox: action-required (seller should edit + resubmit)
+    // but ALSO dismissible (they may decide to abandon the listing).
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'listing_rejected',
+      title: 'Listing needs changes',
+      body: `${d.listingTitle} — ${reason}`,
+      url: `/listings/${d.listingId}/edit`,
+      iconKey: 'sold',
+      linkedType: 'listing',
+      linkedId: d.listingId,
+      dismissible: true,
+    });
     const html = this.email({
       status: { tone: 'error', label: 'Not approved' },
       headline: 'Listing not approved',
@@ -933,8 +970,10 @@ export class NotificationsService {
     actionUrl?: string;
   }) {
     const url = d.actionUrl ?? `${this.appUrl}/checkout/offer/${d.offerId}`;
-    // In-app inbox: buyer must pay → action-required. Cleared when the
-    // buyer pays (TransactionsService.payOffer calls resolveByEntity).
+    // In-app inbox: buyer must pay, but the Transaction model has no
+    // offerId foreign key so we can't auto-resolve from the payment
+    // flow. Marked dismissible — the buyer can tap → goes to checkout
+    // → pays → returns and dismisses the row themselves.
     await this.persistByEmail(d.buyerEmail, {
       category: 'BUYER',
       type: 'offer_accepted',
@@ -944,7 +983,7 @@ export class NotificationsService {
       iconKey: 'offer',
       linkedType: 'offer',
       linkedId: d.offerId,
-      dismissible: false,
+      dismissible: true,
     });
     const html = this.email({
       status: { tone: 'success', label: 'Accepted' },
@@ -1396,11 +1435,29 @@ export class NotificationsService {
     raffleTitle: string,
     position: number,
     claimDeadline: Date,
+    raffleId?: string,
   ) {
     const place = position === 1 ? 'WINNER' : `Backup #${position - 1}`;
     const url = `${this.appUrl}/dashboard/raffle-wins`;
     const isWinner = position === 1;
     const deadlineStr = claimDeadline.toLocaleString('en-ZA');
+    // In-app inbox: action-required (winner must claim before
+    // deadline; clears when admin marks prize dispatched).
+    await this.persistByEmail(winnerEmail, {
+      category: 'BUYER',
+      type: isWinner ? 'raffle_won' : 'raffle_backup',
+      title: isWinner ? '🎉 You won!' : `You're a backup pick`,
+      body: `${raffleTitle} — claim by ${deadlineStr}`,
+      url: '/dashboard/raffle-wins',
+      iconKey: 'raffle',
+      linkedType: 'raffle',
+      linkedId: raffleId,
+      // Dismissible — the dispatch flow happens out-of-band (admin
+      // contacts winner manually), so we don't reliably get a
+      // resolveByEntity hook to auto-clear. Winner clears manually
+      // once they've claimed the prize.
+      dismissible: true,
+    });
     const html = this.email({
       status: isWinner
         ? { tone: 'success', label: 'Winner' }

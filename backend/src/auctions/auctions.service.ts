@@ -518,6 +518,13 @@ export class AuctionsService {
         void this.notifyOutbid(outbidUserId, listingId, visibleBid);
       }
       void this.notifyBidPlaced(listing.sellerId, listingId, visibleBid);
+      // Inbox: the user just bid higher on this auction — clear any
+      // unresolved "you've been outbid" rows for them on this listing.
+      // Stops the bell badge from showing a stale outbid alert after
+      // they've already responded to it.
+      void this.notifications.resolveByEntity('listing', listingId, {
+        userId: buyer.id,
+      });
 
       return {
         currentBid: updated.currentBid,

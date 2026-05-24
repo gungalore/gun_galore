@@ -1037,6 +1037,11 @@ export class AdminService {
       transactionId: txId,
       note,
     });
+    // Inbox: refund is a terminal state — clear any unresolved
+    // notifications tied to this transaction for both buyer + seller
+    // (auction_won, offer_accepted, new_sale, order_dispatched all
+    // become moot once the tx is refunded).
+    void this.notifications.resolveByEntity('transaction', txId);
 
     // Zoho Books: post a Credit Note against the original commission
     // invoice so the seller's open balance reverses. No-op if the

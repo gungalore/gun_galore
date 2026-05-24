@@ -108,6 +108,23 @@ export class AdminBroadcastService {
         await this.notifications.sendBroadcastSms(u.phone, body, reference);
         sent += 1;
       }
+      // Inbox: write a row per recipient regardless of channel so the
+      // broadcast also appears in their Notifications page Account tab.
+      // Dismissible — informational, no action to take.
+      // Fire-and-forget; persist() catches errors internally so a
+      // single user's inbox-row failure won't break the broadcast.
+      const inboxTitle =
+        subject || (dto.channel === 'email' ? 'Announcement' : 'Message');
+      const inboxBody = body.length > 240 ? body.slice(0, 237) + '…' : body;
+      await this.notifications.persist({
+        userId: u.id,
+        category: 'ACCOUNT',
+        type: 'broadcast',
+        title: inboxTitle,
+        body: inboxBody,
+        iconKey: 'broadcast',
+        dismissible: true,
+      });
     }
 
     // Audit row — captures who fanned out what to whom + the body

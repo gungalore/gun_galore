@@ -336,6 +336,12 @@ export class TransactionsService {
     // "Seller dispatched" before any carrier event lands.
     void this.tracking.recordInternal(transactionId, 'SELLER_DISPATCHED');
     void this.sendDispatchedNotification(transactionId);
+    // Inbox: seller just dispatched → clear their "new sale" +
+    // "dispatch reminder" rows for this tx. Buyer's new
+    // "order_dispatched" row that fires inside sendDispatchedNotification
+    // is action-required (must confirm delivery) and resolves later
+    // via confirmDelivery.
+    void this.notifications.resolveByEntity('transaction', transactionId);
     return updated;
   }
 
@@ -493,6 +499,13 @@ export class TransactionsService {
       occurredAt: new Date(now.getTime() + 1),
     });
     void this.sendReleasedNotification(transactionId);
+    // Inbox: buyer just confirmed delivery → clear their
+    // "order_dispatched" notification on this transaction. The seller
+    // gets a new "payment_released" row from sendReleasedNotification
+    // which is dismissible (no further action).
+    void this.notifications.resolveByEntity('transaction', transactionId, {
+      userId: tx.buyerId,
+    });
     return { released: true };
   }
 
@@ -617,6 +630,13 @@ export class TransactionsService {
     // starts with a "Payment received" marker BEFORE the seller marks
     // dispatch. Fire-and-forget — tracking is non-critical.
     void this.tracking.recordInternal(txId, 'PAYMENT_RECEIVED');
+
+    // Inbox: buyer just paid → clear any "you won the auction — pay
+    // now" or "offer accepted — pay" notifications they had on this
+    // listing. We resolve by listingId (auction won was linked to
+    // listing) and optimistically try the offer linkage too via a
+    // separate lookup on the tx's offerId if present.
+    void this.resolveBuyerPaymentNotifications(txId, listing.id);
 
     // PRIVATE_ARRANGE — buyer explicitly waived payment protection at
     // checkout (privateArrangeAcceptedAt is set). Release funds
@@ -796,6 +816,27 @@ export class TransactionsService {
       });
     } catch (err) {
       this.logger.error(`sendDispatchedNotification failed for ${txId}: ${(err as Error).message}`);
+    }
+  }
+
+  // Clears the buyer-side auction_won notification on this listing
+  // now that they've paid. Offer-linked rows (offer_accepted) are
+  // dismissible by the buyer once they've paid since the Transaction
+  // model has no offerId foreign key — auto-resolve isn't possible.
+  private async resolveBuyerPaymentNotifications(txId: string, listingId: string) {
+    try {
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: txId },
+        select: { buyerId: true },
+      });
+      if (!tx) return;
+      await this.notifications.resolveByEntity('listing', listingId, {
+        userId: tx.buyerId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `resolveBuyerPaymentNotifications ${txId} failed: ${(err as Error).message}`,
+      );
     }
   }
 
