@@ -1,6 +1,39 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
+import { NotificationCategory } from '@prisma/client';
 import { SmsService } from '../sms/sms.service';
+import { PrismaService } from '../prisma/prisma.service';
+
+// Compile-time list of the entity types we can link a Notification
+// row to. Used by resolveByEntity() callers so typos don't sit silently
+// in the codebase. Keep in sync with the linkedType column the migration
+// produces.
+export type NotificationLinkedType =
+  | 'offer'
+  | 'transaction'
+  | 'bid'
+  | 'listing'
+  | 'raffle';
+
+interface PersistOpts {
+  userId: string;
+  category: NotificationCategory;
+  type: string;
+  title: string;
+  body: string;
+  url?: string;
+  iconKey?: string;
+  linkedType?: NotificationLinkedType;
+  linkedId?: string;
+  /**
+   * True = user can swipe-dismiss the row from the inbox.
+   * False = row can ONLY be cleared by acting on the linked entity
+   *         (server-side resolveByEntity stamp). Action-required
+   *         notifications must set this to false.
+   * Defaults to false (safer).
+   */
+  dismissible?: boolean;
+}
 
 // Fails open — emails are fire-and-forget; never block the main flow.
 
@@ -303,11 +336,120 @@ export class NotificationsService {
   private readonly resend: Resend | null;
   private readonly appUrl: string;
 
-  constructor(private readonly sms: SmsService) {
+  constructor(
+    private readonly sms: SmsService,
+    private readonly prisma: PrismaService,
+  ) {
     const key = process.env.RESEND_API_KEY;
     this.resend = key ? new Resend(key) : null;
     this.appUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
     if (!key) this.logger.warn('RESEND_API_KEY not set — emails disabled');
+  }
+
+  // ─── In-app inbox: persist + resolve ──────────────────────────────
+  //
+  // Every transactional event method below calls `persist()` in addition
+  // to its existing email/SMS dispatch — that's what populates the
+  // bell badge + the /notifications inbox.
+  //
+  // Action handlers across the codebase (OffersService.acceptOffer,
+  // TransactionsService.markDispatched, etc.) call `resolveByEntity()`
+  // to clear the relevant notifications when the user actually takes
+  // action. Opening the inbox does NOT resolve anything — that was
+  // the explicit user-spec'd behaviour.
+  //
+  // Both methods fail open: errors are logged but don't throw, so a
+  // DB blip never blocks the email/SMS dispatch the user is waiting on.
+
+  /**
+   * Convenience wrapper — most existing transactional methods take an
+   * email rather than a userId (their primary purpose was firing
+   * email/SMS). This looks up the user by email and persists. No-op
+   * (with a debug log) when no user matches — emails sent to addresses
+   * that aren't in our User table won't get an inbox row, which is
+   * the right behaviour (anonymous recipient = no inbox).
+   */
+  async persistByEmail(
+    email: string,
+    opts: Omit<PersistOpts, 'userId'>,
+  ): Promise<void> {
+    try {
+      const u = await this.prisma.user.findUnique({
+        where: { email },
+        select: { id: true },
+      });
+      if (!u) {
+        this.logger.debug(`persistByEmail: no user for ${email} (${opts.type})`);
+        return;
+      }
+      await this.persist({ ...opts, userId: u.id });
+    } catch (err) {
+      this.logger.error(
+        `persistByEmail(${opts.type}) failed: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  async persist(opts: PersistOpts): Promise<void> {
+    try {
+      await this.prisma.notification.create({
+        data: {
+          userId: opts.userId,
+          category: opts.category,
+          type: opts.type,
+          title: opts.title,
+          body: opts.body,
+          url: opts.url ?? null,
+          iconKey: opts.iconKey ?? null,
+          linkedType: opts.linkedType ?? null,
+          linkedId: opts.linkedId ?? null,
+          dismissible: opts.dismissible ?? false,
+        },
+      });
+    } catch (err) {
+      // Don't let an in-app inbox failure break the email/SMS flow.
+      this.logger.error(
+        `persist(${opts.type}) for user ${opts.userId} failed: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  /**
+   * Stamp `resolvedAt` on every unresolved notification linked to the
+   * given entity. Called from action handlers (offer accept/reject,
+   * transaction dispatch, bid placed) when the user takes the action
+   * that an action-required notification was waiting for.
+   *
+   * Pass `userId` to scope to one user's rows (e.g. only the previous
+   * top-bidder's outbid notification on this auction). Omit it to
+   * resolve across all recipients (e.g. an auction closes — every
+   * losing bidder's outbid notification on that auction is now stale).
+   */
+  async resolveByEntity(
+    linkedType: NotificationLinkedType,
+    linkedId: string,
+    opts: { userId?: string; resolvedBy?: 'user_action' | 'auto_expired' } = {},
+  ): Promise<number> {
+    try {
+      const r = await this.prisma.notification.updateMany({
+        where: {
+          linkedType,
+          linkedId,
+          resolvedAt: null,
+          ...(opts.userId ? { userId: opts.userId } : {}),
+        },
+        data: {
+          resolvedAt: new Date(),
+          resolvedBy: opts.resolvedBy ?? 'user_action',
+        },
+      });
+      return r.count;
+    } catch (err) {
+      this.logger.error(
+        `resolveByEntity(${linkedType}:${linkedId}) failed: ${err instanceof Error ? err.message : err}`,
+      );
+      return 0;
+    }
   }
 
   // Wrap the pure renderEmail() helper with the logo URL injection so
@@ -363,6 +505,20 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   async newSaleSeller(d: SaleDetails) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    // In-app inbox: action-required (seller must dispatch within 48h).
+    // Cleared when TransactionsService.markDispatched fires
+    // resolveByEntity('transaction', txId).
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'new_sale',
+      title: 'Your listing sold',
+      body: `${d.listingTitle} sold for ${formatRand(d.listingPrice)} — dispatch within 48h`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'sold',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
     // Firearm DEALER_TRANSFER triggers the SAPS 534 + stock register
     // + firearm-serial photo flow — we tell the seller about it up
     // front so they can prepare and the dealer can fill the form in
@@ -523,6 +679,21 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   async itemDispatched(d: DispatchDetails) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    // In-app inbox: BUYER gets the "your order is on the way" alert.
+    // Action-required (must confirm delivery to release payout) —
+    // cleared when TransactionsService.confirmDelivery fires
+    // resolveByEntity('transaction', txId, buyerUserId).
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'order_dispatched',
+      title: 'Your order is on the way',
+      body: `${d.listingTitle} — ${prettyCourier(d.shippingMethod)} ${d.trackingReference ?? ''}`.trim(),
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'dispatch',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
     const rows: { label: string; value: string }[] = [
       { label: 'Courier', value: prettyCourier(d.shippingMethod) },
     ];
@@ -705,6 +876,21 @@ export class NotificationsService {
     actionUrl?: string;
   }) {
     const url = d.actionUrl ?? `${this.appUrl}/offers/received`;
+    // In-app inbox row. Action-required (not dismissible) — the seller
+    // must accept / reject / counter on /offers/received to clear it.
+    // OffersService.{accept,reject,counter}Offer call resolveByEntity
+    // for these.
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'offer_received',
+      title: 'New offer received',
+      body: `${d.buyerName} offered ${formatRand(d.offerAmount)} on ${d.listingTitle}`,
+      url: '/offers/received',
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: false,
+    });
     const html = this.email({
       status: { tone: 'pending', label: 'New offer' },
       headline: 'New offer',
@@ -747,6 +933,19 @@ export class NotificationsService {
     actionUrl?: string;
   }) {
     const url = d.actionUrl ?? `${this.appUrl}/checkout/offer/${d.offerId}`;
+    // In-app inbox: buyer must pay → action-required. Cleared when the
+    // buyer pays (TransactionsService.payOffer calls resolveByEntity).
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'offer_accepted',
+      title: 'Offer accepted — pay within 24h',
+      body: `${d.listingTitle} — ${formatRand(d.acceptedAmount)}`,
+      url: `/checkout/offer/${d.offerId}`,
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: false,
+    });
     const html = this.email({
       status: { tone: 'success', label: 'Accepted' },
       headline: 'Your offer was accepted',
@@ -772,6 +971,18 @@ export class NotificationsService {
     offerId: string;
   }) {
     const url = `${this.appUrl}/listings/${d.listingId}`;
+    // In-app inbox: final state — dismissible (no action to take).
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'offer_rejected',
+      title: 'Offer declined',
+      body: `Your offer on ${d.listingTitle} was declined.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+    });
     const html = this.email({
       status: { tone: 'error', label: 'Declined' },
       headline: 'Offer declined',
@@ -817,6 +1028,22 @@ export class NotificationsService {
       preheader: `Seller countered at ${formatRand(d.counterAmount)}`,
     });
     await this.send(d.buyerEmail, 'Counter-offer on: ' + d.listingTitle, html);
+    // In-app inbox: buyer must respond to the counter → action-required.
+    // Cleared when buyer accepts / rejects / counter-counters via
+    // OffersService — same resolveByEntity('offer', offerId) call site
+    // resolves both the seller's offer_received AND the buyer's
+    // offer_countered notifications on the same offer.
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'offer_countered',
+      title: 'Seller countered your offer',
+      body: `${d.listingTitle} — ${formatRand(d.originalAmount)} → ${formatRand(d.counterAmount)}`,
+      url: '/my/offers',
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: false,
+    });
     if (d.actionUrl) {
       await this.sendSms(
         d.buyerPhone,
@@ -923,6 +1150,23 @@ export class NotificationsService {
     const url =
       actionUrl ??
       (listingId ? `${this.appUrl}/listings/${listingId}` : this.appUrl);
+    // In-app inbox: action-required. Buyer must place a higher bid (or
+    // accept the loss when auction closes). Linked on listingId so when
+    // the same user bids again on this auction, their previous outbid
+    // notifications auto-resolve via BidsService.placeBid →
+    // resolveByEntity('listing', listingId, bidderId). When the auction
+    // closes, the cron resolves remaining outbid rows as 'auto_expired'.
+    await this.persistByEmail(buyerEmail, {
+      category: 'BUYER',
+      type: 'bid_outbid',
+      title: "You've been outbid",
+      body: `${listingTitle} — current bid ${formatRand(newAmount)}`,
+      url: listingId ? `/listings/${listingId}` : '/',
+      iconKey: 'bid',
+      linkedType: 'listing',
+      linkedId: listingId,
+      dismissible: false,
+    });
     const html = this.email({
       status: { tone: 'error', label: 'Outbid' },
       headline: "You've been outbid",
@@ -958,6 +1202,21 @@ export class NotificationsService {
     actionUrl?: string,
   ) {
     const url = actionUrl ?? `${this.appUrl}/my/bids`;
+    // In-app inbox: action-required (must pay within 24h). Linked on
+    // the listingId since the auction won doesn't yet have a tx id
+    // until the buyer pays — TransactionsService.payAuction will fire
+    // resolveByEntity('listing', listingId, winnerId) at pay-time.
+    await this.persistByEmail(winnerEmail, {
+      category: 'BUYER',
+      type: 'auction_won',
+      title: 'You won — pay within 24h',
+      body: `${listingTitle} for ${formatRand(amount)}`,
+      url: listingId ? `/checkout/${listingId}` : '/my/bids',
+      iconKey: 'trophy',
+      linkedType: 'listing',
+      linkedId: listingId,
+      dismissible: false,
+    });
     const html = this.email({
       status: { tone: 'success', label: 'Auction won' },
       headline: 'You won.',

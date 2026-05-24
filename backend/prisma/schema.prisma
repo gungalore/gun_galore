@@ -366,6 +366,73 @@ model User {
   // let them accept an offer / pay for a sale / raise a bid without
   // needing a Clerk session). Cascade-deleted when the user is deleted.
   actionTokensAuthorised ActionToken[] @relation("ActionTokensAuthorised")
+
+  // ── Notification inbox back-relation ─────────────────────────────
+  // In-app inbox rows. Written by NotificationsService.persist() in
+  // addition to every email/SMS dispatch. Cascade-deleted with the user.
+  notifications Notification[]
+}
+
+// =====================================================================
+// In-app Notifications inbox
+// =====================================================================
+// Persistent feed of events for the user — the source of truth behind
+// the bell icon in the bottom tab bar + the /notifications inbox page.
+// Mirrors every email/SMS dispatched by NotificationsService.
+//
+// "Resolved" semantics: a notification stays in the inbox (and counts
+// toward the bell badge) until either:
+//   * The linked entity transitions to a terminal state and
+//     NotificationsService.resolveByEntity() stamps resolvedAt
+//     (e.g. seller accepts an offer → the seller's "offer received"
+//     notification auto-resolves), OR
+//   * The user explicitly dismisses an informational notification
+//     via the × button (only allowed when dismissible = true).
+//
+// Opening the inbox or tapping a row does NOT clear anything — that
+// was the explicit user-spec'd behaviour. The badge only drops when
+// the user actually acts on the underlying entity.
+enum NotificationCategory {
+  BUYER    // events relevant to the user as a buyer
+  SELLER   // events relevant to the user as a seller
+  ACCOUNT  // KYC / AVS / broadcasts / admin messages
+}
+
+model Notification {
+  id        String               @id @default(cuid())
+  userId    String
+  category  NotificationCategory
+  // Discriminator for the event (e.g. 'offer_received', 'bid_outbid').
+  // Free-form string so we can add new event types without a migration.
+  type      String
+
+  title     String
+  body      String
+  url       String?              // deep-link path (e.g. /transactions/abc)
+  iconKey   String?              // UI icon hint (offer | bid | sold | ...)
+
+  // Linkage to the underlying entity. resolveByEntity() in the service
+  // looks up unresolved rows by (linkedType, linkedId) and stamps
+  // resolvedAt on them when the entity transitions.
+  linkedType String?             // 'offer' | 'transaction' | 'bid' | 'listing' | 'raffle'
+  linkedId   String?
+
+  // Resolution state.
+  resolvedAt DateTime?
+  resolvedBy String?             // 'user_action' | 'dismissed' | 'auto_expired'
+
+  // True for informational notifications the user can swipe/tap to
+  // dismiss. False for action-required ones — those can ONLY clear
+  // via resolveByEntity when the underlying entity transitions.
+  dismissible Boolean             @default(false)
+
+  createdAt   DateTime            @default(now())
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Bell-badge / active-feed query: WHERE userId=? AND resolvedAt IS NULL
+  @@index([userId, resolvedAt, createdAt(sort: Desc)])
+  // resolveByEntity lookup
+  @@index([linkedType, linkedId, resolvedAt])
 }
 
 model Category {

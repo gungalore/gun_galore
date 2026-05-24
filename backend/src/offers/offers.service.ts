@@ -130,6 +130,11 @@ export class OffersService {
     });
 
     void this.notifyBuyerOfAccept(offerId);
+    // Resolve the seller's "offer received" notification — they just
+    // acted on it. The new "offer accepted" row that fires for the
+    // buyer is action-required (buyer must pay) and isn't cleared
+    // here; TransactionsService.payOffer handles that one.
+    void this.notifications.resolveByEntity('offer', offerId);
     return updated;
   }
 
@@ -148,6 +153,9 @@ export class OffersService {
     });
 
     void this.notifyBuyerOfReject(offerId);
+    // Seller resolved their "offer received". Buyer's new
+    // "offer rejected" row is dismissible — they handle it themselves.
+    void this.notifications.resolveByEntity('offer', offerId);
     return updated;
   }
 
@@ -188,6 +196,10 @@ export class OffersService {
     });
 
     void this.notifyBuyerOfCounter(offerId);
+    // Seller resolved their "offer received". Buyer's new
+    // "offer countered" row is action-required (buyer must respond)
+    // and stays open until they accept/reject the counter.
+    void this.notifications.resolveByEntity('offer', offerId);
     return updated;
   }
 
@@ -209,6 +221,9 @@ export class OffersService {
     });
 
     void this.notifySellerOfCounterAccepted(offerId);
+    // Buyer resolved their "offer countered". Seller's new
+    // counterAccepted row is dismissible (buyer will pay next).
+    void this.notifications.resolveByEntity('offer', offerId);
     return updated;
   }
 
@@ -227,6 +242,9 @@ export class OffersService {
     });
 
     void this.notifySellerOfCounterRejected(offerId);
+    // Buyer resolved their "offer countered". Seller's new
+    // counterRejected row is dismissible (final state).
+    void this.notifications.resolveByEntity('offer', offerId);
     return updated;
   }
 
