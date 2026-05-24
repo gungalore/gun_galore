@@ -8,7 +8,13 @@ import { WishlistButton } from './wishlist-button';
 import { useCountdown, formatCountdown } from '@/lib/use-countdown';
 
 export function ListingCard({ listing }: { listing: Listing }) {
-  const primaryImage = listing.images.find((i) => i.isPrimary) ?? listing.images[0];
+  // Defensive: if upstream returns a partial listing without the
+  // images array (e.g. raw Meilisearch hits — see the historical
+  // browseViaSearch bug), fall back to an empty array so .find()
+  // doesn't crash and bubble to error.tsx. The "No photo" placeholder
+  // is the user-visible signal that data is missing.
+  const images = listing.images ?? [];
+  const primaryImage = images.find((i) => i.isPrimary) ?? images[0];
 
   return (
     <Link href={`/listings/${listing.id}`} className="block group">

@@ -443,8 +443,45 @@ export class ListingsService {
       limit,
     });
 
+    // Meilisearch returns its own flat document shape (id, title, status,
+    // categorySlug, etc.) — NO relations like `images`, `seller`, or
+    // `category`. Returning those raw hits would crash every consumer
+    // that does `listing.images.find(...)` (ListingCard, listing detail,
+    // wishlist). Fix: use Meilisearch only for ranking + filtering, then
+    // re-fetch the full Prisma listing rows with the same includes
+    // browseViaPrisma uses, preserving the Meilisearch hit order.
+    type Hit = { id?: string };
+    const hits = result.hits as Hit[];
+    const ids = hits.map((h) => h.id).filter((x): x is string => !!x);
+    if (ids.length === 0) {
+      return { listings: [], total: result.estimatedTotalHits ?? 0, page, limit };
+    }
+
+    const rows = await this.prisma.listing.findMany({
+      where: { id: { in: ids } },
+      include: {
+        images: { where: { isPrimary: true }, take: 1 },
+        category: { select: { id: true, name: true, slug: true } },
+        seller: {
+          select: {
+            id: true,
+            username: true,
+            sellerTier: true,
+          },
+        },
+      },
+    });
+
+    // Restore Meilisearch order. findMany returns rows in DB order;
+    // we want them sorted by where each listing's ID appears in the
+    // Meilisearch hit list so search relevance is preserved.
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const listings = ids
+      .map((id) => byId.get(id))
+      .filter((r): r is NonNullable<typeof r> => !!r);
+
     return {
-      listings: result.hits,
+      listings,
       total: result.estimatedTotalHits ?? 0,
       page,
       limit,
