@@ -103,12 +103,22 @@ html[data-standalone='true'] {
    computed font-size is < 16px. We use 13-14px text everywhere in the
    UI, so this rule scopes the font-size bump to mobile widths only —
    keeps desktop UI dense while killing the zoom-in-on-tap behaviour
-   that screams "this is a web form". */
+   that screams "this is a web form".
+
+   `!important` is required because many components set inline
+   fontSize (e.g. LiveSearch's inputStyle = { fontSize: 13 }), and
+   inline beats @media without `!important`. Without this override,
+   focusing the PWA search bar on iOS auto-zooms the viewport AND
+   unlocks pinch-zoom — which the user notices as the page "moving
+   and zooming" the moment they tap the search input.
+
+   Caveat: `[type='range']` doesn't honour font-size visually anyway,
+   but the rule is harmless on it. */
 @media (max-width: 768px) {
   input,
   textarea,
   select {
-    font-size: 16px;
+    font-size: 16px !important;
   }
 }
 
