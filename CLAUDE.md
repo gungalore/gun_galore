@@ -750,10 +750,134 @@ the internal `shippingStatus`, fire notifications, always return
 
 ## Notifications
 
-- Every notifiable event fires SMS (SMSPortal) **and** email
-  (Resend) simultaneously.
-- SMS action links use single-use cryptographic tokens, 48-hour
-  expiry. Format: `GunGalor: [msg]. [action]: gg.co.za/s/TOKEN`.
+Three channels, one source of truth in `NotificationsService` —
+every transactional event fires whichever of these apply:
+
+1. **Email** (Resend) — every event, every recipient.
+2. **SMS** (SMSPortal) — every event with a verified phone on file.
+   Action SMSes embed single-use cryptographic tokens with 48-hour
+   expiry; format: `Gun Galore: [msg]. [action]: gg.co.za/s/TOKEN`.
+3. **In-app inbox** (`Notification` Prisma model, see "Notifications
+   inbox" section below) — persisted row per recipient. Drives the
+   bell badge on the bottom tab bar and the `/notifications` page.
+
+All three fan out from the same `NotificationsService` method (e.g.
+`offerReceived`, `bidOutbid`, `newSaleSeller`). The in-app `persist()`
+call is additive — failures there never block the email/SMS dispatch.
+
+---
+
+## Notifications inbox (in-app feed)
+
+User-facing inbox of every transactional event, reachable from the
+bell icon in the bottom tab bar (`Alerts` tab) or directly at
+`/notifications`. Backs the Phase D push delivery layer when we ship
+it — push will fire a notification AND persist the same row.
+
+### Resolved-by-action semantics (not "read on open")
+
+Per explicit operator spec: opening the inbox or tapping an item does
+**NOT** clear it. A notification stays in the inbox — and counts
+toward the bell badge — until the user **acts** on the underlying
+entity (accepts the offer, dispatches the sale, places a higher
+bid…) OR explicitly dismisses an informational item that has no
+action.
+
+Schema (`Notification` model in `backend/prisma/schema.prisma`):
+
+- `category: NotificationCategory` — `BUYER | SELLER | ACCOUNT`. Drives
+  the tab the row appears in.
+- `linkedType` + `linkedId` — pointer to the underlying entity
+  (`offer | transaction | bid | listing | raffle`).
+- `dismissible: Boolean` — `true` for informational rows (× button
+  shows in the inbox), `false` for action-required rows (can ONLY
+  clear via the server-side resolve hook).
+- `resolvedAt` + `resolvedBy` — `'user_action' | 'dismissed' |
+  'auto_expired'`. Bell-badge query is
+  `WHERE userId=? AND resolvedAt IS NULL`.
+
+### Service API (`backend/src/notifications/notifications.service.ts`)
+
+- `persist({ userId, category, type, title, body, url?, iconKey?,
+  linkedType?, linkedId?, dismissible? })` — writes a row. Fail-open
+  (logs errors, never throws).
+- `persistByEmail(email, opts)` — same but does a `User.findUnique`
+  by email first. Most existing event methods take emails (their
+  original purpose was email/SMS) so this is the common call site.
+- `resolveByEntity(linkedType, linkedId, { userId?, resolvedBy? })` —
+  stamps `resolvedAt` on every matching unresolved row. Called from
+  action handlers across the codebase whenever the user takes the
+  action a notification was waiting on. Pass `userId` to scope to a
+  single recipient.
+
+### Feed endpoints (`notifications-feed.controller.ts`)
+
+All Clerk-guarded. Throttle: 120/min/user (bell badge polls every
+60s across multiple tabs/devices).
+
+- `GET /notifications/me/active-count` →
+  `{ buyer, seller, account, total }`. Polled by the bell badge.
+- `GET /notifications/me?category=&status=active|resolved|all&limit=&before=`
+  → paginated descending-by-createdAt feed. `status` defaults to
+  `active` (resolvedAt IS NULL). `before` is a cursor for "Load more".
+- `POST /notifications/me/dismiss` body `{ ids: string[] }` →
+  resolves the rows ONLY where `dismissible=true`. Action-required
+  rows are silently filtered.
+
+### Currently wired events
+
+| Event method | Category | Linked entity | Dismissible | Resolves on |
+|---|---|---|---|---|
+| `bidOutbid` | BUYER | listing | no | New bid by this user on the same listing |
+| `auctionWon` | BUYER | listing | no | Buyer pays |
+| `offerAccepted` | BUYER | offer | yes | Manual dismiss (no offerId on Transaction model) |
+| `offerCountered` | BUYER | offer | no | Buyer accepts/rejects/counters back |
+| `offerRejected` | BUYER | offer | yes | Manual dismiss |
+| `itemDispatched` | BUYER | transaction | no | Buyer confirms delivery |
+| `raffleWinnerPicked` | BUYER | raffle | yes | Manual dismiss (admin dispatch is out-of-band) |
+| `offerReceived` | SELLER | offer | no | Seller accepts/rejects/counters |
+| `newSaleSeller` | SELLER | transaction | no | Seller marks dispatched |
+| `paymentReleasedSeller` | SELLER | transaction | yes | Manual dismiss |
+| `listingApproved` | SELLER | listing | yes | Manual dismiss |
+| `listingRejected` | SELLER | listing | yes | Manual dismiss |
+| Admin broadcast | ACCOUNT | — | yes | Manual dismiss |
+
+`resolveByEntity` call sites: `OffersService.{accept,reject,counter,
+acceptCounter,rejectCounter}`, `AuctionsService.placeBid`,
+`TransactionsService.{confirmDispatch,confirmDelivery,markPaid}`,
+`AdminService.refundTransaction`.
+
+### Frontend surfaces
+
+- `frontend/components/bottom-tab-bar.tsx` — Alerts tab (bell icon)
+  with active-count red badge top-right when total > 0 (or `9+`).
+  Badge polls `/notifications/me/active-count` every 60s. Gated to
+  standalone mode (no polling in browser tabs). Critically: opening
+  the inbox does NOT drop the badge — only acting on entities or
+  dismissing informational rows does.
+- `frontend/app/notifications/page.tsx` — three tabs (Buyer / Seller
+  / Account) with their own per-tab active-count pill. `?tab=…`
+  URL-driven. "Show resolved" toggle flips to history.
+- `frontend/components/notifications-list.tsx` — fetches the feed,
+  optimistic dismiss with rollback, "Load more" cursor paging.
+- `frontend/components/notification-item.tsx` — icon + title + body
+  + relative time. Dismissible rows show a `×` button; action-
+  required rows show a faint "Act" pill (no dismiss button).
+- `frontend/lib/notifications.ts` — typed fetch helpers. All
+  resilient — return `[]` / `{0,0,0,0}` on network/HTTP errors so
+  the UI degrades gracefully if the backend is briefly unreachable.
+
+### Long-tail events not yet wired
+
+Email + SMS fire as before, but no inbox row yet for:
+`bidPlaced`, `counterAccepted`, `counterRejected`,
+`auctionEndedForSeller`, `shippingDispatched`/`Out`/`Delivered`,
+`orderConfirmedBuyer`, `refundIssuedBuyer`, `raffleEntryConfirmed`,
+`raffleBackupPromoted`, `raffleWinnerPrizeDispatched`,
+`dealerVerificationApproved`/`Rejected`, `shippingFailed`,
+`firearmStockedAtDealerBuyer`, `dispatchNudgeSeller`,
+`listingRemovedByAdmin`. Each is a one-line `persistByEmail` away
+when prioritised.
 
 ---
 
@@ -877,33 +1001,72 @@ opened fullscreen" from "native iOS app":
   script in `app/layout.tsx` that sets
   `<html data-standalone="true">` before first frame. CSS gates the
   rest off that attribute, so server HTML matches for browser users
-  and installed-PWA users with no flash.
+  and installed-PWA users with no flash. The same script rewrites
+  the viewport meta to lock pinch-zoom + double-tap-zoom in
+  standalone mode (`maximum-scale=1, user-scalable=no`) — installed
+  users get a fixed native-window feel; browser users keep zoom for
+  accessibility.
 - **Bottom tab bar** — `frontend/components/bottom-tab-bar.tsx`,
-  5-tab nav (Browse / Auctions / Sell / My / More) anchored to the
+  5-tab nav (**Shop / Alerts / Sell / My / More**) anchored to the
   bottom with `env(safe-area-inset-bottom)` padding for the home
-  indicator. Visible only in standalone mode. Browser-mobile users
-  keep the existing hamburger drawer in `nav.tsx`.
+  indicator. Sell is the raised circular FAB in the centre.
+  - **Shop** opens a bottom-sheet picker with five rows: All listings,
+    Marketplace, Auctions, Take a Shot, Competitions. Active row
+    highlighted in brand red.
+  - **Alerts** routes to `/notifications` with a red active-count
+    badge (see "Notifications inbox" section above).
+  - Visible only in standalone mode. Browser-mobile users keep the
+    existing hamburger drawer in `nav.tsx`.
+  - **Hides on scroll-down** (`lib/use-scroll-direction.ts`) — slides
+    off-screen when the user scrolls down (more reading room), back
+    in when they scroll up. Sheet-open state overrides the hide.
+- **Sticky featured strip** — `frontend/components/sticky-featured-
+  strip.tsx`, mounted in the layout and visible only in standalone
+  on the shopping surface pages (`/` and `/competitions`). Sits
+  above the bottom tab bar; hides on scroll-down in sync with it.
+  140×64pt cards by default; latest spec is 30% larger (182×83pt).
+- **Sticky search bar** — `frontend/components/mobile-search-bar.tsx`
+  shown at the top of every applicable page in standalone mode.
+  Hidden on focus-flow routes via a denylist (`/admin`, `/checkout`,
+  `/sign-in`, `/sign-up`, `/listings/new`, `/kyc/verify`, `/offline`,
+  `/notifications`, `*/dealer-verification`).
 - **Top nav hidden in standalone** — `public-chrome.tsx` wraps the
   Nav in a `data-public-nav` div + Footer in `data-public-footer`,
   both hidden via `globals.css` when standalone. The bottom tab bar
-  replaces them. Search affordance moves to a sticky bar at the top
-  of `/` only (`components/mobile-search-bar.tsx`).
+  + sticky search bar replace them.
+- **All-listings entry** — `Shop → All listings` routes to
+  `/?sort=newest`. `showHero` on the homepage excludes when a `sort`
+  param is set, so the user lands on the actual listings grid
+  (sorted server-side per `BrowseListingsDto.sort` =
+  `newest|price_asc|price_desc`) instead of the curated landing.
+  The homepage's big Featured marquee section also hides in
+  standalone (CSS gates on `data-featured-home-section`) — the
+  sticky featured strip already covers featured in standalone, so
+  the inline marquee would be redundant.
 - **iOS splash images** — generated by `pwa-asset-generator` into
   `frontend/public/splash/apple-splash-*.jpeg`, wired via
   `<link rel="apple-touch-startup-image">` in `layout.tsx`. Kills
   the white-flash on PWA launch on every supported iPhone + iPad.
+  Plus an animated install walkthrough modal
+  (`components/install-animation.tsx`) shows the "tap Share → Add to
+  Home Screen" gesture flow when iOS Safari users tap "How" on the
+  install-prompt CTA — pixel-art Windows pointing-hand cursor flies
+  in, halo + step badge, 4-scene loop. Built from a Claude Design
+  prototype handoff.
 - **CSS polish** in `globals.css`: `-webkit-tap-highlight-color`
   transparent (no grey flash), `overscroll-behavior-y: none`
   (no page rubber-band), `font-size: 16px` on mobile inputs (no
-  iOS zoom-on-focus), `env(safe-area-inset-*)` paddings.
+  iOS zoom-on-focus), `env(safe-area-inset-*)` paddings,
+  `touch-action: pan-x pan-y` in standalone mode (belt-and-braces
+  zoom block).
 - **View transitions** — `::view-transition-old/new(root)` keyframes
-  in `globals.css`, gated on standalone. Fires when the browser /
-  Next.js wraps router transitions in `document.startViewTransition`
-  (currently a no-op until we enable the corresponding experimental
-  flag; rules are harmless in the meantime).
-- **Manifest shortcuts** — `app/manifest.ts` includes `shortcuts`
-  array (Browse / Sell / Auctions) for Android's long-press app-icon
-  menu, plus explicit `id: '/'` and `scope: '/'`.
+  in `globals.css`, gated on standalone. Will fire once we enable
+  Next 16's `experimental: { viewTransition: true }` flag and wrap
+  the layout in `<ViewTransition>`. Currently a no-op; rules are
+  harmless in the meantime.
+- **Manifest** — `app/manifest.ts` includes `id: '/'`, `scope: '/'`,
+  and a `shortcuts` array (Browse / Sell / Auctions) for Android's
+  long-press app-icon menu.
 - `middleware.ts` adds `/offline` and `/sw.js` to the public
   routes list so Clerk doesn't `protect-rewrite` them.
 - `tsconfig.json` includes `webworker` lib so the SW source
@@ -916,14 +1079,18 @@ opened fullscreen" from "native iOS app":
   stale-while-revalidate for Cloudinary images, network-first
   short cache for `/api/*` GETs, network-only for writes, never
   touch anything containing `clerk`.
-- **Web push notifications** (Phase D) — VAPID + PushSubscription
-  table + opt-in UX. Deferred until value is clear over existing
-  Urgent Notifications strip + email/SMS.
-- **Install-prompt UX with deferral logic** (Phase E) — shown
-  after 3 visits OR 2 minutes, 14-day dismissal via localStorage,
-  iOS manual instructions.
-- **iOS splash screens** — apple-touch-icon already covers the
-  default behaviour.
+- **Web push delivery** — the persistent `Notification` model + the
+  in-app inbox are SHIPPED (see "Notifications inbox" section
+  above). Push delivery itself (VAPID + `PushSubscription` table +
+  opt-in UX + service-worker push handler) is the next layer; once
+  built, it will fire write-row AND push using the same payload.
+- **Install-prompt UX with deferral logic** — currently shows
+  immediately when beforeinstallprompt fires (Android/desktop) or
+  when the user is in iOS Safari + has dismissed nothing. 14-day
+  dismissal via localStorage already in place; deferred-trigger
+  logic (e.g. "after 3 visits") not built.
+- **Custom notification sounds** — operator chose default OS sound
+  when push lands. No custom mp3 plumbing.
 
 ---
 
@@ -1003,12 +1170,70 @@ Work on a feature branch; `deploy now` merges it into `main`.
 
 ---
 
+## Operational ops
+
+### Category seeding (`backend/scripts/seed-categories.mjs`)
+
+`prisma/seed.ts` re-introduces 5 TEST dealers + the seed admin user,
+so it's NOT safe to run against production. Use this script instead
+when production needs the canonical category tree (14 parents +
+~110 sub-categories) refreshed:
+
+```
+ssh gungalore "cd ~/app/backend && node scripts/seed-categories.mjs"
+```
+
+- Idempotent — upserts by slug. Safe to re-run when the tree changes.
+- Deactivates ALL existing categories first, then re-activates the
+  canonical set. Anything admin-added via `/admin/categories` that
+  isn't in the canonical list will be left `isActive=false` (still
+  FK-valid for old listings, just hidden from pickers — manually
+  re-enable in the admin panel if needed).
+- Only touches `Category` table. No dealers, admins, users, listings,
+  or transactions affected.
+
+Production was seeded fresh on 2026-05-24 (0 → 129 categories).
+The dev seed script (`prisma/seed.ts`) is for local dev only.
+
+### Profile-completion verify-success fallback
+
+`ProfileCompletionModal` (`frontend/components/profile-completion-
+modal.tsx`) is the hard-wall modal after first listing publish. iOS
+Safari has an aggressive request-cancellation pattern in PWAs —
+the POST to `/users/me/profile-complete` can drop the response
+even when the server actually succeeded (we've seen "Load failed"
+twice in a row while backend logged two `Profile completed` events).
+
+Two-layer hardening:
+
+1. `keepalive: true` on the fetch — tells iOS Safari to hold the
+   request open across short backgrounding events.
+2. On any thrown network error, re-fetch `/users/me` and check
+   `profileCompletedAt`. If set, treat as success (close modal,
+   clear localStorage draft, fire `onComplete`) instead of showing
+   a confusing error to a user whose data is already saved.
+
+The user only sees an error now if the server genuinely didn't
+accept the data (a 4xx response with a `message` body, shown
+verbatim) OR if both the POST AND the verification GET fail.
+
+---
+
 ## Current Status
 
 **Phases 1–14 complete plus Featured Slots system, sitewide UX
-hardening, auction proxy hardening, KYC no-webcam handoff, and PWA
-Phases A–C (conservative SW). End-to-end test still deferred. Next:
-End-to-end test + PWA Phase D (push notifications) when prioritised.**
+hardening, auction proxy hardening, KYC no-webcam handoff, PWA
+Phases A–C (conservative SW + app-feel polish), and Phase C.5
+(in-app Notifications inbox with action-resolve semantics + sticky
+search bar everywhere + Alerts tab in bottom nav). Next: PWA Phase D
+push delivery (VAPID + service-worker push handler — write-row +
+push will both fire from the same `NotificationsService` methods),
+plus backfill of the ~15 remaining transactional events to write
+inbox rows (counterAccepted/Rejected, shipping{Dispatched,Out,
+Delivered}, refundIssuedBuyer, raffle{Entry,BackupPromoted,
+PrizeDispatched}, dealerVerification{Approved,Rejected},
+{dispatchNudge,shippingFailed,firearmStocked,listingRemovedByAdmin}
+Seller). End-to-end test still deferred.**
 
 - [x] `.gitignore` committed first (excludes `.env*` and credential files).
 - [ ] New GitHub repo created and pushed (local git only so far).
