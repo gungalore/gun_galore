@@ -19,6 +19,11 @@ export class RatingsController {
   }
 }
 
+// Auth-gated dashboard endpoint. NOTE: split from the public seller
+// ratings controller below because Nest applies class-level guards to
+// every method — having `forSeller` under the same `@UseGuards(ClerkGuard)`
+// class would 401 the public /sellers/:clerkId page that needs to load
+// without an auth token (server-fetched SSR for guests).
 @Controller('ratings')
 @UseGuards(ClerkGuard)
 export class RatingsDashboardController {
@@ -29,8 +34,15 @@ export class RatingsDashboardController {
   dashboard(@CurrentUser() clerkId: string) {
     return this.ratingsService.getTrustDashboard(clerkId);
   }
+}
 
-  // Seller's public ratings (used on listing pages)
+// Public — no guard. Used by /sellers/[clerkId] page (SSR fetch, no
+// auth token) so any visitor can see a seller's reviews.
+@Controller('ratings')
+export class RatingsPublicController {
+  constructor(private readonly ratingsService: RatingsService) {}
+
+  // Seller's public ratings (used on listing pages + /sellers/[clerkId]).
   @Get('seller/:clerkId')
   forSeller(@Param('clerkId') clerkId: string) {
     return this.ratingsService.findForSeller(clerkId);
