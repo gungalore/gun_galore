@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { apiFetch } from '@/lib/api';
 import { Listing } from '@/lib/types';
@@ -58,10 +59,12 @@ export default async function CheckoutPage({
 
           <div className="flex gap-4">
             {listing.images[0] && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={listing.images.find((i) => i.isPrimary)?.url ?? listing.images[0].url}
                 alt={listing.title}
+                width={80}
+                height={80}
+                sizes="80px"
                 className="w-20 h-20 rounded-[6px] object-cover flex-shrink-0"
                 style={{ background: 'var(--bg-inset)' }}
               />

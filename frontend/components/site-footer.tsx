@@ -54,7 +54,7 @@ export function SiteFooter() {
           >
             Gun Galore
           </p>
-          <p style={{ color: 'var(--text-tertiary)', lineHeight: 1.6, margin: 0 }}>
+          <p style={{ color: 'var(--text-tertiary-on-card)', lineHeight: 1.6, margin: 0 }}>
             South Africa&apos;s verified firearms, hunting and outdoor
             marketplace. Every seller verified. Every transaction
             protected.
@@ -124,7 +124,7 @@ export function SiteFooter() {
                 support@gungalore.co.za
               </a>
             </li>
-            <li style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
+            <li style={{ color: 'var(--text-tertiary-on-card)', fontSize: 12 }}>
               We aim to respond within 2 business days
             </li>
           </ul>
@@ -140,18 +140,18 @@ export function SiteFooter() {
           margin: '0 auto',
           paddingTop: 16,
           borderTop: '0.5px solid var(--border)',
-          color: 'var(--text-tertiary)',
+          color: 'var(--text-tertiary-on-card)',
           fontSize: 11,
           lineHeight: 1.7,
         }}
       >
         <p style={{ margin: 0 }}>
           © {year} GunGalore (Pty) Ltd · Registration No. 2026/393321/07 · 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa ·{' '}
-          <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--text-tertiary)', textDecoration: 'underline' }}>
+          <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--text-tertiary-on-card)', textDecoration: 'underline' }}>
             support@gungalore.co.za
           </a>
           {' · '}
-          <Link href="/legal" style={{ color: 'var(--text-tertiary)', textDecoration: 'underline' }}>
+          <Link href="/legal" style={{ color: 'var(--text-tertiary-on-card)', textDecoration: 'underline' }}>
             Full disclosures &amp; legal index
           </Link>
         </p>

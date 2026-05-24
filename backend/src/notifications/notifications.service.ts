@@ -652,6 +652,20 @@ export class NotificationsService {
     reason?: string;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}/dealer-verification`;
+    // In-app inbox: action-required — seller must reshoot photos.
+    // Cleared when DealerVerificationService transitions the verification
+    // to APPROVED → resolveByEntity('transaction', txId).
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'dealer_verification_rejected',
+      title: 'Dealer photos need reshoot',
+      body: `${d.listingTitle}${d.reason ? ` — ${d.reason}` : ''}`,
+      url: `/transactions/${d.transactionId}/dealer-verification`,
+      iconKey: 'dispatch',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
     const reasonLine = d.reason
       ? `<p style="margin: 8px 0;"><b>Admin note:</b> ${d.reason}</p>`
       : '';
@@ -780,6 +794,19 @@ export class NotificationsService {
     note?: string | null;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    // In-app inbox: informational — the refund is already issued, the
+    // buyer just needs to know. Dismissible.
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'refund_issued',
+      title: 'Refund issued',
+      body: `${formatRand(d.buyerTotal)} refunded for ${d.listingTitle}. Allow 5–10 business days.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+    });
     const body =
       `Hi ${b(d.buyerName)}, a refund of ${b(formatRand(d.buyerTotal))} for ${b(d.listingTitle)} has been issued. Please allow 5–10 business days for it to appear on your statement.` +
       (d.note ? `<br><br>Note from admin: ${b(d.note)}` : '');
@@ -1101,6 +1128,20 @@ export class NotificationsService {
     counterAmount: number;
     offerId: string;
   }) {
+    // In-app inbox: informational — seller just needs to know the
+    // buyer's accepted the counter. Buyer has 24h to pay. Dismissible
+    // because the next action belongs to the buyer.
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'counter_accepted',
+      title: 'Counter accepted',
+      body: `${d.buyerName} accepted your ${formatRand(d.counterAmount)} counter on ${d.listingTitle}.`,
+      url: `/offers/received`,
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+    });
     const html = this.email({
       status: { tone: 'success', label: 'Counter accepted' },
       headline: 'Counter accepted',
@@ -1126,6 +1167,18 @@ export class NotificationsService {
     listingId: string;
     offerId: string;
   }) {
+    // In-app inbox: informational, final state. Dismissible.
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'counter_rejected',
+      title: 'Counter declined',
+      body: `${d.buyerName} declined your counter on ${d.listingTitle}. Listing stays active.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+    });
     const html = this.email({
       status: { tone: 'error', label: 'Counter declined' },
       headline: 'Counter declined',
@@ -1284,8 +1337,38 @@ export class NotificationsService {
     listingTitle: string,
     outcome: 'WON' | 'NO_RESERVE' | 'NO_BIDS',
     amount: number,
+    // Optional listingId so we can deep-link the inbox row to the
+    // listing and resolveByEntity('listing', listingId) when the next
+    // step lands (e.g. seller relists / buyer pays). Callers that
+    // don't have it yet can still call this method — the row just
+    // won't auto-resolve.
+    listingId?: string,
   ) {
     const ctaUrl = `${this.appUrl}/dashboard`;
+    // In-app inbox: WON is action-required (seller needs to track the
+    // buyer's payment), NO_RESERVE/NO_BIDS are dismissible final
+    // states.
+    await this.persistByEmail(sellerEmail, {
+      category: 'SELLER',
+      type: `auction_ended_${outcome.toLowerCase()}`,
+      title:
+        outcome === 'WON'
+          ? 'Auction sold'
+          : outcome === 'NO_RESERVE'
+            ? 'Reserve not met'
+            : 'Auction ended — no bids',
+      body:
+        outcome === 'WON'
+          ? `${listingTitle} sold for ${formatRand(amount)}. Buyer has 24h to pay.`
+          : outcome === 'NO_RESERVE'
+            ? `Highest bid ${formatRand(amount)} on ${listingTitle} didn't meet your reserve.`
+            : `${listingTitle} ended with no bids. Relist to try again.`,
+      url: listingId ? `/listings/${listingId}` : '/dashboard',
+      iconKey: 'sold',
+      linkedType: listingId ? 'listing' : undefined,
+      linkedId: listingId,
+      dismissible: outcome !== 'WON',
+    });
     let html: string;
     let subject: string;
     switch (outcome) {
@@ -1333,6 +1416,20 @@ export class NotificationsService {
     listingTitle: string,
     transactionId: string,
   ) {
+    // In-app inbox: action-required (buyer must confirm delivery to
+    // release payout). Cleared when TransactionsService.confirmDelivery
+    // fires resolveByEntity('transaction', txId, buyerUserId).
+    await this.persistByEmail(buyerEmail, {
+      category: 'BUYER',
+      type: 'shipping_dispatched',
+      title: 'Dispatched',
+      body: `${listingTitle} is on its way.`,
+      url: `/transactions/${transactionId}`,
+      iconKey: 'dispatch',
+      linkedType: 'transaction',
+      linkedId: transactionId,
+      dismissible: false,
+    });
     const html = this.email({
       status: { tone: 'success', label: 'Dispatched' },
       headline: 'Dispatched',
@@ -1372,6 +1469,20 @@ export class NotificationsService {
     transactionId: string,
   ) {
     const url = `${this.appUrl}/transactions/${transactionId}`;
+    // In-app inbox: action-required (buyer should confirm receipt
+    // within 7 days or payment auto-releases anyway). Cleared by
+    // resolveByEntity('transaction', txId, buyerUserId) on confirm.
+    await this.persistByEmail(buyerEmail, {
+      category: 'BUYER',
+      type: 'shipping_delivered',
+      title: 'Delivered — confirm receipt',
+      body: `${listingTitle} was delivered. Tap to confirm so the seller can be paid.`,
+      url: `/transactions/${transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: transactionId,
+      dismissible: false,
+    });
     const html = this.email({
       status: { tone: 'success', label: 'Delivered' },
       headline: 'Delivered',
@@ -1410,8 +1521,25 @@ export class NotificationsService {
     raffleTitle: string,
     ticketCount: number,
     refCodes: string[],
+    // Optional raffleId so we can deep-link the inbox row. Caller can
+    // pass it from RafflesService.confirmEntry — if missing the row
+    // still appears and just deep-links to /my/tickets.
+    raffleId?: string,
   ) {
     const url = `${this.appUrl}/my/tickets`;
+    // In-app inbox: confirmation receipt — dismissible. The user will
+    // get a separate "you won" / "you lost" notification at draw time.
+    await this.persistByEmail(buyerEmail, {
+      category: 'BUYER',
+      type: 'raffle_entry_confirmed',
+      title: 'Raffle entry confirmed',
+      body: `${ticketCount} ticket${ticketCount === 1 ? '' : 's'} for ${raffleTitle}.`,
+      url: '/my/tickets',
+      iconKey: 'transaction',
+      linkedType: raffleId ? 'raffle' : undefined,
+      linkedId: raffleId,
+      dismissible: true,
+    });
     const shownRefs = refCodes.slice(0, 25);
     const refsList = shownRefs.join(', ');
     const refsLine =
@@ -1517,8 +1645,22 @@ export class NotificationsService {
     raffleTitle: string;
     trackingRef: string;
     carrierLabel?: string | null;
+    raffleId?: string;
   }) {
     const { winnerEmail, winnerPhone, raffleTitle, trackingRef } = opts;
+    // In-app inbox: informational — the prize is on the way and the
+    // tracking ref is the only action they'd take. Dismissible.
+    await this.persistByEmail(winnerEmail, {
+      category: 'BUYER',
+      type: 'raffle_prize_dispatched',
+      title: 'Your prize is on the way',
+      body: `${raffleTitle} dispatched. Tracking: ${trackingRef}`,
+      url: '/dashboard/raffle-wins',
+      iconKey: 'dispatch',
+      linkedType: opts.raffleId ? 'raffle' : undefined,
+      linkedId: opts.raffleId,
+      dismissible: true,
+    });
     const carrier = opts.carrierLabel?.trim() || 'Courier';
     const trackingUrl = carrierTrackingUrl(opts.carrierLabel, trackingRef);
 
@@ -1683,6 +1825,20 @@ export class NotificationsService {
     autoRefundDays: number;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    // In-app inbox: action-required (seller must dispatch to avoid
+    // auto-refund + strike). Cleared by resolveByEntity('transaction')
+    // when TransactionsService.markDispatched fires.
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'dispatch_nudge',
+      title: 'Dispatch needed — soon',
+      body: `${d.listingTitle} — ${d.hoursElapsed}h since payment. Auto-refund in ${d.autoRefundDays} day${d.autoRefundDays === 1 ? '' : 's'}.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'dispatch',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
     const html = this.email({
       status: { tone: 'pending', label: 'Action needed' },
       headline: 'Please dispatch your sold item',

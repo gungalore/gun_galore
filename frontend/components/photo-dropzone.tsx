@@ -151,10 +151,19 @@ export function PhotoDropzone({
           JPG, PNG, or WebP · {minFiles}–{maxFiles} photos · first photo is the cover · drag to reorder
         </div>
 
+        {/* `capture="environment"` hints to iOS/Android that the
+            rear-facing camera is the preferred source — when a mobile
+            user taps the dropzone the OS jumps straight to the camera
+            instead of the generic file picker. Desktop browsers ignore
+            the attribute, so behaviour is unchanged there. The
+            `multiple` attr still applies, so users can still pick
+            multiple existing photos from their gallery via the OS
+            sheet's other-source option. */}
         <input
           ref={inputRef}
           type="file"
           accept={accept}
+          capture="environment"
           multiple
           style={{ display: 'none' }}
           onChange={(e) => {

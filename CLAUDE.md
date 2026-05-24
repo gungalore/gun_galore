@@ -1007,14 +1007,25 @@ opened fullscreen" from "native iOS app":
   users get a fixed native-window feel; browser users keep zoom for
   accessibility.
 - **Bottom tab bar** — `frontend/components/bottom-tab-bar.tsx`,
-  5-tab nav (**Shop / Alerts / Sell / My / More**) anchored to the
-  bottom with `env(safe-area-inset-bottom)` padding for the home
+  5-tab nav (**Shop / Alerts / Sell / Wishlist / More**) anchored to
+  the bottom with `env(safe-area-inset-bottom)` padding for the home
   indicator. Sell is the raised circular FAB in the centre.
   - **Shop** opens a bottom-sheet picker with five rows: All listings,
     Marketplace, Auctions, Take a Shot, Competitions. Active row
     highlighted in brand red.
   - **Alerts** routes to `/notifications` with a red active-count
     badge (see "Notifications inbox" section above).
+  - **Wishlist** routes to `/wishlist`. Heart icon, red count badge
+    when items are saved (caps at "50+"). Replaces the old "My" tab —
+    "My" destinations now live in the More sheet.
+  - **More** sheet is headed by a Profile card (avatar + username +
+    "View profile" chevron pulled from Clerk's `useUser()`), then
+    sections: **My account** (Dashboard, Profile, My listings/orders/
+    sales/offers/bids/tickets/raffle wins, Received offers, Sign out),
+    **Shop** (Take a Shot, Competitions), **Legal** (Terms, Privacy,
+    Refund, legal index). Sections are separated by thin dividers and
+    every row has a trailing chevron so it reads as iOS-Settings-style
+    navigation.
   - Visible only in standalone mode. Browser-mobile users keep the
     existing hamburger drawer in `nav.tsx`.
   - **Hides on scroll-down** (`lib/use-scroll-direction.ts`) — slides
@@ -1058,7 +1069,25 @@ opened fullscreen" from "native iOS app":
   (no page rubber-band), `font-size: 16px` on mobile inputs (no
   iOS zoom-on-focus), `env(safe-area-inset-*)` paddings,
   `touch-action: pan-x pan-y` in standalone mode (belt-and-braces
-  zoom block).
+  zoom block). `--text-tertiary-on-card: #8a8a8a` token gives WCAG-AA
+  contrast for tertiary text on `--bg-card` (used in the footer; the
+  raw `--text-tertiary` fails AA at 3.7:1).
+- **Online/offline + SW-update banners** —
+  `components/connection-status-banner.tsx` watches `navigator.onLine`
+  via `useSyncExternalStore`, debounces the first drop by 500ms,
+  shows a red "You're offline" sticky bar + a green "Back online"
+  toast on recovery. `components/sw-update-banner.tsx` listens for
+  `updatefound` + `controllerchange` on the service-worker
+  registration; when a fresh SW activates with a previous controller
+  in place (i.e. an update, not a first install) it pops a bottom-
+  anchored "An update is available — Reload" banner. Tapping Reload
+  hard-refreshes so the new bundles load (Serwist's
+  `skipWaiting: true` already activates the new SW; the page just
+  needs a refresh to pick up the new JS).
+- **Web Share + clipboard fallback** —
+  `components/share-listing-button.tsx` wraps `navigator.share()` with
+  a `navigator.clipboard.writeText()` fallback + 2s toast. Mounted on
+  `/listings/[id]` next to the Wishlist button.
 - **View transitions** — `::view-transition-old/new(root)` keyframes
   in `globals.css`, gated on standalone. Will fire once we enable
   Next 16's `experimental: { viewTransition: true }` flag and wrap
@@ -1223,17 +1252,78 @@ verbatim) OR if both the POST AND the verification GET fail.
 
 **Phases 1–14 complete plus Featured Slots system, sitewide UX
 hardening, auction proxy hardening, KYC no-webcam handoff, PWA
-Phases A–C (conservative SW + app-feel polish), and Phase C.5
-(in-app Notifications inbox with action-resolve semantics + sticky
-search bar everywhere + Alerts tab in bottom nav). Next: PWA Phase D
-push delivery (VAPID + service-worker push handler — write-row +
-push will both fire from the same `NotificationsService` methods),
-plus backfill of the ~15 remaining transactional events to write
-inbox rows (counterAccepted/Rejected, shipping{Dispatched,Out,
-Delivered}, refundIssuedBuyer, raffle{Entry,BackupPromoted,
-PrizeDispatched}, dealerVerification{Approved,Rejected},
-{dispatchNudge,shippingFailed,firearmStocked,listingRemovedByAdmin}
-Seller). End-to-end test still deferred.**
+Phases A–C (conservative SW + app-feel polish), Phase C.5 (in-app
+Notifications inbox with action-resolve semantics + sticky search bar
+everywhere + Alerts tab in bottom nav), and the audit-driven
+"PWA-as-centrepiece" drops:**
+
+- **Drop 1 — Lighthouse polish (done)**: hero.png → WebP (1.2 MB →
+  29 KB, mobile LCP 9.9s → ~2.5s) via `image-set()` CSS swap +
+  `<link rel="preload">`; `app/robots.ts` (Disallow `/admin/`,
+  `/api/`, `/checkout/`, `/kyc/`, `/sign-in/`, `/sign-up/`,
+  `/sso-callback/`, `/a/`, `/offline`, `/preview/`); footer contrast
+  fix via `--text-tertiary-on-card` token; `lib/status-labels.ts`
+  central PAYMENT/LISTING/SHIPPING/OFFER/KYC status copy + tone map
+  (replaces inline `.replace(/_/g, ' ')` on `/my/orders|sales|
+  listings` + `/transactions/[id]` — "HELD" now reads "Payment held"
+  with a `title=` tooltip); `<img>` → `next/image` on conversion-
+  critical pages (checkout/orders/sales/listings/transactions);
+  `capture="environment"` on `<PhotoDropzone>` file input so iOS/
+  Android jump straight to the rear camera.
+- **Drop 2 — Wishlist + nav restructure (done)**:
+  - Backend `WatchedListing` Prisma model (user ↔ listing join, compound
+    unique, cascade delete both sides) +
+    `backend/src/wishlist/{wishlist.module,service,controller}.ts`
+    with 4 endpoints (`POST /wishlist/:id`, `DELETE /wishlist/:id`,
+    `GET /wishlist`, `GET /wishlist/ids`). Registered in `AppModule`.
+    `npx prisma db push` to apply.
+  - Frontend `lib/use-wishlist.tsx` Context + `useWishlist()` hook
+    (optimistic toggle with rollback, hydrates `/wishlist/ids` on
+    sign-in). `WishlistProvider` mounted in `app/layout.tsx` inside
+    ClerkProvider.
+  - `components/wishlist-button.tsx` (overlay variant on cards +
+    inline variant on listing detail) with `e.preventDefault()` +
+    `e.stopPropagation()` so the parent `<Link>` doesn't navigate
+    when only the heart was tapped. Signed-out tap pops a "Sign in
+    to save" hint (inline `<SignInButton mode="modal">`).
+  - Heart mounted on `listing-card.tsx` (top-right of image — the
+    condition badge moved to bottom-left to make room); on listing
+    detail next to the Share button.
+  - `/wishlist` page server-fetches `/wishlist`, renders a grid via
+    the existing `ListingCard`, partitions SOLD / CANCELLED /
+    EXPIRED / REMOVED / AUCTION_ENDED_* into greyed-out tombstone
+    rows with a "Remove from wishlist" button (so saves don't
+    silently vanish when the listing goes terminal).
+  - Bottom-tab restructure: **Shop · Alerts · Sell · Wishlist · More**
+    (heart icon with the same count-badge style as the bell). "My"
+    tab removed entirely.
+  - MoreSheet redesigned with a Profile header (avatar + username +
+    "View profile" chevron from `useUser()`) and 3 sections: **My
+    account** (Dashboard, Profile, all /my/* destinations + Sign
+    out), **Shop** (Take a Shot, Competitions), **Legal**. Section
+    dividers + trailing row chevrons.
+  - Desktop hamburger `nav.tsx` ACCOUNT_LINKS gets `Wishlist` next to
+    "View profile" for parity.
+- **Drop 3 — Polish (done)**: live auction countdown
+  (`lib/use-countdown.ts` 1Hz tick) replaces the static
+  `AuctionTimeChip` in `listing-card.tsx`; `ShareListingButton` +
+  inline `WishlistButton` on listing detail; `ConnectionStatusBanner`
+  + `SwUpdateBanner` mounted in `app/layout.tsx`; ProfileCompletionModal
+  "Finish later" escape — exports `markProfileFinishLater()` +
+  `shouldSuppressProfileModal()` + `clearProfileFinishLater()` helpers,
+  /listings/new gates on the 24h suppression flag before popping the
+  modal (payout stays server-side-blocked regardless); 10 long-tail
+  notification events backfilled with `persistByEmail` inbox rows —
+  `counterAccepted/Rejected`, `auctionEndedForSeller`,
+  `shippingDispatched/Delivered`, `refundIssuedBuyer`,
+  `raffleEntryConfirmed`, `raffleWinnerPrizeDispatched`,
+  `dealerVerificationRejected`, `dispatchNudgeSeller`.
+
+**Next:** PWA Phase D push delivery (VAPID + service-worker push
+handler), remaining ~5 notification events to backfill
+(shippingOutForDelivery, orderConfirmedBuyer, raffleBackupPromoted,
+dealerVerificationApproved, firearmStocked, listingRemovedByAdmin,
+shippingFailed). End-to-end Playwright test still deferred.
 
 - [x] `.gitignore` committed first (excludes `.env*` and credential files).
 - [ ] New GitHub repo created and pushed (local git only so far).

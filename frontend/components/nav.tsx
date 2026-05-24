@@ -69,8 +69,12 @@ export function Nav() {
   ];
 
   // Account menu items — shared between desktop dropdown and mobile drawer.
+  // Wishlist sits at the top with the primary "View profile" link so the
+  // desktop nav has parity with the installed-PWA bottom bar (where
+  // Wishlist is one of the five primary tabs).
   const ACCOUNT_LINKS = [
     { href: '/profile', label: 'View profile', primary: true },
+    { href: '/wishlist', label: 'Wishlist' },
     { href: '/my/listings', label: 'My Listings' },
     { href: '/my/orders', label: 'My Orders' },
     { href: '/my/sales', label: 'My Sales' },

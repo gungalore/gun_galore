@@ -48,12 +48,68 @@ const SA_BANKS: { name: string; universalCode: string }[] = [
 // publishing more listings, but their payout is blocked until this
 // modal has been submitted successfully (server-side gate in
 // AdminService.releaseTransaction).
+// 24-hour "snooze" window for the profile-completion gate. While this
+// localStorage flag is in the future, the modal stays closed even if
+// the seller publishes more listings. Payout is STILL blocked
+// server-side until the profile is complete — the flag only changes
+// when the modal pops, not what's gated by it. Cleared on successful
+// submit so the seller never sees it after they actually finish.
+const FINISH_LATER_KEY_PREFIX = 'gg-profile-finish-later-until-';
+const FINISH_LATER_MS = 24 * 60 * 60 * 1000; // 24h
+
+export function markProfileFinishLater(userId: string | null | undefined) {
+  if (typeof window === 'undefined' || !userId) return;
+  try {
+    window.localStorage.setItem(
+      `${FINISH_LATER_KEY_PREFIX}${userId}`,
+      String(Date.now() + FINISH_LATER_MS),
+    );
+  } catch {
+    /* localStorage quota / private mode — silent */
+  }
+}
+
+/** True when the seller has explicitly chosen "Finish later" within
+ * the last 24 hours. Callers should AND this with an in-progress check
+ * to decide whether to pop the modal at all. */
+export function shouldSuppressProfileModal(userId: string | null | undefined): boolean {
+  if (typeof window === 'undefined' || !userId) return false;
+  try {
+    const raw = window.localStorage.getItem(`${FINISH_LATER_KEY_PREFIX}${userId}`);
+    if (!raw) return false;
+    const until = parseInt(raw, 10);
+    if (!Number.isFinite(until)) return false;
+    if (Date.now() < until) return true;
+    // Expired — clean up.
+    window.localStorage.removeItem(`${FINISH_LATER_KEY_PREFIX}${userId}`);
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function clearProfileFinishLater(userId: string | null | undefined) {
+  if (typeof window === 'undefined' || !userId) return;
+  try {
+    window.localStorage.removeItem(`${FINISH_LATER_KEY_PREFIX}${userId}`);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function ProfileCompletionModal({
   me,
   onComplete,
+  onFinishLater,
 }: {
   me: Me;
   onComplete: () => void;
+  /** Optional escape hatch. When provided, a "Finish later" link
+   * renders below the submit button. Tapping it stamps a 24h
+   * localStorage flag (callers should re-check via
+   * shouldSuppressProfileModal) and invokes this callback so the
+   * parent can close the modal + continue whatever flow led here. */
+  onFinishLater?: () => void;
 }) {
   const { getToken } = useAuth();
 
@@ -253,6 +309,7 @@ export function ProfileCompletionModal({
         return;
       }
       clearDraft(draftKey);
+      clearProfileFinishLater(me.id);
       onComplete();
     } catch (err) {
       // Network error — the POST may have completed server-side even
@@ -662,6 +719,41 @@ export function ProfileCompletionModal({
         >
           {submitting ? 'Saving…' : 'Complete profile'}
         </button>
+
+        {/* "Finish later" escape — only rendered when the parent
+            opted in via the onFinishLater prop. Stamps a 24-hour
+            localStorage flag so the modal won't re-pop on every
+            navigation. Server-side payout gate stays in place —
+            this is purely a UX escape valve, not a way around the
+            block. Right-aligned below the primary CTA so it doesn't
+            compete visually with "Complete profile". */}
+        {onFinishLater && (
+          <div
+            style={{
+              marginTop: 10,
+              display: 'flex',
+              justifyContent: 'flex-end',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                markProfileFinishLater(me.id);
+                onFinishLater();
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-tertiary)',
+                fontSize: 12,
+                cursor: 'pointer',
+                padding: '4px 0',
+              }}
+            >
+              Finish later — payouts blocked until done →
+            </button>
+          </div>
+        )}
 
         {/* Show exactly which fields are still blocking the submit so
             the seller doesn't have to guess. Hidden once everything

@@ -1,17 +1,11 @@
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Transaction } from '@/lib/types';
+import { PAYMENT_STATUS, resolveStatus, toneColor } from '@/lib/status-labels';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-const STATUS_COLOR: Record<string, string> = {
-  HELD: '#f59e0b',
-  PENDING_ADMIN_VERIFICATION: '#f59e0b',
-  RELEASED: '#22c55e',
-  REFUNDED: '#6366f1',
-  DISPUTED: 'var(--red)',
-};
 
 export default async function MySalesPage() {
   const { userId, getToken } = await auth();
@@ -33,6 +27,8 @@ export default async function MySalesPage() {
   );
 
   function TxRow({ tx }: { tx: Transaction }) {
+    const status = resolveStatus(PAYMENT_STATUS, tx.paymentStatus);
+    const color = toneColor(status.tone);
     return (
       <Link
         href={`/transactions/${tx.id}`}
@@ -44,9 +40,12 @@ export default async function MySalesPage() {
         }}
       >
         {tx.listing.images?.[0] && (
-          <img
+          <Image
             src={tx.listing.images[0].url}
             alt={tx.listing.title}
+            width={56}
+            height={56}
+            sizes="56px"
             className="w-14 h-14 rounded-[6px] object-cover shrink-0"
           />
         )}
@@ -68,12 +67,13 @@ export default async function MySalesPage() {
           </p>
           <span
             className="text-xs px-2 py-0.5 rounded-full"
+            title={status.hint ?? status.label}
             style={{
-              color: STATUS_COLOR[tx.paymentStatus] ?? 'var(--text-tertiary)',
-              background: `${STATUS_COLOR[tx.paymentStatus] ?? 'var(--text-tertiary)'}18`,
+              color,
+              background: `${color}18`,
             }}
           >
-            {tx.paymentStatus.replace(/_/g, ' ')}
+            {status.label}
           </span>
         </div>
       </Link>

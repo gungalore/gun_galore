@@ -30,6 +30,7 @@ import { KycModule } from './kyc/kyc.module';
 import { ReferenceNumberModule } from './common/reference-number.service';
 import { ZohoBooksModule } from './zoho/zoho-books.module';
 import { ActionTokensModule } from './actions/action-tokens.module';
+import { WishlistModule } from './wishlist/wishlist.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { ActionTokensModule } from './actions/action-tokens.module';
     ReferenceNumberModule,
     ZohoBooksModule,
     ActionTokensModule,
+    WishlistModule,
   ],
   controllers: [AppController],
   providers: [

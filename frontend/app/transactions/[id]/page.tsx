@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { Transaction, PaymentStatus, ShippingStatus } from '@/lib/types';
 import { formatPrice, PROVINCE_LABELS } from '@/lib/utils';
@@ -135,10 +136,12 @@ export default async function TransactionPage({
             style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
           >
             {primaryImage && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={primaryImage.url}
                 alt={listing.title}
+                width={80}
+                height={80}
+                sizes="80px"
                 className="w-20 h-20 rounded-[6px] object-cover flex-shrink-0"
                 style={{ background: 'var(--bg-inset)' }}
               />

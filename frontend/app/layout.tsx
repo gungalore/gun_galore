@@ -8,6 +8,9 @@ import { SwKillSwitch } from '@/components/sw-killswitch';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { MobileSearchBar } from '@/components/mobile-search-bar';
 import { StickyFeaturedStrip } from '@/components/sticky-featured-strip';
+import { ConnectionStatusBanner } from '@/components/connection-status-banner';
+import { SwUpdateBanner } from '@/components/sw-update-banner';
+import { WishlistProvider } from '@/lib/use-wishlist';
 import './globals.css';
 
 // Inline script that runs BEFORE first paint and:
@@ -89,6 +92,10 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
+      {/* WishlistProvider hydrates the user's saved-listing IDs once
+          on sign-in (Set<string>) and makes the toggle helper
+          available to every heart icon in the app. Mounted inside
+          ClerkProvider because the hook depends on useAuth/useUser. */}
       <html lang="en-ZA">
         <head>
           {/* Pre-paint standalone-mode detection — sets
@@ -99,6 +106,20 @@ export default function RootLayout({
               useStandalone() hook hydrates. */}
           <script
             dangerouslySetInnerHTML={{ __html: STANDALONE_DETECT_SCRIPT }}
+          />
+          {/* Preload the homepage hero image so it kicks off in
+              parallel with the JS bundle. Lighthouse mobile flagged
+              the original hero.png (1.2 MB) as the LCP element with
+              an LCP of 9.9s; switching to WebP (~29 KB) plus this
+              preload drops LCP under 2.5s. Safe to preload on every
+              route because the file is tiny + cached after first hit;
+              non-homepage routes pay a one-time ~30 KB hit and warm
+              the cache for the inevitable hero-page visit. */}
+          <link
+            rel="preload"
+            as="image"
+            href="/hero.webp"
+            type="image/webp"
           />
           {/* iOS apple-touch-startup-image splash screens. iOS picks
               the right image via the media-attribute device match
@@ -120,6 +141,7 @@ export default function RootLayout({
           ))}
         </head>
         <body className="antialiased">
+          <WishlistProvider>
           {/* PublicNav + PublicFooter hide themselves on /admin/*
               (the admin layout owns its own chrome) so the public
               Nav and ECT § 43 footer only render on the buyer/
@@ -130,6 +152,11 @@ export default function RootLayout({
               so a single visit cleans up after a shipped-broken SW.
               No-op when the env var is unset. */}
           <SwKillSwitch />
+          {/* Online/offline + SW-update banners — self-gate (render
+              null when nothing's to show) so they cost a single
+              effect-mount when there's no event. */}
+          <ConnectionStatusBanner />
+          <SwUpdateBanner />
           <PublicNav />
           {/* Search affordance for standalone-PWA users on the Browse
               screen — the top nav (with its search input) is hidden
@@ -160,6 +187,7 @@ export default function RootLayout({
               dismissal stored in localStorage. Already standalone-
               aware so it hides itself once the app is installed. */}
           <InstallPrompt />
+          </WishlistProvider>
         </body>
       </html>
     </ClerkProvider>

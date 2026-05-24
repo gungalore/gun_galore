@@ -13,28 +13,34 @@
 //
 // Five tabs — Sell sits dead-centre (position 3) so the raised FAB
 // styling reads symmetric:
-//   1. Shop    → opens a bottom sheet with 5 shopping surfaces:
-//                All listings / Marketplace / Auctions / Take a Shot /
-//                Competitions.
-//   2. Alerts  → routes to /notifications. Bell icon. When there are
-//                unresolved notifications, shows a red active-count
-//                badge in the top-right corner of the bell.
-//   3. Sell    → /listings/new (centred, raised red FAB — the
-//                prominent primary action).
-//   4. My      → /dashboard (signed-in) / /sign-in (signed-out).
-//   5. More    → bottom sheet with secondary destinations (Wishlist,
-//                account links, legal).
+//   1. Shop      → opens a bottom sheet with 5 shopping surfaces:
+//                  All listings / Marketplace / Auctions / Take a Shot /
+//                  Competitions.
+//   2. Alerts    → routes to /notifications. Bell icon. When there are
+//                  unresolved notifications, shows a red active-count
+//                  badge in the top-right corner of the bell.
+//   3. Sell      → /listings/new (centred, raised red FAB — the
+//                  prominent primary action).
+//   4. Wishlist  → /wishlist. Heart icon. Shows a count badge when
+//                  the user has saved listings — same style as the
+//                  Alerts bell.
+//   5. More      → bottom sheet headed by the user's avatar + username,
+//                  followed by My account / Shop / Legal sections.
+//                  All `/my/*` destinations + /dashboard + /profile
+//                  live in here.
 //
 // Active-route highlighting via usePathname() + a search-aware match
 // helper (so /?listingType=AUCTION lights up the Shop tab even
 // though the pathname is just '/').
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
 import { useStandalone } from '@/lib/use-standalone';
 import { useScrollDirection } from '@/lib/use-scroll-direction';
+import { useWishlist } from '@/lib/use-wishlist';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -187,15 +193,45 @@ function IconBell() {
     </svg>
   );
 }
+function IconHeart() {
+  // Outline-style heart so the active-tab fill (var(--red)) reads
+  // crisply when the user is on /wishlist. Unselected uses
+  // currentColor stroke matching the other tab icons.
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+function IconChevronRight() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M9 6l6 6-6 6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export function BottomTabBar() {
   const isStandalone = useStandalone();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { isSignedIn } = useUser();
+  const { isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   const { signOut } = useClerk();
   const scrollDir = useScrollDirection();
+  const wishlist = useWishlist();
   const [shopOpen, setShopOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [alertsCount, setAlertsCount] = useState<number>(0);
@@ -304,10 +340,12 @@ export function BottomTabBar() {
       prominent: true,
     },
     {
-      key: 'my',
-      label: 'My',
-      href: isSignedIn ? '/dashboard' : '/sign-in',
-      isActive: (p) => p.startsWith('/dashboard') || p.startsWith('/my/'),
+      key: 'wishlist',
+      label: 'Wishlist',
+      // Signed-out → bounce to sign-in with the redirect intact so
+      // they land back on the wishlist once authenticated.
+      href: isSignedIn ? '/wishlist' : '/sign-in?redirect_url=/wishlist',
+      isActive: (p) => p.startsWith('/wishlist'),
     },
     {
       key: 'more',
@@ -362,8 +400,42 @@ export function BottomTabBar() {
         );
       case 'sell':
         return <IconPlus />;
-      case 'my':
-        return <IconUser />;
+      case 'wishlist':
+        // Heart + count badge in the top-right corner when the user
+        // has saved listings. Same badge style as the Alerts bell so
+        // they read as a consistent set of "you have things here"
+        // indicators. Caps the displayed number at 50+ to keep the
+        // pill from overflowing the icon.
+        return (
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <IconHeart />
+            {wishlist.count > 0 && (
+              <span
+                aria-label={`${wishlist.count} saved`}
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -6,
+                  minWidth: 16,
+                  height: 16,
+                  padding: '0 4px',
+                  borderRadius: 8,
+                  background: 'var(--red)',
+                  color: '#fff',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  lineHeight: 1,
+                  border: '1.5px solid var(--bg-deep)',
+                }}
+              >
+                {wishlist.count > 50 ? '50+' : wishlist.count}
+              </span>
+            )}
+          </span>
+        );
       case 'more':
         return <IconMore />;
       default:
@@ -509,6 +581,9 @@ export function BottomTabBar() {
       {moreOpen && (
         <MoreSheet
           isSignedIn={!!isSignedIn}
+          username={user?.username ?? user?.firstName ?? null}
+          email={user?.primaryEmailAddress?.emailAddress ?? null}
+          imageUrl={user?.imageUrl ?? null}
           onClose={() => setMoreOpen(false)}
           onSignOut={() => {
             void signOut(() => {
@@ -734,25 +809,50 @@ function ShopSheet({
 }
 
 // ─── Bottom-sheet drawer for secondary destinations ────────────────
+//
+// Top-to-bottom layout:
+//   1. Drag-handle pill (visual cue)
+//   2. Profile header card — avatar + username + tier → tap opens
+//      /profile. For signed-out users this collapses to a Sign-in
+//      pill instead.
+//   3. My account section — Dashboard, Profile, all /my/* destinations.
+//      Folded into the sheet because the "My" tab was replaced by
+//      Wishlist; the My destinations still need a permanent home.
+//   4. Shop section — secondary shop surfaces (Take a Shot, Competitions).
+//      Wishlist is intentionally NOT here because it's a primary tab.
+//   5. Legal section — terms / privacy / refund / legal index.
+//   6. Sign out (signed-in only) — destructive-styled button below.
+//
+// Visual notes:
+//   - Trailing chevron on every nav row so they read as "tap to go".
+//   - Sections separated by a thin border-top + the uppercase label.
+//   - Tighter row text (14px) + more vertical padding (14px) for
+//     thumb-friendly tapping without feeling sparse.
 function MoreSheet({
   isSignedIn,
+  username,
+  email,
+  imageUrl,
   onClose,
   onSignOut,
 }: {
   isSignedIn: boolean;
+  username: string | null;
+  email: string | null;
+  imageUrl: string | null;
   onClose: () => void;
   onSignOut: () => void;
 }) {
-  // Secondary destinations — the ones that didn't earn a tab. Order =
-  // discoverability priority (most-likely-used first).
+  // Secondary destinations — order = discoverability priority
+  // (most-likely-used first).
   const shopLinks = [
     { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
     { href: '/competitions', label: 'Competitions' },
-    { href: '/wishlist', label: 'Wishlist' },
   ];
   const accountLinks = isSignedIn
     ? [
-        { href: '/profile', label: 'Profile' },
+        { href: '/dashboard', label: 'Dashboard' },
+        { href: '/profile', label: 'View profile' },
         { href: '/my/listings', label: 'My listings' },
         { href: '/my/orders', label: 'My orders' },
         { href: '/my/sales', label: 'My sales' },
@@ -769,6 +869,14 @@ function MoreSheet({
     { href: '/refund-policy', label: 'Refund & disputes' },
     { href: '/legal', label: 'All legal documents' },
   ];
+
+  const displayName = username ?? 'Member';
+  // First letter for the avatar fallback. Prefer username, then email.
+  const initial = (
+    username?.charAt(0) ??
+    email?.charAt(0) ??
+    'M'
+  ).toUpperCase();
 
   return (
     <div
@@ -790,7 +898,7 @@ function MoreSheet({
         aria-modal="true"
         style={{
           width: '100%',
-          maxHeight: '85dvh',
+          maxHeight: '88dvh',
           overflowY: 'auto',
           background: 'var(--bg-card)',
           borderTop: '0.5px solid var(--border)',
@@ -809,68 +917,175 @@ function MoreSheet({
             height: 4,
             borderRadius: 2,
             background: 'var(--border-hover)',
-            margin: '8px auto 14px',
+            margin: '8px auto 12px',
           }}
         />
 
-        <Section title="Shop">
-          {shopLinks.map((l) => (
-            <SheetLink key={l.href} href={l.href} label={l.label} />
-          ))}
-        </Section>
-
+        {/* Profile header. Signed-in users see avatar + username + a
+            "View profile" chevron — tapping the whole card opens
+            /profile. Signed-out users see a single Sign in pill.
+            Sits flush at the top of the sheet to give the bottom-
+            sheet a clear "this is YOUR drawer" anchor. */}
         {isSignedIn ? (
+          <Link
+            href="/profile"
+            onClick={onClose}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              margin: '0 12px 8px',
+              padding: '12px 14px',
+              borderRadius: 12,
+              background: 'var(--bg-inset)',
+              border: '0.5px solid var(--border)',
+              color: 'var(--text-primary)',
+              textDecoration: 'none',
+            }}
+          >
+            {imageUrl ? (
+              <Image
+                src={imageUrl}
+                alt={displayName}
+                width={44}
+                height={44}
+                sizes="44px"
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  flexShrink: 0,
+                }}
+                unoptimized
+              />
+            ) : (
+              /* Initial-circle fallback when Clerk doesn't return an
+                 imageUrl (rare but possible for non-OAuth sign-ups). */
+              <span
+                aria-hidden
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  background: 'rgba(200,16,46,0.18)',
+                  color: 'var(--red)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 600,
+                  fontSize: 18,
+                  flexShrink: 0,
+                }}
+              >
+                {initial}
+              </span>
+            )}
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span
+                style={{
+                  display: 'block',
+                  fontSize: 16,
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {displayName}
+              </span>
+              <span
+                style={{
+                  display: 'block',
+                  fontSize: 12,
+                  color: 'var(--text-tertiary)',
+                  marginTop: 2,
+                }}
+              >
+                View profile
+              </span>
+            </span>
+            <span style={{ color: 'var(--text-tertiary)' }}>
+              <IconChevronRight />
+            </span>
+          </Link>
+        ) : (
+          <div style={{ padding: '0 12px 8px' }}>
+            <SignInButton mode="modal">
+              <button
+                type="button"
+                className="app-chrome"
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  background: 'var(--red)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 12,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Sign in or sign up
+              </button>
+            </SignInButton>
+          </div>
+        )}
+
+        {isSignedIn && (
           <Section title="My account">
             {accountLinks.map((l) => (
-              <SheetLink key={l.href} href={l.href} label={l.label} />
+              <SheetLink
+                key={l.href}
+                href={l.href}
+                label={l.label}
+                onNavigate={onClose}
+              />
             ))}
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="app-chrome"
-              style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '12px 20px',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--red)',
-                fontSize: 15,
-                cursor: 'pointer',
-              }}
-            >
-              Sign out
-            </button>
-          </Section>
-        ) : (
-          <Section title="Account">
-            <div style={{ padding: '8px 20px 16px' }}>
-              <SignInButton mode="modal">
-                <button
-                  type="button"
-                  className="app-chrome"
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    background: 'var(--red)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 8,
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Sign in
-                </button>
-              </SignInButton>
-            </div>
+            <li>
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="app-chrome"
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '14px 20px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--red)',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                Sign out
+              </button>
+            </li>
           </Section>
         )}
 
+        <Section title="Shop">
+          {shopLinks.map((l) => (
+            <SheetLink
+              key={l.href}
+              href={l.href}
+              label={l.label}
+              onNavigate={onClose}
+            />
+          ))}
+        </Section>
+
         <Section title="Legal">
           {legalLinks.map((l) => (
-            <SheetLink key={l.href} href={l.href} label={l.label} />
+            <SheetLink
+              key={l.href}
+              href={l.href}
+              label={l.label}
+              onNavigate={onClose}
+            />
           ))}
         </Section>
       </div>
@@ -887,7 +1102,10 @@ function MoreSheet({
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 6 }}>
+    <div style={{ marginTop: 8 }}>
+      {/* Section header sits on top of a thin divider line so the
+          sheet reads as grouped sections rather than one wall of
+          links. */}
       <p
         style={{
           padding: '14px 20px 6px',
@@ -897,6 +1115,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
           textTransform: 'uppercase',
           color: 'var(--text-tertiary)',
           margin: 0,
+          borderTop: '0.5px solid var(--border-divider)',
         }}
       >
         {title}
@@ -906,20 +1125,37 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function SheetLink({ href, label }: { href: string; label: string }) {
+function SheetLink({
+  href,
+  label,
+  onNavigate,
+}: {
+  href: string;
+  label: string;
+  onNavigate?: () => void;
+}) {
   return (
     <li>
+      {/* Trailing chevron + tighter row text — reads as iOS Settings
+          row rather than inert link text. */}
       <Link
         href={href}
+        onClick={onNavigate}
         style={{
-          display: 'block',
-          padding: '12px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          padding: '13px 20px',
           color: 'var(--text-primary)',
-          fontSize: 15,
+          fontSize: 14,
           textDecoration: 'none',
         }}
       >
-        {label}
+        <span>{label}</span>
+        <span style={{ color: 'var(--text-tertiary)' }}>
+          <IconChevronRight />
+        </span>
       </Link>
     </li>
   );

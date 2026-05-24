@@ -30,7 +30,10 @@ import {
   PreviewResult,
   PreviewSnapshot,
 } from '@/components/listing-preview-modal';
-import { ProfileCompletionModal } from '@/components/profile-completion-modal';
+import {
+  ProfileCompletionModal,
+  shouldSuppressProfileModal,
+} from '@/components/profile-completion-modal';
 import { HelpTip } from '@/components/help-tip';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -928,11 +931,16 @@ export default function NewListingPage() {
       }
 
       // Gate: if the seller still owes us the post-publish profile
-      // (banking + ID + name), show the hard-wall modal BEFORE we
-      // redirect to the listing. They'll redirect only once they
-      // submit it successfully. If they've already completed it on
-      // a previous listing, this is a no-op and we redirect now.
-      if (currentMe && !currentMe.profileCompletedAt) {
+      // (banking + ID + name), show the modal BEFORE we redirect.
+      // BUT respect the 24h "Finish later" suppression flag — if the
+      // seller already chose to defer in the last 24h, redirect
+      // straight to the listing. Payout is still gated server-side
+      // until the profile is actually completed.
+      if (
+        currentMe &&
+        !currentMe.profileCompletedAt &&
+        !shouldSuppressProfileModal(currentMe.id)
+      ) {
         setPendingRedirectId(listing.id);
         setSubmitting(false);
         return;
@@ -2125,6 +2133,17 @@ export default function NewListingPage() {
         <ProfileCompletionModal
           me={currentMe}
           onComplete={() => {
+            const id = pendingRedirectId;
+            setPendingRedirectId(null);
+            router.push(`/listings/${id}`);
+          }}
+          onFinishLater={() => {
+            // Stamp the 24h suppression flag (handled inside the
+            // modal via markProfileFinishLater) and continue the
+            // happy-path redirect to the listing. The seller is
+            // told their payout is blocked via copy below the
+            // CTA + a dashboard banner — payout itself stays
+            // blocked server-side until the profile is complete.
             const id = pendingRedirectId;
             setPendingRedirectId(null);
             router.push(`/listings/${id}`);

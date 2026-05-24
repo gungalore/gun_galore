@@ -4,6 +4,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Listing } from '@/lib/types';
 import { formatPrice, CONDITION_LABELS, TIER_LABELS } from '@/lib/utils';
+import { WishlistButton } from './wishlist-button';
+import { useCountdown, formatCountdown } from '@/lib/use-countdown';
 
 export function ListingCard({ listing }: { listing: Listing }) {
   const primaryImage = listing.images.find((i) => i.isPrimary) ?? listing.images[0];
@@ -56,9 +58,13 @@ export function ListingCard({ listing }: { listing: Listing }) {
           >
             {listing.category.name}
           </span>
-          {/* Condition badge — top-right */}
+          {/* Condition chip — moved to bottom-left of the image (was
+              top-right) to free the top-right corner for the heart
+              button. Keeps the at-a-glance "Used" / "Like new" info
+              on the photo without competing with the wishlist
+              affordance. */}
           <span
-            className="absolute top-2 right-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
+            className="absolute bottom-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
             style={{
               background: 'rgba(0,0,0,0.72)',
               color: 'var(--text-secondary)',
@@ -66,6 +72,11 @@ export function ListingCard({ listing }: { listing: Listing }) {
           >
             {CONDITION_LABELS[listing.condition]}
           </span>
+          {/* Heart — save for later. Top-right with a subtle blurred
+              dark background so it reads against any photo. Tapping
+              the heart stops propagation so the parent <Link> doesn't
+              navigate to the listing detail. */}
+          <WishlistButton listingId={listing.id} />
         </div>
 
         {/* Card body */}
@@ -131,26 +142,16 @@ export function ListingCard({ listing }: { listing: Listing }) {
   );
 }
 
-// Compact "Ends in 2h 14m" chip. Red when <1h to draw the eye for
-// last-minute browsers. Renders nothing if endTime is missing or the
-// auction has already ended (the card itself transitions out of the
-// active grid in that case, but defensive).
+// Compact "Ends in 2h 14m" chip — live 1Hz tick via useCountdown so
+// the auction time doesn't go stale on long-open grid pages. Red
+// when <1h to draw the eye for last-minute browsers. Renders nothing
+// once the auction has ended (the card transitions out of the active
+// grid in that case, but defensive).
 function AuctionTimeChip({ endTime }: { endTime: string | null | undefined }) {
-  if (!endTime) return null;
-  const msLeft = new Date(endTime).getTime() - Date.now();
-  if (msLeft <= 0) return null;
-
-  const hours = Math.floor(msLeft / 3600_000);
-  const mins = Math.floor((msLeft % 3600_000) / 60_000);
-  const days = Math.floor(hours / 24);
-
-  let label: string;
-  if (days >= 2) label = `${days}d`;
-  else if (hours >= 1) label = `${hours}h ${mins}m`;
-  else label = `${mins}m`;
-
-  const urgent = msLeft < 3600_000; // <1h
-
+  const ms = useCountdown(endTime ?? null);
+  if (!endTime || ms <= 0) return null;
+  const label = formatCountdown(ms);
+  const urgent = ms < 3600_000; // <1h
   return (
     <span
       className="px-1.5 py-0.5 rounded-[3px]"

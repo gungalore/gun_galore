@@ -22,6 +22,8 @@ import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
 import { HelpTip } from '@/components/help-tip';
 import { HelpText } from '@/components/help-text';
+import { WishlistButton } from '@/components/wishlist-button';
+import { ShareListingButton } from '@/components/share-listing-button';
 
 export async function generateMetadata({
   params,
@@ -255,6 +257,19 @@ export default async function ListingDetailPage({
               {listing.status === 'SOLD' ? 'Sold' : 'Not available'}
             </div>
           ) : null}
+
+          {/* Quick-actions row — Wishlist (save for later) + Share
+              (Web Share API → clipboard fallback). Sits directly under
+              the buy-panel so it's the natural next-click for a buyer
+              who's interested but not ready to commit. Spans both
+              buttons evenly on mobile, sits inline on desktop. */}
+          <div className="flex gap-2 mb-5">
+            <WishlistButton listingId={listing.id} variant="inline" />
+            <ShareListingButton
+              title={listing.title}
+              text={`Check out this listing on Gun Galore: ${listing.title}`}
+            />
+          </div>
 
           {/* Shipping + payment protection explainer — kept compact so
               it doesn't dominate the buy panel area, but visible

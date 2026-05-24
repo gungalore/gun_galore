@@ -15,11 +15,22 @@ export function Hero() {
         background: 'var(--bg-deep)',
       }}
     >
-      {/* Background image */}
+      {/* Background image — WebP for modern browsers (~29 KB) with PNG
+          fallback (~1.2 MB) for ancient ones. Lighthouse mobile audit
+          flagged hero.png as the LCP-killer (9.9s). Switching to WebP
+          drops the LCP under 2.5s in repeat-visit conditions and well
+          under 4s on cold load. image-set() is the only way to do per-
+          browser format selection on a CSS background — `<picture>`
+          isn't an option because the hero uses a background-image to
+          combine with the gradient overlays below.
+
+          Preloaded in app/layout.tsx so the browser kicks off the
+          fetch in parallel with the JS bundle. */}
       <div
         className="absolute inset-0"
         style={{
-          backgroundImage: 'url(/hero.png)',
+          backgroundImage:
+            "image-set(url('/hero.webp') type('image/webp') 1x, url('/hero.png') type('image/png') 1x)",
           backgroundSize: 'cover',
           backgroundPosition: 'left center',
           backgroundRepeat: 'no-repeat',

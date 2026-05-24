@@ -371,6 +371,12 @@ model User {
   // In-app inbox rows. Written by NotificationsService.persist() in
   // addition to every email/SMS dispatch. Cascade-deleted with the user.
   notifications Notification[]
+
+  // ── Wishlist back-relation ───────────────────────────────────────
+  // Saved listings the user wants to come back to. See WatchedListing.
+  // Distinct from AuctionWatch (which is bidding-specific notification
+  // opt-in); wishlist is the general "save for later" pattern.
+  wishlistEntries WatchedListing[]
 }
 
 // =====================================================================
@@ -568,6 +574,11 @@ model Listing {
   offers       Offer[]
   bids         Bid[]
   watchers     AuctionWatch[]
+  // Users who saved this listing to their wishlist. Distinct from
+  // `watchers` (auction-bidding opt-in). Used for the heart-icon
+  // state across browse grids + /wishlist page + future "X people
+  // saved this" social-proof signal.
+  wishlistedBy WatchedListing[]
   questions    ListingQuestion[]
 
   // Featured-slot back-relation. When a seller wins a featured slot
@@ -1098,6 +1109,29 @@ model AuctionWatch {
 
   @@unique([listingId, userId])
   @@index([userId])
+}
+
+// User ↔ Listing wishlist join. One row per saved listing. Cascade-
+// deletes both sides so a removed user / listing cleans up without a
+// background job. The compound unique stops accidental duplicates
+// (the wishlist service relies on this for upsert semantics). The
+// (userId, createdAt) index supports the "newest first" ordering on
+// /wishlist without a sort.
+//
+// Naming: kept as "WatchedListing" rather than "WishlistEntry" so
+// that future "X people watching this" social-proof rollups can
+// .count() on the same table directly without renaming.
+model WatchedListing {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, listingId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([listingId])
 }
 
 // ---------------------------------------------------------------------------
