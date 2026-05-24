@@ -110,6 +110,8 @@ export default function FeaturedBidPage() {
   const [slots, setSlots] = useState<SlotForBidder[] | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [activeModal, setActiveModal] = useState<
     null | { kind: 'bid'; slot: SlotForBidder } | { kind: 'bind'; slot: SlotForBidder }
   >(null);
@@ -121,6 +123,10 @@ export default function FeaturedBidPage() {
   }, []);
 
   // Initial load + revalidate every 15s so other bidders' moves show.
+  // On non-OK responses or network failure, surface a visible error
+  // state instead of leaving skeletons up forever (previous behaviour
+  // hid every failure mode, so users got a permanently blank-looking
+  // page if /featured/slots ever errored).
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
     let cancelled = false;
@@ -133,13 +139,28 @@ export default function FeaturedBidPage() {
           }),
           fetch(`${API_URL}/featured/config`, { cache: 'no-store' }),
         ]);
-        if (!s.ok || !c.ok) return;
+        if (cancelled) return;
+        if (!s.ok) {
+          setLoadError(`Couldn't load featured slots (HTTP ${s.status})`);
+          return;
+        }
+        if (!c.ok) {
+          setLoadError(`Couldn't load tier config (HTTP ${c.status})`);
+          return;
+        }
         const [slotData, cfgData] = await Promise.all([s.json(), c.json()]);
         if (cancelled) return;
         setSlots(slotData);
         setConfig(cfgData);
-      } catch {
-        /* keep last snapshot */
+        setLoadError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(
+            err instanceof Error
+              ? `Network error: ${err.message}`
+              : 'Network error loading featured slots',
+          );
+        }
       }
     }
     load();
@@ -148,7 +169,7 @@ export default function FeaturedBidPage() {
       cancelled = true;
       clearInterval(t);
     };
-  }, [isLoaded, isSignedIn, getToken]);
+  }, [isLoaded, isSignedIn, getToken, reloadKey]);
 
   if (!isLoaded) return null;
   if (!isSignedIn) {
@@ -237,12 +258,54 @@ export default function FeaturedBidPage() {
       {/* Tier table */}
       {config && <TierTable config={config} />}
 
+      {/* Load error banner — replaces the permanent skeletons state
+          when the slots / config endpoints fail, so the user knows
+          something is wrong instead of seeing an empty page. */}
+      {loadError && (
+        <div
+          className="mt-6 rounded-[8px] p-4 flex items-center gap-3 flex-wrap"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--red)',
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p
+              className="text-sm"
+              style={{ color: 'var(--text-primary)', fontWeight: 500, marginBottom: 2 }}
+            >
+              Couldn&apos;t load featured slots
+            </p>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {loadError}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLoadError(null);
+              setReloadKey((k) => k + 1);
+            }}
+            className="px-3 py-1.5 rounded text-xs"
+            style={{
+              background: 'var(--red)',
+              color: '#fff',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 500,
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Slots grid — show skeletons while slots load so the page
           doesn't flash blank for a second. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
-        {slots === null
+        {slots === null && !loadError
           ? Array.from({ length: 6 }).map((_, i) => <SlotSkeleton key={i} />)
-          : slots.map((slot) => (
+          : (slots ?? []).map((slot) => (
               <SlotCard
                 key={slot.id}
                 slot={slot}

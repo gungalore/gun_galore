@@ -16,8 +16,9 @@
 //   1. Shop    → opens a bottom sheet with 5 shopping surfaces:
 //                All listings / Marketplace / Auctions / Take a Shot /
 //                Competitions.
-//   2. Search  → opens a bottom sheet with the LiveSearch input so
-//                users can search from any screen.
+//   2. Alerts  → routes to /notifications. Bell icon. When there are
+//                unresolved notifications, shows a red active-count
+//                badge in the top-right corner of the bell.
 //   3. Sell    → /listings/new (centred, raised red FAB — the
 //                prominent primary action).
 //   4. My      → /dashboard (signed-in) / /sign-in (signed-out).
@@ -31,9 +32,10 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { SignInButton, useUser, useClerk } from '@clerk/nextjs';
+import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
 import { useStandalone } from '@/lib/use-standalone';
-import { LiveSearch } from '@/components/live-search';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 interface Tab {
   key: string;
@@ -44,8 +46,8 @@ interface Tab {
   // Centred-prominent tabs (currently just Sell) get the raised
   // circular-FAB treatment. Only works at 5 tabs (position 3 = 50%).
   prominent?: boolean;
-  // 'shop' / 'search' / 'more' open sheets instead of navigating.
-  action?: 'shop' | 'search' | 'more';
+  // 'shop' / 'more' open sheets instead of navigating.
+  action?: 'shop' | 'more';
 }
 
 // Inline SVG icons — no extra dep. 24×24 viewbox, currentColor stroke
@@ -166,12 +168,17 @@ function IconMore() {
     </svg>
   );
 }
-function IconSearch() {
+function IconBell() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.6" />
       <path
-        d="M16 16l4 4"
+        d="M6 9a6 6 0 0 1 12 0v5l1.5 2.5h-15L6 14V9z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10 19a2 2 0 0 0 4 0"
         stroke="currentColor"
         strokeWidth="1.6"
         strokeLinecap="round"
@@ -185,22 +192,22 @@ export function BottomTabBar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { isSignedIn } = useUser();
+  const { getToken } = useAuth();
   const { signOut } = useClerk();
   const [shopOpen, setShopOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [alertsCount, setAlertsCount] = useState<number>(0);
 
   // Auto-close any open sheet on route change (mirrors the mobile-drawer
   // behaviour in nav.tsx).
   useEffect(() => {
     setShopOpen(false);
-    setSearchOpen(false);
     setMoreOpen(false);
   }, [pathname]);
 
   // Body-scroll lock while any sheet is open.
   useEffect(() => {
-    if (shopOpen || searchOpen || moreOpen) {
+    if (shopOpen || moreOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -208,7 +215,41 @@ export function BottomTabBar() {
     return () => {
       document.body.style.overflow = '';
     };
-  }, [shopOpen, searchOpen, moreOpen]);
+  }, [shopOpen, moreOpen]);
+
+  // Active-count poll for the bell badge. Cheap COUNT query on the
+  // server. Resilient: silently no-ops if the endpoint isn't deployed
+  // yet (Drop 1 ships the UI before the backend; badge stays at 0
+  // until the migration + controller land). Also refreshes when the
+  // user navigates (covers the case where they just took an action).
+  useEffect(() => {
+    if (!isStandalone || !isSignedIn) {
+      setAlertsCount(0);
+      return;
+    }
+    let cancelled = false;
+    async function poll() {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const r = await fetch(`${API_URL}/notifications/me/active-count`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!r.ok) return; // endpoint not deployed yet → silent no-op
+        const data = (await r.json()) as { total?: number };
+        if (!cancelled) setAlertsCount(data.total ?? 0);
+      } catch {
+        // Network blip — keep last known count.
+      }
+    }
+    poll();
+    const t = setInterval(poll, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [isStandalone, isSignedIn, getToken, pathname]);
 
   // Server HTML stays identical to browser-mobile — the tab bar only
   // exists for installed PWA users. The CSS rule that pads the body
@@ -230,11 +271,11 @@ export function BottomTabBar() {
       action: 'shop',
     },
     {
-      key: 'search',
-      label: 'Search',
-      href: '#search',
-      isActive: () => searchOpen,
-      action: 'search',
+      key: 'alerts',
+      label: 'Alerts',
+      href: '/notifications',
+      isActive: (p) => p.startsWith('/notifications'),
+      // No `action` — this is a real Link, not a sheet.
     },
     {
       key: 'sell',
@@ -262,8 +303,44 @@ export function BottomTabBar() {
     switch (key) {
       case 'shop':
         return <IconShop />;
-      case 'search':
-        return <IconSearch />;
+      case 'alerts':
+        // Bell + an optional unread-count badge in the top-right corner.
+        // Badge only renders when alertsCount > 0 — the clear "you have
+        // unfinished business" indicator that polls via active-count
+        // and only drops when the user ACTS on the underlying entity
+        // (server-side auto-resolve), NOT when they open the inbox.
+        return (
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <IconBell />
+            {alertsCount > 0 && (
+              <span
+                aria-label={`${alertsCount} unresolved`}
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -6,
+                  minWidth: 16,
+                  height: 16,
+                  padding: '0 4px',
+                  borderRadius: 8,
+                  background: 'var(--red)',
+                  color: '#fff',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  lineHeight: 1,
+                  // Crisp ring around the badge so it pops off the
+                  // dark tab-bar background.
+                  border: '1.5px solid var(--bg-deep)',
+                }}
+              >
+                {alertsCount > 9 ? '9+' : alertsCount}
+              </span>
+            )}
+          </span>
+        );
       case 'sell':
         return <IconPlus />;
       case 'my':
@@ -358,16 +435,11 @@ export function BottomTabBar() {
                     type="button"
                     onClick={() => {
                       if (tab.action === 'shop') setShopOpen(true);
-                      else if (tab.action === 'search') setSearchOpen(true);
                       else if (tab.action === 'more') setMoreOpen(true);
                     }}
                     aria-label={tab.label}
                     aria-expanded={
-                      tab.action === 'shop'
-                        ? shopOpen
-                        : tab.action === 'search'
-                          ? searchOpen
-                          : moreOpen
+                      tab.action === 'shop' ? shopOpen : moreOpen
                     }
                     style={{
                       width: '100%',
@@ -407,10 +479,6 @@ export function BottomTabBar() {
         />
       )}
 
-      {searchOpen && (
-        <SearchSheet onClose={() => setSearchOpen(false)} />
-      )}
-
       {moreOpen && (
         <MoreSheet
           isSignedIn={!!isSignedIn}
@@ -426,93 +494,8 @@ export function BottomTabBar() {
   );
 }
 
-// ─── Search sheet — full-width search input from any screen ─────────
-// Wraps the existing LiveSearch component (the same one mounted in
-// the top nav for browser users + the standalone-only MobileSearchBar
-// on the homepage). Keeps search behaviour identical across the whole
-// app — autocomplete, debounce, hit ranking all unchanged. The sheet
-// auto-closes on result-tap via the pathname-change effect at the
-// top of BottomTabBar.
-function SearchSheet({ onClose }: { onClose: () => void }) {
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 56,
-        background: 'rgba(0, 0, 0, 0.6)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        // Sheet anchors to the top of the screen so the keyboard
-        // doesn't overlap the input on iOS.
-        paddingTop: 'max(16px, env(safe-area-inset-top))',
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-label="Search"
-        aria-modal="true"
-        style={{
-          width: '100%',
-          maxWidth: 560,
-          margin: '0 12px',
-          padding: 14,
-          background: 'var(--bg-card)',
-          border: '0.5px solid var(--border)',
-          borderRadius: 12,
-          animation: 'gg-sheet-down 220ms cubic-bezier(0.4, 0, 0.2, 1)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 10,
-          }}
-        >
-          <p
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: 0.6,
-              textTransform: 'uppercase',
-              color: 'var(--text-tertiary)',
-              margin: 0,
-            }}
-          >
-            Search
-          </p>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close search"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              fontSize: 14,
-              cursor: 'pointer',
-              padding: '4px 8px',
-            }}
-          >
-            Cancel
-          </button>
-        </div>
-        <LiveSearch placeholder="Search listings, sellers, categories…" />
-      </div>
-      <style>{`
-        @keyframes gg-sheet-down {
-          from { transform: translateY(-12px); opacity: 0; }
-          to   { transform: translateY(0); opacity: 1; }
-        }
-      `}</style>
-    </div>
-  );
-}
+// (SearchSheet removed — search now lives as the sticky MobileSearchBar
+// at the top of every applicable page in standalone mode.)
 
 // ─── Shop sheet — picker for the 5 shopping surfaces ──────────────
 // Replaces the old separate Browse + Auctions tabs with one entry

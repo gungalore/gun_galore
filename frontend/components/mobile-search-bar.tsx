@@ -1,31 +1,52 @@
 'use client';
 
-// MobileSearchBar — sticky search input shown ONLY at the top of the
-// Browse screen ("/") when the app is running as an installed PWA.
+// MobileSearchBar — sticky search input at the top of every applicable
+// page when the app is running as an installed PWA.
 //
 // In browser mode the existing nav.tsx already has a search input in
-// the top toolbar. In standalone mode the top nav is hidden (the
-// bottom tab bar replaces it), so the user has no search affordance
-// — this thin sticky bar fills the gap on the page they're most
-// likely to want to search from.
+// the top toolbar, so this is a no-op there. In standalone mode the
+// top nav is hidden (the bottom tab bar replaces it), so without this
+// bar the user has no quick search affordance.
 //
-// Self-gating on standalone AND pathname means parent pages don't
-// have to think about when to render it: just mount once in the root
-// layout and the component decides whether to show.
+// Self-gates on:
+//   * standalone mode (browsers use the top-nav search)
+//   * a route denylist for focus-flow pages where a sticky search bar
+//     would be distracting or have nowhere to go (checkout, /sign-in,
+//     /listings/new, KYC, admin chrome, offline fallback).
+// Parent pages don't have to think about when to render it: mount once
+// in the root layout and the component decides.
 
 import { usePathname } from 'next/navigation';
 import { useStandalone } from '@/lib/use-standalone';
 import { LiveSearch } from '@/components/live-search';
 
+// Pathname prefixes where the sticky search bar should NOT render. All
+// of these are either focus flows (checkout / sell / KYC) where search
+// noise hurts conversion, or have their own chrome (admin, offline).
+const HIDDEN_PREFIXES = [
+  '/admin',
+  '/checkout',
+  '/sign-in',
+  '/sign-up',
+  '/listings/new',
+  '/kyc/verify',
+  '/offline',
+  '/notifications', // page has its own header; no need for inline search
+];
+
+function shouldHide(pathname: string): boolean {
+  if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return true;
+  // Dealer-verification upload pages live at /transactions/:id/dealer-verification
+  if (pathname.endsWith('/dealer-verification')) return true;
+  return false;
+}
+
 export function MobileSearchBar() {
   const isStandalone = useStandalone();
   const pathname = usePathname();
 
-  // Browse-screen-only. Listing-type filtered routes still get the
-  // search bar so users can refine inside the surface (e.g. "rifle"
-  // inside Auctions).
   if (!isStandalone) return null;
-  if (pathname !== '/') return null;
+  if (shouldHide(pathname)) return null;
 
   return (
     <div
