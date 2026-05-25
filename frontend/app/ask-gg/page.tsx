@@ -29,11 +29,14 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useUser, SignInButton } from '@clerk/nextjs';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   useAskGg,
   type AskGgUiMessage,
   type AskGgQuota,
   type AskGgFairUseCoolOff,
+  type AskGgCitation,
 } from '@/lib/use-ask-gg';
 
 function IconSparkles({ size = 22 }: { size?: number }) {
@@ -435,11 +438,22 @@ function MessageBubble({
           opacity: message.pending ? 0.6 : 1,
           fontSize: 14,
           lineHeight: 1.5,
-          whiteSpace: 'pre-wrap',
+          // User bubbles keep simple pre-wrap (no markdown rendered for
+          // user input). Assistant bubbles render markdown via
+          // ReactMarkdown — the component takes over whitespace handling
+          // so we DON'T set pre-wrap on the container.
+          whiteSpace: isUser ? 'pre-wrap' : 'normal',
           wordBreak: 'break-word',
         }}
       >
-        {message.content}
+        {isUser ? (
+          message.content
+        ) : (
+          <AssistantMarkdown content={message.content} />
+        )}
+        {!isUser && message.citations && message.citations.length > 0 && (
+          <CitationsRow citations={message.citations} />
+        )}
         {!isUser && priorUserContent && (
           <div
             style={{
@@ -473,6 +487,226 @@ function MessageBubble({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Renders assistant-message content as Markdown. Claude's answers
+ *  use `**bold**`, `## headers`, `- bullet lists`, fenced code, and
+ *  inline `code` — without proper rendering they show as literals.
+ *  Custom components apply Gun Galore's text-tertiary/primary
+ *  colour tokens + tight spacing so the chat bubble doesn't bloat.
+ *  GFM enabled for tables (load-data tables benefit) + autolinks. */
+function AssistantMarkdown({ content }: { content: string }) {
+  return (
+    <div className="ask-gg-md">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // Cap heading sizes — assistant occasionally emits H1; keep
+          // every heading visually subordinate to the page chrome.
+          h1: ({ children }) => (
+            <p style={mdHeadingStyle(16)}>{children}</p>
+          ),
+          h2: ({ children }) => (
+            <p style={mdHeadingStyle(15)}>{children}</p>
+          ),
+          h3: ({ children }) => (
+            <p style={mdHeadingStyle(14)}>{children}</p>
+          ),
+          h4: ({ children }) => (
+            <p style={mdHeadingStyle(14)}>{children}</p>
+          ),
+          p: ({ children }) => (
+            <p style={{ margin: '0 0 8px', lineHeight: 1.55 }}>{children}</p>
+          ),
+          strong: ({ children }) => (
+            <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+              {children}
+            </strong>
+          ),
+          ul: ({ children }) => (
+            <ul style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ul>
+          ),
+          ol: ({ children }) => (
+            <ol style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ol>
+          ),
+          li: ({ children }) => (
+            <li style={{ marginBottom: 3, lineHeight: 1.5 }}>{children}</li>
+          ),
+          code: ({ children, ...props }) => {
+            const isInline = !(props as { className?: string }).className;
+            return isInline ? (
+              <code
+                style={{
+                  background: 'var(--bg-inset)',
+                  padding: '1px 5px',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  fontFamily:
+                    'ui-monospace, SFMono-Regular, Menlo, monospace',
+                }}
+              >
+                {children}
+              </code>
+            ) : (
+              <code>{children}</code>
+            );
+          },
+          pre: ({ children }) => (
+            <pre
+              style={{
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                borderRadius: 6,
+                padding: '8px 10px',
+                fontSize: 12,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                overflowX: 'auto',
+                margin: '0 0 8px',
+              }}
+            >
+              {children}
+            </pre>
+          ),
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--red)', textDecoration: 'underline' }}
+            >
+              {children}
+            </a>
+          ),
+          blockquote: ({ children }) => (
+            <blockquote
+              style={{
+                margin: '0 0 8px',
+                paddingLeft: 10,
+                borderLeft: '2px solid var(--border-hover)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              {children}
+            </blockquote>
+          ),
+          table: ({ children }) => (
+            <div style={{ overflowX: 'auto', margin: '0 0 8px' }}>
+              <table
+                style={{
+                  borderCollapse: 'collapse',
+                  fontSize: 12,
+                  width: '100%',
+                }}
+              >
+                {children}
+              </table>
+            </div>
+          ),
+          th: ({ children }) => (
+            <th
+              style={{
+                border: '0.5px solid var(--border)',
+                padding: '4px 8px',
+                background: 'var(--bg-inset)',
+                textAlign: 'left',
+                fontWeight: 600,
+              }}
+            >
+              {children}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td
+              style={{
+                border: '0.5px solid var(--border)',
+                padding: '4px 8px',
+              }}
+            >
+              {children}
+            </td>
+          ),
+          hr: () => (
+            <hr
+              style={{
+                border: 'none',
+                borderTop: '0.5px solid var(--border)',
+                margin: '10px 0',
+              }}
+            />
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function mdHeadingStyle(fontSize: number): React.CSSProperties {
+  return {
+    margin: '8px 0 4px',
+    fontSize,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    lineHeight: 1.35,
+  };
+}
+
+/** Citation chips rendered below an assistant message. Each chip
+ *  shows the manual + page(s) Claude actually read while answering.
+ *  Plain visible footer — no hyperlinks (PDFs are admin-only). The
+ *  manual name is enough proof that the answer came from a real
+ *  manufacturer source. */
+function CitationsRow({ citations }: { citations: AskGgCitation[] }) {
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        paddingTop: 10,
+        borderTop: '0.5px solid var(--border)',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 6,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 10,
+          textTransform: 'uppercase',
+          letterSpacing: 0.6,
+          color: 'var(--text-tertiary)',
+          alignSelf: 'center',
+          marginRight: 4,
+        }}
+      >
+        Sources
+      </span>
+      {citations.map((c, i) => (
+        <span
+          key={`${c.manualId}-${i}`}
+          title={`${c.manufacturer} — ${c.title}${
+            c.edition ? ` (${c.edition})` : ''
+          }, page${c.pages.length > 1 ? 's' : ''} ${c.pages.join(', ')}`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '3px 9px',
+            borderRadius: 999,
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--border)',
+            color: 'var(--text-secondary)',
+            fontSize: 11,
+            lineHeight: 1.3,
+          }}
+        >
+          {c.manufacturer} {c.title}
+          {c.edition ? ` (${c.edition})` : ''} ·{' '}
+          p.{c.pages.length === 1 ? c.pages[0] : c.pages.join(',')}
+        </span>
+      ))}
     </div>
   );
 }
@@ -661,6 +895,215 @@ function FairUseCard({ coolOff }: { coolOff: AskGgFairUseCoolOff }) {
   );
 }
 
+/** 3-column FREE / MEMBER / PRO perks comparison. Rendered on the
+ *  signed-out + FREE-tier-exhausted cards so prospects (and capped
+ *  free users) can see exactly what they'd get by signing up /
+ *  upgrading. Prices are deliberately shown as "Launching soon"
+ *  because the self-serve subscription flow is gated on Peach card
+ *  tokenisation — operator sets the rand amounts once Peach lands.
+ *
+ *  Perks come from the locked spec (OD1 + OD3 + the Phase E
+ *  marketplace perks). The `current` prop visually highlights the
+ *  user's current tier so they can see what they'd gain by upgrading.
+ */
+function TierPerksTable({
+  current,
+}: {
+  current: 'FREE' | 'MEMBER' | 'PRO' | null;
+}) {
+  type Perk = { free: string; member: string; pro: string };
+  const ROWS: Array<{ label: string; perk: Perk }> = [
+    {
+      label: 'Ask GG chat',
+      perk: {
+        free: '5 messages / month',
+        member: '20 messages / hour',
+        pro: '60 messages / hour',
+      },
+    },
+    {
+      label: 'Photo identification',
+      perk: {
+        free: '5 photos / month',
+        member: 'Unlimited (5/query)',
+        pro: 'Unlimited (20/query)',
+      },
+    },
+    {
+      label: 'Reloading-manual lookup',
+      perk: { free: '✓', member: '✓', pro: '✓ priority' },
+    },
+    {
+      label: 'Username badge',
+      perk: { free: '—', member: 'GG+ pill', pro: 'Verified-expert' },
+    },
+    {
+      label: 'Featured-listing bid discount',
+      perk: { free: '—', member: '25% off', pro: '50% off' },
+    },
+    {
+      label: 'Prime Ad reserve discount',
+      perk: { free: '—', member: '—', pro: '25% off' },
+    },
+    {
+      label: 'Business / VAT receipts',
+      perk: { free: '—', member: '—', pro: '✓' },
+    },
+  ];
+
+  const tiers: Array<{
+    key: 'FREE' | 'MEMBER' | 'PRO';
+    label: string;
+    price: string;
+    accent: boolean;
+  }> = [
+    { key: 'FREE', label: 'Free', price: 'R0', accent: false },
+    { key: 'MEMBER', label: 'Member', price: 'Launching soon', accent: false },
+    { key: 'PRO', label: 'Pro', price: 'Launching soon', accent: true },
+  ];
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        maxWidth: 720,
+        marginBottom: 28,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: 10,
+      }}
+    >
+      {tiers.map((t) => {
+        const isCurrent = current === t.key;
+        return (
+          <div
+            key={t.key}
+            style={{
+              background: isCurrent
+                ? 'rgba(200,16,46,0.06)'
+                : 'var(--bg-card)',
+              border: `0.5px solid ${
+                isCurrent
+                  ? 'rgba(200,16,46,0.40)'
+                  : t.accent
+                    ? 'rgba(200,16,46,0.25)'
+                    : 'var(--border)'
+              }`,
+              borderRadius: 10,
+              padding: '14px 12px',
+              textAlign: 'left',
+              position: 'relative',
+            }}
+          >
+            {/* Tier header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 4,
+              }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: 16,
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                }}
+              >
+                {t.label}
+              </h3>
+              {isCurrent && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.6,
+                    color: 'var(--red)',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: 'rgba(200,16,46,0.12)',
+                    fontWeight: 600,
+                  }}
+                >
+                  Current
+                </span>
+              )}
+              {!isCurrent && t.accent && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.6,
+                    color: 'var(--red)',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: 'rgba(200,16,46,0.12)',
+                    fontWeight: 600,
+                  }}
+                >
+                  Most value
+                </span>
+              )}
+            </div>
+            <p
+              style={{
+                margin: '0 0 12px',
+                fontSize: 12,
+                color: 'var(--text-tertiary)',
+              }}
+            >
+              {t.price}
+            </p>
+
+            {/* Perk rows */}
+            <ul
+              style={{
+                margin: 0,
+                padding: 0,
+                listStyle: 'none',
+                fontSize: 12,
+                lineHeight: 1.4,
+              }}
+            >
+              {ROWS.map((r) => {
+                const value = r.perk[t.key === 'FREE' ? 'free' : t.key === 'MEMBER' ? 'member' : 'pro'];
+                const isDash = value === '—';
+                return (
+                  <li
+                    key={r.label}
+                    style={{
+                      padding: '5px 0',
+                      borderTop: '0.5px solid var(--border-divider)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 1,
+                    }}
+                  >
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                      {r.label}
+                    </span>
+                    <span
+                      style={{
+                        color: isDash ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                        fontSize: 12,
+                        fontWeight: isDash ? 400 : 500,
+                      }}
+                    >
+                      {value}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SignInRequiredCard() {
   return (
     <div
@@ -728,6 +1171,7 @@ function SignInRequiredCard() {
         platform. Sign in to use 5 free messages per month — then
         upgrade for unlimited.
       </p>
+      <TierPerksTable current={null} />
       <div
         style={{
           display: 'flex',
@@ -836,9 +1280,9 @@ function UpgradeCard() {
         }}
       >
         You&rsquo;ve used your 5 free Ask GG messages this month.
-        Upgrade to Member or Pro for unlimited firearms questions,
-        photo identification, and marketplace perks.
+        Here&rsquo;s what you get by upgrading:
       </p>
+      <TierPerksTable current="FREE" />
       <div
         style={{
           display: 'flex',

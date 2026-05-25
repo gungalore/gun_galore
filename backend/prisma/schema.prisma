@@ -416,10 +416,10 @@ model User {
   askGgLifetimePhotoIds   Int              @default(0)
 
   // Back-relations (Ask GG subscription + assistant)
-  subscription          Subscription?
-  askGgConversations    AskGgConversation[]
-  askGgKbEntries        AskGgKbEntry[]      @relation("KbAuthor")
-  askGgUsage            AskGgUsage[]
+  subscription              Subscription?
+  askGgConversations        AskGgConversation[]
+  askGgKbEntries            AskGgKbEntry[]       @relation("KbAuthor")
+  askGgUsage                AskGgUsage[]
 }
 
 // =====================================================================
@@ -973,7 +973,10 @@ model AdminUser {
 
   // Back-relation for AdminAuditEvent.adminUser (every audit row is
   // attributed to the admin who triggered it).
-  auditEvents  AdminAuditEvent[]
+  auditEvents              AdminAuditEvent[]
+  // Back-relation for ReloadingManual.uploadedByAdmin — admin who
+  // ingested a reloading manual via the inbox-scan flow.
+  reloadingManualsUploaded ReloadingManual[] @relation("ReloadingUploader")
 }
 
 // Cross-resource audit trail for every destructive admin action.
@@ -2030,6 +2033,11 @@ model AskGgMessage {
   promptTokens     Int?
   completionTokens Int?
   costUsd          Float?
+  // Citations: Json array of reloading-manual fetches Claude did
+  // while answering. Each entry: { manualId, manufacturer, title,
+  // edition, pages }. Rendered as chips below the assistant message
+  // so the user can verify against the source PDF.
+  citations        Json?
   createdAt        DateTime          @default(now())
 
   @@index([conversationId, createdAt])
@@ -2086,4 +2094,87 @@ model AskGgUsage {
 
   @@unique([userId, day])
   @@index([day])
+}
+
+// =====================================================================
+// Reloading manuals — Phase D PDF-RAG source-of-truth
+// =====================================================================
+// Operator uploads commercial reloading manuals (Hodgdon Annual,
+// Lyman Handbook, Hornady, Accurate, Vihtavuori, IMR, Alliant). The
+// pipeline extracts each page's text on upload so we can full-text
+// search across all manuals at query time.
+//
+// Runtime flow when a user asks a reloading question:
+//   1. Claude (in Ask GG) calls tool searchReloadingManuals({query})
+//      → Postgres FTS across ReloadingManualPage.extractedText
+//      → returns top hits {manualId, pageNumber, snippet}
+//   2. Claude picks the best hit, calls fetchManualPages({manualId,
+//      pages: [N-1, N, N+1]}) → pdf-lib slices those pages from the
+//      stored PDF → returned as a base64 document content block
+//   3. Claude reads the actual page in its next turn, composes a
+//      natural-language answer with explicit citation:
+//      "Per Hodgdon Annual Manual (p.145): max load of 168gr SMK with
+//       H4350 is XX.Xgr at YYYY fps. Start at ZZ.Zgr and work up."
+//
+// Numbers ALWAYS come from a verified manual; never from training
+// data. The "verification" is implicit — Claude reads the original
+// page on every query, not a transcribed copy.
+
+enum ReloadingManualStatus {
+  PROCESSING // upload finished, pdf-parse running
+  ACTIVE     // text extracted + indexed, queryable by Ask GG
+  ARCHIVED   // hidden from new queries (replaced by newer edition)
+  FAILED     // pdf-parse threw; admin can retry or delete
+}
+
+model ReloadingManual {
+  id              String                @id @default(cuid())
+  manufacturer    String                // "Hodgdon" / "Vihtavuori" / etc.
+  title           String                // "Annual Manual" / "Reloading Handbook"
+  edition         String?               // "2024" / "49th Edition" — optional
+  // Relative path under RELOADING_STORAGE_DIR (env, default
+  // ./uploads/reloading-manuals). Filename is a random hex string so
+  // a directory listing leak doesn't reveal which manuals we hold.
+  // PDFs are read by the backend (pdf-lib slicing for Ask GG) and
+  // served through the authenticated download route — never exposed
+  // via a public URL.
+  storedPath      String                @unique
+  fileSizeBytes   Int
+  pageCount       Int                   @default(0)
+  status          ReloadingManualStatus @default(PROCESSING)
+  // Admin who triggered the inbox scan that ingested this manual.
+  // FK to AdminUser (separate table from regular User) — admin JWT
+  // payloads carry AdminUser.id as `sub`, not a User.id.
+  uploadedByAdminId String
+  uploadedByAdmin   AdminUser           @relation("ReloadingUploader", fields: [uploadedByAdminId], references: [id])
+  errorMessage    String?               // populated when status = FAILED
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  pages           ReloadingManualPage[]
+
+  @@index([status, manufacturer])
+}
+
+// NOTE on the FTS index — there is a Postgres `textTsv tsvector`
+// GENERATED ALWAYS AS column + GIN index on this table that we
+// manage OUTSIDE Prisma (see ReloadingService.onModuleInit). We don't
+// declare it here because Prisma fights GENERATED columns: declaring
+// it as Unsupported still triggers ALTER attempts that Postgres
+// rejects, and not declaring it triggers DROP attempts on `db push`.
+//
+// Operational rule: if `prisma db push` warns about dropping `textTsv`,
+// it's safe to accept the drop — onModuleInit re-adds the column +
+// index at next backend restart, and Postgres immediately re-populates
+// the GENERATED tsvector from the existing `extractedText` values.
+// No data loss, no manual reindex.
+model ReloadingManualPage {
+  id            String          @id @default(cuid())
+  manualId      String
+  manual        ReloadingManual @relation(fields: [manualId], references: [id], onDelete: Cascade)
+  pageNumber    Int             // 1-indexed; matches printed manual pagination
+  extractedText String          @db.Text
+  createdAt     DateTime        @default(now())
+
+  @@unique([manualId, pageNumber])
+  @@index([manualId, pageNumber])
 }

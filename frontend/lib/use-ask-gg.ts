@@ -27,6 +27,17 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 export type AskGgRole = 'user' | 'assistant';
 
+/** A reloading-manual page-fetch Claude performed while answering.
+ *  Rendered as a citation chip below the assistant message so the
+ *  user can verify the answer against the source PDF. */
+export interface AskGgCitation {
+  manualId: string;
+  manufacturer: string;
+  title: string;
+  edition: string | null;
+  pages: number[];
+}
+
 export interface AskGgUiMessage {
   /** Local-only ID for optimistic messages; replaced with the
    *  server-side ID once the post resolves. */
@@ -34,6 +45,9 @@ export interface AskGgUiMessage {
   role: AskGgRole;
   content: string;
   model?: string;
+  /** Reloading-manual citations attached to this assistant message
+   *  (always empty / undefined for user messages). */
+  citations?: AskGgCitation[];
   /** When true, this message is the optimistic pre-post placeholder
    *  for the user's just-typed input. Rendered with a subtle muted
    *  state until the server confirms it. */
@@ -68,6 +82,7 @@ interface SendResponse {
     role: 'assistant';
     content: string;
     model: string | null;
+    citations?: AskGgCitation[] | null;
   };
 }
 
@@ -289,6 +304,7 @@ export function useAskGg(): UseAskGg {
             role: 'assistant',
             content: data.assistantMessage.content,
             model: data.assistantMessage.model ?? undefined,
+            citations: data.assistantMessage.citations ?? undefined,
           },
         ]);
         // Refresh the quota so the "N left" pill updates immediately

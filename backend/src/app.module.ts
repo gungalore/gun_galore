@@ -33,6 +33,7 @@ import { ActionTokensModule } from './actions/action-tokens.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { PushModule } from './push/push.module';
 import { AskGgModule } from './ask-gg/ask-gg.module';
+import { ReloadingModule } from './reloading/reloading.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { AskGgModule } from './ask-gg/ask-gg.module';
     WishlistModule,
     PushModule,
     AskGgModule,
+    ReloadingModule,
   ],
   controllers: [AppController],
   providers: [

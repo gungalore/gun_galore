@@ -24,6 +24,7 @@ const ITEMS = [
   { href: '/admin/postal-entries', label: 'Postal Entries' },
   { href: '/admin/dealers', label: 'Dealers' },
   { href: '/admin/categories', label: 'Categories' },
+  { href: '/admin/reloading', label: 'Reloading manuals' },
   { href: '/admin/settings', label: 'Settings' },
   { href: '/admin/broadcast', label: 'Broadcast' },
   // /admin/kyc removed from sidebar — VerifyNow balance + trend chart +

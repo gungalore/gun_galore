@@ -154,6 +154,13 @@ export class AskGgService {
         promptTokens: reply.promptTokens ?? null,
         completionTokens: reply.completionTokens ?? null,
         costUsd: reply.costUsd ?? null,
+        // Reloading-manual citations Claude collected via tool-use.
+        // Stored as Json so the frontend can render verification
+        // chips on every assistant turn, both live and on reload.
+        citations:
+          reply.citations.length > 0
+            ? (reply.citations as unknown as object[])
+            : undefined,
       },
     });
 
@@ -229,6 +236,7 @@ export class AskGgService {
             content: true,
             imageUrls: true,
             model: true,
+            citations: true,
             createdAt: true,
           },
         },

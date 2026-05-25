@@ -190,3 +190,15 @@ gungalore-design-reference.html
 # Photo source folder for design reference (not part of the app)
 design-photos/
 
+
+# ---------------------------------------------------------------------------
+# Operator's local copy of reloading manuals (Phase D)
+# ---------------------------------------------------------------------------
+# Copyright-sensitive commercial publications (Hodgdon, Lyman, Hornady,
+# Accurate, Vihtavuori, IMR, Alliant, Somchem, ABCs of Reloading, etc.).
+# The PDFs live on the prod server's filesystem
+# (~/app/manual-inbox/ + ~/app/manuals/), never in git.
+Manuals/
+
+# Stray preview artifacts
+postal-entry-preview.pdf
