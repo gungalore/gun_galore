@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import { NotificationCategory } from '@prisma/client';
 import { SmsService } from '../sms/sms.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PushService } from '../push/push.service';
 
 // Compile-time list of the entity types we can link a Notification
 // row to. Used by resolveByEntity() callers so typos don't sit silently
@@ -339,6 +340,7 @@ export class NotificationsService {
   constructor(
     private readonly sms: SmsService,
     private readonly prisma: PrismaService,
+    private readonly push: PushService,
   ) {
     const key = process.env.RESEND_API_KEY;
     this.resend = key ? new Resend(key) : null;
@@ -411,6 +413,37 @@ export class NotificationsService {
       this.logger.error(
         `persist(${opts.type}) for user ${opts.userId} failed: ${err instanceof Error ? err.message : err}`,
       );
+    }
+
+    // Push notification fanout — fire ONLY for action-required events
+    // (the inbox rows where dismissible === false). Dismissible rows
+    // (counter accepted, refund issued, raffle entry confirmed) are
+    // informational; pushing those would feel spammy. Email and the
+    // in-app inbox still cover them.
+    //
+    // Fire-and-forget: a push failure (VAPID not configured, dead
+    // subscription, etc.) must NOT block whatever upstream caller is
+    // waiting on persist(). PushService.sendToUser handles its own
+    // errors internally — we just don't await the result on the
+    // critical path.
+    if (!opts.dismissible) {
+      void this.push
+        .sendToUser(opts.userId, opts.category, {
+          title: opts.title,
+          body: opts.body,
+          url: opts.url,
+          // Tag: use the linked entity so a second push for the same
+          // entity replaces the first instead of stacking. Falls back
+          // to type for events without a linked entity (e.g. broadcasts).
+          tag: opts.linkedType && opts.linkedId
+            ? `${opts.linkedType}:${opts.linkedId}`
+            : opts.type,
+        })
+        .catch((err) => {
+          this.logger.debug(
+            `push for ${opts.type}/${opts.userId} failed silently: ${err instanceof Error ? err.message : err}`,
+          );
+        });
     }
   }
 

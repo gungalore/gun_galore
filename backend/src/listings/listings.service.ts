@@ -390,7 +390,14 @@ export class ListingsService {
   }
 
   async browse(dto: BrowseListingsDto) {
-    const { q, sellerClerkId } = dto;
+    const { q, sellerClerkId, ids } = dto;
+
+    // `ids=cuid1,cuid2,…` — multi-ID lookup for the recently-viewed
+    // rail. Returns ACTIVE listings in the order the IDs were given
+    // (preserves the recency stack the client maintains). All other
+    // filters are ignored on this path because the client has
+    // already chosen the exact listings it wants.
+    if (ids) return this.browseByIds(ids);
 
     // Seller-scoped browses always go via Prisma — the Meilisearch
     // index stores sellerId (our internal cuid), not sellerClerkId, so
@@ -403,6 +410,43 @@ export class ListingsService {
       return this.browseViaSearch(dto);
     }
     return this.browseViaPrisma(dto);
+  }
+
+  // Multi-ID lookup. Capped at 50 IDs per request to avoid
+  // pathological response sizes; the recently-viewed rail never
+  // displays more than ~20 anyway. SOLD / CANCELLED / EXPIRED
+  // listings get filtered out so a stale ID in the client's
+  // localStorage doesn't render a "gone" card on the rail.
+  private async browseByIds(rawIds: string) {
+    const ids = rawIds
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .slice(0, 50);
+    if (ids.length === 0) {
+      return { listings: [], total: 0, page: 1, limit: ids.length };
+    }
+    const rows = await this.prisma.listing.findMany({
+      where: { id: { in: ids }, status: 'ACTIVE' },
+      include: {
+        images: { where: { isPrimary: true }, take: 1 },
+        category: { select: { id: true, name: true, slug: true } },
+        seller: {
+          select: { id: true, username: true, sellerTier: true },
+        },
+      },
+    });
+    // Re-order to match the input list (Prisma's findMany ignores it).
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const listings = ids
+      .map((id) => byId.get(id))
+      .filter((r): r is NonNullable<typeof r> => !!r);
+    return {
+      listings,
+      total: listings.length,
+      page: 1,
+      limit: ids.length,
+    };
   }
 
   private async browseViaSearch(dto: BrowseListingsDto) {
@@ -574,6 +618,14 @@ export class ListingsService {
             totalSales: true,
             createdAt: true,
           },
+        },
+        // Social-proof signals: how many people have saved this
+        // listing. Surfaced as "X people saved this" on the listing
+        // detail page (only when ≥ 3 — "1 person saved this" reads
+        // sadder than no signal). Cheap aggregate query via Prisma's
+        // _count. Counts are public — names never are.
+        _count: {
+          select: { wishlistedBy: true },
         },
       },
     });

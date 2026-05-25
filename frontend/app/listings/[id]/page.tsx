@@ -24,6 +24,9 @@ import { HelpTip } from '@/components/help-tip';
 import { HelpText } from '@/components/help-text';
 import { WishlistButton } from '@/components/wishlist-button';
 import { ShareListingButton } from '@/components/share-listing-button';
+import { SocialProofPill } from '@/components/social-proof-pill';
+import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
+import { RecordVisit } from '@/components/record-visit';
 
 export async function generateMetadata({
   params,
@@ -263,13 +266,36 @@ export default async function ListingDetailPage({
               the buy-panel so it's the natural next-click for a buyer
               who's interested but not ready to commit. Spans both
               buttons evenly on mobile, sits inline on desktop. */}
-          <div className="flex gap-2 mb-5">
+          <div className="flex gap-2 mb-3">
             <WishlistButton listingId={listing.id} variant="inline" />
             <ShareListingButton
               title={listing.title}
               text={`Check out this listing on Gun Galore: ${listing.title}`}
             />
           </div>
+
+          {/* Social-proof pill. Self-hides below 3 saves so the
+              cold-start case (first day a listing is up, nobody has
+              saved it yet) doesn't render a sad "0 saves" signal.
+              Auctions get a slightly different label since the same
+              WatchedListing count doubles as a watcher signal. */}
+          {listing.status === 'ACTIVE' && (
+            <div className="mb-5">
+              <SocialProofPill
+                count={listing._count?.wishlistedBy ?? 0}
+                label={
+                  listing.listingType === 'AUCTION'
+                    ? (n) => `${n} watching this auction`
+                    : undefined
+                }
+              />
+            </div>
+          )}
+
+          {/* Invisible — pushes this listing's ID into the
+              recently-viewed localStorage stack so other surfaces
+              (homepage rail, wishlist empty-state rail) pick it up. */}
+          <RecordVisit listingId={listing.id} />
 
           {/* Shipping + payment protection explainer — kept compact so
               it doesn't dominate the buy panel area, but visible
@@ -433,6 +459,14 @@ export default async function ListingDetailPage({
       </PageReveal>
         </div>
       </div>
+
+      {/* Recently-viewed rail — "More from your recent views". Self-
+          hides if the user has fewer than 2 entries (excluding this
+          listing) or if the fetch returns nothing. */}
+      <RecentlyViewedRail
+        title="More from your recent views"
+        excludeId={listing.id}
+      />
     </main>
   );
 }

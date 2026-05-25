@@ -254,7 +254,13 @@ export default function NewListingPage() {
     title: '',
     description: '',
     price: '',
-    listingType: 'BUY_NOW',
+    // Intentionally empty — we want the seller to consciously pick
+    // Marketplace, Auction, or Take a Shot. The old default of
+    // 'BUY_NOW' meant sellers who never read past the title field
+    // accidentally listed everything as fixed-price even when an
+    // auction would have made them more. Step 2 now blocks until
+    // a type is chosen.
+    listingType: '',
     categoryId: '',
     condition: 'GOOD',
     province: 'GAUTENG',
@@ -499,15 +505,18 @@ export default function NewListingPage() {
 
     const hasPrice = parseFloat(form.price || '0') > 0;
     const hasReserve = parseFloat(form.reservePrice || '0') > 0;
-    // Auction is valid if duration is picked AND we can derive a
-    // starting bid — either from a typed `price` (no-reserve mode)
-    // or from a typed `reservePrice` (the backend derives 70% of it).
+    // Step 2 is blocked until the seller picks a listing type AND
+    // satisfies that type's price requirement. The empty-string
+    // default for listingType (see useState above) means Step 2
+    // shows "Up next" until the seller actively chooses.
     const step2 =
-      form.listingType === 'TAKE_A_SHOT'
-        ? true // no price required
-        : form.listingType === 'AUCTION'
-          ? (hasPrice || hasReserve) && !!form.durationDays
-          : hasPrice;
+      !form.listingType
+        ? false
+        : form.listingType === 'TAKE_A_SHOT'
+          ? true // no price required
+          : form.listingType === 'AUCTION'
+            ? (hasPrice || hasReserve) && !!form.durationDays
+            : hasPrice;
 
     // Step 3 — delivery + address. The seller picks ≥1 shipping method
     // and fills the pickup address. NO locker selection here — for PUDO,
@@ -1368,9 +1377,20 @@ export default function NewListingPage() {
                 </>
               }
             >
+              {/* equalCols=true → 3-column grid with each pill
+                  stretching to fill its column. Forces all three
+                  options onto the same row regardless of label
+                  width (the old flex-wrap left "Take a Shot"
+                  alone on row two, which downplayed it). Empty
+                  string is passed when the seller hasn't picked
+                  yet — none of the pills render as selected. */}
               <PillGroup
                 value={
-                  form.listingType as 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT'
+                  (form.listingType || null) as
+                    | 'BUY_NOW'
+                    | 'AUCTION'
+                    | 'TAKE_A_SHOT'
+                    | null
                 }
                 onChange={(v) => set('listingType', v)}
                 options={[
@@ -1378,7 +1398,20 @@ export default function NewListingPage() {
                   { value: 'AUCTION', label: 'Auction' },
                   { value: 'TAKE_A_SHOT', label: 'Take a Shot' },
                 ]}
+                equalCols
               />
+              {!form.listingType && (
+                <p
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    color: 'var(--text-tertiary)',
+                  }}
+                >
+                  Pick how you want to sell — each option has different
+                  pricing, timing and bidder behaviour.
+                </p>
+              )}
             </Field>
 
             {/* Per-type explanation banner */}

@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AdminCreditsService } from '../admin/admin-credits.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
+import { PushService } from '../push/push.service';
 
 // Threshold-alert dedup window. Once we've fired an alert at any
 // severity for a given service, we won't fire ANOTHER alert at the
@@ -35,7 +36,33 @@ export class TasksService {
     private readonly adminCredits: AdminCreditsService,
     private readonly notifications: NotificationsService,
     private readonly sms: SmsService,
+    private readonly push: PushService,
   ) {}
+
+  // ─── Push subscription cleanup ───────────────────────────────────
+  // Runs once a week. Drops subscriptions where lastUsedAt is older
+  // than 90 days (the user almost certainly uninstalled the PWA or
+  // cleared their service-worker storage; we'd just keep getting
+  // 410s on every push). Stops the table growing forever.
+  //
+  // Live failures still prune immediately via PushService.sendToUser's
+  // 410 handler — this cron just sweeps up the long-tail of subs that
+  // we've STOPPED trying to push to (because the user has no recent
+  // notifiable events) but which never got marked dead.
+  @Cron(CronExpression.EVERY_WEEK)
+  async pushSubscriptionPrune() {
+    try {
+      const removed = await this.push.pruneStale(90);
+      await this.recordCronRun('push-prune');
+      if (removed > 0) {
+        this.logger.log(`pushSubscriptionPrune: removed ${removed} stale subs`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `pushSubscriptionPrune failed: ${(err as Error).message}`,
+      );
+    }
+  }
 
   // Stamp the Setting table with this cron's last successful run.
   // Powers the /admin/health "Cron status" panel — admin can see at a

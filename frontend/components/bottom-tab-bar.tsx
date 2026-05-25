@@ -13,21 +13,27 @@
 //
 // Five tabs — Sell sits dead-centre (position 3) so the raised FAB
 // styling reads symmetric:
-//   1. Shop      → opens a bottom sheet with 5 shopping surfaces:
-//                  All listings / Marketplace / Auctions / Take a Shot /
-//                  Competitions.
-//   2. Alerts    → routes to /notifications. Bell icon. When there are
-//                  unresolved notifications, shows a red active-count
-//                  badge in the top-right corner of the bell.
-//   3. Sell      → /listings/new (centred, raised red FAB — the
-//                  prominent primary action).
-//   4. Wishlist  → /wishlist. Heart icon. Shows a count badge when
-//                  the user has saved listings — same style as the
-//                  Alerts bell.
-//   5. More      → bottom sheet headed by the user's avatar + username,
-//                  followed by My account / Shop / Legal sections.
-//                  All `/my/*` destinations + /dashboard + /profile
-//                  live in here.
+//   1. Shop     → opens a bottom sheet with 5 shopping surfaces:
+//                 All listings / Marketplace / Auctions / Take a Shot /
+//                 Competitions.
+//   2. Alerts   → routes to /notifications. Bell icon. When there are
+//                 unresolved notifications, shows a red active-count
+//                 badge in the top-right corner of the bell.
+//   3. Sell     → /listings/new (centred, raised red FAB — the
+//                 prominent primary action).
+//   4. Ask GG   → /ask-gg. Sparkles icon. Placeholder for an upcoming
+//                 AI assistant (find listings, answer firearm questions,
+//                 help with checkout). Tab exists today so the nav
+//                 reads as intended on launch; route renders a
+//                 Coming-soon page until the feature ships.
+//                 (Wishlist used to live in this slot — it moved to
+//                 the 25% button next to the search bar at the top of
+//                 the PWA. See TopWishlistButton.)
+//   5. More     → bottom sheet headed by the user's avatar + username,
+//                 followed by My account / Shop / Legal sections.
+//                 All `/my/*` destinations + /dashboard + /profile
+//                 live in here, plus a Wishlist fallback link under
+//                 Shop for routes where the top search bar is hidden.
 //
 // Active-route highlighting via usePathname() + a search-aware match
 // helper (so /?listingType=AUCTION lights up the Shop tab even
@@ -40,7 +46,7 @@ import { useEffect, useState } from 'react';
 import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
 import { useStandalone } from '@/lib/use-standalone';
 import { useScrollDirection } from '@/lib/use-scroll-direction';
-import { useWishlist } from '@/lib/use-wishlist';
+import { PushToggleRow } from '@/components/push-opt-in-banner';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -193,18 +199,37 @@ function IconBell() {
     </svg>
   );
 }
-function IconHeart() {
-  // Outline-style heart so the active-tab fill (var(--red)) reads
-  // crisply when the user is on /wishlist. Unselected uses
-  // currentColor stroke matching the other tab icons.
+function IconSparkles() {
+  // Four-point sparkle cluster — universal "AI / magic" affordance.
+  // A large centre sparkle with two smaller satellite sparkles reads
+  // as the "smart helper" idiom established by ChatGPT / Apple
+  // Intelligence / Copilot. Drawn with currentColor stroke so the
+  // active-tab tint (var(--red)) flows through.
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      {/* Main sparkle — centred, larger */}
       <path
-        d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+        d="M12 4 L13.6 9.4 L19 11 L13.6 12.6 L12 18 L10.4 12.6 L5 11 L10.4 9.4 Z"
         stroke="currentColor"
-        strokeWidth="1.6"
+        strokeWidth="1.4"
         strokeLinejoin="round"
-        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Small sparkle — top-right */}
+      <path
+        d="M18.5 4 L19 5.5 L20.5 6 L19 6.5 L18.5 8 L18 6.5 L16.5 6 L18 5.5 Z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      {/* Small sparkle — bottom-right */}
+      <path
+        d="M18.5 16 L19 17.2 L20.2 17.7 L19 18.2 L18.5 19.4 L18 18.2 L16.8 17.7 L18 17.2 Z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+        fill="none"
       />
     </svg>
   );
@@ -231,7 +256,6 @@ export function BottomTabBar() {
   const { getToken } = useAuth();
   const { signOut } = useClerk();
   const scrollDir = useScrollDirection();
-  const wishlist = useWishlist();
   const [shopOpen, setShopOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [alertsCount, setAlertsCount] = useState<number>(0);
@@ -340,12 +364,12 @@ export function BottomTabBar() {
       prominent: true,
     },
     {
-      key: 'wishlist',
-      label: 'Wishlist',
-      // Signed-out → bounce to sign-in with the redirect intact so
-      // they land back on the wishlist once authenticated.
-      href: isSignedIn ? '/wishlist' : '/sign-in?redirect_url=/wishlist',
-      isActive: (p) => p.startsWith('/wishlist'),
+      key: 'ask-gg',
+      label: 'Ask GG',
+      // Currently a Coming-soon placeholder page; future home of an
+      // AI assistant. No auth gate — anyone can preview the feature.
+      href: '/ask-gg',
+      isActive: (p) => p.startsWith('/ask-gg'),
     },
     {
       key: 'more',
@@ -400,42 +424,10 @@ export function BottomTabBar() {
         );
       case 'sell':
         return <IconPlus />;
-      case 'wishlist':
-        // Heart + count badge in the top-right corner when the user
-        // has saved listings. Same badge style as the Alerts bell so
-        // they read as a consistent set of "you have things here"
-        // indicators. Caps the displayed number at 50+ to keep the
-        // pill from overflowing the icon.
-        return (
-          <span style={{ position: 'relative', display: 'inline-flex' }}>
-            <IconHeart />
-            {wishlist.count > 0 && (
-              <span
-                aria-label={`${wishlist.count} saved`}
-                style={{
-                  position: 'absolute',
-                  top: -4,
-                  right: -6,
-                  minWidth: 16,
-                  height: 16,
-                  padding: '0 4px',
-                  borderRadius: 8,
-                  background: 'var(--red)',
-                  color: '#fff',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  lineHeight: 1,
-                  border: '1.5px solid var(--bg-deep)',
-                }}
-              >
-                {wishlist.count > 50 ? '50+' : wishlist.count}
-              </span>
-            )}
-          </span>
-        );
+      case 'ask-gg':
+        // Sparkles icon — universal "AI / smart helper" affordance.
+        // No badge: the route is a placeholder, nothing to count.
+        return <IconSparkles />;
       case 'more':
         return <IconMore />;
       default:
@@ -845,7 +837,15 @@ function MoreSheet({
 }) {
   // Secondary destinations — order = discoverability priority
   // (most-likely-used first).
+  //
+  // Wishlist is listed FIRST as a fallback for the routes where the
+  // top sticky search bar (which hosts the primary Wishlist button)
+  // is hidden: /admin, /checkout, /sign-in, /sign-up, /listings/new,
+  // /kyc/verify, /offline, /notifications, dealer-verification. On
+  // any of those pages users still have one tap to wishlist via
+  // this More-sheet entry.
   const shopLinks = [
+    { href: '/wishlist', label: 'Wishlist' },
     { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
     { href: '/competitions', label: 'Competitions' },
   ];
@@ -1044,6 +1044,9 @@ function MoreSheet({
                 onNavigate={onClose}
               />
             ))}
+            {/* Push toggle — self-hides when push isn't supported /
+                backend isn't configured / iOS-in-browser. */}
+            <PushToggleRow />
             <li>
               <button
                 type="button"

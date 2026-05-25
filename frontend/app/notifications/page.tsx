@@ -24,6 +24,7 @@ import {
 import { NotificationsTabs } from '@/components/notifications-tabs';
 import { NotificationsList } from '@/components/notifications-list';
 import { PageReveal } from '@/components/page-reveal';
+import { PushOptInBanner } from '@/components/push-opt-in-banner';
 
 function tabFromParam(raw: string | null): NotificationCategory {
   if (raw === 'seller') return 'SELLER';
@@ -108,6 +109,7 @@ export default function NotificationsPage() {
       </header>
 
       <div data-reveal>
+        <PushOptInBanner />
         <NotificationsTabs current={current} activeCount={activeCount} />
       </div>
 

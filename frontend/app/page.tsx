@@ -7,6 +7,7 @@ import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
 import { SignedInWelcome } from '@/components/signed-in-welcome';
+import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 
 interface SearchParams {
   q?: string;
@@ -303,6 +304,11 @@ export default async function HomePage({
               Featured slots loading…
             </div>
           )}
+          {/* Recently viewed — self-hides if the user has < 2 entries
+              on this device, so cold-start visitors don't see an empty
+              rail. Sits below the featured marquee so returning users
+              get a quick re-entry into things they were looking at. */}
+          <RecentlyViewedRail />
         </section>
       ) : hasBackground ? (
         /* Filtered surfaces (marketplace/auctions/take-a-shot) keep

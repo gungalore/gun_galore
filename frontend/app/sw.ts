@@ -167,3 +167,85 @@ const serwist = new Serwist({
 });
 
 serwist.addEventListeners();
+
+// ─── Web Push handlers ──────────────────────────────────────────────
+//
+// Fires when the backend pushes a notification to one of this user's
+// subscriptions. The push payload is JSON (set on the backend via
+// PushService.sendToUser). We show an OS-level notification; tapping
+// it opens (or focuses) the URL specified in the payload.
+//
+// PWA caveats:
+//   - iOS Safari 16.4+ supports web push, but ONLY when the PWA is
+//     installed to the home screen. The opt-in UI gates on this.
+//   - Android Chrome works everywhere.
+//   - Firefox + Edge use Mozilla's autopush + Microsoft's WNS
+//     respectively; both go through the same web-push library on the
+//     backend.
+//
+// `tag` dedupes — passing the same tag for a re-fired notification
+// (e.g. successive outbids on the same auction) replaces the
+// previous OS notification instead of stacking. Keeps the lock
+// screen clean.
+self.addEventListener('push', (event) => {
+  const e = event as PushEvent;
+  if (!e.data) return;
+  let payload: {
+    title?: string;
+    body?: string;
+    url?: string;
+    tag?: string;
+  } = {};
+  try {
+    payload = e.data.json();
+  } catch {
+    // Plain-text fallback — backend always sends JSON but defend
+    // against partner-injected pushes anyway.
+    payload = { title: 'Gun Galore', body: e.data.text() };
+  }
+  const title = payload.title ?? 'Gun Galore';
+  const body = payload.body ?? '';
+  const url = payload.url ?? '/';
+  e.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: payload.tag,
+      data: { url },
+      requireInteraction: false,
+    }),
+  );
+});
+
+// Tapping the notification opens (or focuses) the deep-link URL.
+// If the PWA is already running in a tab/window we focus it; else
+// we open a new one.
+self.addEventListener('notificationclick', (event) => {
+  const e = event as NotificationEvent;
+  e.notification.close();
+  const url = (e.notification.data as { url?: string } | undefined)?.url ?? '/';
+  e.waitUntil(
+    (async () => {
+      const allClients = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+      // Prefer focusing an existing tab on the same origin — saves a
+      // hard reload and preserves session state.
+      for (const client of allClients) {
+        if ('focus' in client) {
+          try {
+            await (client as WindowClient).navigate(url);
+            await (client as WindowClient).focus();
+            return;
+          } catch {
+            /* fall through to openWindow */
+          }
+        }
+      }
+      // Nothing to focus → open fresh.
+      await self.clients.openWindow(url);
+    })(),
+  );
+});

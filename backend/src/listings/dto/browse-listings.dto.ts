@@ -35,6 +35,16 @@ export class BrowseListingsDto {
   @IsString()
   sellerClerkId?: string;
 
+  /** Comma-separated cuid list. When set, returns ONLY the matching
+   * listings preserving the order of the input list. Powers the
+   * recently-viewed rail on the homepage — frontend stores the last
+   * N viewed listing IDs in localStorage and asks for their fresh
+   * data here. Skips all other filters except the ACTIVE status gate.
+   * Max 50 IDs per request — caller responsible for slicing. */
+  @IsOptional()
+  @IsString()
+  ids?: string;
+
   // ZAR cents
   @IsOptional()
   @Type(() => Number)

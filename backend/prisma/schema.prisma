@@ -377,6 +377,13 @@ model User {
   // Distinct from AuctionWatch (which is bidding-specific notification
   // opt-in); wishlist is the general "save for later" pattern.
   wishlistEntries WatchedListing[]
+
+  // ── Push notification back-relation ──────────────────────────────
+  // Browser/PWA push subscription endpoints. One row per device a user
+  // has opted in on (iPhone PWA + Android Chrome = two rows). Fired
+  // by PushService.sendToUser when NotificationsService.persist
+  // writes a non-dismissible (action-required) inbox row.
+  pushSubscriptions PushSubscription[]
 }
 
 // =====================================================================
@@ -1132,6 +1139,39 @@ model WatchedListing {
   @@unique([userId, listingId])
   @@index([userId, createdAt(sort: Desc)])
   @@index([listingId])
+}
+
+// Browser / installed-PWA push subscription. Created when the user
+// taps "Enable push notifications" → the browser calls
+// pushManager.subscribe() and returns an endpoint URL + two crypto
+// keys. We store one row per device per user.
+//
+// `endpoint` is globally unique (a per-device URL on the push
+// gateway — FCM for Android Chrome / Mozilla autopush for Firefox /
+// APNS for iOS Safari). Used as the upsert key so a single device
+// can only have one active subscription per user.
+//
+// `category` array lets users mute one notification category without
+// muting all of them (e.g., disable ACCOUNT push but keep BUYER /
+// SELLER). Default = all three categories enabled.
+//
+// `lastUsedAt` is bumped each time we successfully push to this
+// endpoint. A weekly cron prunes subscriptions where lastUsedAt is
+// > 90 days old (the device probably uninstalled the PWA / cleared
+// SW). Cascade-deletes with the user.
+model PushSubscription {
+  id         String                 @id @default(cuid())
+  userId     String
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint   String                 @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  category   NotificationCategory[] @default([BUYER, SELLER, ACCOUNT])
+  createdAt  DateTime               @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
 }
 
 // ---------------------------------------------------------------------------

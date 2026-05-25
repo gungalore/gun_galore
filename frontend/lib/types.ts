@@ -161,6 +161,11 @@ export interface Listing {
   images: ListingImage[];
   createdAt: string;
   updatedAt: string;
+  /** Aggregated social-proof — how many users have saved this listing
+   * to their wishlist. Set by ListingsService.findById via Prisma's
+   * `_count: { wishlistedBy: true }`. Only present on listing detail
+   * responses (browse responses omit it for the smaller payload). */
+  _count?: { wishlistedBy?: number };
 }
 
 export interface BrowseResponse {

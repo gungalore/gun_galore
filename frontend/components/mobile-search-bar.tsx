@@ -19,6 +19,7 @@
 import { usePathname } from 'next/navigation';
 import { useStandalone } from '@/lib/use-standalone';
 import { LiveSearch } from '@/components/live-search';
+import { TopWishlistButton } from '@/components/top-wishlist-button';
 
 // Pathname prefixes where the sticky search bar should NOT render. All
 // of these are either focus flows (checkout / sell / KYC) where search
@@ -68,7 +69,21 @@ export function MobileSearchBar() {
         paddingTop: 'calc(10px + env(safe-area-inset-top))',
       }}
     >
-      <LiveSearch />
+      {/* 75 / 25 split — LiveSearch dominant, TopWishlistButton as
+          a compact heart-icon button in the spare 25%. Wishlist
+          used to live in the bottom tab bar; pairing it with the
+          search bar puts "save for later" beside the most-used
+          shopping affordance on every page where this bar renders.
+          min-width on the wishlist button stops it crushing below
+          ~320 px viewports. */}
+      <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
+        <div style={{ flex: 3, minWidth: 0 }}>
+          <LiveSearch />
+        </div>
+        <div style={{ flex: 1, minWidth: 56, maxWidth: 110 }}>
+          <TopWishlistButton />
+        </div>
+      </div>
     </div>
   );
 }

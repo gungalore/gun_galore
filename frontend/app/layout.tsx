@@ -10,6 +10,7 @@ import { MobileSearchBar } from '@/components/mobile-search-bar';
 import { StickyFeaturedStrip } from '@/components/sticky-featured-strip';
 import { ConnectionStatusBanner } from '@/components/connection-status-banner';
 import { SwUpdateBanner } from '@/components/sw-update-banner';
+import { PushFirstLaunchPrompt } from '@/components/push-first-launch-prompt';
 import { WishlistProvider } from '@/lib/use-wishlist';
 import './globals.css';
 
@@ -33,6 +34,22 @@ import './globals.css';
 // (rare but possible on Chrome desktop) updates both the attribute
 // AND the viewport rule consistently.
 const STANDALONE_DETECT_SCRIPT = `(function(){var BROWSER='width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover';var LOCKED='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';function applyVP(s){var v=document.querySelector('meta[name=viewport]');if(!v){v=document.createElement('meta');v.setAttribute('name','viewport');document.head.appendChild(v);}v.setAttribute('content',s?LOCKED:BROWSER);}try{var m=window.matchMedia&&window.matchMedia('(display-mode: standalone)');var s=(m&&m.matches)||window.navigator.standalone===true;if(s){document.documentElement.dataset.standalone='true';}applyVP(s);if(m&&m.addEventListener){m.addEventListener('change',function(e){var ns=e.matches||window.navigator.standalone===true;if(ns){document.documentElement.dataset.standalone='true';}else{delete document.documentElement.dataset.standalone;}applyVP(ns);});}}catch(_){}})();`;
+
+// Chunk-load-error self-healer. Runs once on first paint and watches
+// for Next.js chunk-load failures, which happen when the SW served
+// a cached HTML referencing JS chunk hashes that no longer exist
+// after a deploy (new build → new hashes → old hashes 404). Without
+// this the user sees a white screen and has to close+open the PWA
+// multiple times before the cached HTML naturally revalidates.
+//
+// On detecting a ChunkLoadError we mark a sessionStorage flag (to
+// avoid reload loops) and force window.location.reload(). The
+// freshly-fetched HTML references the new chunk hashes and the page
+// recovers in one tap instead of three.
+//
+// Why inline before paint: needs to be registered before any chunk
+// has a chance to fail. A React useEffect would run too late.
+const CHUNK_HEAL_SCRIPT = `(function(){try{var KEY='gg-chunk-reload-at';var seen=window.sessionStorage&&window.sessionStorage.getItem(KEY);var now=Date.now();if(seen&&(now-parseInt(seen,10))<10000){return;}function looksLikeChunkErr(e){var msg=(e&&(e.message||e.reason&&(e.reason.message||e.reason)+''))||'';return /Loading chunk [\\d_]+ failed|ChunkLoadError|Failed to fetch dynamically imported module|Importing a module script failed/i.test(msg);}function reload(){try{window.sessionStorage.setItem(KEY,String(Date.now()));}catch(_){}window.location.reload();}window.addEventListener('error',function(e){if(looksLikeChunkErr(e)){reload();}},true);window.addEventListener('unhandledrejection',function(e){if(looksLikeChunkErr(e)){reload();}});}catch(_){}})();`;
 
 export const metadata: Metadata = {
   title: 'Gun Galore — SA Firearms Marketplace',
@@ -106,6 +123,14 @@ export default function RootLayout({
               useStandalone() hook hydrates. */}
           <script
             dangerouslySetInnerHTML={{ __html: STANDALONE_DETECT_SCRIPT }}
+          />
+          {/* Auto-reload on Next.js chunk-load errors — covers the
+              white-screen window when a new deploy lands and the SW-
+              cached HTML references stale chunk hashes. One reload
+              fetches fresh HTML + chunks; sessionStorage gate stops
+              reload loops if the cause is something else. */}
+          <script
+            dangerouslySetInnerHTML={{ __html: CHUNK_HEAL_SCRIPT }}
           />
           {/* Preload the homepage hero image so it kicks off in
               parallel with the JS bundle. Lighthouse mobile flagged
@@ -198,6 +223,12 @@ export default function RootLayout({
               dismissal stored in localStorage. Already standalone-
               aware so it hides itself once the app is installed. */}
           <InstallPrompt />
+          {/* First-launch push opt-in card — only shows in installed
+              PWA mode, only when push isn't already enabled, only
+              outside the 30-day snooze window. Self-hides under any
+              condition. Matches the iOS/Android-native pattern where
+              an installed app asks for notifications on first launch. */}
+          <PushFirstLaunchPrompt />
           </WishlistProvider>
         </body>
       </html>
