@@ -23,6 +23,7 @@ import {
 } from '@/lib/notifications';
 import { NotificationsTabs } from '@/components/notifications-tabs';
 import { NotificationsList } from '@/components/notifications-list';
+import { PageReveal } from '@/components/page-reveal';
 
 function tabFromParam(raw: string | null): NotificationCategory {
   if (raw === 'seller') return 'SELLER';
@@ -66,7 +67,9 @@ export default function NotificationsPage() {
         padding: '20px 14px 40px',
       }}
     >
+      <PageReveal variant="slide-up">
       <header
+        data-reveal
         style={{
           display: 'flex',
           alignItems: 'baseline',
@@ -104,9 +107,14 @@ export default function NotificationsPage() {
         </button>
       </header>
 
-      <NotificationsTabs current={current} activeCount={activeCount} />
+      <div data-reveal>
+        <NotificationsTabs current={current} activeCount={activeCount} />
+      </div>
 
-      <NotificationsList category={current} showResolved={showResolved} />
+      <div data-reveal>
+        <NotificationsList category={current} showResolved={showResolved} />
+      </div>
+      </PageReveal>
     </main>
   );
 }

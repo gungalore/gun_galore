@@ -164,6 +164,17 @@ export default function RootLayout({
               both display-mode + pathname, no-op everywhere else. */}
           <MobileSearchBar />
           <UrgentNotifications />
+          {/* NOTE on View Transitions: React 19.2.6 stable doesn't
+              expose `unstable_ViewTransition` yet — only the React
+              experimental channel does. We've left
+              `experimental.viewTransition: true` in next.config.mjs
+              and kept the
+              `html[data-standalone='true']::view-transition-old/new`
+              keyframes in globals.css so that as soon as React
+              stabilises the export OR Next.js starts auto-wiring it
+              behind the flag, the slide-on-route-change activates
+              with zero further changes. Until then routes navigate
+              with a hard cut (existing behaviour). */}
           {children}
           <PublicFooter />
           {/* Sticky featured-listings strip — hugs the bottom tab bar

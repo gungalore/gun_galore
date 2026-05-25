@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { MyTicket } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
+import { PageReveal } from '@/components/page-reveal';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -26,7 +27,9 @@ export default async function MyTicketsPage() {
 
   return (
     <main className="max-w-[760px] mx-auto px-4 py-8">
+      <PageReveal variant="slide-up">
       <h1
+        data-reveal
         className="text-xl mb-6"
         style={{ color: 'var(--text-primary)', fontWeight: 500 }}
       >
@@ -35,6 +38,7 @@ export default async function MyTicketsPage() {
 
       {Object.keys(byRaffle).length === 0 && (
         <div
+          data-reveal
           className="rounded-[8px] py-12 px-6 text-center"
           style={{
             background: 'var(--bg-card)',
@@ -70,7 +74,7 @@ export default async function MyTicketsPage() {
         </div>
       )}
 
-      <div className="space-y-4">
+      <div data-reveal className="space-y-4">
         {Object.entries(byRaffle).map(([raffleId, group]) => {
           const raffle = group[0].raffle;
           const confirmed = group.filter((t) => t.status === 'CONFIRMED');
@@ -165,6 +169,7 @@ export default async function MyTicketsPage() {
           );
         })}
       </div>
+      </PageReveal>
     </main>
   );
 }

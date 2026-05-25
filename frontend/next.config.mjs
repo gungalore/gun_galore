@@ -10,6 +10,19 @@ const nextConfig = {
   // only in `next build`, not in dev), so an empty turbopack config
   // is enough to silence the conflict.
   turbopack: {},
+  // Enable React's <ViewTransition> component — wraps every route
+  // change in a transition so the existing
+  // `html[data-standalone='true']::view-transition-old/new(root)`
+  // keyframes in globals.css fire during navigation. Result: the
+  // installed PWA slides between routes (180ms fade out + 280ms
+  // slide-in) instead of doing a hard cut. Browser-mode users keep
+  // the standard navigation feel (CSS rules are scoped to
+  // standalone). Falls back gracefully on browsers that don't
+  // implement the View Transitions API (Safari < 18) — the page
+  // just navigates instantly with no animation.
+  experimental: {
+    viewTransition: true,
+  },
   images: {
     remotePatterns: [
       // User-uploaded photos (listings, KYC docs, etc.).

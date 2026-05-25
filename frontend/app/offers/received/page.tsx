@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Offer } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
 import ReceivedOfferActions from './received-offer-actions';
+import { PageReveal } from '@/components/page-reveal';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -23,18 +24,19 @@ export default async function ReceivedOffersPage() {
 
   return (
     <main className="max-w-[760px] mx-auto px-4 py-8">
-      <h1 className="text-xl font-medium mb-6" style={{ color: 'var(--text-primary)' }}>
+      <PageReveal variant="slide-up">
+      <h1 data-reveal className="text-xl font-medium mb-6" style={{ color: 'var(--text-primary)' }}>
         Received Offers
       </h1>
 
       {offers.length === 0 && (
-        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+        <p data-reveal className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
           No offers received yet.
         </p>
       )}
 
       {pending.length > 0 && (
-        <section className="mb-8">
+        <section data-reveal className="mb-8">
           <h2 className="text-xs uppercase mb-3" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
             Awaiting your response
           </h2>
@@ -45,7 +47,7 @@ export default async function ReceivedOffersPage() {
       )}
 
       {other.length > 0 && (
-        <section>
+        <section data-reveal>
           <h2 className="text-xs uppercase mb-3" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
             History
           </h2>
@@ -54,6 +56,7 @@ export default async function ReceivedOffersPage() {
           </div>
         </section>
       )}
+      </PageReveal>
     </main>
   );
 }

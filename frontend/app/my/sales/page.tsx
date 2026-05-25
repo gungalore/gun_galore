@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Transaction } from '@/lib/types';
 import { PAYMENT_STATUS, resolveStatus, toneColor } from '@/lib/status-labels';
+import { PageReveal } from '@/components/page-reveal';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -82,12 +83,14 @@ export default async function MySalesPage() {
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
-      <h1 className="text-xl font-medium mb-6" style={{ color: 'var(--text-primary)' }}>
+      <PageReveal variant="slide-up">
+      <h1 data-reveal className="text-xl font-medium mb-6" style={{ color: 'var(--text-primary)' }}>
         My Sales
       </h1>
 
       {transactions.length === 0 ? (
         <div
+          data-reveal
           className="rounded-[8px] py-12 px-6 text-center"
           style={{
             background: 'var(--bg-card)',
@@ -135,7 +138,7 @@ export default async function MySalesPage() {
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div data-reveal className="space-y-6">
           {pending.length > 0 && (
             <div>
               <p className="text-xs uppercase tracking-wider mb-3" style={{ color: 'var(--text-tertiary)' }}>
@@ -158,6 +161,7 @@ export default async function MySalesPage() {
           )}
         </div>
       )}
+      </PageReveal>
     </main>
   );
 }

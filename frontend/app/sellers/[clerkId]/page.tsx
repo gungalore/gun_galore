@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ListingCard } from '@/components/listing-card';
+import { PageReveal } from '@/components/page-reveal';
 import { BrowseResponse } from '@/lib/types';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -55,8 +56,10 @@ export default async function SellerProfilePage({
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
+      <PageReveal variant="scale-in">
       {/* Profile header */}
       <div
+        data-reveal
         className="rounded-[10px] p-6 mb-6"
         style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
       >
@@ -79,7 +82,7 @@ export default async function SellerProfilePage({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+      <div data-reveal className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
         {/* Active listings */}
         <div>
           <p className="text-xs uppercase tracking-wider mb-3" style={{ color: 'var(--text-tertiary)' }}>
@@ -133,6 +136,7 @@ export default async function SellerProfilePage({
           )}
         </div>
       </div>
+      </PageReveal>
     </main>
   );
 }

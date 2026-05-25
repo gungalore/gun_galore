@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { formatPrice } from '@/lib/utils';
+import { PageReveal } from '@/components/page-reveal';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -98,7 +99,9 @@ export default async function MyBidsPage() {
 
   return (
     <main className="max-w-[760px] mx-auto px-4 py-8">
+      <PageReveal variant="slide-up">
       <h1
+        data-reveal
         className="text-xl font-medium mb-6"
         style={{ color: 'var(--text-primary)' }}
       >
@@ -107,6 +110,7 @@ export default async function MyBidsPage() {
 
       {bids.length === 0 && featuredBids.length === 0 && (
         <div
+          data-reveal
           className="rounded-[8px] py-12 px-6 text-center"
           style={{
             background: 'var(--bg-card)',
@@ -158,27 +162,27 @@ export default async function MyBidsPage() {
 
       {/* ─── Auction bids on listings ─────────────────────────────── */}
       {live.length > 0 && (
-        <Section title="Live">
+        <div data-reveal><Section title="Live">
           {live.map((b) => (
             <BidCard key={b.bidId} row={b} />
           ))}
-        </Section>
+        </Section></div>
       )}
 
       {won.length > 0 && (
-        <Section title="Won — pay now">
+        <div data-reveal><Section title="Won — pay now">
           {won.map((b) => (
             <BidCard key={b.bidId} row={b} />
           ))}
-        </Section>
+        </Section></div>
       )}
 
       {closed.length > 0 && (
-        <Section title="Closed">
+        <div data-reveal><Section title="Closed">
           {closed.map((b) => (
             <BidCard key={b.bidId} row={b} />
           ))}
-        </Section>
+        </Section></div>
       )}
 
       {/* ─── Featured-slot bids ───────────────────────────────────────
@@ -186,6 +190,7 @@ export default async function MyBidsPage() {
           advertising slots, not for buying listings. */}
       {featuredBids.length > 0 && (
         <div
+          data-reveal
           style={{
             marginTop: 32,
             paddingTop: 24,
@@ -224,6 +229,7 @@ export default async function MyBidsPage() {
           )}
         </div>
       )}
+      </PageReveal>
     </main>
   );
 }

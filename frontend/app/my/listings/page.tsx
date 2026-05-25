@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import CancelButton from './cancel-button';
 import { LISTING_STATUS, resolveStatus, toneColor } from '@/lib/status-labels';
+import { PageReveal } from '@/components/page-reveal';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -33,7 +34,8 @@ export default async function MyListingsPage() {
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
-      <div className="flex items-center justify-between mb-6">
+      <PageReveal variant="slide-up">
+      <div data-reveal className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>
           My Listings
         </h1>
@@ -48,6 +50,7 @@ export default async function MyListingsPage() {
 
       {listings.length === 0 ? (
         <div
+          data-reveal
           className="rounded-[8px] py-12 px-6 text-center"
           style={{
             background: 'var(--bg-card)',
@@ -86,7 +89,7 @@ export default async function MyListingsPage() {
            HTML table overflowed horizontally below 640px with no
            responsive collapse, matching the orders + sales card
            pattern they were already using. */
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div data-reveal className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {listings.map((l) => {
             const status = resolveStatus(LISTING_STATUS, l.status);
             const color = toneColor(status.tone);
@@ -171,6 +174,7 @@ export default async function MyListingsPage() {
           })}
         </div>
       )}
+      </PageReveal>
     </main>
   );
 }

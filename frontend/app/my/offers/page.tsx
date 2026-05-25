@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Offer } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
 import OfferActions from './offer-actions';
+import { PageReveal } from '@/components/page-reveal';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -34,12 +35,14 @@ export default async function MyOffersPage() {
 
   return (
     <main className="max-w-[760px] mx-auto px-4 py-8">
-      <h1 className="text-xl font-medium mb-6" style={{ color: 'var(--text-primary)' }}>
+      <PageReveal variant="slide-up">
+      <h1 data-reveal className="text-xl font-medium mb-6" style={{ color: 'var(--text-primary)' }}>
         My Offers
       </h1>
 
       {active.length === 0 && closed.length === 0 && (
         <div
+          data-reveal
           className="rounded-[8px] py-12 px-6 text-center"
           style={{
             background: 'var(--bg-card)',
@@ -76,7 +79,7 @@ export default async function MyOffersPage() {
       )}
 
       {active.length > 0 && (
-        <section className="mb-8">
+        <section data-reveal className="mb-8">
           <h2 className="text-xs uppercase mb-3" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
             Active
           </h2>
@@ -87,7 +90,7 @@ export default async function MyOffersPage() {
       )}
 
       {closed.length > 0 && (
-        <section>
+        <section data-reveal>
           <h2 className="text-xs uppercase mb-3" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
             Closed
           </h2>
@@ -96,6 +99,7 @@ export default async function MyOffersPage() {
           </div>
         </section>
       )}
+      </PageReveal>
     </main>
   );
 }

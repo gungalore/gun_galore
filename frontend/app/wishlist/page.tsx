@@ -3,6 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { ListingCard } from '@/components/listing-card';
+import { PageReveal } from '@/components/page-reveal';
 import { Listing } from '@/lib/types';
 import { WishlistRemoveButton } from './wishlist-remove-button';
 
@@ -64,7 +65,8 @@ export default async function WishlistPage() {
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
-      <header className="mb-6">
+      <PageReveal variant="slide-up">
+      <header data-reveal className="mb-6">
         <h1
           className="text-xl font-medium mb-1"
           style={{ color: 'var(--text-primary)' }}
@@ -82,6 +84,7 @@ export default async function WishlistPage() {
         /* Empty state — actionable CTAs into the two highest-volume
            shopping surfaces. Avoids the dead-end "nothing here" UX. */
         <div
+          data-reveal
           className="rounded-[8px] py-12 px-6 text-center"
           style={{
             background: 'var(--bg-card)',
@@ -132,6 +135,7 @@ export default async function WishlistPage() {
         <>
           {live.length > 0 && (
             <div
+              data-reveal
               className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-8"
             >
               {live.map((r) => (
@@ -141,7 +145,7 @@ export default async function WishlistPage() {
           )}
 
           {tombstones.length > 0 && (
-            <div>
+            <div data-reveal>
               <p
                 className="text-xs uppercase tracking-wider mb-3"
                 style={{ color: 'var(--text-tertiary)' }}
@@ -200,7 +204,7 @@ export default async function WishlistPage() {
 
           {/* Browse-more CTA at the bottom of the wishlist — makes the
               page feel less like a dead-end. */}
-          <div className="mt-8 text-center">
+          <div data-reveal className="mt-8 text-center">
             <Link
               href="/?listingType=BUY_NOW"
               prefetch
@@ -217,6 +221,7 @@ export default async function WishlistPage() {
           </div>
         </>
       )}
+      </PageReveal>
     </main>
   );
 }

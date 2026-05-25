@@ -99,6 +99,32 @@ html[data-standalone='true'] {
   touch-action: pan-x pan-y;
 }
 
+/* Skeleton shimmer — used by /app/<route>/loading.tsx pages while
+   the server fetches data. Background-position sweep gives the
+   "loading" feel without a spinner. Scoped to elements that opt in
+   via the .gg-skeleton class (see components/skeleton.tsx). Honours
+   prefers-reduced-motion: reduce → solid colour, no sweep. */
+.gg-skeleton {
+  background: var(--bg-card);
+  border-radius: 6px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gg-skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--bg-card) 0%,
+      var(--bg-card-hover) 50%,
+      var(--bg-card) 100%
+    );
+    background-size: 200% 100%;
+    animation: gg-skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+  @keyframes gg-skeleton-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+}
+
 /* iOS Safari auto-zooms when a form input is focused if the input's
    computed font-size is < 16px. We use 13-14px text everywhere in the
    UI, so this rule scopes the font-size bump to mobile widths only —

@@ -1,208 +1,165 @@
 'use client';
 
 import {
-  useEffect,
+  Children,
+  cloneElement,
+  isValidElement,
   useId,
-  useLayoutEffect,
-  useMemo,
-  useState,
+  type CSSProperties,
+  type ReactElement,
   type ReactNode,
 } from 'react';
 
-// useLayoutEffect runs synchronously after DOM mutations but before
-// paint — perfect for installing animation CSS before the browser
-// paints the elements that use it. On the server it's a no-op, so we
-// fall back to useEffect there to avoid the SSR warning.
-const useIsomorphicLayoutEffect =
-  typeof window !== 'undefined' ? useLayoutEffect : useEffect;
-
-// Drop-in wrapper that fades its `data-reveal` descendants in over
-// ~2.5s using a scoped CSS keyframe animation. No GSAP, no useEffect
-// for the animation itself — pure CSS so it survives React 18
-// StrictMode + RSC hydration without the "tween got killed mid-flight"
-// failure modes the JS-driven version kept hitting.
+// ─── PageReveal ────────────────────────────────────────────────────
 //
-// IMPORTANT: the CSS lives in a <style> tag that we attach to
-// document.head from a useEffect. Earlier this CSS was rendered inline
-// as <style>{...}</style> inside the component's JSX, which made React
-// remount the tag during StrictMode's setup → cleanup → setup cycle.
-// Each remount briefly removed the @keyframes rule; any data-reveal
-// element whose animation had already started saw its keyframe-name
-// dangle for one frame and got stuck at the 0% state forever. Putting
-// the CSS in document.head once per page-load keeps it alive across
-// every re-render.
+// Drop-in wrapper that fades its direct `data-reveal` children in
+// using a scoped CSS keyframe animation. Pure CSS — no useEffect,
+// no IntersectionObserver, no JS animation library.
+//
+// The OLD implementation injected the `from`-state CSS into
+// document.head from a useLayoutEffect. That left a race: the
+// server-rendered HTML carried the `data-reveal` markers but no
+// styles, so for one or two frames the browser painted children at
+// full opacity. Then the CSS landed and tried to play 0% → 100%,
+// either flickering OR (depending on browser repaint timing) just
+// skipping the animation entirely. THAT was the "sometimes works,
+// sometimes doesn't" symptom.
+//
+// This rewrite renders the scoped <style> INLINE inside the wrapper
+// so it ships as part of the SSR'd HTML. There is no window between
+// "element painted" and "rules in place" — the rules are in the same
+// document fragment as the element. No race, no flicker, ever.
+//
+// House-standard cadence (LOCKED): 100 ms delay, 380 ms duration,
+// 60 ms per-child stagger. Total settle time for an 8-child page
+// is ~580 ms — modern app speed (Linear / Stripe / Vercel cadence).
+//
+// Stagger uses a CSS custom property (`--pr-i`) auto-assigned to
+// each `data-reveal` child by index. The old nth-of-type approach
+// capped at 8; this works for any count.
+//
+// `prefers-reduced-motion: reduce` users get the to-state instantly
+// with no animation — WCAG 2.3.3 + good taste.
 
 export type PageRevealVariant =
-  | 'slide-up'    // y: 20px → 0, opacity 0 → 1
-  | 'scale-in'    // scale: 0.92 → 1, opacity 0 → 1
-  | 'slide-right' // x: -28px → 0, opacity 0 → 1
-  | 'blur-in'     // filter blur(8px) → 0, opacity 0 → 1
-  | 'random';     // picks one of the four real variants on mount
+  | 'slide-up'      // y: 16px → 0
+  | 'scale-in'      // scale: 0.96 → 1
+  | 'slide-right'   // x: -20px → 0
+  | 'blur-in';      // blur(6px) → 0
 
-interface Props {
-  children: ReactNode;
-  /** Gap between staggered items (default 0.18). Variant + stagger
-   *  are the only knobs left; delay + duration are LOCKED to the
-   *  house standard (0.5 + 1.0) so the cadence is identical on
-   *  every page. */
-  stagger?: number;
-  /** Optional className applied to the wrapper div. */
-  className?: string;
-  /** Which keyframe to use. Default `random` — picks one of the four
-   *  real variants per page-load so the seller doesn't see the same
-   *  reveal every time they visit. */
-  variant?: PageRevealVariant;
-}
+const DELAY_MS = 100;
+const DURATION_MS = 380;
+const STAGGER_MS = 60;
 
-// House standard reveal cadence — LOCKED. Every page on Gun Galore
-// uses these values. Earlier we let pages override delay and duration
-// via props; the result was visibly inconsistent animations (homepage
-// + competitions delayed 2s, everywhere else 0.5s) which felt
-// broken. The props are gone; these constants are the source of truth.
-const REVEAL_DELAY_SECONDS = 0.5;
-const REVEAL_DURATION_SECONDS = 1.0;
-
-const REAL_VARIANTS: Exclude<PageRevealVariant, 'random'>[] = [
-  'slide-up',
-  'scale-in',
-  'slide-right',
-  'blur-in',
-];
-
-const VARIANTS: Record<
-  Exclude<PageRevealVariant, 'random'>,
-  { keyframeName: string; from: string; keyframe: string }
-> = {
+const VARIANTS: Record<PageRevealVariant, { from: string; to: string }> = {
   'slide-up': {
-    keyframeName: 'pgRevealSlideUp',
-    from: 'opacity: 0; transform: translateY(20px);',
-    keyframe: `
-      @keyframes pgRevealSlideUp {
-        0%   { opacity: 0; transform: translateY(20px); }
-        100% { opacity: 1; transform: translateY(0); }
-      }`,
+    from: 'opacity:0;transform:translateY(16px);',
+    to: 'opacity:1;transform:translateY(0);',
   },
   'scale-in': {
-    keyframeName: 'pgRevealScaleIn',
-    from: 'opacity: 0; transform: scale(0.92);',
-    keyframe: `
-      @keyframes pgRevealScaleIn {
-        0%   { opacity: 0; transform: scale(0.92); }
-        100% { opacity: 1; transform: scale(1); }
-      }`,
+    from: 'opacity:0;transform:scale(0.96);',
+    to: 'opacity:1;transform:scale(1);',
   },
   'slide-right': {
-    keyframeName: 'pgRevealSlideRight',
-    from: 'opacity: 0; transform: translateX(-28px);',
-    keyframe: `
-      @keyframes pgRevealSlideRight {
-        0%   { opacity: 0; transform: translateX(-28px); }
-        100% { opacity: 1; transform: translateX(0); }
-      }`,
+    from: 'opacity:0;transform:translateX(-20px);',
+    to: 'opacity:1;transform:translateX(0);',
   },
   'blur-in': {
-    keyframeName: 'pgRevealBlurIn',
-    from: 'opacity: 0; filter: blur(8px);',
-    keyframe: `
-      @keyframes pgRevealBlurIn {
-        0%   { opacity: 0; filter: blur(8px); }
-        100% { opacity: 1; filter: blur(0); }
-      }`,
+    from: 'opacity:0;filter:blur(6px);',
+    to: 'opacity:1;filter:blur(0);',
   },
 };
 
-// Module-level cache — once we've installed a CSS rule block into the
-// document head, never re-install. Multiple PageReveal instances on
-// the same page-load share these.
-const INSTALLED_KEYFRAMES = new Set<string>();
-
-// Install the @keyframes for every variant ONCE at module load. Doing
-// it here (synchronously, before any component renders) avoids the
-// timing trap where a useEffect installs the keyframes AFTER the
-// `animation` property has already been applied to an element — once
-// CSS resolves `animation-name` against a missing keyframe set, the
-// animation is dead even if the keyframes are added later.
-if (typeof document !== 'undefined' && !INSTALLED_KEYFRAMES.has('__keyframes')) {
-  const styleEl = document.createElement('style');
-  styleEl.id = 'page-reveal-keyframes';
-  styleEl.dataset.pageReveal = 'keyframes';
-  styleEl.textContent = REAL_VARIANTS.map((v) => VARIANTS[v].keyframe).join(
-    '\n',
-  );
-  document.head.appendChild(styleEl);
-  INSTALLED_KEYFRAMES.add('__keyframes');
+interface Props {
+  children: ReactNode;
+  className?: string;
+  /** Which keyframe to use. Default `slide-up` — the universal
+   * choice. Callers that want a different feel per surface (homepage
+   * landing, listing detail, etc.) can override. */
+  variant?: PageRevealVariant;
 }
+
+// Stable per-mount scope class. We use useId() so server + client
+// agree on the class string (no hydration mismatch warning). Sub
+// the colons React uses internally with hyphens so the result is a
+// valid CSS identifier.
+function makeScope(rawId: string): string {
+  return `pr-${rawId.replace(/[^a-zA-Z0-9]/g, '')}`;
+}
+
+// Keyframes are global (one set covers every PageReveal instance on
+// the page). Render them once via a stable module-level <style>
+// stamp that we inline at the first render. They're tiny so the
+// duplication-across-pages cost is negligible vs the simplicity win.
+const KEYFRAMES_CSS = (Object.keys(VARIANTS) as PageRevealVariant[])
+  .map(
+    (v) =>
+      `@keyframes pr-${v}{from{${VARIANTS[v].from}}to{${VARIANTS[v].to}}}`,
+  )
+  .join('');
 
 export function PageReveal({
   children,
-  stagger = 0.18,
   className,
-  variant = 'random',
+  variant = 'slide-up',
 }: Props) {
-  // Locked timing — both come from module-level constants so a
-  // careless prop can't drift the cadence on a single page.
-  const delay = REVEAL_DELAY_SECONDS;
-  const duration = REVEAL_DURATION_SECONDS;
-  // Resolve `random` to a concrete variant ONCE per mount. useState's
-  // lazy initialiser runs on first render and persists across StrictMode.
-  const [resolvedVariant] = useState<Exclude<PageRevealVariant, 'random'>>(
-    () => {
-      if (variant === 'random') {
-        return REAL_VARIANTS[Math.floor(Math.random() * REAL_VARIANTS.length)];
-      }
-      return variant;
-    },
-  );
+  const rawId = useId();
+  const scope = makeScope(rawId);
+  const v = VARIANTS[variant];
 
-  // Per-instance CSS goes to document.head via useLayoutEffect so the
-  // rules are in place BEFORE the browser paints the data-reveal
-  // elements for the first time. Putting the <style> in JSX produces
-  // a brief flicker / animation-restart whenever React reconciles the
-  // tree — moving it to head means React can never touch it.
+  // Scope-local CSS. The `from`-state is the default (so SSR shows
+  // the children at the start of the animation, not at full
+  // opacity). Inside the no-preference media query we layer on the
+  // actual animation — reduced-motion users keep the SSR-rendered
+  // to-state via the `prefers-reduced-motion: reduce` branch.
   //
-  // We scope the per-instance CSS using a unique attribute selector
-  // (`[data-page-reveal="<id>"] [data-reveal]`) so two PageReveal
-  // mounts on the same page with different props don't collide.
-  const scopeId = useId();
-  const css = useMemo(() => {
-    const v = VARIANTS[resolvedVariant];
-    const scope = `[data-page-reveal="${scopeId}"]`;
-    const delays = Array.from({ length: 8 })
-      .map(
-        (_, i) =>
-          `${scope} [data-reveal]:nth-of-type(${i + 1}) { animation-delay: ${delay + i * stagger}s; }`,
-      )
-      .join('\n');
-    return `
-      ${scope} [data-reveal] {
-        ${v.from}
-        animation: ${v.keyframeName} ${duration}s cubic-bezier(0.22, 1, 0.36, 1) both;
-      }
-      ${delays}
-    `;
-  }, [resolvedVariant, delay, duration, stagger, scopeId]);
+  // Note: the from-state must include the END properties too, or
+  // browsers without animation support (very rare today) would paint
+  // the from-state forever. We solve this by giving reduced-motion
+  // users an explicit override that sets to-state.
+  const css =
+    `${KEYFRAMES_CSS}` +
+    `.${scope}>[data-reveal]{${v.from}}` +
+    `@media (prefers-reduced-motion: no-preference){` +
+    `.${scope}>[data-reveal]{` +
+    `animation:pr-${variant} ${DURATION_MS}ms cubic-bezier(0.22,1,0.36,1) both;` +
+    `animation-delay:calc(${DELAY_MS}ms + (var(--pr-i,0) * ${STAGGER_MS}ms));` +
+    `}` +
+    `}` +
+    `@media (prefers-reduced-motion: reduce){` +
+    `.${scope}>[data-reveal]{${v.to}animation:none;}` +
+    `}`;
 
-  useIsomorphicLayoutEffect(() => {
-    if (typeof document === 'undefined') return;
-    const id = `page-reveal-${scopeId}`;
-    let styleEl = document.getElementById(id) as HTMLStyleElement | null;
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = id;
-      styleEl.dataset.pageRevealInstance = 'true';
-      document.head.appendChild(styleEl);
-    }
-    styleEl.textContent = css;
-    return () => {
-      // Leave it in document.head — same reason as the keyframes block:
-      // if React strict-mode unmounts then remounts us, removing the
-      // style would break in-flight animations. Tiny memory cost.
-    };
-  }, [css, scopeId]);
+  // Auto-stagger: walk direct children, find the ones with
+  // `data-reveal`, and inject an incrementing `--pr-i` CSS variable
+  // so the CSS calc() picks up the right delay. Children that
+  // already specify their own `--pr-i` win. Non-element children
+  // (text / fragments) pass through untouched.
+  let revealIndex = 0;
+  const enhanced = Children.map(children, (child) => {
+    if (!isValidElement(child)) return child;
+    const props = (child as ReactElement<{
+      'data-reveal'?: boolean | string;
+      style?: CSSProperties;
+    }>).props;
+    if (!props['data-reveal']) return child;
+    const existing = (props.style ?? {}) as CSSProperties & Record<string, unknown>;
+    if (existing['--pr-i'] !== undefined) return child;
+    const idx = revealIndex++;
+    // Cast — CSSProperties doesn't type custom CSS variables.
+    const merged = { ...existing, ['--pr-i']: idx } as CSSProperties;
+    return cloneElement(child as ReactElement<{ style?: CSSProperties }>, {
+      style: merged,
+    });
+  });
 
   return (
-    <div className={className} data-page-reveal={scopeId}>
-      {children}
+    <div className={className ? `${scope} ${className}` : scope}>
+      {/* Inline <style> ships with the SSR'd HTML. Browsers accept
+          <style> inside <body> since HTML5 (this is the same trick
+          framework CSS-in-JS libraries use). */}
+      <style dangerouslySetInnerHTML={{ __html: css }} />
+      {enhanced}
     </div>
   );
 }
