@@ -38,6 +38,25 @@ export interface AskGgCitation {
   pages: number[];
 }
 
+/** A verified KB entry surfaced by the search-first flow. Rendered
+ *  as a card above the composer while the user is typing — clicking
+ *  "This helped" expands the full answer + bumps usefulCount, no
+ *  Claude call made. (Phase C search-first.) */
+export interface AskGgKbHit {
+  id: string;
+  title: string;
+  answer: string;
+  snippet: string;
+  category: string | null;
+  usefulCount: number;
+  rank: number;
+}
+
+export type AskGgConversationOutcome =
+  | 'RESOLVED'
+  | 'UNRESOLVED'
+  | 'ABANDONED';
+
 export interface AskGgUiMessage {
   /** Local-only ID for optimistic messages; replaced with the
    *  server-side ID once the post resolves. */
@@ -138,6 +157,18 @@ export interface UseAskGg {
   /** Phase B — upload 1-5 photos to Cloudinary via the backend. Used
    *  by the composer before calling send() with the returned URLs. */
   uploadPhotos: (files: File[]) => Promise<string[]>;
+  /** Phase C — search the verified KB. Used by the composer's
+   *  debounced search-as-you-type to surface cached answers BEFORE
+   *  the user spends a message on Claude. */
+  searchKb: (q: string) => Promise<AskGgKbHit[]>;
+  /** Phase C — user clicked "This helped" on a KB card. Bumps the
+   *  entry's usefulCount on the server (cheap counter; admin uses
+   *  it to prioritise high-value entries vs archive dead weight). */
+  markKbHelpful: (entryId: string) => Promise<void>;
+  /** Phase C — user answered the "did this solve it?" prompt on
+   *  the latest assistant turn. RESOLVED auto-creates a DRAFT KB
+   *  entry for the admin queue. */
+  markResolved: (outcome: AskGgConversationOutcome) => Promise<void>;
   /** Wipe local conversation state and start a fresh thread. Does
    *  NOT clear quota / tierGated / coolOff (those are server-truth). */
   reset: () => void;
@@ -421,6 +452,69 @@ export function useAskGg(): UseAskGg {
     [getToken],
   );
 
+  /** Phase C — KB search. Public endpoint, no auth needed. Empty /
+   *  short queries return []. Network errors swallow silently
+   *  (search-as-you-type shouldn't surface error UI). */
+  const searchKb = useCallback(async (q: string): Promise<AskGgKbHit[]> => {
+    const trimmed = q.trim();
+    if (trimmed.length < 5) return [];
+    try {
+      const r = await fetch(
+        `${API_URL}/ask-gg/kb/search?q=${encodeURIComponent(trimmed)}`,
+        { cache: 'no-store' },
+      );
+      if (!r.ok) return [];
+      return (await r.json()) as AskGgKbHit[];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  /** Phase C — POST /ask-gg/kb/:id/helpful. Fire-and-forget. */
+  const markKbHelpful = useCallback(
+    async (entryId: string): Promise<void> => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        await fetch(`${API_URL}/ask-gg/kb/${entryId}/helpful`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        // silent — UX continues regardless
+      }
+    },
+    [getToken],
+  );
+
+  /** Phase C — mark the current conversation RESOLVED / UNRESOLVED
+   *  / ABANDONED. RESOLVED triggers backend KB-draft creation
+   *  automatically. No-op when there's no active conversation yet
+   *  (you can't resolve nothing). */
+  const markResolved = useCallback(
+    async (outcome: AskGgConversationOutcome): Promise<void> => {
+      if (!conversationId) return;
+      try {
+        const token = await getToken();
+        if (!token) return;
+        await fetch(
+          `${API_URL}/ask-gg/conversations/${conversationId}/resolved`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ outcome }),
+          },
+        );
+      } catch {
+        // silent — user can mark again on next assistant turn
+      }
+    },
+    [conversationId, getToken],
+  );
+
   return {
     messages,
     conversationId,
@@ -432,6 +526,9 @@ export function useAskGg(): UseAskGg {
     error,
     send,
     uploadPhotos,
+    searchKb,
+    markKbHelpful,
+    markResolved,
     reset,
   };
 }

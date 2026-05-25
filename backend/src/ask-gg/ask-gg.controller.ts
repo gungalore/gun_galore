@@ -19,6 +19,7 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AskGgService } from './ask-gg.service';
+import { AskGgKbService } from './ask-gg-kb.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { AskGgConversationOutcome } from '@prisma/client';
 
@@ -42,6 +43,7 @@ import { AskGgConversationOutcome } from '@prisma/client';
 export class AskGgController {
   constructor(
     private readonly askGg: AskGgService,
+    private readonly kb: AskGgKbService,
     private readonly cloudinary: CloudinaryService,
   ) {}
 
@@ -185,5 +187,28 @@ export class AskGgController {
     @Body() body: { outcome: AskGgConversationOutcome },
   ) {
     return this.askGg.markResolved(clerkId, id, body.outcome);
+  }
+
+  /**
+   * Phase C — search the VERIFIED knowledge base. Hits a Postgres FTS
+   * index; sub-100ms typical. Frontend hits this debounced as the
+   * user types in the composer. Empty / short queries return [].
+   *
+   * @SkipThrottle — search-as-you-type would otherwise eat the 60/min
+   * global bucket. The query itself is cheap (indexed) and the result
+   * is bounded to 5 entries per call.
+   */
+  @Get('kb/search')
+  @SkipThrottle()
+  searchKb(@Query('q') q?: string) {
+    return this.kb.searchVerified(q ?? '', 5);
+  }
+
+  /** User clicked "This helped" on a KB card — bumps usefulCount.
+   *  Cheap counter; surfacedCount is bumped automatically inside the
+   *  search call so admin can see hit-rate vs help-rate. */
+  @Post('kb/:id/helpful')
+  markKbHelpful(@Param('id') id: string) {
+    return this.kb.markHelpful(id);
   }
 }

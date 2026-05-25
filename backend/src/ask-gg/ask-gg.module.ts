@@ -1,17 +1,35 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { AskGgService } from './ask-gg.service';
 import { AskGgClaudeService } from './ask-gg-claude.service';
 import { AskGgQuotaService } from './ask-gg-quota.service';
+import { AskGgKbService } from './ask-gg-kb.service';
 import { AskGgController } from './ask-gg.controller';
+import { AskGgKbAdminController } from './ask-gg-kb-admin.controller';
+import { AdminAuditService } from '../admin/admin-audit.service';
 import { ReloadingModule } from '../reloading/reloading.module';
 
 @Module({
   // ReloadingModule exports ReloadingService so AskGgClaudeService can
   // call searchPages + slicePagesAsPdf when answering reloading
   // questions (Phase D Sprint 2 tool-use loop).
-  imports: [ReloadingModule],
-  controllers: [AskGgController],
-  providers: [AskGgService, AskGgClaudeService, AskGgQuotaService],
-  exports: [AskGgService],
+  imports: [
+    ReloadingModule,
+    // For the admin KB-verification controller (uses AdminJwtGuard).
+    // Same secret/config as AdminModule — kept local here so we
+    // don't create a circular dep importing AdminModule.
+    JwtModule.register({
+      secret: process.env.JWT_ADMIN_SECRET || 'dev-admin-secret-change-in-prod',
+    }),
+  ],
+  controllers: [AskGgController, AskGgKbAdminController],
+  providers: [
+    AskGgService,
+    AskGgClaudeService,
+    AskGgQuotaService,
+    AskGgKbService,
+    AdminAuditService,
+  ],
+  exports: [AskGgService, AskGgKbService],
 })
 export class AskGgModule {}

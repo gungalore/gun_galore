@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AskGgClaudeService, AskGgChatMessage } from './ask-gg-claude.service';
 import { AskGgQuotaService } from './ask-gg-quota.service';
+import { AskGgKbService } from './ask-gg-kb.service';
 import {
   AskGgConversationOutcome,
   SubscriptionTier,
@@ -44,6 +45,7 @@ export class AskGgService {
     private readonly prisma: PrismaService,
     private readonly claude: AskGgClaudeService,
     private readonly quota: AskGgQuotaService,
+    private readonly kb: AskGgKbService,
   ) {}
 
   private async userIdFromClerk(clerkId: string): Promise<{
@@ -291,13 +293,27 @@ export class AskGgService {
     if (!c || c.userId !== user.id) {
       throw new NotFoundException('Conversation not found');
     }
-    return this.prisma.askGgConversation.update({
+    const updated = await this.prisma.askGgConversation.update({
       where: { id: conversationId },
       data: {
         outcome,
         resolvedAt: new Date(),
       },
     });
+    // Phase C: a RESOLVED conversation is the seller of the platform's
+    // knowledge — auto-spawn a DRAFT KB entry for the admin queue.
+    // Fire-and-forget: KB creation failure must NOT fail the resolve
+    // (the conversation is already updated).
+    if (outcome === AskGgConversationOutcome.RESOLVED) {
+      this.kb.createDraftFromConversation(conversationId).catch((err) => {
+        this.logger.warn(
+          `KB draft creation failed for ${conversationId}: ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      });
+    }
+    return updated;
   }
 
   /** Current quota snapshot for the signed-in user. Used by the

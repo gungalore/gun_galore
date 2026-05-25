@@ -37,6 +37,7 @@ import {
   type AskGgQuota,
   type AskGgFairUseCoolOff,
   type AskGgCitation,
+  type AskGgKbHit,
 } from '@/lib/use-ask-gg';
 
 function IconSparkles({ size = 22 }: { size?: number }) {
@@ -161,6 +162,14 @@ export default function AskGgPage() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  // Phase C — KB hits surfaced as the user types in the composer.
+  // Debounced 400ms after the last keystroke. Cleared when the user
+  // sends, or when they dismiss the helper.
+  const [kbHits, setKbHits] = useState<AskGgKbHit[]>([]);
+  const [kbDismissed, setKbDismissed] = useState(false);
+  // Phase C — resolve-prompt state. Reset whenever a new assistant
+  // turn lands so the user gets one bite at the apple per answer.
+  const [resolvedThisTurn, setResolvedThisTurn] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -169,6 +178,33 @@ export default function AskGgPage() {
     if (!scrollRef.current) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [ag.messages.length, ag.sending]);
+
+  // Phase C — debounced KB search as the user types. Triggers
+  // 400ms after the last keystroke. Skips while a send is in
+  // flight (results would be stale by the time they render).
+  useEffect(() => {
+    if (kbDismissed) return;
+    if (ag.sending) return;
+    const trimmed = composerValue.trim();
+    if (trimmed.length < 5) {
+      setKbHits([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      void ag.searchKb(trimmed).then(setKbHits);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [composerValue, kbDismissed, ag.sending, ag.searchKb]);
+
+  // Phase C — reset the resolve-prompt state every time a NEW
+  // assistant message arrives. The user gets one fresh prompt per
+  // answer instead of a one-shot for the whole conversation.
+  const latestAssistantId = [...ag.messages]
+    .reverse()
+    .find((m) => m.role === 'assistant')?.id;
+  useEffect(() => {
+    setResolvedThisTurn(false);
+  }, [latestAssistantId]);
 
   const showSignInCard = isLoaded && !isSignedIn;
   // FREE user with zero history AND quota exhausted → big hero.
@@ -232,7 +268,19 @@ export default function AskGgPage() {
 
     setComposerValue('');
     setPendingFiles([]);
+    // Phase C — sending clears the staged KB hits AND resets the
+    // dismissed flag so future typing surfaces fresh suggestions.
+    setKbHits([]);
+    setKbDismissed(false);
     await ag.send(v, imageUrls.length > 0 ? { imageUrls } : undefined);
+  }
+
+  function handleKbHelpful(entryId: string) {
+    void ag.markKbHelpful(entryId);
+    // Optimistic dismiss — user got what they came for, no need
+    // to keep the cards visible.
+    setKbHits([]);
+    setKbDismissed(true);
   }
 
   async function handleEscalate(originalContent: string) {
@@ -398,6 +446,31 @@ export default function AskGgPage() {
               </div>
             )}
           </div>
+
+          {/* Phase C — "Did this solve it?" prompt on the latest
+              assistant turn. Shows once per turn; dismisses on
+              resolve OR when the user sends a new message. Skipped
+              when there's no assistant message yet OR when a send
+              is in flight (the answer might be about to change). */}
+          {latestAssistantId && !resolvedThisTurn && !ag.sending && (
+            <ResolvePrompt
+              onResolve={(outcome) => {
+                void ag.markResolved(outcome);
+                setResolvedThisTurn(true);
+              }}
+            />
+          )}
+
+          {/* Phase C — KB search-first hits. Surface above the
+              composer as the user types; one click skips Claude
+              entirely and saves the cost. */}
+          {kbHits.length > 0 && !kbDismissed && (
+            <KbHitsRow
+              hits={kbHits}
+              onHelpful={(id) => handleKbHelpful(id)}
+              onDismiss={() => setKbDismissed(true)}
+            />
+          )}
 
           {/* Pre-composer chrome: fair-use cool-off > upgrade nudge >
               free-tier quota pill. At most one shows. */}
@@ -1053,6 +1126,280 @@ function CitationsRow({ citations }: { citations: AskGgCitation[] }) {
           p.{c.pages.length === 1 ? c.pages[0] : c.pages.join(',')}
         </span>
       ))}
+    </div>
+  );
+}
+
+/** Phase C — "Did this solve it?" pill rendered after the latest
+ *  assistant turn. Yes triggers a backend RESOLVED → spawns a DRAFT
+ *  KB entry the admin can verify, growing the search-first corpus.
+ *  No / Skip both dismiss; No marks UNRESOLVED so the analytics
+ *  dashboard can spot frequently-failing question patterns. */
+function ResolvePrompt({
+  onResolve,
+}: {
+  onResolve: (outcome: 'RESOLVED' | 'UNRESOLVED' | 'ABANDONED') => void;
+}) {
+  return (
+    <div
+      style={{
+        marginTop: 4,
+        padding: '8px 12px',
+        background: 'var(--bg-card)',
+        border: '0.5px solid var(--border)',
+        borderRadius: 999,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        fontSize: 12,
+        color: 'var(--text-secondary)',
+        flexWrap: 'wrap',
+      }}
+    >
+      <span style={{ fontStyle: 'italic' }}>Did that solve it?</span>
+      <button
+        type="button"
+        onClick={() => onResolve('RESOLVED')}
+        style={{
+          padding: '3px 12px',
+          borderRadius: 999,
+          background: 'rgba(120,180,90,0.12)',
+          border: '0.5px solid rgba(120,180,90,0.40)',
+          color: '#7eb45c',
+          fontSize: 11,
+          fontWeight: 600,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+        }}
+      >
+        Yes
+      </button>
+      <button
+        type="button"
+        onClick={() => onResolve('UNRESOLVED')}
+        style={{
+          padding: '3px 12px',
+          borderRadius: 999,
+          background: 'rgba(200,16,46,0.08)',
+          border: '0.5px solid rgba(200,16,46,0.30)',
+          color: 'var(--red)',
+          fontSize: 11,
+          fontWeight: 600,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+        }}
+      >
+        No
+      </button>
+      <button
+        type="button"
+        onClick={() => onResolve('ABANDONED')}
+        style={{
+          padding: '3px 12px',
+          borderRadius: 999,
+          background: 'transparent',
+          border: 'none',
+          color: 'var(--text-tertiary)',
+          fontSize: 11,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+        }}
+      >
+        Skip
+      </button>
+    </div>
+  );
+}
+
+/** Phase C — KB hit cards rendered above the composer. Each card is
+ *  collapsed by default (title + snippet + actions); clicking the
+ *  title expands to the full answer. "This helped" bumps usefulCount
+ *  + dismisses (user got their answer, no Claude call). "Ask anyway"
+ *  is implicit — they just hit Send. The X dismisses the whole row. */
+function KbHitsRow({
+  hits,
+  onHelpful,
+  onDismiss,
+}: {
+  hits: AskGgKbHit[];
+  onHelpful: (entryId: string) => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        padding: '10px 12px',
+        background: 'var(--bg-card)',
+        border: '0.5px solid var(--border)',
+        borderRadius: 10,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 8,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            textTransform: 'uppercase',
+            letterSpacing: 0.6,
+            color: 'var(--text-tertiary)',
+            fontWeight: 600,
+          }}
+        >
+          Others asked something similar
+        </span>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss suggestions"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-tertiary)',
+            cursor: 'pointer',
+            fontSize: 14,
+            padding: 0,
+            lineHeight: 1,
+          }}
+        >
+          ×
+        </button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {hits.map((hit) => (
+          <KbHitCard key={hit.id} hit={hit} onHelpful={() => onHelpful(hit.id)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KbHitCard({
+  hit,
+  onHelpful,
+}: {
+  hit: AskGgKbHit;
+  onHelpful: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div
+      style={{
+        background: 'var(--bg-inset)',
+        border: '0.5px solid var(--border)',
+        borderRadius: 8,
+        padding: '8px 10px',
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          width: '100%',
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          textAlign: 'left',
+          color: 'var(--text-primary)',
+          fontSize: 13,
+          fontWeight: 500,
+          fontFamily: 'inherit',
+        }}
+      >
+        {hit.title}
+      </button>
+      {!expanded && (
+        <p
+          style={{
+            margin: '4px 0 6px',
+            fontSize: 11,
+            color: 'var(--text-tertiary)',
+            lineHeight: 1.45,
+            whiteSpace: 'pre-wrap',
+          }}
+          // Snippet contains ts_headline output without HTML markup.
+          // Safe to render as plain text.
+        >
+          {hit.snippet}
+        </p>
+      )}
+      {expanded && (
+        <p
+          style={{
+            margin: '6px 0',
+            fontSize: 12,
+            color: 'var(--text-secondary)',
+            lineHeight: 1.55,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {hit.answer}
+        </p>
+      )}
+      <div
+        style={{
+          display: 'flex',
+          gap: 6,
+          alignItems: 'center',
+          marginTop: 4,
+        }}
+      >
+        <button
+          type="button"
+          onClick={onHelpful}
+          style={{
+            padding: '3px 10px',
+            borderRadius: 6,
+            background: 'rgba(120,180,90,0.12)',
+            border: '0.5px solid rgba(120,180,90,0.40)',
+            color: '#7eb45c',
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          This helped
+        </button>
+        {!expanded && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            style={{
+              padding: '3px 10px',
+              borderRadius: 6,
+              background: 'transparent',
+              border: '0.5px solid var(--border)',
+              color: 'var(--text-secondary)',
+              fontSize: 11,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Read full answer
+          </button>
+        )}
+        {hit.category && (
+          <span
+            style={{
+              marginLeft: 'auto',
+              fontSize: 10,
+              color: 'var(--text-tertiary)',
+              textTransform: 'uppercase',
+              letterSpacing: 0.4,
+            }}
+          >
+            {hit.category}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
