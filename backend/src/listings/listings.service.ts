@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,7 +12,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { BrowseListingsDto } from './dto/browse-listings.dto';
-import { Listing, ListingStatus } from '@prisma/client';
+import { Listing, ListingStatus, ListingType } from '@prisma/client';
 import {
   ListingModerationService,
   ListingModerationResult,
@@ -643,6 +644,13 @@ export class ListingsService {
       throw new BadRequestException('Cannot edit a sold or cancelled listing');
     }
 
+    // Marketplace integrity: once a buyer has committed (auction bid
+    // OR live take-a-shot offer in negotiation), the seller can no
+    // longer edit. Prevents bait-and-switch where a seller accepts
+    // commitment on one item then swaps it. assertEditable throws
+    // 409 if locked.
+    await this.assertEditable(listing);
+
     const updated = await this.prisma.listing.update({
       where: { id },
       data: { ...dto },
@@ -669,7 +677,10 @@ export class ListingsService {
   }
 
   async addImage(id: string, clerkId: string, file: Express.Multer.File) {
-    await this.assertOwner(id, clerkId);
+    const listing = await this.assertOwner(id, clerkId);
+    // Photos can't change after commitment — buyers commit on the
+    // images they see at bid / offer time. Same lock as update().
+    await this.assertEditable(listing);
 
     const imageCount = await this.prisma.listingImage.count({
       where: { listingId: id },
@@ -695,7 +706,11 @@ export class ListingsService {
   }
 
   async removeImage(listingId: string, imageId: string, clerkId: string) {
-    await this.assertOwner(listingId, clerkId);
+    const listing = await this.assertOwner(listingId, clerkId);
+    // Same lock — removing a photo after commitment would let the
+    // seller change which item buyers think they're bidding /
+    // offering on.
+    await this.assertEditable(listing);
 
     const image = await this.prisma.listingImage.findFirst({
       where: { id: imageId, listingId },
@@ -731,6 +746,109 @@ export class ListingsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * Marketplace-integrity gate — locks listing edits once a buyer
+   * has committed:
+   *
+   *   - AUCTION → any bid placed (bidCount > 0)
+   *   - TAKE_A_SHOT → any offer in PENDING / COUNTERED / ACCEPTED
+   *     (i.e. mid-negotiation or deal-effectively-done)
+   *   - BUY_NOW → not gated here; the existing status flow
+   *     (PENDING_PAYMENT → PENDING → SOLD) blocks edits at the
+   *     right point.
+   *
+   * Throws 409 ConflictException with a structured body so the
+   * frontend can render a clean explanation card instead of a
+   * generic error.
+   */
+  private async assertEditable(listing: {
+    id: string;
+    listingType: ListingType;
+    bidCount: number;
+  }): Promise<void> {
+    if (listing.listingType === ListingType.AUCTION && listing.bidCount > 0) {
+      throw new ConflictException({
+        message:
+          "This listing is locked because bids have been placed. You can't edit an auction once buyers have committed — cancel + relist if the listing is wrong.",
+        code: 'listing-locked-by-bids',
+        bidCount: listing.bidCount,
+        listingId: listing.id,
+      });
+    }
+    if (listing.listingType === ListingType.TAKE_A_SHOT) {
+      const activeOffer = await this.prisma.offer.findFirst({
+        where: {
+          listingId: listing.id,
+          status: { in: ['PENDING', 'COUNTERED', 'ACCEPTED'] },
+        },
+        select: { id: true, status: true },
+      });
+      if (activeOffer) {
+        throw new ConflictException({
+          message:
+            "This listing is locked because there's an offer in negotiation. You can't change the item mid-deal. Reject or wait for the offer to expire, then edit.",
+          code: 'listing-locked-by-offer',
+          offerStatus: activeOffer.status,
+          listingId: listing.id,
+        });
+      }
+    }
+  }
+
+  /** Public read of the lock state — used by /listings/:id detail so
+   *  the frontend can hide the Edit button without trial-and-error
+   *  on the update endpoint. Returns `{ canEdit, reason? }`. */
+  async getEditLockState(listingId: string): Promise<{
+    canEdit: boolean;
+    reason: string | null;
+    code: string | null;
+  }> {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+      select: { id: true, listingType: true, status: true, bidCount: true },
+    });
+    if (!listing) {
+      return { canEdit: false, reason: 'Listing not found', code: 'not-found' };
+    }
+    if (
+      listing.status === ListingStatus.SOLD ||
+      listing.status === ListingStatus.CANCELLED
+    ) {
+      return {
+        canEdit: false,
+        reason: `Listing is ${listing.status.toLowerCase()}.`,
+        code: 'listing-' + listing.status.toLowerCase(),
+      };
+    }
+    if (
+      listing.listingType === ListingType.AUCTION &&
+      listing.bidCount > 0
+    ) {
+      return {
+        canEdit: false,
+        reason: `Bids have been placed (${listing.bidCount}). The listing is locked.`,
+        code: 'listing-locked-by-bids',
+      };
+    }
+    if (listing.listingType === ListingType.TAKE_A_SHOT) {
+      const activeOffer = await this.prisma.offer.findFirst({
+        where: {
+          listingId: listing.id,
+          status: { in: ['PENDING', 'COUNTERED', 'ACCEPTED'] },
+        },
+        select: { status: true },
+      });
+      if (activeOffer) {
+        return {
+          canEdit: false,
+          reason: `An offer is in negotiation (${activeOffer.status.toLowerCase()}). The listing is locked.`,
+          code: 'listing-locked-by-offer',
+        };
+      }
+    }
+    return { canEdit: true, reason: null, code: null };
   }
 
   private async assertOwner(listingId: string, clerkId: string) {

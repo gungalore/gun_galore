@@ -120,6 +120,19 @@ export class ListingsController {
     return this.listingsService.update(id, clerkId, dto);
   }
 
+  /**
+   * Cheap pre-flight: returns whether the seller can edit this
+   * listing right now (bids placed? listing sold/cancelled?). The
+   * /listings/[id] detail page hits this so it can hide the Edit
+   * button server-side instead of trial-and-erroring on the PATCH.
+   * Public read — no auth needed; the answer is the same for any
+   * caller (it's not sensitive info).
+   */
+  @Get(':id/edit-lock')
+  editLock(@Param('id') id: string) {
+    return this.listingsService.getEditLockState(id);
+  }
+
   @Delete(':id')
   @UseGuards(ClerkGuard)
   @HttpCode(204)

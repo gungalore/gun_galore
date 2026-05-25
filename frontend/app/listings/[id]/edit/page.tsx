@@ -40,6 +40,16 @@ export default function EditListingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newImages, setNewImages] = useState<File[]>([]);
+  // Lock state — fetched in parallel with the listing. When canEdit
+  // is false, render the friendly "listing locked" card below
+  // instead of the form. Backend GET /listings/:id/edit-lock
+  // returns the unified shape covering AUCTION-bid + TAKE_A_SHOT
+  // -offer locks.
+  const [editLock, setEditLock] = useState<{
+    canEdit: boolean;
+    reason: string | null;
+    code: string | null;
+  } | null>(null);
 
   const [form, setForm] = useState({
     title: '',
@@ -68,12 +78,26 @@ export default function EditListingPage() {
     async function load() {
       try {
         const token = await getToken();
-        const res = await fetch(`${API_URL}/listings/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        // Fire both requests in parallel — listing detail (auth'd)
+        // and the public edit-lock probe.
+        const [res, lockRes] = await Promise.all([
+          fetch(`${API_URL}/listings/${id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_URL}/listings/${id}/edit-lock`, { cache: 'no-store' }),
+        ]);
         if (!res.ok) { router.push('/my/listings'); return; }
         const l: Listing = await res.json();
         setListing(l);
+        if (lockRes.ok) {
+          setEditLock(
+            (await lockRes.json()) as {
+              canEdit: boolean;
+              reason: string | null;
+              code: string | null;
+            },
+          );
+        }
         setForm({
           title: l.title,
           description: l.description,
@@ -179,6 +203,54 @@ export default function EditListingPage() {
   }
 
   if (!listing) return null;
+
+  // Marketplace-integrity gate: AUCTION listings with bids + TAKE_A_SHOT
+  // listings with active offers can't be edited. Backend throws 409 on
+  // any PATCH attempt — this client-side card just avoids letting the
+  // seller fill out the whole form for nothing. editLock state is
+  // fetched in the same useEffect that loads the listing (below).
+  if (editLock && !editLock.canEdit) {
+    const detail =
+      editLock.code === 'listing-locked-by-bids'
+        ? 'Bidders committed on the listing as it stands; changing the item now would be unfair to them. If the listing is genuinely wrong, head back to the listing page and cancel it (all bids will be refunded), then create a new one with the correct details.'
+        : editLock.code === 'listing-locked-by-offer'
+          ? "There's an offer in negotiation. Once you change the item, the offer would no longer be on what the buyer agreed to. Reject the offer (or wait for it to expire), then edit."
+          : (editLock.reason ?? 'This listing is locked.');
+    return (
+      <main className="max-w-[640px] mx-auto px-4 py-12">
+        <h1
+          className="text-xl mb-3"
+          style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+        >
+          Listing locked
+        </h1>
+        <p
+          className="text-sm mb-4"
+          style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+        >
+          {editLock.reason}
+        </p>
+        <p
+          className="text-sm mb-6"
+          style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+        >
+          {detail}
+        </p>
+        <a
+          href={`/listings/${listing.id}`}
+          className="inline-block px-4 py-2 rounded-[6px] text-sm"
+          style={{
+            background: 'var(--red)',
+            color: '#fff',
+            textDecoration: 'none',
+            fontWeight: 500,
+          }}
+        >
+          Back to listing
+        </a>
+      </main>
+    );
+  }
 
   const isFirearm = listing.category.isFirearm;
 
