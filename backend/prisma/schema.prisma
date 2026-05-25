@@ -384,6 +384,42 @@ model User {
   // by PushService.sendToUser when NotificationsService.persist
   // writes a non-dismissible (action-required) inbox row.
   pushSubscriptions PushSubscription[]
+
+  // ── Ask GG subscription tier ─────────────────────────────────────
+  // Orthogonal to SellerTier. SellerTier reflects marketplace
+  // reputation (NEW → DEALER); SubscriptionTier reflects the AI
+  // assistant subscription (FREE / MEMBER / PRO). A user can be
+  // both DEALER + PRO, or NEW + FREE, etc.
+  //
+  // FREE = default. MEMBER + PRO are paid via Peach recurring
+  // billing (see Subscription model). Admin can grant MEMBER/PRO
+  // manually for testing / comp accounts (recorded in
+  // AdminAuditEvent like any tier change).
+  subscriptionTier        SubscriptionTier @default(FREE)
+  // Peach card-vault ID. Created lazily on first paid subscription;
+  // reused for every subsequent recurring charge. Mirrors the
+  // zohoContactId pattern. NULL until the subscription billing
+  // rail goes live (operator-side blocker — separate work).
+  peachCustomerId         String?          @unique
+  // Verified-expert badge (Pro tier). Awarded by admin after the
+  // user has 5+ verified KB submissions. Visible site-wide next to
+  // their username on listings + KB entries + Q&A answers.
+  isVerifiedExpert        Boolean          @default(false)
+  verifiedExpertAt        DateTime?
+  expertBadgeReason       String?
+  // Lifetime counters for FREE-tier caps. Free users get 5 messages
+  // + 5 photo IDs per rolling 30 days; the AskGgUsage daily rollup
+  // is the source of truth for windows, but these lifetime counts
+  // make it cheap to render "you've used N total" in the UI without
+  // a daily-rollup aggregation query.
+  askGgLifetimeMessages   Int              @default(0)
+  askGgLifetimePhotoIds   Int              @default(0)
+
+  // Back-relations (Ask GG subscription + assistant)
+  subscription          Subscription?
+  askGgConversations    AskGgConversation[]
+  askGgKbEntries        AskGgKbEntry[]      @relation("KbAuthor")
+  askGgUsage            AskGgUsage[]
 }
 
 // =====================================================================
@@ -1836,4 +1872,218 @@ model CreditThreshold {
   lastAlarmAlertAt DateTime? // dedup so alarm doesn't fire more than once per 6h
   enabled          Boolean   @default(true)
   updatedAt        DateTime  @updatedAt
+}
+
+// =====================================================================
+// Ask GG — AI assistant subscription
+// =====================================================================
+// Sister product to the M1-M5 marketplace. Paid AI chat assistant
+// with photo identification, knowledge base, reloading-data lookups,
+// ballistic calculators, renewal reminders. See the Ask GG plan
+// file at C:\Users\gerha\.claude\plans\zesty-forging-stardust.md
+// for the full spec + phasing.
+//
+// Phase A (current) scope:
+//   - SubscriptionTier on User (FREE / MEMBER / PRO)
+//   - Subscription + SubscriptionCharge models (billing rail, only
+//     wires up once Peach card-tokenisation lands)
+//   - Conversations + messages + per-message cost tracking
+//   - KB entries + per-day usage rollup
+// Models exist now even where their full lifecycle (billing,
+// KB-verification, embedding search) is built in later drops —
+// keeps the schema migrations single + future-proof.
+
+enum SubscriptionTier {
+  FREE
+  MEMBER
+  PRO
+}
+
+enum SubscriptionPaymentStatus {
+  ACTIVE       // current period valid, will auto-renew at currentPeriodEnd
+  PAST_DUE     // last charge failed; in retry window
+  SUSPENDED    // 3rd retry failed; tier downgraded to FREE pending payment update
+  CANCELLED    // user-initiated cancel; remains valid until currentPeriodEnd
+}
+
+enum AskGgConversationOutcome {
+  UNRESOLVED   // default; user hasn't responded to the "did this solve it?" prompt
+  RESOLVED     // user marked the conversation as helpful — eligible for KB
+  ABANDONED    // user marked unhelpful or never returned
+}
+
+enum AskGgKbStatus {
+  DRAFT        // auto-created from a RESOLVED conversation, awaiting admin review
+  SUBMITTED    // user-edited a draft and re-submitted for admin attention
+  VERIFIED     // admin approved — surfaces in search results first
+  ARCHIVED     // soft-deleted; admin can resurrect
+}
+
+// Subscription billing record. ONE row per User; the user's tier
+// lives on User.subscriptionTier as the hot-path read. This model
+// tracks the recurring-billing lifecycle (period boundaries, retry
+// state, Peach customer linkage).
+//
+// During Phase A (pre-Peach-tokenisation) the row is created only
+// by admin grants (subscriptionTier change in /admin/users/[id]
+// writes both User.subscriptionTier AND this row). When Peach
+// recurring billing lands, POST /subscriptions creates this row
+// post-checkout and the daily billing cron advances the period.
+model Subscription {
+  id                 String                    @id @default(cuid())
+  userId             String                    @unique
+  user               User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier               SubscriptionTier
+  status             SubscriptionPaymentStatus @default(ACTIVE)
+  billingCycle       String                    // 'monthly' | 'annual' | 'comp' (admin grant, no billing)
+  amountCents        Int                       // ZAR cents per cycle. 0 for comp accounts.
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean                   @default(false)
+  // Peach vault ID for recurring charges. NULL for comp accounts +
+  // pre-Peach-tokenisation grants. Mirrored from User.peachCustomerId
+  // at signup so the cron doesn't need to JOIN.
+  peachCustomerId    String?
+  // Zoho Books customer ID for invoice / receipt linkage. Lazy-
+  // created on first successful charge. Same pattern as
+  // User.zohoContactId for marketplace transactions.
+  zohoCustomerId     String?
+  lastChargeAt       DateTime?
+  failedChargeCount  Int                       @default(0)
+  // Optional fields surfaced in Pro-tier business receipts (Phase E).
+  businessName       String?
+  vatNumber          String?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  charges            SubscriptionCharge[]
+
+  // Index supports the daily billing cron:
+  // "WHERE status = ACTIVE AND currentPeriodEnd <= now AND
+  //  cancelAtPeriodEnd = false"
+  @@index([status, currentPeriodEnd])
+}
+
+// One row per recurring charge attempt (success or failure). Drives
+// the billing-history page on /subscriptions + admin spend audit.
+model SubscriptionCharge {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amountCents    Int
+  status         String       // 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'REFUNDED'
+  peachPaymentId String?
+  zohoReceiptId  String?
+  errorMessage   String?
+  attemptCount   Int          @default(1)
+  chargedAt      DateTime     @default(now())
+
+  @@index([subscriptionId, chargedAt(sort: Desc)])
+}
+
+// A single Ask GG chat thread. Most users will have many.
+//
+// `title` is the first user message truncated to 80 chars (auto-set
+// on create; never edited). Conversation history page renders by
+// title for fast scanning.
+//
+// `outcome` flips when the user responds to the post-assistant
+// "did this solve it?" prompt. RESOLVED conversations become
+// AskGgKbEntry DRAFT rows automatically (Phase C wiring).
+//
+// `resolvedByMatch` is set when the conversation was answered by
+// surfacing a KB hit (no Claude call fired). Powers the per-day
+// cost dashboard's "KB-vs-Claude split" chart.
+model AskGgConversation {
+  id              String                   @id @default(cuid())
+  userId          String
+  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String?
+  outcome         AskGgConversationOutcome @default(UNRESOLVED)
+  resolvedAt      DateTime?
+  resolvedByMatch String?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  messages        AskGgMessage[]
+  kbEntry         AskGgKbEntry?
+
+  @@index([userId, updatedAt(sort: Desc)])
+}
+
+// One row per message in a conversation. Both user + assistant turns
+// land here so the full history is replayable.
+//
+// `imageUrls` is populated for vision messages (Phase B). Up to 5
+// Cloudinary URLs per message, matching MAX_VISION_PHOTOS in the
+// existing listing-moderation pattern.
+//
+// Token + cost columns make per-user spend visibility cheap —
+// something the existing Claude services (moderation, dealer
+// verification) don't track today.
+model AskGgMessage {
+  id               String            @id @default(cuid())
+  conversationId   String
+  conversation     AskGgConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role             String            // 'user' | 'assistant' | 'system'
+  content          String
+  imageUrls        String[]
+  model            String?           // 'claude-sonnet-4-6', 'claude-haiku-4-5-…', for cost audit
+  promptTokens     Int?
+  completionTokens Int?
+  costUsd          Float?
+  createdAt        DateTime          @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// Knowledge base entry. Created automatically when a conversation
+// is marked RESOLVED (Phase C wiring); curated + verified by admin.
+// VERIFIED entries surface first in the search-first flow so future
+// users with similar questions get cached answers instead of fresh
+// Claude calls — cost per question decreases as the KB matures.
+//
+// `embedding` is a pgvector column for cosine-similarity search
+// (Phase C). NULL for now; backfilled when embeddings infrastructure
+// lands.
+model AskGgKbEntry {
+  id                   String             @id @default(cuid())
+  sourceConversationId String?            @unique
+  sourceConversation   AskGgConversation? @relation(fields: [sourceConversationId], references: [id])
+  authorId             String
+  author               User               @relation("KbAuthor", fields: [authorId], references: [id])
+  title                String
+  question             String
+  answer               String
+  category             String?
+  tags                 String[]
+  status               AskGgKbStatus      @default(DRAFT)
+  verifiedById         String?
+  verifiedAt           DateTime?
+  usefulCount          Int                @default(0)
+  surfacedCount        Int                @default(0)
+  embedding            Bytes?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([status, verifiedAt(sort: Desc)])
+  @@index([category])
+}
+
+// Per-user-per-day usage rollup. Powers free-tier caps (5 photo
+// IDs + 5 messages per rolling 30 days) and Member/Pro fair-use
+// rate caps (admin-configurable via SettingsService).
+//
+// One row per user per UTC day. Bumped synchronously on message
+// send + photo identification. Queries aggregate over date ranges
+// to enforce caps + drive the admin usage dashboard.
+model AskGgUsage {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day          DateTime // truncated to date (00:00 UTC) on write
+  messageCount Int      @default(0)
+  photoIdCount Int      @default(0)
+  costUsdCents Int      @default(0)
+
+  @@unique([userId, day])
+  @@index([day])
 }

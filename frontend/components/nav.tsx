@@ -121,6 +121,41 @@ export function Nav() {
                 {link.label}
               </Link>
             ))}
+            {/* Ask GG — paid AI assistant, deliberately set apart from
+                SHOP_LINKS (it's not a shopping surface). Sparkles icon
+                + slight accent so it reads as "different product". The
+                installed-PWA equivalent is the dedicated tab in the
+                bottom-tab-bar (5-tab layout, sparkles icon, same colour
+                language). Mobile-web users reach it via the hamburger
+                drawer's Assistant section below. */}
+            <Link
+              href="/ask-gg"
+              style={{ color: 'var(--text-secondary)' }}
+              className="flex items-center gap-1.5 hover:text-[#f5f5f5] transition-colors"
+              aria-label="Ask GG — AI assistant"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden
+              >
+                <path
+                  d="M12 4 L13.6 9.4 L19 11 L13.6 12.6 L12 18 L10.4 12.6 L5 11 L10.4 9.4 Z"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M18.5 4 L19 5.5 L20.5 6 L19 6.5 L18.5 8 L18 6.5 L16.5 6 L18 5.5 Z"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              Ask GG
+            </Link>
           </div>
 
           {/* Live search — desktop only. On mobile it lives inside the
@@ -399,6 +434,57 @@ export function Nav() {
                   </Link>
                 ))}
               </nav>
+            </div>
+
+            {/* Assistant section — Ask GG. Separate from Shop because
+                it's a paid AI feature, not a shopping surface. On the
+                installed PWA the equivalent entry is the dedicated
+                bottom-tab-bar tab; here in the mobile-web drawer it
+                lives as its own section so the entry is discoverable
+                even outside the installed app. */}
+            <div
+              className="px-4 py-4"
+              style={{ borderTop: '0.5px solid var(--border)' }}
+            >
+              <p
+                className="text-xs uppercase mb-2"
+                style={{ color: 'var(--text-tertiary)', letterSpacing: '0.08em' }}
+              >
+                Assistant
+              </p>
+              <Link
+                href="/ask-gg"
+                className="px-3 py-3 rounded-[6px] text-base flex items-center gap-2"
+                style={{
+                  color: 'var(--text-primary)',
+                  textDecoration: 'none',
+                  background: 'transparent',
+                  fontWeight: 500,
+                }}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden
+                  style={{ color: 'var(--red)' }}
+                >
+                  <path
+                    d="M12 4 L13.6 9.4 L19 11 L13.6 12.6 L12 18 L10.4 12.6 L5 11 L10.4 9.4 Z"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M18.5 4 L19 5.5 L20.5 6 L19 6.5 L18.5 8 L18 6.5 L16.5 6 L18 5.5 Z"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                Ask GG
+              </Link>
             </div>
 
             {/* Account section — what's shown depends on sign-in state */}

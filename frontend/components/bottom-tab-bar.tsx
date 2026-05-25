@@ -21,14 +21,15 @@
 //                 badge in the top-right corner of the bell.
 //   3. Sell     → /listings/new (centred, raised red FAB — the
 //                 prominent primary action).
-//   4. Ask GG   → /ask-gg. Sparkles icon. Placeholder for an upcoming
-//                 AI assistant (find listings, answer firearm questions,
-//                 help with checkout). Tab exists today so the nav
-//                 reads as intended on launch; route renders a
-//                 Coming-soon page until the feature ships.
-//                 (Wishlist used to live in this slot — it moved to
-//                 the 25% button next to the search bar at the top of
-//                 the PWA. See TopWishlistButton.)
+//   4. Ask GG   → /ask-gg. Sparkles icon. Paid AI assistant — answers
+//                 firearm / shooting / SA gun-law questions, identifies
+//                 firearms from photos (Phase B), helps with checkout
+//                 and reloading. FREE tier sees an upgrade card; MEMBER
+//                 and PRO tiers get the live chat. Topic-gated at the
+//                 system-prompt level so it won't entertain off-topic
+//                 questions. (Wishlist used to live in this slot — it
+//                 moved to the 25% button next to the search bar at
+//                 the top of the PWA. See TopWishlistButton.)
 //   5. More     → bottom sheet headed by the user's avatar + username,
 //                 followed by My account / Shop / Legal sections.
 //                 All `/my/*` destinations + /dashboard + /profile
@@ -366,8 +367,10 @@ export function BottomTabBar() {
     {
       key: 'ask-gg',
       label: 'Ask GG',
-      // Currently a Coming-soon placeholder page; future home of an
-      // AI assistant. No auth gate — anyone can preview the feature.
+      // Paid AI assistant. Page itself is open (no auth gate at the
+      // route level) so signed-out users see the marketing/upgrade
+      // surface; FREE tier sees an upgrade card; MEMBER + PRO get
+      // the live chat.
       href: '/ask-gg',
       isActive: (p) => p.startsWith('/ask-gg'),
     },
@@ -426,7 +429,8 @@ export function BottomTabBar() {
         return <IconPlus />;
       case 'ask-gg':
         // Sparkles icon — universal "AI / smart helper" affordance.
-        // No badge: the route is a placeholder, nothing to count.
+        // Drop 1 ships no badge; future drops can surface "N messages
+        // left this month" for FREE users (their 5-msg cap).
         return <IconSparkles />;
       case 'more':
         return <IconMore />;
