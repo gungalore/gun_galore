@@ -48,6 +48,10 @@ export interface AskGgUiMessage {
   /** Reloading-manual citations attached to this assistant message
    *  (always empty / undefined for user messages). */
   citations?: AskGgCitation[];
+  /** Phase B — Cloudinary URLs of photos the user attached to this
+   *  message (always empty / undefined for assistant messages).
+   *  Rendered as inline thumbnails inside the user bubble. */
+  imageUrls?: string[];
   /** When true, this message is the optimistic pre-post placeholder
    *  for the user's just-typed input. Rendered with a subtle muted
    *  state until the server confirms it. */
@@ -65,6 +69,19 @@ export interface AskGgQuota {
   /** Length of the active window in ms (30d / 1h). Lets the frontend
    *  format the right copy ("this month" vs "this hour"). */
   windowLengthMs: number;
+  /** Phase B — separate photo-ID counter. FREE caps at 5/30d; MEMBER
+   *  and PRO are unlimited (only the hourly message cap applies). */
+  photos: AskGgPhotoQuota;
+}
+
+export interface AskGgPhotoQuota {
+  tier: 'FREE' | 'MEMBER' | 'PRO';
+  used: number;
+  cap: number;
+  remaining: number;
+  /** True for MEMBER + PRO — no photo cap, just the hourly message
+   *  rate. Frontend uses this to hide the "N left" pill on paid tiers. */
+  unlimited: boolean;
 }
 
 export interface AskGgFairUseCoolOff {
@@ -76,7 +93,12 @@ export interface AskGgFairUseCoolOff {
 interface SendResponse {
   conversationId: string;
   isNew: boolean;
-  userMessage: { id: string; role: 'user'; content: string };
+  userMessage: {
+    id: string;
+    role: 'user';
+    content: string;
+    imageUrls?: string[];
+  };
   assistantMessage: {
     id: string;
     role: 'assistant';
@@ -109,7 +131,13 @@ export interface UseAskGg {
   fairUseCoolOff: AskGgFairUseCoolOff | null;
   /** Last error message, if any. Cleared on next successful send. */
   error: string | null;
-  send: (content: string, escalate?: boolean) => Promise<void>;
+  send: (
+    content: string,
+    opts?: { escalate?: boolean; imageUrls?: string[] },
+  ) => Promise<void>;
+  /** Phase B — upload 1-5 photos to Cloudinary via the backend. Used
+   *  by the composer before calling send() with the returned URLs. */
+  uploadPhotos: (files: File[]) => Promise<string[]>;
   /** Wipe local conversation state and start a fresh thread. Does
    *  NOT clear quota / tierGated / coolOff (those are server-truth). */
   reset: () => void;
@@ -122,6 +150,7 @@ interface QuotaResponseBody {
   remaining: number;
   windowResetsAt: string;
   windowLengthMs: number;
+  photos: AskGgPhotoQuota;
 }
 
 interface QuotaExhaustedBody {
@@ -195,9 +224,21 @@ export function useAskGg(): UseAskGg {
   }, [fairUseCoolOff, refreshQuota]);
 
   const send = useCallback(
-    async (content: string, escalate?: boolean) => {
+    async (
+      content: string,
+      opts: { escalate?: boolean; imageUrls?: string[] } = {},
+    ) => {
       const trimmed = content.trim();
-      if (!trimmed || sending || tierGated || fairUseCoolOff) return;
+      const imageUrls = opts.imageUrls ?? [];
+      // Allow photo-only sends (no text). Reject only when truly empty.
+      if (
+        (!trimmed && imageUrls.length === 0) ||
+        sending ||
+        tierGated ||
+        fairUseCoolOff
+      ) {
+        return;
+      }
       setError(null);
 
       // Optimistic user message — shows immediately, gets replaced
@@ -207,6 +248,7 @@ export function useAskGg(): UseAskGg {
         id: optimisticId,
         role: 'user',
         content: trimmed,
+        imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
         pending: true,
       };
       setMessages((prev) => [...prev, optimisticUser]);
@@ -228,7 +270,8 @@ export function useAskGg(): UseAskGg {
           body: JSON.stringify({
             conversationId,
             content: trimmed,
-            escalate: escalate ?? false,
+            escalate: opts.escalate ?? false,
+            imageUrls,
           }),
         });
 
@@ -298,6 +341,10 @@ export function useAskGg(): UseAskGg {
             id: data.userMessage.id,
             role: 'user',
             content: data.userMessage.content,
+            imageUrls:
+              data.userMessage.imageUrls && data.userMessage.imageUrls.length > 0
+                ? data.userMessage.imageUrls
+                : undefined,
           },
           {
             id: data.assistantMessage.id,
@@ -335,6 +382,45 @@ export function useAskGg(): UseAskGg {
     // — they reflect server state, not conversation state.
   }, []);
 
+  /** Phase B — upload 1-5 photos to Cloudinary via POST /ask-gg/uploads.
+   *  Returns the Cloudinary URLs. Caller passes them into send() via
+   *  `opts.imageUrls`. Validates client-side first to avoid pointless
+   *  round-trips for files the backend would reject. */
+  const uploadPhotos = useCallback(
+    async (files: File[]): Promise<string[]> => {
+      if (files.length === 0) return [];
+      if (files.length > 5) {
+        throw new Error('Up to 5 photos per upload.');
+      }
+      for (const f of files) {
+        if (!/^image\/(jpeg|png|webp)$/.test(f.type)) {
+          throw new Error(`Unsupported file type: ${f.name}. JPG, PNG, WebP only.`);
+        }
+        if (f.size > 10 * 1024 * 1024) {
+          throw new Error(`${f.name} is too large — 10 MB max per photo.`);
+        }
+      }
+      const token = await getToken();
+      if (!token) throw new Error('Sign in first.');
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      const r = await fetch(`${API_URL}/ask-gg/uploads`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (!r.ok) {
+        const body = (await r.json().catch(() => null)) as {
+          message?: string;
+        } | null;
+        throw new Error(body?.message ?? `Upload failed (${r.status}).`);
+      }
+      const data = (await r.json()) as { urls: string[] };
+      return data.urls;
+    },
+    [getToken],
+  );
+
   return {
     messages,
     conversationId,
@@ -345,6 +431,7 @@ export function useAskGg(): UseAskGg {
     fairUseCoolOff,
     error,
     send,
+    uploadPhotos,
     reset,
   };
 }

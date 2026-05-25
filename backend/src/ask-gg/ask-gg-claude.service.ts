@@ -270,10 +270,26 @@ export class AskGgClaudeService {
 
     // Build the running message array. Anthropic SDK takes a separate
     // system string (not a "system role" message in the array).
-    const messages: MessageParam[] = history.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
+    // User messages with imageUrls become an array of image blocks +
+    // a text block — that's how Claude vision works (image content
+    // blocks of type 'url' carrying the Cloudinary URL).
+    const messages: MessageParam[] = history.map((m) => {
+      const urls = m.imageUrls ?? [];
+      if (m.role === 'user' && urls.length > 0) {
+        const imageBlocks: ContentBlockParam[] = urls.map((url) => ({
+          type: 'image' as const,
+          source: { type: 'url' as const, url },
+        }));
+        return {
+          role: 'user' as const,
+          content: [
+            ...imageBlocks,
+            { type: 'text' as const, text: m.content || ' ' },
+          ],
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
 
     // Escalation prepends a brief reminder so Opus knows it's the
     // retry pass. Keeps the existing conversation intact.
@@ -568,6 +584,204 @@ export class AskGgClaudeService {
           is_error: true,
         },
       ];
+    }
+  }
+
+  /**
+   * Phase B Sprint 2 — one-shot photo identification for the
+   * /listings/new "Help me describe this" button. Different shape
+   * from complete(): no conversation history, no tool-use loop, no
+   * persistence — just photo bytes in, structured JSON proposal out.
+   *
+   * The JSON proposal is rendered as a preview card on the listings
+   * form; user clicks "Apply" to pre-fill title / description /
+   * category / condition. Worst-case Claude returns garbage JSON →
+   * we surface a friendly error and the user keeps typing.
+   */
+  async identifyFromPhotos(
+    photos: Array<{ base64: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' }>,
+    opts: { categoryHint?: string; categoryTree?: string } = {},
+  ): Promise<{
+    proposal: {
+      title: string;
+      description: string;
+      manufacturer: string | null;
+      model: string | null;
+      calibre: string | null;
+      condition: 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR' | null;
+      suggestedCategorySlug: string | null;
+      notes: string | null;
+      confidence: 'high' | 'medium' | 'low';
+    } | null;
+    rawText: string;
+    model: string;
+    promptTokens: number | null;
+    completionTokens: number | null;
+    costUsd: number | null;
+  }> {
+    const model = MODEL_DEFAULT;
+
+    if (!this.client) {
+      return {
+        proposal: null,
+        rawText: '',
+        model,
+        promptTokens: null,
+        completionTokens: null,
+        costUsd: null,
+      };
+    }
+
+    if (photos.length === 0) {
+      return {
+        proposal: null,
+        rawText: 'No photos provided.',
+        model,
+        promptTokens: null,
+        completionTokens: null,
+        costUsd: null,
+      };
+    }
+
+    // Stricter system prompt: JSON-only, no preamble. Claude is good
+    // at this when told plainly. We re-parse on the server to validate.
+    //
+    // Category guidance: we pass the operator's actual category tree
+    // (top-level → sub-categories) so Claude can pick the most
+    // SPECIFIC matching slug. e.g. for a bolt-action hunting rifle
+    // Claude returns "rifles-bolt-action" not just "rifles", giving
+    // the listing form a more accurate pre-fill.
+    const categoryGuidance = opts.categoryTree
+      ? `\n\nAVAILABLE CATEGORIES (top-level → sub-categories — indentation shows hierarchy):\n${opts.categoryTree}\n\nPick the most SPECIFIC slug that fits the item. Prefer a sub-category slug over its parent when the photos give you enough confidence. If unsure between sub-categories, return the parent slug. Return null only if no category fits at all.`
+      : '\n\nReturn one of these top-level slugs in suggestedCategorySlug, or null: "rifles", "pistols", "shotguns", "ammunition", "optics", "accessories", "knives", "reloading", "safes", "cleaning", "holsters".';
+
+    const identifySystem = `You are an SA firearms identification assistant. Look at the photos and return a STRICT JSON object describing what you see, for use pre-filling a marketplace listing form.
+
+Output ONLY the JSON object, no markdown fence, no preamble, no explanation.
+
+Schema:
+{
+  "title": string,                        // Concise listing title: "Make Model — Calibre" preferred. e.g. "Beretta 92FS — 9mm Parabellum"
+  "description": string,                  // 2-4 sentences. Make, model, calibre, finish, condition observations, accessories visible.
+  "manufacturer": string | null,          // e.g. "Beretta". null if you can't tell.
+  "model": string | null,                 // e.g. "92FS". null if you can't tell.
+  "calibre": string | null,               // e.g. "9mm Parabellum". null if you can't tell.
+  "condition": "NEW" | "LIKE_NEW" | "GOOD" | "FAIR" | "POOR" | null,
+  "suggestedCategorySlug": string | null, // see CATEGORY guidance below
+  "notes": string | null,                 // Anything noteworthy: defects you see, missing parts, included items, that the listing should mention.
+  "confidence": "high" | "medium" | "low" // How sure you are about the make/model ID.
+}
+
+Rules:
+- If photos do not show a firearm or firearms-related item, return: {"title":"","description":"","manufacturer":null,"model":null,"calibre":null,"condition":null,"suggestedCategorySlug":null,"notes":"Photos do not appear to show firearms or related gear.","confidence":"low"}
+- Never guess a model number you can't actually see. Better to leave null than misidentify — wrong model in a listing kills buyer trust.
+- For condition: rely on visible wear, finish, scratches. If you can't tell, return null.
+- Be conservative on calibre — only commit if a stamp / barrel marking / mag is visible.${categoryGuidance}${
+      opts.categoryHint
+        ? `\n\nOperator hint: user has pre-selected category "${opts.categoryHint}". Bias toward that category (or one of its sub-categories) but override if photos clearly show something else.`
+        : ''
+    }`;
+
+    const imageBlocks: ContentBlockParam[] = photos.map((p) => ({
+      type: 'image' as const,
+      source: {
+        type: 'base64' as const,
+        media_type: p.mediaType,
+        data: p.base64,
+      },
+    }));
+
+    try {
+      const r = await this.client.messages.create({
+        model,
+        max_tokens: 1024,
+        system: identifySystem,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              ...imageBlocks,
+              {
+                type: 'text',
+                text: 'Identify the item(s) in these photos for a marketplace listing. Return JSON per the schema in your instructions.',
+              },
+            ],
+          },
+        ],
+      });
+
+      const textBlock = r.content.find((b) => b.type === 'text');
+      const rawText =
+        textBlock && textBlock.type === 'text' ? textBlock.text.trim() : '';
+
+      // Extract JSON — Claude usually obeys "no fence" but defends
+      // against ``` wrappers if it slips.
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      let proposal: Awaited<ReturnType<typeof this.identifyFromPhotos>>['proposal'] = null;
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+          proposal = {
+            title: String(parsed.title ?? '').slice(0, 200),
+            description: String(parsed.description ?? '').slice(0, 2000),
+            manufacturer: parsed.manufacturer
+              ? String(parsed.manufacturer).slice(0, 100)
+              : null,
+            model: parsed.model ? String(parsed.model).slice(0, 100) : null,
+            calibre: parsed.calibre ? String(parsed.calibre).slice(0, 50) : null,
+            condition: (['NEW', 'LIKE_NEW', 'GOOD', 'FAIR', 'POOR'].includes(
+              String(parsed.condition),
+            )
+              ? parsed.condition
+              : null) as
+              | 'NEW'
+              | 'LIKE_NEW'
+              | 'GOOD'
+              | 'FAIR'
+              | 'POOR'
+              | null,
+            suggestedCategorySlug: parsed.suggestedCategorySlug
+              ? String(parsed.suggestedCategorySlug).slice(0, 60)
+              : null,
+            notes: parsed.notes ? String(parsed.notes).slice(0, 500) : null,
+            confidence: (['high', 'medium', 'low'].includes(
+              String(parsed.confidence),
+            )
+              ? parsed.confidence
+              : 'low') as 'high' | 'medium' | 'low',
+          };
+        } catch (parseErr) {
+          this.logger.warn(
+            `identifyFromPhotos JSON parse failed: ${
+              parseErr instanceof Error ? parseErr.message : parseErr
+            }. Raw text length: ${rawText.length}`,
+          );
+        }
+      }
+
+      const promptTokens = r.usage?.input_tokens ?? null;
+      const completionTokens = r.usage?.output_tokens ?? null;
+      const costUsd = estimateCostUsd(
+        model,
+        promptTokens ?? 0,
+        completionTokens ?? 0,
+      );
+
+      return { proposal, rawText, model, promptTokens, completionTokens, costUsd };
+    } catch (err) {
+      this.logger.error(
+        `identifyFromPhotos failed (model ${model}): ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      return {
+        proposal: null,
+        rawText: '',
+        model,
+        promptTokens: null,
+        completionTokens: null,
+        costUsd: null,
+      };
     }
   }
 }

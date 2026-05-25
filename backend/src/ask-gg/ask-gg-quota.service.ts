@@ -28,6 +28,13 @@ const FREE_MSG_CAP_PER_30_DAYS = 5;
 const MEMBER_MSG_CAP_PER_HOUR = 20;
 const PRO_MSG_CAP_PER_HOUR = 60;
 
+// Phase B — photo identification cap. FREE users get 5 photo-bearing
+// requests per rolling 30-day window (separate counter from the
+// message cap so they can use their 5 messages PLUS 5 photo-IDs).
+// MEMBER + PRO are unlimited on photo IDs — counts only toward the
+// hourly fair-use message cap. Spec OD3.
+const FREE_PHOTO_CAP_PER_30_DAYS = 5;
+
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -152,7 +159,80 @@ export class AskGgQuotaService {
     );
   }
 
+  /**
+   * FREE-tier photo-ID cap check. Counts photo-bearing requests (NOT
+   * individual photos) in the rolling 30-day window — a 5-photo
+   * upload = 1 photo-ID for quota purposes. MEMBER + PRO are
+   * unlimited on photo IDs (caps only on hourly message rate via
+   * assertCanSend).
+   *
+   * Throws 403 { code: 'free-photo-quota-exhausted' } if FREE user
+   * has spent all 5 photo-IDs in the past 30 days. The frontend
+   * shows an upgrade nudge without flipping the whole chat to the
+   * UpgradeCard (text-only messages should still work for users who
+   * haven't blown their message cap).
+   */
+  async assertCanUploadPhotos(
+    userId: string,
+    tier: SubscriptionTier,
+  ): Promise<void> {
+    if (tier !== 'FREE') return; // MEMBER + PRO have no photo cap
+    const since = new Date(Date.now() - THIRTY_DAYS_MS);
+    const used = await this.countPhotoIdRequestsSince(userId, since);
+    if (used < FREE_PHOTO_CAP_PER_30_DAYS) return;
+    throw new ForbiddenException({
+      message: `You've used your ${FREE_PHOTO_CAP_PER_30_DAYS} free photo identifications this month. Upgrade to Member or Pro for unlimited.`,
+      code: 'free-photo-quota-exhausted',
+      cap: FREE_PHOTO_CAP_PER_30_DAYS,
+      used,
+      minTier: 'MEMBER',
+    });
+  }
+
+  /** Photo-ID snapshot — exposed via /ask-gg/quota alongside the
+   *  message snapshot so the frontend can render the "N photo IDs
+   *  left this month" pill for FREE users. */
+  async photoSnapshot(
+    userId: string,
+    tier: SubscriptionTier,
+  ): Promise<{
+    tier: SubscriptionTier;
+    used: number;
+    cap: number;
+    remaining: number;
+    unlimited: boolean;
+  }> {
+    if (tier !== 'FREE') {
+      return { tier, used: 0, cap: 0, remaining: 0, unlimited: true };
+    }
+    const since = new Date(Date.now() - THIRTY_DAYS_MS);
+    const used = await this.countPhotoIdRequestsSince(userId, since);
+    return {
+      tier,
+      used,
+      cap: FREE_PHOTO_CAP_PER_30_DAYS,
+      remaining: Math.max(0, FREE_PHOTO_CAP_PER_30_DAYS - used),
+      unlimited: false,
+    };
+  }
+
   // ─── internals ────────────────────────────────────────────────────
+
+  /** Count user messages WITH photos sent in the active window.
+   *  imageUrls is a String[] column; non-empty array = photo request. */
+  private async countPhotoIdRequestsSince(
+    userId: string,
+    since: Date,
+  ): Promise<number> {
+    return this.prisma.askGgMessage.count({
+      where: {
+        role: 'user',
+        createdAt: { gte: since },
+        conversation: { userId },
+        imageUrls: { isEmpty: false },
+      },
+    });
+  }
 
   private async countUserMessagesSince(
     userId: string,

@@ -1,22 +1,35 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  FileTypeValidator,
   Get,
+  MaxFileSizeValidator,
   Param,
+  ParseFilePipe,
   Post,
+  Query,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AskGgService } from './ask-gg.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { AskGgConversationOutcome } from '@prisma/client';
 
 /**
  * /ask-gg routes — Ask GG chat assistant.
  *
  *   POST   /ask-gg/messages                            send a new message
+ *   POST   /ask-gg/uploads                             upload 1–5 photos for chat (Phase B)
+ *   POST   /ask-gg/identify-listing                    one-shot photo ID for /listings/new (Phase B)
  *   GET    /ask-gg/conversations                       list user's conversations
+ *   GET    /ask-gg/quota                               current quota snapshot (messages + photos)
  *   GET    /ask-gg/conversations/:id                   single conversation
  *   POST   /ask-gg/conversations/:id/resolved          mark outcome
  *
@@ -27,7 +40,10 @@ import { AskGgConversationOutcome } from '@prisma/client';
 @Controller('ask-gg')
 @UseGuards(ClerkGuard)
 export class AskGgController {
-  constructor(private readonly askGg: AskGgService) {}
+  constructor(
+    private readonly askGg: AskGgService,
+    private readonly cloudinary: CloudinaryService,
+  ) {}
 
   // 30 messages per minute per IP cap. Belt-and-braces alongside the
   // future per-user fair-use cap — even if a single Clerk session is
@@ -38,9 +54,104 @@ export class AskGgController {
   send(
     @CurrentUser() clerkId: string,
     @Body()
-    body: { conversationId?: string; content: string; escalate?: boolean },
+    body: {
+      conversationId?: string;
+      content: string;
+      escalate?: boolean;
+      imageUrls?: string[];
+    },
   ) {
     return this.askGg.sendMessage(clerkId, body);
+  }
+
+  /**
+   * Phase B — upload 1-5 photos to Cloudinary so they can be attached
+   * to the next chat message. Returns the URLs the frontend includes
+   * in the subsequent POST /ask-gg/messages call.
+   *
+   * Frontend flow:
+   *   user picks photos → POST /ask-gg/uploads (multipart)
+   *     → backend streams each to Cloudinary
+   *     → returns { urls: string[] }
+   *   user types message + clicks Send →
+   *     POST /ask-gg/messages with { content, imageUrls }
+   *
+   * Tier gate: signed-in only (ClerkGuard). The actual photo-quota
+   * check happens at /messages send time so an over-cap FREE user
+   * gets a clean error instead of paying to upload to Cloudinary
+   * then being rejected at send.
+   */
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('uploads')
+  @UseInterceptors(
+    FilesInterceptor('files', 5, {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB each
+    }),
+  )
+  async uploads(
+    @CurrentUser() _clerkId: string,
+    @UploadedFiles(
+      new ParseFilePipe({
+        fileIsRequired: true,
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
+        ],
+      }),
+    )
+    files: Express.Multer.File[],
+  ): Promise<{ urls: string[] }> {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('At least one photo required.');
+    }
+    if (files.length > 5) {
+      throw new BadRequestException('Up to 5 photos per upload.');
+    }
+    const results = await Promise.all(
+      files.map((f) => this.cloudinary.uploadImage(f.buffer, 'ask-gg/photo-id')),
+    );
+    return { urls: results.map((r) => r.url) };
+  }
+
+  /**
+   * Phase B Sprint 2 — one-shot photo identification for the
+   * /listings/new "Help me describe this" button. Multipart upload of
+   * 1-5 photos; returns a structured proposal that pre-fills the
+   * listing form. No persistence, no conversation row.
+   */
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('identify-listing')
+  @UseInterceptors(
+    FilesInterceptor('files', 5, {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  async identifyListing(
+    @CurrentUser() clerkId: string,
+    @UploadedFiles(
+      new ParseFilePipe({
+        fileIsRequired: true,
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
+        ],
+      }),
+    )
+    files: Express.Multer.File[],
+    @Query('categoryHint') categoryHint?: string,
+  ) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('At least one photo required.');
+    }
+    const photos = files.map((f) => ({
+      base64: f.buffer.toString('base64'),
+      mediaType: f.mimetype as 'image/jpeg' | 'image/png' | 'image/webp',
+    }));
+    return this.askGg.identifyForListing(clerkId, photos, {
+      categoryHint: categoryHint?.trim() || undefined,
+    });
   }
 
   @Get('conversations')

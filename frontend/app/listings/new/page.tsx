@@ -9,6 +9,7 @@ import { CategoryPicker } from '@/components/category-picker';
 import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
 import { PhotoDropzone } from '@/components/photo-dropzone';
 import { StepAccordion, StepStatus } from '@/components/step-accordion';
+import IdentifyFromPhotos from './identify-from-photos';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import {
@@ -495,9 +496,17 @@ export default function NewListingPage() {
 
   // ─────────────────── Step completion (drives the accordion) ───────────
   // Each step's `isComplete` is a pure function of the form state.
-  // Four steps total: basics → selling → delivery+address → photos.
+  // Four steps total: photos → basics → selling → delivery+address.
+  // Photos moved to first so the AI "Help me describe this" button
+  // can pre-fill basics from the photos before the seller types.
   const stepComplete = useMemo(() => {
-    const step1 =
+    // Step 1 — at least 1 photo.
+    const step1 = images.length >= 1;
+
+    // Step 2 — basics: title, category, condition, description.
+    // Often pre-filled by the Step 1 AI helper, but the seller can
+    // always override / fill manually.
+    const step2 =
       form.title.trim().length >= 5 &&
       !!form.categoryId &&
       !!form.condition &&
@@ -505,11 +514,11 @@ export default function NewListingPage() {
 
     const hasPrice = parseFloat(form.price || '0') > 0;
     const hasReserve = parseFloat(form.reservePrice || '0') > 0;
-    // Step 2 is blocked until the seller picks a listing type AND
-    // satisfies that type's price requirement. The empty-string
-    // default for listingType (see useState above) means Step 2
-    // shows "Up next" until the seller actively chooses.
-    const step2 =
+    // Step 3 — listing type + price. Blocked until the seller picks
+    // a listing type AND satisfies that type's price requirement.
+    // The empty-string default for listingType (see useState above)
+    // means Step 3 shows "Up next" until the seller actively chooses.
+    const step3 =
       !form.listingType
         ? false
         : form.listingType === 'TAKE_A_SHOT'
@@ -518,7 +527,7 @@ export default function NewListingPage() {
             ? (hasPrice || hasReserve) && !!form.durationDays
             : hasPrice;
 
-    // Step 3 — delivery + address. The seller picks ≥1 shipping method
+    // Step 4 — delivery + address. The seller picks ≥1 shipping method
     // and fills the pickup address. NO locker selection here — for PUDO,
     // the seller drops at any locker using a delivery PIN; the buyer
     // picks the destination locker at checkout.
@@ -537,10 +546,8 @@ export default function NewListingPage() {
         parsedParcel.lengthCm != null &&
         parsedParcel.widthCm != null &&
         parsedParcel.heightCm != null);
-    const step3 =
+    const step4 =
       shippingMethods.length > 0 && addressFilled && parcelFilled;
-
-    const step4 = images.length >= 1;
 
     return { step1, step2, step3, step4 };
   }, [form, images, pickupAddress, shippingMethods, parsedParcel, isFirearm]);
@@ -565,7 +572,18 @@ export default function NewListingPage() {
   const [expandedStep, setExpandedStep] = useState<1 | 2 | 3 | 4 | null>(1);
   const isOpen = (n: number) => expandedStep === n;
 
+  // Furthest step the seller has explicitly advanced to via the Continue
+  // button (or Fill form / Continue inside the Step 1 AI helper). Header
+  // clicks can navigate BACK to any earlier step, but never FORWARD — the
+  // only way to unlock a future step is the explicit Continue action.
+  // This is what the operator asked for: "Only the continue or fill form
+  // button can jump to the next box."
+  const [furthestStep, setFurthestStep] = useState<1 | 2 | 3 | 4>(1);
+
   function toggleStep(n: 1 | 2 | 3 | 4) {
+    // Hard gate: can't jump forward via header click. Have to use the
+    // Continue / Fill form button.
+    if (n > furthestStep) return;
     if (statusFor(n) === 'locked') return;
     setExpandedStep((prev) => (prev === n ? null : n));
   }
@@ -577,17 +595,27 @@ export default function NewListingPage() {
       setExpandedStep(null);
     } else {
       setExpandedStep(next as 1 | 2 | 3 | 4);
+      // Bump the forward-navigation gate — this is the moment the
+      // seller has explicitly unlocked the next step's header.
+      setFurthestStep((prev) =>
+        Math.max(prev, next) as 1 | 2 | 3 | 4,
+      );
     }
-    // Continuing past Step 1 (the descriptive content) is the right
-    // moment to kick the moderation audit — fire-and-forget so the
-    // advance is instant for the seller. By the time they reach the
-    // Preview button, the result is usually already cached.
-    if (n === 1) {
+    // Continuing past Step 2 (basics — the descriptive content) is
+    // the right moment to kick the moderation audit — fire-and-forget
+    // so the advance is instant for the seller. By the time they reach
+    // the Preview button, the result is usually already cached. (Step
+    // numbers were re-ordered: Photos is now Step 1, basics Step 2.)
+    if (n === 2) {
       void runAudit();
     }
   }
 
   function statusFor(n: 1 | 2 | 3 | 4): StepStatus {
+    // Forward-navigation gate: any step beyond `furthestStep` is
+    // visually locked even if its prerequisites are met. The user
+    // has to hit Continue (or Fill form on Step 1) to unlock it.
+    if (n > furthestStep) return 'locked';
     const key = `step${n}` as keyof typeof stepComplete;
     if (stepComplete[key]) return 'complete';
     for (let i = 1; i < n; i++) {
@@ -792,9 +820,12 @@ export default function NewListingPage() {
   // auditResult so the modal opens instantly.
   async function runAudit(): Promise<PreviewResult | null> {
     if (auditing) return null;
-    // Step 1 must be complete before there's anything meaningful to
-    // audit. The Continue handler enforces this too but guard here.
-    if (!stepComplete.step1) return null;
+    // Step 2 (basics) must be complete before there's anything
+    // meaningful to audit — the moderator reads title + description.
+    // The Continue handler enforces this too but guard here. Note:
+    // step numbers were re-ordered (Photos first, basics second) so
+    // the basics gate is now step2, not step1.
+    if (!stepComplete.step2) return null;
     setAuditing(true);
     setAuditError(null);
     try {
@@ -1012,17 +1043,19 @@ export default function NewListingPage() {
 
   // Re-audit whenever the seller's photos change. Debounced 900ms so
   // rapid-fire uploads (drag of 3 files at once) collapse into a single
-  // audit. Only fires once Step 1 is complete — there's nothing useful
-  // to moderate before the seller has typed the description.
+  // audit. Only fires once basics (Step 2 after re-order) is complete —
+  // there's nothing useful to moderate before the seller has typed
+  // the description.
   useEffect(() => {
-    if (!stepComplete.step1) return;
+    if (!stepComplete.step2) return;
     const t = setTimeout(() => {
       void runAudit();
     }, 900);
     return () => clearTimeout(t);
     // We intentionally ONLY depend on `images` here, not on stepComplete
-    // or runAudit — those change every render. The Step-1 Continue
-    // handler covers the case where step1 just transitioned to complete.
+    // or runAudit — those change every render. The Step-2 (basics)
+    // Continue handler covers the case where step2 just transitioned
+    // to complete.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images]);
 
@@ -1138,21 +1171,73 @@ export default function NewListingPage() {
       >
         {/* ───── Form column ───── */}
         <div className="space-y-3 max-w-[820px]">
-          {/* Step 1 — About this item (basics + condition + firearm details) */}
+          {/* Step 1 — Photos. Photos first so the AI "Help me describe
+              this" button can pre-fill the other steps (title, category,
+              condition, description) before the seller types anything. */}
           <StepAccordion
             number={1}
-            title="About this item"
-            description="Tell buyers what it is, what shape it's in, and what makes it interesting."
+            title="Photos"
+            description="Buyers click photos first. Bright, sharp, multiple angles. 1–5 photos, drag to reorder."
             status={statusFor(1)}
             expanded={isOpen(1)}
             onToggle={() => toggleStep(1)}
             summary={
               stepComplete.step1
+                ? `${images.length} photo${images.length === 1 ? '' : 's'} — cover: ${images[0]?.name ?? '—'}`
+                : undefined
+            }
+            // Continue appears as soon as the first photo lands.
+            // Hidden entirely on a fresh form so the empty step reads
+            // as just the dropzone, no chrome.
+            hideContinue={images.length === 0}
+            onContinue={() => advanceFromStep(1)}
+            continueDisabled={!stepComplete.step1}
+          >
+            <PhotoDropzone
+              files={images}
+              onChange={setImages}
+              minFiles={1}
+              maxFiles={5}
+            />
+            {/* Ask GG "Help me describe this" — reads the photos and
+                proposes title / description / category / condition.
+                Pure helper: parent owns the form state via onApply.
+                Sits inside Step 1 so the seller can pre-fill Step 2
+                before typing anything. */}
+            <IdentifyFromPhotos
+              files={images}
+              currentCategoryId={form.categoryId}
+              categories={categories}
+              onApply={(patch) => {
+                setForm((f) => ({
+                  ...f,
+                  title: patch.title ?? f.title,
+                  description: patch.description ?? f.description,
+                  condition: patch.condition ?? f.condition,
+                  categoryId: patch.categoryId ?? f.categoryId,
+                }));
+              }}
+              // Unified advance — same gate as the Continue button so
+              // furthestStep bumps and the next header unlocks.
+              onAdvance={() => advanceFromStep(1)}
+            />
+          </StepAccordion>
+
+          {/* Step 2 — About this item (basics + condition + firearm details) */}
+          <StepAccordion
+            number={2}
+            title="About this item"
+            description="Tell buyers what it is, what shape it's in, and what makes it interesting."
+            status={statusFor(2)}
+            expanded={isOpen(2)}
+            onToggle={() => toggleStep(2)}
+            summary={
+              stepComplete.step2
                 ? `${form.title.trim()} · ${selectedCategory?.name ?? ''} · ${CONDITION_LABELS[form.condition as keyof typeof CONDITION_LABELS]}`.slice(0, 100)
                 : undefined
             }
-            onContinue={() => advanceFromStep(1)}
-            continueDisabled={!stepComplete.step1}
+            onContinue={() => advanceFromStep(2)}
+            continueDisabled={!stepComplete.step2}
           >
             <Field label="Title" required>
               <input
@@ -1338,16 +1423,16 @@ export default function NewListingPage() {
             </Field>
           </StepAccordion>
 
-          {/* Step 2 — Listing type + pricing */}
+          {/* Step 3 — Listing type + pricing */}
           <StepAccordion
-            number={2}
+            number={3}
             title="How are you selling?"
             description="Each option has different rules. You can always change later."
-            status={statusFor(2)}
-            expanded={isOpen(2)}
-            onToggle={() => toggleStep(2)}
+            status={statusFor(3)}
+            expanded={isOpen(3)}
+            onToggle={() => toggleStep(3)}
             summary={
-              stepComplete.step2
+              stepComplete.step3
                 ? `${
                     form.listingType === 'BUY_NOW'
                       ? 'Marketplace'
@@ -1357,8 +1442,8 @@ export default function NewListingPage() {
                   }${form.price ? ` · R${form.price}` : ''}`
                 : undefined
             }
-            onContinue={() => advanceFromStep(2)}
-            continueDisabled={!stepComplete.step2}
+            onContinue={() => advanceFromStep(3)}
+            continueDisabled={!stepComplete.step3}
           >
             <Field
               label="Listing type"
@@ -1722,25 +1807,25 @@ export default function NewListingPage() {
             )}
           </StepAccordion>
 
-          {/* Step 3 — Delivery & address */}
+          {/* Step 4 — Delivery & address */}
           <StepAccordion
-            number={3}
+            number={4}
             title="Delivery & address"
             description={
               isFirearm
                 ? 'Firearms must move through a SAPS-licensed dealer. Pick one or both arrangement options below, then add your pickup address.'
                 : 'Pick which couriers you offer, then add the pickup address. We use it to suggest your nearest Pudo locker.'
             }
-            status={statusFor(3)}
-            expanded={isOpen(3)}
-            onToggle={() => toggleStep(3)}
+            status={statusFor(4)}
+            expanded={isOpen(4)}
+            onToggle={() => toggleStep(4)}
             summary={
-              stepComplete.step3
+              stepComplete.step4
                 ? `${shippingMethods.length} method${shippingMethods.length === 1 ? '' : 's'} · ${pickupAddress.city || 'pickup set'}`
                 : undefined
             }
-            onContinue={() => advanceFromStep(3)}
-            continueDisabled={!stepComplete.step3}
+            onContinue={() => advanceFromStep(4)}
+            continueDisabled={!stepComplete.step4}
           >
             {/* Parcel info — captured first so the delivery picker below
                 can disable PUDO if the parcel overshoots locker limits.
@@ -1914,29 +1999,6 @@ export default function NewListingPage() {
                 load it. The buyer picks the destination locker at checkout.
               </p>
             )}
-          </StepAccordion>
-
-          {/* Step 4 — Photos */}
-          <StepAccordion
-            number={4}
-            title="Photos"
-            description="Buyers click photos first. Bright, sharp, multiple angles. 1–5 photos, drag to reorder."
-            status={statusFor(4)}
-            expanded={isOpen(4)}
-            onToggle={() => toggleStep(4)}
-            summary={
-              stepComplete.step4
-                ? `${images.length} photo${images.length === 1 ? '' : 's'} — cover: ${images[0]?.name ?? '—'}`
-                : undefined
-            }
-            hideContinue
-          >
-            <PhotoDropzone
-              files={images}
-              onChange={setImages}
-              minFiles={1}
-              maxFiles={5}
-            />
           </StepAccordion>
 
           {/* Preview listing — enabled once every step is complete.

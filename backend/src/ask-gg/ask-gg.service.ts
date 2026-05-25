@@ -71,17 +71,33 @@ export class AskGgService {
       conversationId?: string;
       content: string;
       escalate?: boolean;
+      /** Cloudinary URLs from prior POST /ask-gg/uploads. Phase B —
+       *  photo identification. Max 5 per message. */
+      imageUrls?: string[];
     },
   ) {
     const user = await this.userIdFromClerk(clerkId);
-    // Quota check FIRST, before any DB writes for this turn. FREE
+    // Quota checks FIRST, before any DB writes for this turn. FREE
     // over-cap throws 403, MEMBER/PRO over-cap throws 429 — both
     // shaped so the frontend can pick the right card.
     await this.quota.assertCanSend(user.id, user.subscriptionTier);
+    const imageUrls = (input.imageUrls ?? []).filter(
+      (u) => typeof u === 'string' && u.length > 0,
+    );
+    if (imageUrls.length > 5) {
+      throw new BadRequestException('Up to 5 photos per message.');
+    }
+    if (imageUrls.length > 0) {
+      // Separate quota — FREE 5 photo-IDs / 30 days.
+      await this.quota.assertCanUploadPhotos(user.id, user.subscriptionTier);
+    }
 
+    // Photo-only messages skip the text-content length check but we
+    // still trim. Empty content + empty imageUrls is rejected as
+    // "you gave us nothing to work with".
     const trimmed = input.content?.trim() ?? '';
-    if (!trimmed) {
-      throw new BadRequestException('Message cannot be empty.');
+    if (!trimmed && imageUrls.length === 0) {
+      throw new BadRequestException('Message or photo required.');
     }
     if (trimmed.length > 4_000) {
       throw new BadRequestException(
@@ -103,10 +119,16 @@ export class AskGgService {
         throw new NotFoundException('Conversation not found');
       }
     } else {
+      // Photo-only opening message gets a placeholder title.
+      const titleSource =
+        trimmed.length > 0 ? trimmed : `Photo identification (${imageUrls.length})`;
       const created = await this.prisma.askGgConversation.create({
         data: {
           userId: user.id,
-          title: trimmed.length > 80 ? `${trimmed.slice(0, 77)}…` : trimmed,
+          title:
+            titleSource.length > 80
+              ? `${titleSource.slice(0, 77)}…`
+              : titleSource,
         },
         select: { id: true },
       });
@@ -121,6 +143,7 @@ export class AskGgService {
         conversationId: conversationId!,
         role: 'user',
         content: trimmed,
+        imageUrls,
       },
     });
 
@@ -171,21 +194,26 @@ export class AskGgService {
       data: { updatedAt: new Date() },
     });
 
-    // Daily usage rollup — single counter for now (Drop 1 doesn't
-    // need to differentiate message vs photo). Day truncation in JS
-    // keeps Prisma simple.
+    // Daily usage rollup. Phase B: separate counter for photo-IDs
+    // so the operator-facing usage dashboard can split message vs
+    // photo spend. photoIdCount increments by 1 per photo-bearing
+    // request (NOT per photo) so the rollup matches the FREE-tier
+    // quota semantics (1 request = 1 photo-ID for cap purposes).
     const todayUtc = new Date();
     todayUtc.setUTCHours(0, 0, 0, 0);
+    const photoIdIncrement = imageUrls.length > 0 ? 1 : 0;
     await this.prisma.askGgUsage.upsert({
       where: { userId_day: { userId: user.id, day: todayUtc } },
       create: {
         userId: user.id,
         day: todayUtc,
         messageCount: 1,
+        photoIdCount: photoIdIncrement,
         costUsdCents: Math.round((reply.costUsd ?? 0) * 100),
       },
       update: {
         messageCount: { increment: 1 },
+        photoIdCount: { increment: photoIdIncrement },
         costUsdCents: { increment: Math.round((reply.costUsd ?? 0) * 100) },
       },
     });
@@ -276,9 +304,101 @@ export class AskGgService {
    *  composer to render the "N free messages left this month" pill
    *  (FREE) or to detect the soft fair-use warning state
    *  (MEMBER / PRO). No tier gate — every signed-in user gets to
-   *  see their own quota. */
+   *  see their own quota.
+   *
+   *  Phase B: also returns the photo-ID snapshot so the frontend can
+   *  render the separate "N photo IDs left this month" indicator
+   *  next to the paperclip icon.
+   */
   async getQuota(clerkId: string) {
     const user = await this.userIdFromClerk(clerkId);
-    return this.quota.snapshot(user.id, user.subscriptionTier);
+    const [messages, photos] = await Promise.all([
+      this.quota.snapshot(user.id, user.subscriptionTier),
+      this.quota.photoSnapshot(user.id, user.subscriptionTier),
+    ]);
+    return { ...messages, photos };
+  }
+
+  /**
+   * Phase B Sprint 2 — one-shot photo identification for the
+   * /listings/new "Help me describe this" button. NOT persisted as
+   * a conversation; just returns a structured proposal the listing
+   * form can apply via "Apply to form".
+   *
+   * Counts against:
+   *   - FREE: assertCanUploadPhotos (5/30days photo-ID cap)
+   *   - MEMBER + PRO: assertCanSend (hourly fair-use)
+   * Bumps photoIdCount on AskGgUsage so the usage dashboard reflects
+   * spend even though there's no conversation row.
+   */
+  async identifyForListing(
+    clerkId: string,
+    photos: Array<{
+      base64: string;
+      mediaType: 'image/jpeg' | 'image/png' | 'image/webp';
+    }>,
+    opts: { categoryHint?: string } = {},
+  ) {
+    const user = await this.userIdFromClerk(clerkId);
+    await this.quota.assertCanSend(user.id, user.subscriptionTier);
+    await this.quota.assertCanUploadPhotos(user.id, user.subscriptionTier);
+
+    if (photos.length === 0) {
+      throw new BadRequestException('At least one photo required.');
+    }
+    if (photos.length > 5) {
+      throw new BadRequestException('Up to 5 photos per identification.');
+    }
+
+    // Build a hierarchical category tree string so Claude can pick the
+    // most SPECIFIC slug (sub-category preferred over its parent).
+    // Top-level categories (parentId === null) appear flush-left;
+    // children indented two spaces under their parent.
+    const allCategories = await this.prisma.category.findMany({
+      orderBy: [{ parentId: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, slug: true, parentId: true },
+    });
+    const topLevel = allCategories.filter((c) => c.parentId === null);
+    const lines: string[] = [];
+    for (const top of topLevel) {
+      lines.push(`${top.slug} — ${top.name}`);
+      const kids = allCategories
+        .filter((c) => c.parentId === top.id)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      for (const k of kids) {
+        lines.push(`  ${k.slug} — ${k.name}`);
+      }
+    }
+    const categoryTree = lines.join('\n');
+
+    const result = await this.claude.identifyFromPhotos(photos, {
+      ...opts,
+      categoryTree,
+    });
+
+    // Bump the daily usage rollup. Treat as 1 message + 1 photo-ID
+    // (the one-shot still costs Claude vision tokens).
+    const todayUtc = new Date();
+    todayUtc.setUTCHours(0, 0, 0, 0);
+    await this.prisma.askGgUsage.upsert({
+      where: { userId_day: { userId: user.id, day: todayUtc } },
+      create: {
+        userId: user.id,
+        day: todayUtc,
+        messageCount: 1,
+        photoIdCount: 1,
+        costUsdCents: Math.round((result.costUsd ?? 0) * 100),
+      },
+      update: {
+        messageCount: { increment: 1 },
+        photoIdCount: { increment: 1 },
+        costUsdCents: { increment: Math.round((result.costUsd ?? 0) * 100) },
+      },
+    });
+
+    return {
+      proposal: result.proposal,
+      costUsd: result.costUsd,
+    };
   }
 }
