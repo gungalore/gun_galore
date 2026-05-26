@@ -309,12 +309,21 @@ export default function NewListingPage() {
         pickupAddress?: ManualAddressValue;
         pickupLat?: number | null;
         pickupLng?: number | null;
+        // Phase M dealer-lock — persist shipping picks + the
+        // optional planned-dealer hint so a PWA reload doesn't
+        // make the seller re-do them.
+        shippingMethods?: ShippingMethod[];
+        plannedDealerLocation?: string;
       };
       if (d.form) setForm(d.form);
       if (d.parcel) setParcel(d.parcel);
       if (d.pickupAddress) setPickupAddress(d.pickupAddress);
       if (d.pickupLat !== undefined) setPickupLat(d.pickupLat);
       if (d.pickupLng !== undefined) setPickupLng(d.pickupLng);
+      if (d.shippingMethods) setShippingMethods(d.shippingMethods);
+      if (d.plannedDealerLocation !== undefined) {
+        setPlannedDealerLocation(d.plannedDealerLocation);
+      }
       setDraftRestored(true);
     } catch {
       // Bad JSON / quota — ignore, start fresh.
@@ -329,12 +338,28 @@ export default function NewListingPage() {
     try {
       localStorage.setItem(
         draftKey,
-        JSON.stringify({ form, parcel, pickupAddress, pickupLat, pickupLng }),
+        JSON.stringify({
+          form,
+          parcel,
+          pickupAddress,
+          pickupLat,
+          pickupLng,
+          shippingMethods,
+          plannedDealerLocation,
+        }),
       );
     } catch {
       // Quota / private mode — silent.
     }
-  }, [form, parcel, pickupAddress, pickupLat, pickupLng]);
+  }, [
+    form,
+    parcel,
+    pickupAddress,
+    pickupLat,
+    pickupLng,
+    shippingMethods,
+    plannedDealerLocation,
+  ]);
 
   // Discard the draft (lets the seller force a clean slate).
   function discardDraft() {
