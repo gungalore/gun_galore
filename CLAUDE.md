@@ -1309,6 +1309,104 @@ were considered + rejected (not forgotten).
 
 ## Current Status
 
+### 2026-05-26 session — Ask GG Phase E + dealer-lock + ballistics
+
+All shipped + live on prod (`139.84.231.220`, `ssh gungalore`):
+
+- **Phase E1 — Verified-expert badge + GG+ pill** (OD1 + OD2 locked).
+  Backend `AskGgKbService.getExpertEligibility` / `getExpertQueue` /
+  `getGrantedExperts` / `setVerifiedExpert` + new
+  `AskGgExpertAdminController` (`/admin/ask-gg/experts/{queue,granted}`
+  + `/admin/users/:id/verified-expert/{grant,revoke}` with mandatory
+  reason → AdminAuditEvent `USER_VERIFIED_EXPERT_AWARDED` /
+  `_REVOKED`). New public `GET /api/sellers/:clerkId`. Frontend
+  `<UserBadges>` + `<UserBadgesWithTooltip>` rendered on listing
+  card, listing-detail seller chip, `/sellers/[clerkId]` header,
+  Q&A asker + answerer. New `/admin/ask-gg/experts` page (Queue +
+  Granted tabs).
+- **Phase E2 — Featured-slot bid discount** (OD1).
+  `FeaturedSlotBid` schema gets `discountPercent` (snapshot at bid
+  time) + `chargedAmountCents` (set at charge time). FREE=0,
+  MEMBER=25, PRO=50. Face bid unchanged → leaderboard stays fair;
+  discount applies to actual Peach charge + Zoho receipt. `/featured/slots`
+  response now wraps `slots[]` with `{bidderSubscriptionTier,
+  bidderDiscountPercent}`. Bid modal shows snap preview + GG+
+  discount line ("you'll be charged R250, saving R250").
+- **Phase E3 — Weekly subscriber-only raffles** (replaced the
+  bulk-photo-ID idea). `Raffle` schema adds
+  `subscriberTierRestriction` (MEMBER/PRO) + `autoEnterSubscribers`
+  + `subscriberDrawAt` + `hidePrizeValue`. Subscriber raffles
+  auto-enter every active subscriber of the matching tier on
+  publish (MEMBER raffle = Members + Pros, PRO raffle = Pros
+  only), 48h auto-draw via new
+  `runSubscriberRaffleDraws` cron (every 5 min). Re-uses existing
+  draw pipeline so DrawProof + winner notifications are identical
+  to public raffles. New `GET /raffles/me/subscriber` endpoint.
+  `/admin/competitions/create` gets a "Raffle type" picker (Public
+  / Member / Pro) — subscriber raffles hide pricing fields. New
+  `<SubscriberRaffleWidget>` on `/ask-gg`: FREE upsell card,
+  subscribers see auto-entry cards with countdown + win banner.
+- **Phase E (operator decisions):**
+  - Pro photo per-request cap lifted 5 → 10 (Member/Free stay at 5)
+    via new `maxPhotosPerRequest(tier)` helper.
+  - `/ask-gg` perks card updated: dropped Business Receipts row,
+    added Weekly Ask GG raffle row + Ballistic calculator row,
+    Pro photos shows "Unlimited (10/query)".
+  - Cancellation policy on subscriber raffles: snapshot at publish.
+    Mid-window subscribers don't get this week's raffle. Mid-window
+    cancellations stay eligible (entered fair-and-square).
+- **Mandatory dealer-transfer + planned-location hint.**
+  `Listing.plannedDealerLocation` (max 200 chars, free-text). Firearm
+  listings now REJECTED at create/update/preview if `shippingMethods`
+  omits `DEALER_TRANSFER`. `/listings/new`: DEALER_TRANSFER pill
+  locked-on for firearms ("required" copy), PRIVATE_ARRANGE
+  optional, planned-location text input below. `/listings/[id]/edit`:
+  planned-location field in firearm block, sends on save (clears
+  empties). Listing detail surfaces the hint as a chip above the
+  seller card when present.
+- **Listing detail copy + layout.** Shipping & Payment block now
+  branches on `listing.isFirearm` (proper boolean, not slug regex).
+  Firearm path: "Payment held… until firearm is stocked at a
+  licensed dealer and verified — funds release automatically once
+  verification passes." PRIVATE_ARRANGE paragraph now firearm-only
+  AND gated on `shippingMethods.includes('PRIVATE_ARRANGE')` (no
+  longer shown on non-firearm listings where it was never even
+  selectable). Description block moved above Shipping & Payment so
+  buyers read what they're buying before the legal block.
+- **Image gallery — drag-to-pan when zoomed** (mouse + touch).
+  Replaced overflow:auto scrollbar approach with CSS transform
+  + unified PointerEvent handlers. Pan clamped to bounds. 4px
+  movement threshold distinguishes drag-to-pan from click-to-toggle.
+  Cursor: zoom-in → grab → grabbing. `touch-action: none` while
+  zoomed so the browser doesn't claim the gesture as scroll.
+- **PWA audit + fixes.** `/ask-gg` excluded from generic
+  `/offline` fallback (Ask GG is inherently online-only — Claude
+  + Clerk + live quota — friendly offline page misled users into
+  waiting). `/listings/new` localStorage draft now also persists
+  `shippingMethods` + `plannedDealerLocation` (pre-existing gap for
+  shippingMethods; closed while in here). `public/sw.js` gitignored
+  + untracked (Serwist regenerates on every build, chronic dirty-prod
+  conflicts every deploy).
+- **Ballistic calculator — Phase D extra finally shipped.** New
+  `backend/src/ballistics/` module: pure-math G1 drag-model solver
+  with standard atmosphere defaults + optional temp/pressure/altitude/
+  wind overrides. Binary-searches launch angle so trajectory crosses
+  LOS at zero range, then steps at 1ms intervals sampling drop /
+  retained velocity / energy / TOF / windage at each requested
+  range. Wired as third Claude tool alongside searchReloadingManuals
+  + fetchManualPages. Tier-gated MEMBER + PRO; FREE users get a
+  `upgradeRequired: true` tool_result + the system prompt surfaces
+  this as a "GG+ feature" message. Pro tools (Strelok+, JBM)
+  recommended for serious long-range work; ours is ~±5% accurate
+  out to 1000m at <10° barrel angle.
+- **Deploy cleanup.** CLAUDE.md "deploy now" updated to the real
+  server paths (`/home/gungalore/app`, pm2 services
+  `gungalore-backend`/`gungalore-frontend`) + the critical
+  `npx prisma generate` step that, when missing, silently reloaded
+  stale dist/ for half a deploy.
+
+---
+
 **Phases 1–14 complete plus Featured Slots system, sitewide UX
 hardening, auction proxy hardening, KYC no-webcam handoff, PWA
 Phases A–C (conservative SW + app-feel polish), Phase C.5 (in-app
