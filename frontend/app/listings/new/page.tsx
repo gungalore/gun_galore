@@ -229,6 +229,10 @@ export default function NewListingPage() {
   // Delivery + pickup-address state. Lives outside `form` because the
   // shipping-methods array doesn't fit the flat string-map.
   const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>([]);
+  // Phase M dealer-lock — optional hint of where the seller intends
+  // to dealer-stock this firearm. Only collected + sent when isFirearm.
+  // Buyers near that dealer see it on listing detail.
+  const [plannedDealerLocation, setPlannedDealerLocation] = useState('');
   const [pickupAddress, setPickupAddress] = useState<ManualAddressValue>(
     emptyManualAddress,
   );
@@ -486,13 +490,26 @@ export default function NewListingPage() {
   // set stays in shippingMethods and gets sent to the API alongside the
   // new picks — the server then rejects with
   // "shippingMethods must contain no more than 2 elements".
+  //
+  // Phase M dealer-lock — for firearms we PRE-SET DEALER_TRANSFER so it's
+  // always present. The pill renders disabled-locked below so the
+  // seller can't toggle it off. PRIVATE_ARRANGE remains optional.
   const lastIsFirearm = useRef(isFirearm);
   useEffect(() => {
     if (lastIsFirearm.current !== isFirearm) {
       lastIsFirearm.current = isFirearm;
-      setShippingMethods([]);
+      setShippingMethods(isFirearm ? ['DEALER_TRANSFER'] : []);
     }
   }, [isFirearm]);
+  // Defensive: even if DEALER_TRANSFER somehow gets stripped (e.g.
+  // pill-group bug, hot-reload race), force it back in for firearms.
+  useEffect(() => {
+    if (isFirearm && !shippingMethods.includes('DEALER_TRANSFER')) {
+      setShippingMethods((prev) =>
+        Array.from(new Set(['DEALER_TRANSFER', ...prev])),
+      );
+    }
+  }, [isFirearm, shippingMethods]);
 
   // ─────────────────── Step completion (drives the accordion) ───────────
   // Each step's `isComplete` is a pure function of the form state.
@@ -730,6 +747,13 @@ export default function NewListingPage() {
       // De-dupe defensively so a stale state can't ever send the API a
       // duplicate (which would fail @ArrayMaxSize(2) on the DTO).
       shippingMethods: Array.from(new Set(shippingMethods)),
+      // Phase M dealer-lock — only send when populated AND firearm.
+      // Non-firearm submissions never carry it (backend ignores it
+      // anyway, but no point sending stale state from a category
+      // switch).
+      ...(isFirearm && plannedDealerLocation.trim()
+        ? { plannedDealerLocation: plannedDealerLocation.trim() }
+        : {}),
       pickupBuilding: pickupAddress.building.trim() || undefined,
       pickupStreet: pickupAddress.street.trim() || undefined,
       pickupAddress2: pickupAddress.address2.trim() || undefined,
@@ -1916,21 +1940,37 @@ export default function NewListingPage() {
             >
               <MultiSelectPillGroup<ShippingMethod>
                 value={shippingMethods}
-                onChange={setShippingMethods}
+                onChange={(next) => {
+                  // Phase M dealer-lock — defensive guard: never
+                  // allow DEALER_TRANSFER to be dropped on a firearm
+                  // listing. The option below is also `disabled` so
+                  // the user can't toggle it via the pill, but this
+                  // catches any onChange path that bypasses the
+                  // disabled flag (keyboard, programmatic).
+                  if (isFirearm && !next.includes('DEALER_TRANSFER')) {
+                    setShippingMethods([
+                      'DEALER_TRANSFER',
+                      ...next.filter((m) => m !== 'DEALER_TRANSFER'),
+                    ]);
+                    return;
+                  }
+                  setShippingMethods(next);
+                }}
                 options={
                   isFirearm
                     ? [
                         {
                           value: 'DEALER_TRANSFER',
-                          label: 'Dealer-stocked transfer',
+                          label: 'Dealer-stocked transfer · required',
                           description:
-                            'You drop with your dealer; buyer collects from theirs.',
+                            'You drop with your dealer; buyer collects from theirs. Required for all firearm listings.',
+                          disabled: true,
                         },
                         {
                           value: 'PRIVATE_ARRANGE',
-                          label: 'Arrange privately',
+                          label: 'Also offer: Arrange privately',
                           description:
-                            'Buyer + seller meet at a dealer to do the transfer in person.',
+                            'Optional. Buyer + seller meet at a dealer to do the transfer in person.',
                         },
                       ]
                     : [
@@ -1952,6 +1992,51 @@ export default function NewListingPage() {
                       ]
                 }
               />
+              {/* Phase M dealer-lock — optional hint of where the
+                  seller plans to dealer-stock the firearm. Buyers
+                  near that dealer see it on listing detail so they
+                  can factor it into their decision (e.g. shorter
+                  collection drive). Only rendered for firearms;
+                  text input below the pills, never required. */}
+              {isFirearm && (
+                <div className="mt-3">
+                  <label
+                    className="block text-xs mb-1"
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      letterSpacing: '0.02em',
+                    }}
+                  >
+                    Where do you plan to dealer-stock this? <span style={{ color: 'var(--text-tertiary)' }}>(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={200}
+                    value={plannedDealerLocation}
+                    onChange={(e) => setPlannedDealerLocation(e.target.value)}
+                    placeholder="e.g. Pretoria Arms, Centurion"
+                    style={{
+                      width: '100%',
+                      background: 'var(--bg-inset)',
+                      border: '0.5px solid var(--border)',
+                      color: 'var(--text-primary)',
+                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      fontSize: '14px',
+                      outline: 'none',
+                    }}
+                  />
+                  <p
+                    className="text-xs mt-1"
+                    style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
+                  >
+                    Shown on the listing so buyers near that dealer
+                    know their drive's shorter. You&apos;re not locked
+                    in — the actual dealer is captured later when you
+                    upload the stock-in proof.
+                  </p>
+                </div>
+              )}
             </Field>
 
             <Field

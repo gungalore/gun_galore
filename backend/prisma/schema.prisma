@@ -575,9 +575,23 @@ model Listing {
 
   // Seller-offered shipping methods. For non-firearm listings this is
   // some non-empty subset of [PUDO, TCG]. For firearm / barrel listings
-  // it's a subset of [DEALER_TRANSFER, PRIVATE_ARRANGE]. The buyer picks
-  // ONE of these at checkout and that pick lands on Transaction.shippingMethod.
+  // it's a subset of [DEALER_TRANSFER, PRIVATE_ARRANGE]. DEALER_TRANSFER
+  // is MANDATORY for firearm listings — the seller can additionally
+  // offer PRIVATE_ARRANGE, but they cannot list a firearm without
+  // dealer-stock as an option. ListingsService.create + update enforce
+  // this. The buyer picks ONE of these at checkout and that pick lands
+  // on Transaction.shippingMethod.
   shippingMethods ShippingMethod[] @default([])
+
+  // Optional seller-supplied hint of where they intend to dealer-stock
+  // a firearm (e.g. "Pretoria Arms, Centurion"). Only meaningful when
+  // the listing is a firearm + offers DEALER_TRANSFER. Shown to buyers
+  // on the listing detail page so a buyer near that dealer can see
+  // they'd have less driving post-purchase. Free text, max 200 chars,
+  // not validated against a dealer registry — purely informational.
+  // Seller is NOT bound to this dealer (the actual stocking dealer is
+  // captured at dealer-verification upload time).
+  plannedDealerLocation String?
 
   // Seller pickup address (where Pudo/TCG collect from, or where the
   // private/dealer-transfer hand-off originates). Captured at listing

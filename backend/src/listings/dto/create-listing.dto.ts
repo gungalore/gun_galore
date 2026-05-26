@@ -94,14 +94,20 @@ export class CreateListingDto {
   // ---- Delivery + pickup address ---------------------------------------
   // At least one shipping method is required. For non-firearm categories
   // the valid values are PUDO + TCG; for firearms/barrels they are
-  // DEALER_TRANSFER + PRIVATE_ARRANGE. We don't enforce that pairing here
-  // — the listings service checks it against the category.
+  // DEALER_TRANSFER + PRIVATE_ARRANGE. The listings service additionally
+  // enforces that firearm listings MUST include DEALER_TRANSFER (per
+  // SAPS regulation + platform policy 2026-05-26).
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(2)
   @IsEnum(ShippingMethod, { each: true })
   shippingMethods?: ShippingMethod[];
+
+  // Optional seller-supplied hint of where they intend to dealer-stock
+  // this firearm. Free text, max 200 chars. Ignored for non-firearm
+  // listings. Shown to buyers on the listing detail page.
+  @IsOptional() @IsString() @MaxLength(200) plannedDealerLocation?: string;
 
   @IsOptional() @IsString() @MaxLength(120) pickupBuilding?: string;
   @IsOptional() @IsString() @MaxLength(200) pickupStreet?: string;

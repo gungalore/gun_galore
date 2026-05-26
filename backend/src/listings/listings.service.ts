@@ -131,6 +131,23 @@ export class ListingsService {
       throw new BadRequestException('TAKE_A_SHOT listings must not have a listed price');
     }
 
+    // Firearm listings MUST include DEALER_TRANSFER in shippingMethods
+    // (operator decision 2026-05-26 — was previously seller's choice).
+    // The seller can additionally offer PRIVATE_ARRANGE, but they
+    // cannot list a firearm with PRIVATE_ARRANGE as the ONLY option.
+    // SAPS regulation already requires every firearm transfer to flow
+    // through a licensed dealer; this just enforces it at listing-
+    // creation time so the buyer always has the dealer-stock fallback.
+    if (
+      category.isFirearm &&
+      dto.shippingMethods &&
+      !dto.shippingMethods.includes('DEALER_TRANSFER')
+    ) {
+      throw new BadRequestException(
+        'Firearm listings must include "Dealer-stocked transfer" as a shipping option.',
+      );
+    }
+
     const moderationEnabled = await this.settings.get(FLAGS.claudeModerationEnabled);
 
     let moderation: ListingModerationResult;
@@ -209,6 +226,23 @@ export class ListingsService {
     }
     if (dto.listingType === 'TAKE_A_SHOT' && dto.price) {
       throw new BadRequestException('TAKE_A_SHOT listings must not have a listed price');
+    }
+
+    // Firearm listings MUST include DEALER_TRANSFER in shippingMethods
+    // (operator decision 2026-05-26 — was previously seller's choice).
+    // The seller can additionally offer PRIVATE_ARRANGE, but they
+    // cannot list a firearm with PRIVATE_ARRANGE as the ONLY option.
+    // SAPS regulation already requires every firearm transfer to flow
+    // through a licensed dealer; this just enforces it at listing-
+    // creation time so the buyer always has the dealer-stock fallback.
+    if (
+      category.isFirearm &&
+      dto.shippingMethods &&
+      !dto.shippingMethods.includes('DEALER_TRANSFER')
+    ) {
+      throw new BadRequestException(
+        'Firearm listings must include "Dealer-stocked transfer" as a shipping option.',
+      );
     }
 
     // Auction-specific validation + derived fields
@@ -357,6 +391,14 @@ export class ListingsService {
         endTime,
         // Delivery + pickup address
         shippingMethods: dto.shippingMethods ?? [],
+        // Phase M dealer-lock — optional planned-dealer hint shown
+        // to buyers near that dealer. Trimmed to spec-allowed 200
+        // chars at the DTO layer; we also defensively null out
+        // whitespace-only inputs here.
+        plannedDealerLocation:
+          (dto.plannedDealerLocation ?? '').trim().length > 0
+            ? dto.plannedDealerLocation!.trim()
+            : null,
         pickupBuilding: dto.pickupBuilding ?? null,
         pickupStreet: dto.pickupStreet ?? null,
         pickupAddress2: dto.pickupAddress2 ?? null,
@@ -665,9 +707,34 @@ export class ListingsService {
     // 409 if locked.
     await this.assertEditable(listing);
 
+    // Phase M dealer-lock — if the seller is editing shippingMethods
+    // on a firearm listing, DEALER_TRANSFER must still be present.
+    if (
+      listing.isFirearm &&
+      dto.shippingMethods !== undefined &&
+      !dto.shippingMethods.includes('DEALER_TRANSFER')
+    ) {
+      throw new BadRequestException(
+        'Firearm listings must include "Dealer-stocked transfer" as a shipping option.',
+      );
+    }
+
+    // Normalise the optional planned-dealer hint: trim, null out
+    // whitespace-only inputs (matches create()).
+    const normalisedPlanned =
+      dto.plannedDealerLocation === undefined
+        ? undefined
+        : (dto.plannedDealerLocation ?? '').trim().length > 0
+          ? dto.plannedDealerLocation!.trim()
+          : null;
     const updated = await this.prisma.listing.update({
       where: { id },
-      data: { ...dto },
+      data: {
+        ...dto,
+        ...(normalisedPlanned !== undefined
+          ? { plannedDealerLocation: normalisedPlanned }
+          : {}),
+      },
       include: { images: true, category: true },
     });
 

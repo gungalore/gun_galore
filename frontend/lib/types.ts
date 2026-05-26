@@ -152,7 +152,17 @@ export interface Listing {
   // Shipping methods the seller offered in the Sell form. Subset of
   // [PUDO, TCG] for non-firearms or [DEALER_TRANSFER, PRIVATE_ARRANGE]
   // for firearms. Empty array means "any legal option" (legacy).
+  // Firearm listings ALWAYS include DEALER_TRANSFER (mandatory per
+  // platform policy 2026-05-26 + SAPS regs); PRIVATE_ARRANGE is the
+  // optional additional offer the seller can include.
   shippingMethods: ShippingMethod[];
+  // Optional free-text hint of where the seller plans to dealer-stock
+  // a firearm (e.g. "Pretoria Arms, Centurion"). Shown to buyers on
+  // listing detail so a buyer near that dealer can factor it into
+  // their decision. Null for non-firearms or when the seller didn't
+  // fill it in. Seller is not bound to this dealer — the actual
+  // stocking dealer is captured later at dealer-verification time.
+  plannedDealerLocation: string | null;
   status: ListingStatus;
   condition: Condition;
   province: Province;

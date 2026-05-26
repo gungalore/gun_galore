@@ -399,6 +399,45 @@ export default async function ListingDetailPage({
             {PROVINCE_LABELS[listing.province]}
           </p>
 
+          {/* Phase M dealer-lock — surface the seller's optional
+              planned-dealer-stock hint so buyers near that dealer
+              know their collection drive's shorter. Only renders
+              for firearm listings where the seller filled it in. */}
+          {listing.isFirearm && listing.plannedDealerLocation && (
+            <div
+              className="mb-4 rounded-[6px] px-3 py-2 text-xs"
+              style={{
+                background: 'var(--bg-card)',
+                border: '0.5px solid var(--border)',
+                color: 'var(--text-secondary)',
+                lineHeight: 1.5,
+              }}
+            >
+              <span
+                style={{
+                  color: 'var(--text-tertiary)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  marginRight: 6,
+                }}
+              >
+                Planned dealer-stock
+              </span>
+              <span style={{ color: 'var(--text-primary)' }}>
+                {listing.plannedDealerLocation}
+              </span>
+              <p
+                className="mt-1"
+                style={{ color: 'var(--text-tertiary)', fontSize: 11, lineHeight: 1.4 }}
+              >
+                Seller&apos;s indication only — the actual stocking dealer
+                is confirmed after purchase.
+              </p>
+            </div>
+          )}
+
           {/* Seller card — must NOT wrap SellerControls in this Link
               because SellerControls renders its own Link (edit) + button
               (cancel), which would create an invalid nested-<a> tree
