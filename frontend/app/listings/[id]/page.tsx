@@ -298,71 +298,11 @@ export default async function ListingDetailPage({
               (homepage rail, wishlist empty-state rail) pick it up. */}
           <RecordVisit listingId={listing.id} />
 
-          {/* Shipping + payment protection explainer — kept compact so
-              it doesn't dominate the buy panel area, but visible
-              BEFORE checkout so buyers (especially first-time buyers
-              on firearm listings) understand:
-                • Firearms always route through a SAPS-licensed dealer
-                  (no courier, no locker, no meet-up). This is the
-                  default and there's no opt-out.
-                • Non-firearms ship via Pudo or The Courier Guy with
-                  payment held until delivery is confirmed.
-                • PRIVATE_ARRANGE exists as an explicit opt-out at
-                  checkout — the buyer waives payment protection and
-                  the seller is paid immediately. HelpTip surfaces the
-                  consequence so buyers don't first hear about it on
-                  the consent screen. */}
-          {listing.status === 'ACTIVE' && (
-            <div
-              className="rounded-[6px] p-3 mb-4 text-xs"
-              style={{
-                background: 'var(--bg-card)',
-                border: '0.5px solid var(--border)',
-                color: 'var(--text-secondary)',
-                lineHeight: 1.55,
-              }}
-            >
-              <p
-                className="uppercase mb-2"
-                style={{
-                  color: 'var(--text-tertiary)',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Shipping & payment
-              </p>
-              <p className="mb-1.5">
-                <strong style={{ color: 'var(--text-primary)' }}>
-                  Payment held by Gun Galore
-                </strong>{' '}
-                until you confirm the item arrived. If anything goes
-                wrong before delivery, we hold the funds — neither
-                side can pull out unilaterally.
-              </p>
-              <p>
-                <strong style={{ color: 'var(--text-primary)' }}>
-                  Shipping:
-                </strong>{' '}
-                {listing.category.slug === 'firearms' || /firearm/i.test(listing.category.name)
-                  ? "the seller takes the firearm to their nearest SAPS-licensed dealer to be booked into stock. Once we've verified the SAPS 534 + stock register + firearm photos, we send you the dealer's contact details and release the funds. The inter-dealer transfer onwards is arranged between you and the seller."
-                  : 'Pudo locker-to-locker or The Courier Guy door delivery — both quoted at checkout.'}
-              </p>
-              <p className="mt-1.5" style={{ color: 'var(--text-tertiary)' }}>
-                <strong>Private arrangement</strong> is offered as a
-                checkout opt-out — you waive payment protection in
-                exchange for direct contact details with the seller.
-                Once accepted, you can&apos;t dispute or get refunded
-                via Gun Galore. Use only if you know the seller.
-              </p>
-            </div>
-          )}
-
-          {/* Description — moved up here from the bottom of the page so
-              the buyer sees it immediately under the Buy Now CTA, next
-              to the product photo. Make/Model/Calibre have been removed
-              entirely from the public listing surface per spec — the
-              fields still live on Listing for search/filtering, just
-              not displayed to buyers. */}
+          {/* Description — moved 2026-05-26 to sit right under the CTA
+              so the buyer reads what they're actually buying before the
+              legal/shipping block. Reduces vertical scroll on mobile.
+              Make/Model/Calibre are NOT rendered to buyers per spec — the
+              fields live on Listing for search/filtering only. */}
           <div
             className="rounded-[6px] p-3 mb-4 text-sm"
             style={{
@@ -386,6 +326,97 @@ export default async function ListingDetailPage({
               {listing.description}
             </p>
           </div>
+
+          {/* Shipping + payment protection explainer — kept compact so
+              it doesn't dominate the buy panel area, but visible
+              BEFORE checkout so buyers (especially first-time buyers
+              on firearm listings) understand:
+                • Firearms always route through a SAPS-licensed dealer
+                  (no courier, no locker, no meet-up). This is the
+                  default and there's no opt-out.
+                • Non-firearms ship via Pudo or The Courier Guy with
+                  payment held until delivery is confirmed.
+                • PRIVATE_ARRANGE exists as an explicit opt-out at
+                  checkout (firearm-only) — the buyer waives payment
+                  protection and the seller is paid directly. The copy
+                  branches on listing.isFirearm + shippingMethods so
+                  non-firearm listings don't see the opt-out paragraph
+                  at all. */}
+          {listing.status === 'ACTIVE' && (
+            <div
+              className="rounded-[6px] p-3 mb-4 text-xs"
+              style={{
+                background: 'var(--bg-card)',
+                border: '0.5px solid var(--border)',
+                color: 'var(--text-secondary)',
+                lineHeight: 1.55,
+              }}
+            >
+              <p
+                className="uppercase mb-2"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                Shipping & payment
+              </p>
+              {listing.isFirearm ? (
+                <>
+                  <p className="mb-1.5">
+                    <strong style={{ color: 'var(--text-primary)' }}>
+                      Payment held by Gun Galore
+                    </strong>{' '}
+                    until the firearm is stocked at a licensed dealer
+                    and verified — funds release automatically once
+                    verification passes. Neither side can pull out
+                    unilaterally before then.
+                  </p>
+                  <p>
+                    <strong style={{ color: 'var(--text-primary)' }}>
+                      Dealer-stocked transfer:
+                    </strong>{' '}
+                    seller drops the firearm at their nearest
+                    SAPS-licensed dealer. We verify the SAPS 534 +
+                    stock-in document + photos, release the funds, and
+                    send you the dealer&apos;s contact details. You
+                    collect from the same dealer with your own licence.
+                  </p>
+                  {listing.shippingMethods.includes('PRIVATE_ARRANGE') && (
+                    <p
+                      className="mt-1.5"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
+                      <strong>Private arrangement</strong> is also
+                      offered — you and the seller pick a dealer
+                      together and do the licence transfer in person.
+                      You waive Gun Galore&apos;s payment protection
+                      (no platform-held funds, no dispute or refund
+                      via us). Use only if you know the seller.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="mb-1.5">
+                    <strong style={{ color: 'var(--text-primary)' }}>
+                      Payment held by Gun Galore
+                    </strong>{' '}
+                    until you confirm the item arrived. If anything goes
+                    wrong before delivery, we hold the funds — neither
+                    side can pull out unilaterally.
+                  </p>
+                  <p>
+                    <strong style={{ color: 'var(--text-primary)' }}>
+                      Shipping:
+                    </strong>{' '}
+                    Pudo locker-to-locker or The Courier Guy door
+                    delivery — both quoted at checkout.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Q&A — Claude-moderated, product-only. Replaces buyer-seller
               messaging entirely; sellers reply from /dashboard. */}
