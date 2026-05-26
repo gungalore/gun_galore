@@ -35,6 +35,14 @@ const PRO_MSG_CAP_PER_HOUR = 60;
 // hourly fair-use message cap. Spec OD3.
 const FREE_PHOTO_CAP_PER_30_DAYS = 5;
 
+// Phase E3 — per-request photo cap (how many photos in ONE upload).
+// Originally proposed 5→20 for Pro under the "bulk identification"
+// idea; operator call 2026-05-26 trimmed to 10. Member + Free stay
+// at 5 because the realistic use case is multi-angle of ONE firearm.
+export function maxPhotosPerRequest(tier: SubscriptionTier): number {
+  return tier === SubscriptionTier.PRO ? 10 : 5;
+}
+
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
 

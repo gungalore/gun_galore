@@ -131,9 +131,24 @@ export class ListingQuestionsService {
         status: true,
         autoAnsweredFromQuestionId: true,
         // Username-only on public Q&A — never firstName. Real names
-        // are platform-policy off the public surface.
-        asker: { select: { username: true } },
-        answeredByUser: { select: { username: true } },
+        // are platform-policy off the public surface. Phase E1 adds
+        // the GG+ pill + verified-expert badge alongside the
+        // username so a Pro-tier seller's answer reads as
+        // higher-trust.
+        asker: {
+          select: {
+            username: true,
+            subscriptionTier: true,
+            isVerifiedExpert: true,
+          },
+        },
+        answeredByUser: {
+          select: {
+            username: true,
+            subscriptionTier: true,
+            isVerifiedExpert: true,
+          },
+        },
       },
     });
   }

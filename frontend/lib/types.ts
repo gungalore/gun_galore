@@ -2,6 +2,10 @@ export type ListingType = 'BUY_NOW' | 'TAKE_A_SHOT' | 'AUCTION';
 export type ListingStatus = 'DRAFT' | 'PENDING_REVIEW' | 'ACTIVE' | 'PAYMENT_PENDING' | 'SOLD' | 'CANCELLED' | 'EXPIRED';
 export type Condition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
 export type SellerTier = 'NEW' | 'ESTABLISHED' | 'TRUSTED' | 'TOP_SELLER' | 'DEALER';
+// Subscription tier — orthogonal to SellerTier. Drives the GG+ pill
+// (MEMBER/PRO) rendered next to usernames site-wide per Phase E1
+// (OD1 locked). FREE users don't get a pill.
+export type SubscriptionTier = 'FREE' | 'MEMBER' | 'PRO';
 export type Province =
   | 'EASTERN_CAPE'
   | 'FREE_STATE'
@@ -54,6 +58,34 @@ export interface ListingSeller {
   sellerTier: SellerTier;
   totalSales: number;
   createdAt: string;
+  // Phase E1 — Ask GG badges rendered next to username site-wide.
+  // OD1 locked: subscriptionTier MEMBER/PRO → GG+ pill.
+  // OD2 locked: isVerifiedExpert → verified-expert badge.
+  // Browse cards omit expertBadgeReason (smaller payload); listing-
+  // detail + seller profile include it so the badge tooltip can
+  // show the public rationale the admin entered.
+  subscriptionTier?: SubscriptionTier;
+  isVerifiedExpert?: boolean;
+  expertBadgeReason?: string | null;
+}
+
+// Public seller profile (GET /sellers/:clerkId). Superset of the
+// inline ListingSeller — adds avgRating + verifiedExpertAt for the
+// profile page header. Powers the /sellers/[clerkId] surface so
+// the badge tooltip can show when the badge was granted.
+export interface PublicSellerProfile {
+  id: string;
+  clerkId: string;
+  username: string | null;
+  avatarUrl: string | null;
+  sellerTier: SellerTier;
+  totalSales: number;
+  averageRating: number | null;
+  createdAt: string;
+  subscriptionTier: SubscriptionTier;
+  isVerifiedExpert: boolean;
+  verifiedExpertAt: string | null;
+  expertBadgeReason: string | null;
 }
 
 export interface Me {

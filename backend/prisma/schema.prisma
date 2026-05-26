@@ -1294,6 +1294,39 @@ model Raffle {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  // Phase E3 — Ask GG subscriber raffles. When set, this raffle is
+  // exclusive to subscribers of that tier (e.g. MEMBER raffle is for
+  // Members + Pros, PRO raffle is Pros only — the cron picks based
+  // on User.subscriptionTier).
+  //
+  //   null   → standard public raffle (existing behaviour)
+  //   MEMBER → Ask GG Member raffle: auto-entered free on create,
+  //            48h auto-draw, prize value hidden on public surfaces
+  //   PRO    → Ask GG Pro raffle: same but Pro-only
+  //
+  // itemValueCents + ticketPriceCents are conventionally set to 0
+  // for subscriber raffles (operator sizes prize off-platform as
+  // a % of subscription income). The hidePrizeValue flag is the
+  // belt-and-braces UI guard against accidentally exposing a stale
+  // value if the operator typed one. targetTicketCount is also 0
+  // (auto-entry doesn't have a sell-out trigger; the 48h timer
+  // drives draw scheduling instead).
+  subscriberTierRestriction SubscriptionTier?
+  // If true, every active subscriber of the matching tier gets a
+  // free ticket auto-issued the moment the raffle goes ACTIVE.
+  // Snapshot semantics: only users subscribed at that moment are
+  // entered (later sign-ups don't get in this week).
+  autoEnterSubscribers      Boolean           @default(false)
+  // 48h-after-publish target for the auto-draw cron. Set when the
+  // operator publishes a subscriber raffle. Standard public raffles
+  // use the existing drawAt (sell-out + 24h cooling) instead.
+  subscriberDrawAt          DateTime?
+  // Belt-and-braces: even if a value was typed by mistake, hiding
+  // it client-side keeps the "no fixed value" framing the operator
+  // wants for subscriber raffles. Defaults true when the raffle is
+  // a subscriber raffle.
+  hidePrizeValue            Boolean           @default(false)
+
   tickets Ticket[]
   winners RaffleWinner[]
   events  RaffleAuditEvent[]
@@ -1301,6 +1334,7 @@ model Raffle {
 
   @@index([status])
   @@index([drawAt])
+  @@index([subscriberTierRestriction, subscriberDrawAt])
 }
 
 // Multi-image upload for raffles — mirrors ListingImage so the
@@ -1610,9 +1644,26 @@ model FeaturedSlotBid {
   bidderId String
   bidder   User   @relation("FeaturedSlotBidder", fields: [bidderId], references: [id])
 
-  // ZAR cents. Backend snaps to nearest tier on submit.
+  // ZAR cents. Backend snaps to nearest tier on submit. This is the
+  // FACE bid — what the bidder is "saying" they'd pay, and what the
+  // leaderboard uses for ranking. The actual cents collected is
+  // `chargedAmountCents` (set at charge time).
   amountCents Int
   tier        FeaturedTier
+
+  // Phase E2 — Ask GG subscription perk (OD1 locked).
+  //   FREE   → 0  (full price)
+  //   MEMBER → 25 (25% off the slot fee)
+  //   PRO    → 50 (50% off the slot fee)
+  // Snapshotted on the bid at bid time so the discount can't be
+  // gamed by upgrading right before settlement OR penalised by a
+  // downgrade between bid + bind. Charged cents = floor(
+  // amountCents * (100 - discountPercent) / 100).
+  discountPercent     Int @default(0)
+  // Actual ZAR cents Peach charged. Null until the bid wins + binds.
+  // Once set, Zoho receipt + admin revenue reports use this value
+  // (NOT amountCents) so the books match the cash that landed.
+  chargedAmountCents  Int?
 
   status FeaturedBidStatus @default(ACTIVE)
 

@@ -97,6 +97,14 @@ export class RafflesPublicController {
 export class RafflesBuyerController {
   constructor(private readonly raffles: RafflesService) {}
 
+  /** Phase E3 — current user's subscriber-raffle status.
+   *  Returns the two active subscriber raffles (Member + Pro) the
+   *  user is eligible for, with isEntered + draw countdown. */
+  @Get('me/subscriber')
+  mySubscriberRaffles(@CurrentUser() clerkId: string) {
+    return this.raffles.getMySubscriberRaffles(clerkId);
+  }
+
   // Buyer initiates a ticket purchase. Returns pending tickets + total cents,
   // which the front-end then sends to /transactions to create a Peach checkout.
   @Post(':id/tickets')

@@ -2,6 +2,7 @@ import { Module, Global, forwardRef } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { UsersPublicController } from './users-public.controller';
+import { SellersPublicController } from './sellers-public.controller';
 import { WebhooksController } from './webhooks.controller';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { PaymentsModule } from '../payments/payments.module';
@@ -19,7 +20,12 @@ import { PaymentsModule } from '../payments/payments.module';
   imports: [CloudinaryModule, forwardRef(() => PaymentsModule)],
   // Public controller listed BEFORE the auth-guarded one so its routes
   // are matched first (Nest resolves by registration order).
-  controllers: [WebhooksController, UsersPublicController, UsersController],
+  controllers: [
+    WebhooksController,
+    UsersPublicController,
+    SellersPublicController,
+    UsersController,
+  ],
   providers: [UsersService],
   exports: [UsersService],
 })

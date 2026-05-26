@@ -212,6 +212,21 @@ export class TasksService {
     await this.recordCronRun('raffle-draw');
   }
 
+  // Phase E3 — every 5 minutes, fire the 48h auto-draw for any
+  // subscriber raffle whose subscriberDrawAt has passed. Re-uses
+  // the same draw() pipeline so winners + DrawProof flow are
+  // identical to public raffles. Separate cron from runRaffleDraws
+  // so a public-raffle bug doesn't block subscriber-raffle draws
+  // and vice versa.
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async runSubscriberRaffleDraws() {
+    const result = await this.rafflesService.runSubscriberRaffleDraws();
+    if (result.drawn > 0) {
+      this.logger.log(`Drew ${result.drawn} subscriber raffle(s)`);
+    }
+    await this.recordCronRun('subscriber-raffle-draw');
+  }
+
   // Run every hour — expire stale claim windows and promote backup winners.
   @Cron(CronExpression.EVERY_HOUR)
   async expireRaffleClaims() {

@@ -39,6 +39,7 @@ import {
   type AskGgCitation,
   type AskGgKbHit,
 } from '@/lib/use-ask-gg';
+import { SubscriberRaffleWidget } from '@/components/subscriber-raffle-widget';
 
 function IconSparkles({ size = 22 }: { size?: number }) {
   return (
@@ -378,6 +379,15 @@ export default function AskGgPage() {
         <UpgradeCard />
       ) : (
         <>
+          {/* Phase E3 — subscriber raffle widget. Sits above the
+              messages scroll so subscribers see their auto-entered
+              raffle on every visit. FREE users see an upsell card
+              here; non-signed-in users see nothing (handled inside
+              the widget). */}
+          <div style={{ padding: '12px 0 0' }}>
+            <SubscriberRaffleWidget />
+          </div>
+
           {/* Messages scroll. flex: 1 → fills the space between
               header + composer. */}
           <div
@@ -1619,12 +1629,12 @@ function TierPerksTable({
       perk: {
         free: '5 photos / month',
         member: 'Unlimited (5/query)',
-        pro: 'Unlimited (20/query)',
+        pro: 'Unlimited (10/query)',
       },
     },
     {
       label: 'Reloading-manual lookup',
-      perk: { free: '✓', member: '✓', pro: '✓ priority' },
+      perk: { free: '✓', member: '✓', pro: '✓' },
     },
     {
       label: 'Username badge',
@@ -1635,12 +1645,8 @@ function TierPerksTable({
       perk: { free: '—', member: '25% off', pro: '50% off' },
     },
     {
-      label: 'Prime Ad reserve discount',
-      perk: { free: '—', member: '—', pro: '25% off' },
-    },
-    {
-      label: 'Business / VAT receipts',
-      perk: { free: '—', member: '—', pro: '✓' },
+      label: 'Weekly Ask GG raffle entry',
+      perk: { free: '—', member: 'Member raffle', pro: 'Pro raffle' },
     },
   ];
 

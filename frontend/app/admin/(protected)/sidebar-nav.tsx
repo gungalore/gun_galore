@@ -26,6 +26,7 @@ const ITEMS = [
   { href: '/admin/categories', label: 'Categories' },
   { href: '/admin/reloading', label: 'Reloading manuals' },
   { href: '/admin/ask-gg/kb', label: 'Ask GG · KB' },
+  { href: '/admin/ask-gg/experts', label: 'Ask GG · Experts' },
   { href: '/admin/settings', label: 'Settings' },
   { href: '/admin/broadcast', label: 'Broadcast' },
   // /admin/kyc removed from sidebar — VerifyNow balance + trend chart +

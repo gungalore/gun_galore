@@ -590,6 +590,12 @@ export class ListingsService {
               // username-not-real-name.
               username: true,
               sellerTier: true,
+              // Phase E1 badges — GG+ pill (MEMBER/PRO) + verified-
+              // expert badge render next to the username on every
+              // listing card. Both fields are public by design (OD1
+              // + OD2 locked).
+              subscriptionTier: true,
+              isVerifiedExpert: true,
             },
           },
         },
@@ -618,6 +624,14 @@ export class ListingsService {
             sellerTier: true,
             totalSales: true,
             createdAt: true,
+            // Phase E1 badges (OD1 + OD2 locked).
+            subscriptionTier: true,
+            isVerifiedExpert: true,
+            // Public rationale — only shown on the seller profile,
+            // never on browse cards. Visible to everyone because
+            // the badge is a public award; private rationale lives
+            // in AdminAuditEvent only.
+            expertBadgeReason: true,
           },
         },
         // Social-proof signals: how many people have saved this

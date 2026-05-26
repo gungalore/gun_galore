@@ -20,6 +20,7 @@ import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AskGgService } from './ask-gg.service';
 import { AskGgKbService } from './ask-gg-kb.service';
+import { maxPhotosPerRequest } from './ask-gg-quota.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { AskGgConversationOutcome } from '@prisma/client';
 
@@ -86,13 +87,13 @@ export class AskGgController {
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('uploads')
   @UseInterceptors(
-    FilesInterceptor('files', 5, {
+    FilesInterceptor('files', 10, {
       storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB each
     }),
   )
   async uploads(
-    @CurrentUser() _clerkId: string,
+    @CurrentUser() clerkId: string,
     @UploadedFiles(
       new ParseFilePipe({
         fileIsRequired: true,
@@ -107,8 +108,14 @@ export class AskGgController {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one photo required.');
     }
-    if (files.length > 5) {
-      throw new BadRequestException('Up to 5 photos per upload.');
+    // Per-tier cap (Phase E3 — PRO=10, MEMBER/FREE=5) is enforced
+    // again inside sendMessage / identifyForListing, but we also gate
+    // it here so we don't upload to Cloudinary on a request that will
+    // immediately be rejected downstream.
+    const tier = await this.askGg.getUserTier(clerkId);
+    const cap = maxPhotosPerRequest(tier);
+    if (files.length > cap) {
+      throw new BadRequestException(`Up to ${cap} photos per upload on your tier.`);
     }
     const results = await Promise.all(
       files.map((f) => this.cloudinary.uploadImage(f.buffer, 'ask-gg/photo-id')),
@@ -125,7 +132,7 @@ export class AskGgController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('identify-listing')
   @UseInterceptors(
-    FilesInterceptor('files', 5, {
+    FilesInterceptor('files', 10, {
       storage: memoryStorage(),
       limits: { fileSize: 10 * 1024 * 1024 },
     }),

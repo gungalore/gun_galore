@@ -6,6 +6,7 @@ import { Listing } from '@/lib/types';
 import { formatPrice, CONDITION_LABELS, TIER_LABELS } from '@/lib/utils';
 import { WishlistButton } from './wishlist-button';
 import { useCountdown, formatCountdown } from '@/lib/use-countdown';
+import { UserBadges } from './user-badges';
 
 export function ListingCard({ listing }: { listing: Listing }) {
   // Defensive: if upstream returns a partial listing without the
@@ -106,15 +107,24 @@ export function ListingCard({ listing }: { listing: Listing }) {
                   ? formatPrice(listing.price)
                   : 'Make an offer'}
             </span>
-            <span
-              className="text-xs px-1.5 py-0.5 rounded-[3px]"
-              style={{
-                background: 'var(--bg-inset)',
-                color: 'var(--text-tertiary)',
-                border: '0.5px solid var(--border)',
-              }}
-            >
-              {TIER_LABELS[listing.seller.sellerTier]}
+            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+              <span
+                className="text-xs px-1.5 py-0.5 rounded-[3px]"
+                style={{
+                  background: 'var(--bg-inset)',
+                  color: 'var(--text-tertiary)',
+                  border: '0.5px solid var(--border)',
+                }}
+              >
+                {TIER_LABELS[listing.seller.sellerTier]}
+              </span>
+              {/* Phase E1 — GG+ pill (MEMBER/PRO) + verified-expert
+                  badge. Renders nothing for FREE non-expert sellers
+                  so card density doesn't regress. */}
+              <UserBadges
+                subscriptionTier={listing.seller.subscriptionTier}
+                isVerifiedExpert={listing.seller.isVerifiedExpert}
+              />
             </span>
           </div>
 

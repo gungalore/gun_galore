@@ -5,7 +5,10 @@ import { AskGgClaudeService } from './ask-gg-claude.service';
 import { AskGgQuotaService } from './ask-gg-quota.service';
 import { AskGgKbService } from './ask-gg-kb.service';
 import { AskGgController } from './ask-gg.controller';
-import { AskGgKbAdminController } from './ask-gg-kb-admin.controller';
+import {
+  AskGgKbAdminController,
+  AskGgExpertAdminController,
+} from './ask-gg-kb-admin.controller';
 import { AdminAuditService } from '../admin/admin-audit.service';
 import { ReloadingModule } from '../reloading/reloading.module';
 
@@ -22,7 +25,11 @@ import { ReloadingModule } from '../reloading/reloading.module';
       secret: process.env.JWT_ADMIN_SECRET || 'dev-admin-secret-change-in-prod',
     }),
   ],
-  controllers: [AskGgController, AskGgKbAdminController],
+  controllers: [
+    AskGgController,
+    AskGgKbAdminController,
+    AskGgExpertAdminController,
+  ],
   providers: [
     AskGgService,
     AskGgClaudeService,

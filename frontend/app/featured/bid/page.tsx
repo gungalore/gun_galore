@@ -55,6 +55,16 @@ interface Config {
   bindWindowSec: number;
 }
 
+// Phase E2 — /featured/slots now returns the slots in a wrapper that
+// also includes the signed-in bidder's GG+ subscription discount.
+// The bid modal uses it to preview "you'll pay R250" before commit.
+type SubscriptionTier = 'FREE' | 'MEMBER' | 'PRO';
+interface SlotsResponse {
+  slots: SlotForBidder[];
+  bidderSubscriptionTier: SubscriptionTier;
+  bidderDiscountPercent: number;
+}
+
 interface MyListing {
   id: string;
   title: string;
@@ -109,6 +119,9 @@ export default function FeaturedBidPage() {
 
   const [slots, setSlots] = useState<SlotForBidder[] | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
+  // Phase E2 — render the GG+ discount banner above the tier table.
+  const [bidderTier, setBidderTier] = useState<SubscriptionTier>('FREE');
+  const [bidderDiscount, setBidderDiscount] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -150,7 +163,20 @@ export default function FeaturedBidPage() {
         }
         const [slotData, cfgData] = await Promise.all([s.json(), c.json()]);
         if (cancelled) return;
-        setSlots(slotData);
+        // Phase E2 — backend now wraps slots[] with the bidder's
+        // subscription discount. Old shape (bare array) is handled
+        // as a defensive fallback so the page doesn't blank if the
+        // backend hasn't been restarted.
+        const wrapped: SlotsResponse | SlotForBidder[] = slotData;
+        if (Array.isArray(wrapped)) {
+          setSlots(wrapped);
+          setBidderTier('FREE');
+          setBidderDiscount(0);
+        } else {
+          setSlots(wrapped.slots);
+          setBidderTier(wrapped.bidderSubscriptionTier);
+          setBidderDiscount(wrapped.bidderDiscountPercent);
+        }
         setConfig(cfgData);
         setLoadError(null);
       } catch (err) {
@@ -255,6 +281,62 @@ export default function FeaturedBidPage() {
         </div>
       </header>
 
+      {/* Phase E2 — GG+ discount banner (MEMBER/PRO only). FREE
+          users see an upsell nudge instead. */}
+      {bidderDiscount > 0 ? (
+        <div
+          className="rounded-[6px] px-3 py-2 mb-4 text-xs"
+          style={{
+            background: 'rgba(200,16,46,0.10)',
+            border: '0.5px solid rgba(200,16,46,0.40)',
+            color: 'var(--text-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            lineHeight: 1.45,
+          }}
+        >
+          <span
+            style={{
+              color: 'var(--red)',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              fontSize: 10,
+              flexShrink: 0,
+            }}
+          >
+            GG+ {bidderTier}
+          </span>
+          <span style={{ color: 'var(--text-secondary)' }}>
+            Your Ask GG subscription unlocks{' '}
+            <strong style={{ color: 'var(--text-primary)' }}>
+              {bidderDiscount}% off
+            </strong>{' '}
+            every featured-slot bid you place.
+          </span>
+        </div>
+      ) : (
+        <div
+          className="rounded-[6px] px-3 py-2 mb-4 text-xs"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            color: 'var(--text-secondary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            lineHeight: 1.45,
+          }}
+        >
+          <span style={{ color: 'var(--text-tertiary)' }}>
+            <Link href="/ask-gg" style={{ color: 'var(--red)' }}>
+              Subscribe to Ask GG
+            </Link>{' '}
+            for 25% off featured bids (PRO: 50% off).
+          </span>
+        </div>
+      )}
+
       {/* Tier table */}
       {config && <TierTable config={config} />}
 
@@ -320,6 +402,8 @@ export default function FeaturedBidPage() {
         <BidModal
           slot={activeModal.slot}
           config={config}
+          bidderTier={bidderTier}
+          bidderDiscountPercent={bidderDiscount}
           onClose={() => setActiveModal(null)}
           onPlaced={async () => {
             setActiveModal(null);
@@ -329,7 +413,16 @@ export default function FeaturedBidPage() {
               headers: { Authorization: `Bearer ${await getToken()}` },
               cache: 'no-store',
             });
-            if (r.ok) setSlots(await r.json());
+            if (r.ok) {
+              const wrapped: SlotsResponse | SlotForBidder[] = await r.json();
+              if (Array.isArray(wrapped)) {
+                setSlots(wrapped);
+              } else {
+                setSlots(wrapped.slots);
+                setBidderTier(wrapped.bidderSubscriptionTier);
+                setBidderDiscount(wrapped.bidderDiscountPercent);
+              }
+            }
           }}
           getToken={getToken}
         />
@@ -345,7 +438,16 @@ export default function FeaturedBidPage() {
               headers: { Authorization: `Bearer ${await getToken()}` },
               cache: 'no-store',
             });
-            if (r.ok) setSlots(await r.json());
+            if (r.ok) {
+              const wrapped: SlotsResponse | SlotForBidder[] = await r.json();
+              if (Array.isArray(wrapped)) {
+                setSlots(wrapped);
+              } else {
+                setSlots(wrapped.slots);
+                setBidderTier(wrapped.bidderSubscriptionTier);
+                setBidderDiscount(wrapped.bidderDiscountPercent);
+              }
+            }
           }}
           getToken={getToken}
         />
@@ -754,12 +856,16 @@ function BindWindowBlock({
 function BidModal({
   slot,
   config,
+  bidderTier,
+  bidderDiscountPercent,
   onClose,
   onPlaced,
   getToken,
 }: {
   slot: SlotForBidder;
   config: Config;
+  bidderTier: SubscriptionTier;
+  bidderDiscountPercent: number;
   onClose: () => void;
   onPlaced: () => void;
   getToken: () => Promise<string | null>;
@@ -773,6 +879,11 @@ function BidModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const snapped = snapToTier(amountCents, config);
+  // Phase E2 — effective charge after GG+ discount (floor cents,
+  // matches backend math exactly so the preview doesn't lie).
+  const effectiveChargeCents = snapped
+    ? Math.floor((snapped.amountCents * (100 - bidderDiscountPercent)) / 100)
+    : 0;
 
   // Stepper increments — match the tiers. Lets users jump between
   // tiers with single clicks.
@@ -905,6 +1016,20 @@ function BidModal({
             <>
               Snaps to <strong>{formatRand(snapped.amountCents)}</strong> —{' '}
               <strong>{formatDuration(snapped.durationSec)}</strong> featured if you win.
+              {bidderDiscountPercent > 0 && (
+                <div
+                  className="mt-1 pt-1"
+                  style={{
+                    borderTop: '0.5px solid rgba(47,158,107,0.30)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  GG+ {bidderTier} discount −{bidderDiscountPercent}% →{' '}
+                  you&apos;ll be charged{' '}
+                  <strong>{formatRand(effectiveChargeCents)}</strong>{' '}
+                  (saving {formatRand(snapped.amountCents - effectiveChargeCents)})
+                </div>
+              )}
             </>
           ) : (
             <>Below floor — minimum is {formatRand(config.bidFloorCents)}.</>

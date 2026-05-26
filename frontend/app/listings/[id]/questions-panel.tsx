@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
+import { UserBadges } from '@/components/user-badges';
+import type { SubscriptionTier } from '@/lib/types';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -13,8 +15,19 @@ interface PublicQuestion {
   answeredAt: string;
   status: 'ANSWERED_BY_SELLER' | 'AUTO_ANSWERED';
   autoAnsweredFromQuestionId: string | null;
-  asker: { firstName: string | null; username: string | null };
-  answeredByUser: { firstName: string | null; username: string | null } | null;
+  // Phase E1 — username + badge fields surfaced beside each answerer.
+  // A Pro-tier or verified-expert seller's reply is visually weightier
+  // than a FREE seller's, which is the whole point of the badge.
+  asker: {
+    username: string | null;
+    subscriptionTier?: SubscriptionTier;
+    isVerifiedExpert?: boolean;
+  };
+  answeredByUser: {
+    username: string | null;
+    subscriptionTier?: SubscriptionTier;
+    isVerifiedExpert?: boolean;
+  } | null;
 }
 
 interface AskResponse {
@@ -187,7 +200,23 @@ export function QuestionsPanel({
                 className="text-[11px]"
                 style={{ color: 'var(--text-tertiary)' }}
               >
-                {whoAsked(q)} · {whoAnswered(q)} · {relativeDate(q.answeredAt)}
+                {whoAsked(q)}
+                {/* Buyer badges — usually nothing, but if the asker is
+                    a Pro / verified expert it shows they're an
+                    informed buyer (some sellers treat that signal
+                    as worth replying quickly to). */}
+                <UserBadges
+                  subscriptionTier={q.asker.subscriptionTier}
+                  isVerifiedExpert={q.asker.isVerifiedExpert}
+                />{' '}
+                · {whoAnswered(q)}
+                {q.status !== 'AUTO_ANSWERED' && q.answeredByUser && (
+                  <UserBadges
+                    subscriptionTier={q.answeredByUser.subscriptionTier}
+                    isVerifiedExpert={q.answeredByUser.isVerifiedExpert}
+                  />
+                )}{' '}
+                · {relativeDate(q.answeredAt)}
                 {q.status === 'AUTO_ANSWERED' && (
                   <span
                     className="ml-2"

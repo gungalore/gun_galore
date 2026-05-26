@@ -1248,6 +1248,45 @@ verbatim) OR if both the POST AND the verification GET fail.
 
 ---
 
+## Deferred / Optional — only build if a user actually asks
+
+Items consciously dropped from the active plan because the cost-to-
+build doesn't match the demonstrated demand. Documented here so we
+don't accidentally re-derive them, and so the next pass knows they
+were considered + rejected (not forgotten).
+
+- **Ask GG — Business / VAT receipts** (was E4). Adding `businessName`
+  + `vatNumber` to Subscription so Zoho receipts carry SARS-compliant
+  fields. Pro perk in the original plan. Operator call 2026-05-26:
+  too niche to ship pre-launch; the same outcome is achievable by
+  the dealer manually telling the operator their VAT number once and
+  the operator updating the Zoho contact directly. Revisit if 3+
+  Pro subscribers ask in writing.
+
+- **Ask GG — Priority routing** (was E5). Pro requests jumping a
+  queue read first by the Claude-call worker. Needs real queue
+  infra (BullMQ or similar) that we don't have today. Operator call
+  2026-05-26: deferred — nobody's complained about Ask GG latency,
+  Sonnet is already fast, and the Opus escalate-button covers the
+  "I need a better answer" pressure point. Revisit if median Ask GG
+  latency exceeds 6s OR if Pro users complain.
+
+- **Ask GG — Bulk photo identification 5→20** (was E3 original).
+  Bumped from 5 to 20 photos per Pro request for "estate clearance"
+  use case. Operator call 2026-05-26: 20-photo Claude vision calls
+  cost ~$0.20 and the realistic use cases are thin. Settled at Pro
+  cap = **10/request** (Member stays at 5). Revisit only if a dealer
+  asks specifically for bulk intake processing.
+
+- **Ask GG — Prime Ad reserve discount.** Was in early plan as
+  Pro 25% off `FeaturedAuction.reserveCents`. Operator call
+  2026-05-26: there IS no second ad system + no `reserveCents`
+  field — it was vapor. The featured-slot bid discount (E2 shipped)
+  is the only featured-pricing perk. Do not reintroduce without a
+  concrete second product to discount.
+
+---
+
 ## Current Status
 
 **Phases 1–14 complete plus Featured Slots system, sitewide UX

@@ -12,7 +12,38 @@ import {
   FeaturedSlotStatus,
   FeaturedTier,
   Prisma,
+  SubscriptionTier,
 } from '@prisma/client';
+
+/**
+ * Phase E2 subscription perk (OD1 locked) — discount applied to the
+ * winning bidder's featured-slot fee. The face bid (amountCents) is
+ * unchanged so the auction ranking stays fair across tiers; the
+ * actual cash collected is reduced.
+ *
+ *   FREE   → no discount
+ *   MEMBER → 25% off
+ *   PRO    → 50% off
+ *
+ * Snapshotted on the bid at place-bid time so the discount can't
+ * be gamed by upgrading right before settlement (or unfairly
+ * stripped if the bidder downgrades between bid + bind).
+ */
+export function featuredDiscountPercent(tier: SubscriptionTier): number {
+  if (tier === SubscriptionTier.PRO) return 50;
+  if (tier === SubscriptionTier.MEMBER) return 25;
+  return 0;
+}
+
+/** Apply the snapshotted discount to a face bid. Always rounds DOWN
+ *  in cents so we never accidentally charge more than the face. */
+export function applyFeaturedDiscount(
+  faceCents: number,
+  discountPercent: number,
+): number {
+  const safe = Math.max(0, Math.min(99, Math.round(discountPercent)));
+  return Math.floor((faceCents * (100 - safe)) / 100);
+}
 import { PrismaService } from '../prisma/prisma.service';
 import { PeachService } from '../payments/peach.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
@@ -241,12 +272,21 @@ export class FeaturedService {
   async getSlotsForBidder(clerkId: string | null) {
     const slots = await this.getRail();
     let bidderId: string | null = null;
+    // Phase E2 — surface the bidder's discount up-front so the bid
+    // page can preview "you'll pay R250 (R500 × 50% PRO discount)"
+    // before they commit.
+    let bidderSubscriptionTier: SubscriptionTier = SubscriptionTier.FREE;
+    let bidderDiscountPercent = 0;
     if (clerkId) {
       const buyer = await this.prisma.user.findUnique({
         where: { clerkId },
-        select: { id: true },
+        select: { id: true, subscriptionTier: true },
       });
       bidderId = buyer?.id ?? null;
+      if (buyer) {
+        bidderSubscriptionTier = buyer.subscriptionTier;
+        bidderDiscountPercent = featuredDiscountPercent(buyer.subscriptionTier);
+      }
     }
     const enriched = await Promise.all(
       slots.map(async (s) => {
@@ -269,7 +309,13 @@ export class FeaturedService {
                   bidderId,
                   status: 'ACTIVE',
                 },
-                select: { id: true, amountCents: true, tier: true },
+                select: {
+                  id: true,
+                  amountCents: true,
+                  tier: true,
+                  discountPercent: true,
+                  chargedAmountCents: true,
+                },
               })
             : Promise.resolve(null),
           this.prisma.featuredSlotBid.count({
@@ -279,7 +325,11 @@ export class FeaturedService {
         return { ...s, topBid: top, yourBid: mine, bidCount: count };
       }),
     );
-    return enriched;
+    return {
+      slots: enriched,
+      bidderSubscriptionTier,
+      bidderDiscountPercent,
+    };
   }
 
   // ─── Seller flow: bid → win → bind listing ──────────────────────────
@@ -357,12 +407,18 @@ export class FeaturedService {
       );
     }
 
+    // Phase E2 — snapshot the bidder's subscription perk on the bid.
+    // Locking it at bid-time means a tier change between now + bind
+    // can't move the goalposts in either direction.
+    const discountPercent = featuredDiscountPercent(user.subscriptionTier);
+
     const bid = await this.prisma.featuredSlotBid.create({
       data: {
         auctionId: slot.currentAuctionId,
         bidderId: user.id,
         amountCents: snapped.tierAmountCents,
         tier: snapped.tier,
+        discountPercent,
         status: 'ACTIVE',
       },
     });
@@ -389,6 +445,7 @@ export class FeaturedService {
       bidId: bid.id,
       amountCents: snapped.tierAmountCents,
       tier: snapped.tier,
+      discountPercent,
       timerStarted,
     }, user.id);
 
@@ -397,6 +454,13 @@ export class FeaturedService {
       snappedTier: snapped.tier,
       snappedAmountCents: snapped.tierAmountCents,
       durationSec: snapped.durationSec,
+      // Phase E2 — surface what was applied so the receipt UI can
+      // show "GG+ saved you R250" without re-fetching the bid.
+      discountPercent,
+      effectiveChargeCents: applyFeaturedDiscount(
+        snapped.tierAmountCents,
+        discountPercent,
+      ),
       timerStarted,
     };
   }
@@ -463,12 +527,19 @@ export class FeaturedService {
       // path-style — the bid is recorded as paid, real Peach wiring
       // can land in a follow-up. Mark as paid optimistically.
       const peachPaymentId = `featured-${winningBid.id}`;
+      // Phase E2 — collect the discounted amount (snapshot on the
+      // bid). Defaults to face amount when discountPercent=0.
+      const chargedAmountCents = applyFeaturedDiscount(
+        winningBid.amountCents,
+        winningBid.discountPercent ?? 0,
+      );
       await tx.featuredSlotBid.update({
         where: { id: winningBid.id },
         data: {
           status: 'WON',
           paidAt: new Date(),
           peachPaymentId,
+          chargedAmountCents,
         },
       });
 
@@ -775,9 +846,14 @@ export class FeaturedService {
 
     if (refund && slot.currentAuction?.winningBid?.peachPaymentId) {
       const bid = slot.currentAuction.winningBid;
+      // Phase E2 — refund the amount we actually CHARGED (post-
+      // discount), not the face bid. Fall back to amountCents for
+      // legacy bids that were charged before the discount fields
+      // existed.
+      const refundCents = bid.chargedAmountCents ?? bid.amountCents;
       const r = await this.peach.refundPayment(
         bid.peachPaymentId!,
-        bid.amountCents,
+        refundCents,
       );
       await this.prisma.featuredSlotBid.update({
         where: { id: bid.id },
@@ -786,7 +862,13 @@ export class FeaturedService {
       await this.recordEvent(
         slotId,
         'REFUND_ISSUED',
-        { bidId: bid.id, amountCents: bid.amountCents, peachResult: r.resultCode },
+        {
+          bidId: bid.id,
+          refundCents,
+          faceAmountCents: bid.amountCents,
+          discountPercent: bid.discountPercent,
+          peachResult: r.resultCode,
+        },
         undefined,
         adminId,
       );
@@ -975,23 +1057,36 @@ export class FeaturedService {
   async getRevenueStats() {
     const allPaid = await this.prisma.featuredSlotBid.findMany({
       where: { status: { in: ['WON', 'REFUNDED'] }, paidAt: { not: null } },
-      select: { amountCents: true, paidAt: true, status: true, bidderId: true },
+      select: {
+        amountCents: true,
+        // Phase E2 — admin revenue dashboard reads the cents we
+        // actually collected, not the face bid. Falls back to the
+        // face for pre-E2 bids that have chargedAmountCents = null.
+        chargedAmountCents: true,
+        discountPercent: true,
+        paidAt: true,
+        status: true,
+        bidderId: true,
+      },
     });
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
+    const billable = (b: { amountCents: number; chargedAmountCents: number | null }) =>
+      b.chargedAmountCents ?? b.amountCents;
+
     const totalCents = allPaid
       .filter((b) => b.status === 'WON')
-      .reduce((sum, b) => sum + b.amountCents, 0);
+      .reduce((sum, b) => sum + billable(b), 0);
     const monthCents = allPaid
       .filter((b) => b.status === 'WON' && b.paidAt && b.paidAt >= monthStart)
-      .reduce((sum, b) => sum + b.amountCents, 0);
+      .reduce((sum, b) => sum + billable(b), 0);
 
     // Top bidders by paid spend.
     const byBidder = new Map<string, number>();
     for (const b of allPaid.filter((b) => b.status === 'WON')) {
-      byBidder.set(b.bidderId, (byBidder.get(b.bidderId) ?? 0) + b.amountCents);
+      byBidder.set(b.bidderId, (byBidder.get(b.bidderId) ?? 0) + billable(b));
     }
     const topBidderIds = [...byBidder.entries()]
       .sort((a, b) => b[1] - a[1])

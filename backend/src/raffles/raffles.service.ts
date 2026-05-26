@@ -48,6 +48,27 @@ function generateRef(): string {
 // have to track per-raffle correctness in admin UX.
 const CORRECT_ANSWER: 'A' | 'B' | 'C' | 'D' = 'C';
 
+// Phase E3 — payload shape for the /raffles/me/subscriber endpoint.
+// Used by the /ask-gg widget to show the user's free entry status +
+// draw countdown + win state.
+export interface SubscriberRaffleView {
+  id: string;
+  referenceNumber: string | null;
+  title: string;
+  description: string;
+  status: string;
+  subscriberDrawAt: Date | null;
+  drawnAt: Date | null;
+  coverImageUrl: string | null;
+  isEntered: boolean;
+  myTicket: {
+    id: string;
+    ticketNumber: number;
+    referenceCode: string;
+  } | null;
+  didIWin: boolean;
+}
+
 @Injectable()
 export class RafflesService {
   private readonly logger = new Logger(RafflesService.name);
@@ -126,18 +147,46 @@ export class RafflesService {
     if (Number.isNaN(startTime.getTime())) {
       throw new BadRequestException('Invalid startTime');
     }
-    if (dto.ticketPriceCents > dto.itemValueCents) {
-      throw new BadRequestException(
-        'Ticket price cannot be higher than the item price',
-      );
+
+    // Phase E3 — subscriber raffles have completely different
+    // economics. Branch early so we don't apply public-raffle
+    // validation (ticket price > 0 etc.) to a free subscriber
+    // entry raffle.
+    const isSubscriberRaffle = !!dto.subscriberTierRestriction;
+
+    if (!isSubscriberRaffle) {
+      if (dto.itemValueCents < 1000) {
+        throw new BadRequestException('Public raffles require itemValueCents >= R10');
+      }
+      if (dto.ticketPriceCents < 100) {
+        throw new BadRequestException('Public raffles require ticketPriceCents >= R1');
+      }
+      if (dto.ticketPriceCents > dto.itemValueCents) {
+        throw new BadRequestException(
+          'Ticket price cannot be higher than the item price',
+        );
+      }
     }
 
-    const tier = tierForValue(dto.itemValueCents);
+    // tierForValue assumes a non-zero value — fall back to the
+    // smallest tier band for subscriber raffles (their value is
+    // hidden anyway).
+    const tier = isSubscriberRaffle
+      ? tierForValue(1000)
+      : tierForValue(dto.itemValueCents);
 
-    // Auto-derive how many tickets need to sell for revenue to cover
-    // the prize selling price. Operator no longer chooses this number;
-    // the form just shows the math live.
-    const targetTicketCount = Math.ceil(dto.itemValueCents / dto.ticketPriceCents);
+    // Public raffles derive targetTicketCount from value/price.
+    // Subscriber raffles have no sell-out trigger (cron drives the
+    // draw via subscriberDrawAt), so 0 is the correct sentinel.
+    const targetTicketCount = isSubscriberRaffle
+      ? 0
+      : Math.ceil(dto.itemValueCents / dto.ticketPriceCents);
+
+    // 48h auto-draw timer for subscriber raffles. Operator publishes
+    // → cron drives the draw two days later automatically.
+    const subscriberDrawAt = isSubscriberRaffle
+      ? new Date(Date.now() + 48 * 60 * 60 * 1000)
+      : null;
 
     // Allocate the RAxxxxxx reference before insert.
     const referenceNumber = await this.referenceNumbers.allocateForRaffle();
@@ -160,6 +209,17 @@ export class RafflesService {
         startTime,
         status: startTime <= new Date() ? 'ACTIVE' : 'DRAFT',
         createdByAdminId: adminId,
+        // Phase E3 — subscriber-raffle fields.
+        subscriberTierRestriction: dto.subscriberTierRestriction ?? null,
+        autoEnterSubscribers: isSubscriberRaffle,
+        subscriberDrawAt,
+        // Operator can toggle hidePrizeValue independently for
+        // public raffles, but subscriber raffles force it on so
+        // we never accidentally reveal an off-platform-sized prize.
+        hidePrizeValue:
+          dto.hidePrizeValue !== undefined
+            ? dto.hidePrizeValue
+            : isSubscriberRaffle,
       },
     });
 
@@ -172,12 +232,263 @@ export class RafflesService {
         targetTicketCount,
         itemCostCents: dto.itemCostCents,
         itemValueCents: dto.itemValueCents,
+        subscriberTierRestriction: dto.subscriberTierRestriction ?? null,
       },
       undefined,
       adminId,
     );
 
+    // Phase E3 — auto-enter every active subscriber the moment the
+    // raffle is ACTIVE. If it's still in DRAFT (future startTime),
+    // the open() admin call will trigger this instead. Snapshot
+    // semantics: only users subscribed AT THIS MOMENT are entered.
+    if (isSubscriberRaffle && raffle.status === 'ACTIVE') {
+      await this.autoEnterSubscribers(raffle.id);
+    }
+
     return { raffle };
+  }
+
+  /**
+   * Phase E3 — issue a free CONFIRMED ticket to every active
+   * subscriber of the matching tier.
+   *
+   *   MEMBER raffle → Members + Pros (Pros get TWO entries per week
+   *                                    because Pro raffle also runs)
+   *   PRO raffle    → Pros only
+   *
+   * Skips users who already have a CONFIRMED ticket for this raffle
+   * (idempotent — safe to re-run on open()).
+   */
+  private async autoEnterSubscribers(raffleId: string): Promise<number> {
+    const raffle = await this.prisma.raffle.findUnique({
+      where: { id: raffleId },
+      select: {
+        id: true,
+        title: true,
+        subscriberTierRestriction: true,
+        ticketsSoldPaid: true,
+      },
+    });
+    if (!raffle) return 0;
+    const restriction = raffle.subscriberTierRestriction;
+    if (!restriction) return 0;
+
+    // Build the eligible-tier set. PRO raffle = Pros only; MEMBER
+    // raffle = Members + Pros (Pros get value from both).
+    const eligibleTiers =
+      restriction === 'PRO' ? ['PRO'] : ['MEMBER', 'PRO'];
+
+    const subscribers = await this.prisma.user.findMany({
+      where: {
+        subscriptionTier: { in: eligibleTiers as ('MEMBER' | 'PRO')[] },
+        isBanned: false,
+      },
+      select: { id: true, email: true },
+    });
+
+    if (subscribers.length === 0) {
+      this.logger.warn(
+        `Subscriber raffle ${raffleId} created with zero eligible subscribers (${restriction}).`,
+      );
+      return 0;
+    }
+
+    // Already-issued check (idempotent re-run).
+    const existing = await this.prisma.ticket.findMany({
+      where: { raffleId, buyerId: { in: subscribers.map((s) => s.id) } },
+      select: { buyerId: true },
+    });
+    const existingIds = new Set(existing.map((t) => t.buyerId));
+    const toIssue = subscribers.filter((s) => !existingIds.has(s.id));
+
+    let issued = 0;
+    await this.prisma.$transaction(async (tx) => {
+      // Sequential ticketNumber per raffle. Pull current max once,
+      // increment locally for each insert.
+      const last = await tx.ticket.findFirst({
+        where: { raffleId },
+        orderBy: { ticketNumber: 'desc' },
+        select: { ticketNumber: true },
+      });
+      let n = last?.ticketNumber ?? 0;
+      for (const s of toIssue) {
+        n += 1;
+        await tx.ticket.create({
+          data: {
+            raffleId,
+            buyerId: s.id,
+            ticketNumber: n,
+            referenceCode: generateRef(),
+            status: 'CONFIRMED',
+            amountCents: 0,
+          },
+        });
+        issued += 1;
+      }
+      // Bump ticketsSoldPaid for the eligible-ticket count used by
+      // the draw selection logic. Even though they're free, they
+      // are CONFIRMED tickets that go into the eligibility pool.
+      if (issued > 0) {
+        await tx.raffle.update({
+          where: { id: raffleId },
+          data: { ticketsSoldPaid: { increment: issued } },
+        });
+      }
+    });
+
+    await this.recordEvent(raffleId, 'SUBSCRIBERS_AUTO_ENTERED', {
+      restriction,
+      issued,
+      totalSubscribers: subscribers.length,
+    });
+
+    this.logger.log(
+      `Auto-entered ${issued} subscriber tickets for raffle ${raffleId} (${restriction}).`,
+    );
+    return issued;
+  }
+
+  /** Phase E3 — current user's subscriber-raffle status. Returns
+   *  the latest ACTIVE / recently-DRAWN raffle for each tier the
+   *  user is eligible for. Drives the /ask-gg widget that shows
+   *  "Your free entry this week" + draw countdown.
+   *
+   *  Non-subscribers get { upsell: true } so the widget can render
+   *  the "Subscribe to enter" CTA. */
+  async getMySubscriberRaffles(clerkId: string): Promise<{
+    upsell: boolean;
+    tier: 'FREE' | 'MEMBER' | 'PRO';
+    memberRaffle: SubscriberRaffleView | null;
+    proRaffle: SubscriberRaffleView | null;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true, subscriptionTier: true },
+    });
+    if (!user) {
+      return { upsell: true, tier: 'FREE', memberRaffle: null, proRaffle: null };
+    }
+    const tier = user.subscriptionTier as 'FREE' | 'MEMBER' | 'PRO';
+
+    if (tier === 'FREE') {
+      return { upsell: true, tier, memberRaffle: null, proRaffle: null };
+    }
+
+    // The user is eligible for the MEMBER raffle (always, since Pros
+    // are entered into both). Pros are ALSO eligible for the PRO
+    // raffle.
+    const memberRaffle = await this.loadSubscriberRaffleForUser(
+      'MEMBER',
+      user.id,
+    );
+    const proRaffle =
+      tier === 'PRO'
+        ? await this.loadSubscriberRaffleForUser('PRO', user.id)
+        : null;
+
+    return { upsell: false, tier, memberRaffle, proRaffle };
+  }
+
+  /** Helper for getMySubscriberRaffles — finds the latest ACTIVE
+   *  or recently-DRAWN raffle of a tier, plus the user's ticket
+   *  (if any) and the prize photo. */
+  private async loadSubscriberRaffleForUser(
+    tierRestriction: 'MEMBER' | 'PRO',
+    userId: string,
+  ): Promise<SubscriberRaffleView | null> {
+    const raffle = await this.prisma.raffle.findFirst({
+      where: {
+        subscriberTierRestriction: tierRestriction,
+        status: { in: ['ACTIVE', 'CLOSED_AWAITING_DRAW', 'DRAWN'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        status: true,
+        subscriberDrawAt: true,
+        drawnAt: true,
+        winningTicketId: true,
+        referenceNumber: true,
+        images: {
+          where: { isPrimary: true },
+          take: 1,
+          select: { url: true },
+        },
+        imageUrl: true,
+      },
+    });
+    if (!raffle) return null;
+
+    const myTicket = await this.prisma.ticket.findFirst({
+      where: { raffleId: raffle.id, buyerId: userId, status: 'CONFIRMED' },
+      select: { id: true, ticketNumber: true, referenceCode: true },
+    });
+
+    let didIWin = false;
+    if (raffle.status === 'DRAWN' && raffle.winningTicketId && myTicket) {
+      didIWin = raffle.winningTicketId === myTicket.id;
+    }
+
+    return {
+      id: raffle.id,
+      referenceNumber: raffle.referenceNumber,
+      title: raffle.title,
+      description: raffle.description,
+      status: raffle.status,
+      subscriberDrawAt: raffle.subscriberDrawAt,
+      drawnAt: raffle.drawnAt,
+      coverImageUrl:
+        raffle.images[0]?.url ?? raffle.imageUrl ?? null,
+      isEntered: !!myTicket,
+      myTicket: myTicket
+        ? {
+            id: myTicket.id,
+            ticketNumber: myTicket.ticketNumber,
+            referenceCode: myTicket.referenceCode,
+          }
+        : null,
+      didIWin,
+    };
+  }
+
+  /** Phase E3 — drive the 48h auto-draw for subscriber raffles.
+   *  Called by the daily cron in TasksService. Closes + draws any
+   *  subscriber raffle whose subscriberDrawAt has passed. Re-uses
+   *  the existing draw() pipeline so winners + DrawProof + audit
+   *  flow are identical to public raffles. */
+  async runSubscriberRaffleDraws(): Promise<{ drawn: number }> {
+    const due = await this.prisma.raffle.findMany({
+      where: {
+        subscriberTierRestriction: { not: null },
+        status: 'ACTIVE',
+        subscriberDrawAt: { lte: new Date() },
+      },
+      select: { id: true, title: true, subscriberTierRestriction: true },
+    });
+    let drawn = 0;
+    for (const r of due) {
+      try {
+        // Move to CLOSED_AWAITING_DRAW first (the existing draw()
+        // expects this) then immediately call draw.
+        await this.prisma.raffle.update({
+          where: { id: r.id },
+          data: { status: 'CLOSED_AWAITING_DRAW' },
+        });
+        await this.runDraw(r.id);
+        drawn += 1;
+        this.logger.log(`Subscriber raffle ${r.id} drew successfully.`);
+      } catch (err) {
+        this.logger.error(
+          `Subscriber raffle ${r.id} draw failed: ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      }
+    }
+    return { drawn };
   }
 
   // -------------------------------------------------------------------
@@ -192,9 +503,25 @@ export class RafflesService {
     }
     const updated = await this.prisma.raffle.update({
       where: { id: raffleId },
-      data: { status: 'ACTIVE' },
+      data: {
+        status: 'ACTIVE',
+        // Phase E3 — start the 48h auto-draw countdown from
+        // OPEN time, not from create-time (operator might have
+        // drafted the raffle days earlier).
+        ...(raffle.subscriberTierRestriction
+          ? {
+              subscriberDrawAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+            }
+          : {}),
+      },
     });
     await this.recordEvent(raffleId, 'OPENED', null, undefined, adminId);
+
+    // Phase E3 — snapshot subscribers at OPEN time.
+    if (raffle.subscriberTierRestriction) {
+      await this.autoEnterSubscribers(raffleId);
+    }
+
     return updated;
   }
 

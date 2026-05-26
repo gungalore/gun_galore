@@ -998,7 +998,11 @@ export class ZohoBooksService {
     });
     if (!bid) return;
     if (bid.zohoInvoiceId) return;
-    if (bid.amountCents <= 0) return;
+    // Phase E2 — receipt uses the cents we actually CHARGED
+    // (post-discount), falling back to the face bid for legacy
+    // rows from before the discount fields existed.
+    const billableCents = bid.chargedAmountCents ?? bid.amountCents;
+    if (billableCents <= 0) return;
 
     try {
       const contactId = await this.ensureContact(bid.bidder.id, bid.bidder.email);
@@ -1017,10 +1021,16 @@ export class ZohoBooksService {
         (await this.getAccountIdByName('Bank — Peach Pending')) ??
         (await this.getAccountIdByName('Bank — FNB Business'));
 
-      const feeRand = bid.amountCents / 100;
+      const feeRand = billableCents / 100;
       const today = new Date().toISOString().slice(0, 10);
       const bidRef = bid.id.slice(-8).toUpperCase();
-      const reference = `Featured-slot ${bid.tier} — slot ${bid.auction?.slotId ?? 'unknown'} — bid ${bidRef}`;
+      // Phase E2 — surface the discount on the receipt so the
+      // operator can see it in Books without re-doing the math.
+      const discountSuffix =
+        bid.discountPercent && bid.discountPercent > 0
+          ? ` — GG+ ${bid.discountPercent}% off (face R${(bid.amountCents / 100).toFixed(0)})`
+          : '';
+      const reference = `Featured-slot ${bid.tier} — slot ${bid.auction?.slotId ?? 'unknown'} — bid ${bidRef}${discountSuffix}`;
 
       // Featured-slot fees are paid at the moment the bid commits
       // (the seller's card was already charged by Peach). So we use

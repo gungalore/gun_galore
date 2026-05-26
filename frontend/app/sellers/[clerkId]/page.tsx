@@ -2,7 +2,8 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ListingCard } from '@/components/listing-card';
 import { PageReveal } from '@/components/page-reveal';
-import { BrowseResponse } from '@/lib/types';
+import { UserBadgesWithTooltip } from '@/components/user-badges';
+import type { BrowseResponse, PublicSellerProfile } from '@/lib/types';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -31,7 +32,11 @@ export default async function SellerProfilePage({
 }) {
   const { clerkId } = await params;
 
-  const [ratingsRes, listingsRes] = await Promise.all([
+  const [profileRes, ratingsRes, listingsRes] = await Promise.all([
+    // Phase E1 — public seller profile with badge fields. 404 here
+    // is the canonical "no such seller" so we propagate it to the
+    // page's notFound() below.
+    fetch(`${API_URL}/sellers/${clerkId}`, { cache: 'no-store' }),
     fetch(`${API_URL}/ratings/seller/${clerkId}`, { cache: 'no-store' }),
     // Scope by sellerClerkId so we only show THIS seller's active
     // listings, not the platform's first-8 (which was the original
@@ -42,8 +47,10 @@ export default async function SellerProfilePage({
     ),
   ]);
 
+  if (!profileRes.ok) notFound();
   if (!ratingsRes.ok) notFound();
 
+  const profile: PublicSellerProfile = await profileRes.json();
   const ratings: SellerRating[] = await ratingsRes.json();
   const browse: BrowseResponse = listingsRes.ok
     ? await listingsRes.json()
@@ -65,8 +72,20 @@ export default async function SellerProfilePage({
       >
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>
-              Seller Profile
+            {/* Username + Phase E1 badges (GG+ pill + verified-expert
+                + tooltip with admin-supplied rationale). Username
+                only — platform policy forbids real names on public
+                surfaces. */}
+            <p
+              className="text-xl font-medium flex items-center flex-wrap"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              {profile.username ?? 'Anonymous seller'}
+              <UserBadgesWithTooltip
+                subscriptionTier={profile.subscriptionTier}
+                isVerifiedExpert={profile.isVerifiedExpert}
+                expertBadgeReason={profile.expertBadgeReason}
+              />
             </p>
             {avgRating && (
               <div className="flex items-center gap-2 mt-1">
@@ -78,6 +97,13 @@ export default async function SellerProfilePage({
                 </span>
               </div>
             )}
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+              {profile.totalSales} sale{profile.totalSales !== 1 ? 's' : ''} · joined{' '}
+              {new Date(profile.createdAt).toLocaleDateString('en-ZA', {
+                year: 'numeric',
+                month: 'short',
+              })}
+            </p>
           </div>
         </div>
       </div>

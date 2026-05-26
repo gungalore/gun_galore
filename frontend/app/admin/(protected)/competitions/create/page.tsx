@@ -64,7 +64,12 @@ export default function CreateCompetitionPage() {
     optionC: '',        // ALWAYS correct (backend hardcodes)
     optionD: '',
     startTime: new Date().toISOString().slice(0, 16),
+    // Phase E3 — Ask GG subscriber raffle. '' = standard public,
+    // 'MEMBER' = Ask GG Member raffle (Members + Pros auto-entered),
+    // 'PRO' = Ask GG Pro raffle (Pros only).
+    subscriberTierRestriction: '' as '' | 'MEMBER' | 'PRO',
   });
+  const isSubscriberRaffle = form.subscriberTierRestriction !== '';
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -111,22 +116,31 @@ export default function CreateCompetitionPage() {
       if (!questionReady) {
         throw new Error('Question and all four options are required.');
       }
-      if (calc.ticketCents > calc.priceCents) {
+      if (!isSubscriberRaffle && calc.ticketCents > calc.priceCents) {
         throw new Error('Ticket price cannot be higher than the item price.');
       }
 
       const body = {
         title: form.title.trim(),
         description: form.description.trim(),
-        itemValueCents: calc.priceCents,
-        itemCostCents: calc.costCents,
-        ticketPriceCents: calc.ticketCents,
+        // Phase E3 — subscriber raffles run on 0-value, 0-price
+        // (operator sizes prize off-platform). Force them so the
+        // operator can leave the price fields blank.
+        itemValueCents: isSubscriberRaffle ? 0 : calc.priceCents,
+        itemCostCents: isSubscriberRaffle ? 0 : calc.costCents,
+        ticketPriceCents: isSubscriberRaffle ? 0 : calc.ticketCents,
         question: form.question.trim(),
         optionA: form.optionA.trim(),
         optionB: form.optionB.trim(),
         optionC: form.optionC.trim(),
         optionD: form.optionD.trim(),
         startTime: new Date(form.startTime).toISOString(),
+        ...(isSubscriberRaffle
+          ? {
+              subscriberTierRestriction: form.subscriberTierRestriction,
+              hidePrizeValue: true,
+            }
+          : {}),
       };
 
       const res = await adminFetch(`/admin/raffles`, {
@@ -203,6 +217,34 @@ export default function CreateCompetitionPage() {
         className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6"
       >
         <div className="space-y-4">
+          {/* Phase E3 — subscriber raffle picker. Operator picks
+              Public / Member / Pro at the top of the form. When
+              subscriber raffle is selected, prize/ticket-price
+              fields go away (operator sizes prize off-platform). */}
+          <Field
+            label="Raffle type"
+            hint={
+              isSubscriberRaffle
+                ? 'Auto-enters every active subscriber of this tier the moment you publish. 48h auto-draw. Prize value hidden.'
+                : 'Standard public raffle — sells tickets to anyone, draws on sell-out + 24h cooling.'
+            }
+          >
+            <select
+              value={form.subscriberTierRestriction}
+              onChange={(e) =>
+                set(
+                  'subscriberTierRestriction',
+                  e.target.value as '' | 'MEMBER' | 'PRO',
+                )
+              }
+              style={inputStyle}
+            >
+              <option value="">Public raffle (paid tickets)</option>
+              <option value="MEMBER">Ask GG — Member raffle (free entry, Members + Pros)</option>
+              <option value="PRO">Ask GG — Pro raffle (free entry, Pros only)</option>
+            </select>
+          </Field>
+
           <Field label="Prize title">
             <input
               type="text"
@@ -243,45 +285,70 @@ export default function CreateCompetitionPage() {
 
           {/* Three pricing inputs — that's the entire pricing UI. The
               number of tickets is derived (ceil itemPrice / ticketPrice)
-              and shown live in the side panel. */}
-          <div className="grid grid-cols-3 gap-4">
-            <Field label="Item price (R)" hint="What it sells for">
-              <input
-                type="number"
-                required
-                step="0.01"
-                min="10"
-                value={form.itemPrice}
-                onChange={(e) => set('itemPrice', e.target.value)}
-                style={inputStyle}
-                placeholder="0.00"
-              />
-            </Field>
-            <Field label="Item cost (R)" hint="What we paid">
-              <input
-                type="number"
-                required
-                step="0.01"
-                min="0"
-                value={form.itemCost}
-                onChange={(e) => set('itemCost', e.target.value)}
-                style={inputStyle}
-                placeholder="0.00"
-              />
-            </Field>
-            <Field label="Ticket price (R)" hint="Per ticket">
-              <input
-                type="number"
-                required
-                step="0.01"
-                min="1"
-                value={form.ticketPrice}
-                onChange={(e) => set('ticketPrice', e.target.value)}
-                style={inputStyle}
-                placeholder="0.00"
-              />
-            </Field>
-          </div>
+              and shown live in the side panel. Subscriber raffles skip
+              this section entirely. */}
+          {isSubscriberRaffle ? (
+            <div
+              className="rounded-[6px] p-4 text-xs"
+              style={{
+                background: 'rgba(200,16,46,0.08)',
+                border: '0.5px solid rgba(200,16,46,0.40)',
+                color: 'var(--text-secondary)',
+                lineHeight: 1.5,
+              }}
+            >
+              <strong style={{ color: 'var(--text-primary)' }}>
+                No prize pricing for subscriber raffles.
+              </strong>
+              <br />
+              Operator sizes the prize off-platform as a percentage of
+              subscription income. Auto-entry is free for every active{' '}
+              {form.subscriberTierRestriction === 'PRO'
+                ? 'Pro'
+                : 'Member + Pro'}{' '}
+              at the moment you publish. Draw fires automatically 48h
+              after publication.
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-4">
+              <Field label="Item price (R)" hint="What it sells for">
+                <input
+                  type="number"
+                  required
+                  step="0.01"
+                  min="10"
+                  value={form.itemPrice}
+                  onChange={(e) => set('itemPrice', e.target.value)}
+                  style={inputStyle}
+                  placeholder="0.00"
+                />
+              </Field>
+              <Field label="Item cost (R)" hint="What we paid">
+                <input
+                  type="number"
+                  required
+                  step="0.01"
+                  min="0"
+                  value={form.itemCost}
+                  onChange={(e) => set('itemCost', e.target.value)}
+                  style={inputStyle}
+                  placeholder="0.00"
+                />
+              </Field>
+              <Field label="Ticket price (R)" hint="Per ticket">
+                <input
+                  type="number"
+                  required
+                  step="0.01"
+                  min="1"
+                  value={form.ticketPrice}
+                  onChange={(e) => set('ticketPrice', e.target.value)}
+                  style={inputStyle}
+                  placeholder="0.00"
+                />
+              </Field>
+            </div>
+          )}
 
           {/* Multiple-choice question — C is always correct. */}
           <div
@@ -388,28 +455,63 @@ export default function CreateCompetitionPage() {
             >
               Operator summary
             </p>
-            <Row label="Item price" value={formatRand(calc.priceCents)} />
-            <Row label="Item cost" value={formatRand(calc.costCents)} />
-            <Row label="Ticket price" value={formatRand(calc.ticketCents)} />
-            <hr style={{ border: 'none', borderTop: '0.5px solid var(--border)', margin: '8px 0' }} />
-            <Row
-              label="Tickets to sell"
-              value={calc.target > 0 ? String(calc.target) : '—'}
-              strong
-            />
-            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-              ceil(item price ÷ ticket price)
-            </p>
-            <hr style={{ border: 'none', borderTop: '0.5px solid var(--border)', margin: '8px 0' }} />
-            <Row
-              label="Revenue at sell-out"
-              value={formatRand(calc.projectedRevenue)}
-            />
-            <Row
-              label="Profit"
-              value={formatRand(calc.profit)}
-              color={calc.profit >= 0 ? '#22c55e' : 'var(--red)'}
-            />
+            {isSubscriberRaffle ? (
+              <>
+                <Row
+                  label="Type"
+                  value={
+                    form.subscriberTierRestriction === 'PRO'
+                      ? 'Pro raffle'
+                      : 'Member raffle'
+                  }
+                  strong
+                />
+                <Row
+                  label="Eligible"
+                  value={
+                    form.subscriberTierRestriction === 'PRO'
+                      ? 'Pros only'
+                      : 'Members + Pros'
+                  }
+                />
+                <Row label="Ticket price" value="Free entry" />
+                <hr style={{ border: 'none', borderTop: '0.5px solid var(--border)', margin: '8px 0' }} />
+                <Row label="Auto-entry" value="On publish" />
+                <Row label="Auto-draw" value="48h after publish" />
+                <p
+                  className="text-xs mt-2"
+                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.45 }}
+                >
+                  Prize value is hidden from subscribers. Size the prize
+                  off-platform as a percentage of subscription income.
+                </p>
+              </>
+            ) : (
+              <>
+                <Row label="Item price" value={formatRand(calc.priceCents)} />
+                <Row label="Item cost" value={formatRand(calc.costCents)} />
+                <Row label="Ticket price" value={formatRand(calc.ticketCents)} />
+                <hr style={{ border: 'none', borderTop: '0.5px solid var(--border)', margin: '8px 0' }} />
+                <Row
+                  label="Tickets to sell"
+                  value={calc.target > 0 ? String(calc.target) : '—'}
+                  strong
+                />
+                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  ceil(item price ÷ ticket price)
+                </p>
+                <hr style={{ border: 'none', borderTop: '0.5px solid var(--border)', margin: '8px 0' }} />
+                <Row
+                  label="Revenue at sell-out"
+                  value={formatRand(calc.projectedRevenue)}
+                />
+                <Row
+                  label="Profit"
+                  value={formatRand(calc.profit)}
+                  color={calc.profit >= 0 ? '#22c55e' : 'var(--red)'}
+                />
+              </>
+            )}
           </div>
         </aside>
       </form>

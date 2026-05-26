@@ -2,9 +2,12 @@ import {
   IsString,
   IsInt,
   IsOptional,
+  IsEnum,
+  IsBoolean,
   Min,
   Length,
 } from 'class-validator';
+import { SubscriptionTier } from '@prisma/client';
 
 // Three operator inputs: itemPrice (selling price), itemCost (what we
 // paid), ticketPrice. targetTicketCount is auto-derived on the backend
@@ -20,8 +23,11 @@ export class CreateRaffleDto {
   @Length(20, 5000)
   description: string;
 
+  // Phase E3 — for subscriber raffles these can be 0 (prize value
+  // hidden, no public ticket sale). For public raffles the normal
+  // minimums apply (R10 prize, R1 ticket).
   @IsInt()
-  @Min(1000) // R10 minimum
+  @Min(0)
   itemValueCents: number;
 
   @IsInt()
@@ -29,8 +35,23 @@ export class CreateRaffleDto {
   itemCostCents: number;
 
   @IsInt()
-  @Min(100) // R1 minimum
+  @Min(0)
   ticketPriceCents: number;
+
+  // Phase E3 — subscriber-raffle inputs. null/undefined = standard
+  // public raffle (existing behaviour). MEMBER = Ask GG Member raffle
+  // (open to Members + Pros, auto-entered free, 48h auto-draw). PRO =
+  // Ask GG Pro raffle (Pros only).
+  @IsOptional()
+  @IsEnum(SubscriptionTier)
+  subscriberTierRestriction?: SubscriptionTier;
+
+  // Default true when subscriberTierRestriction is set — service
+  // forces it on regardless of what the form sends. Kept as a DTO
+  // field so the admin form can preview the rendered card.
+  @IsOptional()
+  @IsBoolean()
+  hidePrizeValue?: boolean;
 
   // Multiple choice question — C is always the correct answer. Backend
   // enforces this in createPendingTickets().

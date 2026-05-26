@@ -378,4 +378,252 @@ export class AskGgKbService implements OnModuleInit {
       throw new NotFoundException('KB entry not found');
     }
   }
+
+  // ─── Verified-Expert eligibility (Phase E1) ──────────────────────
+  //
+  // OD2 locked: hybrid criteria — a user becomes "expert eligible"
+  // once they've authored 5+ VERIFIED KB entries. Admin still has to
+  // approve (mandatory reason → AdminAuditEvent). This service is the
+  // read side; the actual grant/revoke happens via AdminService.
+  //
+  // We deliberately do NOT auto-promote — five solid contributions
+  // doesn't necessarily mean the rest of the user's posture is good
+  // (could be a banned-pending user, or someone whose listings have a
+  // pattern of disputes). The admin sees the eligibility queue,
+  // checks the user, then decides.
+
+  /** Threshold for expert eligibility (5 verified KB entries — OD2
+   *  locked). Exposed so the admin queue page can render
+   *  "N / 5 verified" progress for in-flight contributors too. */
+  readonly EXPERT_VERIFIED_THRESHOLD = 5;
+
+  /** How many verified KB entries does this user have? Cheap count
+   *  query — used by the user's own progress chip + by the admin
+   *  dossier. */
+  async getVerifiedKbCount(userId: string): Promise<number> {
+    return this.prisma.askGgKbEntry.count({
+      where: { authorId: userId, status: AskGgKbStatus.VERIFIED },
+    });
+  }
+
+  /** Snapshot for a single user — what their badge state is and
+   *  whether they're eligible. Used by /admin/users/:id dossier
+   *  panel + the public /sellers/:clerkId render. */
+  async getExpertEligibility(userId: string): Promise<{
+    userId: string;
+    verifiedKbCount: number;
+    threshold: number;
+    eligible: boolean;
+    isVerifiedExpert: boolean;
+    verifiedExpertAt: Date | null;
+    expertBadgeReason: string | null;
+  }> {
+    const [user, verifiedKbCount] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          isVerifiedExpert: true,
+          verifiedExpertAt: true,
+          expertBadgeReason: true,
+        },
+      }),
+      this.getVerifiedKbCount(userId),
+    ]);
+    if (!user) throw new NotFoundException('User not found');
+    return {
+      userId,
+      verifiedKbCount,
+      threshold: this.EXPERT_VERIFIED_THRESHOLD,
+      eligible: verifiedKbCount >= this.EXPERT_VERIFIED_THRESHOLD,
+      isVerifiedExpert: user.isVerifiedExpert,
+      verifiedExpertAt: user.verifiedExpertAt,
+      expertBadgeReason: user.expertBadgeReason,
+    };
+  }
+
+  /** Admin queue — every user who's contributed ≥5 verified KB
+   *  entries AND doesn't already hold the badge. Newest-contribution
+   *  first so the admin sees fresh activity at the top.
+   *
+   *  Returns a single round-trip with the per-user verified count +
+   *  the user's username/email so the admin can sanity-check before
+   *  approving. We also include the most recent verified entry's
+   *  date as a proxy for "is this still an active contributor". */
+  async getExpertQueue(opts: { limit?: number; offset?: number } = {}): Promise<{
+    rows: Array<{
+      userId: string;
+      verifiedKbCount: number;
+      mostRecentVerifiedAt: Date | null;
+      user: {
+        id: string;
+        username: string | null;
+        email: string;
+        firstName: string | null;
+        lastName: string | null;
+      };
+    }>;
+    total: number;
+  }> {
+    const limit = Math.max(1, Math.min(opts.limit ?? 50, 200));
+    const offset = Math.max(0, opts.offset ?? 0);
+
+    // groupBy gives us per-author counts in one query — much cheaper
+    // than per-user N+1. We then filter to ≥ threshold and join in
+    // the user row.
+    const grouped = await this.prisma.askGgKbEntry.groupBy({
+      by: ['authorId'],
+      where: { status: AskGgKbStatus.VERIFIED },
+      _count: { _all: true },
+      _max: { verifiedAt: true },
+    });
+
+    // Keep users at-or-above threshold AND not already badged.
+    const eligibleAuthorIds = grouped
+      .filter((g) => g._count._all >= this.EXPERT_VERIFIED_THRESHOLD)
+      .map((g) => g.authorId);
+
+    if (eligibleAuthorIds.length === 0) {
+      return { rows: [], total: 0 };
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        id: { in: eligibleAuthorIds },
+        // Not-yet-badged only. Already-granted users show on the
+        // separate "granted" tab via getGrantedExperts().
+        isVerifiedExpert: false,
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    const rows = grouped
+      .filter((g) => userById.has(g.authorId))
+      .sort((a, b) => {
+        const ad = a._max.verifiedAt?.getTime() ?? 0;
+        const bd = b._max.verifiedAt?.getTime() ?? 0;
+        return bd - ad;
+      })
+      .slice(offset, offset + limit)
+      .map((g) => ({
+        userId: g.authorId,
+        verifiedKbCount: g._count._all,
+        mostRecentVerifiedAt: g._max.verifiedAt,
+        user: userById.get(g.authorId)!,
+      }));
+
+    return { rows, total: users.length };
+  }
+
+  /** Already-granted experts — sibling tab so admin can revoke
+   *  without searching the user table. Includes the reason that
+   *  was given at grant time. */
+  async getGrantedExperts(opts: { limit?: number; offset?: number } = {}): Promise<{
+    rows: Array<{
+      userId: string;
+      verifiedKbCount: number;
+      verifiedExpertAt: Date | null;
+      expertBadgeReason: string | null;
+      user: {
+        id: string;
+        username: string | null;
+        email: string;
+        firstName: string | null;
+        lastName: string | null;
+      };
+    }>;
+    total: number;
+  }> {
+    const limit = Math.max(1, Math.min(opts.limit ?? 50, 200));
+    const offset = Math.max(0, opts.offset ?? 0);
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { isVerifiedExpert: true },
+        orderBy: [{ verifiedExpertAt: 'desc' }],
+        take: limit,
+        skip: offset,
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          verifiedExpertAt: true,
+          expertBadgeReason: true,
+        },
+      }),
+      this.prisma.user.count({ where: { isVerifiedExpert: true } }),
+    ]);
+
+    // Per-user verified-KB count. N+1 is fine — granted experts will
+    // never be many (5+ verified contributors who get manually
+    // approved by a human admin); not worth optimising into a single
+    // SQL query yet.
+    const rows = await Promise.all(
+      users.map(async (u) => ({
+        userId: u.id,
+        verifiedKbCount: await this.getVerifiedKbCount(u.id),
+        verifiedExpertAt: u.verifiedExpertAt,
+        expertBadgeReason: u.expertBadgeReason,
+        user: {
+          id: u.id,
+          username: u.username,
+          email: u.email,
+          firstName: u.firstName,
+          lastName: u.lastName,
+        },
+      })),
+    );
+    return { rows, total };
+  }
+
+  /** Mutate verified-expert state. Returns the updated user fields
+   *  the admin UI needs to refresh the row in place. Audit is
+   *  recorded by the controller (uniform pattern). */
+  async setVerifiedExpert(
+    userId: string,
+    grant: boolean,
+    reason: string,
+  ): Promise<{
+    id: string;
+    isVerifiedExpert: boolean;
+    verifiedExpertAt: Date | null;
+    expertBadgeReason: string | null;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: grant
+        ? {
+            isVerifiedExpert: true,
+            verifiedExpertAt: new Date(),
+            expertBadgeReason: reason.trim().slice(0, 500),
+          }
+        : {
+            isVerifiedExpert: false,
+            verifiedExpertAt: null,
+            // Keep the reason as historical context — the admin
+            // audit log has the revoke reason separately.
+          },
+      select: {
+        id: true,
+        isVerifiedExpert: true,
+        verifiedExpertAt: true,
+        expertBadgeReason: true,
+      },
+    });
+    return updated;
+  }
 }

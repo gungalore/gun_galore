@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AskGgClaudeService, AskGgChatMessage } from './ask-gg-claude.service';
-import { AskGgQuotaService } from './ask-gg-quota.service';
+import { AskGgQuotaService, maxPhotosPerRequest } from './ask-gg-quota.service';
 import { AskGgKbService } from './ask-gg-kb.service';
 import {
   AskGgConversationOutcome,
@@ -60,6 +60,15 @@ export class AskGgService {
     return u;
   }
 
+  /** Public tier accessor used by the controller's upload route so
+   *  it can enforce the per-tier photo cap before pushing to
+   *  Cloudinary. Lightweight read — no auth (caller is already
+   *  ClerkGuard-validated). */
+  async getUserTier(clerkId: string): Promise<SubscriptionTier> {
+    const u = await this.userIdFromClerk(clerkId);
+    return u.subscriptionTier;
+  }
+
   /**
    * Send a new user message. If `conversationId` is omitted, starts
    * a new conversation and seeds its title from the first user
@@ -86,8 +95,12 @@ export class AskGgService {
     const imageUrls = (input.imageUrls ?? []).filter(
       (u) => typeof u === 'string' && u.length > 0,
     );
-    if (imageUrls.length > 5) {
-      throw new BadRequestException('Up to 5 photos per message.');
+    // Phase E3 — per-tier per-request cap. PRO=10, MEMBER/FREE=5.
+    const photoCap = maxPhotosPerRequest(user.subscriptionTier);
+    if (imageUrls.length > photoCap) {
+      throw new BadRequestException(
+        `Up to ${photoCap} photos per message on your tier.`,
+      );
     }
     if (imageUrls.length > 0) {
       // Separate quota — FREE 5 photo-IDs / 30 days.
@@ -362,8 +375,12 @@ export class AskGgService {
     if (photos.length === 0) {
       throw new BadRequestException('At least one photo required.');
     }
-    if (photos.length > 5) {
-      throw new BadRequestException('Up to 5 photos per identification.');
+    // Phase E3 — per-tier cap (PRO=10, MEMBER/FREE=5).
+    const photoCap = maxPhotosPerRequest(user.subscriptionTier);
+    if (photos.length > photoCap) {
+      throw new BadRequestException(
+        `Up to ${photoCap} photos per identification on your tier.`,
+      );
     }
 
     // Build a hierarchical category tree string so Claude can pick the

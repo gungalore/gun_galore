@@ -23,6 +23,7 @@ import { FeaturedRail } from '@/components/featured-rail';
 import { HelpTip } from '@/components/help-tip';
 import { HelpText } from '@/components/help-text';
 import { WishlistButton } from '@/components/wishlist-button';
+import { UserBadges } from '@/components/user-badges';
 import { ShareListingButton } from '@/components/share-listing-button';
 import { SocialProofPill } from '@/components/social-proof-pill';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
@@ -416,6 +417,15 @@ export default async function ListingDetailPage({
                     order chips) but the listing surface is username-only. */}
                 <p style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
                   {listing.seller.username ?? 'Anonymous seller'}
+                  {/* Phase E1 — GG+ pill + verified-expert badge. The
+                      badge tooltip surfaces the public rationale the
+                      admin entered at grant time. */}
+                  <UserBadges
+                    subscriptionTier={listing.seller.subscriptionTier}
+                    isVerifiedExpert={listing.seller.isVerifiedExpert}
+                    expertBadgeReason={listing.seller.expertBadgeReason}
+                    size="md"
+                  />
                 </p>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
                   {listing.seller.totalSales} sale
