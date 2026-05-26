@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 // Subset of Prisma's ListingImage that the gallery actually reads.
@@ -44,6 +44,41 @@ export function ImageGallery({
   const [activeIdx, setActiveIdx] = useState(initial);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [zoomed, setZoomed] = useState(false);
+
+  // Pan-when-zoomed state. The image renders at ZOOM_SCALE×viewport
+  // bounds while zoomed; pan stores the translate offset applied via
+  // CSS transform. Drag-to-pan works for both mouse + touch in one
+  // unified handler set below. Refs hold the in-progress drag state
+  // so re-renders during the drag don't reset it.
+  const ZOOM_SCALE = 2; // 2× zoom — matches the "Click photo to zoom 2×" hint
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    startPanX: number;
+    startPanY: number;
+    moved: boolean;
+  }>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    startPanX: 0,
+    startPanY: 0,
+    moved: false,
+  });
+  // Bounds for the pan — computed from the wrapper + scaled image
+  // size so the user can't drag the image entirely off-screen. Stored
+  // on a ref so the drag handlers always read fresh dims without
+  // forcing a re-render.
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  // Reset pan whenever the zoom toggles off, or the active image
+  // changes, or the lightbox opens/closes — start at center each time.
+  useEffect(() => {
+    setPan({ x: 0, y: 0 });
+  }, [zoomed, activeIdx, lightboxOpen]);
 
   // Portal target — created on mount once the document is available
   // (server-rendering guard). Without a portal the lightbox renders
@@ -316,37 +351,126 @@ export function ImageGallery({
             </>
           )}
 
-          {/* Image — click to toggle 2× zoom. We use a native img tag
-              with maxWidth/maxHeight inside the viewport bounds + a
-              CSS transform for the zoom. overflow:auto on the wrapper
-              lets the user pan a zoomed image. */}
+          {/* Image — click to toggle 2× zoom, drag (mouse OR touch) to
+              pan while zoomed. Pure CSS-transform approach (no
+              overflow:auto scrollbars) so the pan feels native on
+              both desktop and mobile. */}
           <div
+            ref={wrapperRef}
             onClick={(e) => {
               e.stopPropagation();
+              // Only toggle zoom on a true click, not a click that
+              // ended a drag. Movement threshold check below in
+              // pointerup also covers this for touch.
+              if (dragRef.current.moved) {
+                dragRef.current.moved = false;
+                return;
+              }
               setZoomed((z) => !z);
+            }}
+            onPointerDown={(e) => {
+              if (!zoomed) return;
+              // Capture the pointer so events keep firing even if the
+              // user drags outside the wrapper bounds.
+              (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+              dragRef.current = {
+                active: true,
+                startX: e.clientX,
+                startY: e.clientY,
+                startPanX: pan.x,
+                startPanY: pan.y,
+                moved: false,
+              };
+            }}
+            onPointerMove={(e) => {
+              if (!dragRef.current.active) return;
+              const dx = e.clientX - dragRef.current.startX;
+              const dy = e.clientY - dragRef.current.startY;
+              // Treat any movement >4px as a drag — distinguishes
+              // drag-to-pan from click-to-toggle.
+              if (Math.abs(dx) + Math.abs(dy) > 4) {
+                dragRef.current.moved = true;
+              }
+              // Clamp pan so the image edges stay roughly within the
+              // viewport. Half the over-pan distance (image size minus
+              // viewport size, divided by 2) gives the maximum offset
+              // in each direction.
+              const wrapper = wrapperRef.current;
+              const img = imgRef.current;
+              if (!wrapper || !img) return;
+              const wr = wrapper.getBoundingClientRect();
+              const overX = Math.max(
+                0,
+                (img.naturalWidth * ZOOM_SCALE - wr.width) / 2,
+              );
+              const overY = Math.max(
+                0,
+                (img.naturalHeight * ZOOM_SCALE - wr.height) / 2,
+              );
+              // Image dimensions above are raw natural — for an image
+              // shrunk to fit the wrapper, that's an overestimate. We
+              // fall back to a conservative wrapper-based bound so the
+              // image can always be panned to its corners regardless
+              // of source resolution.
+              const fallbackOverX = wr.width * (ZOOM_SCALE - 1) * 0.5;
+              const fallbackOverY = wr.height * (ZOOM_SCALE - 1) * 0.5;
+              const maxX = Math.max(overX, fallbackOverX);
+              const maxY = Math.max(overY, fallbackOverY);
+              const nextX = Math.max(
+                -maxX,
+                Math.min(maxX, dragRef.current.startPanX + dx),
+              );
+              const nextY = Math.max(
+                -maxY,
+                Math.min(maxY, dragRef.current.startPanY + dy),
+              );
+              setPan({ x: nextX, y: nextY });
+            }}
+            onPointerUp={() => {
+              dragRef.current.active = false;
+            }}
+            onPointerCancel={() => {
+              dragRef.current.active = false;
+              dragRef.current.moved = false;
             }}
             style={{
               maxWidth: '90vw',
               maxHeight: '85vh',
-              overflow: zoomed ? 'auto' : 'visible',
-              cursor: zoomed ? 'zoom-out' : 'zoom-in',
+              overflow: 'hidden',
+              cursor: zoomed
+                ? dragRef.current.active
+                  ? 'grabbing'
+                  : 'grab'
+                : 'zoom-in',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              // Touch-action: prevent the browser from claiming the
+              // gesture as a scroll/pinch and stealing it from us.
+              touchAction: zoomed ? 'none' : 'auto',
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
+              ref={imgRef}
               src={active.url}
               alt={`${title} — photo ${activeIdx + 1}`}
               style={{
-                maxWidth: zoomed ? 'none' : '90vw',
-                maxHeight: zoomed ? 'none' : '85vh',
-                width: zoomed ? '180vw' : 'auto',
-                height: zoomed ? 'auto' : 'auto',
+                maxWidth: '90vw',
+                maxHeight: '85vh',
                 objectFit: 'contain',
-                transition: 'all 0.18s ease-out',
+                transform: zoomed
+                  ? `translate(${pan.x}px, ${pan.y}px) scale(${ZOOM_SCALE})`
+                  : 'none',
+                transformOrigin: 'center center',
+                // Only animate the zoom-toggle. While the user is
+                // actively dragging, kill the transition so the
+                // image tracks the pointer 1:1 instead of catching up.
+                transition: dragRef.current.active
+                  ? 'none'
+                  : 'transform 0.18s ease-out',
                 userSelect: 'none',
+                willChange: 'transform',
               }}
               draggable={false}
             />
@@ -365,7 +489,7 @@ export function ImageGallery({
                 textTransform: 'uppercase',
               }}
             >
-              Click photo to zoom 2× · ← → to navigate · Esc to close
+              Click to zoom 2× · drag to pan · ← → to navigate · Esc to close
             </div>
           )}
 
