@@ -158,7 +158,12 @@ const serwist = new Serwist({
             !path.startsWith('/admin') &&
             !path.startsWith('/a/') &&
             !path.startsWith('/checkout') &&
-            !path.startsWith('/preview')
+            !path.startsWith('/preview') &&
+            // Ask GG is inherently online-only (Claude API + Clerk +
+            // live quota state). Falling through to /offline misleads
+            // users into waiting instead of reconnecting. Error
+            // visibly so the browser's "you're offline" UI shows.
+            !path.startsWith('/ask-gg')
           );
         },
       },
