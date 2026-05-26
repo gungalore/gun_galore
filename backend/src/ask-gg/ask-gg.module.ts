@@ -11,6 +11,7 @@ import {
 } from './ask-gg-kb-admin.controller';
 import { AdminAuditService } from '../admin/admin-audit.service';
 import { ReloadingModule } from '../reloading/reloading.module';
+import { BallisticsModule } from '../ballistics/ballistics.module';
 
 @Module({
   // ReloadingModule exports ReloadingService so AskGgClaudeService can
@@ -18,6 +19,7 @@ import { ReloadingModule } from '../reloading/reloading.module';
   // questions (Phase D Sprint 2 tool-use loop).
   imports: [
     ReloadingModule,
+    BallisticsModule,
     // For the admin KB-verification controller (uses AdminJwtGuard).
     // Same secret/config as AdminModule — kept local here so we
     // don't create a circular dep importing AdminModule.

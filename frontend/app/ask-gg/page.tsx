@@ -1637,6 +1637,10 @@ function TierPerksTable({
       perk: { free: '✓', member: '✓', pro: '✓' },
     },
     {
+      label: 'Ballistic calculator',
+      perk: { free: '—', member: '✓', pro: '✓' },
+    },
+    {
       label: 'Username badge',
       perk: { free: '—', member: 'GG+ pill', pro: 'Verified-expert' },
     },

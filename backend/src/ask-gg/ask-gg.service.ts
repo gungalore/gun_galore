@@ -181,6 +181,9 @@ export class AskGgService {
     // assistant message row creation on the happy path.
     const reply = await this.claude.complete(claudeHistory, {
       escalate: input.escalate,
+      // Phase D ballistics — pass user tier so the calculator tool
+      // can refuse FREE users with a friendly upgrade nudge.
+      subscriptionTier: user.subscriptionTier,
     });
 
     const assistantMessage = await this.prisma.askGgMessage.create({

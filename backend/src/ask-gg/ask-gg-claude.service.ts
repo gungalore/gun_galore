@@ -7,6 +7,10 @@ import type {
   ToolUseBlock,
 } from '@anthropic-ai/sdk/resources/messages';
 import { ReloadingService } from '../reloading/reloading.service';
+import {
+  BallisticsService,
+  type BallisticsInput,
+} from '../ballistics/ballistics.service';
 
 // ─── Model strategy ─────────────────────────────────────────────────
 // Two-tier: Sonnet by default, Opus on user-triggered escalation.
@@ -73,6 +77,65 @@ const TOOLS: Tool[] = [
       required: ['manualId', 'pages'],
     },
   },
+  {
+    name: 'calculateBallistics',
+    description:
+      'Run a G1-drag-model ballistic calculation for a specific load. Returns drop / windage / retained velocity / energy / time-of-flight at the requested ranges. ALWAYS call this for ANY question asking for drop, holdover, dial-up, windage, retained energy, or time-of-flight numbers — never invent these from training memory. Use standard atmosphere (15 °C, sea level) unless the user specified conditions. Required inputs: bulletWeightGr, bcG1, muzzleVelocityFps, zeroM. Optional: ranges (defaults to a sensible rifle set), sightHeightCm, tempC, pressureHpa, altitudeM, windSpeedMps, windDirectionDeg.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        bulletWeightGr: {
+          type: 'number',
+          description:
+            'Bullet mass in grains. Common: 168 for .308 SMK, 55 for .223 V-Max, 124 for 9mm.',
+        },
+        bcG1: {
+          type: 'number',
+          description:
+            'G1 ballistic coefficient as a number (e.g. 0.491 for .308 Sierra 168gr HPBT). Look it up if the user didn\'t give you one and explain the assumption in your answer.',
+        },
+        muzzleVelocityFps: {
+          type: 'number',
+          description: 'Muzzle velocity in feet per second (e.g. 2650).',
+        },
+        zeroM: {
+          type: 'number',
+          description:
+            'Zero distance in metres (e.g. 100). The bullet crosses the line-of-sight at this range.',
+        },
+        ranges: {
+          type: 'array',
+          items: { type: 'number' },
+          description:
+            'Ranges in metres to report at. If the user named a specific range like "400 m", include it. Defaults to a sensible rifle set: 25, 50, 100, 150, 200, 300, 400, 500, 600, 800, 1000.',
+        },
+        sightHeightCm: {
+          type: 'number',
+          description:
+            'Sight height above bore axis in cm. Default 4 (typical AR / bolt-action). Use ~3 for AK, ~1.5 for handgun.',
+        },
+        tempC: { type: 'number', description: 'Air temperature in °C. Defaults to standard 15.' },
+        pressureHpa: {
+          type: 'number',
+          description: 'Barometric pressure in hPa. Defaults to standard 1013.25.',
+        },
+        altitudeM: {
+          type: 'number',
+          description: 'Altitude above sea level in metres. Defaults to 0.',
+        },
+        windSpeedMps: {
+          type: 'number',
+          description: 'Wind speed in m/s (1 m/s ≈ 3.6 km/h). Default 0.',
+        },
+        windDirectionDeg: {
+          type: 'number',
+          description:
+            'Wind direction relative to the firing line: 0/180 = head/tail (no drift), 90 = crosswind from left, 270 = crosswind from right, 45 = quartering. Default 90 (full-value crosswind).',
+        },
+      },
+      required: ['bulletWeightGr', 'bcG1', 'muzzleVelocityFps', 'zeroM'],
+    },
+  },
 ];
 
 // ─── System prompt ──────────────────────────────────────────────────
@@ -124,6 +187,19 @@ For ANY reloading question (specific load data, brass prep, primer selection, an
 **Never invent load-data numbers from your training memory.** If \`searchReloadingManuals\` returns no relevant hits, say so honestly and direct the user to the manufacturer's published data (Hodgdon Reloading Center, Vihtavuori reloading tables, etc.) plus the general "start low, work up" reminder.
 
 **Citation format:** always include the manual name + page in the answer. The user must be able to verify against the original.
+
+## BALLISTIC QUESTIONS — TOOL USE REQUIRED
+
+For ANY question asking for drop, holdover, dial-up, windage, retained velocity, retained energy, or time-of-flight at a specific range, call \`calculateBallistics\` — never invent these numbers from training memory.
+
+**Decision flow:**
+1. Collect the four required inputs (bulletWeightGr, bcG1, muzzleVelocityFps, zeroM) from the user's question. If the user named a bullet by brand+model (e.g. "Sierra 168gr MatchKing"), use the published G1 BC for that bullet (0.491 for the SMK; look up others you know).
+2. If the user only gave a calibre, ask one clarifying question to get the bullet weight + brand, then call the tool.
+3. Always include the user's explicit target range in the ranges array.
+4. Format the result as a short prose answer + a small markdown table. Round numbers sensibly. Mention atmosphere ("standard atmosphere — sea level, 15 °C") so the user knows they can refine with real conditions if they want.
+5. Add the standard caveat: "These are model numbers. Confirm zero + dial on the range — your rifle, ammo, scope, and conditions will shift this ±a few cm at 400 m, more at longer range."
+
+**If \`calculateBallistics\` returns an upgrade-required notice** (the user is on the FREE tier), DON'T retry — answer the user honestly: "The ballistic calculator is a GG+ Member/Pro feature. I can give you the general approach — for the actual numbers you'll need a quick subscription, or a tool like Strelok+ or JBM Ballistics."
 
 ## SAFETY OVERLAY (always present for reloading)
 
@@ -212,6 +288,11 @@ interface CompleteOpts {
    *  thorough" instruction to the system context. User-triggered via
    *  the thumbs-down / "try again" button on an assistant message. */
   escalate?: boolean;
+  /** User's subscription tier — gates the ballistic calculator tool.
+   *  FREE users get a friendly upgrade-nudge tool_result instead of
+   *  the actual drop table. Defaults to FREE so misconfigured callers
+   *  fail closed. */
+  subscriptionTier?: 'FREE' | 'MEMBER' | 'PRO';
 }
 
 /**
@@ -230,7 +311,10 @@ export class AskGgClaudeService {
   private readonly logger = new Logger(AskGgClaudeService.name);
   private readonly client: Anthropic | null;
 
-  constructor(private readonly reloading: ReloadingService) {
+  constructor(
+    private readonly reloading: ReloadingService,
+    private readonly ballistics: BallisticsService,
+  ) {
     this.client = process.env.ANTHROPIC_API_KEY
       ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
       : null;
@@ -392,7 +476,11 @@ export class AskGgClaudeService {
         const toolResultBlocks: ContentBlockParam[] = [];
         const documentBlocks: ContentBlockParam[] = [];
         for (const block of toolUseBlocks) {
-          const handled = await this.handleToolCall(block, citations);
+          const handled = await this.handleToolCall(
+            block,
+            citations,
+            opts.subscriptionTier ?? 'FREE',
+          );
           for (const h of handled) {
             if (h.type === 'tool_result') toolResultBlocks.push(h);
             else documentBlocks.push(h);
@@ -481,6 +569,7 @@ export class AskGgClaudeService {
   private async handleToolCall(
     block: ToolUseBlock,
     citations: AskGgCompleteResult['citations'],
+    subscriptionTier: 'FREE' | 'MEMBER' | 'PRO',
   ): Promise<ContentBlockParam[]> {
     const toolUseId = block.id;
     try {
@@ -563,6 +652,78 @@ export class AskGgClaudeService {
             },
           },
         ];
+      }
+
+      if (block.name === 'calculateBallistics') {
+        // Tier gate (Phase D extra — operator decision 2026-05-26):
+        // MEMBER + PRO only. FREE users get a friendly upgrade nudge
+        // as the tool_result; Claude's system prompt knows to surface
+        // it as a "this is a GG+ feature" message rather than retrying.
+        if (subscriptionTier === 'FREE') {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: JSON.stringify({
+                upgradeRequired: true,
+                reason:
+                  'Ballistic calculator is an Ask GG Member / Pro feature. The user is on the FREE tier — do NOT retry. Tell them how to subscribe + offer the general approach without specific numbers.',
+              }),
+              is_error: true,
+            },
+          ];
+        }
+        const input = block.input as Partial<BallisticsInput>;
+        // Validate the required inputs Claude was supposed to supply.
+        if (
+          typeof input.bulletWeightGr !== 'number' ||
+          typeof input.bcG1 !== 'number' ||
+          typeof input.muzzleVelocityFps !== 'number' ||
+          typeof input.zeroM !== 'number'
+        ) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content:
+                'Error: bulletWeightGr, bcG1, muzzleVelocityFps and zeroM are all required (all numeric). Ask the user for whichever is missing before retrying.',
+              is_error: true,
+            },
+          ];
+        }
+        try {
+          const result = this.ballistics.calculate({
+            bulletWeightGr: input.bulletWeightGr,
+            bcG1: input.bcG1,
+            muzzleVelocityFps: input.muzzleVelocityFps,
+            zeroM: input.zeroM,
+            ranges: input.ranges,
+            sightHeightCm: input.sightHeightCm,
+            tempC: input.tempC,
+            pressureHpa: input.pressureHpa,
+            altitudeM: input.altitudeM,
+            windSpeedMps: input.windSpeedMps,
+            windDirectionDeg: input.windDirectionDeg,
+          });
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: JSON.stringify(result),
+            },
+          ];
+        } catch (err) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: `Ballistics calculation failed: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+              is_error: true,
+            },
+          ];
+        }
       }
 
       return [
