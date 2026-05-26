@@ -57,24 +57,44 @@ session's changes]"`.
 `git checkout main`, `git merge [the working branch]`,
 `git push origin main`. Confirm the push succeeded.
 
-**STEP 5 — DEPLOY TO HETZNER SERVER**
-SSH into the server (host IP, root user, and SSH key path are in
-the operator's local notes — never written here). Then on the
-server:
+**STEP 5 — DEPLOY TO SERVER**
+SSH alias: `ssh gungalore` (server IP `139.84.231.220`, user
+`gungalore`). Project lives at `/home/gungalore/app`, pm2 services
+are named `gungalore-backend` and `gungalore-frontend`.
+
+If prod has uncommitted local changes (legacy from the earlier
+SCP-staged workflow), stash them first so `git pull` doesn't
+abort. They're already in main from the dev commits — safe to
+discard via stash.
+
 ```
-cd /var/www/gun_galore_project
+cd /home/gungalore/app
+git stash --include-untracked          # parks any legacy local edits
 git pull origin main
-npx prisma migrate deploy        # MANDATORY whenever migrations exist
-cd backend && npm run build && pm2 reload gg-backend --update-env
+cd backend
+npm install                            # in case package.json shifted
+npx prisma db push --accept-data-loss  # tsvector GENERATED cols get re-created by onModuleInit
+npx prisma generate                    # MANDATORY — db push doesn't always regenerate, and stale client = build fails
+npm run build
+pm2 reload gungalore-backend --update-env
 sleep 5
-curl -f http://localhost:3001/api/health || \
-  (echo "BACKEND HEALTH CHECK FAILED after reload" && exit 1)
-cd ../frontend && npm run build && pm2 reload gg-frontend --update-env
+curl -f http://localhost:3001/api/health && echo "BACKEND OK"
+cd ../frontend
+npm install
+npm run build
+pm2 reload gungalore-frontend --update-env
 sleep 5
-curl -f http://localhost:3000 || \
-  (echo "FRONTEND HEALTH CHECK FAILED after reload" && exit 1)
+curl -fs http://localhost:3000 > /dev/null && echo "FRONTEND OK"
 pm2 list
 ```
+
+**Critical gotcha** (cost us a half-deploy on 2026-05-26): `nest
+build` will report TypeScript errors against stale Prisma types
+and `pm2 reload` will silently reload the OLD compiled dist/. So
+ALWAYS run `npx prisma generate` BEFORE `npm run build` whenever
+the schema has changed, and watch the build output for TS errors
+— if you see any, the backend did NOT actually update.
+
 If a health check fails after a reload: do NOT attempt `pm2 restart`
 automatically; stop the deploy immediately and report. The old
 version keeps serving on a failed reload, so there is no emergency.
