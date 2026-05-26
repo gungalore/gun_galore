@@ -415,6 +415,34 @@ model User {
   askGgLifetimeMessages   Int              @default(0)
   askGgLifetimePhotoIds   Int              @default(0)
 
+  // ── Ballistic Calculator PWA (ballistics.gungalore.co.za) ─────────
+  //
+  // Separate paid product, R299 one-off lifetime purchase via Peach
+  // createCheckout (no recurring billing — sidesteps the BANVR
+  // tokenisation blocker). Sold standalone — buyer doesn't need to
+  // be a Gun Galore marketplace user, but they DO need a Clerk
+  // account (the subdomain is the same Next.js app, same Clerk
+  // session cookies on .gungalore.co.za parent domain).
+  //
+  // Two fields suffice for v1 (vs. a separate Purchase model):
+  // single SKU, single payment, irreversible once set. If we later
+  // add tiered SKUs (annual upgrades, add-ons), promote to a
+  // BallisticsPurchase table — schema migration is trivial.
+  //
+  // ballisticsDemoLookupAt: timestamps the FIRST bullet-lookup an
+  // unpurchased user gets — the "try-before-buy" teaser. Subsequent
+  // lookups are blocked until ballisticsPurchasedAt is set. Stored on
+  // User (vs. on AskGgUsage) because the demo lookup is lifetime-once,
+  // not per-window — once you've tasted it, the next call is the
+  // upgrade prompt.
+  ballisticsPurchasedAt        DateTime?
+  ballisticsPurchasePeachId    String?
+  ballisticsPurchaseAmountCents Int?
+  ballisticsDemoLookupAt       DateTime?
+
+  ballisticProfiles            UserBallisticProfile[]
+  shotMarks                    ShotMark[]
+
   // Back-relations (Ask GG subscription + assistant)
   subscription              Subscription?
   askGgConversations        AskGgConversation[]
@@ -2155,6 +2183,12 @@ model AskGgUsage {
   day          DateTime // truncated to date (00:00 UTC) on write
   messageCount Int      @default(0)
   photoIdCount Int      @default(0)
+  // Ballistic Calculator bullet-lookup count — counted per day for
+  // purchaser fair-use metering (~20/hr ceiling stops a single
+  // compromised account from running up an unbounded Claude bill).
+  // Demo lookups (one ever, pre-purchase) are tracked on
+  // User.ballisticsDemoLookupAt instead.
+  bulletLookupCount Int  @default(0)
   costUsdCents Int      @default(0)
 
   @@unique([userId, day])
@@ -2242,4 +2276,140 @@ model ReloadingManualPage {
 
   @@unique([manualId, pageNumber])
   @@index([manualId, pageNumber])
+}
+
+// =====================================================================
+// Ballistic Calculator PWA — ballistics.gungalore.co.za
+// =====================================================================
+// Standalone paid product (R299 one-off lifetime — see User.ballistics*
+// fields). Two models live here:
+//
+//   - UserBallisticProfile: saved rifle/load setups for purchasers.
+//     20-profile cap per user enforced in the service. Local-first
+//     (the app writes to localStorage immediately + queues a server
+//     sync) so the calculator is offline-functional but devices stay
+//     in sync.
+//
+//   - ShotMark: the Spot Tracker feature — GPS + compass + range
+//     captured at the moment a hunter takes a shot, with the target
+//     coordinate derived via Haversine forward formula. Recovery
+//     view rotates a compass arrow back to the target as the hunter
+//     walks/drives. Includes generic-waypoint variants (BAKKIE /
+//     STAND / BLOOD) reusing the same model.
+// =====================================================================
+
+model UserBallisticProfile {
+  id                  String   @id @default(cuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // User-chosen profile name (e.g. "My .308", "Hunting load"). Unique
+  // per user so the picker can use it as a key.
+  name                String
+  // Rifle metadata
+  rifleName           String?
+  twist               String?  // e.g. "1:11.25" — free-text; only used as a display hint
+  scopeHeightCm       Float?
+  // Load (bullet + cartridge) metadata
+  bulletName          String?  // e.g. "Sierra MatchKing 175gr"
+  bulletWeightGr      Float
+  // G1 is the workhorse; G7 is optional but more accurate for boat-tail
+  // long-range bullets. Calculator uses whichever the user picked via
+  // dragModel — default G1.
+  bcG1                Float
+  bcG7                Float?
+  dragModel           String   @default("G1") // 'G1' | 'G7'
+  muzzleVelocityFps   Float
+  zeroM               Float    @default(100)
+
+  // User-preferred display units. Each user can have different
+  // preferences per profile (e.g. mil for precision rifle, MOA for
+  // hunting). The calculator UI reads these on render.
+  preferredUnitElev   String   @default("mil")  // 'mil' | 'moa' | 'clk'
+  preferredUnitRange  String   @default("m")    // 'm' | 'yd'
+
+  // The user-trued zero offset (in mil) — what the user added on top
+  // of the base zero after sighting in / live truing. Persists across
+  // sessions so the BIG readout is correct on next launch.
+  zeroAdjMil          Float    @default(0)
+
+  // Flagged when the bullet fields were last populated by AI Bullet
+  // Lookup (vs hand-entered). Drives the "AI MATCH" pill in the editor.
+  aiSourcedAt         DateTime?
+
+  // Default profile that loads on cold-start when no URL params or
+  // last-active is present. Exactly one per user (enforced at service
+  // layer — Postgres can't enforce "only one is true").
+  isDefault           Boolean  @default(false)
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Per-profile shot marks — when the operator-shooter logs a kill
+  // from the HUNT-mode big readout, we associate it with whichever
+  // profile was active. Useful for post-hunt analysis ("which load
+  // do I shoot best with?").
+  shotMarks           ShotMark[]
+
+  @@unique([userId, name])
+  @@index([userId, isDefault])
+}
+
+model ShotMark {
+  id                  String   @id @default(cuid())
+  // Null when the user is signed-out and the mark lives only in
+  // localStorage. Once they sign in, the client syncs marks up with
+  // userId populated. Cascade-delete with the user account.
+  userId              String?
+  user                User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Which rifle/load was active at mark time. Optional because
+  // generic waypoints (BAKKIE / STAND / BLOOD) don't have a profile.
+  profileId           String?
+  profile             UserBallisticProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+
+  // ── Capture state (the moment the user tapped CONFIRM MARK) ──────
+  shooterLat          Float
+  shooterLon          Float
+  shooterAltM         Float?
+  // True-north-corrected (WMM declination already applied at capture)
+  azimuthDeg          Float
+  // Range to target in metres. For SHOT marks, pre-filled with the
+  // calculator's current range, fine-tunable via the camera-view
+  // stepper. For waypoint marks (kind != SHOT), 0.
+  rangeM              Float    @default(0)
+
+  // ── Derived target coordinate (Haversine forward formula) ────────
+  // For waypoint marks (kind != SHOT) the target = shooter position
+  // (no projection needed).
+  targetLat           Float
+  targetLon           Float
+
+  // Magnetic declination applied at capture, in degrees. Audit
+  // trail — if the WMM bundle is updated, we can recompute targets
+  // against the new model.
+  declinationDeg      Float    @default(0)
+
+  // ── Optional extras ──────────────────────────────────────────────
+  // Camera snap taken from the video stream the moment the user
+  // tapped CONFIRM. Stored as Cloudinary URL (same uploader the rest
+  // of the platform uses). Operator-photo only — no Claude processing
+  // runs on it per the speed-of-data design principle.
+  photoUrl            String?
+  notes               String?
+
+  // Type of mark. SHOT = actual fired round. VEHICLE = bakkie
+  // position when parking. STAND = hide / blind / known shooting
+  // position. BLOOD = recovery breadcrumb dropped while tracking a
+  // wounded animal.
+  kind                String   @default("SHOT")  // 'SHOT' | 'VEHICLE' | 'STAND' | 'BLOOD'
+
+  // Hunter-recorded outcome flags. Optional, edited post-recovery.
+  hitConfirmed        Boolean?
+  recovered           Boolean?
+
+  createdAt           DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([profileId])
 }

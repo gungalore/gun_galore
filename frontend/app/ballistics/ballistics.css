@@ -1,0 +1,458 @@
+/*
+ * frontend/app/ballistics/ballistics.css
+ *
+ * Lifted near-verbatim from the locked design mock with all tokens
+ * scoped under `.bc-app`. The marketplace's tokens stay untouched —
+ * this file is loaded only on /ballistics/* routes (or on the
+ * ballistics.gungalore.co.za subdomain, which middleware rewrites
+ * straight into /ballistics).
+ *
+ * Why scoped:
+ *   - The mock uses a near-pure black palette (#050507) where the
+ *     marketplace uses #0f0f0f
+ *   - Brand red drift (#e60c20 vs #C8102E) — both are correct for
+ *     their respective surfaces but they're not the same value
+ *   - Type stack is JetBrains Mono + Space Grotesk vs the marketplace
+ *     Inter + system stack
+ *
+ * Phone-frame styles (bc-phone, bc-phone-screen, bc-status, bc-home)
+ * from the mock are intentionally NOT carried over — that wrapper was
+ * for the static design canvas. The real PWA fills the viewport.
+ */
+
+.bc-app {
+  /* Surfaces */
+  --bc-bg:          #050507;
+  --bc-bg-2:        #0a0a0c;
+  --bc-surface:     #0e0e12;
+  --bc-surface-2:   #15151a;
+  --bc-surface-3:   #1c1c22;
+  --bc-surface-4:   #25252c;
+
+  /* Lines */
+  --bc-line:        #24242a;
+  --bc-line-2:      #34343c;
+  --bc-line-3:      #4a4a54;
+
+  /* Text */
+  --bc-text:        #f4f4f6;
+  --bc-text-2:      #c4c4c8;
+  --bc-text-dim:    #8a8a92;
+  --bc-text-mute:   #5a5a62;
+  --bc-text-disabled: #3a3a42;
+
+  /* Brand red */
+  --bc-red:         #e60c20;
+  --bc-red-hot:     #ff2740;
+  --bc-red-deep:    #8a0815;
+  --bc-red-soft:    rgba(230, 12, 32, 0.14);
+  --bc-red-line:    rgba(230, 12, 32, 0.32);
+  --bc-red-glow:    rgba(230, 12, 32, 0.45);
+
+  /* Semantic */
+  --bc-good:        #62d27c;
+  --bc-warn:        #f5a623;
+
+  /* Radii */
+  --bc-r-xs: 4px;
+  --bc-r-sm: 8px;
+  --bc-r-md: 12px;
+  --bc-r-lg: 18px;
+  --bc-r-xl: 24px;
+  --bc-r-2xl: 32px;
+
+  /* Font stacks — system fallbacks while we're not self-hosting
+   * Space Grotesk / JetBrains Mono. `next/font/google` was hanging
+   * the dev compile on the first cold fetch; the system stack
+   * renders instantly and still gives the locked-grid look via
+   * tabular-nums + monospace numerals on .bc-num. */
+  --font-bc-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+    'Helvetica Neue', Arial, sans-serif;
+  --font-bc-mono: ui-monospace, 'SF Mono', 'Cascadia Mono',
+    'Roboto Mono', 'Consolas', monospace;
+
+  background: var(--bc-bg);
+  color: var(--bc-text);
+  font-family: var(--font-bc-ui);
+  font-weight: 500;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Mode toggle (HUNT / PRO) ─────────────────────────────────────── */
+.bc-app .bc-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bc-surface-2);
+  border: 1px solid var(--bc-line);
+  border-radius: 100px;
+  padding: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  height: 24px;
+}
+.bc-app .bc-mode-toggle button {
+  border: 0;
+  background: transparent;
+  color: var(--bc-text-mute);
+  padding: 0 9px;
+  height: 20px;
+  border-radius: 100px;
+  cursor: pointer;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  transition: background .15s, color .15s;
+}
+.bc-app .bc-mode-toggle button.is-active {
+  background: var(--bc-red);
+  color: #fff;
+  box-shadow: 0 0 0 1px var(--bc-red-hot), 0 0 12px var(--bc-red-glow);
+}
+
+/* Top bar */
+.bc-app .bc-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 10px;
+  gap: 12px;
+}
+.bc-app .bc-brand {
+  font-family: var(--font-bc-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: var(--bc-text-mute);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bc-app .bc-brand-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--bc-red);
+  box-shadow: 0 0 6px var(--bc-red-glow);
+}
+
+/* Chips + cards */
+.bc-app .bc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 100px;
+  border: 1px solid var(--bc-line);
+  background: var(--bc-surface);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--bc-text-2);
+  text-transform: uppercase;
+}
+.bc-app .bc-chip .lbl { color: var(--bc-text-mute); }
+.bc-app .bc-chip .val { font-family: var(--font-bc-mono); color: var(--bc-text); }
+
+.bc-app .bc-card {
+  background: var(--bc-surface);
+  border: 1px solid var(--bc-line);
+  border-radius: var(--bc-r-lg);
+  padding: 16px;
+}
+.bc-app .bc-card-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.bc-app .bc-card-h .ttl {
+  font-family: var(--font-bc-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--bc-text-mute);
+}
+
+/* Numeric readouts */
+.bc-app .bc-num {
+  font-family: var(--font-bc-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--bc-text);
+  line-height: 0.95;
+}
+.bc-app .bc-num-unit {
+  font-family: var(--font-bc-mono);
+  font-weight: 500;
+  color: var(--bc-text-mute);
+  font-size: 0.45em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-left: 0.3em;
+}
+.bc-app .bc-label-xs {
+  font-family: var(--font-bc-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--bc-text-mute);
+}
+
+/* Tap targets */
+.bc-app .bc-tap {
+  background: var(--bc-surface-2);
+  border: 1px solid var(--bc-line);
+  border-radius: var(--bc-r-md);
+  color: var(--bc-text);
+  font-family: var(--font-bc-ui);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .12s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  user-select: none;
+  padding: 12px 18px;
+}
+.bc-app .bc-tap:hover { background: var(--bc-surface-3); border-color: var(--bc-line-2); }
+.bc-app .bc-tap:active { transform: scale(0.97); }
+.bc-app .bc-tap.primary {
+  background: var(--bc-red);
+  border-color: var(--bc-red-hot);
+  color: #fff;
+  box-shadow: 0 0 0 1px var(--bc-red-hot) inset, 0 6px 18px var(--bc-red-soft);
+}
+.bc-app .bc-tap.primary:hover { background: var(--bc-red-hot); }
+.bc-app .bc-tap.ghost { background: transparent; }
+
+/* Big stepper buttons */
+.bc-app .bc-step {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--bc-surface-2);
+  border: 1.5px solid var(--bc-line-2);
+  color: var(--bc-text);
+  font-family: var(--font-bc-mono);
+  font-size: 32px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  transition: all .1s ease;
+}
+.bc-app .bc-step:hover { border-color: var(--bc-red); color: var(--bc-red-hot); }
+.bc-app .bc-step:active {
+  background: var(--bc-red);
+  border-color: var(--bc-red);
+  color: #fff;
+  transform: scale(0.95);
+}
+
+/* Range pill */
+.bc-app .bc-range-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 10px 18px;
+  border-radius: var(--bc-r-md);
+  background: var(--bc-surface-2);
+  border: 1px solid var(--bc-line);
+}
+.bc-app .bc-range-pill .v {
+  font-family: var(--font-bc-mono);
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--bc-text);
+}
+.bc-app .bc-range-pill .u {
+  font-family: var(--font-bc-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bc-text-mute);
+}
+
+/* Divider */
+.bc-app .bc-div { height: 1px; background: var(--bc-line); margin: 14px 0; }
+
+/* Tabular rows for DOPE table */
+.bc-app .bc-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 1fr 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--bc-line);
+  font-family: var(--font-bc-mono);
+  font-size: 13px;
+  color: var(--bc-text-2);
+}
+.bc-app .bc-row:last-child { border-bottom: 0; }
+.bc-app .bc-row .r { color: var(--bc-text); font-weight: 600; }
+.bc-app .bc-row.is-active {
+  background: var(--bc-red-soft);
+  color: var(--bc-text);
+  position: relative;
+}
+.bc-app .bc-row.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--bc-red);
+}
+
+/* The BIG holdover readout */
+.bc-app .bc-readout {
+  position: relative;
+  background: linear-gradient(180deg, var(--bc-surface) 0%, var(--bc-bg-2) 100%);
+  border: 1px solid var(--bc-line);
+  border-radius: var(--bc-r-xl);
+  padding: 22px;
+  overflow: hidden;
+}
+.bc-app .bc-readout::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--bc-red-line), transparent);
+}
+
+/* Interval strip cells */
+.bc-app .bc-interval-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+.bc-app .bc-interval {
+  background: var(--bc-surface-2);
+  border: 1px solid var(--bc-line);
+  border-radius: var(--bc-r-md);
+  padding: 10px 8px;
+  text-align: center;
+}
+.bc-app .bc-interval.is-current {
+  border-color: var(--bc-red);
+  background: var(--bc-red-soft);
+  box-shadow: 0 0 0 1px var(--bc-red-line);
+}
+.bc-app .bc-interval .ri {
+  font-family: var(--font-bc-mono);
+  font-size: 12px;
+  color: var(--bc-text-mute);
+  letter-spacing: 0.04em;
+}
+.bc-app .bc-interval .hi {
+  font-family: var(--font-bc-mono);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--bc-text);
+  margin-top: 2px;
+}
+
+/* Wind call grid */
+.bc-app .bc-wind-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.bc-app .bc-wind-cell {
+  background: var(--bc-surface-2);
+  border: 1px solid var(--bc-line);
+  border-radius: var(--bc-r-md);
+  padding: 10px;
+  text-align: center;
+}
+.bc-app .bc-wind-cell .speed {
+  font-family: var(--font-bc-mono);
+  font-size: 11px;
+  color: var(--bc-text-mute);
+}
+.bc-app .bc-wind-cell .drift {
+  font-family: var(--font-bc-mono);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--bc-text);
+  margin-top: 4px;
+}
+
+/* AI Lookup card highlight */
+.bc-app .bc-ai-load {
+  position: relative;
+  background: var(--bc-red-soft);
+  border-color: var(--bc-red-line);
+}
+.bc-app .bc-ai-load::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--bc-red);
+  border-radius: 3px 0 0 3px;
+}
+.bc-app .bc-ai-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bc-red);
+  color: #fff;
+  font-family: var(--font-bc-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+
+/* Demo-mode banner — sticky bottom CTA on non-purchaser pages */
+.bc-app .bc-demo-cta {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(180deg, transparent, rgba(230,12,32,0.08) 30%, var(--bc-red) 100%);
+  padding: 20px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--bc-red-line);
+  font-family: var(--font-bc-ui);
+}
+.bc-app .bc-demo-cta .copy {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+.bc-app .bc-demo-cta .copy small {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.85);
+  margin-top: 2px;
+}
+
+/* Page padding wrappers */
+.bc-app .bc-page {
+  padding: 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 32px);
+}

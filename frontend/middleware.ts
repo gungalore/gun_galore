@@ -14,6 +14,11 @@ const isPublicRoute = createRouteMatcher([
   '/buy-and-sell(.*)',
   '/welcome(.*)',
   '/sellers(.*)', // public seller profiles
+  '/ballistics(.*)', // standalone PAID Ballistic Calculator PWA. Demo mode
+                     // (locked profile, 200 m range cap, 1 demo bullet
+                     // lookup) is reachable signed-out; purchase + saving
+                     // profiles require a Clerk session, gated at the API
+                     // layer, not the route layer.
   '/admin(.*)',   // admin uses its own JWT auth, not Clerk
   '/offline',     // PWA offline fallback — must be reachable without auth
                   // because the service worker serves it whenever the
@@ -37,6 +42,14 @@ const isPublicRoute = createRouteMatcher([
   '/preview',            // bypass-cookie setter for the coming-soon gate
 ]);
 
+// Hostname for the standalone PAID Ballistic Calculator PWA. Set at
+// the DNS + nginx layer to point at the same Next.js process as the
+// marketplace; middleware detects it and rewrites '/' to '/ballistics'
+// so the subdomain root lands on the calculator landing page instead
+// of the marketplace homepage. Same codebase, same deploy, but a
+// completely separate product surface.
+const BALLISTICS_HOST = 'ballistics.gungalore.co.za';
+
 // Routes that ALWAYS pass through the coming-soon gate, even without
 // the preview cookie:
 //   /a/*          — SMS-link recipients (token in URL = auth)
@@ -57,6 +70,56 @@ const isComingSoonBypassRoute = createRouteMatcher([
 const COMING_SOON_COOKIE = 'gg-preview';
 
 export default clerkMiddleware(async (auth, request) => {
+  // ── Subdomain rewrite: ballistics.gungalore.co.za ──────────────────
+  //
+  // The standalone Ballistic Calculator PWA lives at /ballistics in
+  // the same Next.js process as the marketplace. We detect the host
+  // and (a) rewrite '/' to '/ballistics' so the subdomain root lands
+  // on the calculator's landing page, (b) tag every request with
+  // an x-ballistics-host header so server components can switch on it
+  // to render the ballistics-only chrome (no marketplace nav, no
+  // bottom tab bar, scoped instrument palette). Subpaths under
+  // /ballistics on the marketplace domain still work — same routes,
+  // just exposed under both hosts for backwards compatibility.
+  const hostHeader = request.headers.get('host') ?? '';
+  const isBallisticsHost = hostHeader.split(':')[0] === BALLISTICS_HOST;
+  if (isBallisticsHost) {
+    // Rewrite the subdomain root to /ballistics.
+    if (
+      request.nextUrl.pathname === '/' ||
+      request.nextUrl.pathname === ''
+    ) {
+      const rewritten = request.nextUrl.clone();
+      rewritten.pathname = '/ballistics';
+      const res = NextResponse.rewrite(rewritten);
+      res.headers.set('x-ballistics-host', '1');
+      return res;
+    }
+    // Any other path under the ballistics subdomain that ISN'T already
+    // under /ballistics is rewritten in too (so signed-in users can hit
+    // /sign-in on the subdomain and stay there).
+    if (
+      !request.nextUrl.pathname.startsWith('/ballistics') &&
+      !request.nextUrl.pathname.startsWith('/api') &&
+      !request.nextUrl.pathname.startsWith('/sign-in') &&
+      !request.nextUrl.pathname.startsWith('/sign-up') &&
+      !request.nextUrl.pathname.startsWith('/sso-callback') &&
+      !request.nextUrl.pathname.startsWith('/_next') &&
+      !request.nextUrl.pathname.startsWith('/sw.js') &&
+      !request.nextUrl.pathname.startsWith('/offline')
+    ) {
+      const rewritten = request.nextUrl.clone();
+      rewritten.pathname = `/ballistics${rewritten.pathname}`;
+      const res = NextResponse.rewrite(rewritten);
+      res.headers.set('x-ballistics-host', '1');
+      return res;
+    }
+    // Pass through but tag the header so layout knows the shell.
+    const res = NextResponse.next();
+    res.headers.set('x-ballistics-host', '1');
+    // Don't return here — Clerk middleware below still needs to run.
+  }
+
   // ── No middleware-level admin auth gate ────────────────────────────
   //
   // Cookie-based gating proved unreliable across browsers (some configs
@@ -87,8 +150,16 @@ export default clerkMiddleware(async (auth, request) => {
       !!process.env.COMING_SOON_BYPASS_SECRET &&
       cookieVal === process.env.COMING_SOON_BYPASS_SECRET;
 
+    // The ballistics subdomain is its own product launch surface — it
+    // ships independent of the marketplace coming-soon gate. If somebody
+    // hits ballistics.gungalore.co.za while the gate is still ON for
+    // the marketplace, they should see the calculator landing, not the
+    // marketplace holding page.
     const allowed =
-      isComingSoonBypassRoute(request) || isCheckoutWithToken || hasBypassCookie;
+      isComingSoonBypassRoute(request) ||
+      isCheckoutWithToken ||
+      hasBypassCookie ||
+      isBallisticsHost;
 
     if (!allowed) {
       return NextResponse.rewrite(new URL('/coming-soon', request.url));

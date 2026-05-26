@@ -1145,4 +1145,152 @@ export class ZohoBooksService {
       };
     }
   }
+
+  // ───────────────────────────────────────────────────────────────────
+  // Ballistic Calculator one-off lifetime license (R299)
+  // ───────────────────────────────────────────────────────────────────
+  // Lighter-weight than the raffle-ticket / commission flows above:
+  // single line item, fixed amount, no Ticket/Transaction join.
+  // Success path = a SalesReceipt posted to Books deposit account.
+  // No retry-queue write — caller logs+swallows failures (the admin
+  // dossier sync-status panel surfaces them and operator can hit the
+  // existing retry button to call this again).
+
+  /**
+   * Create a SalesReceipt in Books for a successful ballistics license
+   * purchase. The deposit account is "Bank — Peach Pending" (where
+   * Peach captures before settling to FNB Business) with FNB fallback —
+   * same logic raffle tickets use.
+   */
+  async createBallisticsLicenseSalesReceipt(opts: {
+    userId: string;
+    peachPaymentId: string;
+    amountCents: number;
+  }): Promise<void> {
+    if (!this.isEnabled()) return;
+    const { userId, peachPaymentId, amountCents } = opts;
+    const rand = amountCents / 100;
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, firstName: true, lastName: true },
+    });
+    if (!user?.email) {
+      throw new Error(
+        `Ballistics receipt: user ${userId} missing email`,
+      );
+    }
+
+    const contactId = await this.ensureContact(user.id, user.email);
+    if (!contactId) {
+      throw new Error('Could not resolve Books contact for purchaser');
+    }
+    // Revenue account for the calculator. Operator can rename in CoA
+    // but the name must match — falls back to a generic SaaS revenue
+    // account if the dedicated one doesn't exist yet.
+    const revenueAccountId =
+      (await this.getAccountIdByName('Ballistic Calculator Revenue')) ??
+      (await this.getAccountIdByName('SaaS Revenue')) ??
+      (await this.getAccountIdByName('Software Revenue'));
+    if (!revenueAccountId) {
+      throw new Error(
+        'Books CoA: need account "Ballistic Calculator Revenue" (or "SaaS Revenue" / "Software Revenue")',
+      );
+    }
+    const depositAccountId =
+      (await this.getAccountIdByName('Bank — Peach Pending')) ??
+      (await this.getAccountIdByName('Bank — FNB Business'));
+    if (!depositAccountId) {
+      throw new Error(
+        'Books CoA: need deposit account "Bank — Peach Pending" or "Bank — FNB Business"',
+      );
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const reference = `Ballistic Calculator lifetime license (Peach ${peachPaymentId.slice(0, 12)})`;
+
+    type CreateSalesReceiptResp = {
+      salesreceipt?: { salesreceipt_id?: string };
+      message?: string;
+    };
+    await this.request<CreateSalesReceiptResp>('POST', '/salesreceipts', {
+      customer_id: contactId,
+      reference_number: reference,
+      date: today,
+      line_items: [
+        {
+          name: 'Ballistic Calculator — Lifetime License',
+          description: 'One-off lifetime purchase, ballistics.gungalore.co.za',
+          rate: rand,
+          quantity: 1,
+          account_id: revenueAccountId,
+        },
+      ],
+      payment_mode: 'Other',
+      deposit_to_account_id: depositAccountId,
+      notes: `Peach payment id: ${peachPaymentId}\nUser id: ${userId}`,
+    });
+  }
+
+  /**
+   * Refund / revoke: create a CreditNote in Books offsetting an earlier
+   * ballistics license sale. Admin-only; called after refundForUser
+   * has already fired the Peach reversal and cleared the User license
+   * column.
+   */
+  async createBallisticsLicenseCreditNote(opts: {
+    userId: string;
+    peachPaymentId: string;
+    amountCents: number;
+    reason: string;
+  }): Promise<void> {
+    if (!this.isEnabled()) return;
+    const { userId, peachPaymentId, amountCents, reason } = opts;
+    const rand = amountCents / 100;
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true },
+    });
+    if (!user?.email) {
+      throw new Error(
+        `Ballistics credit-note: user ${userId} missing email`,
+      );
+    }
+    const contactId = await this.ensureContact(user.id, user.email);
+    if (!contactId) {
+      throw new Error('Could not resolve Books contact for refund');
+    }
+    const revenueAccountId =
+      (await this.getAccountIdByName('Ballistic Calculator Revenue')) ??
+      (await this.getAccountIdByName('SaaS Revenue')) ??
+      (await this.getAccountIdByName('Software Revenue'));
+    if (!revenueAccountId) {
+      throw new Error(
+        'Books CoA: no Ballistic Calculator / SaaS revenue account',
+      );
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    type CreateCreditNoteResp = {
+      creditnote?: { creditnote_id?: string };
+      message?: string;
+    };
+    await this.request<CreateCreditNoteResp>('POST', '/creditnotes', {
+      customer_id: contactId,
+      reference_number: `Ballistics refund — ${peachPaymentId.slice(0, 12)}`,
+      date: today,
+      line_items: [
+        {
+          name: 'Ballistic Calculator — Refund',
+          description: `Refund of lifetime license. Reason: ${reason}`,
+          rate: rand,
+          quantity: 1,
+          account_id: revenueAccountId,
+        },
+      ],
+      notes: `Refund of ballistics lifetime license.\nPeach payment id: ${peachPaymentId}\nUser id: ${userId}\nReason: ${reason}`,
+    });
+  }
 }

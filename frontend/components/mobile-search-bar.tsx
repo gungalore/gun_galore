@@ -33,6 +33,7 @@ const HIDDEN_PREFIXES = [
   '/kyc/verify',
   '/offline',
   '/notifications', // page has its own header; no need for inline search
+  '/ballistics',    // standalone product — its own chrome, no marketplace search
 ];
 
 function shouldHide(pathname: string): boolean {

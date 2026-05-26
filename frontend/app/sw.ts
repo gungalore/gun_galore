@@ -163,7 +163,14 @@ const serwist = new Serwist({
             // live quota state). Falling through to /offline misleads
             // users into waiting instead of reconnecting. Error
             // visibly so the browser's "you're offline" UI shows.
-            !path.startsWith('/ask-gg')
+            !path.startsWith('/ask-gg') &&
+            // Ballistic Calculator is the OPPOSITE — it's offline-
+            // first. Carve out so the precached shell serves rather
+            // than the marketplace /offline fallback (which would be
+            // confusing on the ballistics subdomain — that shell is
+            // an entirely separate product). Shell precache + the
+            // client-side math handle the offline UX cleanly.
+            !path.startsWith('/ballistics')
           );
         },
       },

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@clerk/nextjs';
+import { usePathname } from 'next/navigation';
 
 // 35px strip that sits directly under the 56px Nav. Reserved area
 // for "you need to act on this NOW" prompts — pending payment,
@@ -31,6 +32,7 @@ export interface UrgentNotification {
 
 export function UrgentNotifications() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
+  const pathname = usePathname();
   const [notifications, setNotifications] = useState<UrgentNotification[]>([]);
 
   useEffect(() => {
@@ -60,6 +62,9 @@ export function UrgentNotifications() {
 
   // Hide entire strip for signed-out users — nothing to notify about.
   if (!isLoaded || !isSignedIn) return null;
+  // Standalone Ballistic Calculator owns its own chrome — marketplace
+  // urgent-notifications strip doesn't belong on /ballistics routes.
+  if (pathname.startsWith('/ballistics')) return null;
 
   return (
     <div

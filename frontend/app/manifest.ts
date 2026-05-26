@@ -52,6 +52,13 @@ export default function manifest(): MetadataRoute.Manifest {
         url: '/?listingType=AUCTION',
         icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
       },
+      {
+        name: 'Ballistic calculator',
+        short_name: 'Ballistics',
+        description: 'Open the standalone ballistic calculator',
+        url: '/ballistics',
+        icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+      },
     ],
     icons: [
       {

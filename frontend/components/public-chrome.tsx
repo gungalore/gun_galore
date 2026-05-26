@@ -16,6 +16,12 @@ import { SiteFooter } from '@/components/site-footer';
 export function PublicNav() {
   const pathname = usePathname();
   if (pathname.startsWith('/admin')) return null;
+  // Ballistic Calculator is a standalone product on its own subdomain;
+  // its layout supplies its own chrome (bc-app shell). Hiding the
+  // marketplace Nav on /ballistics keeps the two products visually
+  // separate even when accessed via the legacy /ballistics path on the
+  // main domain.
+  if (pathname.startsWith('/ballistics')) return null;
   // data-public-nav wrapper lets globals.css hide the whole thing in
   // standalone-PWA mode (`html[data-standalone='true'] [data-public-nav]`).
   // We deliberately keep it server-renderable — no useStandalone here —
@@ -33,6 +39,9 @@ export function PublicFooter() {
   // Hide on admin pages (own chrome) and on the offline fallback (PWA).
   if (pathname.startsWith('/admin')) return null;
   if (pathname === '/offline') return null;
+  // Same reasoning as PublicNav — Ballistic Calculator is its own
+  // product and the ECT § 43 footer belongs to the marketplace only.
+  if (pathname.startsWith('/ballistics')) return null;
   return (
     <div data-public-footer>
       <SiteFooter />
