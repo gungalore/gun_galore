@@ -14,6 +14,13 @@
 
 'use client';
 
+// Opt OUT of static pre-rendering. The license + profile state is per-
+// user, so pre-baking a "demo mode" HTML at build time would only get
+// corrected on hydration anyway. Also: at build time the page's SSG
+// pass hung at ~52/70 routes — letting Next render on demand sidesteps
+// whatever the offending build-time path was.
+export const dynamic = 'force-dynamic';
+
 import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
