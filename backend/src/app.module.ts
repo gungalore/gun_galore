@@ -34,7 +34,6 @@ import { WishlistModule } from './wishlist/wishlist.module';
 import { PushModule } from './push/push.module';
 import { AskGgModule } from './ask-gg/ask-gg.module';
 import { ReloadingModule } from './reloading/reloading.module';
-import { BallisticsModule } from './ballistics/ballistics.module';
 
 @Module({
   imports: [
@@ -82,7 +81,6 @@ import { BallisticsModule } from './ballistics/ballistics.module';
     PushModule,
     AskGgModule,
     ReloadingModule,
-    BallisticsModule,
   ],
   controllers: [AppController],
   providers: [

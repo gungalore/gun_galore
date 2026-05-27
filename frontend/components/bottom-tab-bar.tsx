@@ -336,9 +336,6 @@ export function BottomTabBar() {
   // (`html[data-standalone='true'] body { padding-bottom: ... }`)
   // still applies regardless so the layout is consistent.
   if (!isStandalone) return null;
-  // Ballistic Calculator runs without the marketplace tab bar — it's
-  // a separate product with its own chrome shell.
-  if (pathname.startsWith('/ballistics')) return null;
 
   // "Shop" tab is active on any of the 4 shopping surfaces + the
   // competitions route (i.e. anywhere the picker would point to).
@@ -856,12 +853,6 @@ function MoreSheet({
     { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
     { href: '/competitions', label: 'Competitions' },
   ];
-  // Standalone paid products that live alongside the marketplace.
-  // Single entry today (Ballistic Calculator); becomes its own
-  // section as we add more lifetime-purchase tools.
-  const toolsLinks = [
-    { href: '/ballistics', label: 'Ballistic calculator' },
-  ];
   const accountLinks = isSignedIn
     ? [
         { href: '/dashboard', label: 'Dashboard' },
@@ -1085,17 +1076,6 @@ function MoreSheet({
 
         <Section title="Shop">
           {shopLinks.map((l) => (
-            <SheetLink
-              key={l.href}
-              href={l.href}
-              label={l.label}
-              onNavigate={onClose}
-            />
-          ))}
-        </Section>
-
-        <Section title="Tools">
-          {toolsLinks.map((l) => (
             <SheetLink
               key={l.href}
               href={l.href}

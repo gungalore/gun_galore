@@ -20,15 +20,5 @@
     "noImplicitAny": true,
     "strictBindCallApply": true,
     "noFallthroughCasesInSwitch": true
-  },
-  // Explicit include keeps default '**/*' from sweeping in prisma/,
-  // scripts/, test/ etc. — those have their own runtimes (prisma
-  // CLI, ts-node, jest e2e) and were previously matched but then
-  // rejected by rootDir. Errored out nest start --watch entirely.
-  "include": ["src/**/*"],
-  // Keep one-off dev scripts out of nest build. `scripts/` is
-  // invoked manually with ts-node and may reach across the workspace
-  // (e.g. into ../frontend/) for parity testing — those imports are
-  // intentional and shouldn't pollute the production dist.
-  "exclude": ["node_modules", "dist", "scripts", "test", "prisma"]
+  }
 }

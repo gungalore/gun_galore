@@ -25,12 +25,6 @@ service-account*.json
 gcp-key*.json
 
 # ---------------------------------------------------------------------------
-# Per-machine Claude Code config (launch profiles for the preview MCP).
-# This file is committed locally only — every operator's setup differs.
-# ---------------------------------------------------------------------------
-.claude/
-
-# ---------------------------------------------------------------------------
 # Node / npm / pnpm / yarn
 # ---------------------------------------------------------------------------
 node_modules/

@@ -48,14 +48,6 @@ export class PeachService {
     shopperResultUrl: string;       // where Peach redirects after payment
     shopperEmail?: string;
     description?: string;
-    /**
-     * Override Peach's server-to-server notification URL. Defaults to
-     * the marketplace transactions webhook. Standalone products that
-     * don't create a Transaction row (e.g. Ballistic Calculator one-off
-     * license) use this to route the webhook to their own handler and
-     * avoid the marketplace "unknown transaction" warning.
-     */
-    notificationUrl?: string;
   }): Promise<PeachCheckout> {
     if (!this.isConfigured) {
       this.logger.warn('Peach not configured — returning mock checkout');
@@ -75,9 +67,7 @@ export class PeachService {
       'customer.email': params.shopperEmail ?? '',
       'cart.merchantTransactionId': params.merchantTransactionId,
       'shopperResultUrl': params.shopperResultUrl,
-      'notificationUrl':
-        params.notificationUrl ??
-        `${process.env.BACKEND_URL ?? 'http://localhost:3001'}/api/payments/webhook/peach`,
+      'notificationUrl': `${process.env.BACKEND_URL ?? 'http://localhost:3001'}/api/payments/webhook/peach`,
     });
 
     const res = await fetch(`${this.baseUrl}/v1/checkouts`, {
