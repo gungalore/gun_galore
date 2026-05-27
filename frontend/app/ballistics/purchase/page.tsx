@@ -20,12 +20,6 @@
 
 'use client';
 
-// Skip SSG — the page polls /license + reads ?status= search params and
-// loads the Peach widget via next/script. All client-side concerns; no
-// upside to pre-baking HTML, and the Peach Script import was a strong
-// candidate for the SSG hang at ~52/70 routes on the first deploy.
-export const dynamic = 'force-dynamic';
-
 import { useCallback, useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import Script from 'next/script';

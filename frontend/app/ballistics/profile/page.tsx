@@ -8,10 +8,6 @@
 
 'use client';
 
-// Skip SSG — per-user license + profile state means the pre-rendered
-// HTML would be replaced on hydration anyway. Matches /ballistics root.
-export const dynamic = 'force-dynamic';
-
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AILookup } from '../_components/AILookup';
