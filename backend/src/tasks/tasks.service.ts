@@ -7,6 +7,7 @@ import { FeaturedService } from '../featured/featured.service';
 import { KycService } from '../kyc/kyc.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { DispatchSlaService } from '../payments/dispatch-sla.service';
+import { TransactionsService } from '../payments/transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminCreditsService } from '../admin/admin-credits.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -32,6 +33,7 @@ export class TasksService {
     private readonly kycService: KycService,
     private readonly trackingService: TrackingService,
     private readonly dispatchSla: DispatchSlaService,
+    private readonly transactions: TransactionsService,
     private readonly prisma: PrismaService,
     private readonly adminCredits: AdminCreditsService,
     private readonly notifications: NotificationsService,
@@ -307,6 +309,33 @@ export class TasksService {
       );
     }
     await this.recordCronRun('dispatch-sla');
+  }
+
+  // ─── Accept-deadline escalation (TOK-7 Phase 2) ─────────────────
+  // Every 10 minutes find transactions where the 48h accept window has
+  // expired and the seller hasn't accepted or rejected. Flips
+  // acceptEscalatedAt and notifies admins via the inbox + raises an
+  // AdminAlert. No auto-refund — admin decides per case.
+  //
+  // 10-min cadence gives buyers a tight feedback loop after the seller
+  // misses the deadline (vs the hourly dispatch SLA where the human
+  // doesn't perceive a 60-min difference). Query is one indexed scan;
+  // negligible DB load.
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async acceptEscalationSweep() {
+    try {
+      const r = await this.transactions.escalateStaleAccepts();
+      if (r.escalated > 0) {
+        this.logger.log(
+          `Accept-escalation: ${r.escalated} of ${r.scanned} flipped to escalated`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Accept-escalation sweep failed: ${(err as Error).message}`,
+      );
+    }
+    await this.recordCronRun('accept-escalation');
   }
 
   // ─── Credit-balance poll ───────────────────────────────────────

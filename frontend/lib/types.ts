@@ -245,6 +245,17 @@ export interface Transaction {
   trackingReference: string | null;
   dispatchedAt: string | null;
   deliveredAt: string | null;
+  // TOK-7 — seller accept→dispatch state machine. acceptDeadlineAt =
+  // paidAt + 48h (stamped at payment), dispatchDeadlineAt = acceptedAt
+  // + 5d (stamped at accept). rejectedAt + rejectedReason set when
+  // the seller declines the sale (triggers buyer refund).
+  // acceptEscalatedAt is set by the 48h-no-accept escalation cron.
+  acceptedAt: string | null;
+  acceptDeadlineAt: string | null;
+  dispatchDeadlineAt: string | null;
+  rejectedAt: string | null;
+  rejectedReason: string | null;
+  acceptEscalatedAt: string | null;
   dealerId: string | null;
   confirmedDeliveryAt: string | null;
   // PRIVATE_ARRANGE — set when the buyer accepted the hard-consent

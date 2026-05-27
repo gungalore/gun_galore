@@ -643,6 +643,152 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Buyer: seller accepted the sale (TOK-7 Phase 2)
+  // ---------------------------------------------------------------
+  // Closes the "Awaiting seller accept" loop on the buyer side. The
+  // seller has now committed; dispatch SLA is now ticking. Buyer
+  // inbox row is informational (dismissible) — the next action-required
+  // event for them is "order dispatched, please confirm delivery".
+  async saleAcceptedBuyer(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+    dispatchDeadlineAt: Date;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'sale_accepted',
+      title: 'Seller accepted your order',
+      body: `${d.listingTitle} — dispatch within 5 days`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+    });
+    const deadline = d.dispatchDeadlineAt.toLocaleDateString('en-ZA', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    });
+    const html = this.email({
+      status: { tone: 'success', label: 'Accepted' },
+      headline: 'Seller accepted your order',
+      body: `Hi ${b(d.buyerName)}, the seller has accepted your order for ${b(d.listingTitle)} and has up to <strong>5 days</strong> to dispatch (by ${b(deadline)}). We'll SMS you the tracking reference as soon as it's on its way.`,
+      cta: { label: 'View order', url: txUrl },
+      preheader: `Seller accepted — ${d.listingTitle}`,
+    });
+    await this.send(d.buyerEmail, 'Order accepted: ' + d.listingTitle, html);
+    await this.sendSms(
+      d.buyerPhone,
+      `Gun Galore: Seller accepted ${truncate(d.listingTitle, 40)}. Dispatch within 5 days — we'll SMS the tracking ref when it ships.`,
+      `sale-accepted-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Buyer: seller REJECTED the sale, refund issued (TOK-7 Phase 2)
+  // ---------------------------------------------------------------
+  // The seller declined to fulfil — refund has already been fired via
+  // Peach by TransactionsService.rejectTransaction before this method
+  // runs, so we just need to inform the buyer. Reason is surfaced so
+  // they understand WHY (sold elsewhere, can't ship, etc.).
+  async saleRejectedBuyer(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone?: string | null;
+    listingTitle: string;
+    listingId: string;
+    transactionId: string;
+    buyerTotal: number;
+    reason: string;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'sale_rejected',
+      title: 'Sale cancelled — refund issued',
+      body: `${d.listingTitle} — ${formatRand(d.buyerTotal)} refunded`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'error', label: 'Cancelled' },
+      headline: 'Sale cancelled — refund issued',
+      body: `Hi ${b(d.buyerName)}, the seller couldn't fulfil your order for ${b(d.listingTitle)}. A full refund of ${b(formatRand(d.buyerTotal))} has been issued back to your card — allow 5–10 business days for it to reflect.<br><br>Seller's reason: ${b(d.reason)}<br><br>The listing has been re-activated so other buyers can grab it, but you may want to look for an alternative.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Refund amount', value: formatRand(d.buyerTotal) },
+        { label: 'Refund destination', value: 'Original payment card' },
+      ],
+      cta: { label: 'View order', url: txUrl },
+      preheader: `Refund of ${formatRand(d.buyerTotal)} issued`,
+    });
+    await this.send(
+      d.buyerEmail,
+      'Sale cancelled & refunded: ' + d.listingTitle,
+      html,
+    );
+    await this.sendSms(
+      d.buyerPhone,
+      `Gun Galore: Seller cancelled ${truncate(d.listingTitle, 30)}. R${(d.buyerTotal / 100).toFixed(0)} refund on the way (5-10 business days).`,
+      `sale-rejected-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Admin: a sale has stalled past the 48h accept window (TOK-7 Phase 2)
+  // ---------------------------------------------------------------
+  // Fires from TransactionsService.escalateStaleAccepts cron sweep when
+  // a sale's acceptDeadlineAt has passed without seller action. Goes to
+  // every admin user via the broadcast pattern.
+  //
+  // Inbox row only — we don't email/SMS the admins for each stalled sale
+  // (would be too noisy). The stalled-queue page on /admin/command-center
+  // is the canonical surface; this notification just brings it to their
+  // attention next time they open the inbox.
+  async saleAcceptEscalatedAdmin(d: {
+    transactionId: string;
+    listingTitle: string;
+    sellerName: string;
+  }) {
+    try {
+      // AdminUser is a separate model from User — admins have a clerkId
+      // that we need to map back to a User row for the inbox to find
+      // them. The persistByEmail wrapper already does this lookup.
+      const admins = await this.prisma.adminUser.findMany({
+        where: { isActive: true },
+        select: { email: true },
+      });
+      for (const admin of admins) {
+        await this.persistByEmail(admin.email, {
+          // ACCOUNT is the "admin messages" category per schema.prisma
+          // — closest match for an internal-ops escalation row.
+          category: 'ACCOUNT',
+          type: 'sale_accept_escalated',
+          title: 'Sale stalled — seller hasn’t accepted',
+          body: `${d.sellerName} — "${d.listingTitle}" (48h elapsed)`,
+          url: `/admin/transactions/${d.transactionId}`,
+          iconKey: 'transaction',
+          linkedType: 'transaction',
+          linkedId: d.transactionId,
+          dismissible: false,
+        });
+      }
+    } catch (err) {
+      this.logger.error(
+        `saleAcceptEscalatedAdmin failed for tx ${d.transactionId}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------
   // Seller: dealer-verification approved (payout will release)
   // ---------------------------------------------------------------
   async dealerVerificationApproved(d: {

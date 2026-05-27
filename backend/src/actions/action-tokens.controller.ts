@@ -125,6 +125,32 @@ export class ActionTokensController {
     );
   }
 
+  // Reject reuses the SAME TRANSACTION_ACCEPT token (the token gives the
+  // seller the authority to make EITHER decision). Reason is required.
+  @Post(':token/reject-transaction')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  rejectTransaction(
+    @Param('token') token: string,
+    @Body() body: { reason?: string },
+    @Req() req: Request,
+  ) {
+    const reason = (body?.reason ?? '').toString();
+    if (reason.trim().length < 3) {
+      throw new BadRequestException('Reason is required.');
+    }
+    return this.tokens.runAction(
+      token,
+      'TRANSACTION_ACCEPT',
+      'transaction',
+      async ({ targetId, authorisedUserId }) => {
+        const clerkId = await this.clerkIdFor(authorisedUserId);
+        return this.transactions.rejectTransaction(targetId, clerkId, reason);
+      },
+      reqIp(req),
+      reqUa(req),
+    );
+  }
+
   // ─── Dispatch (TOK-7) ────────────────────────────────────────────
   // Seller's one-tap "mark dispatched" from the 48h nudge SMS. Token
   // authorisedUserId IS the seller. POST body provides tracking ref +

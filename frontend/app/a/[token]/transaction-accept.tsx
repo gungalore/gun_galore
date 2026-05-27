@@ -48,10 +48,24 @@ export interface TransactionAcceptPayload {
   buyerUsername: string;
 }
 
+const REJECT_REASONS = [
+  { value: 'SOLD_ELSEWHERE', label: 'I’ve sold this elsewhere' },
+  { value: 'STOCK_ISSUE', label: 'Out of stock / item damaged' },
+  {
+    value: 'CANT_FULFIL_SHIPPING',
+    label: 'Can’t fulfil shipping (location / dealer)',
+  },
+  { value: 'BUYER_SUSPICIOUS', label: 'Buyer seems suspicious' },
+  { value: 'OTHER', label: 'Other (write a reason)' },
+] as const;
+
+type RejectReasonKey = (typeof REJECT_REASONS)[number]['value'];
+
 type ViewState =
   | { kind: 'choice' }
+  | { kind: 'rejecting'; reason: RejectReasonKey | null; freeText: string }
   | { kind: 'submitting' }
-  | { kind: 'done' }
+  | { kind: 'done'; outcome: 'accepted' | 'rejected' }
   | { kind: 'error'; message: string };
 
 export function TransactionAcceptPage({
@@ -69,7 +83,11 @@ export function TransactionAcceptPage({
   const alreadyRejected = payload.transaction.rejectedAt != null;
 
   const [view, setView] = useState<ViewState>(
-    alreadyAccepted || alreadyRejected ? { kind: 'done' } : { kind: 'choice' },
+    alreadyRejected
+      ? { kind: 'done', outcome: 'rejected' }
+      : alreadyAccepted
+        ? { kind: 'done', outcome: 'accepted' }
+        : { kind: 'choice' },
   );
 
   async function callAccept(): Promise<void> {
@@ -89,7 +107,40 @@ export function TransactionAcceptPage({
         setView({ kind: 'error', message });
         return;
       }
-      setView({ kind: 'done' });
+      setView({ kind: 'done', outcome: 'accepted' });
+    } catch (err) {
+      setView({
+        kind: 'error',
+        message:
+          err instanceof Error
+            ? err.message
+            : "Couldn't reach Gun Galore — try again in a moment.",
+      });
+    }
+  }
+
+  async function callReject(reasonText: string): Promise<void> {
+    setView({ kind: 'submitting' });
+    try {
+      const res = await fetch(
+        `${API_URL}/actions/${token}/reject-transaction`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: reasonText }),
+        },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          message?: string | string[];
+        };
+        const message = Array.isArray(body.message)
+          ? body.message.join(', ')
+          : (body.message ?? `Error ${res.status}`);
+        setView({ kind: 'error', message });
+        return;
+      }
+      setView({ kind: 'done', outcome: 'rejected' });
     } catch (err) {
       setView({
         kind: 'error',
@@ -107,6 +158,7 @@ export function TransactionAcceptPage({
       <DoneScreen
         listingTitle={payload.listing.title}
         buyerUsername={payload.buyerUsername}
+        outcome={view.outcome}
         wasAlreadyAccepted={alreadyAccepted}
         wasAlreadyRejected={alreadyRejected}
       />
@@ -119,6 +171,25 @@ export function TransactionAcceptPage({
       <ErrorPanel
         message={view.message}
         onRetry={() => setView({ kind: 'choice' })}
+      />
+    );
+  }
+
+  // ─── Reject — reason picker ──────────────────────────────────────
+  if (view.kind === 'rejecting') {
+    return (
+      <RejectPicker
+        reason={view.reason}
+        freeText={view.freeText}
+        listingTitle={payload.listing.title}
+        onChangeReason={(reason) =>
+          setView({ kind: 'rejecting', reason, freeText: view.freeText })
+        }
+        onChangeFreeText={(freeText) =>
+          setView({ kind: 'rejecting', reason: view.reason, freeText })
+        }
+        onCancel={() => setView({ kind: 'choice' })}
+        onSubmit={(reasonText) => void callReject(reasonText)}
       />
     );
   }
@@ -326,7 +397,7 @@ export function TransactionAcceptPage({
         </ol>
       </div>
 
-      {/* Action button — Accept */}
+      {/* Action buttons — Accept / Reject */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <ActionButton
           variant="primary"
@@ -335,18 +406,15 @@ export function TransactionAcceptPage({
         >
           {isSubmitting ? 'Working…' : 'Accept this sale'}
         </ActionButton>
-        <p
-          style={{
-            fontSize: 11,
-            color: 'var(--text-tertiary)',
-            textAlign: 'center',
-            lineHeight: 1.5,
-          }}
+        <ActionButton
+          variant="ghost"
+          disabled={isSubmitting}
+          onClick={() =>
+            setView({ kind: 'rejecting', reason: null, freeText: '' })
+          }
         >
-          Can&rsquo;t fulfil this sale? Reply to the SMS, or contact
-          support@gungalore.co.za and we&rsquo;ll arrange a refund for the
-          buyer.
-        </p>
+          I can&rsquo;t fulfil — reject + refund buyer
+        </ActionButton>
       </div>
 
       {/* Deadline hint */}
@@ -385,6 +453,148 @@ function DeadlineCountdown({ deadlineIso }: { deadlineIso: string }) {
     >
       {text}
     </p>
+  );
+}
+
+function RejectPicker({
+  reason,
+  freeText,
+  listingTitle,
+  onChangeReason,
+  onChangeFreeText,
+  onCancel,
+  onSubmit,
+}: {
+  reason: RejectReasonKey | null;
+  freeText: string;
+  listingTitle: string;
+  onChangeReason: (reason: RejectReasonKey) => void;
+  onChangeFreeText: (freeText: string) => void;
+  onCancel: () => void;
+  onSubmit: (reasonText: string) => void;
+}) {
+  const canSubmit =
+    reason !== null && (reason !== 'OTHER' || freeText.trim().length >= 3);
+  const submittable =
+    reason === 'OTHER'
+      ? freeText.trim()
+      : (REJECT_REASONS.find((r) => r.value === reason)?.label ?? '');
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div
+        style={{
+          background: 'var(--bg-card)',
+          border: '0.5px solid var(--red)',
+          borderRadius: 12,
+          padding: 20,
+        }}
+      >
+        <p
+          style={{
+            fontSize: 16,
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+            marginBottom: 6,
+          }}
+        >
+          Reject this sale?
+        </p>
+        <p
+          style={{
+            fontSize: 13,
+            color: 'var(--text-secondary)',
+            lineHeight: 1.55,
+            marginBottom: 16,
+          }}
+        >
+          The buyer will be refunded in full and notified of your reason.
+          The listing for &quot;{listingTitle}&quot; will go live again on
+          the marketplace.
+        </p>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            marginBottom: 12,
+          }}
+        >
+          {REJECT_REASONS.map((r) => (
+            <label
+              key={r.value}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                padding: 12,
+                borderRadius: 8,
+                background:
+                  reason === r.value
+                    ? 'var(--bg-inset)'
+                    : 'transparent',
+                border: `0.5px solid ${
+                  reason === r.value
+                    ? 'var(--text-secondary)'
+                    : 'var(--border)'
+                }`,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="radio"
+                name="reject-reason"
+                checked={reason === r.value}
+                onChange={() => onChangeReason(r.value)}
+                style={{ marginTop: 4 }}
+              />
+              <span
+                style={{
+                  fontSize: 14,
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.4,
+                }}
+              >
+                {r.label}
+              </span>
+            </label>
+          ))}
+        </div>
+        {reason === 'OTHER' && (
+          <textarea
+            value={freeText}
+            onChange={(e) => onChangeFreeText(e.target.value)}
+            placeholder="Tell the buyer what happened (min 3 chars)"
+            rows={3}
+            maxLength={500}
+            style={{
+              width: '100%',
+              padding: 10,
+              borderRadius: 8,
+              background: 'var(--bg-inset)',
+              border: '0.5px solid var(--border)',
+              color: 'var(--text-primary)',
+              fontSize: 14,
+              resize: 'vertical',
+              fontFamily: 'inherit',
+            }}
+          />
+        )}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <ActionButton
+          variant="primary"
+          disabled={!canSubmit}
+          onClick={() => onSubmit(submittable)}
+        >
+          Reject + refund buyer
+        </ActionButton>
+        <ActionButton variant="ghost" onClick={onCancel}>
+          ← Back
+        </ActionButton>
+      </div>
+    </div>
   );
 }
 
@@ -439,17 +649,20 @@ function ActionButton({
 function DoneScreen({
   listingTitle,
   buyerUsername,
+  outcome,
   wasAlreadyAccepted,
   wasAlreadyRejected,
 }: {
   listingTitle: string;
   buyerUsername: string;
+  outcome: 'accepted' | 'rejected';
   wasAlreadyAccepted: boolean;
   wasAlreadyRejected: boolean;
 }) {
-  // Branch copy on prior-state so a refresh after action shows the
-  // right wording (we don't want to say "you've just accepted" after
-  // a refresh hours later).
+  // Branch copy on prior-state + outcome of THIS visit. Prior-state
+  // wins so a refresh hours later doesn't say "you've just accepted".
+  const justRejected = outcome === 'rejected' && !wasAlreadyRejected;
+  const justAccepted = outcome === 'accepted' && !wasAlreadyAccepted;
   const copy = wasAlreadyRejected
     ? {
         title: 'Sale rejected',
@@ -457,19 +670,33 @@ function DoneScreen({
         emoji: '✕',
         color: 'var(--text-tertiary)',
       }
-    : wasAlreadyAccepted
+    : justRejected
       ? {
-          title: 'Sale already accepted',
-          body: `You've already accepted the sale on "${listingTitle}" from @${buyerUsername}. We'll send another SMS with the dispatch link when it's time to ship.`,
-          emoji: '✓',
-          color: '#22c55e',
+          title: 'Sale rejected — buyer refunded',
+          body: `You've rejected the sale on "${listingTitle}". The buyer has been refunded in full and notified of your reason. The listing is live again on the marketplace.`,
+          emoji: '✕',
+          color: 'var(--text-tertiary)',
         }
-      : {
-          title: 'Sale accepted',
-          body: `You've accepted the sale on "${listingTitle}" from @${buyerUsername}. You have 5 days to dispatch — we'll send a separate SMS with a one-tap dispatch link.`,
-          emoji: '✓',
-          color: '#22c55e',
-        };
+      : wasAlreadyAccepted
+        ? {
+            title: 'Sale already accepted',
+            body: `You've already accepted the sale on "${listingTitle}" from @${buyerUsername}. We'll send another SMS with the dispatch link when it's time to ship.`,
+            emoji: '✓',
+            color: '#22c55e',
+          }
+        : justAccepted
+          ? {
+              title: 'Sale accepted',
+              body: `You've accepted the sale on "${listingTitle}" from @${buyerUsername}. You have 5 days to dispatch — we'll send a separate SMS with a one-tap dispatch link.`,
+              emoji: '✓',
+              color: '#22c55e',
+            }
+          : {
+              title: 'Done',
+              body: `Action on "${listingTitle}" is complete.`,
+              emoji: '✓',
+              color: '#22c55e',
+            };
 
   return (
     <div

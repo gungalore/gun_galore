@@ -9,6 +9,7 @@ import { ConfirmDeliveryButton } from './confirm-delivery-button';
 import { RaiseDisputeButton } from './raise-dispute-button';
 import { RatingWidget } from './rating-widget';
 import { TrackingTimeline } from './tracking-timeline';
+import { AcceptRejectPanel } from './accept-reject-panel';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -84,9 +85,19 @@ export default async function TransactionPage({
   // .maybeImmediatePayout). The buttons below are courier-flow only.
   const isPrivateArrange = tx.shippingMethod === 'PRIVATE_ARRANGE';
 
+  // TOK-7 Phase 2 — accept gates dispatch. Seller must tap "Accept this
+  // sale" before they can mark dispatched. The accept panel shows from
+  // paidAt until accepted/rejected; the dispatch panel only shows once
+  // accepted (and not yet dispatched).
+  const isPaidAwaitingAccept =
+    !!tx.paidAt && !tx.acceptedAt && !tx.rejectedAt && !tx.dispatchedAt;
+  const isRejected = !!tx.rejectedAt;
+  const canAccept = isSeller && isPaidAwaitingAccept && !isPrivateArrange;
   const canDispatch =
     !isPrivateArrange &&
     isSeller &&
+    !!tx.acceptedAt && // hard gate — must accept first
+    !isRejected &&
     tx.paymentStatus === 'HELD' &&
     tx.shippingStatus === 'PENDING' &&
     !tx.dispatchedAt;
@@ -433,88 +444,233 @@ export default async function TransactionPage({
             </div>
           )}
 
-          {/* Dispatch SLA countdown — visible to the seller while
-              their courier order is awaiting dispatch. Backend
-              dispatch-sla.service.ts nudges at 48h after paidAt and
-              auto-refunds (with strike) at 7 days. Without this
-              banner the seller has no in-app warning until the
-              auto-refund email lands. */}
-          {canDispatch && tx.paidAt && (tx.shippingMethod === 'PUDO' || tx.shippingMethod === 'TCG') && (() => {
-            const paid = new Date(tx.paidAt).getTime();
-            const nudgeAt = paid + 48 * 60 * 60 * 1000;
-            const refundAt = paid + 7 * 24 * 60 * 60 * 1000;
-            const now = Date.now();
-            const msToRefund = refundAt - now;
-            const hoursToRefund = Math.max(0, Math.floor(msToRefund / 3_600_000));
-            const isOverdue = now > nudgeAt;
-            const isCritical = hoursToRefund <= 24;
-            const tone = isCritical
-              ? { bg: 'rgba(200,16,46,0.10)', border: 'var(--red)', label: 'var(--red)' }
-              : isOverdue
-                ? { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.55)', label: '#f59e0b' }
-                : { bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.35)', label: '#f59e0b' };
-            const dateFmt = (ms: number) =>
-              new Date(ms).toLocaleString('en-ZA', {
-                weekday: 'short',
-                day: 'numeric',
-                month: 'short',
-                hour: '2-digit',
-                minute: '2-digit',
-              });
+          {/* TOK-7 Phase 2 — seller accept/reject panel. Renders only
+              while the sale is awaiting the seller's go/no-go decision.
+              The same panel is the canonical entry point for the
+              non-SMS path; the /a/<token> page does the SMS version. */}
+          {canAccept && (
+            <AcceptRejectPanel
+              transactionId={tx.id}
+              acceptDeadlineAt={tx.acceptDeadlineAt}
+              isDealerTransfer={tx.shippingMethod === 'DEALER_TRANSFER'}
+            />
+          )}
+
+          {/* Buyer-side "Awaiting seller accept" chip — counterpart
+              to the seller's AcceptRejectPanel. Live countdown to
+              acceptDeadlineAt. Reassures the buyer that their card
+              has been charged but the order isn't locked in yet. */}
+          {isBuyer && isPaidAwaitingAccept && tx.acceptDeadlineAt && (() => {
+            const deadline = new Date(tx.acceptDeadlineAt).getTime();
+            const msLeft = deadline - Date.now();
+            const hoursLeft = Math.max(0, Math.floor(msLeft / 3_600_000));
+            const expired = msLeft <= 0;
             return (
               <div
                 className="rounded-[8px] px-4 py-3"
                 style={{
-                  background: tone.bg,
-                  border: `0.5px solid ${tone.border}`,
+                  background: expired
+                    ? 'rgba(200,16,46,0.10)'
+                    : 'rgba(245,158,11,0.08)',
+                  border: `0.5px solid ${
+                    expired ? 'var(--red)' : 'rgba(245,158,11,0.45)'
+                  }`,
                   lineHeight: 1.55,
                 }}
               >
                 <p
                   className="text-xs uppercase mb-1"
                   style={{
-                    color: tone.label,
+                    color: expired ? 'var(--red)' : '#f59e0b',
                     letterSpacing: '0.06em',
                     fontWeight: 600,
                   }}
                 >
-                  {isCritical
-                    ? `Dispatch deadline — ${hoursToRefund}h left`
-                    : isOverdue
-                      ? 'Dispatch overdue'
-                      : 'Dispatch deadline'}
+                  {expired
+                    ? 'Seller missed accept window — admin reviewing'
+                    : `Awaiting seller accept · ${hoursLeft}h left`}
                 </p>
-                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  {isOverdue ? (
+                <p
+                  className="text-xs"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  {expired ? (
                     <>
-                      You should have dispatched by{' '}
-                      <span style={{ color: 'var(--text-primary)' }}>
-                        {dateFmt(nudgeAt)}
-                      </span>
-                      . If the item isn&apos;t dispatched by{' '}
-                      <strong style={{ color: 'var(--text-primary)' }}>
-                        {dateFmt(refundAt)}
-                      </strong>{' '}
-                      the buyer is automatically refunded and a
-                      cancellation strike lands on your account.
+                      The seller didn&apos;t confirm in time. Our team has
+                      been alerted and will follow up — you don&apos;t need
+                      to do anything. If they can&apos;t fulfil, your
+                      payment is refunded automatically.
                     </>
                   ) : (
                     <>
-                      Dispatch by{' '}
+                      Your card has been charged but the funds are{' '}
                       <strong style={{ color: 'var(--text-primary)' }}>
-                        {dateFmt(nudgeAt)}
+                        held safely
                       </strong>{' '}
-                      to stay on track. Auto-refund + strike at{' '}
-                      <span style={{ color: 'var(--text-primary)' }}>
-                        {dateFmt(refundAt)}
-                      </span>
-                      .
+                      by Gun Galore. The seller has 48 hours to confirm
+                      they can fulfil. If they don&apos;t, you&apos;ll be
+                      refunded automatically.
                     </>
                   )}
                 </p>
               </div>
             );
           })()}
+
+          {/* Rejected state — final, both buyer and seller see this. */}
+          {isRejected && (
+            <div
+              className="rounded-[8px] px-4 py-3"
+              style={{
+                background: 'rgba(200,16,46,0.08)',
+                border: '0.5px solid var(--red)',
+                lineHeight: 1.55,
+              }}
+            >
+              <p
+                className="text-xs uppercase mb-1"
+                style={{
+                  color: 'var(--red)',
+                  letterSpacing: '0.06em',
+                  fontWeight: 600,
+                }}
+              >
+                {isBuyer
+                  ? 'Sale cancelled — refund issued'
+                  : 'You rejected this sale'}
+              </p>
+              <p
+                className="text-xs"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                {isBuyer ? (
+                  <>
+                    The seller couldn&apos;t fulfil this order. Your refund
+                    is on the way — allow 5–10 business days to reflect on
+                    your card. The listing has been re-activated if you
+                    want to try with a different one.
+                  </>
+                ) : (
+                  <>
+                    The buyer has been refunded in full and the listing is
+                    live again on the marketplace. No further action needed.
+                  </>
+                )}
+                {tx.rejectedReason && (
+                  <>
+                    <br />
+                    <span style={{ color: 'var(--text-tertiary)' }}>
+                      Reason: {tx.rejectedReason}
+                    </span>
+                  </>
+                )}
+              </p>
+            </div>
+          )}
+
+          {/* Post-accept dispatch deadline chip — shown to BOTH parties
+              after seller has accepted but not yet dispatched. Buyer sees
+              "dispatch within Xd" (reassurance the order is moving),
+              seller sees the same countdown as a reminder.
+              Replaces the old paidAt-based dispatch-SLA chip below. */}
+          {!isPrivateArrange &&
+            !!tx.acceptedAt &&
+            !tx.dispatchedAt &&
+            !isRejected &&
+            tx.dispatchDeadlineAt &&
+            (tx.shippingMethod === 'PUDO' ||
+              tx.shippingMethod === 'TCG' ||
+              tx.shippingMethod === 'DEALER_TRANSFER') &&
+            (() => {
+              const deadline = new Date(tx.dispatchDeadlineAt).getTime();
+              const msLeft = deadline - Date.now();
+              const hoursLeft = Math.max(0, Math.floor(msLeft / 3_600_000));
+              const daysLeft = Math.floor(hoursLeft / 24);
+              const expired = msLeft <= 0;
+              const isCritical = msLeft > 0 && hoursLeft <= 24;
+              const tone = expired
+                ? { bg: 'rgba(200,16,46,0.12)', border: 'var(--red)', label: 'var(--red)' }
+                : isCritical
+                  ? { bg: 'rgba(200,16,46,0.08)', border: 'var(--red)', label: 'var(--red)' }
+                  : { bg: 'rgba(0,160,60,0.06)', border: 'rgba(0,160,60,0.35)', label: '#00a03c' };
+              const remaining = expired
+                ? 'overdue'
+                : daysLeft > 0
+                  ? `${daysLeft}d ${hoursLeft % 24}h left`
+                  : `${hoursLeft}h left`;
+              return (
+                <div
+                  className="rounded-[8px] px-4 py-3"
+                  style={{
+                    background: tone.bg,
+                    border: `0.5px solid ${tone.border}`,
+                    lineHeight: 1.55,
+                  }}
+                >
+                  <p
+                    className="text-xs uppercase mb-1"
+                    style={{
+                      color: tone.label,
+                      letterSpacing: '0.06em',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {isSeller
+                      ? expired
+                        ? 'DISPATCH OVERDUE'
+                        : `DISPATCH — ${remaining}`
+                      : expired
+                        ? 'Dispatch overdue — admin reviewing'
+                        : `Sale accepted · dispatching within ${remaining}`}
+                  </p>
+                  <p
+                    className="text-xs"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {isSeller ? (
+                      expired ? (
+                        <>
+                          You&apos;ve missed the 5-day dispatch window. The
+                          buyer will be auto-refunded on the next sweep and
+                          you&apos;ll receive a dispatch strike. Contact
+                          support if there&apos;s a courier issue.
+                        </>
+                      ) : (
+                        <>
+                          Dispatch by{' '}
+                          <strong style={{ color: 'var(--text-primary)' }}>
+                            {new Date(tx.dispatchDeadlineAt).toLocaleString(
+                              'en-ZA',
+                              {
+                                weekday: 'short',
+                                day: 'numeric',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              },
+                            )}
+                          </strong>{' '}
+                          — past that point the buyer is auto-refunded and
+                          your account gets a dispatch strike.
+                        </>
+                      )
+                    ) : expired ? (
+                      <>
+                        The seller is past the dispatch deadline. Our team
+                        will refund you automatically if it doesn&apos;t
+                        ship in the next 24 hours.
+                      </>
+                    ) : (
+                      <>
+                        The seller has accepted and is preparing your order.
+                        We&apos;ll SMS the tracking reference as soon as it
+                        ships.
+                      </>
+                    )}
+                  </p>
+                </div>
+              );
+            })()}
 
           {/* Seller dispatch */}
           {canDispatch && (

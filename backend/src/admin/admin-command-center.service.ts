@@ -49,6 +49,12 @@ export interface AttentionQueue {
   // — a live service running on empty silently breaks user-facing
   // flows (OTP not received, image upload 4xx, KYC stuck spinner).
   creditsBelowAlarm: number;
+  // Sales where the buyer paid but the seller blew past the 48h
+  // accept deadline without acting. Flagged by the
+  // acceptEscalationSweep cron (TasksService). Admin needs to either
+  // give the seller more time or force-refund the buyer. URGENT-grade
+  // — the buyer's money has been held for 2+ days with no commitment.
+  salesAwaitingAccept: number;
 }
 
 export interface TodayPulse {
@@ -117,6 +123,7 @@ export class AdminCommandCenterService {
       rafflesPendingDispatch,
       rafflesNewlyDrawn,
       creditsBelowAlarm,
+      salesAwaitingAccept,
     ] = await Promise.all([
       this.prisma.listing.count({ where: { status: 'PENDING_REVIEW' } }),
       this.prisma.transaction.count({
@@ -171,6 +178,18 @@ export class AdminCommandCenterService {
       // in one place. Returns 0 when the operator hasn't configured
       // any thresholds yet (so the card stays calm by default).
       this.adminCredits.countServicesBelowAlarm(),
+      // TOK-7 Phase 2: stalled sales — paid but seller didn't accept
+      // within 48h and the escalation cron has flagged them. Only the
+      // escalated rows count — sales still inside their 48h window
+      // are the seller's responsibility, not admin's.
+      this.prisma.transaction.count({
+        where: {
+          acceptEscalatedAt: { not: null },
+          acceptedAt: null,
+          rejectedAt: null,
+          paymentStatus: 'HELD',
+        },
+      }),
     ]);
 
     return {
@@ -184,6 +203,7 @@ export class AdminCommandCenterService {
       rafflesPendingDispatch,
       rafflesNewlyDrawn,
       creditsBelowAlarm,
+      salesAwaitingAccept,
     };
   }
 

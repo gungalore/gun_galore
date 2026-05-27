@@ -342,6 +342,17 @@ export class TransactionsService {
   async acceptTransaction(transactionId: string, sellerClerkId: string) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
+      include: {
+        listing: { select: { title: true } },
+        buyer: {
+          select: {
+            email: true,
+            firstName: true,
+            phone: true,
+            username: true,
+          },
+        },
+      },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
 
@@ -375,12 +386,231 @@ export class TransactionsService {
     // Timeline + notifications — fire-and-forget.
     void this.tracking.recordInternal(transactionId, 'SELLER_ACCEPTED');
     void this.notifications.resolveByEntity('transaction', transactionId);
-    // TODO (Phase 2): notify buyer "Seller accepted — preparing to dispatch"
+    // Buyer notification — "Seller accepted, dispatch within 5d".
+    // Closes the "Awaiting seller accept" loop on the buyer side.
+    void this.notifications.saleAcceptedBuyer({
+      buyerEmail: tx.buyer.email,
+      buyerName:
+        tx.buyer.firstName ?? tx.buyer.username ?? 'there',
+      buyerPhone: tx.buyer.phone,
+      listingTitle: tx.listing.title,
+      transactionId: tx.id,
+      dispatchDeadlineAt,
+    });
 
     this.logger.log(
       `Transaction ${transactionId} accepted by seller ${seller.id}; dispatch deadline ${dispatchDeadlineAt.toISOString()}`,
     );
     return updated;
+  }
+
+  // ------------------------------------------------------------------
+  // Seller rejects the transaction (TOK-7 Phase 2)
+  // ------------------------------------------------------------------
+  // Alternative to accept — the seller can't or won't fulfil. Triggers:
+  //   1. Peach refund of buyerTotal
+  //   2. Transaction.paymentStatus = REFUNDED + rejectedAt/Reason stamped
+  //   3. Listing reactivated (status ACTIVE, soldAt cleared) so other
+  //      buyers can pick it up again
+  //   4. Buyer notification (saleRejectedBuyer — SMS + email + inbox)
+  //   5. Tracking timeline entry SELLER_REJECTED for audit
+  //
+  // Reason is required (operator-confirmed) — surfaces to the buyer in
+  // the rejection notification and to admin for trust-safety review.
+  //
+  // No strike on the seller for rejecting (unlike auto-refund-no-dispatch
+  // which IS a strike). Rejecting up-front is the honest move; we want
+  // sellers to do this rather than ghost the transaction.
+  async rejectTransaction(
+    transactionId: string,
+    sellerClerkId: string,
+    reason: string,
+  ) {
+    const trimmedReason = (reason ?? '').trim();
+    if (trimmedReason.length < 3) {
+      throw new BadRequestException('Reason is required (min 3 characters)');
+    }
+    if (trimmedReason.length > 500) {
+      throw new BadRequestException('Reason is too long (max 500 characters)');
+    }
+
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        listing: { select: { id: true, title: true } },
+        buyer: {
+          select: {
+            email: true,
+            firstName: true,
+            phone: true,
+            username: true,
+          },
+        },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+
+    const seller = await this.prisma.user.findUnique({
+      where: { clerkId: sellerClerkId },
+    });
+    if (!seller || tx.sellerId !== seller.id) {
+      throw new ForbiddenException('Not authorised');
+    }
+    if (!tx.paidAt) {
+      throw new BadRequestException('Payment not confirmed yet');
+    }
+    if (tx.acceptedAt) {
+      throw new BadRequestException(
+        'Transaction already accepted — cannot reject. Contact support to refund.',
+      );
+    }
+    if (tx.rejectedAt) {
+      // Idempotent — already-rejected is a successful no-op.
+      return tx;
+    }
+    if (tx.dispatchedAt) {
+      throw new BadRequestException('Already dispatched — cannot reject.');
+    }
+
+    // Fire Peach refund first — only stamp rejectedAt if it succeeded,
+    // so an admin can retry on failure rather than the buyer being
+    // stuck without a refund AND the listing reactivated.
+    const refundRes = tx.peachPaymentId
+      ? await this.peach.refundPayment(tx.peachPaymentId, tx.buyerTotal)
+      : { success: true, resultCode: 'NO_PEACH_ID' };
+
+    if (!refundRes.success) {
+      this.logger.warn(
+        `Reject failed for ${transactionId}: Peach refund failed (${refundRes.resultCode}) — raising admin alert`,
+      );
+      await this.prisma.adminAlert.create({
+        data: {
+          type: 'SALE_REJECT_REFUND_FAILED',
+          referenceId: transactionId,
+          urgent: true,
+          context: `Seller tried to reject sale; Peach refund failed: ${refundRes.resultCode}. Buyer still owed ${tx.buyerTotal} cents.`,
+        },
+      });
+      throw new BadRequestException(
+        'Refund failed — support has been alerted and will resolve manually within 24h.',
+      );
+    }
+
+    // Atomic state change — only after refund succeeded.
+    await this.prisma.$transaction([
+      this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: {
+          rejectedAt: new Date(),
+          rejectedReason: trimmedReason,
+          paymentStatus: 'REFUNDED',
+          releasedAt: null,
+        },
+      }),
+      this.prisma.listing.update({
+        where: { id: tx.listingId },
+        data: { status: 'ACTIVE', soldAt: null },
+      }),
+    ]);
+
+    // Timeline + buyer notification + clear seller's accept-pending
+    // inbox row. Fire-and-forget; UI feedback already returned to the
+    // seller via the controller's success response.
+    void this.tracking.recordInternal(transactionId, 'SELLER_REJECTED', {
+      message: `Seller rejected: ${trimmedReason}`,
+    });
+    void this.notifications.resolveByEntity('transaction', transactionId);
+    void this.notifications.saleRejectedBuyer({
+      buyerEmail: tx.buyer.email,
+      buyerName:
+        tx.buyer.firstName ?? tx.buyer.username ?? 'there',
+      buyerPhone: tx.buyer.phone,
+      listingTitle: tx.listing.title,
+      listingId: tx.listingId,
+      transactionId: tx.id,
+      buyerTotal: tx.buyerTotal,
+      reason: trimmedReason,
+    });
+
+    this.logger.log(
+      `Transaction ${transactionId} REJECTED by seller ${seller.id} (reason: ${trimmedReason.slice(0, 80)})`,
+    );
+    return this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // 48h accept-escalation sweep (TOK-7 Phase 2)
+  // ------------------------------------------------------------------
+  // Cron-invoked. Finds transactions past the accept deadline that the
+  // seller hasn't actioned (no accept, no reject) and flips
+  // acceptEscalatedAt so they surface on the admin "stalled sales"
+  // queue. We do NOT auto-refund — admin decides per-case (give the
+  // seller more time, or refund the buyer).
+  //
+  // Idempotent via acceptEscalatedAt — already-escalated rows are
+  // skipped on subsequent passes.
+  async escalateStaleAccepts(): Promise<{ scanned: number; escalated: number }> {
+    const now = new Date();
+    const stale = await this.prisma.transaction.findMany({
+      where: {
+        acceptDeadlineAt: { lte: now },
+        acceptedAt: null,
+        rejectedAt: null,
+        acceptEscalatedAt: null,
+        paymentStatus: 'HELD',
+      },
+      include: {
+        listing: { select: { title: true } },
+        seller: {
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+          },
+        },
+      },
+      take: 50,
+    });
+
+    let escalated = 0;
+    for (const tx of stale) {
+      try {
+        await this.prisma.transaction.update({
+          where: { id: tx.id },
+          data: { acceptEscalatedAt: new Date() },
+        });
+        await this.prisma.adminAlert.create({
+          data: {
+            type: 'SALE_ACCEPT_STALLED',
+            referenceId: tx.id,
+            urgent: false,
+            context: `Seller ${tx.seller.username ?? tx.seller.firstName ?? tx.seller.email} hasn't accepted "${tx.listing.title}" within ${ACCEPT_DEADLINE_HOURS}h.`,
+          },
+        });
+        void this.tracking.recordInternal(tx.id, 'ACCEPT_ESCALATED');
+        // Admin notification — uses the broadcast-style admin channel
+        // already wired in NotificationsService.
+        await this.notifications.saleAcceptEscalatedAdmin({
+          transactionId: tx.id,
+          listingTitle: tx.listing.title,
+          sellerName:
+            tx.seller.username ??
+            ([tx.seller.firstName, tx.seller.lastName]
+              .filter(Boolean)
+              .join(' ') ||
+              tx.seller.email),
+        });
+        escalated++;
+      } catch (err) {
+        this.logger.warn(
+          `accept escalation failed for ${tx.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return { scanned: stale.length, escalated };
   }
 
   async confirmDispatch(
@@ -397,14 +627,20 @@ export class TransactionsService {
     }
     if (!tx.paidAt) throw new BadRequestException('Payment not confirmed yet');
     if (tx.dispatchedAt) throw new BadRequestException('Already dispatched');
-    // TOK-7 (Phase 1 — not yet enforced): seller must accept the
-    // transaction first. Logged as a warning during the rollout window
-    // while we ship the Accept UI; will become a hard throw once the
-    // frontend Accept button + SMS token flow are live (Phase 2).
+    if (tx.rejectedAt) {
+      throw new BadRequestException(
+        'This sale was rejected and refunded — cannot dispatch.',
+      );
+    }
+    // TOK-7 Phase 2 — accept is now a HARD gate. The Phase 1 soft
+    // warning is gone; sellers must tap Accept (one-tap from SMS link
+    // OR the Accept button on the transaction page) before they can
+    // mark dispatched. Any in-flight pre-Phase-2 transaction got its
+    // acceptedAt = paidAt backfilled at Phase 1 deploy so this never
+    // fires for legacy rows.
     if (!tx.acceptedAt) {
-      this.logger.warn(
-        `Transaction ${transactionId} dispatched without prior accept — ` +
-          `Phase 1 soft warning, will be required once Accept UI ships.`,
+      throw new BadRequestException(
+        'You need to accept the sale first. Tap "Accept this sale" — then you can mark it dispatched.',
       );
     }
 

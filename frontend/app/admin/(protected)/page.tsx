@@ -25,6 +25,9 @@ interface AttentionQueue {
   // Anthropic, Pudo) at/below the operator-configured alarm threshold.
   // Alarm-grade — a service running on empty silently breaks user flows.
   creditsBelowAlarm: number;
+  // TOK-7 Phase 2 — sales where buyer paid but seller missed the 48h
+  // accept window. Flagged by the accept-escalation cron. URGENT.
+  salesAwaitingAccept: number;
 }
 
 interface TodayPulse {
@@ -199,6 +202,16 @@ export default function AdminCommandCenterPage() {
           href: '/admin/credits',
           tone: attention.creditsBelowAlarm > 0 ? 'urgent' : 'calm',
           hint: 'Below alarm threshold',
+        },
+        // TOK-7 Phase 2: stalled sales — buyer paid, seller missed the
+        // 48h accept deadline. Urgent because the buyer's money has
+        // been held for 2+ days without commitment.
+        {
+          label: 'Sales awaiting accept',
+          value: attention.salesAwaitingAccept,
+          href: '/admin/transactions?status=HELD&filter=accept-stalled',
+          tone: attention.salesAwaitingAccept > 0 ? 'urgent' : 'calm',
+          hint: 'Seller didn’t accept in 48h',
         },
       ]
     : [];

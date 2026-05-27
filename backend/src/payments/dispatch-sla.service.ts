@@ -6,9 +6,14 @@ import { TrackingService } from '../shipping/tracking.service';
 
 // Two thresholds for courier-shipped orders (PUDO / TCG only —
 // PRIVATE_ARRANGE has no dispatch step, DEALER_TRANSFER routes
-// through the dealer and not the SLA). Both measured from paidAt.
-const NUDGE_AFTER_HOURS = 48;
-const AUTO_REFUND_AFTER_DAYS = 7;
+// through the dealer and not the SLA). Both measured from
+// acceptedAt (TOK-7 Phase 2 change — was paidAt before).
+//
+// The dispatch window opens the moment the seller accepts; legacy
+// (pre-Phase-1) transactions got `acceptedAt = paidAt` backfilled at
+// the Phase 1 deploy so the clock still starts cleanly for them too.
+const NUDGE_BEFORE_REFUND_HOURS = 24;
+const DISPATCH_WINDOW_DAYS = 5;
 
 @Injectable()
 export class DispatchSlaService {
@@ -22,17 +27,27 @@ export class DispatchSlaService {
   ) {}
 
   // ------------------------------------------------------------------
-  // 48h nudge — finds courier orders the seller hasn't dispatched
-  // yet and sends a one-shot reminder (SMS + email). Idempotent via
-  // dispatchNudgedAt — once stamped, the cron skips the row.
+  // Pre-deadline nudge — finds accepted-but-not-yet-dispatched courier
+  // orders whose dispatch deadline is < 24h away and sends a one-shot
+  // reminder (SMS + email). Idempotent via dispatchNudgedAt — once
+  // stamped, the cron skips the row.
+  //
+  // TOK-7 Phase 2: gates on acceptedAt (sellers who haven't accepted
+  // get the SEPARATE accept-escalation cron, not this dispatch nudge —
+  // they shouldn't get pinged about dispatching something they haven't
+  // committed to fulfilling).
   // ------------------------------------------------------------------
   async nudgeStale(): Promise<{ scanned: number; nudged: number }> {
-    const cutoff = new Date(Date.now() - NUDGE_AFTER_HOURS * 60 * 60 * 1000);
+    const nudgeCutoff = new Date(
+      Date.now() + NUDGE_BEFORE_REFUND_HOURS * 60 * 60 * 1000,
+    );
 
     const stale = await this.prisma.transaction.findMany({
       where: {
-        paidAt: { lte: cutoff },
+        acceptedAt: { not: null },
+        dispatchDeadlineAt: { lte: nudgeCutoff },
         dispatchedAt: null,
+        rejectedAt: null,
         dispatchNudgedAt: null,
         paymentStatus: 'HELD',
         shippingMethod: { in: ['PUDO', 'TCG'] },
@@ -61,8 +76,14 @@ export class DispatchSlaService {
               .join(' ') || 'Seller',
           listingTitle: tx.listing.title,
           transactionId: tx.id,
-          hoursElapsed: NUDGE_AFTER_HOURS,
-          autoRefundDays: AUTO_REFUND_AFTER_DAYS,
+          // hoursElapsed = how long since they accepted (existing field
+          // in the notification's signature; preserved for copy parity).
+          hoursElapsed: tx.acceptedAt
+            ? Math.floor(
+                (Date.now() - tx.acceptedAt.getTime()) / 3_600_000,
+              )
+            : 0,
+          autoRefundDays: DISPATCH_WINDOW_DAYS,
         });
         nudged++;
       } catch (err) {
@@ -82,14 +103,18 @@ export class DispatchSlaService {
   // suspension review (not auto-banned — that's the operator's call).
   // ------------------------------------------------------------------
   async autoRefundStale(): Promise<{ scanned: number; refunded: number }> {
-    const cutoff = new Date(
-      Date.now() - AUTO_REFUND_AFTER_DAYS * 24 * 60 * 60 * 1000,
-    );
+    const now = new Date();
 
     const stale = await this.prisma.transaction.findMany({
       where: {
-        paidAt: { lte: cutoff },
+        // TOK-7 Phase 2: gates on the explicit dispatchDeadlineAt
+        // (= acceptedAt + 5d) instead of `paidAt + 7d`. Sellers who
+        // never accepted are handled by escalateStaleAccepts on a
+        // separate path — they don't get auto-refunded by this cron.
+        acceptedAt: { not: null },
+        dispatchDeadlineAt: { lte: now },
         dispatchedAt: null,
+        rejectedAt: null,
         paymentStatus: 'HELD',
         shippingMethod: { in: ['PUDO', 'TCG'] },
       },
@@ -159,7 +184,7 @@ export class DispatchSlaService {
         }
 
         void this.tracking.recordInternal(tx.id, 'AUTO_REFUNDED_NO_DISPATCH', {
-          message: `Auto-refunded after ${AUTO_REFUND_AFTER_DAYS} days without dispatch`,
+          message: `Auto-refunded after ${DISPATCH_WINDOW_DAYS} days without dispatch`,
         });
 
         await this.notifications.orderAutoRefunded({

@@ -236,6 +236,36 @@ export class TransactionsController {
   ) {
     return this.txService.confirmDispatch(id, clerkId, body);
   }
+
+  // ---------------------------------------------------------------
+  // Seller accepts the sale (TOK-7 Phase 2)
+  // ---------------------------------------------------------------
+  // Signed-in seller's Accept button on /transactions/[id]. Mirrors the
+  // /actions/:token/accept-transaction endpoint that the SMS one-tap
+  // uses, just guarded by Clerk session instead of a token. Idempotent.
+  @Post(':id/accept')
+  @UseGuards(ClerkGuard)
+  @HttpCode(200)
+  accept(@Param('id') id: string, @CurrentUser() clerkId: string) {
+    return this.txService.acceptTransaction(id, clerkId);
+  }
+
+  // ---------------------------------------------------------------
+  // Seller rejects the sale (TOK-7 Phase 2)
+  // ---------------------------------------------------------------
+  // Reason required. Fires Peach refund + reactivates listing + notifies
+  // buyer. Allowed reason codes are validated client-side in the picker
+  // and a free-text "other" reason gets passed through to the service.
+  @Post(':id/reject')
+  @UseGuards(ClerkGuard)
+  @HttpCode(200)
+  reject(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.txService.rejectTransaction(id, clerkId, body?.reason ?? '');
+  }
 }
 
 // ---------------------------------------------------------------
