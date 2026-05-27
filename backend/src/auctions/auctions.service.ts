@@ -11,7 +11,14 @@ import { ActionTokensService } from '../actions/action-tokens.service';
 import { PlaceBidDto } from './dto/place-bid.dto';
 import { Prisma } from '@prisma/client';
 
-const APP_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+// Lazy getter — must NOT be a module-level constant. ES module imports
+// hoist before main.ts's dotenv.config() runs, so a top-level
+// `const APP_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000'`
+// captures `undefined` and falls back to localhost. SMS token URLs
+// then go out as http://localhost:3000/a/<token> to live users.
+// Calling the function at use-time defers the env read until after
+// dotenv has populated process.env.
+const APP_URL = () => process.env.FRONTEND_URL ?? 'http://localhost:3000';
 const AUCTION_WIN_CHECKOUT_TTL_HOURS = 24;
 
 // Tiered bid increments per CLAUDE.md (M2 Auction System).
@@ -817,7 +824,7 @@ export class AuctionsService {
         newAmount,
         user.phone,
         listingId,
-        token ? `${APP_URL}/a/${token}` : undefined,
+        token ? `${APP_URL()}/a/${token}` : undefined,
       );
     } catch (err) {
       this.logger.warn(`outbid notify failed: ${(err as Error).message}`);
@@ -851,7 +858,7 @@ export class AuctionsService {
         amount,
         user.phone,
         listingId,
-        token ? `${APP_URL}/a/${token}` : undefined,
+        token ? `${APP_URL()}/a/${token}` : undefined,
       );
     } catch (err) {
       this.logger.warn(`auctionWon notify failed: ${(err as Error).message}`);

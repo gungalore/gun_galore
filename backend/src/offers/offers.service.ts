@@ -16,7 +16,13 @@ import { OfferStatus } from '@prisma/client';
 const OFFER_TTL_HOURS = 48;
 const COUNTER_TTL_HOURS = 24;
 const CHECKOUT_TTL_HOURS = 24;
-const APP_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+// Lazy getter — must NOT be a module-level constant. ES module imports
+// hoist before main.ts's dotenv.config() runs, so a top-level
+// `const APP_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000'`
+// captures `undefined` and falls back to localhost. Every SMS token URL
+// then breaks for live users. Calling the function at use-time defers
+// the env read until after dotenv has populated process.env.
+const APP_URL = () => process.env.FRONTEND_URL ?? 'http://localhost:3000';
 
 @Injectable()
 export class OffersService {
@@ -405,7 +411,7 @@ export class OffersService {
         listingId: offer.listing.id,
         offerAmount: offer.offerAmount,
         offerId: offer.id,
-        actionUrl: token ? `${APP_URL}/a/${token}` : undefined,
+        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
       });
     } catch (err) {
       this.logger.error(`notifySellerOfOffer failed: ${(err as Error).message}`);
@@ -443,7 +449,7 @@ export class OffersService {
         listingId: offer.listing.id,
         acceptedAmount: offer.offerAmount,
         offerId: offer.id,
-        actionUrl: token ? `${APP_URL}/a/${token}` : undefined,
+        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
       });
     } catch (err) {
       this.logger.error(`notifyBuyerOfAccept failed: ${(err as Error).message}`);
@@ -500,7 +506,7 @@ export class OffersService {
         counterAmount: offer.counterAmount,
         sellerNote: offer.sellerNote ?? undefined,
         offerId: offer.id,
-        actionUrl: token ? `${APP_URL}/a/${token}` : undefined,
+        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
       });
     } catch (err) {
       this.logger.error(`notifyBuyerOfCounter failed: ${(err as Error).message}`);
