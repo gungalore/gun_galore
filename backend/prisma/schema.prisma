@@ -752,6 +752,35 @@ model Transaction {
   // window passes.
   dispatchNudgedAt DateTime?
 
+  // ── Seller accept flow (TOK-7) ───────────────────────────────────
+  // Two-step seller workflow: after the buyer pays, the seller has 48h
+  // to ACCEPT the transaction (one-tap via SMS), then 5 days from accept
+  // to DISPATCH. Without acceptedAt being set the buyer sits in
+  // "Awaiting seller accept" status on their order page.
+  //
+  // Migration: every transaction with paidAt set at deployment time
+  // gets `acceptedAt = paidAt` backfilled so the new acceptance gate
+  // doesn't suddenly trap legacy in-flight orders.
+  //
+  // accept/dispatch deadlines are stored so the UI countdown chips
+  // can use a single field instead of recomputing paidAt+48h on every
+  // render, and the cron can do an indexed scan on the deadline column.
+  acceptedAt          DateTime?
+  acceptDeadlineAt    DateTime?  // = paidAt + 48h, set when payment captured
+  dispatchDeadlineAt  DateTime?  // = acceptedAt + 5d, set when seller accepts
+
+  // Seller rejection of the sale — instead of accepting, seller can
+  // reject. Triggers Peach refund + buyer notification. rejectedReason
+  // surfaces in the buyer's notification and in the admin audit log.
+  rejectedAt      DateTime?
+  rejectedReason  String?
+
+  // Set when the 48h-no-accept cron escalates the order to the admin
+  // queue (operator-confirmed 2026-05-27: no auto-refund on this
+  // timeout, admin manually decides). Idempotency guard against the
+  // cron raising the same flag every 10 min.
+  acceptEscalatedAt DateTime?
+
   // PRIVATE_ARRANGE explicit consent. The buyer ticked two checkboxes
   // and typed "I UNDERSTAND" at checkout to acknowledge that payment
   // protection ends at payment capture — the seller is paid

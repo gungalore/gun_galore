@@ -29,7 +29,17 @@ export type ActionTokenPurpose =
   | 'OFFER_DECISION'
   | 'COUNTER_DECISION'
   | 'AUCTION_BID'
-  | 'CHECKOUT';
+  | 'CHECKOUT'
+  // DISPATCH — seller's one-tap link from the 48h dispatch nudge SMS.
+  // Lands on `/a/<token>` which renders the dispatch form (tracking
+  // reference input + optional Pudo locker) so the seller can mark
+  // the parcel shipped WITHOUT signing in. targetType = 'transaction'.
+  | 'DISPATCH'
+  // TRANSACTION_ACCEPT — first step of the seller's two-step workflow
+  // after a buyer pays. SMS fires immediately on payment with this
+  // token; tap → Accept (one-tap, no sign-in) OR Reject (with reason).
+  // targetType = 'transaction'. 48h TTL = ACCEPT_DEADLINE_HOURS.
+  | 'TRANSACTION_ACCEPT';
 
 export type ActionTokenTargetType = 'offer' | 'listing' | 'transaction';
 

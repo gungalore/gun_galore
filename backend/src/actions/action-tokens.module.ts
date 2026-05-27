@@ -5,6 +5,7 @@ import { ActionTokensController } from './action-tokens.controller';
 import { OffersModule } from '../offers/offers.module';
 import { AuctionsModule } from '../auctions/auctions.module';
 import { ListingsModule } from '../listings/listings.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 /**
  * ActionTokensModule — public, token-gated single-action endpoints.
@@ -29,6 +30,10 @@ import { ListingsModule } from '../listings/listings.module';
     forwardRef(() => OffersModule),
     forwardRef(() => AuctionsModule),
     ListingsModule,
+    // PaymentsModule exports TransactionsService — needed for the
+    // /actions/:token/accept-transaction + /dispatch endpoints to
+    // call the existing acceptTransaction / confirmDispatch methods.
+    forwardRef(() => PaymentsModule),
   ],
   providers: [ActionTokensService],
   controllers: [ActionTokensController],

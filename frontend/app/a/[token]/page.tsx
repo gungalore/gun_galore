@@ -3,6 +3,10 @@ import { apiFetch } from '@/lib/api';
 import { ActionTokenError } from './error-screen';
 import { OfferDecisionPage, type OfferDecisionPayload } from './offer-decision';
 import { AuctionBidPage, type AuctionBidPayload } from './auction-bid';
+import {
+  TransactionAcceptPage,
+  type TransactionAcceptPayload,
+} from './transaction-accept';
 
 /**
  * Universal SMS-link landing page. URL pattern: `/a/<token>`.
@@ -29,7 +33,8 @@ export const revalidate = 0;
 type ResolvedPayload =
   | OfferDecisionPayload
   | AuctionBidPayload
-  | CheckoutPayload;
+  | CheckoutPayload
+  | TransactionAcceptPayload;
 
 interface CheckoutPayload {
   kind: 'CHECKOUT';
@@ -95,6 +100,8 @@ export default async function ActionTokenPage({
         <OfferDecisionPage token={token} payload={payload} />
       ) : payload.kind === 'AUCTION_BID' ? (
         <AuctionBidPage token={token} payload={payload} />
+      ) : payload.kind === 'TRANSACTION_ACCEPT' ? (
+        <TransactionAcceptPage token={token} payload={payload} />
       ) : (
         <ActionTokenError status={500} />
       )}

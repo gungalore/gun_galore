@@ -20,6 +20,7 @@ import {
 } from './action-tokens.service';
 import { OffersService } from '../offers/offers.service';
 import { AuctionsService } from '../auctions/auctions.service';
+import { TransactionsService } from '../payments/transactions.service';
 
 /**
  * Public, token-gated endpoints powering the /a/<token> SMS-link
@@ -56,6 +57,8 @@ export class ActionTokensController {
     private readonly offers: OffersService,
     @Inject(forwardRef(() => AuctionsService))
     private readonly auctions: AuctionsService,
+    @Inject(forwardRef(() => TransactionsService))
+    private readonly transactions: TransactionsService,
   ) {}
 
   // ─── Resolve: render data for the /a/:token page ─────────────────
@@ -93,9 +96,71 @@ export class ActionTokensController {
         return this.buildAuctionPayload(resolved, user);
       case 'CHECKOUT':
         return this.buildCheckoutPayload(resolved, user);
+      case 'DISPATCH':
+        return this.buildDispatchPayload(resolved, user);
+      case 'TRANSACTION_ACCEPT':
+        return this.buildTransactionAcceptPayload(resolved, user);
       default:
         throw new BadRequestException(`Unknown token purpose: ${resolved.purpose}`);
     }
+  }
+
+  // ─── Transaction accept (TOK-7 Phase 1) ─────────────────────────
+  // Seller's one-tap "I will handle this sale" from the post-payment
+  // SMS. Token authorisedUserId is the seller. 48h TTL.
+
+  @Post(':token/accept-transaction')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  acceptTransaction(@Param('token') token: string, @Req() req: Request) {
+    return this.tokens.runAction(
+      token,
+      'TRANSACTION_ACCEPT',
+      'transaction',
+      async ({ targetId, authorisedUserId }) => {
+        const clerkId = await this.clerkIdFor(authorisedUserId);
+        return this.transactions.acceptTransaction(targetId, clerkId);
+      },
+      reqIp(req),
+      reqUa(req),
+    );
+  }
+
+  // ─── Dispatch (TOK-7) ────────────────────────────────────────────
+  // Seller's one-tap "mark dispatched" from the 48h nudge SMS. Token
+  // authorisedUserId IS the seller. POST body provides tracking ref +
+  // optional Pudo locker.
+
+  @Post(':token/dispatch')
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  dispatch(
+    @Param('token') token: string,
+    @Body() body: { trackingReference?: string; pudoDropoffLockerId?: string },
+    @Req() req: Request,
+  ) {
+    const tracking = (body?.trackingReference ?? '').toString().trim();
+    if (tracking.length === 0) {
+      throw new BadRequestException('Tracking reference is required.');
+    }
+    if (tracking.length > 120) {
+      throw new BadRequestException('Tracking reference too long (max 120).');
+    }
+    const locker = body?.pudoDropoffLockerId
+      ? body.pudoDropoffLockerId.toString().trim().slice(0, 60) || undefined
+      : undefined;
+    return this.tokens.runAction(
+      token,
+      'DISPATCH',
+      'transaction',
+      async ({ targetId, authorisedUserId }) => {
+        const clerkId = await this.clerkIdFor(authorisedUserId);
+        return this.transactions.confirmDispatch(targetId, clerkId, {
+          trackingReference: tracking,
+          pudoDropoffLockerId: locker,
+        });
+      },
+      reqIp(req),
+      reqUa(req),
+    );
   }
 
   // ─── Offer actions ───────────────────────────────────────────────
@@ -329,6 +394,122 @@ export class ActionTokensController {
         currentBid: listing.currentBid,
       },
       auction: state,
+    };
+  }
+
+  private async buildTransactionAcceptPayload(
+    resolved: ResolvedToken,
+    user: { username: string | null; firstName: string | null },
+  ) {
+    // Seller-facing "I'll handle this sale" decision page. targetId =
+    // transactionId. Surfaces buyer username, listing, price, accept
+    // deadline so the seller can decide before tapping.
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: resolved.targetId },
+      select: {
+        id: true,
+        paidAt: true,
+        acceptedAt: true,
+        rejectedAt: true,
+        acceptDeadlineAt: true,
+        shippingMethod: true,
+        listing: {
+          select: {
+            id: true,
+            title: true,
+            referenceNumber: true,
+            price: true,
+            images: {
+              where: { isPrimary: true },
+              take: 1,
+              select: { url: true },
+            },
+          },
+        },
+        buyer: { select: { username: true } },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction no longer exists');
+
+    return {
+      kind: 'TRANSACTION_ACCEPT' as const,
+      expiresAt: resolved.expiresAt.toISOString(),
+      greeting: user.firstName ?? user.username ?? 'there',
+      transaction: {
+        id: tx.id,
+        paidAt: tx.paidAt?.toISOString() ?? null,
+        acceptedAt: tx.acceptedAt?.toISOString() ?? null,
+        rejectedAt: tx.rejectedAt?.toISOString() ?? null,
+        acceptDeadlineAt: tx.acceptDeadlineAt?.toISOString() ?? null,
+        shippingMethod: tx.shippingMethod,
+      },
+      listing: {
+        id: tx.listing.id,
+        title: tx.listing.title,
+        reference: tx.listing.referenceNumber,
+        listPrice: tx.listing.price,
+        primaryImageUrl: tx.listing.images[0]?.url ?? null,
+      },
+      buyerUsername: tx.buyer?.username ?? 'the buyer',
+    };
+  }
+
+  private async buildDispatchPayload(
+    resolved: ResolvedToken,
+    user: { username: string | null; firstName: string | null },
+  ) {
+    // For dispatch, targetId = transactionId. Surface enough that the
+    // seller can confirm what they're dispatching at a glance + collect
+    // the tracking reference for the buyer's status page.
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: resolved.targetId },
+      select: {
+        id: true,
+        paidAt: true,
+        dispatchedAt: true,
+        shippingMethod: true,
+        pudoDropoffLockerId: true,
+        trackingReference: true,
+        listing: {
+          select: {
+            id: true,
+            title: true,
+            referenceNumber: true,
+            price: true,
+            images: {
+              where: { isPrimary: true },
+              take: 1,
+              select: { url: true },
+            },
+          },
+        },
+        buyer: { select: { username: true } },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction no longer exists');
+
+    return {
+      kind: 'DISPATCH' as const,
+      expiresAt: resolved.expiresAt.toISOString(),
+      greeting: user.firstName ?? user.username ?? 'there',
+      transaction: {
+        id: tx.id,
+        paidAt: tx.paidAt?.toISOString() ?? null,
+        dispatchedAt: tx.dispatchedAt?.toISOString() ?? null,
+        shippingMethod: tx.shippingMethod,
+        // If a previous attempt persisted these fields (rare, but
+        // possible if the cron retried), surface them as defaults.
+        existingTrackingReference: tx.trackingReference,
+        existingPudoDropoffLockerId: tx.pudoDropoffLockerId,
+      },
+      listing: {
+        id: tx.listing.id,
+        title: tx.listing.title,
+        reference: tx.listing.referenceNumber,
+        listPrice: tx.listing.price,
+        primaryImageUrl: tx.listing.images[0]?.url ?? null,
+      },
+      buyerUsername: tx.buyer?.username ?? 'the buyer',
     };
   }
 

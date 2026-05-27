@@ -14,6 +14,17 @@ import { ListingStatus, Province, ShippingMethod } from '@prisma/client';
 import { KycService } from '../kyc/kyc.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { TrackingService } from '../shipping/tracking.service';
+import { Inject, forwardRef } from '@nestjs/common';
+import { ActionTokensService } from '../actions/action-tokens.service';
+
+// TOK-7 — accept→dispatch state machine deadlines.
+// Spec (operator-confirmed 2026-05-27):
+//   - 48h from payment for the seller to ACCEPT the transaction
+//   - 5 days from acceptance for the seller to DISPATCH
+//   - 48h no-accept: escalate to admin queue (no auto-refund)
+//   - 5d no-dispatch: existing auto-refund + strike flow (unchanged)
+export const ACCEPT_DEADLINE_HOURS = 48;
+export const DISPATCH_DEADLINE_DAYS = 5;
 
 @Injectable()
 export class TransactionsService {
@@ -27,6 +38,14 @@ export class TransactionsService {
     private readonly kyc: KycService,
     private readonly shipping: ShippingService,
     private readonly tracking: TrackingService,
+    // forwardRef: ActionTokensModule imports PaymentsModule for
+    // TransactionsService (so the /actions/:token/accept-transaction
+    // endpoint can call acceptTransaction), and PaymentsModule needs
+    // ActionTokensService here to mint the TRANSACTION_ACCEPT token
+    // when sending the post-payment SMS. Circular by design — Nest
+    // handles it with two forwardRefs.
+    @Inject(forwardRef(() => ActionTokensService))
+    private readonly tokens: ActionTokensService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -308,6 +327,62 @@ export class TransactionsService {
   // ------------------------------------------------------------------
   // Seller confirms item dispatched
   // ------------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // Seller accepts the transaction (TOK-7)
+  // ------------------------------------------------------------------
+  // First step of the two-step seller workflow. Buyer paid; seller has
+  // ACCEPT_DEADLINE_HOURS to acknowledge they'll handle it. On accept
+  // we stamp `acceptedAt` and pre-compute `dispatchDeadlineAt` so the
+  // UI countdown chip can read one field + the dispatch cron can do
+  // an indexed scan on the deadline.
+  //
+  // Idempotent — already-accepted txs just return without re-stamping.
+  // (Important because the SMS link can be tapped multiple times by
+  // accident; we don't want to extend the deadline by re-clicking.)
+  async acceptTransaction(transactionId: string, sellerClerkId: string) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+
+    const seller = await this.prisma.user.findUnique({
+      where: { clerkId: sellerClerkId },
+    });
+    if (!seller || tx.sellerId !== seller.id) {
+      throw new ForbiddenException('Not authorised');
+    }
+    if (!tx.paidAt) {
+      throw new BadRequestException('Payment not confirmed yet');
+    }
+    if (tx.rejectedAt) {
+      throw new BadRequestException('Transaction already rejected');
+    }
+    if (tx.acceptedAt) {
+      // Idempotent — already-accepted is a successful no-op.
+      return tx;
+    }
+
+    const acceptedAt = new Date();
+    const dispatchDeadlineAt = new Date(
+      acceptedAt.getTime() + DISPATCH_DEADLINE_DAYS * 24 * 60 * 60 * 1000,
+    );
+
+    const updated = await this.prisma.transaction.update({
+      where: { id: transactionId },
+      data: { acceptedAt, dispatchDeadlineAt },
+    });
+
+    // Timeline + notifications — fire-and-forget.
+    void this.tracking.recordInternal(transactionId, 'SELLER_ACCEPTED');
+    void this.notifications.resolveByEntity('transaction', transactionId);
+    // TODO (Phase 2): notify buyer "Seller accepted — preparing to dispatch"
+
+    this.logger.log(
+      `Transaction ${transactionId} accepted by seller ${seller.id}; dispatch deadline ${dispatchDeadlineAt.toISOString()}`,
+    );
+    return updated;
+  }
+
   async confirmDispatch(
     transactionId: string,
     sellerClerkId: string,
@@ -322,6 +397,16 @@ export class TransactionsService {
     }
     if (!tx.paidAt) throw new BadRequestException('Payment not confirmed yet');
     if (tx.dispatchedAt) throw new BadRequestException('Already dispatched');
+    // TOK-7 (Phase 1 — not yet enforced): seller must accept the
+    // transaction first. Logged as a warning during the rollout window
+    // while we ship the Accept UI; will become a hard throw once the
+    // frontend Accept button + SMS token flow are live (Phase 2).
+    if (!tx.acceptedAt) {
+      this.logger.warn(
+        `Transaction ${transactionId} dispatched without prior accept — ` +
+          `Phase 1 soft warning, will be required once Accept UI ships.`,
+      );
+    }
 
     const updated = await this.prisma.transaction.update({
       where: { id: transactionId },
@@ -608,6 +693,14 @@ export class TransactionsService {
     resultCode: string,
     listing: { id: string; sellerId: string },
   ) {
+    const paidAt = new Date();
+    // TOK-7: seller has 48h from payment to ACCEPT the transaction.
+    // We compute + store the deadline here so the UI countdown chip
+    // can render it directly without recomputing, and the
+    // accept-escalation cron can do an indexed scan.
+    const acceptDeadlineAt = new Date(
+      paidAt.getTime() + ACCEPT_DEADLINE_HOURS * 60 * 60 * 1000,
+    );
     await this.prisma.$transaction([
       this.prisma.transaction.update({
         where: { id: txId },
@@ -615,7 +708,8 @@ export class TransactionsService {
           paymentStatus: 'HELD',
           peachPaymentId: paymentId,
           peachResultCode: resultCode,
-          paidAt: new Date(),
+          paidAt,
+          acceptDeadlineAt,
         },
       }),
       this.prisma.listing.update({
@@ -771,6 +865,33 @@ export class TransactionsService {
         },
       });
       if (!tx) return;
+      // Mint the TRANSACTION_ACCEPT token so the seller can tap the
+      // SMS link and accept the sale in one tap (no sign-in). 48h TTL
+      // matches the operator-confirmed accept window; if the seller
+      // never taps, the cron escalates to admin (Phase 2).
+      let acceptActionUrl: string | undefined;
+      try {
+        const expiresAt = new Date(
+          Date.now() + ACCEPT_DEADLINE_HOURS * 60 * 60 * 1000,
+        );
+        const token = await this.tokens.mint({
+          purpose: 'TRANSACTION_ACCEPT',
+          targetType: 'transaction',
+          targetId: txId,
+          authorisedUserId: tx.sellerId,
+          expiresAt,
+        });
+        const appUrl =
+          process.env.FRONTEND_URL ?? 'https://gungalore.co.za';
+        acceptActionUrl = `${appUrl}/a/${token}`;
+      } catch (err) {
+        this.logger.warn(
+          `Failed to mint TRANSACTION_ACCEPT token for ${txId}: ${
+            (err as Error).message
+          } — falling back to dashboard link`,
+        );
+      }
+
       const details = {
         listingTitle: tx.listing.title,
         listingId: tx.listingId,
@@ -788,6 +909,9 @@ export class TransactionsService {
         sellerPayout: tx.sellerPayout,
         passFeeToBuyer: tx.passFeeToBuyer,
         shippingMethod: tx.shippingMethod,
+        // Optional — when set, the seller-facing SMS + email use this
+        // /a/<token> URL for the "Accept this sale" call-to-action.
+        acceptActionUrl,
       };
       await Promise.all([
         this.notifications.orderConfirmedBuyer(details),
