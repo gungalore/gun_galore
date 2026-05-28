@@ -70,6 +70,16 @@ export type EstimateRangeBody = {
   knownSpecies?: string[];
   /** Aim region geometry. */
   aimRegion?: AimRegion;
+  /** Optical zoom of the chosen lens (1 = main wide, 3 = typical iPhone
+   *  Pro tele). Frontend reports this so the AI can derive an effective
+   *  FOV from the base camera FOV. */
+  opticalZoom?: number;
+  /** Digital zoom applied at capture (centre-crop + upscale, 1 = none). */
+  digitalZoom?: number;
+  /** Combined zoom factor — operator's "stack the lenses" math. */
+  effectiveZoom?: number;
+  /** Human-readable camera label for logs ("Back Telephoto Camera"). */
+  cameraLabel?: string;
 };
 
 /**
@@ -101,6 +111,15 @@ export function parseEstimateRangeBody(
   out.headingDeg = parseNumberField(raw.headingDeg, 'headingDeg', 0, 360);
   out.latitude = parseNumberField(raw.latitude, 'latitude', -90, 90);
   out.longitude = parseNumberField(raw.longitude, 'longitude', -180, 180);
+  out.opticalZoom = parseNumberField(raw.opticalZoom, 'opticalZoom', 0.5, 20);
+  out.digitalZoom = parseNumberField(raw.digitalZoom, 'digitalZoom', 1, 20);
+  out.effectiveZoom = parseNumberField(raw.effectiveZoom, 'effectiveZoom', 0.5, 100);
+
+  if (typeof raw.cameraLabel === 'string' && raw.cameraLabel.length > 0) {
+    // Clip to 100 chars so a malicious / weird label can't blow up log
+    // lines + the system prompt.
+    out.cameraLabel = raw.cameraLabel.slice(0, 100);
+  }
 
   if (typeof raw.knownSpecies === 'string' && raw.knownSpecies.length > 0) {
     out.knownSpecies = parseJsonField(raw.knownSpecies, 'knownSpecies', (v) => {

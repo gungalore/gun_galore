@@ -98,6 +98,10 @@ export class RangeEstimatorService {
         longitude: input.longitude,
         knownSpecies: input.knownSpecies,
         aimRegion: input.aimRegion,
+        opticalZoom: input.opticalZoom,
+        digitalZoom: input.digitalZoom,
+        effectiveZoom: input.effectiveZoom,
+        cameraLabel: input.cameraLabel,
       },
       biome,
     });

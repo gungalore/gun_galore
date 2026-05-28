@@ -81,7 +81,7 @@ const CORE_INSTRUCTIONS = `You are an expert range estimator for South African h
 
 You have three reasoning paths. WORK THROUGH THEM IN ORDER; don't jump to a lower path until you've exhausted the higher one. Cross-check whenever you can.
 
-1. **KNOWN-SIZE on the SUBJECT** — Identify what's in the aim DOT first. If nothing identifiable there, look at what's TOUCHING the BOX (any object whose pixels intersect the box). Use the subject's typical SA size to back-calculate distance from its apparent size in the frame. Phone is an iPhone main camera (~26 mm equivalent, ~63° horizontal field of view).
+1. **KNOWN-SIZE on the SUBJECT** — Identify what's in the aim DOT first. If nothing identifiable there, look at what's TOUCHING the BOX (any object whose pixels intersect the box). Use the subject's typical SA size to back-calculate distance from its apparent size in the frame. Phone is an iPhone — native main wide HFOV is ~63° — but the user message will give you the EFFECTIVE FOV after optical + digital zoom. ALWAYS use the effective FOV from the user message for your trigonometry, not the native 63°.
 
 2. **REFERENCE-OBJECT in the HORIZONTAL BAND** (preferred over other-frame references) — A horizontal band is defined at the same image-Y as the dot, spanning the full width of the frame (see AIM REGION SEMANTICS below). On flat-ish terrain, objects in the band are at SIMILAR PHYSICAL DISTANCES to the camera as the subject is, due to perspective. Prefer reference objects found in the band — a fence post, vehicle, tree, person, crop row — because their apparent size directly gives you the subject's distance. If the band has nothing identifiable, fall back to other-frame references (the regional biome + universal lists below).
 
@@ -95,7 +95,7 @@ The hunter framed the shot with three concentric zones, each with a specific rol
 
 - **DOT** — centerX, centerY, radius dotR (~1% of frame diameter). The PRECISE aim point. Try to identify whatever's exactly here first.
 
-- **BOX** — centred on the dot, ~8% × 8% square. Sized to encompass a small SA car (Hyundai i10 / Toyota Yaris class, ~1.5 m × 3.7 m) at 200 m on an iPhone main camera, with safety margin. THE BOX IS ITSELF A REFERENCE SCALE — if you can't identify what's inside it, you still know that whatever fills the box is approximately car-at-200m sized in apparent angular extent. If the dot landed on empty terrain, expand your subject search to anything TOUCHING the box (pixels intersecting any of its edges).
+- **BOX** — centred on the dot, ~8% × 8% square. Sized to encompass a small SA car (Hyundai i10 / Toyota Yaris class, ~1.5 m × 3.7 m) at 200 m on iPhone main camera at 1× zoom. Note: the BOX angular size in the frame is FIXED — but the physical distance it represents SCALES with the camera's effective zoom (it gets CLOSER as zoom increases). At 1× the box ≈ car-at-200m; at 2× total zoom the box ≈ car-at-100m; at 6× total zoom the box ≈ car-at-33m. Adjust your "filling-the-box" mental reference using the effective zoom from the user message. If the dot landed on empty terrain, expand your subject search to anything TOUCHING the box (pixels intersecting any of its edges).
 
 - **BAND** — bandTop and bandBottom (Y-coordinates 0..1, 0 = top of frame), full frame width, vertically centred on the dot, typically ~15% of frame height. This is your PREFERRED region to hunt for scale references because, on flat ground, objects at the same image-Y as the subject are at the same physical distance. Use objects here as your primary distance anchors.
 
@@ -303,6 +303,33 @@ function formatUserMessage(
         ? body.knownSpecies.join(', ')
         : '(not provided)'
     }`,
+  );
+
+  // ── Zoom block — critical for the AI's trigonometry. iPhone main
+  // wide is ~63° horizontal FOV at 1×. Each zoom multiplier (optical
+  // + digital, combined into effectiveZoom) narrows the effective FOV
+  // proportionally.
+  const optical = body.opticalZoom ?? 1;
+  const digital = body.digitalZoom ?? 1;
+  const effective = body.effectiveZoom ?? optical * digital;
+  const baseHFovDeg = 63; // iPhone main wide reference
+  const effectiveHFovDeg = baseHFovDeg / effective;
+  parts.push('');
+  parts.push('## CAMERA ZOOM (critical for distance trig)');
+  parts.push(
+    `- Camera label: ${body.cameraLabel ?? 'rear camera'}`,
+  );
+  parts.push(
+    `- Optical zoom: ${optical}× ${optical === 1 ? '(main wide)' : '(telephoto lens selected)'}`,
+  );
+  parts.push(
+    `- Digital zoom (centre-crop + upscale at capture): ${digital}×`,
+  );
+  parts.push(
+    `- Effective zoom: ${effective.toFixed(1)}× → effective horizontal FOV ≈ ${effectiveHFovDeg.toFixed(1)}° (down from iPhone's native ~${baseHFovDeg}°)`,
+  );
+  parts.push(
+    `  Use this effective FOV when doing the apparent-size → distance math. The image you see is already zoomed; do NOT additionally compensate for zoom in your reasoning.`,
   );
 
   parts.push('');

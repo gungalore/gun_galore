@@ -38,8 +38,11 @@ async function bootstrap() {
 
   // CORS — allow the configured production FRONTEND_URL plus any
   // localhost port for local development (next dev → 3000, prod
-  // testing builds → typically 3002 or whatever we pick). Function
-  // form lets us validate at request time without hard-coding ports.
+  // testing builds → typically 3002 or whatever we pick), PLUS the
+  // Capacitor app schemes (capacitor:// on iOS, ionic:// on Android
+  // legacy, https://localhost as some Android Capacitor builds use).
+  // Function form lets us validate at request time without hard-
+  // coding ports.
   app.enableCors({
     origin: (origin, callback) => {
       // Same-origin / curl / Postman → no Origin header → allow.
@@ -52,6 +55,13 @@ async function bootstrap() {
         /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
         // Same machine reached from a phone over LAN (ngrok / IP).
         /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/,
+        // Capacitor (Hunt Ballistics iOS app + future Android). Each
+        // platform serves the bundled web app under a custom scheme:
+        //   iOS:     capacitor://localhost
+        //   Android: https://localhost (or capacitor:// in newer Cap)
+        //   legacy:  ionic://localhost
+        /^capacitor:\/\/localhost$/,
+        /^ionic:\/\/localhost$/,
       ].filter(Boolean);
       const ok = allowed.some((rule) =>
         rule instanceof RegExp ? rule.test(origin) : rule === origin,
