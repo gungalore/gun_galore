@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
 import { BiomeLookupService } from '../region-flora/biome-lookup.service';
 import { RangeEstimatorClaudeService } from './range-estimator-claude.service';
 import type { EstimateRangeBody } from './dto/estimate-range.dto';
@@ -63,6 +64,7 @@ export class RangeEstimatorService {
   private readonly logger = new Logger(RangeEstimatorService.name);
 
   constructor(
+    private readonly prisma: PrismaService,
     private readonly biomes: BiomeLookupService,
     private readonly claude: RangeEstimatorClaudeService,
   ) {}
@@ -113,8 +115,33 @@ export class RangeEstimatorService {
         `tokens=${claudeResult.promptTokens}in/${claudeResult.completionTokens}out`,
     );
 
-    // W4 will add persistence here:
-    //   await this.prisma.rangeEstimate.create({ data: { deviceId, ... } });
+    // Fire-and-forget persistence — never let a DB failure block the
+    // user-facing response. We log + swallow on failure. The frontend
+    // already has its result; losing one historical row to a transient
+    // Postgres blip is fine.
+    void this.persist({
+      deviceId: input.deviceId,
+      lat: input.latitude ?? null,
+      lng: input.longitude ?? null,
+      headingDeg: input.headingDeg ?? null,
+      tiltDeg: input.tiltDeg ?? null,
+      rangeM,
+      confidence: claudeResult.confidence,
+      species: claudeResult.species,
+      notes: claudeResult.notes,
+      modelUsed: claudeResult.modelUsed,
+      biomeId: biome?.id ?? null,
+      regionCode: input.regionCode ?? null,
+      costUsd: claudeResult.costUsd,
+      promptTokens: claudeResult.promptTokens,
+      completionTokens: claudeResult.completionTokens,
+    }).catch((err) => {
+      this.logger.error(
+        `Persist failed (request still returned to user): ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+    });
 
     return {
       rangeM,
@@ -123,5 +150,25 @@ export class RangeEstimatorService {
       notes: claudeResult.notes ?? undefined,
       modelUsed: claudeResult.modelUsed,
     };
+  }
+
+  private async persist(data: {
+    deviceId: string;
+    lat: number | null;
+    lng: number | null;
+    headingDeg: number | null;
+    tiltDeg: number | null;
+    rangeM: number;
+    confidence: number;
+    species: string | null;
+    notes: string | null;
+    modelUsed: 'sonnet' | 'opus';
+    biomeId: string | null;
+    regionCode: string | null;
+    costUsd: number | null;
+    promptTokens: number;
+    completionTokens: number;
+  }): Promise<void> {
+    await this.prisma.rangeEstimate.create({ data });
   }
 }

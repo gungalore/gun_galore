@@ -2272,3 +2272,50 @@ model ReloadingManualPage {
   @@unique([manualId, pageNumber])
   @@index([manualId, pageNumber])
 }
+
+// ─── Hunt Ballistics — RangeEstimate ─────────────────────────────────
+// One row per AI camera-ranging request from the Hunt Ballistics iOS
+// app (POST /hunt-ballistics/estimate-range). Persisted for the future
+// map-plot feature: the user will see where shots were taken from +
+// where the target was, computed from shooter GPS + compass heading +
+// AI range.
+//
+// PRIVACY: we do NOT store the photo itself, only its metadata + the
+// AI result. If we later want to re-train against ground-truth ranges,
+// we'd add a separate opt-in mechanism (with explicit user consent
+// per submission).
+//
+// IDENTITY: Hunt Ballistics uses anonymous per-device UUIDs (X-Device-Id
+// header), not Clerk. There's no FK to User here on purpose — the iOS
+// app is a different product surface from the gun-galore marketplace.
+model RangeEstimate {
+  id               String   @id @default(cuid())
+
+  // Identity — anonymous per-device UUID from the iOS app
+  deviceId         String
+
+  // Geo at capture time — for the future map-plot feature
+  lat              Float?   // GPS latitude (-90..90), null if location denied
+  lng              Float?   // GPS longitude (-180..180)
+  headingDeg       Float?   // compass bearing 0..360 (direction phone was pointing)
+  tiltDeg          Float?   // inclinometer pitch -89..89 (negative = downhill)
+
+  // AI result
+  rangeM           Float    // estimated range in metres (already rounded server-side)
+  confidence       Float    // 0..1 self-assessed by Claude
+  species          String?  // identified subject if Claude is sure
+  notes            String?  @db.Text  // Claude's reasoning trace
+  modelUsed        String   // 'sonnet' | 'opus' — Opus = fallback fired
+
+  // Audit + cost tracking
+  biomeId          String?  // matched SA biome id (sa-biomes.ts), null if outside coverage
+  regionCode       String?  // ISO 3166-1 alpha-2 (usually 'ZA')
+  costUsd          Decimal? @db.Decimal(10, 6)   // total across all passes
+  promptTokens     Int?     // sum of input tokens (Sonnet + Opus if escalated)
+  completionTokens Int?     // sum of output tokens
+
+  createdAt        DateTime @default(now())
+
+  @@index([deviceId, createdAt])
+  @@index([biomeId, createdAt])
+}
