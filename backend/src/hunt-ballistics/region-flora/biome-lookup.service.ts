@@ -30,11 +30,13 @@ export class BiomeLookupService {
     if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
 
     // SA biomes are non-overlapping at this resolution, so first-match
-    // is correct. Iteration is short (~10 entries) so we don't bother
-    // with a spatial index.
+    // is correct. Iteration is short (~10 biomes × 1-2 polygons each)
+    // so we don't bother with a spatial index.
     for (const biome of SA_BIOMES) {
-      if (pointInPolygon(lat, lng, biome.boundary)) {
-        return biome;
+      for (const polygon of biome.boundaries) {
+        if (pointInPolygon(lat, lng, polygon)) {
+          return biome;
+        }
       }
     }
     return null;
