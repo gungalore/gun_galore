@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadGatewayException,
+  Injectable,
+  Logger,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import type {
   ContentBlockParam,
@@ -498,7 +503,29 @@ export class RangeEstimatorClaudeService {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Claude API error';
       this.logger.error(`Claude call failed (${model}): ${message}`);
-      throw err;
+
+      // Translate the most common Anthropic image errors into 422 with
+      // a clear user-readable message. Falls through to 502 for anything
+      // else so the frontend shows an actionable error card instead of
+      // a generic 500 "Internal server error".
+      const lower = message.toLowerCase();
+      if (
+        lower.includes('could not process image') ||
+        lower.includes('image is too small') ||
+        lower.includes('invalid image')
+      ) {
+        throw new UnprocessableEntityException(
+          'Photo could not be processed. Try a sharper, well-lit photo of the target.',
+        );
+      }
+      if (lower.includes('rate limit') || lower.includes('overloaded')) {
+        throw new BadGatewayException(
+          'AI service is busy. Try again in a few seconds.',
+        );
+      }
+      throw new BadGatewayException(
+        `AI service error: ${message.slice(0, 200)}`,
+      );
     }
 
     const promptTokens = r.usage?.input_tokens ?? 0;
