@@ -19,16 +19,21 @@ import { HuntPdfService } from './hunt-pdf.service';
  * process.env.HUNT_BALLISTICS_ADMIN_KEY, sent as the X-Hunt-Admin-Key
  * header).
  *
- *   POST   /admin/hunt-pdfs              create a new PDF (DRAFT)
- *   POST   /admin/hunt-pdfs/:id/pages    bulk-import pages (idempotent)
- *   PATCH  /admin/hunt-pdfs/:id          edit metadata / promote to ACTIVE
- *   DELETE /admin/hunt-pdfs/:id          hard delete (cascade pages)
+ *   POST   /hunt-ballistics/admin/pdfs            create a new PDF (DRAFT)
+ *   POST   /hunt-ballistics/admin/pdfs/:id/pages  bulk-import pages (idempotent)
+ *   PATCH  /hunt-ballistics/admin/pdfs/:id        edit metadata / promote to ACTIVE
+ *   DELETE /hunt-ballistics/admin/pdfs/:id        hard delete (cascade pages)
+ *
+ * URL deliberately nested under /hunt-ballistics/ so the existing
+ * ballistics.gungalore.co.za nginx route (which proxies
+ * /api/hunt-ballistics/* → port 3001) catches admin traffic too,
+ * without needing a second nginx location block.
  *
  * SkipThrottle on all routes — admin endpoints aren't rate-attacked
  * from random clients; if the secret leaks, the attacker can already
  * do anything regardless of throttle.
  */
-@Controller('admin/hunt-pdfs')
+@Controller('hunt-ballistics/admin/pdfs')
 @UseGuards(HuntBallisticsAdminGuard)
 @SkipThrottle()
 export class HuntPdfAdminController {
