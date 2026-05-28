@@ -1,9 +1,6 @@
-import {
-  Injectable,
-  Logger,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { BiomeLookupService } from '../region-flora/biome-lookup.service';
+import { RangeEstimatorClaudeService } from './range-estimator-claude.service';
 import type { EstimateRangeBody } from './dto/estimate-range.dto';
 
 /**
@@ -26,6 +23,16 @@ export interface EstimateRangeResult {
   species?: string;
   notes?: string;
   modelUsed: 'sonnet' | 'opus';
+}
+
+/** Round per the system prompt's contract: ≤200m → 5m steps,
+ *  200-500m → 10m steps, >500m → 25m steps. The AI is asked to round
+ *  itself, but we enforce on the server too so callers always see
+ *  consistent precision regardless of which model produced the answer. */
+function roundRange(rangeM: number): number {
+  if (rangeM <= 200) return Math.round(rangeM / 5) * 5;
+  if (rangeM <= 500) return Math.round(rangeM / 10) * 10;
+  return Math.round(rangeM / 25) * 25;
 }
 
 /**
@@ -55,7 +62,10 @@ export interface EstimateRangeResult {
 export class RangeEstimatorService {
   private readonly logger = new Logger(RangeEstimatorService.name);
 
-  constructor(private readonly biomes: BiomeLookupService) {}
+  constructor(
+    private readonly biomes: BiomeLookupService,
+    private readonly claude: RangeEstimatorClaudeService,
+  ) {}
 
   async estimate(input: EstimateRangeInput): Promise<EstimateRangeResult> {
     const biome =
@@ -65,9 +75,9 @@ export class RangeEstimatorService {
 
     // Trim the deviceId for logs — full UUID isn't useful and bloats
     // log lines. First 8 chars is enough to correlate request → row.
+    const deviceShort = input.deviceId.slice(0, 8);
     this.logger.log(
-      `estimate request: ` +
-        `device=${input.deviceId.slice(0, 8)}… ` +
+      `estimate request: device=${deviceShort}… ` +
         `photo=${input.photo.size}B (${input.photo.mimetype}) ` +
         `tilt=${input.tiltDeg ?? '—'} ` +
         `heading=${input.headingDeg ?? '—'} ` +
@@ -76,17 +86,42 @@ export class RangeEstimatorService {
         `knownSpecies=${input.knownSpecies?.length ?? 0}`,
     );
 
-    // W3 will replace this with a real RangeEstimatorClaudeService call:
-    //   const result = await this.claude.estimate({ ...input, biome });
-    //
-    // W4 will then persist the result:
-    //   await this.prisma.rangeEstimate.create({ data: { ...result, ... } });
-    //
-    // Returning 503 (not 500) signals "feature being deployed" to the
-    // frontend — RangeEstimator.tsx surfaces this as a friendly
-    // error-card message rather than the angry-red "server crashed" UI.
-    throw new ServiceUnavailableException(
-      'Range Estimator is being deployed — Claude integration ships in W3.',
+    const claudeResult = await this.claude.estimate({
+      photo: input.photo,
+      body: {
+        regionCode: input.regionCode,
+        tiltDeg: input.tiltDeg,
+        headingDeg: input.headingDeg,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        knownSpecies: input.knownSpecies,
+        aimRegion: input.aimRegion,
+      },
+      biome,
+    });
+
+    // Server-side rounding so all callers see consistent precision.
+    const rangeM = roundRange(claudeResult.rangeM);
+
+    this.logger.log(
+      `estimate result: device=${deviceShort}… ` +
+        `range=${rangeM}m ` +
+        `conf=${claudeResult.confidence.toFixed(2)} ` +
+        `species=${claudeResult.species ?? '—'} ` +
+        `model=${claudeResult.modelUsed} ` +
+        `cost=$${claudeResult.costUsd?.toFixed(4) ?? '—'} ` +
+        `tokens=${claudeResult.promptTokens}in/${claudeResult.completionTokens}out`,
     );
+
+    // W4 will add persistence here:
+    //   await this.prisma.rangeEstimate.create({ data: { deviceId, ... } });
+
+    return {
+      rangeM,
+      confidence: claudeResult.confidence,
+      species: claudeResult.species ?? undefined,
+      notes: claudeResult.notes ?? undefined,
+      modelUsed: claudeResult.modelUsed,
+    };
   }
 }

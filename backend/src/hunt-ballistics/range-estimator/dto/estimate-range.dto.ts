@@ -4,14 +4,49 @@ import { BadRequestException } from '@nestjs/common';
  * AimRegion — normalised aim coordinates as 0..1 fractions of the
  * photo's dimensions. Mirrors the frontend's AimRegion type in
  * lib/api/estimate-range.ts. The AI uses these to know where in
- * the photo the operator was actually aiming.
+ * the photo the operator was actually aiming, AND where to look
+ * for distance-matched scale references.
+ *
+ * Three concentric zones (innermost to outermost), each with a
+ * different semantic role for the AI:
+ *
+ * 1. DOT (centerX, centerY, radius dotR ~1% of frame)
+ *    Primary aim point. The AI tries to identify whatever is here
+ *    first.
+ *
+ * 2. BOX (centred on dot, ~8% × 8% square)
+ *    Sized to encompass a small SA car (~1.5 × 3.7 m) at 200 m on
+ *    an iPhone main camera, plus ~3× safety margin so the box is
+ *    big enough to be visible/tappable on a phone screen. If the
+ *    DOT landed on empty terrain, the AI expands its subject search
+ *    to ANYTHING TOUCHING the box. The box doubles as a built-in
+ *    scale reference: anything filling it is roughly car-at-200m
+ *    sized in apparent angular extent.
+ *
+ * 3. BAND (vertical strip at the dot's image-Y, full frame width,
+ *    thickness ~15% of frame height)
+ *    On flat-ish ground, objects at the same image-Y are at similar
+ *    physical distances to the camera (perspective principle). So
+ *    the AI PREFERS reference objects found in the band: a fence
+ *    post or vehicle in the band is at the same distance as the
+ *    subject in the dot, which makes the scale-to-distance math
+ *    much cleaner than using a reference at a different image
+ *    height. Falls back to other-frame references when the band
+ *    has nothing identifiable.
  */
 export type AimRegion = {
   centerX: number;
   centerY: number;
+  /** BOX width (0..1) — sized to a small car at 200 m on iPhone main camera. */
   boxW: number;
+  /** BOX height (0..1) — sized to a small car at 200 m on iPhone main camera. */
   boxH: number;
+  /** DOT radius (0..1 of min(width, height)). */
   dotR: number;
+  /** BAND top Y-coordinate (0..1, 0 = top of frame). */
+  bandTop?: number;
+  /** BAND bottom Y-coordinate (0..1, 1 = bottom of frame). */
+  bandBottom?: number;
 };
 
 /**
@@ -136,12 +171,36 @@ function parseJsonField<T>(
 function isValidAimRegion(value: unknown): value is AimRegion {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
-  const fields = ['centerX', 'centerY', 'boxW', 'boxH', 'dotR'] as const;
-  return fields.every(
+  // Required: centerX, centerY, boxW, boxH, dotR. All 0..1.
+  const required = ['centerX', 'centerY', 'boxW', 'boxH', 'dotR'] as const;
+  const requiredValid = required.every(
     (k) =>
       typeof v[k] === 'number' &&
       Number.isFinite(v[k] as number) &&
       (v[k] as number) >= 0 &&
       (v[k] as number) <= 1,
   );
+  if (!requiredValid) return false;
+
+  // Optional: bandTop, bandBottom. Must both be present or both absent,
+  // and bandTop < bandBottom.
+  const hasTop = 'bandTop' in v && v.bandTop != null;
+  const hasBot = 'bandBottom' in v && v.bandBottom != null;
+  if (hasTop !== hasBot) return false;
+  if (hasTop && hasBot) {
+    const t = v.bandTop;
+    const b = v.bandBottom;
+    if (
+      typeof t !== 'number' ||
+      typeof b !== 'number' ||
+      !Number.isFinite(t) ||
+      !Number.isFinite(b) ||
+      t < 0 ||
+      b > 1 ||
+      t >= b
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
