@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { RangeEstimatorModule } from './range-estimator/range-estimator.module';
 import { RegionFloraModule } from './region-flora/region-flora.module';
+import { InfoCentreModule } from './info-centre/info-centre.module';
 
 /**
  * Hunt Ballistics — aggregator module for the standalone Hunt Ballistics
@@ -19,6 +20,6 @@ import { RegionFloraModule } from './region-flora/region-flora.module';
  * controller reads the header directly; no guard at this level.
  */
 @Module({
-  imports: [RangeEstimatorModule, RegionFloraModule],
+  imports: [RangeEstimatorModule, RegionFloraModule, InfoCentreModule],
 })
 export class HuntBallisticsModule {}
