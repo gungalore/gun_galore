@@ -131,7 +131,15 @@ export default clerkMiddleware(async (auth, request) => {
       'redirect_url',
       `${publicBase}${currentPath}`,
     );
-    return Response.redirect(signInUrl);
+    // MUST be NextResponse.redirect, NOT Response.redirect. A bare
+    // Web-API Response.redirect() returns a response with an IMMUTABLE
+    // headers guard; clerkMiddleware then tries to attach its
+    // x-clerk-auth-* headers to it and throws `TypeError: immutable`,
+    // which surfaces as a 500 Internal Server Error on every protected
+    // route for signed-out visitors (e.g. tapping Ask GG after the
+    // Clerk session lapses). NextResponse.redirect returns mutable
+    // headers so Clerk can decorate the response cleanly.
+    return NextResponse.redirect(signInUrl);
   }
 });
 
