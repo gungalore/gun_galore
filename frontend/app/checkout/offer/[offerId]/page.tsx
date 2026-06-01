@@ -99,7 +99,7 @@ export default async function OfferCheckoutPage({
             offerId={offer.id}
             listingId={offer.listingId}
             settledAmount={settledAmount}
-            isFirearm={false}
+            isFirearm={offer.listing.isFirearm ?? false}
           />
         </div>
 

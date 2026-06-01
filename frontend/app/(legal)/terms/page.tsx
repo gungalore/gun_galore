@@ -158,8 +158,9 @@ export default function TermsPage() {
       <p>
         For the avoidance of doubt: the funds-held mechanism is a{' '}
         <strong>buyer-protection mechanism</strong> and not a
-        regulated banking, savings, investment or escrow product.
-        GunGalore does not pay interest on funds held, does not
+        regulated banking, savings or investment product. GunGalore is
+        not a bank and does not provide deposit-taking or fund-custody
+        financial services. GunGalore does not pay interest on funds held, does not
         guarantee the availability of those funds against the
         insolvency of Peach Payments, and is not a registered financial
         services provider.

@@ -374,6 +374,10 @@ export interface Offer {
     id: string;
     title: string;
     images: { url: string; isPrimary: boolean }[];
+    // Drives the offer-checkout form's shipping routing. A firearm offer
+    // must go DEALER_TRANSFER; the form hides courier options for it.
+    isFirearm?: boolean;
+    shippingMethods?: ShippingMethod[];
     // Public-facing offer surfaces — username only per platform policy.
     // Backend offers.service.ts selects username + clerkId only.
     seller: { username: string | null; clerkId: string };

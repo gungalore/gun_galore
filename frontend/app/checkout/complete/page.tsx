@@ -8,7 +8,12 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 function CheckoutCompleteInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [status, setStatus] = useState<'verifying' | 'ok' | 'failed'>('verifying');
+  // 'declined' = gateway said the payment did not succeed (card not charged).
+  // 'error'    = we couldn't verify (network / unexpected) — unknown state,
+  //              so we must NOT claim the card wasn't charged.
+  const [status, setStatus] = useState<
+    'verifying' | 'ok' | 'declined' | 'error'
+  >('verifying');
 
   useEffect(() => {
     const transactionId = searchParams.get('transactionId');
@@ -26,15 +31,23 @@ function CheckoutCompleteInner() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ resourcePath }),
         });
-
-        if (res.ok) {
+        // The endpoint returns 200 for BOTH success and a declined card
+        // ({ success: false }). Gate on the BODY flag, never on res.ok —
+        // otherwise a declined card shows "Payment successful".
+        const body = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          alreadyProcessed?: boolean;
+        };
+        if (res.ok && body.success === true) {
           setStatus('ok');
           setTimeout(() => router.replace(`/transactions/${transactionId}`), 1500);
+        } else if (res.ok && body.success === false) {
+          setStatus('declined');
         } else {
-          setStatus('failed');
+          setStatus('error');
         }
       } catch {
-        setStatus('failed');
+        setStatus('error');
       }
     }
 
@@ -72,7 +85,7 @@ function CheckoutCompleteInner() {
         </>
       )}
 
-      {status === 'failed' && (
+      {status === 'declined' && (
         <>
           <div
             className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 text-xl"
@@ -81,10 +94,11 @@ function CheckoutCompleteInner() {
             ✕
           </div>
           <p className="text-base font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-            Payment could not be verified
+            Payment not completed
           </p>
           <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
-            Your card was not charged. Please try again or contact support.
+            Your payment didn&apos;t go through, so your order isn&apos;t
+            confirmed. You can try again or use a different card.
           </p>
           <button
             onClick={() => router.back()}
@@ -92,6 +106,33 @@ function CheckoutCompleteInner() {
             style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
           >
             Try again
+          </button>
+        </>
+      )}
+
+      {status === 'error' && (
+        <>
+          <div
+            className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 text-xl"
+            style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}
+          >
+            !
+          </div>
+          <p className="text-base font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+            We couldn&apos;t confirm your payment
+          </p>
+          <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
+            We weren&apos;t able to verify the result. Check your order page
+            in a minute to see its status — if it hasn&apos;t updated, contact
+            support@gungalore.co.za before paying again so you aren&apos;t
+            charged twice.
+          </p>
+          <button
+            onClick={() => router.replace('/my/orders')}
+            className="px-5 py-2.5 rounded-[6px] text-sm"
+            style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
+          >
+            View my orders
           </button>
         </>
       )}

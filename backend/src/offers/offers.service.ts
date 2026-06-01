@@ -317,6 +317,13 @@ export class OffersService {
             title: true,
             autoAcceptThreshold: true,
             passFeeToBuyer: true,
+            // isFirearm + shippingMethods drive the offer-checkout form:
+            // a firearm offer MUST route DEALER_TRANSFER (the form hides
+            // courier options + shows the SAPS consent). Without these the
+            // page passed isFirearm=false and firearm buyers were
+            // hard-rejected at submit with no path to complete.
+            isFirearm: true,
+            shippingMethods: true,
             // Seller email retained — only seller themselves sees
             // their own email via this endpoint (gated by isSeller
             // check below). Username is the public handle.
