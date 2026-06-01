@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeeCalculator } from './fee.calculator';
-import { PeachService } from './peach.service';
+import { PeachService, PeachPaymentResult } from './peach.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ListingStatus, Province, ShippingMethod } from '@prisma/client';
@@ -164,11 +164,23 @@ export class TransactionsService {
       shippingCostCents,
     );
 
-    // Reserve the listing
-    await this.prisma.listing.update({
-      where: { id: listing.id },
+    // Reserve the listing ATOMICALLY. Only ONE buyer can flip it from
+    // ACTIVE → PAYMENT_PENDING. This is the double-sell guard: for
+    // TAKE_A_SHOT listings multiple offers can be ACCEPTED at once, so
+    // without a conditional reserve, N buyers could each create a
+    // checkout and pay for the same single item (double-charge). The
+    // BUY_NOW read-check above is racy on its own; this makes both paths
+    // correct. count===0 means another buyer already reserved it or it
+    // has sold.
+    const reserve = await this.prisma.listing.updateMany({
+      where: { id: listing.id, status: ListingStatus.ACTIVE },
       data: { status: ListingStatus.PAYMENT_PENDING },
     });
+    if (reserve.count === 0) {
+      throw new BadRequestException(
+        'This item is no longer available — another buyer is completing checkout, or it has already sold.',
+      );
+    }
 
     // Create the transaction record first to get an ID
     const tx = await this.prisma.transaction.create({
@@ -274,7 +286,9 @@ export class TransactionsService {
     try {
       const result = await this.peach.verifyPayment(resourcePath);
       if (result.isSuccess) {
-        await this.markPaid(tx.id, result.paymentId, result.resultCode, tx.listing);
+        // markPaid binds merchantTransactionId + amount to this tx, so a
+        // replayed/forged resourcePath for a different order is rejected.
+        await this.markPaid(tx.id, result, tx.listing, tx.buyerTotal);
         return { success: true };
       }
       // Payment failed — revert listing
@@ -317,7 +331,27 @@ export class TransactionsService {
     }
 
     if (result.isSuccess) {
-      await this.markPaid(tx.id, result.paymentId, result.resultCode, tx.listing);
+      // tx was looked up BY merchantTransactionId so the id-binding in
+      // markPaid is satisfied by construction; the amount check can still
+      // fire on a genuine anomaly. Catch so a mismatch surfaces as a
+      // logged alert instead of a 500 (the webhook must always 200).
+      try {
+        await this.markPaid(tx.id, result, tx.listing, tx.buyerTotal);
+      } catch (err) {
+        this.logger.error(
+          `Peach webhook: markPaid rejected for ${tx.id}: ${(err as Error).message}`,
+        );
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'PEACH_WEBHOOK_MARKPAID_REJECTED',
+              referenceId: tx.id,
+              urgent: true,
+              context: `Webhook success for ${tx.id} but markPaid rejected: ${(err as Error).message}. Paid amount=${result.amount}c.`,
+            },
+          })
+          .catch(() => undefined);
+      }
     } else {
       this.logger.warn(`Peach webhook: payment failed ${result.resultCode}`);
       await this.revertListing(tx.listingId);
@@ -679,11 +713,12 @@ export class TransactionsService {
       where,
       include: {
         listing: { include: { images: { where: { isPrimary: true }, take: 1 } } },
-        // Username surfaces in the order list UI per platform policy
-        // (no real-name display). firstName/lastName retained for any
-        // internal flow that still needs the real name.
-        buyer: { select: { username: true, firstName: true, lastName: true } },
-        seller: { select: { username: true, firstName: true, lastName: true } },
+        // Username only — the order-list UI shows @username per platform
+        // policy, and this payload goes to the client, so we must NOT
+        // include the counterparty's real name (POPIA). Internal flows
+        // that need the legal name query it directly, not via this list.
+        buyer: { select: { username: true } },
+        seller: { select: { username: true } },
         dealer: { select: { id: true, name: true, city: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -742,16 +777,23 @@ export class TransactionsService {
       !!tx.privateArrangeAcceptedAt &&
       tx.paymentStatus === 'RELEASED';
     if (!isPaidPrivateArrange) {
-      // The buyer's own row is theirs — keep their phone visible to
-      // them; same for the seller. We only blank the OTHER party's
-      // details from each side.
-      if (tx.buyerId !== user.id) tx.buyer.phone = null;
+      // POPIA + platform policy: the COUNTERPARTY's identity is private
+      // until a paid PRIVATE_ARRANGE reveal. Blank the other party's
+      // real name, email and phone from the response — @username (a
+      // separate public field) is the only identifier each side sees.
+      // We never touch the viewer's OWN row. email is non-null in the
+      // model so we clear it through an unknown cast on the response
+      // object only (not persisted).
+      if (tx.buyerId !== user.id) {
+        tx.buyer.phone = null;
+        tx.buyer.firstName = null;
+        tx.buyer.lastName = null;
+        (tx.buyer as unknown as { email: string | null }).email = null;
+      }
       if (tx.sellerId !== user.id) {
         tx.seller.phone = null;
-        // The seller's email is private to the platform on the
-        // non-PA path; blank it before the row leaves the API.
-        // Email column is non-null in the User model so we cast
-        // through unknown to clear it on the response object only.
+        tx.seller.firstName = null;
+        tx.seller.lastName = null;
         (tx.seller as unknown as { email: string | null }).email = null;
       }
     }
@@ -925,10 +967,34 @@ export class TransactionsService {
   // ------------------------------------------------------------------
   private async markPaid(
     txId: string,
-    paymentId: string,
-    resultCode: string,
+    result: PeachPaymentResult,
     listing: { id: string; sellerId: string },
+    expectedBuyerTotal: number,
   ) {
+    // ─── SECURITY: bind the gateway result to THIS transaction ────────
+    // Without these two checks, a single genuine Peach success result
+    // (resourcePath / webhook) could be replayed against ANY other
+    // transaction id, or against an order whose amount differs from what
+    // was actually paid. We require an exact match on both before any
+    // money-state mutation. This is the primary fix for the "mark any
+    // order paid for free" class of attack — it holds even on the
+    // unauthenticated verify-result + webhook paths, because Peach binds
+    // its own resourcePath to one checkout (one merchantTransactionId +
+    // one amount), so an attacker cannot produce a success whose
+    // merchantTransactionId equals the victim tx without paying it.
+    if (result.merchantTransactionId !== txId) {
+      this.logger.error(
+        `markPaid REJECTED: gateway merchantTransactionId="${result.merchantTransactionId}" does not match transaction "${txId}" — possible replay/forgery`,
+      );
+      throw new BadRequestException('Payment does not match this transaction.');
+    }
+    if (result.amount !== expectedBuyerTotal) {
+      this.logger.error(
+        `markPaid REJECTED: gateway amount=${result.amount}c != expected ${expectedBuyerTotal}c for tx ${txId} — amount mismatch`,
+      );
+      throw new BadRequestException('Payment amount does not match the order total.');
+    }
+
     const paidAt = new Date();
     // TOK-7: seller has 48h from payment to ACCEPT the transaction.
     // We compute + store the deadline here so the UI countdown chip
@@ -937,24 +1003,42 @@ export class TransactionsService {
     const acceptDeadlineAt = new Date(
       paidAt.getTime() + ACCEPT_DEADLINE_HOURS * 60 * 60 * 1000,
     );
-    await this.prisma.$transaction([
-      this.prisma.transaction.update({
-        where: { id: txId },
-        data: {
-          paymentStatus: 'HELD',
-          peachPaymentId: paymentId,
-          peachResultCode: resultCode,
-          paidAt,
-          acceptDeadlineAt,
-        },
-      }),
-      this.prisma.listing.update({
-        where: { id: listing.id },
-        data: { status: 'SOLD', soldAt: new Date() },
-      }),
-    ]);
+
+    // ─── ATOMIC idempotency guard ─────────────────────────────────────
+    // updateMany with a paidAt=null predicate so only ONE concurrent
+    // caller (result-page race vs webhook race vs double-click) can flip
+    // the row to paid. count===0 means another path already claimed it —
+    // a successful no-op, not an error.
+    const claim = await this.prisma.transaction.updateMany({
+      where: { id: txId, paidAt: null },
+      data: {
+        paymentStatus: 'HELD',
+        peachPaymentId: result.paymentId,
+        peachResultCode: result.resultCode,
+        paidAt,
+        acceptDeadlineAt,
+      },
+    });
+    if (claim.count === 0) {
+      this.logger.log(
+        `markPaid: transaction ${txId} was already claimed by another path — skipping`,
+      );
+      return;
+    }
+
+    await this.prisma.listing.update({
+      where: { id: listing.id },
+      data: { status: 'SOLD', soldAt: new Date() },
+    });
 
     this.logger.log(`Transaction ${txId} paid — listing ${listing.id} marked SOLD`);
+
+    // The item is now SOLD — reject every still-open offer on this
+    // listing from OTHER buyers (TAKE_A_SHOT can have several ACCEPTED
+    // offers at once). Stops a losing offerer from later trying to pay
+    // for an item that's gone. Fire-and-forget; the atomic reserve above
+    // is the hard backstop, this is the cleanup.
+    void this.rejectSiblingOffersOnSale(txId, listing.id);
 
     // Append an INTERNAL milestone row so the buyer/seller timeline
     // starts with a "Payment received" marker BEFORE the seller marks
@@ -979,6 +1063,44 @@ export class TransactionsService {
 
     // Fire-and-forget notifications
     void this.sendSaleNotifications(txId);
+  }
+
+  // ------------------------------------------------------------------
+  // After a sale completes, reject every still-open offer on the same
+  // listing from OTHER buyers. TAKE_A_SHOT listings can carry several
+  // ACCEPTED offers at once; once one buyer pays, the rest can never be
+  // fulfilled, so flip them to REJECTED to stop their checkout attempts
+  // (which would otherwise fail less gracefully at the reserve step).
+  // We exclude the winning buyer's own offer by buyerId so we never
+  // reject the offer that produced this sale.
+  // ------------------------------------------------------------------
+  private async rejectSiblingOffersOnSale(txId: string, listingId: string) {
+    try {
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: txId },
+        select: { buyerId: true },
+      });
+      if (!tx) return;
+      const res = await this.prisma.offer.updateMany({
+        where: {
+          listingId,
+          buyerId: { not: tx.buyerId },
+          status: { in: ['PENDING', 'COUNTERED', 'ACCEPTED'] },
+        },
+        data: { status: 'REJECTED' },
+      });
+      if (res.count > 0) {
+        this.logger.log(
+          `Rejected ${res.count} sibling offer(s) on sold listing ${listingId}`,
+        );
+        // Clear those buyers' "offer accepted — pay now" inbox rows.
+        void this.notifications.resolveByEntity('listing', listingId);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `rejectSiblingOffersOnSale failed for ${txId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   // ------------------------------------------------------------------

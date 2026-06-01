@@ -298,6 +298,16 @@ export class PeachService {
   verifyWebhookSignature(rawBody: string, providedSignature: string | undefined): boolean {
     const secret = process.env.PEACH_WEBHOOK_SECRET;
     if (!secret) {
+      // FAIL-CLOSED in production. A missing webhook secret in prod means
+      // we cannot prove a webhook came from Peach, so a forged POST could
+      // mark any order PAID. Reject rather than trust. In dev we allow
+      // through so local testing without the secret still works.
+      if (process.env.NODE_ENV === 'production') {
+        this.logger.error(
+          'PEACH_WEBHOOK_SECRET is not set in production — rejecting webhook (fail-closed). Set the secret to enable webhook processing.',
+        );
+        return false;
+      }
       return true; // dev / not configured — allow through
     }
     if (!providedSignature) {

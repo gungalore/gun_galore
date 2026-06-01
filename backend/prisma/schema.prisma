@@ -718,7 +718,12 @@ model Transaction {
   // Payment
   paymentStatus   PaymentStatus @default(HELD)
   peachCheckoutId String?
-  peachPaymentId  String?
+  // @unique: a gateway payment id can settle exactly ONE transaction.
+  // Defence-in-depth against replaying one Peach success against multiple
+  // orders — the second markPaid hits a unique violation. NULLs are
+  // exempt (Postgres) so unpaid rows are fine. Replaces the old
+  // non-unique @@index([peachPaymentId]).
+  peachPaymentId  String?       @unique
   peachResultCode String?
   paidAt          DateTime?
   releasedAt      DateTime?
@@ -875,7 +880,7 @@ model Transaction {
   @@index([buyerId])
   @@index([sellerId])
   @@index([paymentStatus])
-  @@index([peachPaymentId])
+  // peachPaymentId now has a @unique on the field (creates its own index).
 }
 
 // Append-only timeline of shipping + payment milestones per Transaction.

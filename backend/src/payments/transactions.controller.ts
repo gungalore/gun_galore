@@ -294,11 +294,15 @@ export class PaymentsWebhookController {
       (req.headers['x-peach-signature'] as string | undefined) ??
       (req.headers['x-signature'] as string | undefined);
 
-    // Approximate the raw body. For full security we'd configure a raw-body
-    // parser in main.ts, but this works against the JSON-stringified form
-    // when the merchant secret signs the canonicalised JSON. Live wiring of
-    // the raw body is a small follow-up once Peach confirms their scheme.
-    const rawBody = JSON.stringify(body);
+    // Use the TRUE raw request body for HMAC verification. NestFactory is
+    // created with { rawBody: true } (main.ts), so req.rawBody holds the
+    // exact bytes Peach signed. Re-serialising via JSON.stringify(body)
+    // would reorder/reformat keys and never match the signature. Fall back
+    // to the serialized form only if rawBody is somehow absent (it won't be
+    // in prod) — verifyWebhookSignature fails closed in production anyway.
+    const rawBody =
+      (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
+      JSON.stringify(body);
     const valid = this.txService.verifyPeachWebhook(rawBody, signature);
     if (!valid) {
       this.logger.warn('Peach webhook signature invalid — dropping');

@@ -406,7 +406,10 @@ export class OffersService {
         sellerEmail: offer.listing.seller.email,
         sellerName: offer.listing.seller.firstName ?? 'Seller',
         sellerPhone: offer.listing.seller.phone,
-        buyerName: `${offer.buyer.firstName ?? ''} ${offer.buyer.lastName ?? ''}`.trim() || 'A buyer',
+        // POPIA + platform policy: show the buyer's @username to the
+        // seller, never their real legal name. The full name is only
+        // revealed post-payment for shipping where legally required.
+        buyerName: offer.buyer.username ?? 'A buyer',
         listingTitle: offer.listing.title,
         listingId: offer.listing.id,
         offerAmount: offer.offerAmount,
@@ -523,7 +526,10 @@ export class OffersService {
       await this.notifications.counterAccepted({
         sellerEmail: offer.listing.seller.email,
         sellerName: offer.listing.seller.firstName ?? 'Seller',
-        buyerName: `${offer.buyer.firstName ?? ''} ${offer.buyer.lastName ?? ''}`.trim() || 'A buyer',
+        // POPIA + platform policy: show the buyer's @username to the
+        // seller, never their real legal name. The full name is only
+        // revealed post-payment for shipping where legally required.
+        buyerName: offer.buyer.username ?? 'A buyer',
         listingTitle: offer.listing.title,
         listingId: offer.listing.id,
         counterAmount: offer.counterAmount,
@@ -544,7 +550,10 @@ export class OffersService {
       await this.notifications.counterRejected({
         sellerEmail: offer.listing.seller.email,
         sellerName: offer.listing.seller.firstName ?? 'Seller',
-        buyerName: `${offer.buyer.firstName ?? ''} ${offer.buyer.lastName ?? ''}`.trim() || 'A buyer',
+        // POPIA + platform policy: show the buyer's @username to the
+        // seller, never their real legal name. The full name is only
+        // revealed post-payment for shipping where legally required.
+        buyerName: offer.buyer.username ?? 'A buyer',
         listingTitle: offer.listing.title,
         listingId: offer.listing.id,
         offerId: offer.id,

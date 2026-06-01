@@ -12,6 +12,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
+import { PeachService } from '../payments/peach.service';
 import { ListingReviewDto, ReviewAction } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -26,6 +27,10 @@ export class AdminService {
     // post a Credit Note to Books reversing the original commission
     // invoice.
     private readonly zohoBooks: ZohoBooksService,
+    // PaymentsModule (imported by AdminModule) exports PeachService.
+    // refundTransaction() calls it to actually move money back to the
+    // buyer's card before flipping the row to REFUNDED.
+    private readonly peach: PeachService,
   ) {}
 
   // ---------------------------------------------------------------
@@ -993,14 +998,64 @@ export class AdminService {
     });
     if (!tx) throw new NotFoundException('Transaction not found');
 
-    const updated = await this.prisma.transaction.update({
-      where: { id: txId },
+    // ─── Only HELD or DISPUTED orders can be refunded ────────────────
+    // A RELEASED order has already paid the seller (refunding would be a
+    // double payout); an already-REFUNDED order must not refund twice.
+    // Enforce as an atomic conditional update so two concurrent admin
+    // clicks can't both pass the check. count===0 → not in a refundable
+    // state (already refunded / released / etc).
+    const claim = await this.prisma.transaction.updateMany({
+      where: { id: txId, paymentStatus: { in: ['HELD', 'DISPUTED'] } },
       data: {
-        paymentStatus: 'REFUNDED',
         adminNote: note ?? null,
         adminReviewedById: adminId,
         adminReviewedAt: new Date(),
       },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException(
+        `Transaction is not in a refundable state (current: ${tx.paymentStatus}). Only HELD or DISPUTED orders can be refunded.`,
+      );
+    }
+
+    // ─── Actually move the money back via Peach BEFORE flipping ──────
+    // Previously this method told the buyer "refund issued" but never
+    // called the gateway, so funds never returned. Refund first; only
+    // mark REFUNDED + notify + credit-note on gateway success. On
+    // failure, roll the status back to its prior value and raise an
+    // urgent alert so an admin can retry — never tell the buyer they
+    // were refunded when they weren't.
+    const refund = tx.peachPaymentId
+      ? await this.peach.refundPayment(tx.peachPaymentId, tx.buyerTotal)
+      : { success: false, resultCode: 'NO_PEACH_PAYMENT_ID' };
+
+    if (!refund.success) {
+      // Revert the review stamps we just set (best-effort) and abort.
+      await this.prisma.transaction
+        .update({
+          where: { id: txId },
+          data: { paymentStatus: tx.paymentStatus },
+        })
+        .catch(() => undefined);
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'ADMIN_REFUND_GATEWAY_FAILED',
+            referenceId: txId,
+            urgent: true,
+            context: `Admin ${adminId} refund of ${tx.buyerTotal}c failed at gateway (${refund.resultCode ?? 'unknown'}${tx.peachPaymentId ? '' : ' — no peachPaymentId on tx'}). Buyer NOT refunded; retry needed.`,
+          },
+        })
+        .catch(() => undefined);
+      throw new BadRequestException(
+        `Refund failed at the payment gateway (${refund.resultCode ?? 'unknown'}). The buyer was NOT charged back; an alert has been raised. No status change applied.`,
+      );
+    }
+
+    // Gateway refund succeeded — now flip to REFUNDED.
+    const updated = await this.prisma.transaction.update({
+      where: { id: txId },
+      data: { paymentStatus: 'REFUNDED' },
     });
 
     // Mark any related dispute alert as resolved so the

@@ -18,6 +18,15 @@ async function bootstrap() {
     rawBody: true,
   });
 
+  // Trust the single nginx reverse-proxy hop in front of us so Express
+  // derives req.ip from the FIRST X-Forwarded-For entry (the real client)
+  // rather than nginx's loopback address. Without this, @nestjs/throttler
+  // keys EVERY request to nginx's IP — collapsing all per-route rate
+  // limits into one global bucket (no real throttling on auth, KYC,
+  // action-tokens, or the paid AI endpoints). Fixed hop count (1), not
+  // `true`, so a client can't spoof X-Forwarded-For to dodge limits.
+  app.set('trust proxy', 1);
+
   // Bump the JSON body limit so the /listings/preview endpoint can accept
   // up to 5 base64-encoded photos for vision moderation. Each photo runs
   // ~1-2 MB base64; 15 MB gives us headroom for 5x large iPhone JPEGs.
