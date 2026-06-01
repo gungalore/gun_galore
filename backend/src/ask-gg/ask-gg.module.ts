@@ -10,6 +10,7 @@ import {
   AskGgExpertAdminController,
 } from './ask-gg-kb-admin.controller';
 import { AdminAuditService } from '../admin/admin-audit.service';
+import { adminJwtSecret } from '../admin/admin-jwt-secret';
 import { ReloadingModule } from '../reloading/reloading.module';
 import { BallisticsModule } from '../ballistics/ballistics.module';
 
@@ -24,7 +25,7 @@ import { BallisticsModule } from '../ballistics/ballistics.module';
     // Same secret/config as AdminModule — kept local here so we
     // don't create a circular dep importing AdminModule.
     JwtModule.register({
-      secret: process.env.JWT_ADMIN_SECRET || 'dev-admin-secret-change-in-prod',
+      secret: adminJwtSecret(),
     }),
   ],
   controllers: [

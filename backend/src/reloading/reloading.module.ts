@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AdminAuditService } from '../admin/admin-audit.service';
 import { JwtModule } from '@nestjs/jwt';
+import { adminJwtSecret } from '../admin/admin-jwt-secret';
 import { ReloadingService } from './reloading.service';
 import { ReloadingAdminController } from './reloading-admin.controller';
 
@@ -26,7 +27,7 @@ import { ReloadingAdminController } from './reloading-admin.controller';
     // pattern as AdminModule. Kept local here so this module doesn't
     // need to import AdminModule and create a circular dependency.
     JwtModule.register({
-      secret: process.env.JWT_ADMIN_SECRET || 'dev-admin-secret-change-in-prod',
+      secret: adminJwtSecret(),
     }),
   ],
   controllers: [ReloadingAdminController],

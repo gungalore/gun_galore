@@ -9,11 +9,65 @@ import * as dotenv from 'dotenv';
 dotenv.config({ override: true });
 
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { adminJwtSecret } from './admin/admin-jwt-secret';
+
+/**
+ * Fail-closed production config gate. Runs after dotenv has loaded .env.
+ * HARD failures (throw → process exits, pm2 surfaces it) for anything
+ * that silently downgrades security. WARN-only (loud, but boots) for
+ * launch-readiness items the operator flips on at go-live so a deploy
+ * never takes prod down before those credentials are wired.
+ */
+function assertProductionConfig() {
+  const log = new Logger('Bootstrap');
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // HARD: admin JWT secret must be a strong, non-default value in prod.
+  // adminJwtSecret() throws on missing/empty/default when NODE_ENV=production.
+  adminJwtSecret();
+
+  if (!isProd) return;
+
+  // WARN: KYC running against sandbox in production = identity checks pass
+  // on canned data. Operator flips VERIFYNOW_MODE=production at launch.
+  // (Hard-throw deferred to launch — see decision 2026-06-01.)
+  if ((process.env.VERIFYNOW_MODE ?? 'sandbox') !== 'production') {
+    log.error(
+      '⚠️  VERIFYNOW_MODE is not "production" — KYC identity checks are running against SANDBOX data. Set VERIFYNOW_MODE=production before going live.',
+    );
+  }
+  // WARN: Peach base URL still pointing at the test gateway.
+  if (
+    process.env.PEACH_ENTITY_ID &&
+    process.env.PEACH_ACCESS_TOKEN &&
+    (process.env.PEACH_BASE_URL ?? '').includes('test.oppwa.com')
+  ) {
+    log.error(
+      '⚠️  Peach is configured but PEACH_BASE_URL points at the TEST gateway (test.oppwa.com). Set the production base URL before taking real payments.',
+    );
+  }
+  // WARN: webhook secret missing — webhook verification fails closed.
+  if (!process.env.PEACH_WEBHOOK_SECRET) {
+    log.error(
+      '⚠️  PEACH_WEBHOOK_SECRET is not set — incoming Peach webhooks will be REJECTED (fail-closed). Set it (and the matching secret in the Peach dashboard) before relying on webhooks.',
+    );
+  }
+  // WARN: BACKEND_URL missing — webhook notificationUrl falls back to localhost.
+  if (!process.env.BACKEND_URL) {
+    log.error(
+      '⚠️  BACKEND_URL is not set — Peach webhook notificationUrl will fall back to localhost. Set it to the public API base before launch.',
+    );
+  }
+}
 
 async function bootstrap() {
+  // Fail-closed config gate — throws on dangerous misconfig (e.g. missing
+  // admin secret) before the server starts accepting traffic.
+  assertProductionConfig();
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
   });

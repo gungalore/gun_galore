@@ -1,6 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
+import { adminJwtSecret } from '../admin-jwt-secret';
 
 @Injectable()
 export class AdminJwtGuard implements CanActivate {
@@ -13,7 +14,7 @@ export class AdminJwtGuard implements CanActivate {
 
     try {
       const payload = await this.jwtService.verifyAsync(token, {
-        secret: process.env.JWT_ADMIN_SECRET || 'dev-admin-secret-change-in-prod',
+        secret: adminJwtSecret(),
       });
       (request as unknown as Record<string, unknown>)['adminUser'] = payload;
       return true;

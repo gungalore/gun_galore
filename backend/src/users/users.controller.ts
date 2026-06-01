@@ -4,6 +4,7 @@ import {
   Post,
   Patch,
   Body,
+  Req,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -12,6 +13,7 @@ import {
   FileTypeValidator,
   BadRequestException,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ClerkGuard } from '../auth/clerk.guard';
@@ -50,7 +52,10 @@ export class UsersController {
   // implicit (the seller can't reach this endpoint without it).
   @Get('me')
   @UseGuards(ClerkOrTokenGuard) // accept Clerk OR ?t=<checkout-token>
-  async me(@CurrentUser() clerkId: string) {
+  async me(
+    @CurrentUser() clerkId: string,
+    @Req() req: Request & { viaActionToken?: boolean },
+  ) {
     const user = await this.prisma.user.findUnique({
       where: { clerkId },
       select: {
@@ -95,6 +100,17 @@ export class UsersController {
       },
     });
     if (!user) return null;
+    // When reached via a CHECKOUT action token (a replayable 24h
+    // URL-bearer credential, not a full Clerk session) NEVER return the
+    // user's banking details. The token is for completing a checkout, not
+    // for reading the seller's payout account. Strip bank* fields.
+    if (req.viaActionToken) {
+      user.bankName = null;
+      user.bankAccountHolder = null;
+      user.bankAccountNumber = null;
+      user.bankBranchCode = null;
+      user.bankAccountType = null;
+    }
     return { ...user, profileCompleteness: computeCompleteness(user) };
   }
 

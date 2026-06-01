@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
+import { adminJwtSecret } from './admin-jwt-secret';
 
 @Injectable()
 export class AdminAuthService {
@@ -28,7 +29,7 @@ export class AdminAuthService {
 
     const payload = { sub: admin.id, email: admin.email, role: admin.role };
     const token = await this.jwt.signAsync(payload, {
-      secret: process.env.JWT_ADMIN_SECRET || 'dev-admin-secret-change-in-prod',
+      secret: adminJwtSecret(),
       expiresIn: '8h',
     });
 
