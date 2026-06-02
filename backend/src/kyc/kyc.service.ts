@@ -14,6 +14,7 @@ import {
 } from './verifynow.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
+import { ActionTokensService } from '../actions/action-tokens.service';
 
 // SHA-256 hash of a SA ID number with a per-app salt. We never store
 // the raw 13-digit number — only the hash — so even if the User table
@@ -69,6 +70,9 @@ export class KycService {
     private verifyNow: VerifyNowService,
     private notifications: NotificationsService,
     private sms: SmsService,
+    // @Global ActionTokensModule — used to mint the KYC_VERIFY token so
+    // the "verify your identity" SMS link works without a Clerk login.
+    private actionTokens: ActionTokensService,
   ) {}
 
   // ─────────────────── POPIA consent ────────────────────────────────
@@ -361,12 +365,32 @@ export class KycService {
       data: { kycRequiredAt: new Date() },
     });
 
+    // Mint a KYC_VERIFY token so the SMS link works without a Clerk
+    // login (the SMS opens in the phone's default browser, which has no
+    // PWA session). 7-day TTL. If minting fails we fall back to the bare
+    // /kyc/verify URL (login-gated) rather than dropping the SMS.
+    const appUrl = process.env.FRONTEND_URL ?? 'https://gungalore.co.za';
+    let kycUrl = `${appUrl}/kyc/verify`;
+    try {
+      const kycToken = await this.actionTokens.mint({
+        purpose: 'KYC_VERIFY',
+        targetType: 'user',
+        targetId: seller.id,
+        authorisedUserId: seller.id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+      kycUrl = `${appUrl}/a/${kycToken}`;
+    } catch (mintErr) {
+      this.log.warn(
+        `KYC_VERIFY token mint failed for ${seller.id}; using login-gated link: ${(mintErr as Error).message}`,
+      );
+    }
+
     try {
       if (seller.phone) {
         await this.sms.sendSms({
           to: seller.phone,
-          message:
-            'Gun Galore: You have a pending sale. Verify your identity to release the payout: https://gungalore.co.za/kyc/verify',
+          message: `Gun Galore: You have a pending sale. Verify your identity to release the payout: ${kycUrl}`,
           reference: `kyc-required-${seller.id}`,
         });
       }

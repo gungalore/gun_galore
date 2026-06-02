@@ -79,8 +79,13 @@ export default clerkMiddleware(async (auth, request) => {
   // so the URL the user typed stays in the address bar.
   if (process.env.COMING_SOON_GATE === 'on') {
     const url = request.nextUrl;
-    const isCheckoutWithToken =
-      url.pathname.startsWith('/checkout/') && url.searchParams.has('t');
+    // Token-authed pages (SMS one-tap): /checkout/*?t= and /kyc/verify?t=
+    // are authorised by the action token in the URL, not Clerk — let them
+    // through the coming-soon gate the same way.
+    const isTokenAuthedPage =
+      (url.pathname.startsWith('/checkout/') ||
+        url.pathname === '/kyc/verify') &&
+      url.searchParams.has('t');
     const cookieVal = request.cookies.get(COMING_SOON_COOKIE)?.value;
     const hasBypassCookie =
       !!cookieVal &&
@@ -88,7 +93,7 @@ export default clerkMiddleware(async (auth, request) => {
       cookieVal === process.env.COMING_SOON_BYPASS_SECRET;
 
     const allowed =
-      isComingSoonBypassRoute(request) || isCheckoutWithToken || hasBypassCookie;
+      isComingSoonBypassRoute(request) || isTokenAuthedPage || hasBypassCookie;
 
     if (!allowed) {
       return NextResponse.rewrite(new URL('/coming-soon', request.url));
@@ -97,13 +102,14 @@ export default clerkMiddleware(async (auth, request) => {
 
   if (isPublicRoute(request)) return;
 
-  // SMS-link checkout: /checkout/* requests carrying ?t=<token> are
-  // auth'd by the action token, not Clerk. The page + the
-  // backend's ClerkOrTokenGuard handle the token. We just need to
-  // bypass Clerk middleware here so an unauthenticated tap-from-SMS
-  // doesn't get bounced to the sign-in page.
+  // SMS-link token pages: /checkout/*?t= (buyer pays) and /kyc/verify?t=
+  // (seller verifies identity) are auth'd by the action token, not Clerk.
+  // The page + the backend's ClerkOrTokenGuard / KycOrTokenGuard handle
+  // the token. We just bypass Clerk middleware here so an unauthenticated
+  // tap-from-SMS doesn't get bounced to the sign-in page.
   if (
-    request.nextUrl.pathname.startsWith('/checkout/') &&
+    (request.nextUrl.pathname.startsWith('/checkout/') ||
+      request.nextUrl.pathname === '/kyc/verify') &&
     request.nextUrl.searchParams.has('t')
   ) {
     return;

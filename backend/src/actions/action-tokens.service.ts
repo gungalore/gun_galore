@@ -39,9 +39,23 @@ export type ActionTokenPurpose =
   // after a buyer pays. SMS fires immediately on payment with this
   // token; tap → Accept (one-tap, no sign-in) OR Reject (with reason).
   // targetType = 'transaction'. 48h TTL = ACCEPT_DEADLINE_HOURS.
-  | 'TRANSACTION_ACCEPT';
+  | 'TRANSACTION_ACCEPT'
+  // KYC_VERIFY — seller's link from the "verify your identity to release
+  // payout" SMS. Lands on `/a/<token>` → redirects to `/kyc/verify?t=`
+  // so the seller can do VerifyNow ID + face-match WITHOUT signing in.
+  // targetType = 'user', targetId = authorisedUserId = the seller. The
+  // token does NOT bypass the identity proof itself (real SA ID + live
+  // selfie face-matched against Home Affairs are still required); it only
+  // removes the Clerk-login wall when the SMS opens in an external
+  // browser. 7-day TTL — KYC isn't time-critical like a 24h checkout.
+  | 'KYC_VERIFY';
 
-export type ActionTokenTargetType = 'offer' | 'listing' | 'transaction';
+export type ActionTokenTargetType =
+  | 'offer'
+  | 'listing'
+  | 'transaction'
+  // KYC_VERIFY tokens target the user themselves (no offer/listing/tx).
+  | 'user';
 
 /** Max wrong / invalid resolution attempts before the token locks. */
 const MAX_INVALID_ATTEMPTS = 5;

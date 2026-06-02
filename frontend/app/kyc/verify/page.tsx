@@ -116,13 +116,24 @@ function VerifyKycPageInner() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // Action-token auth: when the seller arrives via the SMS one-tap link
+  // (/a/<token> → /kyc/verify?t=<token>) there's no Clerk session, so we
+  // authorise the KYC API calls with the token instead of a Bearer JWT.
+  const actionToken = searchParams.get('t');
+
   // returnTo lets us send the seller back to where they came from (e.g.
-  // the transaction page that prompted them).
-  const returnTo = searchParams.get('returnTo') || '/dashboard';
+  // the transaction page that prompted them). For token arrivals (no
+  // session) default to home, NOT /dashboard — that would itself bounce
+  // to sign-in and re-create the wall we're removing.
+  const returnTo =
+    searchParams.get('returnTo') || (actionToken ? '/' : '/dashboard');
 
   useEffect(() => {
-    if (isLoaded && !isSignedIn) router.push('/sign-in?redirect_url=/kyc/verify');
-  }, [isLoaded, isSignedIn, router]);
+    // The token flow runs without a Clerk session — don't force sign-in.
+    if (!actionToken && isLoaded && !isSignedIn) {
+      router.push('/sign-in?redirect_url=/kyc/verify');
+    }
+  }, [actionToken, isLoaded, isSignedIn, router]);
 
   // Stop the camera stream on unmount so it doesn't keep recording.
   useEffect(() => {
@@ -133,13 +144,22 @@ function VerifyKycPageInner() {
   }, []);
 
   async function apiPost(path: string, body?: object) {
-    const token = await getToken();
-    const res = await fetch(`${API_URL}/kyc/${path}`, {
+    // Token flow: authorise via ?t=<token> (no Clerk session). Otherwise
+    // send the Clerk JWT as a Bearer header (signed-in path).
+    let url = `${API_URL}/kyc/${path}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (actionToken) {
+      const sep = url.includes('?') ? '&' : '?';
+      url = `${url}${sep}t=${encodeURIComponent(actionToken)}`;
+    } else {
+      const token = await getToken();
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers,
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -545,7 +565,7 @@ function VerifyKycPageInner() {
               // defeat the liveness check (anyone could submit any
               // photo). The phone-handoff route forces the selfie to
               // come from a real camera at the time of submission.
-              <CameraUnavailableHandoff returnTo={returnTo} />
+              <CameraUnavailableHandoff returnTo={returnTo} actionToken={actionToken} />
             ) : (
               <div style={{ position: 'relative', marginBottom: 20 }}>
                 <div
@@ -800,18 +820,27 @@ function VerifyKycPageInner() {
 // capture there. Liveness preserved (the selfie still comes from a
 // real camera at the time of capture). File upload is intentionally
 // NOT offered as a workaround.
-function CameraUnavailableHandoff({ returnTo }: { returnTo: string }) {
-  // The QR points to the same /kyc/verify URL, carrying the original
-  // returnTo so the seller lands back where they came from after
-  // finishing on their phone. window check covers the SSR pass.
-  const handoffUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/kyc/verify${
-          returnTo && returnTo !== '/dashboard'
-            ? `?returnTo=${encodeURIComponent(returnTo)}`
-            : ''
-        }`
-      : '';
+function CameraUnavailableHandoff({
+  returnTo,
+  actionToken,
+}: {
+  returnTo: string;
+  actionToken: string | null;
+}) {
+  // The QR points to the same /kyc/verify URL, carrying the action token
+  // (so the phone stays login-free too) AND the original returnTo so the
+  // seller lands back where they came from after finishing on their
+  // phone. window check covers the SSR pass.
+  const handoffUrl = (() => {
+    if (typeof window === 'undefined') return '';
+    const params = new URLSearchParams();
+    if (actionToken) params.set('t', actionToken);
+    if (returnTo && returnTo !== '/dashboard' && returnTo !== '/') {
+      params.set('returnTo', returnTo);
+    }
+    const qs = params.toString();
+    return `${window.location.origin}/kyc/verify${qs ? `?${qs}` : ''}`;
+  })();
 
   return (
     <div

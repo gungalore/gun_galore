@@ -1,17 +1,20 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { ClerkGuard } from '../auth/clerk.guard';
+import { KycOrTokenGuard } from '../auth/kyc-or-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { KycService } from './kyc.service';
 import { ConsentDto } from './dto/consent.dto';
 import { VerifyIdDto } from './dto/verify-id.dto';
 import { FaceMatchDto } from './dto/face-match.dto';
 
-// All endpoints here are seller-self-service. They run under ClerkGuard
-// so we have a clerkId on every request — there's no admin / cross-user
-// surface here (admin tooling for forcing/overriding KYC will live under
-// /admin/kyc once we have the VerifyNow balance + credits APIs wired).
+// All endpoints here are seller-self-service. They run under
+// KycOrTokenGuard, which accepts EITHER a Clerk session OR a KYC_VERIFY
+// action token via ?t=<token> — the latter lets a seller complete
+// verification straight from the SMS link without signing in. Either way
+// @CurrentUser() resolves to the seller's clerkId, so the handlers are
+// identical. There's no admin / cross-user surface here (admin KYC
+// override tooling lives under /admin/kyc).
 @Controller('kyc')
-@UseGuards(ClerkGuard)
+@UseGuards(KycOrTokenGuard)
 export class KycController {
   constructor(private readonly kyc: KycService) {}
 

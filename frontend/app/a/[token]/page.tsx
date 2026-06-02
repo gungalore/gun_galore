@@ -34,6 +34,7 @@ type ResolvedPayload =
   | OfferDecisionPayload
   | AuctionBidPayload
   | CheckoutPayload
+  | KycVerifyPayload
   | TransactionAcceptPayload;
 
 interface CheckoutPayload {
@@ -48,6 +49,15 @@ interface CheckoutPayload {
     primaryImageUrl: string | null;
     status: string;
   };
+  redirectTo: string;
+}
+
+// KYC_VERIFY carries no entity — just a redirect to /kyc/verify?t=<token>
+// where the seller completes VerifyNow without signing in.
+interface KycVerifyPayload {
+  kind: 'KYC_VERIFY';
+  expiresAt: string;
+  greeting: string;
   redirectTo: string;
 }
 
@@ -86,10 +96,11 @@ export default async function ActionTokenPage({
     );
   }
 
-  // CHECKOUT tokens punt to the existing checkout form via redirect.
-  // Keeps the SMS URL short (always /a/<token>) while reusing all
-  // the checkout UI we already have.
-  if (payload.kind === 'CHECKOUT') {
+  // CHECKOUT + KYC_VERIFY tokens punt to an existing page via redirect.
+  // Keeps the SMS URL short (always /a/<token>) while reusing the
+  // checkout form / KYC verify page we already have. The ?t=<token>
+  // carried on the redirect authorises those pages' API calls.
+  if (payload.kind === 'CHECKOUT' || payload.kind === 'KYC_VERIFY') {
     redirect(payload.redirectTo);
   }
 

@@ -96,6 +96,8 @@ export class ActionTokensController {
         return this.buildAuctionPayload(resolved, user);
       case 'CHECKOUT':
         return this.buildCheckoutPayload(resolved, user);
+      case 'KYC_VERIFY':
+        return this.buildKycVerifyPayload(resolved, user);
       case 'DISPATCH':
         return this.buildDispatchPayload(resolved, user);
       case 'TRANSACTION_ACCEPT':
@@ -580,6 +582,22 @@ export class ActionTokensController {
       // URLs short (always /a/<token>) while the actual checkout form
       // lives at the existing /checkout/[id] page.
       redirectTo: `/checkout/${listing.id}?t=${resolved.token}`,
+    };
+  }
+
+  private buildKycVerifyPayload(
+    resolved: ResolvedToken,
+    user: { username: string | null; firstName: string | null },
+  ) {
+    // KYC is about the user themselves — no offer/listing/tx to fetch.
+    // Like CHECKOUT, we just hand the frontend a redirect target; the
+    // verify page at /kyc/verify?t=<token> runs the VerifyNow flow with
+    // the token authorising the (otherwise Clerk-gated) KYC endpoints.
+    return {
+      kind: 'KYC_VERIFY' as const,
+      expiresAt: resolved.expiresAt.toISOString(),
+      greeting: user.firstName ?? user.username ?? 'there',
+      redirectTo: `/kyc/verify?t=${resolved.token}`,
     };
   }
 }
