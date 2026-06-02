@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { FeeCalculator } from './fee.calculator';
 import { PeachService } from './peach.service';
+import { StitchService } from './stitch.service';
 import { TransactionsService } from './transactions.service';
 import { DispatchSlaService } from './dispatch-sla.service';
 import { DealerVerificationService } from './dealer-verification.service';
@@ -20,6 +21,7 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
   providers: [
     FeeCalculator,
     PeachService,
+    StitchService,
     TransactionsService,
     DispatchSlaService,
     DealerVerificationService,
@@ -34,6 +36,7 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
     TransactionsService,
     DispatchSlaService,
     PeachService,
+    StitchService,
     DealerVerificationService,
   ],
 })
