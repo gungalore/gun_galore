@@ -39,26 +39,16 @@ function assertProductionConfig() {
       '⚠️  VERIFYNOW_MODE is not "production" — KYC identity checks are running against SANDBOX data. Set VERIFYNOW_MODE=production before going live.',
     );
   }
-  // WARN: Peach base URL still pointing at the test gateway.
-  if (
-    process.env.PEACH_ENTITY_ID &&
-    process.env.PEACH_ACCESS_TOKEN &&
-    (process.env.PEACH_BASE_URL ?? '').includes('test.oppwa.com')
-  ) {
+  // WARN: Stitch credentials missing — checkout falls back to mock mode.
+  if (!process.env.STITCH_CLIENT_ID || !process.env.STITCH_CLIENT_SECRET) {
     log.error(
-      '⚠️  Peach is configured but PEACH_BASE_URL points at the TEST gateway (test.oppwa.com). Set the production base URL before taking real payments.',
+      '⚠️  STITCH_CLIENT_ID / STITCH_CLIENT_SECRET not set — checkout runs in MOCK mode (no real payments). Set them before taking payments.',
     );
   }
-  // WARN: webhook secret missing — webhook verification fails closed.
-  if (!process.env.PEACH_WEBHOOK_SECRET) {
+  // WARN: Stitch webhook secret missing — webhook verification fails closed.
+  if (!process.env.STITCH_WEBHOOK_SECRET) {
     log.error(
-      '⚠️  PEACH_WEBHOOK_SECRET is not set — incoming Peach webhooks will be REJECTED (fail-closed). Set it (and the matching secret in the Peach dashboard) before relying on webhooks.',
-    );
-  }
-  // WARN: BACKEND_URL missing — webhook notificationUrl falls back to localhost.
-  if (!process.env.BACKEND_URL) {
-    log.error(
-      '⚠️  BACKEND_URL is not set — Peach webhook notificationUrl will fall back to localhost. Set it to the public API base before launch.',
+      '⚠️  STITCH_WEBHOOK_SECRET is not set — incoming Stitch webhooks will be REJECTED (fail-closed). Register the webhook (POST /api/v1/webhook) and set the returned Svix secret before relying on webhooks.',
     );
   }
 }

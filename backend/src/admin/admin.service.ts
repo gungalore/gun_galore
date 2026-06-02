@@ -12,7 +12,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
-import { PeachService } from '../payments/peach.service';
+import { StitchService } from '../payments/stitch.service';
 import { ListingReviewDto, ReviewAction } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -27,10 +27,10 @@ export class AdminService {
     // post a Credit Note to Books reversing the original commission
     // invoice.
     private readonly zohoBooks: ZohoBooksService,
-    // PaymentsModule (imported by AdminModule) exports PeachService.
-    // refundTransaction() calls it to actually move money back to the
-    // buyer's card before flipping the row to REFUNDED.
-    private readonly peach: PeachService,
+    // PaymentsModule (imported by AdminModule) exports StitchService.
+    // refundTransaction() calls it to actually move the money back to the
+    // buyer before flipping the row to REFUNDED.
+    private readonly stitch: StitchService,
   ) {}
 
   // ---------------------------------------------------------------
@@ -1025,9 +1025,11 @@ export class AdminService {
     // failure, roll the status back to its prior value and raise an
     // urgent alert so an admin can retry — never tell the buyer they
     // were refunded when they weren't.
+    // peachPaymentId holds the Stitch payment id (column reused during the
+    // Peach→Stitch transition).
     const refund = tx.peachPaymentId
-      ? await this.peach.refundPayment(tx.peachPaymentId, tx.buyerTotal)
-      : { success: false, resultCode: 'NO_PEACH_PAYMENT_ID' };
+      ? await this.stitch.refundPayment(tx.peachPaymentId, tx.buyerTotal)
+      : { success: false, resultCode: 'NO_PAYMENT_ID' };
 
     if (!refund.success) {
       // Revert the review stamps we just set (best-effort) and abort.

@@ -8,7 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { FeeCalculator } from './fee.calculator';
 import { PeachService, PeachPaymentResult } from './peach.service';
-import { StitchService } from './stitch.service';
+import { StitchService, StitchPaymentResult } from './stitch.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ListingStatus, Province, ShippingMethod } from '@prisma/client';
@@ -349,60 +349,102 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
-  // Exposed to webhook controller so it can verify before processing.
+  // Exposed to the webhook controller — verify the Svix signature.
   // ------------------------------------------------------------------
-  verifyPeachWebhook(rawBody: string, signature: string | undefined): boolean {
-    return this.peach.verifyWebhookSignature(rawBody, signature);
+  verifyStitchWebhook(
+    rawBody: string,
+    headers: { id?: string; timestamp?: string; signature?: string },
+  ): boolean {
+    return this.stitch.verifyWebhookSignature(rawBody, headers);
   }
 
   // ------------------------------------------------------------------
-  // Called from Peach webhook
+  // Called from the Stitch webhook (payment.paid). Confirms the matching
+  // transaction even when the buyer closed the tab before returning to
+  // /checkout/complete (or paid by async EFT). We re-fetch authoritative
+  // status from Stitch — never trusting the webhook body's amount — and
+  // bind it in markPaid. Never reverts on a non-success (a still-settling
+  // payment could be double-sold); the webhook must always 200.
   // ------------------------------------------------------------------
-  async handlePeachWebhook(body: Record<string, unknown>) {
-    const result = this.peach.parseWebhookPayload(body);
-    if (!result.merchantTransactionId) {
-      this.logger.warn('Peach webhook: missing merchantTransactionId');
+  async handleStitchWebhook(body: Record<string, unknown>) {
+    const evt = this.stitch.parseWebhookEvent(body);
+    if (!evt.paymentId && !evt.merchantReference) {
+      this.logger.warn('Stitch webhook: no paymentId/merchantReference');
       return;
     }
 
-    const tx = await this.prisma.transaction.findUnique({
-      where: { id: result.merchantTransactionId },
+    // The Stitch payment id is stored on peachCheckoutId at create() time.
+    // Match on that first; fall back to merchantReference (= our tx id).
+    const tx = await this.prisma.transaction.findFirst({
+      where: evt.paymentId
+        ? { peachCheckoutId: evt.paymentId }
+        : { id: evt.merchantReference },
       include: { listing: true },
     });
     if (!tx) {
-      this.logger.warn(`Peach webhook: unknown transaction ${result.merchantTransactionId}`);
+      this.logger.warn(
+        `Stitch webhook: no transaction for payment ${evt.paymentId ?? evt.merchantReference}`,
+      );
       return;
     }
     if (tx.paidAt) {
-      this.logger.log(`Peach webhook: transaction ${tx.id} already processed`);
+      this.logger.log(`Stitch webhook: transaction ${tx.id} already processed`);
       return;
     }
 
-    if (result.isSuccess) {
-      // tx was looked up BY merchantTransactionId so the id-binding in
-      // markPaid is satisfied by construction; the amount check can still
-      // fire on a genuine anomaly. Catch so a mismatch surfaces as a
-      // logged alert instead of a 500 (the webhook must always 200).
-      try {
-        await this.markPaid(tx.id, result, tx.listing, tx.buyerTotal);
-      } catch (err) {
-        this.logger.error(
-          `Peach webhook: markPaid rejected for ${tx.id}: ${(err as Error).message}`,
-        );
-        await this.prisma.adminAlert
-          .create({
-            data: {
-              type: 'PEACH_WEBHOOK_MARKPAID_REJECTED',
-              referenceId: tx.id,
-              urgent: true,
-              context: `Webhook success for ${tx.id} but markPaid rejected: ${(err as Error).message}. Paid amount=${result.amount}c.`,
-            },
-          })
-          .catch(() => undefined);
-      }
-    } else {
-      this.logger.warn(`Peach webhook: payment failed ${result.resultCode}`);
-      await this.revertListing(tx.listingId);
+    const paymentId = tx.peachCheckoutId ?? evt.paymentId;
+    if (!paymentId) {
+      this.logger.warn(`Stitch webhook: transaction ${tx.id} has no payment id`);
+      return;
+    }
+
+    let status: StitchPaymentResult;
+    try {
+      status = await this.stitch.getPaymentStatus(paymentId);
+    } catch (err) {
+      this.logger.error(
+        `Stitch webhook: status fetch failed for ${paymentId}: ${(err as Error).message}`,
+      );
+      return;
+    }
+    if (!status.isSuccess) {
+      this.logger.warn(
+        `Stitch webhook: payment ${paymentId} not successful (status ${status.status})`,
+      );
+      return;
+    }
+
+    // markPaid binds the amount; merchantTransactionId = tx.id (bound by
+    // construction, same as the verify-result path). Catch a mismatch so
+    // the always-200 webhook surfaces it as an alert, not a 500.
+    try {
+      await this.markPaid(
+        tx.id,
+        {
+          paymentId: status.paymentId,
+          resultCode: status.status,
+          amount: status.amountCents,
+          currency: 'ZAR',
+          merchantTransactionId: tx.id,
+          isSuccess: true,
+        },
+        tx.listing,
+        tx.buyerTotal,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Stitch webhook: markPaid rejected for ${tx.id}: ${(err as Error).message}`,
+      );
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'STITCH_WEBHOOK_MARKPAID_REJECTED',
+            referenceId: tx.id,
+            urgent: true,
+            context: `Webhook success for ${tx.id} but markPaid rejected: ${(err as Error).message}. Paid amount=${status.amountCents}c.`,
+          },
+        })
+        .catch(() => undefined);
     }
   }
 
@@ -554,23 +596,25 @@ export class TransactionsService {
       throw new BadRequestException('Already dispatched — cannot reject.');
     }
 
-    // Fire Peach refund first — only stamp rejectedAt if it succeeded,
-    // so an admin can retry on failure rather than the buyer being
-    // stuck without a refund AND the listing reactivated.
+    // Fire the Stitch refund first — only stamp rejectedAt if it
+    // succeeded, so an admin can retry on failure rather than the buyer
+    // being stuck without a refund AND the listing reactivated.
+    // peachPaymentId holds the Stitch payment id (column reused during
+    // the Peach→Stitch transition).
     const refundRes = tx.peachPaymentId
-      ? await this.peach.refundPayment(tx.peachPaymentId, tx.buyerTotal)
-      : { success: true, resultCode: 'NO_PEACH_ID' };
+      ? await this.stitch.refundPayment(tx.peachPaymentId, tx.buyerTotal)
+      : { success: true, resultCode: 'NO_PAYMENT_ID' };
 
     if (!refundRes.success) {
       this.logger.warn(
-        `Reject failed for ${transactionId}: Peach refund failed (${refundRes.resultCode}) — raising admin alert`,
+        `Reject failed for ${transactionId}: Stitch refund failed (${refundRes.resultCode}) — raising admin alert`,
       );
       await this.prisma.adminAlert.create({
         data: {
           type: 'SALE_REJECT_REFUND_FAILED',
           referenceId: transactionId,
           urgent: true,
-          context: `Seller tried to reject sale; Peach refund failed: ${refundRes.resultCode}. Buyer still owed ${tx.buyerTotal} cents.`,
+          context: `Seller tried to reject sale; Stitch refund failed: ${refundRes.resultCode}. Buyer still owed ${tx.buyerTotal} cents.`,
         },
       });
       throw new BadRequestException(

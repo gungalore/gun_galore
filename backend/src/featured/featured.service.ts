@@ -45,7 +45,7 @@ export function applyFeaturedDiscount(
   return Math.floor((faceCents * (100 - safe)) / 100);
 }
 import { PrismaService } from '../prisma/prisma.service';
-import { PeachService } from '../payments/peach.service';
+import { StitchService } from '../payments/stitch.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 
 // Featured-slot service.
@@ -71,7 +71,7 @@ export class FeaturedService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly peach: PeachService,
+    private readonly stitch: StitchService,
     // @Global — used by bindListingToSlot() to post a Sales Receipt
     // to Books for the featured-slot fee. Feature-flagged so it's
     // a no-op until ZOHO_BOOKS_ENABLED=true.
@@ -851,7 +851,7 @@ export class FeaturedService {
       // legacy bids that were charged before the discount fields
       // existed.
       const refundCents = bid.chargedAmountCents ?? bid.amountCents;
-      const r = await this.peach.refundPayment(
+      const r = await this.stitch.refundPayment(
         bid.peachPaymentId!,
         refundCents,
       );

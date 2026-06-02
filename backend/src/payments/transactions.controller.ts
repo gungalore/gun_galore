@@ -269,7 +269,7 @@ export class TransactionsController {
 }
 
 // ---------------------------------------------------------------
-// Peach webhook — separate controller so path is /api/payments/...
+// Stitch webhook — separate controller so path is /api/payments/...
 // ---------------------------------------------------------------
 @Controller('payments')
 export class PaymentsWebhookController {
@@ -277,39 +277,37 @@ export class PaymentsWebhookController {
 
   constructor(private readonly txService: TransactionsService) {}
 
-  // Peach signs webhooks with HMAC-SHA256 over the raw body. We verify with
-  // the merchant secret if PEACH_WEBHOOK_SECRET is set; otherwise we pass
-  // through (dev / not-yet-configured). The controller ALWAYS returns 200
-  // (CLAUDE.md rule) — silent rejection on bad signatures is logged.
-  @Post('webhook/peach')
+  // Stitch Express delivers webhooks via Svix, signed with the webhook's
+  // signing secret (STITCH_WEBHOOK_SECRET). Verification is HMAC-SHA256
+  // over the RAW body keyed by the secret, sent in the svix-id /
+  // svix-timestamp / svix-signature headers. NestFactory is created with
+  // { rawBody: true } (main.ts) so req.rawBody is the exact bytes Stitch
+  // signed — re-serialising via JSON.stringify would reorder keys and
+  // never match. The controller ALWAYS returns 200 (CLAUDE.md rule);
+  // a bad-signature drop is logged. Verification fails closed in prod.
+  @Post('webhook/stitch')
   @HttpCode(200)
-  async peachWebhook(
+  async stitchWebhook(
     @Req() req: Request,
     @Body() body: Record<string, unknown>,
   ) {
-    this.logger.log('Peach webhook received');
+    this.logger.log('Stitch webhook received');
 
-    // The signature header name is Peach's — confirm with BANVR docs.
-    const signature =
-      (req.headers['x-peach-signature'] as string | undefined) ??
-      (req.headers['x-signature'] as string | undefined);
-
-    // Use the TRUE raw request body for HMAC verification. NestFactory is
-    // created with { rawBody: true } (main.ts), so req.rawBody holds the
-    // exact bytes Peach signed. Re-serialising via JSON.stringify(body)
-    // would reorder/reformat keys and never match the signature. Fall back
-    // to the serialized form only if rawBody is somehow absent (it won't be
-    // in prod) — verifyWebhookSignature fails closed in production anyway.
+    const headers = {
+      id: req.headers['svix-id'] as string | undefined,
+      timestamp: req.headers['svix-timestamp'] as string | undefined,
+      signature: req.headers['svix-signature'] as string | undefined,
+    };
     const rawBody =
       (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
       JSON.stringify(body);
-    const valid = this.txService.verifyPeachWebhook(rawBody, signature);
+    const valid = this.txService.verifyStitchWebhook(rawBody, headers);
     if (!valid) {
-      this.logger.warn('Peach webhook signature invalid — dropping');
+      this.logger.warn('Stitch webhook signature invalid — dropping');
       return { received: true };
     }
 
-    await this.txService.handlePeachWebhook(body);
+    await this.txService.handleStitchWebhook(body);
     return { received: true };
   }
 }

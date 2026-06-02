@@ -9,7 +9,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
-import { PeachService } from '../payments/peach.service';
+import { StitchService } from '../payments/stitch.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { CreateRaffleDto } from './dto/create-raffle.dto';
 import { BuyTicketsDto } from './dto/buy-tickets.dto';
@@ -77,7 +77,7 @@ export class RafflesService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly cloudinary: CloudinaryService,
-    private readonly peach: PeachService,
+    private readonly stitch: StitchService,
     private readonly referenceNumbers: ReferenceNumberService,
     // @Global — used by confirmTickets() to post a Sales Receipt
     // to Books for each confirmed ticket batch. Feature-flagged so
@@ -1140,7 +1140,7 @@ export class RafflesService {
         continue;
       }
       try {
-        const r = await this.peach.refundPayment(t.peachPaymentId, t.amountCents);
+        const r = await this.stitch.refundPayment(t.peachPaymentId, t.amountCents);
         if (r.success) {
           await this.prisma.ticket.update({
             where: { id: t.id },

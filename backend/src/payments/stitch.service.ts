@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 /**
  * StitchService — Stitch EXPRESS payments adapter.
@@ -385,5 +386,96 @@ export class StitchService {
       message?: string;
     };
     return { success: res.ok && json.success !== false, message: json.message };
+  }
+
+  // ─── Webhook signature verification (Svix) ────────────────────────
+  // Stitch Express delivers webhooks via Svix. Each request carries
+  // `svix-id`, `svix-timestamp`, `svix-signature` headers. The signature
+  // is HMAC-SHA256 over `${id}.${timestamp}.${rawBody}` keyed by the
+  // webhook's signing secret (format `whsec_<base64>`), base64-encoded.
+  // The signature header is a space-separated list of `v1,<sig>` entries.
+  //
+  // Fail-closed in production: if STITCH_WEBHOOK_SECRET is unset we REJECT
+  // so an attacker can't post a forged "payment.paid". In non-production
+  // we pass through for local testing.
+  verifyWebhookSignature(
+    rawBody: string,
+    headers: { id?: string; timestamp?: string; signature?: string },
+  ): boolean {
+    const secret = process.env.STITCH_WEBHOOK_SECRET;
+    if (!secret) {
+      if (process.env.NODE_ENV === 'production') {
+        this.logger.error(
+          'STITCH_WEBHOOK_SECRET unset — rejecting webhook (fail-closed)',
+        );
+        return false;
+      }
+      this.logger.warn(
+        'STITCH_WEBHOOK_SECRET unset — accepting webhook (dev only)',
+      );
+      return true;
+    }
+
+    const { id, timestamp, signature } = headers;
+    if (!id || !timestamp || !signature) return false;
+
+    // Reject stale/replayed deliveries (5-minute tolerance).
+    const tsSec = Number(timestamp);
+    if (!Number.isFinite(tsSec)) return false;
+    if (Math.abs(Date.now() - tsSec * 1000) > 5 * 60 * 1000) {
+      this.logger.warn('Stitch webhook timestamp outside tolerance — rejecting');
+      return false;
+    }
+
+    // Secret is `whsec_<base64>`; the signing key is the decoded part.
+    const keyB64 = secret.startsWith('whsec_') ? secret.slice(6) : secret;
+    const key = Buffer.from(keyB64, 'base64');
+    const signedContent = `${id}.${timestamp}.${rawBody}`;
+    const expected = createHmac('sha256', key)
+      .update(signedContent)
+      .digest('base64');
+    const expectedBuf = Buffer.from(expected);
+
+    // Header: "v1,sig1 v1,sig2 ..." — accept if ANY v1 sig matches.
+    return signature
+      .split(' ')
+      .map((part) => part.split(',')[1] ?? part)
+      .some((sig) => {
+        const sigBuf = Buffer.from(sig);
+        return (
+          sigBuf.length === expectedBuf.length &&
+          timingSafeEqual(sigBuf, expectedBuf)
+        );
+      });
+  }
+
+  // Pull the payment id (+ optional reference/type) out of a Stitch
+  // webhook body. The exact envelope isn't pinned in the OpenAPI, so we
+  // probe the common shapes defensively. The id is what we actually need —
+  // the handler re-fetches authoritative status via getPaymentStatus().
+  parseWebhookEvent(body: Record<string, unknown>): {
+    paymentId?: string;
+    merchantReference?: string;
+    type?: string;
+  } {
+    const pick = (obj: unknown, key: string): unknown =>
+      obj && typeof obj === 'object'
+        ? (obj as Record<string, unknown>)[key]
+        : undefined;
+    const data = pick(body, 'data') ?? pick(body, 'payment') ?? body;
+    const rawId =
+      pick(data, 'id') ??
+      pick(pick(data, 'payment'), 'id') ??
+      pick(body, 'id') ??
+      pick(body, 'paymentId');
+    const rawRef =
+      pick(data, 'merchantReference') ?? pick(body, 'merchantReference');
+    const rawType =
+      pick(body, 'type') ?? pick(body, 'event') ?? pick(body, 'eventType');
+    return {
+      paymentId: rawId != null ? String(rawId) : undefined,
+      merchantReference: rawRef != null ? String(rawRef) : undefined,
+      type: rawType != null ? String(rawType) : undefined,
+    };
   }
 }
