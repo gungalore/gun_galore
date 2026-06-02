@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Script from 'next/script';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -27,10 +26,23 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 
 interface CreateTxResponse {
   transactionId: string;
-  peachCheckoutId: string;
-  widgetScriptUrl: string;
+  // Stitch payment id. Carries the `mock-` prefix when the gateway
+  // isn't configured (dev) → we render the test-mode card instead of
+  // redirecting.
+  paymentId: string;
+  // Hosted Stitch checkout URL the browser is redirected to. Empty in
+  // mock mode.
+  redirectUrl: string;
+  provider?: string;
   breakdown: FeeBreakdown;
 }
+
+// localStorage key that carries the transaction id across the Stitch
+// hosted-checkout redirect round-trip (Stitch returns the buyer to the
+// registered base URL without our txId, so /checkout/complete reads it
+// back from here). Kept in sync with the offer checkout form + the
+// complete page.
+const PENDING_TX_KEY = 'gg:pendingTx';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -529,16 +541,33 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       }
 
       const data: CreateTxResponse = await res.json();
-      setCheckout(data);
+
+      // Mock mode (gateway not configured) → no hosted link to send the
+      // buyer to. Render the test-mode card via the `checkout` state.
+      if (!data.redirectUrl || data.paymentId?.startsWith('mock-')) {
+        setCheckout(data);
+        return;
+      }
+
+      // Live: hand off to Stitch's hosted checkout. Stash the txId so the
+      // /checkout/complete return page can verify it (Stitch returns the
+      // buyer to the registered base URL without our id). Keep
+      // `submitting` true — we're navigating away.
+      try {
+        localStorage.setItem(PENDING_TX_KEY, data.transactionId);
+      } catch {
+        // Private-mode / storage-disabled: the txId also rides back via
+        // the (deferred) webhook, so the order still settles server-side.
+      }
+      window.location.href = data.redirectUrl;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
       setSubmitting(false);
     }
   }
 
-  // Once Peach widget script loads, it auto-renders into the form
+  // Mock mode only — live checkout redirects away to Stitch above.
   if (checkout) {
-    const isMock = checkout.peachCheckoutId.startsWith('mock-');
     return (
       <div>
         <h2 className="text-base font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
@@ -561,38 +590,22 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           <PriceRow label="Total charged" value={checkout.breakdown.buyerTotal} highlight />
         </div>
 
-        {isMock ? (
-          <div
-            className="rounded-[8px] p-6 text-center text-sm"
-            style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
+        <div
+          className="rounded-[8px] p-6 text-center text-sm"
+          style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
+        >
+          <p className="mb-2" style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
+            Test mode
+          </p>
+          <p>The payment gateway is not configured. Add Stitch credentials to your .env to enable live checkout.</p>
+          <button
+            onClick={() => router.push(`/transactions/${checkout.transactionId}`)}
+            className="mt-4 px-4 py-2 rounded-[6px] text-sm"
+            style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
           >
-            <p className="mb-2" style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
-              Test mode
-            </p>
-            <p>Peach Payments is not configured. Add credentials to your .env to enable live checkout.</p>
-            <button
-              onClick={() => router.push(`/transactions/${checkout.transactionId}`)}
-              className="mt-4 px-4 py-2 rounded-[6px] text-sm"
-              style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
-            >
-              View order (mock)
-            </button>
-          </div>
-        ) : (
-          <>
-            <Script
-              src={checkout.widgetScriptUrl}
-              strategy="afterInteractive"
-            />
-            {/* Peach renders the card form into this element */}
-            <form
-              action={`${process.env.NEXT_PUBLIC_FRONTEND_URL ?? ''}/checkout/complete?transactionId=${checkout.transactionId}`}
-              className="paymentWidgets"
-              data-brands="VISA MASTER AMEX"
-              style={{ marginTop: '8px' }}
-            />
-          </>
-        )}
+            View order (mock)
+          </button>
+        </div>
       </div>
     );
   }

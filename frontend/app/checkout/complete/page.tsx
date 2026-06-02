@@ -16,32 +16,47 @@ function CheckoutCompleteInner() {
   >('verifying');
 
   useEffect(() => {
-    const transactionId = searchParams.get('transactionId');
-    const resourcePath = searchParams.get('resourcePath');
+    // Stitch returns the buyer to the registered base complete URL with
+    // no id of its own, so we read the txId from the query param if
+    // present (legacy / explicit) and otherwise from the marker the
+    // checkout form stashed in localStorage before the redirect.
+    let transactionId = searchParams.get('transactionId');
+    if (!transactionId && typeof window !== 'undefined') {
+      try {
+        transactionId = localStorage.getItem('gg:pendingTx');
+      } catch {
+        transactionId = null;
+      }
+    }
 
     if (!transactionId) {
       router.replace('/');
       return;
     }
+    const txId = transactionId;
 
     async function verify() {
       try {
-        const res = await fetch(`${API_URL}/transactions/${transactionId}/verify-result`, {
+        const res = await fetch(`${API_URL}/transactions/${txId}/verify-result`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ resourcePath }),
+          body: JSON.stringify({}),
         });
-        // The endpoint returns 200 for BOTH success and a declined card
-        // ({ success: false }). Gate on the BODY flag, never on res.ok —
-        // otherwise a declined card shows "Payment successful".
+        // The endpoint returns 200 for BOTH success and a not-completed
+        // payment ({ success: false }). Gate on the BODY flag, never on
+        // res.ok — otherwise an unpaid order shows "Payment successful".
         const body = (await res.json().catch(() => ({}))) as {
           success?: boolean;
           alreadyProcessed?: boolean;
         };
         if (res.ok && body.success === true) {
+          // Clear the pending marker — this order is settled.
+          try { localStorage.removeItem('gg:pendingTx'); } catch {}
           setStatus('ok');
-          setTimeout(() => router.replace(`/transactions/${transactionId}`), 1500);
+          setTimeout(() => router.replace(`/transactions/${txId}`), 1500);
         } else if (res.ok && body.success === false) {
+          // Not captured. Leave the marker so a refresh re-checks (an
+          // async EFT may still be settling). Show the not-completed state.
           setStatus('declined');
         } else {
           setStatus('error');
@@ -97,15 +112,17 @@ function CheckoutCompleteInner() {
             Payment not completed
           </p>
           <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
-            Your payment didn&apos;t go through, so your order isn&apos;t
-            confirmed. You can try again or use a different card.
+            Your payment isn&apos;t confirmed yet, so your order isn&apos;t
+            complete. If you cancelled, you can start the checkout again from
+            the listing. If you just paid by instant EFT, it may take a
+            moment — check your orders shortly.
           </p>
           <button
-            onClick={() => router.back()}
+            onClick={() => router.replace('/my/orders')}
             className="px-5 py-2.5 rounded-[6px] text-sm"
             style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
           >
-            Try again
+            View my orders
           </button>
         </>
       )}

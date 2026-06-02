@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { FeeCalculator } from './fee.calculator';
 import { PeachService, PeachPaymentResult } from './peach.service';
+import { StitchService } from './stitch.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ListingStatus, Province, ShippingMethod } from '@prisma/client';
@@ -35,6 +36,7 @@ export class TransactionsService {
     private readonly fees: FeeCalculator,
     private readonly notifications: NotificationsService,
     private readonly peach: PeachService,
+    private readonly stitch: StitchService,
     private readonly kyc: KycService,
     private readonly shipping: ShippingService,
     private readonly tracking: TrackingService,
@@ -227,19 +229,28 @@ export class TransactionsService {
         );
     }
 
-    // Create Peach checkout
-    const resultUrl = `${frontendUrl}/checkout/complete?transactionId=${tx.id}`;
-    let peachCheckout;
+    // Create the Stitch Express checkout (hosted payment link). We pass
+    // the BASE complete URL (no txId) because Stitch matches the
+    // redirect against a registered set; the txId rides back via the
+    // browser (localStorage) and, once the webhook lands, via
+    // merchantReference. The buyer's own name is fine to send to the
+    // gateway (it's their card payment, not exposed to other users).
+    const resultUrl = `${frontendUrl}/checkout/complete`;
+    const payerName =
+      [buyer.firstName, buyer.lastName].filter(Boolean).join(' ') ||
+      buyer.username ||
+      undefined;
+    let stitchCheckout;
     try {
-      peachCheckout = await this.peach.createCheckout({
+      stitchCheckout = await this.stitch.createCheckout({
         amountZarCents: buyerTotal,
         merchantTransactionId: tx.id,
         shopperResultUrl: resultUrl,
+        shopperName: payerName,
         shopperEmail: buyer.email,
-        description: listing.title.slice(0, 100),
       });
     } catch (err) {
-      // Roll back listing status if Peach fails
+      // Roll back the listing reservation if the gateway call fails.
       await this.prisma.listing.update({
         where: { id: listing.id },
         data: { status: ListingStatus.ACTIVE },
@@ -248,11 +259,13 @@ export class TransactionsService {
       throw new BadRequestException(`Payment checkout failed: ${(err as Error).message}`);
     }
 
-    // Store checkout ID and mark offer as CONVERTED if applicable
+    // Persist the Stitch payment id (reusing the peachCheckoutId column
+    // during the Peach→Stitch transition — no schema change) and mark
+    // the offer CONVERTED if this was an offer checkout.
     const [updated] = await this.prisma.$transaction([
       this.prisma.transaction.update({
         where: { id: tx.id },
-        data: { peachCheckoutId: peachCheckout.checkoutId },
+        data: { peachCheckoutId: stitchCheckout.paymentId },
       }),
       ...(offerRecord
         ? [this.prisma.offer.update({
@@ -264,16 +277,37 @@ export class TransactionsService {
 
     return {
       transactionId: updated.id,
-      peachCheckoutId: peachCheckout.checkoutId,
-      widgetScriptUrl: peachCheckout.widgetScriptUrl,
+      // Generic fields the frontend redirects on. paymentId carries the
+      // `mock-` prefix when Stitch isn't configured (dev), which the UI
+      // uses to render the test-mode card instead of redirecting.
+      paymentId: stitchCheckout.paymentId,
+      redirectUrl: stitchCheckout.redirectUrl,
+      provider: 'stitch' as const,
       breakdown: { listingPrice, commissionZar, processingFee, buyerTotal, sellerPayout },
     };
   }
 
   // ------------------------------------------------------------------
-  // Called from the result page — verify payment with Peach
+  // Called from the result page — verify payment with Stitch
   // ------------------------------------------------------------------
-  async verifyResult(transactionId: string, resourcePath: string) {
+  // The Stitch payment id was stored on peachCheckoutId at create() time.
+  // We look the tx up by its own id, read ITS stored payment id, and query
+  // Stitch for that payment — so the gateway result is bound to this exact
+  // transaction by construction (an attacker who controls only the URL's
+  // transactionId can never point it at someone else's payment). The
+  // amount check in markPaid (Stitch echoes data.payment.amount in cents)
+  // is the remaining money-state guard.
+  //
+  // We deliberately DO NOT revert the listing on a non-success here. The
+  // Stitch payment OBJECT only exists once captured, so a "not found yet"
+  // simply means the buyer hasn't finished (or an EFT/PayShap is still
+  // settling); reverting could double-sell a still-settling order.
+  // Abandoned PAYMENT_PENDING listings are freed by the webhook/reconcile
+  // path (deferred) after the 24h payment-link expiry.
+  //
+  // `_resourcePath` is the legacy Peach param — accepted for backward
+  // compatibility with the existing endpoint shape but unused.
+  async verifyResult(transactionId: string, _resourcePath?: string) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: { listing: true },
@@ -283,19 +317,33 @@ export class TransactionsService {
     // Already processed — idempotent
     if (tx.paidAt) return { success: true, alreadyProcessed: true };
 
+    const stitchPaymentId = tx.peachCheckoutId;
+    if (!stitchPaymentId) {
+      throw new BadRequestException('No payment reference on this transaction');
+    }
+
     try {
-      const result = await this.peach.verifyPayment(resourcePath);
-      if (result.isSuccess) {
-        // markPaid binds merchantTransactionId + amount to this tx, so a
-        // replayed/forged resourcePath for a different order is rejected.
+      const status = await this.stitch.getPaymentStatus(stitchPaymentId);
+      if (status.isSuccess) {
+        // Map the Stitch result into the gateway-result shape markPaid
+        // binds on. merchantTransactionId is set to tx.id (bound by
+        // construction — see above) so a missing merchantReference echo
+        // can't break a genuine capture; the amount is the real guard.
+        const result: PeachPaymentResult = {
+          paymentId: status.paymentId,
+          resultCode: status.status,
+          amount: status.amountCents,
+          currency: 'ZAR',
+          merchantTransactionId: tx.id,
+          isSuccess: true,
+        };
         await this.markPaid(tx.id, result, tx.listing, tx.buyerTotal);
         return { success: true };
       }
-      // Payment failed — revert listing
-      await this.revertListing(tx.listingId);
-      return { success: false, resultCode: result.resultCode };
+      // Not captured (yet) — leave the listing reserved; do not revert.
+      return { success: false, resultCode: status.status };
     } catch (err) {
-      this.logger.error('Peach verify failed', err);
+      this.logger.error('Stitch verify failed', err);
       throw new BadRequestException('Payment verification failed');
     }
   }

@@ -79,6 +79,17 @@ export class StitchService {
     { token: string; expiresAtMs: number }
   >();
 
+  /**
+   * Redirect URLs we've already registered on the Stitch account this
+   * process lifetime. Express requires a redirect URL to be registered
+   * (POST /api/v1/redirect-urls) before it can be appended to a payment
+   * link via ?redirect_url=. Registration is idempotent on Stitch's side
+   * (re-POSTing an existing URL is a no-op / "already exists"), so this
+   * in-memory set is purely to avoid a redundant network call per
+   * checkout — a cold process just re-registers once on its first sale.
+   */
+  private readonly registeredRedirects = new Set<string>();
+
   private get apiUrl(): string {
     return process.env.STITCH_API_URL ?? 'https://express.stitch.money';
   }
@@ -176,6 +187,15 @@ export class StitchService {
     };
     if (params.shopperEmail) payload.payerEmailAddress = params.shopperEmail;
 
+    // Register the post-payment redirect URL (best-effort) so we can
+    // append it to the hosted link. If registration fails we proceed
+    // WITHOUT a redirect rather than blocking the sale — the payment
+    // still completes; the buyer just lands on Stitch's own done page
+    // and the order is reconciled via the webhook (deferred) instead.
+    const registeredRedirect = await this.ensureRedirectRegistered(
+      params.shopperResultUrl,
+    );
+
     const res = await fetch(`${this.apiUrl}/api/v1/payment-links`, {
       method: 'POST',
       headers: await this.authHeaders('client_paymentrequest'),
@@ -194,7 +214,55 @@ export class StitchService {
     if (!id || !link) {
       throw new Error('Stitch create response missing data.payment.id/link');
     }
-    return { paymentId: id, redirectUrl: link };
+    // Append the registered redirect so the buyer returns to
+    // /checkout/complete after paying. Express format:
+    //   https://express.stitch.money/<code>?redirect_url=<encoded>
+    const redirectUrl = registeredRedirect
+      ? `${link}${link.includes('?') ? '&' : '?'}redirect_url=${encodeURIComponent(registeredRedirect)}`
+      : link;
+    return { paymentId: id, redirectUrl };
+  }
+
+  /**
+   * Ensure `url` is registered as a Stitch Express redirect URL, so it
+   * can be appended to a payment link. Returns the URL on success (or if
+   * already registered), else null — callers then skip the redirect
+   * append and let the webhook/reconcile path settle the order.
+   *
+   * Stitch matches the appended redirect_url against the registered set,
+   * so we register + append the EXACT same string (the base
+   * /checkout/complete URL). The per-transaction id is carried back via
+   * the browser (localStorage) + the webhook's merchantReference, not via
+   * this URL — keeping one stable registered value instead of one per
+   * order.
+   */
+  private async ensureRedirectRegistered(
+    url: string | null | undefined,
+  ): Promise<string | null> {
+    if (!url) return null;
+    if (this.registeredRedirects.has(url)) return url;
+    try {
+      const res = await fetch(`${this.apiUrl}/api/v1/redirect-urls`, {
+        method: 'POST',
+        headers: await this.authHeaders('client_paymentrequest'),
+        body: JSON.stringify({ redirectUrl: url }),
+      });
+      // 2xx = registered; 409/422 = already exists → also usable.
+      if (res.ok || res.status === 409 || res.status === 422) {
+        this.registeredRedirects.add(url);
+        return url;
+      }
+      const text = await res.text().catch(() => '');
+      this.logger.warn(
+        `Stitch register redirect-url ${res.status}: ${text} — proceeding without redirect`,
+      );
+      return null;
+    } catch (err) {
+      this.logger.warn(
+        `Stitch register redirect-url failed: ${(err as Error).message} — proceeding without redirect`,
+      );
+      return null;
+    }
   }
 
   // ─── Get / verify payment status ──────────────────────────────────
@@ -205,6 +273,20 @@ export class StitchService {
       `${this.apiUrl}/api/v1/payment/${encodeURIComponent(paymentId)}`,
       { headers: await this.authHeaders('client_paymentrequest') },
     );
+    // The PAYMENT object only exists once the buyer has actually paid —
+    // before that, only the payment LINK exists, so the status endpoint
+    // 404s. Treat that as "not paid yet" (a normal non-success), NOT an
+    // error: the buyer may have abandoned or not finished. Any other
+    // non-OK (auth, 5xx) is a real fault and still throws.
+    if (res.status === 404) {
+      return {
+        paymentId,
+        merchantReference: '',
+        status: 'NOT_FOUND',
+        amountCents: 0,
+        isSuccess: false,
+      };
+    }
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`Stitch getPaymentStatus ${res.status}: ${text}`);

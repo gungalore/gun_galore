@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Script from 'next/script';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { formatPrice } from '@/lib/utils';
@@ -10,10 +9,19 @@ import { LockerPicker, PudoLocker } from '@/components/locker-picker';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
+// Carries the txId across the Stitch hosted-checkout redirect round-trip
+// (Stitch returns the buyer to the registered base URL without our id).
+// Read back by /checkout/complete. Kept in sync with the listing
+// checkout form + the complete page.
+const PENDING_TX_KEY = 'gg:pendingTx';
+
 interface CreateTxResponse {
   transactionId: string;
-  peachCheckoutId: string;
-  widgetScriptUrl: string;
+  // Stitch payment id; `mock-` prefix in dev (gateway unconfigured).
+  paymentId: string;
+  // Hosted Stitch checkout URL to redirect to. Empty in mock mode.
+  redirectUrl: string;
+  provider?: string;
   breakdown: FeeBreakdown;
 }
 
@@ -121,15 +129,29 @@ export function OfferCheckoutForm({
         throw new Error(msg);
       }
       const data: CreateTxResponse = await res.json();
-      setCheckout(data);
+
+      // Mock mode (gateway unconfigured) → show the test card.
+      if (!data.redirectUrl || data.paymentId?.startsWith('mock-')) {
+        setCheckout(data);
+        return;
+      }
+
+      // Live: stash the txId for the return page, then hand off to
+      // Stitch's hosted checkout. Keep `submitting` true — navigating away.
+      try {
+        localStorage.setItem(PENDING_TX_KEY, data.transactionId);
+      } catch {
+        // Storage disabled — the (deferred) webhook still settles it.
+      }
+      window.location.href = data.redirectUrl;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
       setSubmitting(false);
     }
   }
 
+  // Mock mode only — live checkout redirects away to Stitch above.
   if (checkout) {
-    const isMock = checkout.peachCheckoutId.startsWith('mock-');
     return (
       <div>
         <h2 className="text-base font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
@@ -152,32 +174,20 @@ export function OfferCheckoutForm({
             <span style={{ color: 'var(--red)' }}>{formatPrice(checkout.breakdown.buyerTotal)}</span>
           </div>
         </div>
-        {isMock ? (
-          <div
-            className="rounded-[8px] p-6 text-center text-sm"
-            style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
+        <div
+          className="rounded-[8px] p-6 text-center text-sm"
+          style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
+        >
+          <p className="mb-2 font-medium" style={{ color: 'var(--text-primary)' }}>Test mode</p>
+          <p>The payment gateway is not configured.</p>
+          <button
+            onClick={() => router.push(`/transactions/${checkout.transactionId}`)}
+            className="mt-4 px-4 py-2 rounded-[6px] text-sm"
+            style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
           >
-            <p className="mb-2 font-medium" style={{ color: 'var(--text-primary)' }}>Test mode</p>
-            <p>Peach Payments is not configured.</p>
-            <button
-              onClick={() => router.push(`/transactions/${checkout.transactionId}`)}
-              className="mt-4 px-4 py-2 rounded-[6px] text-sm"
-              style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
-            >
-              View order (mock)
-            </button>
-          </div>
-        ) : (
-          <>
-            <Script src={checkout.widgetScriptUrl} strategy="afterInteractive" />
-            <form
-              action={`${process.env.NEXT_PUBLIC_FRONTEND_URL ?? ''}/checkout/complete?transactionId=${checkout.transactionId}`}
-              className="paymentWidgets"
-              data-brands="VISA MASTER AMEX"
-              style={{ marginTop: '8px' }}
-            />
-          </>
-        )}
+            View order (mock)
+          </button>
+        </div>
       </div>
     );
   }
