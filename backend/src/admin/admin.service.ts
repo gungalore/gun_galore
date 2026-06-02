@@ -942,13 +942,13 @@ export class AdminService {
 
     // Hard gate — we will not move money to a seller who hasn't
     // (a) completed their profile (banking + ID on file), or
-    // (b) had their bank account verified by Peach AVS, or
-    // (c) passed KYC selfie.
-    // Each failure surfaces a precise reason so the admin knows
-    // exactly which step the seller still owes us.
+    // (b) passed KYC selfie.
+    // Bank-account verification (AVS) was removed with Peach — the admin
+    // reviews the seller's bank details manually before the payout EFT.
+    // Each failure surfaces a precise reason so the admin knows exactly
+    // which step the seller still owes us.
     const missing: string[] = [];
     if (!tx.seller.profileCompletedAt) missing.push('profile completion');
-    if (!tx.seller.bankVerifiedAt) missing.push('Peach bank account verification');
     if (tx.seller.kycStatus !== 'VERIFIED') missing.push('KYC (selfie + ID)');
     if (missing.length > 0) {
       throw new BadRequestException(

@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeeCalculator } from './fee.calculator';
-import { PeachService, PeachPaymentResult } from './peach.service';
 import { StitchService, StitchPaymentResult } from './stitch.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -27,6 +26,18 @@ import { ActionTokensService } from '../actions/action-tokens.service';
 export const ACCEPT_DEADLINE_HOURS = 48;
 export const DISPATCH_DEADLINE_DAYS = 5;
 
+// Gateway-agnostic payment-result shape that markPaid() binds on. (Was
+// PeachPaymentResult — the gateway is now Stitch.) The verify-result and
+// webhook paths each map their provider response into this.
+interface GatewayPaymentResult {
+  paymentId: string;
+  resultCode: string;
+  amount: number;
+  currency: string;
+  merchantTransactionId: string;
+  isSuccess: boolean;
+}
+
 @Injectable()
 export class TransactionsService {
   private readonly logger = new Logger(TransactionsService.name);
@@ -35,7 +46,6 @@ export class TransactionsService {
     private readonly prisma: PrismaService,
     private readonly fees: FeeCalculator,
     private readonly notifications: NotificationsService,
-    private readonly peach: PeachService,
     private readonly stitch: StitchService,
     private readonly kyc: KycService,
     private readonly shipping: ShippingService,
@@ -329,7 +339,7 @@ export class TransactionsService {
         // binds on. merchantTransactionId is set to tx.id (bound by
         // construction — see above) so a missing merchantReference echo
         // can't break a genuine capture; the amount is the real guard.
-        const result: PeachPaymentResult = {
+        const result: GatewayPaymentResult = {
           paymentId: status.paymentId,
           resultCode: status.status,
           amount: status.amountCents,
@@ -1059,7 +1069,7 @@ export class TransactionsService {
   // ------------------------------------------------------------------
   private async markPaid(
     txId: string,
-    result: PeachPaymentResult,
+    result: GatewayPaymentResult,
     listing: { id: string; sellerId: string },
     expectedBuyerTotal: number,
   ) {

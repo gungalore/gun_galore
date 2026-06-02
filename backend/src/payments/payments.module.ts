@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { FeeCalculator } from './fee.calculator';
-import { PeachService } from './peach.service';
 import { StitchService } from './stitch.service';
 import { TransactionsService } from './transactions.service';
 import { DispatchSlaService } from './dispatch-sla.service';
@@ -20,22 +19,20 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
   ],
   providers: [
     FeeCalculator,
-    PeachService,
     StitchService,
     TransactionsService,
     DispatchSlaService,
     DealerVerificationService,
   ],
   controllers: [TransactionsController, PaymentsWebhookController],
-  // PeachService also exported so UsersModule can use it for the
-  // post-publish profile-complete AVS check.
+  // StitchService exported so admin / raffles / featured can issue
+  // refunds and the webhook controller can verify + confirm payments.
   // DealerVerificationService exported so AdminModule can use it for
   // admin-side override / re-scan.
   exports: [
     FeeCalculator,
     TransactionsService,
     DispatchSlaService,
-    PeachService,
     StitchService,
     DealerVerificationService,
   ],

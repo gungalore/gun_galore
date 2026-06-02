@@ -1,14 +1,11 @@
 import {
   BadRequestException,
-  forwardRef,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SmsService } from '../sms/sms.service';
-import { PeachService } from '../payments/peach.service';
 import { User, Province } from '@prisma/client';
 import { createHash, randomInt } from 'crypto';
 import { createClerkClient } from '@clerk/backend';
@@ -16,8 +13,9 @@ import { encryptSaIdNumber, hashSaIdNumber } from '../common/id-crypto';
 
 // Submitted by the ProfileCompletionModal post-first-publish. Hard
 // wall — the seller can't skip it before the modal closes. Backend
-// validates every field, runs Peach AVS against the banking quartet,
-// and only then writes anything to the DB.
+// validates every field, then writes to the DB. (Automated bank AVS was
+// removed with Peach — Stitch Express has no account-verification
+// endpoint; bank details are reviewed manually at payout instead.)
 export interface ProfileCompleteDto {
   firstName: string;
   lastName: string;
@@ -82,8 +80,6 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sms: SmsService,
-    @Inject(forwardRef(() => PeachService))
-    private readonly peach: PeachService,
   ) {}
 
   // Pulls the user-friendly message out of a Clerk SDK error. Clerk
@@ -224,22 +220,10 @@ export class UsersService {
       }
     }
 
-    // ─── Peach AVS — validate bank details BEFORE saving anything ──
-    const avs = await this.peach.verifyBankAccount({
-      bankName: dto.bankName.trim(),
-      accountHolder: dto.bankAccountHolder.trim(),
-      accountNumber: dto.bankAccountNumber.trim(),
-      branchCode: dto.bankBranchCode.trim(),
-      accountType: dto.bankAccountType,
-      idNumber,
-    });
-    if (avs.match === false) {
-      throw new BadRequestException(
-        `Bank details rejected by your bank: ${avs.reason ?? 'unknown reason'}`,
-      );
-    }
-    // avs.match === true OR 'mock' (dev fallback when Peach isn't
-    // configured) both proceed to save.
+    // Automated bank-account verification (AVS) was removed with Peach —
+    // Stitch Express has no account-verification endpoint. Bank details
+    // are captured as entered; an admin reviews them before the manual
+    // payout EFT (the manual check that replaced automated AVS).
 
     // ─── Push username to Clerk first so the two stores stay in sync ──
     if (username !== user.username) {
@@ -276,14 +260,14 @@ export class UsersService {
         bankAccountNumber: dto.bankAccountNumber.trim(),
         bankBranchCode: dto.bankBranchCode.trim(),
         bankAccountType: dto.bankAccountType,
-        bankVerifiedAt: avs.match === true ? new Date() : null,
-        bankAvsResult: avs.rawResultCode ?? null,
+        bankVerifiedAt: null,
+        bankAvsResult: null,
         profileCompletedAt: new Date(),
       },
     });
 
     this.logger.log(
-      `Profile completed for ${clerkId} (AVS: ${avs.match}, bank=${dto.bankName})`,
+      `Profile completed for ${clerkId} (bank=${dto.bankName})`,
     );
     return updated;
   }

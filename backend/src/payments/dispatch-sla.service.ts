@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { PeachService } from './peach.service';
+import { StitchService } from './stitch.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TrackingService } from '../shipping/tracking.service';
 
@@ -21,7 +21,7 @@ export class DispatchSlaService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly peach: PeachService,
+    private readonly stitch: StitchService,
     private readonly notifications: NotificationsService,
     private readonly tracking: TrackingService,
   ) {}
@@ -126,12 +126,12 @@ export class DispatchSlaService {
     for (const tx of stale) {
       try {
         const r = tx.peachPaymentId
-          ? await this.peach.refundPayment(tx.peachPaymentId, tx.buyerTotal)
-          : { success: true, resultCode: 'NO_PEACH_ID' };
+          ? await this.stitch.refundPayment(tx.peachPaymentId, tx.buyerTotal)
+          : { success: true, resultCode: 'NO_PAYMENT_ID' };
 
         if (!r.success) {
           this.logger.warn(
-            `Auto-refund cron: Peach refund failed for ${tx.id} (${r.resultCode}) — leaving HELD for admin review`,
+            `Auto-refund cron: Stitch refund failed for ${tx.id} (${r.resultCode}) — leaving HELD for admin review`,
           );
           // Raise admin alert so a human can intervene + manually
           // refund / contact the seller.
@@ -140,7 +140,7 @@ export class DispatchSlaService {
               type: 'DISPATCH_SLA_REFUND_FAILED',
               referenceId: tx.id,
               urgent: true,
-              context: `Peach refund failed: ${r.resultCode} ${r.message ?? ''}`,
+              context: `Stitch refund failed: ${r.resultCode} ${r.message ?? ''}`,
             },
           });
           continue;

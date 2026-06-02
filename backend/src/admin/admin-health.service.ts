@@ -91,8 +91,8 @@ export class AdminHealthService {
       }
     > = [
       {
-        name: 'Peach Payments',
-        url: process.env.PEACH_BASE_URL ?? 'https://test.oppwa.com',
+        name: 'Stitch Payments',
+        url: process.env.STITCH_API_URL ?? 'https://express.stitch.money',
         category: 'payment',
         method: 'HEAD',
       },
