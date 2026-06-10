@@ -82,10 +82,19 @@ export default clerkMiddleware(async (auth, request) => {
     // Token-authed pages (SMS one-tap): /checkout/*?t= and /kyc/verify?t=
     // are authorised by the action token in the URL, not Clerk — let them
     // through the coming-soon gate the same way.
+    //
+    // /checkout/complete is allowed UNCONDITIONALLY: it's where the
+    // payment gateway redirects the buyer after paying, and that return
+    // URL carries NO token or session (the txId rides back via
+    // localStorage / the webhook). Gating it would swallow the
+    // post-payment verification for any buyer without the preview
+    // cookie. The page itself is harmless — it only calls the public,
+    // amount-bound verify-result API.
     const isTokenAuthedPage =
-      (url.pathname.startsWith('/checkout/') ||
+      url.pathname === '/checkout/complete' ||
+      ((url.pathname.startsWith('/checkout/') ||
         url.pathname === '/kyc/verify') &&
-      url.searchParams.has('t');
+        url.searchParams.has('t'));
     const cookieVal = request.cookies.get(COMING_SOON_COOKIE)?.value;
     const hasBypassCookie =
       !!cookieVal &&
@@ -107,10 +116,18 @@ export default clerkMiddleware(async (auth, request) => {
   // The page + the backend's ClerkOrTokenGuard / KycOrTokenGuard handle
   // the token. We just bypass Clerk middleware here so an unauthenticated
   // tap-from-SMS doesn't get bounced to the sign-in page.
+  //
+  // /checkout/complete bypasses Clerk unconditionally: the payment
+  // gateway redirects the buyer here with no token and possibly no
+  // session (SMS-token buyers are never signed in; on iOS the return
+  // can land in a separate browser context). Bouncing them to sign-in
+  // would skip payment verification entirely. The page only calls the
+  // public verify-result API, which binds on txId + amount server-side.
   if (
-    (request.nextUrl.pathname.startsWith('/checkout/') ||
+    request.nextUrl.pathname === '/checkout/complete' ||
+    ((request.nextUrl.pathname.startsWith('/checkout/') ||
       request.nextUrl.pathname === '/kyc/verify') &&
-    request.nextUrl.searchParams.has('t')
+      request.nextUrl.searchParams.has('t'))
   ) {
     return;
   }
