@@ -247,14 +247,21 @@ export class TransactionsService {
           dto.shippingMethod === 'PRIVATE_ARRANGE' && dto.privateArrangeConsent
             ? new Date()
             : null,
-        // M33 — durable record of the buyer's 18+/competency
-        // attestation. Only set on firearm checkouts (validated above).
-        firearmAttestationAcceptedAt:
-          listing.isFirearm && dto.firearmAttestation18Plus === true
-            ? new Date()
-            : null,
       },
     });
+
+    // M33 — durable evidence of the firearm-attestation flag. Logged
+    // here (not persisted on Transaction yet) because adding the
+    // `firearmAttestationAcceptedAt` column is held behind the
+    // tsvector schema reconciliation on the launch checklist —
+    // pushing schema today would risk dropping the runtime-added
+    // FTS columns. The validation gate above is what enforces it; the
+    // log line gives us a searchable record until persistence lands.
+    if (listing.isFirearm) {
+      this.logger.log(
+        `FIREARM_ATTESTATION accepted=true tx=${tx.id} buyer=${buyer.id} listing=${listing.id}`,
+      );
+    }
 
     // KYC TRIGGER — if this seller hasn't been verified yet, fire the
     // VerifyNow prompt (SMS + email + in-app banner flag). idempotent:

@@ -32,11 +32,9 @@ Items already fixed in code and pushed to origin are crossed off the audit; they
 
 - [ ] **Run `npx prisma migrate deploy` on prod** (audit M32). Switch from the current `prisma db push --accept-data-loss` flow to a tracked-migration flow before any new schema lands. Without this, a future deploy could drop the runtime-added tsvector columns. (DBA/dev pairing required — write the baseline migration, then apply.)
 - [ ] **Declare runtime-added FTS columns in `schema.prisma`** (audit M32 / FIX-9 / BC-SCHEMA-DRIFT). The `ask-gg`, `reloading`, `hunt-pdf` services add `tsvector` columns at boot via raw DDL. Put them into `schema.prisma` (as `Unsupported("tsvector")`) and create a tracked migration that creates them + their GIN indexes.
-- [ ] **Push the new columns added in this batch** (`firearmAttestationAcceptedAt` on `Transaction`, plus the two new `@@index` lines for accept/dispatch deadlines):
-  ```
-  cd backend && npx prisma db push   # only on the FIRST deploy AFTER this commit lands
-  ```
-  These are additive (nullable column + indexes); existing rows are safe.
+- [ ] **Add + push the deferred schema additions** (these were rolled back from the audit-fix deploy to avoid colliding with the tsvector drift). Once you're running tracked `prisma migrate deploy` (the line above):
+  - `Transaction.firearmAttestationAcceptedAt DateTime?` — durable evidence of the 18+/SAPS-competency consent. Today the gate refuses checkout without the flag and logs a `FIREARM_ATTESTATION` line per transaction, but does not persist a timestamp on the row. Add the column, then re-add the write in `transactions.service.ts:create()` (the comment block in the file flags exactly where).
+  - `@@index([paymentStatus, acceptDeadlineAt])` and `@@index([paymentStatus, dispatchDeadlineAt])` on `Transaction` — the accept-escalation (10-min) and dispatch-SLA (hourly) sweeps will degrade to sequential scans as transaction volume grows without these.
 
 ---
 
