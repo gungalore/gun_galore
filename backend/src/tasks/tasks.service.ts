@@ -96,8 +96,28 @@ export class TasksService {
   //      and promoted the next occupant)
   //   5. Open AD_HOC auctions for any VACANT slot that doesn't have
   //      a currentAuction (catches cold-start + post-sale gaps)
+  // AUDIT M14 + M34 — outer try/catch so one bad slot doesn't poison
+  // every subsequent feature-tick pass; `recordCronRun('featured-tick')`
+  // in finally so the admin health dashboard sees it heartbeat.
+  // Without these guards a persistent error on a single slot would
+  // re-throw every minute, blocking ALL featured-slot lifecycle
+  // processing AND leaving the operator blind to the stall (the
+  // dashboard would show "never run").
   @Cron(CronExpression.EVERY_MINUTE)
   async featuredTick() {
+    try {
+      await this.featuredTickImpl();
+    } catch (err) {
+      this.logger.error(
+        `featuredTick failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('featured-tick');
+    }
+  }
+
+  private async featuredTickImpl() {
     const now = new Date();
     const cfg = await this.featured.getConfig();
 
@@ -181,22 +201,43 @@ export class TasksService {
     }
   }
 
+  // AUDIT M15 — every cron below wraps work in try/catch with
+  // recordCronRun in finally. A DB hiccup in the leading findMany
+  // would otherwise skip the heartbeat, leaving the admin health
+  // dashboard stale and masking outages.
+
   // Run every 10 minutes — expire pending/countered offers past their TTL.
   @Cron(CronExpression.EVERY_10_MINUTES)
   async expireOffers() {
     this.logger.debug('Running offer expiry cron');
-    await this.offersService.expireStale();
-    await this.recordCronRun('offer-expire');
+    try {
+      await this.offersService.expireStale();
+    } catch (err) {
+      this.logger.error(
+        `expireOffers failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('offer-expire');
+    }
   }
 
   // Run every minute — finalize auctions whose endTime has passed.
   @Cron(CronExpression.EVERY_MINUTE)
   async endAuctions() {
-    const result = await this.auctionsService.endStale();
-    if (result.processed > 0) {
-      this.logger.log(`Finalised ${result.processed} auction(s)`);
+    try {
+      const result = await this.auctionsService.endStale();
+      if (result.processed > 0) {
+        this.logger.log(`Finalised ${result.processed} auction(s)`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `endAuctions failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('auction-end');
     }
-    await this.recordCronRun('auction-end');
   }
 
   // Raffles no longer have an endTime — the cooling window is started
@@ -207,11 +248,19 @@ export class TasksService {
   // Run every 5 minutes — run draws for raffles past their cooling window.
   @Cron(CronExpression.EVERY_5_MINUTES)
   async runRaffleDraws() {
-    const result = await this.rafflesService.runReadyDraws();
-    if (result.processed > 0) {
-      this.logger.log(`Ran ${result.processed} raffle draw(s)`);
+    try {
+      const result = await this.rafflesService.runReadyDraws();
+      if (result.processed > 0) {
+        this.logger.log(`Ran ${result.processed} raffle draw(s)`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `runRaffleDraws failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('raffle-draw');
     }
-    await this.recordCronRun('raffle-draw');
   }
 
   // Phase E3 — every 5 minutes, fire the 48h auto-draw for any
@@ -222,21 +271,37 @@ export class TasksService {
   // and vice versa.
   @Cron(CronExpression.EVERY_5_MINUTES)
   async runSubscriberRaffleDraws() {
-    const result = await this.rafflesService.runSubscriberRaffleDraws();
-    if (result.drawn > 0) {
-      this.logger.log(`Drew ${result.drawn} subscriber raffle(s)`);
+    try {
+      const result = await this.rafflesService.runSubscriberRaffleDraws();
+      if (result.drawn > 0) {
+        this.logger.log(`Drew ${result.drawn} subscriber raffle(s)`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `runSubscriberRaffleDraws failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('subscriber-raffle-draw');
     }
-    await this.recordCronRun('subscriber-raffle-draw');
   }
 
   // Run every hour — expire stale claim windows and promote backup winners.
   @Cron(CronExpression.EVERY_HOUR)
   async expireRaffleClaims() {
-    const result = await this.rafflesService.expireClaims();
-    if (result.processed > 0) {
-      this.logger.log(`Expired ${result.processed} raffle claim(s)`);
+    try {
+      const result = await this.rafflesService.expireClaims();
+      if (result.processed > 0) {
+        this.logger.log(`Expired ${result.processed} raffle claim(s)`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `expireRaffleClaims failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('raffle-expire');
     }
-    await this.recordCronRun('raffle-expire');
   }
 
   // Run every 5 minutes — refresh the cached VerifyNow credit balance

@@ -145,7 +145,58 @@ export class UsersService {
   }
 
   async deleteByClerkId(clerkId: string): Promise<void> {
-    await this.prisma.user.deleteMany({ where: { clerkId } });
+    // H3 — Clerk user.deleted webhook handler. Hard delete fails for
+    // any user with transactions/ratings/offers (FK RESTRICT in the
+    // financial models), which would 500 the webhook and make Clerk
+    // retry forever AND leave the seller's PII on file indefinitely.
+    //
+    // This minimal interim fix wraps the delete in try/catch so the
+    // webhook always 200s. When delete is blocked by financial-row
+    // RESTRICTs, we PII-scrub the row in-place (POPIA erasure
+    // semantics) while preserving the financial history needed for
+    // SARS / dispute defence. A proper soft-delete column + DTO
+    // exclusion is tracked on the launch checklist.
+    try {
+      await this.prisma.user.deleteMany({ where: { clerkId } });
+    } catch (err) {
+      this.logger.warn(
+        `Hard delete of clerk user ${clerkId} blocked by FK constraints — falling back to PII scrub: ${(err as Error).message}`,
+      );
+      try {
+        await this.prisma.user.updateMany({
+          where: { clerkId },
+          data: {
+            // Strip the directly-identifying PII while keeping the row
+            // for FK targets (transactions, offers, ratings).
+            email: `deleted+${Date.now()}@gungalore.local`,
+            firstName: null,
+            lastName: null,
+            phone: null,
+            avatarUrl: null,
+            idNumberEncrypted: null,
+            addrBuilding: null,
+            addrStreet: null,
+            addrAddress2: null,
+            addrSuburb: null,
+            addrCity: null,
+            addrPostalCode: null,
+            addrProvince: null,
+            addrLat: null,
+            addrLng: null,
+            bankAccountHolder: null,
+            bankAccountNumber: null,
+            bankBranchCode: null,
+            bankName: null,
+            bankAccountType: null,
+            isBanned: true,
+          },
+        });
+      } catch (scrubErr) {
+        this.logger.error(
+          `PII scrub of clerk user ${clerkId} also failed: ${(scrubErr as Error).message}`,
+        );
+      }
+    }
   }
 
   // ─────────────────── Profile editing ─────────────────────────────

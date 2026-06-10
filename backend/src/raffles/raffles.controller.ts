@@ -16,7 +16,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { RafflesService } from './raffles.service';
@@ -34,25 +34,33 @@ import { buildPostalEntryPdf } from './postal-entry-pdf';
 // SkipThrottle on these reads: SSR (homepage, raffle detail) calls them
 // from localhost, and the shared 60 req/min bucket would trip → 404.
 @Controller('raffles')
-@SkipThrottle()
 export class RafflesPublicController {
   constructor(
     private readonly raffles: RafflesService,
     private readonly prisma: PrismaService,
   ) {}
 
+  // M17 — SkipThrottle moved off the controller. The class-level skip
+  // applied to the PDF generator too, turning it into a cheap DoS
+  // lever (unauthenticated, on-the-fly PDF render — easy to script).
+  // Plain reads still skip the global throttle; the PDF route gets its
+  // own modest per-IP cap.
+
   @Get()
+  @SkipThrottle()
   list() {
     return this.raffles.listActive();
   }
 
   @Get(':id')
+  @SkipThrottle()
   get(@Param('id') id: string) {
     return this.raffles.getPublic(id);
   }
 
   // Public verifiability — exposes seed + hash after the draw
   @Get(':id/proof')
+  @SkipThrottle()
   proof(@Param('id') id: string) {
     return this.raffles.getDrawProof(id);
   }
@@ -60,7 +68,11 @@ export class RafflesPublicController {
   // Print-ready postal-entry PDF. Public so anyone can pick up the
   // free-entry route without an account. Filename includes the raffle
   // reference so the operator can match envelopes back to the raffle.
+  // M17 — explicit per-IP cap: 6 generations / min is plenty for any
+  // legitimate use (a buyer + a few retries) and stops scripted
+  // PDF-storm DoS attempts.
   @Get(':id/postal-entry.pdf')
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
   async postalEntryPdf(@Param('id') id: string, @Res() res: Response) {
     const raffle = await this.prisma.raffle.findUnique({
       where: { id },

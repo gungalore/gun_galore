@@ -624,23 +624,17 @@ export default function AuctionPanel({
                 Cancel auto bid (keep current lead, stop auto-countering)
               </button>
             )}
-            {state.bidCount === 0 && state.buyNowPrice && (
-              <button
-                type="button"
-                onClick={() => setOpenModal('buyNow')}
-                disabled={submitting}
-                className="w-full py-3 rounded-[6px] text-sm font-medium"
-                style={{
-                  background: 'var(--red)',
-                  color: '#fff',
-                  border: 'none',
-                  cursor: submitting ? 'not-allowed' : 'pointer',
-                  opacity: submitting ? 0.6 : 1,
-                }}
-              >
-                Buy Now — {formatRand(state.buyNowPrice)}
-              </button>
-            )}
+            {/*
+              AUDIT M9 — Auction Buy-Now is temporarily disabled:
+              the backend buyNow() returns a price but does not reserve
+              the listing, and the subsequent /checkout/[listingId]
+              redirect 404s on a non-ACTIVE auction (BUY_NOW listings
+              are the only ones the checkout page currently handles).
+              Re-enable once the auction winner-pay path lands and is
+              proven to drive the buyer all the way through to paid.
+              Hidden rather than disabled to avoid teasing a non-working
+              feature; the inline help text below is also tightened.
+            */}
           </div>
           <HelpText>
             <strong style={{ color: 'var(--text-secondary)' }}>Place Bid</strong> sets one
@@ -648,14 +642,6 @@ export default function AuctionPanel({
             <strong style={{ color: 'var(--text-secondary)' }}>Auto Bid</strong> sets your
             maximum and we keep you in front automatically up to that
             ceiling — your max stays private.
-            {state.bidCount === 0 && state.buyNowPrice && (
-              <>
-                {' '}
-                <strong style={{ color: 'var(--text-secondary)' }}>Buy Now</strong> skips
-                bidding entirely at the seller&apos;s set price (only
-                available before the first bid lands).
-              </>
-            )}
           </HelpText>
 
           {error && (

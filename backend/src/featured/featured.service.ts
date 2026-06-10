@@ -520,12 +520,22 @@ export class FeaturedService {
         );
       }
 
-      // Charge Peach. If we can't charge, fail the bind (caller may
-      // retry or pick a different listing).
-      // NOTE: requires a Peach payment method already on file via a
-      // prior tokenisation. For initial rollout we just call refund-
-      // path-style — the bid is recorded as paid, real Peach wiring
-      // can land in a follow-up. Mark as paid optimistically.
+      // AUDIT H1 — until a real Stitch (or successor gateway) charge
+      // is wired here, the binding marks the bid PAID with a fabricated
+      // id ("featured-<bidId>") which (a) gives away featuring for
+      // free, (b) inflates the admin revenue dashboard with phantom
+      // income, and (c) makes the force-evict path try to refund a
+      // gateway payment that was never captured.
+      //
+      // Until real charging lands, refuse binding in production so we
+      // can't accidentally hand out free homepage featuring. In
+      // non-prod we keep the synthetic-id path so the lifecycle is
+      // still exercisable end-to-end. Tracked on LAUNCH-CHECKLIST.md.
+      if (process.env.NODE_ENV === 'production') {
+        throw new BadRequestException(
+          'Featured-slot binding is temporarily disabled while the new payment integration is being wired. Please try again later or contact support.',
+        );
+      }
       const peachPaymentId = `featured-${winningBid.id}`;
       // Phase E2 — collect the discounted amount (snapshot on the
       // bid). Defaults to face amount when discountPercent=0.

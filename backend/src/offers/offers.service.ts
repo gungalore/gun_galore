@@ -126,6 +126,16 @@ export class OffersService {
     if (offer.status !== OfferStatus.PENDING) {
       throw new BadRequestException('Offer is not pending');
     }
+    // M8 — re-check listing status at accept time. The listing could
+    // have sold via another offer or buy-now since the seller saw their
+    // SMS/notification. Without this, the seller would "accept" an
+    // offer on a gone item and the buyer would get a misleading
+    // "accepted — pay now" SMS that fails later at the reserve step.
+    if (listing.status !== 'ACTIVE') {
+      throw new BadRequestException(
+        'This listing is no longer available — it may already have sold or been cancelled.',
+      );
+    }
 
     const updated = await this.prisma.offer.update({
       where: { id: offerId },

@@ -43,6 +43,61 @@ const nextConfig = {
       },
     ],
   },
+  // Security headers (audit H9 + H10 + HDR-4). Applied to every route.
+  // CSP intentionally only sets `frame-ancestors` for now — a full
+  // script-src / connect-src CSP needs per-environment tuning (Clerk,
+  // Cloudinary, Stitch checkout origin, Anthropic) and Report-Only
+  // observation before enforcement. The frame-ancestors directive
+  // alone gives us anti-clickjacking and is safe to ship today.
+  //
+  // The Cache-Control header overrides Next's default 1-year `s-maxage`
+  // on prerendered HTML (audit H10) — that default risked a shared
+  // cache pinning "Coming Soon" / outdated legal copy for a year. We
+  // keep static asset caching (/_next/static/*) untouched since those
+  // are content-hashed and safe to cache aggressively.
+  async headers() {
+    const securityHeaders = [
+      // HSTS is set at the CDN edge (Cloudflare) per audit H8 — kept
+      // out of here so we don't accidentally override the edge config.
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      // Sensible default — apps can request camera/geolocation/etc. via
+      // explicit user gesture (covered by the browser permission prompt
+      // even when the policy is empty), so we deny everything else.
+      {
+        key: 'Permissions-Policy',
+        value:
+          'camera=(self), geolocation=(self), microphone=(), payment=(self), usb=(), magnetometer=(self), accelerometer=(self), gyroscope=(self)',
+      },
+      { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+      {
+        key: 'Content-Security-Policy',
+        value: "frame-ancestors 'none'",
+      },
+    ];
+    return [
+      {
+        source: '/:path*',
+        headers: securityHeaders,
+      },
+      {
+        // Cap shared-cache lifetime for HTML/SSR routes so a brief edge
+        // miscache (or a stale Cloudflare Cache Rule) cannot pin
+        // coming-soon / legal copy indefinitely. Static fingerprinted
+        // assets under /_next/static/* are matched LAST by Next.js and
+        // keep their default immutable cache; only non-static paths
+        // pick up this Cache-Control.
+        source: '/((?!_next/static|_next/image|favicon).*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, s-maxage=300, stale-while-revalidate=86400',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 // PWA service worker wiring via @serwist/next.
@@ -63,7 +118,13 @@ const nextConfig = {
 const withSerwist = withSerwistInit({
   swSrc: 'app/sw.ts',
   swDest: 'public/sw.js',
-  reloadOnOnline: true,
+  // H7 — DO NOT hard-reload on reconnect. Serwist's `online` listener
+  // would trigger a full `location.reload()` the instant signal returns,
+  // wiping in-progress React state — KYC selfie/ID capture, checkout
+  // form, listing photos. The connection banner in app/layout.tsx
+  // already shows a non-destructive "back online" hint, which is the
+  // correct UX on a mobile-first PWA for shooters on flaky signal.
+  reloadOnOnline: false,
   // SW is built only in production. Two reasons to disable in dev:
   //   1. Turbopack (Next 16 dev) doesn't run the Webpack-based Serwist
   //      plugin; explicit disable silences the warning.

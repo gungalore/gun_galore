@@ -989,22 +989,27 @@ export class ZohoBooksService {
   async createFeaturedSlotInvoice(bidId: string): Promise<void> {
     if (!this.isEnabled()) return;
 
-    const bid = await this.prisma.featuredSlotBid.findUnique({
-      where: { id: bidId },
-      include: {
-        bidder: { select: { id: true, email: true } },
-        auction: { select: { slotId: true } },
-      },
-    });
-    if (!bid) return;
-    if (bid.zohoInvoiceId) return;
-    // Phase E2 — receipt uses the cents we actually CHARGED
-    // (post-discount), falling back to the face bid for legacy
-    // rows from before the discount fields existed.
-    const billableCents = bid.chargedAmountCents ?? bid.amountCents;
-    if (billableCents <= 0) return;
-
+    // M16 — the entire body runs inside try so the leading findUnique +
+    // related lookups can't throw past the bare void caller in
+    // featured.service.ts. Previously the findUnique sat OUTSIDE the
+    // try block, so a DB hiccup there became an unhandled rejection
+    // on a fire-and-forget call site.
     try {
+      const bid = await this.prisma.featuredSlotBid.findUnique({
+        where: { id: bidId },
+        include: {
+          bidder: { select: { id: true, email: true } },
+          auction: { select: { slotId: true } },
+        },
+      });
+      if (!bid) return;
+      if (bid.zohoInvoiceId) return;
+      // Phase E2 — receipt uses the cents we actually CHARGED
+      // (post-discount), falling back to the face bid for legacy
+      // rows from before the discount fields existed.
+      const billableCents = bid.chargedAmountCents ?? bid.amountCents;
+      if (billableCents <= 0) return;
+
       const contactId = await this.ensureContact(bid.bidder.id, bid.bidder.email);
       if (!contactId) {
         throw new Error('Could not resolve Books contact for winning bidder');

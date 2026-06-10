@@ -13,9 +13,9 @@
 //     30-day max. Same reasoning — URLs are fingerprinted.
 //   • Brand static assets in /public (logo, manifest, icons) —
 //     stale-while-revalidate. Updates land within a tab refresh.
-//   • HTML pages, /api/*, anything containing 'clerk' or 'peach' —
-//     deliberately NOT cached. Network-only. Prices, auctions, bids,
-//     and auth must never go stale.
+//   • HTML pages, /api/*, anything containing 'clerk' — deliberately
+//     NOT cached. Network-only. Prices, auctions, bids, and auth must
+//     never go stale.
 //   • Offline fallback page at /offline for navigations that fail.
 //
 // Kill switch: setting NEXT_PUBLIC_DISABLE_PWA=true at build time
@@ -42,11 +42,12 @@ declare global {
 declare const self: ServiceWorkerGlobalScope;
 
 // CRITICAL: bypass the service worker entirely for admin routes,
-// backend API, Clerk, and Peach. These must always hit the network
-// fresh — admin data is real-time, API responses contain auth state,
-// Clerk does its own dance with cookies, Peach is a payment provider.
-// Putting these BEFORE every other rule (including defaultCache and
-// the navigation fallback) ensures nothing else can intercept them.
+// backend API, Clerk, and the payment gateway hosted pages. These must
+// always hit the network fresh — admin data is real-time, API responses
+// contain auth state, Clerk does its own dance with cookies, and the
+// gateway hosted pages must never be served from cache. Putting these
+// BEFORE every other rule (including defaultCache and the navigation
+// fallback) ensures nothing else can intercept them.
 const networkOnlyRoutes: RuntimeCaching[] = [
   {
     matcher: ({ url }) => url.pathname.startsWith('/admin'),
@@ -163,7 +164,15 @@ const serwist = new Serwist({
             // live quota state). Falling through to /offline misleads
             // users into waiting instead of reconnecting. Error
             // visibly so the browser's "you're offline" UI shows.
-            !path.startsWith('/ask-gg')
+            !path.startsWith('/ask-gg') &&
+            // M23 — KYC verify needs the camera + VerifyNow + the
+            // KYC API endpoints. Same rationale as Ask GG: serving
+            // /offline here misleads sellers who DO have signal but
+            // hit a brief blip mid-capture. Sign-in / sign-up rely
+            // on Clerk being reachable for the same reason.
+            !path.startsWith('/kyc') &&
+            !path.startsWith('/sign-in') &&
+            !path.startsWith('/sign-up')
           );
         },
       },

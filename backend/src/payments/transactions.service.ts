@@ -83,12 +83,27 @@ export class TransactionsService {
     }
 
     // ---- Offer-based checkout (TAKE_A_SHOT) ----
-    let offerRecord: { id: string; offerAmount: number; counterAmount: number | null; buyerId: string; status: string } | null = null;
+    let offerRecord: { id: string; offerAmount: number; counterAmount: number | null; buyerId: string; status: string; listingId: string } | null = null;
     if (dto.offerId) {
       const rawOffer = await this.prisma.offer.findUnique({ where: { id: dto.offerId } });
       if (!rawOffer) throw new NotFoundException('Offer not found');
       if (rawOffer.buyerId !== buyer.id) throw new ForbiddenException('Offer does not belong to you');
       if (rawOffer.status !== 'ACCEPTED') throw new BadRequestException('Offer is not accepted');
+      // C1 — HARD BIND: the offer's listing MUST match the listing being
+      // checked out. Without this an attacker with any accepted offer on
+      // a cheap listing could submit checkout pointing at a DIFFERENT,
+      // more expensive listing, pay the cheap-offer amount, and steal
+      // the expensive item (it would be marked SOLD on the other seller).
+      // This is the offer→listing binding the audit identified as
+      // CRITICAL price-substitution / inventory theft.
+      if (rawOffer.listingId !== dto.listingId) {
+        this.logger.error(
+          `Offer→listing binding REJECTED: offer ${rawOffer.id} is on listing ${rawOffer.listingId}, not ${dto.listingId} (buyer ${buyer.id}) — possible price-substitution attempt`,
+        );
+        throw new BadRequestException(
+          'This offer is not on the listing you are trying to buy.',
+        );
+      }
       if (listing.listingType !== 'TAKE_A_SHOT') throw new BadRequestException('Offer checkout requires a TAKE_A_SHOT listing');
       offerRecord = rawOffer;
     } else {
@@ -108,6 +123,17 @@ export class TransactionsService {
       listing.shippingMethods,
       dto.shippingMethod,
     );
+
+    // M33 — 18+/competency attestation on firearm checkouts. Required
+    // by the audit + SAPS regulatory framework. Refuse the transaction
+    // server-side if the flag is not explicitly true on a firearm
+    // listing — the frontend gate is convenience UX, this is the
+    // authoritative check. Non-firearm checkouts ignore the flag.
+    if (listing.isFirearm && dto.firearmAttestation18Plus !== true) {
+      throw new BadRequestException(
+        'You must confirm you are over 18 and (where applicable) hold the relevant SAPS competency before buying a firearm.',
+      );
+    }
 
     // If dealer transfer, verify the dealer exists and is active
     if (dto.shippingMethod === 'DEALER_TRANSFER' && dto.dealerId) {
@@ -219,6 +245,12 @@ export class TransactionsService {
         // this column is set before releasing funds — defence in depth.
         privateArrangeAcceptedAt:
           dto.shippingMethod === 'PRIVATE_ARRANGE' && dto.privateArrangeConsent
+            ? new Date()
+            : null,
+        // M33 — durable record of the buyer's 18+/competency
+        // attestation. Only set on firearm checkouts (validated above).
+        firearmAttestationAcceptedAt:
+          listing.isFirearm && dto.firearmAttestation18Plus === true
             ? new Date()
             : null,
       },
@@ -611,9 +643,31 @@ export class TransactionsService {
     // being stuck without a refund AND the listing reactivated.
     // peachPaymentId holds the Stitch payment id (column reused during
     // the Peach→Stitch transition).
-    const refundRes = tx.peachPaymentId
-      ? await this.stitch.refundPayment(tx.peachPaymentId, tx.buyerTotal)
-      : { success: true, resultCode: 'NO_PAYMENT_ID' };
+    //
+    // PAY-8 — if the tx has NO stored payment id we MUST NOT silently
+    // flip to REFUNDED (the buyer was charged; no payment was reversed).
+    // This previously diverged from the safer admin path. Treat it as a
+    // hard failure that raises an admin alert for manual reconciliation.
+    if (!tx.peachPaymentId) {
+      this.logger.error(
+        `Reject failed for ${transactionId}: paid tx has NO payment id — cannot refund; raising admin alert`,
+      );
+      await this.prisma.adminAlert.create({
+        data: {
+          type: 'SALE_REJECT_NO_PAYMENT_ID',
+          referenceId: transactionId,
+          urgent: true,
+          context: `Seller tried to reject sale ${transactionId}; the transaction is marked paid but has no stored gateway payment id. Manual refund + manual status flip required.`,
+        },
+      });
+      throw new BadRequestException(
+        'Refund could not be issued automatically — support has been alerted and will resolve manually within 24h.',
+      );
+    }
+    const refundRes = await this.stitch.refundPayment(
+      tx.peachPaymentId,
+      tx.buyerTotal,
+    );
 
     if (!refundRes.success) {
       this.logger.warn(

@@ -95,6 +95,30 @@ export class AskGgService {
     const imageUrls = (input.imageUrls ?? []).filter(
       (u) => typeof u === 'string' && u.length > 0,
     );
+    // M13 — image-host allowlist. Without this, a user could pass any
+    // arbitrary URL into imageUrls and the backend's Anthropic
+    // integration would dereference it on their behalf — a server-side
+    // request forgery primitive (probe internal networks, force
+    // outbound traffic) and a vector for hosting malicious payloads
+    // that Anthropic then fetches. Restrict to https + our own
+    // Cloudinary tenant only; that's where /ask-gg/uploads writes.
+    const ALLOW_HOSTS = new Set(['res.cloudinary.com']);
+    for (const url of imageUrls) {
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        throw new BadRequestException('Image URL is not a valid URL.');
+      }
+      if (parsed.protocol !== 'https:') {
+        throw new BadRequestException('Image URL must be https.');
+      }
+      if (!ALLOW_HOSTS.has(parsed.hostname)) {
+        throw new BadRequestException(
+          'Image URL must be hosted on Cloudinary — upload via /ask-gg/uploads first, then attach the returned URL.',
+        );
+      }
+    }
     // Phase E3 — per-tier per-request cap. PRO=10, MEMBER/FREE=5.
     const photoCap = maxPhotosPerRequest(user.subscriptionTier);
     if (imageUrls.length > photoCap) {

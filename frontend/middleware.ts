@@ -105,7 +105,14 @@ export default clerkMiddleware(async (auth, request) => {
       isComingSoonBypassRoute(request) || isTokenAuthedPage || hasBypassCookie;
 
     if (!allowed) {
-      return NextResponse.rewrite(new URL('/coming-soon', request.url));
+      const res = NextResponse.rewrite(new URL('/coming-soon', request.url));
+      // M31 — prevent Googlebot indexing the coming-soon page as the
+      // homepage. Without this, every gated route currently returns
+      // 200 + content with no robots directive, so the search index
+      // will record "Coming Soon" as the canonical site for every URL
+      // — only repaired after a post-launch recrawl.
+      res.headers.set('X-Robots-Tag', 'noindex, nofollow');
+      return res;
     }
   }
 

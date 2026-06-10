@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { UseInterceptors } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { ClerkOrTokenGuard } from '../auth/clerk-or-token.guard';
@@ -86,9 +87,24 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
-  // Verify Peach result (called from result page)
+  // Verify Stitch payment result (called from /checkout/complete)
   // ---------------------------------------------------------------
+  // INTENTIONALLY UNAUTHENTICATED — the return-from-gateway flow has no
+  // Clerk session (SMS-token buyers were never signed in) and no token
+  // (the CHECKOUT token wasn't passed back). Security relies on:
+  //   1. The endpoint re-fetches authoritative payment status from
+  //      Stitch using the STORED payment id on the transaction — an
+  //      attacker controlling only the URL's txId cannot fabricate a
+  //      "paid" state.
+  //   2. markPaid binds the exact amount.
+  //   3. Idempotent — already-paid txs return immediately.
+  //
+  // What an attacker COULD do without rate limiting: enumerate
+  // transaction IDs and trigger confirm side-effects (SMS to seller,
+  // PRIVATE_ARRANGE immediate payout) for orders the buyer paid but
+  // didn't return on. M4 — narrow per-IP throttle bounds that.
   @Post(':id/verify-result')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   verifyResult(
     @Param('id') id: string,
     @Body('resourcePath') resourcePath: string,
@@ -171,6 +187,21 @@ export class TransactionsController {
       throw new BadRequestException(
         'All three photos are required: saps534, stockRegister, firearmSerial.',
       );
+    }
+    // M12 — payload-level file-type validation. Without this, multer
+    // would happily accept arbitrary content types (SVG / HTML / shell
+    // script with an image extension), passing them on to Claude
+    // vision + Cloudinary. Restrict to common photo types only; mirror
+    // the bound used in the ask-gg uploads endpoint. Reject the whole
+    // submission on any single file failing — these are linked
+    // payout-gating evidence; one bad file means the seller resubmits.
+    const TYPE_RE = /^image\/(jpeg|png|webp|heic|heif)$/;
+    for (const f of [saps534, stockRegister, firearmSerial]) {
+      if (!TYPE_RE.test(f.mimetype)) {
+        throw new BadRequestException(
+          `Unsupported file type "${f.mimetype}" — please upload JPEG, PNG, WebP or HEIC photos only.`,
+        );
+      }
     }
     // Dealer contact details captured at upload time — these get
     // surfaced to the buyer on approval so they know where the

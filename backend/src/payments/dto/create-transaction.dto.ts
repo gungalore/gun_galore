@@ -102,4 +102,16 @@ export class CreateTransactionDto {
       'Private arrangement requires explicit consent — tick the boxes on the checkout screen.',
   })
   privateArrangeConsent?: boolean;
+
+  // M33 — 18+/competency attestation for firearm checkouts. The flag
+  // must be explicitly `true` (not `undefined`, not `false`) when the
+  // listing is a firearm. The service re-checks `listing.isFirearm`
+  // server-side and refuses the transaction if the flag isn't true on
+  // a firearm listing — defence in depth against the frontend gate
+  // being bypassed. Stored as `firearmAttestationAcceptedAt` on the
+  // Transaction so we have durable evidence the buyer affirmed at
+  // checkout (dispute defence + SAPS audit trail).
+  @IsOptional()
+  @IsBoolean()
+  firearmAttestation18Plus?: boolean;
 }

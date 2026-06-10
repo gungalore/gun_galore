@@ -62,6 +62,9 @@ export function OfferCheckoutForm({
 
   const [method, setMethod] = useState<ShippingMethod>(isFirearm ? 'DEALER_TRANSFER' : 'PUDO');
   const [selectedLocker, setSelectedLocker] = useState<PudoLocker | null>(null);
+  // M33 — 18+/competency attestation. Backend hard-refuses firearm
+  // transactions without this flag === true.
+  const [firearmAttestation, setFirearmAttestation] = useState(false);
   // Dealer-transfer self-arrange consent — see comment in
   // /checkout/[listingId]/checkout-form.tsx. Same pattern: a single
   // checkbox the buyer ticks to acknowledge they'll choose their
@@ -86,7 +89,11 @@ export function OfferCheckoutForm({
   const allowedMethods: ShippingMethod[] = isFirearm ? ['DEALER_TRANSFER'] : ['PUDO', 'TCG'];
 
   function buildPayload() {
-    const base = { listingId, offerId, shippingMethod: method };
+    // M33 — firearm offers must carry the attestation flag.
+    const attestation = isFirearm
+      ? { firearmAttestation18Plus: firearmAttestation }
+      : {};
+    const base = { listingId, offerId, shippingMethod: method, ...attestation };
     if (method === 'PUDO') return { ...base, pudoPickupLockerId: selectedLocker?.lockerId };
     if (method === 'TCG') return { ...base, deliveryAddress: tcgAddress };
     // No dealerId — see /checkout/[listingId]/checkout-form.tsx for
@@ -97,6 +104,8 @@ export function OfferCheckoutForm({
   }
 
   function isReady() {
+    // M33 — firearm offers gated on the attestation checkbox.
+    if (isFirearm && !firearmAttestation) return false;
     if (method === 'PUDO') return !!selectedLocker;
     if (method === 'TCG') {
       return !!(
@@ -267,6 +276,61 @@ export function OfferCheckoutForm({
           accepted={dtConsentAccepted}
           onChange={setDtConsentAccepted}
         />
+      )}
+
+      {isFirearm && (
+        <div
+          className="rounded-[6px] p-4 text-sm space-y-3"
+          style={{
+            background: 'rgba(200,16,46,0.06)',
+            border: '0.5px solid var(--red)',
+            color: 'var(--text-primary)',
+            lineHeight: 1.55,
+          }}
+        >
+          <p
+            className="text-xs uppercase"
+            style={{
+              color: 'var(--red)',
+              letterSpacing: '0.05em',
+              fontWeight: 600,
+            }}
+          >
+            Firearm purchase — required confirmation
+          </p>
+          <p style={{ color: 'var(--text-secondary)' }}>
+            South African firearms law requires every buyer to be at
+            least 18 and to hold the relevant SAPS competency for the
+            firearm being bought (where competency applies). You will
+            be unable to collect the firearm at the dealer without the
+            correct paperwork and competency on the day.
+          </p>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={firearmAttestation}
+              onChange={(e) => setFirearmAttestation(e.target.checked)}
+              style={{ marginTop: 3, accentColor: 'var(--red)' }}
+            />
+            <span style={{ color: 'var(--text-secondary)' }}>
+              I confirm I am over 18 and I am legally entitled to own /
+              collect this firearm under South African law, including
+              holding any required SAPS competency for the calibre and
+              type. I understand that submitting this confirmation
+              dishonestly may be a criminal offence.
+            </span>
+          </label>
+          <p
+            className="text-xs"
+            style={{
+              color: firearmAttestation ? '#00a03c' : 'var(--text-tertiary)',
+            }}
+          >
+            {firearmAttestation
+              ? '✓ Confirmation recorded. You can proceed to payment below.'
+              : 'Tick the box to enable payment.'}
+          </p>
+        </div>
       )}
 
       <button

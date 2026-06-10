@@ -30,7 +30,14 @@ function CheckoutCompleteInner() {
     }
 
     if (!transactionId) {
-      router.replace('/');
+      // AUDIT M21 — DON'T bounce to "/" silently. A buyer who paid via
+      // Stitch but came back with no txId (Safari private / partitioned
+      // localStorage, or storage wiped between submit and return)
+      // would land on the homepage with no way to find their order.
+      // Surface the error state instead — the order is being settled
+      // by the (deferred) reconcile cron, and the buyer can find it
+      // under My Orders once it reconciles.
+      setStatus('error');
       return;
     }
     const txId = transactionId;

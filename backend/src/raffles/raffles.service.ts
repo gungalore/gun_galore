@@ -993,17 +993,36 @@ export class RafflesService {
           where: { raffleId: w.raffleId, position: w.position + 1 },
         });
         if (next?.userId) {
+          // AUDIT H5 — RESET the promoted backup's claimDeadline.
+          // At draw time every position shares position-1's deadline,
+          // so a backup promoted after the primary forfeits is
+          // already past deadline and gets force-forfeited on the
+          // very next cron pass. Reset to a fresh tier-correct window
+          // BEFORE notifying so the email shows the real deadline.
+          const raffle = await this.prisma.raffle.findUnique({
+            where: { id: w.raffleId },
+            select: { itemValueCents: true },
+          });
+          const tier = tierForValue(raffle?.itemValueCents ?? 1000);
+          const freshDeadline = new Date(
+            Date.now() + claimWindowDays(tier) * 24 * 60 * 60 * 1000,
+          );
+          const updatedNext = await this.prisma.raffleWinner.update({
+            where: { id: next.id },
+            data: { claimDeadline: freshDeadline },
+          });
           const user = await this.prisma.user.findUnique({ where: { id: next.userId } });
           if (user?.email) {
             void this.notifications.raffleBackupPromoted(
               user.email,
               w.raffleId,
-              next.claimDeadline,
+              updatedNext.claimDeadline,
             );
           }
           await this.recordEvent(w.raffleId, 'BACKUP_PROMOTED', {
             from: w.position,
             to: next.position,
+            newDeadline: updatedNext.claimDeadline.toISOString(),
           });
         } else {
           await this.prisma.raffle.update({

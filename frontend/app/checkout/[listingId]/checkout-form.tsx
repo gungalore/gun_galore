@@ -187,6 +187,12 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     if (method !== 'PRIVATE_ARRANGE') setPaConsentAccepted(false);
   }, [method]);
 
+  // AUDIT M33 — 18+/competency attestation for firearm checkouts. The
+  // backend HARD-refuses any firearm transaction without the explicit
+  // `true` flag, so this gate is mirrored on Pay/isReady. Non-firearm
+  // checkouts ignore this state.
+  const [firearmAttestation, setFirearmAttestation] = useState(false);
+
   // "Ship to a different address" toggle. Off by default — the
   // delivering-to chip / saved-address LockerPicker uses the profile
   // values. When ON, we render the inline address-capture form and
@@ -412,7 +418,14 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   }
 
   function buildPayload() {
-    const base = { listingId: listing.id, shippingMethod: method };
+    // M33 — for firearm listings the backend HARD-refuses any
+    // transaction without firearmAttestation18Plus === true. We
+    // include it on every payload (harmless for non-firearm) so we
+    // never accidentally regress this gate.
+    const attestation = listing.isFirearm
+      ? { firearmAttestation18Plus: firearmAttestation }
+      : {};
+    const base = { listingId: listing.id, shippingMethod: method, ...attestation };
     if (method === 'PUDO') return { ...base, pudoPickupLockerId: selectedLocker?.lockerId };
     if (method === 'TCG') {
       // Effective address: captureAddr when toggle is on OR there's
@@ -468,6 +481,8 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     // (the inline BuyerPhoneCapture block surfaces above when missing).
     // No phone = no dispatch SMS = lost parcel risk.
     if (meLoaded && me && !me.phone) return false;
+    // M33 — firearm buyers must affirm 18+/competency.
+    if (listing.isFirearm && !firearmAttestation) return false;
 
     // PUDO + TCG also need a successful quote — the buyer can't pay
     // until we know what the shipping line costs. DEALER_TRANSFER and
@@ -1104,6 +1119,16 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
         <PrivateArrangeConsent
           accepted={paConsentAccepted}
           onChange={setPaConsentAccepted}
+        />
+      )}
+
+      {/* M33 — 18+/competency attestation. Required by the backend
+          for every firearm transaction. Rendered last in the consent
+          stack so it's the buyer's final affirmation before Pay. */}
+      {listing.isFirearm && (
+        <FirearmAttestation
+          accepted={firearmAttestation}
+          onChange={setFirearmAttestation}
         />
       )}
 
@@ -1776,6 +1801,78 @@ function PrivateArrangeConsent({
         {allOk
           ? '✓ Consent recorded. You can proceed to payment below.'
           : 'Tick both boxes and type the phrase to enable payment.'}
+      </p>
+    </div>
+  );
+}
+
+// AUDIT M33 — single-checkbox firearm attestation. The backend HARD-
+// refuses any firearm transaction without `firearmAttestation18Plus:
+// true`, so this is both a regulatory consent and a server-enforced
+// gate. The wording captures the two things SA firearms law cares
+// about at the point of sale: minimum age and (where applicable)
+// competency for the calibre/type being bought.
+function FirearmAttestation({
+  accepted,
+  onChange,
+}: {
+  accepted: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div
+      className="rounded-[6px] p-4 text-sm space-y-3"
+      style={{
+        background: 'rgba(200,16,46,0.06)',
+        border: '0.5px solid var(--red)',
+        color: 'var(--text-primary)',
+        lineHeight: 1.55,
+      }}
+    >
+      <p
+        className="text-xs uppercase"
+        style={{
+          color: 'var(--red)',
+          letterSpacing: '0.05em',
+          fontWeight: 600,
+        }}
+      >
+        Firearm purchase — required confirmation
+      </p>
+
+      <p style={{ color: 'var(--text-secondary)' }}>
+        South African firearms law requires every buyer to be at least
+        18 and to hold the relevant SAPS competency for the firearm
+        being bought (where competency applies). You will be unable to
+        collect the firearm at the dealer without the correct paperwork
+        and competency on the day.
+      </p>
+
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={accepted}
+          onChange={(e) => onChange(e.target.checked)}
+          style={{ marginTop: 3, accentColor: 'var(--red)' }}
+        />
+        <span style={{ color: 'var(--text-secondary)' }}>
+          I confirm I am over 18 and I am legally entitled to own /
+          collect this firearm under South African law, including
+          holding any required SAPS competency for the calibre and
+          type. I understand that submitting this confirmation
+          dishonestly may be a criminal offence.
+        </span>
+      </label>
+
+      <p
+        className="text-xs"
+        style={{
+          color: accepted ? '#00a03c' : 'var(--text-tertiary)',
+        }}
+      >
+        {accepted
+          ? '✓ Confirmation recorded. You can proceed to payment below.'
+          : 'Tick the box to enable payment.'}
       </p>
     </div>
   );
