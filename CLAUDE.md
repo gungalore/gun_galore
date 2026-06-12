@@ -29,6 +29,12 @@ order. Do not skip steps. Report the result of each step before
 moving to the next. If any step fails, STOP immediately, report
 exactly what failed, and wait for the user's instruction.
 
+**Deploy branch (LOCKED).** Production tracks
+`feat/hunt-ballistics-range-estimator`, **NOT `main`**. Do NOT
+`git checkout main`, do NOT merge into main, do NOT push to main.
+Push the current feature branch and `git pull --ff-only` it on
+prod. (`main` is intentionally stale until a future re-baseline.)
+
 **NOTE ON pm2 COMMANDS**
 Always use `pm2 reload [service] --update-env` for deployments.
 This is a zero-downtime rolling restart — the old process keeps
@@ -54,27 +60,37 @@ committed), `git commit -m "[clear, specific message describing the
 session's changes]"`.
 
 **STEP 4 — PUSH TO GITHUB**
-`git checkout main`, `git merge [the working branch]`,
-`git push origin main`. Confirm the push succeeded.
+`git push origin feat/hunt-ballistics-range-estimator`.
+Confirm the push succeeded. Do NOT touch main.
 
 **STEP 5 — DEPLOY TO SERVER**
 SSH alias: `ssh gungalore` (server IP `139.84.231.220`, user
-`gungalore`). Project lives at `/home/gungalore/app`, pm2 services
-are named `gungalore-backend` and `gungalore-frontend`.
+`gungalore`, Vultr VPS). Project lives at `/home/gungalore/app`,
+pm2 services are named `gungalore-backend` and `gungalore-frontend`.
 
 If prod has uncommitted local changes (legacy from the earlier
 SCP-staged workflow), stash them first so `git pull` doesn't
-abort. They're already in main from the dev commits — safe to
-discard via stash.
+abort. They're already in the deployed branch from the dev
+commits — safe to discard via stash.
+
+**SCHEMA-DRIFT TRAP (DO NOT FORGET).** Three services (Ask GG KB,
+reloading-manual FTS, listings FTS) add `tsvector GENERATED` columns
++ GIN indexes at boot via raw DDL. These columns are NOT in
+`schema.prisma`. Running `npx prisma db push --accept-data-loss`
+will drop them and the next boot won't recreate the indexes
+cleanly. **For routine deploys, do NOT run db push.** Only run
+`npx prisma generate` (regenerates the client from the existing
+schema, no DB writes). When schema.prisma genuinely changes, write
+a real migration and use `npx prisma migrate deploy`. See
+`[BC-SCHEMA-DRIFT]` in LAUNCH-CHECKLIST.md.
 
 ```
 cd /home/gungalore/app
-git stash --include-untracked          # parks any legacy local edits
-git pull origin main
+git stash --include-untracked            # parks any legacy local edits
+git pull --ff-only origin feat/hunt-ballistics-range-estimator
 cd backend
-npm install                            # in case package.json shifted
-npx prisma db push --accept-data-loss  # tsvector GENERATED cols get re-created by onModuleInit
-npx prisma generate                    # MANDATORY — db push doesn't always regenerate, and stale client = build fails
+npm install                              # in case package.json shifted
+npx prisma generate                      # regenerate client only — NEVER db push (tsvector trap)
 npm run build
 pm2 reload gungalore-backend --update-env
 sleep 5
@@ -146,11 +162,14 @@ unfinished modules dark in production (see Feature Flags).
 - **Email:** Resend
 - **KYC:** VerifyNow
 - **Shipping:** Pudo (lockers) + The Courier Guy / TCG (door)
-- **Payments:** Peach Payments (only — see Payments)
-- **AI:** Anthropic API (listing moderation, skill questions,
-  listing-quality scoring)
-- **Accounting:** Odoo (self-hosted, Community edition)
-- **Hosting:** Hetzner VPS — Nginx + PM2
+- **Payments:** Stitch Express (only — see Payments). Hosted
+  payment-links + Svix webhooks. (Migrated off Peach 2026-06; do
+  NOT reintroduce Peach.)
+- **AI:** Anthropic API (listing moderation, Ask GG, ballistic
+  bullet lookup, listing-quality scoring)
+- **Accounting:** Zoho Books (live); Odoo planning is archived
+- **Hosting:** Vultr VPS at `139.84.231.220` — Nginx + PM2 (NOT
+  Hetzner — operator has corrected this multiple times)
 - **Error monitoring:** Sentry
 - **Uptime monitoring:** UptimeRobot
 
@@ -159,18 +178,23 @@ unfinished modules dark in production (see Feature Flags).
 
 ---
 
-## Server Layout (Hetzner)
+## Server Layout (Vultr)
 
-- App lives at `/var/www/gun_galore_project`
+- App lives at `/home/gungalore/app` on the Vultr VPS
+  (`139.84.231.220`). SSH via the `gungalore` alias only —
+  `ssh gungalore` works, `ssh gungalore@139.84.231.220` bypasses
+  the operator's local key config and prompts for a password they
+  don't have.
 - The marketing landing page at `/var/www/html` is separate —
-  **never touch it**
-- Production: `gungalore.co.za` / `api.gungalore.co.za`
-- Staging: `staging.gungalore.co.za` / `api-staging.gungalore.co.za`
-- Short-link domain: `gg.co.za` (for SMS action links)
-
-Build locally during the rebuild. Deploy to the server only when
-end-to-end testing starts. Set up proper, separate staging and
-production environments before launch.
+  **never touch it**.
+- Production: `gungalore.co.za` / `api.gungalore.co.za`.
+- Ballistic Calculator is its own app on the same VPS — code lives
+  at `~/ballistics-app/` (own Postgres DB, own pm2 services, own
+  Nginx block at `ballistics.gungalore.co.za`). The marketplace
+  stays the marketplace; ballistics is independent.
+- Short-link domain: `gg.co.za` (for SMS action links).
+- Staging not currently provisioned — work hits prod after local
+  build + type-check passes. Re-evaluate before public launch.
 
 ---
 
@@ -232,7 +256,7 @@ never printed.
    Marketing).
 8. Feature flags stay `false` until a module is fully ready.
 9. **No wallet.** There is no user balance, stored credit, or
-   ledger. All money moves per-transaction through Peach.
+   ledger. All money moves per-transaction through Stitch.
 10. **No public seller profile page** and **no dealer directory
     page.** Seller reputation surfaces only as the tier badge and
     rating on the listing itself.
@@ -279,8 +303,9 @@ stabilised before the next.
 3. **Shipping** — Pudo locker API (L2L, ~2,700 lockers, 24h cache),
    TCG door API, dealer-transfer routing for firearms, buyer
    delivery-address collection, address standardisation.
-4. **Payments** — Peach embedded checkout, `PaymentStatus` flow,
-   commission calculation, seller payouts, penalties.
+4. **Payments** — Stitch Express hosted payment-link checkout,
+   `PaymentStatus` flow, commission calculation, seller payouts,
+   penalties.
 5. **Messaging** — buyer↔seller threaded chat scoped per
    transaction, with Claude moderation.
 6. **Ratings & Trust** — ratings, private Trust Score, seller
@@ -409,8 +434,8 @@ across the board and a R30 minimum platform fee was added.
   listing price itself.
 - **Absorb-only commission:** commission is always deducted from the
   seller's payout.
-- **The BUYER pays the payment-processing fee** (Peach's
-  ~3.5% + R1.50). It is added to the buyer's total at checkout, and
+- **The BUYER pays the payment-processing fee** (Stitch's
+  per-transaction fee). It is added to the buyer's total at checkout, and
   the platform keeps it — no part of it flows back to the seller.
   `passFeeToBuyer` on `Listing` is hardcoded `true` in the Sell form;
   it is not exposed in the UI.
@@ -443,7 +468,7 @@ listing quality 10 (Claude assessment), account age 5.
 
 **Cancellation penalty escalation** — applied only AFTER a failure,
 each requiring admin approval. All of the seller's listings are
-suspended until the fine is paid (via Peach or deducted from the
+suspended until the fine is paid (via Stitch or deducted from the
 next payout):
 
 - 1st failure within 6 months — R150
@@ -459,7 +484,7 @@ KYC is a **seller-only gate**.
 - Buyers, bidders and offer-makers **never** need KYC to transact —
   anywhere, in any module.
 - Seller KYC is triggered ONLY at `sellerConfirmSale()` in
-  `payments.service.ts`, after Peach confirms payment. The
+  `payments.service.ts`, after Stitch confirms payment. The
   equivalent gate for Take a Shot is in `offers.service.ts` →
   `acceptOffer()`. **Not** at listing submission.
 - Bank-account verification happens at first payout.
@@ -474,32 +499,54 @@ KYC is a **seller-only gate**.
 
 ## Payments
 
-**Provider: Peach Payments only.** PayFast, Ozow, Stitch, iKhokha,
-Yoco and direct bank APIs are all rejected.
+**Provider: Stitch Express only.** Migrated off Peach in 2026-06.
+Peach is the rejected legacy provider; do not reintroduce it.
+PayFast, Ozow, iKhokha, Yoco and direct bank APIs are also rejected.
 
-- Peach embedded checkout. 3DS/OTP stays ON for every purchase
-  (buyer is present each time — cardholder-initiated).
+**NEVER use the word "escrow"** in user-facing copy, internal copy,
+or notifications. It is a regulated SA financial term Gun Galore is
+not registered for. Use "funds held" / "payment held" / "held until
+delivery confirmed" instead. This applies everywhere — Terms,
+listing detail, transaction page, emails, SMS, admin panel.
+
+**Stitch integration shape:**
+
+- **Pay-in:** Stitch hosted payment links (`POST /payment-init` →
+  redirect → buyer pays → Stitch redirects to `/checkout/complete?id=…`
+  → we verify via `stitch.verifyPayment(id)` AND match the bound
+  transaction + amount → flip `PaymentStatus`).
+- **Webhook:** Stitch posts to `/api/payments/webhook/stitch` (Svix
+  signature). Fail-closed: bad signature = 401, no DB writes.
+  `peachPaymentId` column was renamed in spirit — the field is now
+  the Stitch payment ID, `@unique` to block replay.
+- **Pay-out:** Stitch payouts to the seller's verified bank account.
+  Triggered on dealer-verification APPROVED (firearms) or buyer
+  Confirm-Delivery (non-firearms). See dealer-verification flow.
+- **Refunds:** `stitch.refundPayment(stitchId)` is called BEFORE
+  flipping the row to `REFUNDED`. Money moves first, ledger flips
+  second — never the other way around.
 - **`PaymentStatus` enum:** `HELD`, `PENDING_ADMIN_VERIFICATION`,
   `RELEASED`, `DISPUTED`, `REFUNDED`.
-- **Card tokenisation** (saved cards) — DEFERRED to post-live-
-  credentials. When built: `allowStoringDetails=true` adds a "save
-  card" toggle that must be unticked by default (explicit consent).
-  Peach returns a `registrationId`; store the token only (Peach
-  holds the card — keeps Gun Galore out of PCI scope). Brand/last4/
-  expiry may be stored for display. Pass saved cards back via
-  `cardTokens`. Needs the recurring entity ID from the Peach
-  dashboard.
-- **Bank verification:** Peach BANVR (real-time, single account) /
-  BANV (batch). Result returns via webhook. Service window
-  03:00–23:00 — queue checks outside it (queuing is already
-  designed). Confirm BANVR is enabled on the merchant account and
-  check per-verification pricing.
-- Everything is wired against Peach; it goes live with an `.env`
-  credentials update.
+- **3DS/OTP:** Stitch handles cardholder authentication on its
+  hosted page. Buyer is always present (cardholder-initiated, no
+  recurring/tokenisation in scope for v1).
+- **Bank verification (AVS):** VerifyNow (NOT Stitch BANVR — Peach's
+  product was dropped with Peach). Result via webhook. AVS is tied
+  to the user's KYC identity (operator memory:
+  `project_avs_kyc_ordering`): bank-holder name + ID must match the
+  KYC-verified identity, so AVS passing means "this seller actually
+  owns this account."
+- **`VERIFYNOW_MODE=production`** at boot — asserted by config
+  guard; sandbox is rejected outside dev. Operator memory:
+  `feedback_env_mode_changes` — never flip sandbox↔production
+  without explicit confirmation.
+- **Stitch redirect URL setup:** prod helper at
+  `scripts/stitch-redirect-setup.cjs` registers `/checkout/complete`
+  with Stitch's API. Run once per env.
 
 **Prohibited:** never enter or store raw card/bank numbers. If a
 user pastes card details into chat or a form, refuse and instruct
-them to enter it themselves in the Peach checkout.
+them to enter it themselves on the Stitch hosted page.
 
 ---
 
@@ -690,7 +737,7 @@ target."*
   published after the draw for public verification. 1 winner + 2
   backups. 7-day claim window per tier.
 - **Minimum not reached** → status `CANCELLED_MIN_NOT_MET`:
-  auto-refund every ticket via Peach (per-ticket, so partial
+  auto-refund every ticket via Stitch (per-ticket, so partial
   failures are isolated; failed refunds logged for admin retry),
   notify all entrants, return the item to the platform — admin may
   re-raffle, convert to auction, or convert to Buy Now.
@@ -1145,16 +1192,21 @@ opened fullscreen" from "native iOS app":
 
 ## Odoo Accounting
 
-Self-hosted Odoo (Community edition, SA localisation, small Hetzner
-box). Integration is a later phase. Syncs: completed transactions →
-sales invoices (with VAT); commission → income; seller payouts →
-vendor bills; refunds → credit notes; Peach fees → expenses; users →
-contacts (FICA records); raffle tickets → deferred revenue
-(recognised at draw completion); prize costs → COGS; featured fees →
-revenue; SMS/email costs → expenses; bank reconciliation; VAT201;
-monthly P&L / balance sheet / cash flow. Real-time JSON-RPC for
-money movements; nightly batch for contacts. Chart of accounts set
-up by the accountant.
+**Live accounting: Zoho Books** (not Odoo). The Zoho Books
+integration shipped in Phase ZB-1 through ZB-11 — commission
+invoices on dealer-verification APPROVED, paid-marker on payout
+fired, credit notes on refund, sales receipts on raffle tickets,
+invoices on featured-slot bids won, admin retry button per row, and
+queue-depth health monitoring. See `backend/src/zoho-books/`. Odoo
+was the earlier plan and is archived — do not build new code
+against it.
+
+Stitch payment fees → expenses; users → contacts (FICA records);
+deferred revenue for raffle tickets recognised at draw completion;
+prize costs → COGS; featured fees → revenue; SMS / email costs →
+expenses. VAT201, monthly P&L, balance sheet, cash flow all run
+out of Books once VAT registration crosses R1M turnover (see
+Feature Flags `VAT_REGISTERED`).
 
 ---
 
@@ -1187,13 +1239,13 @@ firearm listings.
 
 ## Backups & Disaster Recovery
 
-- Hetzner daily snapshots.
+- Vultr daily snapshots (built-in product on the VPS plan).
 - Automated daily `pg_dump` cron to object storage, 30-day
   retention, 02:00.
 - UptimeRobot monitors the frontend and `/api/health`.
 - Sentry for error monitoring.
 - Test backups monthly by restoring to a test database.
-- Recovery: server dead → restore Hetzner snapshot; DB corrupted →
+- Recovery: server dead → restore Vultr snapshot; DB corrupted →
   stop backend, restore `pg_dump`; bad deploy → roll back to the
   git tag.
 - Full HA (hot standby / managed DB) is deferred until meaningful
@@ -1307,425 +1359,77 @@ were considered + rejected (not forgotten).
 
 ---
 
-## Current Status
+## Recent build context
 
-### 2026-05-26 session — Ask GG Phase E + dealer-lock + ballistics
+This section replaces the long per-session trail that used to live
+here. For the full history, run `git log` — for the current state of
+the launch, read these two files (both tracked in this repo):
 
-All shipped + live on prod (`139.84.231.220`, `ssh gungalore`):
+- **`AUDIT-2026-06-10.md`** — 40-agent end-to-end code audit of the
+  current `feat/hunt-ballistics-range-estimator` branch. Findings
+  are batched A–G (critical money path, raffle integrity, headers,
+  PWA, checkout UX, featured/attestations, reliability + POPIA).
+  This is the canonical "what's wrong" snapshot.
+- **`LAUNCH-CHECKLIST.md`** — open Tier 0/1/2 items that must be
+  done before flipping the public switch. Includes operator-only
+  destructive actions, schema-drift cleanup, firearm attestation
+  persistence, and the remaining `[FIX-*]` tasks. This is the
+  canonical "what's left" list.
 
-- **Phase E1 — Verified-expert badge + GG+ pill** (OD1 + OD2 locked).
-  Backend `AskGgKbService.getExpertEligibility` / `getExpertQueue` /
-  `getGrantedExperts` / `setVerifiedExpert` + new
-  `AskGgExpertAdminController` (`/admin/ask-gg/experts/{queue,granted}`
-  + `/admin/users/:id/verified-expert/{grant,revoke}` with mandatory
-  reason → AdminAuditEvent `USER_VERIFIED_EXPERT_AWARDED` /
-  `_REVOKED`). New public `GET /api/sellers/:clerkId`. Frontend
-  `<UserBadges>` + `<UserBadgesWithTooltip>` rendered on listing
-  card, listing-detail seller chip, `/sellers/[clerkId]` header,
-  Q&A asker + answerer. New `/admin/ask-gg/experts` page (Queue +
-  Granted tabs).
-- **Phase E2 — Featured-slot bid discount** (OD1).
-  `FeaturedSlotBid` schema gets `discountPercent` (snapshot at bid
-  time) + `chargedAmountCents` (set at charge time). FREE=0,
-  MEMBER=25, PRO=50. Face bid unchanged → leaderboard stays fair;
-  discount applies to actual Peach charge + Zoho receipt. `/featured/slots`
-  response now wraps `slots[]` with `{bidderSubscriptionTier,
-  bidderDiscountPercent}`. Bid modal shows snap preview + GG+
-  discount line ("you'll be charged R250, saving R250").
-- **Phase E3 — Weekly subscriber-only raffles** (replaced the
-  bulk-photo-ID idea). `Raffle` schema adds
-  `subscriberTierRestriction` (MEMBER/PRO) + `autoEnterSubscribers`
-  + `subscriberDrawAt` + `hidePrizeValue`. Subscriber raffles
-  auto-enter every active subscriber of the matching tier on
-  publish (MEMBER raffle = Members + Pros, PRO raffle = Pros
-  only), 48h auto-draw via new
-  `runSubscriberRaffleDraws` cron (every 5 min). Re-uses existing
-  draw pipeline so DrawProof + winner notifications are identical
-  to public raffles. New `GET /raffles/me/subscriber` endpoint.
-  `/admin/competitions/create` gets a "Raffle type" picker (Public
-  / Member / Pro) — subscriber raffles hide pricing fields. New
-  `<SubscriberRaffleWidget>` on `/ask-gg`: FREE upsell card,
-  subscribers see auto-entry cards with countdown + win banner.
-- **Phase E (operator decisions):**
-  - Pro photo per-request cap lifted 5 → 10 (Member/Free stay at 5)
-    via new `maxPhotosPerRequest(tier)` helper.
-  - `/ask-gg` perks card updated: dropped Business Receipts row,
-    added Weekly Ask GG raffle row + Ballistic calculator row,
-    Pro photos shows "Unlimited (10/query)".
-  - Cancellation policy on subscriber raffles: snapshot at publish.
-    Mid-window subscribers don't get this week's raffle. Mid-window
-    cancellations stay eligible (entered fair-and-square).
-- **Mandatory dealer-transfer + planned-location hint.**
-  `Listing.plannedDealerLocation` (max 200 chars, free-text). Firearm
-  listings now REJECTED at create/update/preview if `shippingMethods`
-  omits `DEALER_TRANSFER`. `/listings/new`: DEALER_TRANSFER pill
-  locked-on for firearms ("required" copy), PRIVATE_ARRANGE
-  optional, planned-location text input below. `/listings/[id]/edit`:
-  planned-location field in firearm block, sends on save (clears
-  empties). Listing detail surfaces the hint as a chip above the
-  seller card when present.
-- **Listing detail copy + layout.** Shipping & Payment block now
-  branches on `listing.isFirearm` (proper boolean, not slug regex).
-  Firearm path: "Payment held… until firearm is stocked at a
-  licensed dealer and verified — funds release automatically once
-  verification passes." PRIVATE_ARRANGE paragraph now firearm-only
-  AND gated on `shippingMethods.includes('PRIVATE_ARRANGE')` (no
-  longer shown on non-firearm listings where it was never even
-  selectable). Description block moved above Shipping & Payment so
-  buyers read what they're buying before the legal block.
-- **Image gallery — drag-to-pan when zoomed** (mouse + touch).
-  Replaced overflow:auto scrollbar approach with CSS transform
-  + unified PointerEvent handlers. Pan clamped to bounds. 4px
-  movement threshold distinguishes drag-to-pan from click-to-toggle.
-  Cursor: zoom-in → grab → grabbing. `touch-action: none` while
-  zoomed so the browser doesn't claim the gesture as scroll.
-- **PWA audit + fixes.** `/ask-gg` excluded from generic
-  `/offline` fallback (Ask GG is inherently online-only — Claude
-  + Clerk + live quota — friendly offline page misled users into
-  waiting). `/listings/new` localStorage draft now also persists
-  `shippingMethods` + `plannedDealerLocation` (pre-existing gap for
-  shippingMethods; closed while in here). `public/sw.js` gitignored
-  + untracked (Serwist regenerates on every build, chronic dirty-prod
-  conflicts every deploy).
-- **Ballistic calculator — Phase D extra finally shipped.** New
-  `backend/src/ballistics/` module: pure-math G1 drag-model solver
-  with standard atmosphere defaults + optional temp/pressure/altitude/
-  wind overrides. Binary-searches launch angle so trajectory crosses
-  LOS at zero range, then steps at 1ms intervals sampling drop /
-  retained velocity / energy / TOF / windage at each requested
-  range. Wired as third Claude tool alongside searchReloadingManuals
-  + fetchManualPages. Tier-gated MEMBER + PRO; FREE users get a
-  `upgradeRequired: true` tool_result + the system prompt surfaces
-  this as a "GG+ feature" message. Pro tools (Strelok+, JBM)
-  recommended for serious long-range work; ours is ~±5% accurate
-  out to 1000m at <10° barrel angle.
-- **Deploy cleanup.** CLAUDE.md "deploy now" updated to the real
-  server paths (`/home/gungalore/app`, pm2 services
-  `gungalore-backend`/`gungalore-frontend`) + the critical
-  `npx prisma generate` step that, when missing, silently reloaded
-  stale dist/ for half a deploy.
+### Headline state (2026-06-12)
 
----
+- **Payments: Stitch Express, fully live.** Peach has been removed
+  from the code-path (search the codebase for `peach` — only
+  comments noting the migration should remain). See Payments
+  section above.
+- **KYC SMS link tokenization** (`ActionToken` purpose
+  `KYC_VERIFY`): KYC verification can be triggered from a single-
+  tap SMS link via the dual-auth `KycOrTokenGuard`. Mirrors the
+  offer / counter / dispatch / auction-bid token pattern.
+- **40-agent audit + 21 batch fixes shipped** to prod (Stitch +
+  CSP/COOP headers + raffle race + offer checkout UX + featured
+  slots + firearm attestation gate). Items left over are tracked
+  in LAUNCH-CHECKLIST.md, NOT here.
+- **Firearm 18+/competency attestation:** server-side gate in
+  `backend/src/payments/transactions.service.ts` enforces
+  `firearmAttestation18Plus === true` on checkout DTOs that touch
+  firearm listings. Persistence column was reverted from the last
+  deploy — see LAUNCH-CHECKLIST.md `[FIX-7]` for the migration
+  follow-up.
+- **Security headers** are configured in `frontend/next.config.mjs`
+  `headers()`: `X-Frame-Options: DENY`, `Content-Security-Policy:
+  frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-
+  Policy`. Don't relax these without operator sign-off.
+- **Schema-drift trap (READ THIS):** three services (Ask GG KB,
+  reloading-manual FTS, listings FTS) add `tsvector GENERATED`
+  columns + GIN indexes at boot via raw DDL in their
+  `onModuleInit`. These columns are NOT declared in `schema.prisma`.
+  Running `npx prisma db push --accept-data-loss` would drop them.
+  The deploy block above has been updated to use `prisma generate`
+  only; for real schema changes use `prisma migrate deploy` with a
+  written migration. See `[BC-SCHEMA-DRIFT]` and `[FIX-9]` in
+  LAUNCH-CHECKLIST.md for the proper declaration follow-up.
 
-**Phases 1–14 complete plus Featured Slots system, sitewide UX
-hardening, auction proxy hardening, KYC no-webcam handoff, PWA
-Phases A–C (conservative SW + app-feel polish), Phase C.5 (in-app
-Notifications inbox with action-resolve semantics + sticky search bar
-everywhere + Alerts tab in bottom nav), and the audit-driven
-"PWA-as-centrepiece" drops:**
+### Operator memory shortcuts
 
-- **Drop 1 — Lighthouse polish (done)**: hero.png → WebP (1.2 MB →
-  29 KB, mobile LCP 9.9s → ~2.5s) via `image-set()` CSS swap +
-  `<link rel="preload">`; `app/robots.ts` (Disallow `/admin/`,
-  `/api/`, `/checkout/`, `/kyc/`, `/sign-in/`, `/sign-up/`,
-  `/sso-callback/`, `/a/`, `/offline`, `/preview/`); footer contrast
-  fix via `--text-tertiary-on-card` token; `lib/status-labels.ts`
-  central PAYMENT/LISTING/SHIPPING/OFFER/KYC status copy + tone map
-  (replaces inline `.replace(/_/g, ' ')` on `/my/orders|sales|
-  listings` + `/transactions/[id]` — "HELD" now reads "Payment held"
-  with a `title=` tooltip); `<img>` → `next/image` on conversion-
-  critical pages (checkout/orders/sales/listings/transactions);
-  `capture="environment"` on `<PhotoDropzone>` file input so iOS/
-  Android jump straight to the rear camera.
-- **Drop 2 — Wishlist + nav restructure (done)**:
-  - Backend `WatchedListing` Prisma model (user ↔ listing join, compound
-    unique, cascade delete both sides) +
-    `backend/src/wishlist/{wishlist.module,service,controller}.ts`
-    with 4 endpoints (`POST /wishlist/:id`, `DELETE /wishlist/:id`,
-    `GET /wishlist`, `GET /wishlist/ids`). Registered in `AppModule`.
-    `npx prisma db push` to apply.
-  - Frontend `lib/use-wishlist.tsx` Context + `useWishlist()` hook
-    (optimistic toggle with rollback, hydrates `/wishlist/ids` on
-    sign-in). `WishlistProvider` mounted in `app/layout.tsx` inside
-    ClerkProvider.
-  - `components/wishlist-button.tsx` (overlay variant on cards +
-    inline variant on listing detail) with `e.preventDefault()` +
-    `e.stopPropagation()` so the parent `<Link>` doesn't navigate
-    when only the heart was tapped. Signed-out tap pops a "Sign in
-    to save" hint (inline `<SignInButton mode="modal">`).
-  - Heart mounted on `listing-card.tsx` (top-right of image — the
-    condition badge moved to bottom-left to make room); on listing
-    detail next to the Share button.
-  - `/wishlist` page server-fetches `/wishlist`, renders a grid via
-    the existing `ListingCard`, partitions SOLD / CANCELLED /
-    EXPIRED / REMOVED / AUCTION_ENDED_* into greyed-out tombstone
-    rows with a "Remove from wishlist" button (so saves don't
-    silently vanish when the listing goes terminal).
-  - Bottom-tab restructure: **Shop · Alerts · Sell · Wishlist · More**
-    (heart icon with the same count-badge style as the bell). "My"
-    tab removed entirely.
-  - MoreSheet redesigned with a Profile header (avatar + username +
-    "View profile" chevron from `useUser()`) and 3 sections: **My
-    account** (Dashboard, Profile, all /my/* destinations + Sign
-    out), **Shop** (Take a Shot, Competitions), **Legal**. Section
-    dividers + trailing row chevrons.
-  - Desktop hamburger `nav.tsx` ACCOUNT_LINKS gets `Wishlist` next to
-    "View profile" for parity.
-- **Drop 3 — Polish (done)**: live auction countdown
-  (`lib/use-countdown.ts` 1Hz tick) replaces the static
-  `AuctionTimeChip` in `listing-card.tsx`; `ShareListingButton` +
-  inline `WishlistButton` on listing detail; `ConnectionStatusBanner`
-  + `SwUpdateBanner` mounted in `app/layout.tsx`; ProfileCompletionModal
-  "Finish later" escape — exports `markProfileFinishLater()` +
-  `shouldSuppressProfileModal()` + `clearProfileFinishLater()` helpers,
-  /listings/new gates on the 24h suppression flag before popping the
-  modal (payout stays server-side-blocked regardless); 10 long-tail
-  notification events backfilled with `persistByEmail` inbox rows —
-  `counterAccepted/Rejected`, `auctionEndedForSeller`,
-  `shippingDispatched/Delivered`, `refundIssuedBuyer`,
-  `raffleEntryConfirmed`, `raffleWinnerPrizeDispatched`,
-  `dealerVerificationRejected`, `dispatchNudgeSeller`.
+These are also in the auto-memory store but worth pinning here so
+they survive any future memory wipe:
 
-**Next:** PWA Phase D push delivery (VAPID + service-worker push
-handler), remaining ~5 notification events to backfill
-(shippingOutForDelivery, orderConfirmedBuyer, raffleBackupPromoted,
-dealerVerificationApproved, firearmStocked, listingRemovedByAdmin,
-shippingFailed). End-to-end Playwright test still deferred.
-
-- [x] `.gitignore` committed first (excludes `.env*` and credential files).
-- [ ] New GitHub repo created and pushed (local git only so far).
-- [ ] All previously exposed credentials rotated.
-- [x] Foundation scaffold: Next.js 16 + NestJS 11 + Prisma 7 + Postgres 18
-      + Clerk v7 + Meilisearch (local Windows service) + Cloudinary.
-      Branch: `foundation`. Local only — not deployed.
-- [x] M1 backend: Prisma schema (User, Category, Listing, ListingImage +
-      7 enums), PrismaService (@prisma/adapter-pg — Prisma 7 requirement),
-      UsersModule (Clerk webhook sync), CategoriesModule (13 seeded
-      categories), ListingsModule (full CRUD + image upload + Meilisearch
-      sync). All on branch `foundation`.
-- [x] M1 frontend: homepage listing grid (server component, FilterBar client component),
-      listing detail page, create-listing form (Clerk auth, image upload). All pages
-      type-check clean. Routes: `/`, `/listings/[id]`, `/listings/new`.
-- [x] Shipping: ShippingModule (PudoService 24h locker cache, TcgService, DealersService),
-      ShippingService routing rules (firearm → DEALER_TRANSFER only), webhook handlers
-      (TCG + Pudo, public routes, always-200). Dealer model + migration + 5 test dealers seeded.
-      Frontend: LockerPicker, DealerPicker components ready for checkout.
-      Routes: GET /api/shipping/pudo/lockers, GET /api/shipping/dealers,
-      GET /api/shipping/options, POST /api/shipping/webhook/{tcg,pudo}.
-- [x] Payments: Peach embedded checkout, PaymentStatus flow (HELD→RELEASED), marginal
-      commission calculator (FeeCalculator), Transaction model + Dealer model, seller payouts.
-      Mock mode when PEACH_ENTITY_ID/PEACH_ACCESS_TOKEN not set. Both TypeScript clean.
-      Routes: POST /api/transactions, POST /api/transactions/:id/verify-result,
-      GET /api/transactions, GET /api/transactions/:id, POST /api/transactions/:id/dispatch,
-      POST /api/payments/webhook/peach.
-      Frontend: /checkout/[listingId] (server + client), /checkout/complete (result handler),
-      /transactions/[id] (order detail, buyer + seller views with dispatch button),
-      listing detail Buy Now CTA.
-- [x] Messaging: Message model + migration. MessagesModule (ModerationService using Claude Haiku —
-      APPROVE / STRIP contact info / BLOCK off-platform solicitation; fails open). REST API:
-      POST/GET /api/transactions/:id/messages, GET /api/messages/unread-count. Frontend:
-      MessageThread client component (5s poll, bubble UI, moderation notice) embedded in
-      transaction detail page. Both TypeScript clean.
-- [x] Ratings & Trust: Rating model + migration. RatingsModule (create rating, trust score calc —
-      6 components, marginal formula, all LOCKED). Tier auto-upgrade (NEW→ESTABLISHED→TRUSTED→
-      TOP_SELLER; DEALER sticky). confirm-delivery endpoint (buyer → releases payment, increments
-      totalSales). Frontend: ConfirmDeliveryButton, RatingWidget (star picker + comment),
-      /dashboard (trust score bar chart + recent ratings). Both builds + 7/7 endpoint tests clean.
-      **Build fixes also landed this phase**: nodenext→commonjs/node tsconfig, meilisearch ambient
-      shim, start:prod path corrected, checkout/complete Suspense fix.
-- [x] Admin Panel: AdminUser model + AdminAuthService (bcrypt + JWT, 8h expiry, separate
-      from Clerk), AdminJwtGuard + SuperadminGuard. Routes: POST /api/admin/auth/login,
-      GET /api/admin/auth/me, GET /api/admin/stats, /api/admin/listings (PENDING_REVIEW
-      queue + review action), /api/admin/users (search + ban toggle),
-      /api/admin/transactions (payment status tabs). Frontend route group
-      `app/admin/(protected)/` with sidebar layout; pages: Overview (4 stat cards),
-      Listings (moderation queue), Users, Transactions. Login page outside the protected
-      group at `/admin/login`. Cookie-based auth (`admin_token`). Seed creates
-      `admin@gungalore.co.za` / `Admin@GunGalore1!` SUPERADMIN.
-- [x] KYC: VerifyNow integration scaffolded — POST /api/users/kyc accepts ID document
-      upload (Cloudinary) → flips kycStatus to PENDING. Admin reviews manually via the
-      Users admin page. Frontend `/my/kyc` page with file picker + status display.
-      VerifyNow API binding is stubbed (no live key yet).
-- [x] Notifications: NotificationsService with Resend SMTP integration (fails open when
-      RESEND_API_KEY unset — emails are no-ops in dev). Branded dark-theme HTML email
-      layout. Methods cover all events: orderPaid, paymentReleased, refunded, disputed,
-      shippingDispatched, listingPublished, offerReceived/Accepted/Rejected/Countered,
-      counterAccepted/Rejected, bidPlaced/Outbid/auctionWon/auctionEndedForSeller,
-      raffleEntryConfirmed/WinnerPicked/BackupPromoted/MinNotMet. SMSPortal binding
-      deferred.
-- [x] **M2 Auctions (Phase 10)**: Bid model + AuctionWatch model + currentBid/reservePrice/
-      buyNowPrice/endTime/bidCount/reserveMet fields on Listing. AuctionsService with
-      full proxy-bid resolution (3-case: new max wins / lower max bumps visible / same
-      bidder raises ceiling), tiered increments (R50/R100/R250/R500/R1,000), snipe
-      protection (2 min extension), reserve flag, Buy Now only-while-zero-bids gate,
-      end-auctions cron (every minute), strike on non-payment (3 strikes → ban).
-      Routes: GET /api/auctions/:listingId, POST /api/auctions/:listingId/bids,
-      POST /api/auctions/:listingId/buy-now, GET /api/auctions/me/bids,
-      POST/DELETE /api/auctions/:listingId/watch. Frontend: AuctionPanel client
-      component (5s polling, live countdown, reserve indicator, proxy bid form, bid
-      history), `/listings/new` form auction branch (duration/reserve/buy-now),
-      `/my/bids` page (Live/Won/Closed). Smoke-tested with 3-bidder scenario
-      end-to-end + visual verification.
-- [x] **Take a Shot (Phase 11)**: Offer model + COUNTERED status, nullable price on
-      Listing for TAKE_A_SHOT, autoAcceptThreshold field. OffersService with submit
-      (auto-accept if ≥ threshold), accept/reject/counter (one counter only),
-      accept-counter / reject-counter / withdraw; offers cron expires PENDING/COUNTERED
-      after TTL (48h pending, 24h counter). Endpoints all under `/api/offers/...`.
-      Frontend: OfferPanel (sign-in gate, R-prefixed amount + note), `/my/offers`
-      buyer view, `/offers/received` seller view, `/checkout/offer/[offerId]` separate
-      flow that uses `counterAmount ?? offerAmount`. Transaction creation atomically
-      marks the offer CONVERTED.
-- [x] **M5 Competitions (Phase 12)**: Raffle + Ticket + RaffleWinner + PostalEntry +
-      RaffleSellerApplication + RaffleAuditEvent + Setting models. RafflesService
-      with full lifecycle (DRAFT → ACTIVE → CLOSED_AWAITING_DRAW → DRAWN → CLAIMED,
-      with auto-cancel on MIN_NOT_MET), verifiable draw (`crypto.randomBytes(32)` +
-      SHA-256 + rejection-sampled mod → 1 winner + 2 backups), skill-gated buy flow,
-      24h cooling window between endTime and drawAt, 7d claim windows with backup
-      promotion. Crons: close expired (every minute), run draws (every 5 min), expire
-      claims (every hour). Endpoints: GET /api/raffles, GET /api/raffles/:id,
-      GET /api/raffles/:id/proof, POST /api/raffles/:id/tickets, POST /api/raffles/wins/:id/claim,
-      GET /api/raffles/me/{tickets,wins}, admin: /api/admin/raffles CRUD + audit + run-draw,
-      /api/admin/raffles/postal-entries. Frontend pages: `/competitions` (list),
-      `/competitions/[id]` (detail + EnterPanel with skill question), `/admin/competitions`
-      (list), `/admin/competitions/create` (form + live revenue calculator),
-      `/admin/competitions/[id]/audit` (verifiable draw proof + event log),
-      `/admin/postal-entries`, `/dashboard/raffle-wins` (claim flow), `/my/tickets`.
-      End-to-end draw smoke-tested (150 paid + 2 postal → 3 winners with verifiable seed).
-      **Deferred this phase**: Peach checkout wiring for tickets (dev auto-confirm in
-      place), PDF generation (pdfkit) for postal forms, Claude-generated skill questions,
-      min-not-met automatic refund cron, seller-application intake UI (model exists,
-      `raffle_seller_applications_enabled` flag-gated off).
-- [x] **Claude AI Listing Moderation (Phase 13)**: SettingsModule (Setting key/value
-      table — already in schema; typed accessors for 7 flags with safe defaults).
-      ModerationModule with ListingModerationService — uses `@anthropic-ai/sdk`
-      (Haiku model, vision-enabled), system prompt encodes the policy from
-      CLAUDE.md verbatim. Outcomes mapped to ListingStatus:
-      APPROVE / AUTO_FIX_AND_APPROVE → ACTIVE, REJECT → CANCELLED,
-      HUMAN_REVIEW → PENDING_REVIEW. Local regex fallback in
-      `stripContactInfo()` runs on top of Claude's cleaned description as a
-      defence-in-depth (strips emails, phones, URLs, social handles, WhatsApp
-      phrases). Safety nets applied AFTER Claude's call:
-      (1) price >= `high_value_review_threshold` (R20k) → bumped to HUMAN_REVIEW,
-      (2) new seller's first N firearm listings (default 3) → HUMAN_REVIEW,
-      (3) APPROVE with confidence < `claude_confidence_threshold` (0.85) →
-      HUMAN_REVIEW. Fail-open: any Anthropic API error or missing key routes
-      to HUMAN_REVIEW with a "manual review queued" reason. ListingsService
-      stores `claudeDecision`, `claudeConfidence`, `claudeReasons`,
-      `claudeReviewedAt`, `claudeOriginalDescription`, `claudeAutoFixApplied`;
-      pending/rejected listings are NOT indexed in Meilisearch.
-      Frontend: admin moderation queue shows colour-coded decision pill
-      (APPROVE green / AUTO-FIX blue / REJECT red / HUMAN REVIEW amber) with
-      confidence %, 3-bullet reasoning summary, and a "✎ Contact info stripped"
-      indicator on auto-fixed listings. Seller-only `ModerationBanner` on
-      listing detail page surfaces PENDING_REVIEW / REJECT / AUTO_FIX state.
-      Smoke-tested: local regex stripping (2 samples), offline-mode behaviour
-      (HUMAN_REVIEW fallback), settings table read/write. Bug fix: admin
-      listings page now handles null price (TAKE_A_SHOT) and converts
-      cents → rand correctly. Live Anthropic call deferred until
-      ANTHROPIC_API_KEY is added to backend/.env.
-- [x] **Webhooks polish (Phase 14)**: ShippingService now actually applies
-      webhook events to transactions. New helpers: `findTransactionByTrackingNumber`
-      (shared TCG/Pudo lookup) and `applyShippingUpdate(transactionId, newStatus)`
-      which is fully idempotent — refuses backward transitions via the
-      `STATUS_RANK` precedence table (PENDING < COLLECTED < IN_TRANSIT <
-      OUT_FOR_DELIVERY < DELIVERED/FAILED/RETURNED), no-ops on same-status
-      events, and stamps `dispatchedAt` (first forward move past PENDING) +
-      `deliveredAt` (DELIVERED) exactly once. Both TCG + Pudo handlers now
-      look up the transaction and call `applyShippingUpdate`. Notifications
-      fire per transition: `shippingDispatched`, `shippingOutForDelivery`,
-      `shippingDelivered`, `shippingFailed` (new methods added to
-      NotificationsService). Peach webhook gets HMAC scaffold:
-      `peach.verifyWebhookSignature(rawBody, signature)` uses
-      `PEACH_WEBHOOK_SECRET` with HMAC-SHA256 and `timingSafeEqual`; fails
-      open when the secret isn't configured (dev mode). Controller reads
-      `x-peach-signature` / `x-signature` headers and rejects bad signatures
-      silently while still returning 200 (CLAUDE.md rule). Smoke-tested:
-      unknown waybill → 200 noop, real waybill → status applied, repeated
-      event → idempotent no-op, backward event (COLLECTED after DELIVERED) →
-      refused with logged warning.
-- [x] **Featured Slots system**: full ad-bidding feature — 6 new
-      Prisma models (FeaturedSlot, FeaturedAuction, FeaturedSlotBid,
-      FeaturedSlotConfig, FeaturedSlotBidderBan,
-      FeaturedSlotAuditEvent), 5 enums (FeaturedSlotStatus,
-      FeaturedAuctionStatus, FeaturedAuctionKind, FeaturedBidStatus,
-      FeaturedTier T1-T5), FeaturedService + 3 controllers
-      (public/seller/admin). Auction opens on vacant, 24h timer
-      starts on first bid, 15-min bind window picks any ACTIVE
-      listing (BUY_NOW / AUCTION / TAKE_A_SHOT all valid),
-      tier-snapped duration (R100/1d → R500/14d). Per-minute cron
-      drives all transitions. Frontend: `<FeaturedRail>` sidebar
-      (vertical desktop, horizontal mobile, continuous scroll,
-      hover-paused), homepage horizontal scroll grid replacing
-      live-listings on the bare landing, `/featured/bid` seller
-      page (slot grid + bid modal stepper + bind modal with
-      50px-tall rail-styled row picker), full admin panel under
-      `/admin/featured` (slots / revenue / settings / banned
-      bidders / audit). Manual award accepts either CUID or
-      reference number (UM000123).
-- [x] **Sitewide UX hardening**:
-      - **Help system** — `<HelpText>` (always-visible inline
-        hint) + `<HelpTip>` (on-demand ⓘ popover, hover desktop /
-        tap mobile, click-outside + ESC dismiss). Swept across
-        featured/bid, listing detail + auction-panel, listings/new,
-        kyc/verify, profile/edit.
-      - **Urgent Notifications strip** — 35px sticky band below
-        the nav, self-fetches `GET /api/users/me/urgent` every 60s
-        and renders coloured pills for: KYC required, auction wins
-        awaiting payment (with countdown), accepted offers awaiting
-        payment (with countdown), sales paid + waiting on dispatch.
-        Hidden when signed-out. The old `<KycBanner>` was removed —
-        the urgent strip subsumes it.
-      - **5 UX quick wins** — bordered empty-state CTAs on all
-        /my/* dashboards, active-page indicator (red left-border)
-        in the Account dropdown, distinct green/grey Active/Closed
-        pills on offer + bid cards, Clerk `<SignInButton>` modal
-        triggers replacing dead "Sign in to bid" boxes on listings,
-        shimmer loading skeleton on /featured/bid.
-      - **/my/bids extension** — new `GET /api/featured/me/bids`
-        endpoint + `<FeaturedBidCard>` component. Featured-slot bids
-        now show alongside auction bids, split into Live / Won —
-        bind now / Closed.
-      - **"Escrow" term banned** — full repo sweep (UI, code
-        comments, email bodies, the lot). Replaced with "funds
-        held" / "payment held" / "payment protection" /
-        "payment released". Rule #1 in Absolute Rules.
-      - **Real names off public surfaces** — sweep removed
-        firstName/lastName from public-facing Prisma selects
-        (listings, ratings, offers, featured, auctions,
-        listing-questions) and frontend displays (sellers/[id],
-        offers/received, dashboard, my/sales, my/orders, listing
-        detail seller card, questions panel, checkout seller chip,
-        featured/bid top-bid, transactions detail buyer/seller line).
-        Username only, no `@` prefix. Rule #11.
-      - **Competition detail layout** mirrors listing detail —
-        ImageGallery (zoom + thumbnails + lightbox) in left column,
-        all text in right column.
-      - **Bind modal redesign** — 50px-tall rows matching the
-        FeaturedRail card aesthetic (subtle red→gold glow, 36px
-        thumbnail, single-line title).
-- [x] **Auction proxy bidding hardening**: see Auction System >
-      "Proxy resolution rules (LOCKED)". Killed the one-shot
-      bypass bug (Place Bid could defeat existing proxies), added
-      eBay-style dual-row history (proxy counters get their own
-      Bid row attributed to the proxy holder), added
-      `proxyExhausted` last-stand rows for Auto Bid duels, added
-      explicit OUTBID banner with tie/exceed copy distinction,
-      added Cancel-proxy endpoint + UI link, added
-      `GET /api/auctions/:listingId/me` per-user state endpoint
-      driving the "Auto Bid · ACTIVE · Rxxx (Raise)" button label,
-      added `currentBidderName` to auction state + "High bidder:
-      You ✓" line. Bid history shows usernames only (no `@`
-      prefix) and tags legacy single-row proxy events with
-      "proxy counter".
-- [x] **KYC no-webcam handoff**: `qrcode.react` dependency added.
-      When `cameraUnavailable` is detected at the selfie step,
-      page now renders a `<CameraUnavailableHandoff>` block —
-      large QR code pointing at `/kyc/verify` (with `returnTo`
-      preserved), brief instruction, and a `mailto:` fallback link
-      for users with no smartphone at all. File upload was
-      considered + rejected — defeats the liveness check.
-- [x] **PWA Phases A–C (conservative)**: see PWA section above
-      for full detail. Manifest + meta tags (Phase A), 5 PNG icon
-      variants generated by `scripts/generate-pwa-icons.ts` from a
-      source image (Phase B), Serwist service worker with
-      defaultCache-only conservative caching + `/offline` fallback
-      + remote kill switch (Phase C). Image / API caching
-      strategies and web push deferred to Phases D / E.
-- [ ] End-to-end test (deferred per user direction).
-- [ ] PWA Phases D / E: web push notifications + install-prompt
-      UX polish. Layered onto the existing SW when prioritised.
-- [ ] Remaining roadmap phases: 16 SEO, 17 Odoo, 18 M3 Store /
-      M4 Swap.
+- **Never use the word "escrow"** — regulated SA financial term.
+  Use "funds held" / "payment held" everywhere.
+- **Never expose real names to other users** — username only on
+  public surfaces, no `@` prefix.
+- **Production server is Vultr, NOT Hetzner** (139.84.231.220).
+- **SSH via the `gungalore` alias** only — never
+  `gungalore@139.84.231.220` (bypasses the alias config).
+- **Ballistic Calculator is its own app** at
+  `ballistics.gungalore.co.za` (own DB, pm2 services, nginx block,
+  lives at `~/ballistics-app/`).
+- **Pudo is on production mode** as of 2026-05-20.
+- **Always provide full ready-to-run PowerShell commands** to the
+  operator (they don't write code).
+- **Don't flip sandbox↔production env mode** without confirmation.
 
 **Prisma 7 notes (do not revert):**
 - Generator: `prisma-client-js` (NOT `prisma-client` — that generates ESM
@@ -1736,11 +1440,24 @@ shippingFailed). End-to-end Playwright test still deferred.
 - CLI config: `backend/prisma.config.ts` (Prisma 7 requirement — `url` is
   not allowed in `schema.prisma` datasource block).
 
-Pending external items: Peach Payments live credentials (confirm
-BANVR + tokenisation enabled); SA Post Office PO Box for
-"Gun Galore Competitions" → set `raffle_po_box_address`; attorney
-review of `/competitions/terms`; email forwarding for
-competitions@ / sellers@ / support@gungalore.co.za; register the
-`gg.co.za` short-link domain.
+Pending external items (operator track — none of these are coding
+work, but the platform can't fully launch without them; see
+LAUNCH-CHECKLIST.md for the authoritative list):
 
-Update this section at Step 7 of every `deploy now`.
+- Stitch live merchant + payout-bank account fully configured
+  (sandbox→production cutover, redirect URL registered via
+  `scripts/stitch-redirect-setup.cjs`).
+- SA Post Office PO Box for "Gun Galore Competitions" → set
+  `raffle_po_box_address` in admin settings.
+- Attorney review of `/terms`, `/privacy`, `/aml-policy`,
+  `/refund-policy`, `/firearms-compliance`, `/competitions/terms`.
+- Email forwarding for `competitions@` / `sellers@` / `support@`
+  at gungalore.co.za.
+- Register the `gg.co.za` short-link domain (used in SMS action
+  links).
+- DNS + nginx + certbot for `ballistics.gungalore.co.za`
+  (`[BC-OPS]` in LAUNCH-CHECKLIST.md).
+
+Do not append new session trails here — keep this file as rules,
+not history. When work concludes, update LAUNCH-CHECKLIST.md (open
+items) or AUDIT-2026-06-10.md (findings) instead.
