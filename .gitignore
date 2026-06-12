@@ -202,3 +202,8 @@ Manuals/
 
 # Stray preview artifacts
 postal-entry-preview.pdf
+
+# ---------------------------------------------------------------------------
+# Claude Code per-developer config (VS Code debug launchers, etc.)
+# ---------------------------------------------------------------------------
+.claude/
