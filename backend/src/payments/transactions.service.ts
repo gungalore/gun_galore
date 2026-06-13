@@ -1143,6 +1143,47 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
+  // Manual EFT confirmation (PAYMENT_MODE=manual)
+  // ------------------------------------------------------------------
+  // Called by ManualPaymentsService when the AUTHORITATIVE FNB statement
+  // reconciliation confirms a buyer's EFT for `txId`. Reuses the full
+  // markPaid path (atomic claim → listing SOLD → sibling-offer cleanup →
+  // PAYMENT_RECEIVED timeline → sale notifications → immediate-payout for
+  // PRIVATE_ARRANGE), so a manual sale is indistinguishable downstream
+  // from a gateway sale. Idempotent: a no-op if already paid.
+  async confirmManualPayment(txId: string): Promise<void> {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: txId },
+      include: { listing: true },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.paidAt) {
+      this.logger.log(`confirmManualPayment: ${txId} already paid — skipping`);
+      return;
+    }
+    // peachCheckoutId/peachPaymentId is @unique — give the manual EFT a
+    // stable unique id derived from the order reference.
+    const paymentId = `EFT-${tx.orderReference ?? txId}`;
+    await this.markPaid(
+      txId,
+      {
+        paymentId,
+        resultCode: 'MANUAL_EFT',
+        amount: tx.buyerTotal,
+        currency: 'ZAR',
+        merchantTransactionId: txId,
+        isSuccess: true,
+      },
+      tx.listing,
+      tx.buyerTotal,
+    );
+    await this.prisma.transaction.update({
+      where: { id: txId },
+      data: { manualVerifiedAt: new Date() },
+    });
+  }
+
+  // ------------------------------------------------------------------
   // Private helpers
   // ------------------------------------------------------------------
   private async markPaid(

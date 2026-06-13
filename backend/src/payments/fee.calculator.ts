@@ -23,21 +23,30 @@ export const MIN_COMMISSION_CENTS = 3_000; // R30
 // Top Seller discount — 0.5% off total price. LOCKED per CLAUDE.md.
 const TOP_SELLER_DISCOUNT = 0.005;
 
-// Peach processing fee. Peach's published rate is 3.5% + R1.50 fixed,
-// VAT-EXCLUSIVE. SA VAT is 15%, so the buyer-facing inclusive figure is
-// (subtotal × 3.5% + R1.50) × 1.15 ≈ 4.025% + R1.725. We compute this
-// inclusively so the buyer sees the same number that Peach actually
-// bills against the card.
+// Card-gateway processing fee (Stitch/Peach lineage). Published rate is
+// 3.5% + R1.50 fixed, VAT-EXCLUSIVE. SA VAT is 15%, so the buyer-facing
+// inclusive figure is (subtotal × 3.5% + R1.50) × 1.15 ≈ 4.025% + R1.725.
+// Computed inclusively so the buyer sees the figure billed against the card.
 const PEACH_RATE = 0.035;
 const PEACH_FIXED_CENTS = 150; // R1.50
-const VAT_MULTIPLIER = 1.15; // SA VAT — 15% on top of Peach's net fee
+const VAT_MULTIPLIER = 1.15; // SA VAT — 15% on top of the net card fee
+
+// Manual EFT processing fee. While there is no card gateway, buyers pay
+// GG by bank EFT and a flat 1.5% handling fee is added to the order (no
+// fixed component). Operator decision 2026-06: manual mode = 1.5%, the
+// dormant paygate keeps the 3.5%+R1.50 card rate.
+const MANUAL_RATE = 0.015;
+
+// Which fee schedule to apply. 'paygate' = card gateway rate (default,
+// keeps every existing caller unchanged); 'manual' = flat 1.5% EFT fee.
+export type PaymentMode = 'paygate' | 'manual';
 
 export interface FeeBreakdown {
   listingPrice: number;   // ZAR cents
   shippingCost: number;   // ZAR cents — courier rate at checkout time
   commissionZar: number;  // ZAR cents — platform commission off the listing price only
-  processingFee: number;  // ZAR cents — Peach incl. VAT, charged on (listing + shipping)
-  buyerTotal: number;     // ZAR cents — what Peach charges the card
+  processingFee: number;  // ZAR cents — gateway/EFT fee, charged on (listing + shipping)
+  buyerTotal: number;     // ZAR cents — what the buyer pays
   sellerPayout: number;   // ZAR cents — what the seller actually receives
 }
 
@@ -73,12 +82,14 @@ export class FeeCalculator {
   }
 
   /**
-   * Peach processing fee on a given subtotal, returned VAT-inclusive
-   * (the figure that lands on the buyer's card statement). Apply this
-   * to the FULL buyer subtotal — listing price + shipping — because
-   * Peach charges on the gross.
+   * Processing fee on a given subtotal (listing price + shipping).
+   * - 'paygate': card rate, VAT-inclusive — (base × 3.5% + R1.50) × 1.15.
+   * - 'manual': flat 1.5% EFT handling fee, no fixed component.
    */
-  calculateProcessingFee(baseZarCents: number): number {
+  calculateProcessingFee(baseZarCents: number, mode: PaymentMode = 'paygate'): number {
+    if (mode === 'manual') {
+      return Math.round(baseZarCents * MANUAL_RATE);
+    }
     const net = baseZarCents * PEACH_RATE + PEACH_FIXED_CENTS;
     return Math.round(net * VAT_MULTIPLIER);
   }
@@ -95,15 +106,18 @@ export class FeeCalculator {
     passFeeToBuyer: boolean,
     isTopSeller: boolean,
     shippingCostZarCents = 0,
+    mode: PaymentMode = 'paygate',
   ): FeeBreakdown {
     const listingPrice = listingPriceZarCents;
     const shippingCost = Math.max(0, Math.round(shippingCostZarCents));
     const commissionZar = this.calculateCommission(listingPrice, isTopSeller);
-    // Peach charges on whatever the buyer actually pays, which always
-    // includes shipping. Don't strip shipping out of the processing-fee
-    // base or we under-collect by R0.50–R5.00 per transaction.
+    // The processing fee is charged on whatever the buyer actually pays,
+    // which always includes shipping. Don't strip shipping out of the
+    // base or we under-collect. Mode selects card (3.5%+R1.50) vs the
+    // manual EFT flat 1.5%.
     const processingFee = this.calculateProcessingFee(
       listingPrice + shippingCost,
+      mode,
     );
 
     // If buyer absorbs fee: buyer pays price + shipping + fee,

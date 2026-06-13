@@ -863,6 +863,25 @@ model Transaction {
   zohoSyncError           String?
   zohoSyncLastAttemptAt   DateTime?
 
+  // ── Manual EFT payment (PAYMENT_MODE=manual) ────────────────────────
+  // While there is no live card gateway, buyers pay GG by EFT using
+  // `orderReference` as their bank reference. The site matches FNB
+  // inContact alerts (provisional) + the daily FNB statement
+  // (authoritative) against this reference + the exact amount. Distinct
+  // from the listing's own reference number; unique per order.
+  orderReference   String?   @unique
+  // EFT lifecycle: manualDetectedAt = an inContact alert matched
+  // (provisional, seller NOT yet notified); manualVerifiedAt = the FNB
+  // statement confirmed it (authoritative → markPaid runs).
+  manualDetectedAt DateTime?
+  manualVerifiedAt DateTime?
+  // 1-hour pay-by deadline shown to the buyer; the freeze-expiry cron
+  // releases the listing back to ACTIVE if nothing is detected by then.
+  manualPayByAt    DateTime?
+  // Countdown-notice idempotency guards (30-min + 10-min warnings).
+  manualWarn30At   DateTime?
+  manualWarn10At   DateTime?
+
   // Admin
   adminNote         String?
   adminReviewedById String?
@@ -874,12 +893,14 @@ model Transaction {
   messages            Message[]
   trackingEvents      TrackingEvent[]
   rating              Rating?
+  manualPayments      ManualPayment[]
   confirmedDeliveryAt DateTime?
 
   @@index([listingId])
   @@index([buyerId])
   @@index([sellerId])
   @@index([paymentStatus])
+  @@index([manualPayByAt])
   // peachPaymentId now has a @unique on the field (creates its own index).
 }
 
@@ -1563,10 +1584,67 @@ model RaffleAuditEvent {
 
 // Single-row settings table for feature flags + global config.
 // Looked up by key. Values are strings (parse as needed).
+// PAYMENT_MODE = 'manual' (FNB EFT) | 'paygate' (Stitch, dormant) lives here.
 model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ── Manual EFT payments (no live card gateway) ────────────────────────
+// Every incoming-payment signal we observe — whether a fast FNB
+// inContact email alert (provisional) or a row from the daily FNB
+// statement CSV (authoritative) — is logged here, deduped by
+// externalId, and matched to a Transaction by orderReference + amount.
+// Unmatched rows form the admin investigation queue.
+enum ManualPaymentSource {
+  INCONTACT // parsed from an FNB inContact email alert
+  STATEMENT // parsed from an uploaded FNB statement CSV row
+}
+
+enum ManualPaymentStatus {
+  MATCHED // bound to exactly one Transaction by ref + amount
+  UNMATCHED // no order matched — needs admin allocation/refund
+  AMBIGUOUS // ref matched but amount differs, or >1 candidate — admin
+  REVERSED // a prior provisional match was undone (e.g. statement disproved it)
+}
+
+model ManualPayment {
+  id         String              @id @default(cuid())
+  source     ManualPaymentSource
+  // Dedupe key: the email Message-ID for inContact, or a stable hash of
+  // (statementUploadId + row) for statement rows, so re-scanning the
+  // inbox or re-uploading a statement never double-processes a payment.
+  externalId String              @unique
+  rawText    String              @db.Text
+  amountCents Int
+  reference  String? // parsed buyer reference, trimmed/uppercased
+  paidAt     DateTime? // value date/time from the alert or statement
+  status     ManualPaymentStatus @default(UNMATCHED)
+
+  matchedTransactionId String?
+  matchedTransaction   Transaction? @relation(fields: [matchedTransactionId], references: [id])
+
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([reference])
+}
+
+// One row per admin upload of an FNB statement CSV — an audit trail of
+// the daily reconciliation runs (who uploaded what, how much matched).
+model StatementUpload {
+  id             String   @id @default(cuid())
+  filename       String
+  uploadedById   String?
+  rowCount       Int      @default(0)
+  creditRowCount Int      @default(0)
+  matchedCount   Int      @default(0)
+  unmatchedCount Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 // Atomic counter for per-prefix reference numbers (UM / AU / TS / RA).

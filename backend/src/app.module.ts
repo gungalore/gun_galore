@@ -35,6 +35,7 @@ import { PushModule } from './push/push.module';
 import { AskGgModule } from './ask-gg/ask-gg.module';
 import { ReloadingModule } from './reloading/reloading.module';
 import { HuntBallisticsModule } from './hunt-ballistics/hunt-ballistics.module';
+import { ManualPaymentsModule } from './manual-payments/manual-payments.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { HuntBallisticsModule } from './hunt-ballistics/hunt-ballistics.module';
     AskGgModule,
     ReloadingModule,
     HuntBallisticsModule,
+    ManualPaymentsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -10,6 +10,7 @@ import { ShippingModule } from '../shipping/shipping.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { AdminModule } from '../admin/admin.module';
 import { PushModule } from '../push/push.module';
+import { ManualPaymentsModule } from '../manual-payments/manual-payments.module';
 
 @Module({
   // AdminModule is imported so we can inject AdminCreditsService into
@@ -27,6 +28,7 @@ import { PushModule } from '../push/push.module';
     PaymentsModule,
     AdminModule,
     PushModule,
+    ManualPaymentsModule,
   ],
   providers: [TasksService],
 })

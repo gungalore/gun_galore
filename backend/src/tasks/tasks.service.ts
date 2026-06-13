@@ -13,6 +13,7 @@ import { AdminCreditsService } from '../admin/admin-credits.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
 import { PushService } from '../push/push.service';
+import { ManualPaymentsService } from '../manual-payments/manual-payments.service';
 
 // Threshold-alert dedup window. Once we've fired an alert at any
 // severity for a given service, we won't fire ANOTHER alert at the
@@ -39,7 +40,130 @@ export class TasksService {
     private readonly notifications: NotificationsService,
     private readonly sms: SmsService,
     private readonly push: PushService,
+    private readonly manualPayments: ManualPaymentsService,
   ) {}
+
+  // ─── Manual EFT — inContact inbox scan ───────────────────────────
+  // Every 10 min: read pop@gungalore.co.za for new FNB inContact credit
+  // alerts, match them to awaiting orders by reference + amount, and set
+  // manualDetectedAt (PROVISIONAL — stops the 1-hour freeze timer). The
+  // seller is NOT notified here; the daily statement upload is the
+  // authoritative gate that confirms payment + triggers dispatch.
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async scanInContactInbox() {
+    try {
+      await this.manualPayments.scanInbox();
+    } catch (err) {
+      this.logger.error(
+        `scanInContactInbox failed: ${(err as Error).message}`,
+      );
+    } finally {
+      await this.recordCronRun('incontact-scan');
+    }
+  }
+
+  // ─── Manual EFT — freeze expiry + payment countdown ──────────────
+  // Every 5 min: (1) release listings whose 1-hour pay-by window lapsed
+  // with no payment detected, cancelling the stale order; (2) fire the
+  // 30-min and 10-min "time left to pay" reminders to the buyer.
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async manualPaymentFreezeSweep() {
+    const now = new Date();
+    try {
+      // (1) Expire un-paid, un-detected orders past their pay-by time.
+      const expired = await this.prisma.transaction.findMany({
+        where: {
+          paymentStatus: 'HELD',
+          paidAt: null,
+          manualDetectedAt: null,
+          manualVerifiedAt: null,
+          manualPayByAt: { not: null, lte: now },
+        },
+        select: { id: true, listingId: true, orderReference: true },
+        take: 100,
+      });
+      for (const tx of expired) {
+        try {
+          // Release the listing back to ACTIVE and drop the dead order so
+          // it stops occupying the item. Mirrors the gateway-checkout
+          // rollback path.
+          await this.prisma.$transaction([
+            this.prisma.listing.updateMany({
+              where: { id: tx.listingId, status: 'PAYMENT_PENDING' },
+              data: { status: 'ACTIVE' },
+            }),
+            this.prisma.transaction.delete({ where: { id: tx.id } }),
+          ]);
+          this.logger.log(
+            `Manual EFT freeze expired for order ${tx.orderReference ?? tx.id} — listing ${tx.listingId} released`,
+          );
+        } catch (err) {
+          this.logger.warn(
+            `freeze-expire failed for ${tx.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+
+      // (2) Countdown reminders. 30-min warning when ≤30 min remain;
+      // 10-min when ≤10 min remain. Idempotent via the warn timestamps.
+      const in30 = new Date(now.getTime() + 30 * 60 * 1000);
+      const in10 = new Date(now.getTime() + 10 * 60 * 1000);
+      await this.fireManualWarnings('manualWarn30At', in30, '30 minutes');
+      await this.fireManualWarnings('manualWarn10At', in10, '10 minutes');
+    } catch (err) {
+      this.logger.error(
+        `manualPaymentFreezeSweep failed: ${(err as Error).message}`,
+      );
+    } finally {
+      await this.recordCronRun('manual-freeze-sweep');
+    }
+  }
+
+  // Fire a single countdown reminder tier. `field` is the idempotency
+  // stamp; `before` is the upper bound on manualPayByAt (≤30m / ≤10m
+  // out). Only un-detected, un-warned, still-pending orders qualify.
+  private async fireManualWarnings(
+    field: 'manualWarn30At' | 'manualWarn10At',
+    before: Date,
+    label: string,
+  ) {
+    const due = await this.prisma.transaction.findMany({
+      where: {
+        paymentStatus: 'HELD',
+        paidAt: null,
+        manualDetectedAt: null,
+        manualPayByAt: { not: null, lte: before, gt: new Date() },
+        [field]: null,
+      },
+      select: { id: true, buyerId: true, orderReference: true, buyerTotal: true },
+      take: 100,
+    });
+    for (const tx of due) {
+      try {
+        await this.prisma.transaction.update({
+          where: { id: tx.id },
+          data: { [field]: new Date() },
+        });
+        const buyer = await this.prisma.user.findUnique({
+          where: { id: tx.buyerId },
+          select: { phone: true },
+        });
+        if (buyer?.phone) {
+          await this.sms
+            .sendSms({
+              to: buyer.phone,
+              message: `Gun Galore: ${label} left to EFT R${(tx.buyerTotal / 100).toFixed(2)} for order ${tx.orderReference ?? ''}. Use the order number as your payment reference or your order is released.`,
+              reference: `manual-${field}-${tx.id}`,
+            })
+            .catch(() => undefined);
+        }
+      } catch (err) {
+        this.logger.warn(
+          `manual countdown (${label}) failed for ${tx.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
 
   // ─── Push subscription cleanup ───────────────────────────────────
   // Runs once a week. Drops subscriptions where lastUsedAt is older

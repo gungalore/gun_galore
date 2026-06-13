@@ -11,12 +11,28 @@ import { PrismaService } from '../prisma/prisma.service';
 // one place so a future "Used New" or rename of TAKE_A_SHOT doesn't
 // silently produce wrong refs.
 
-export type ReferencePrefix = 'UM' | 'AU' | 'TS' | 'RA';
+// UM/AU/TS = listings, RA = raffles, FS = featured-slot orders. Order
+// references reuse these per-prefix counters, so every issued number is
+// globally unique within its prefix whether it labels a listing or an
+// order (no two things ever share UM000042).
+export type ReferencePrefix = 'UM' | 'AU' | 'TS' | 'RA' | 'FS';
 
 const LISTING_TYPE_TO_PREFIX: Record<ListingType, ReferencePrefix> = {
   BUY_NOW: 'UM',
   AUCTION: 'AU',
   TAKE_A_SHOT: 'TS',
+};
+
+// Per-order reference source — the thing being paid for. Drives the
+// prefix the buyer sees as their EFT reference (e.g. UM000123).
+export type OrderRefSource = ListingType | 'RAFFLE' | 'FEATURED';
+
+const ORDER_SOURCE_TO_PREFIX: Record<OrderRefSource, ReferencePrefix> = {
+  BUY_NOW: 'UM',
+  AUCTION: 'AU',
+  TAKE_A_SHOT: 'TS',
+  RAFFLE: 'RA',
+  FEATURED: 'FS',
 };
 
 const PAD_WIDTH = 6;
@@ -60,6 +76,15 @@ export class ReferenceNumberService {
   /** Allocate for a Raffle (always RA). */
   allocateForRaffle(): Promise<string> {
     return this.allocate('RA');
+  }
+
+  /**
+   * Allocate a per-ORDER reference the buyer uses as their manual-EFT
+   * bank reference (e.g. UM000123). Unique per order; matched against
+   * FNB inContact alerts + statement rows during reconciliation.
+   */
+  allocateOrderReference(source: OrderRefSource): Promise<string> {
+    return this.allocate(ORDER_SOURCE_TO_PREFIX[source]);
   }
 }
 
