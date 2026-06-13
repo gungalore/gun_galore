@@ -55,7 +55,6 @@ export class TasksService {
   async pushSubscriptionPrune() {
     try {
       const removed = await this.push.pruneStale(90);
-      await this.recordCronRun('push-prune');
       if (removed > 0) {
         this.logger.log(`pushSubscriptionPrune: removed ${removed} stale subs`);
       }
@@ -63,6 +62,8 @@ export class TasksService {
       this.logger.error(
         `pushSubscriptionPrune failed: ${(err as Error).message}`,
       );
+    } finally {
+      await this.recordCronRun('push-prune');
     }
   }
 

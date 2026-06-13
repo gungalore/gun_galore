@@ -51,10 +51,10 @@ export default function RefundPolicyPage() {
       <h2>1. How payment held works</h2>
       <p>
         For most transactions, GunGalore holds the buyer's payment
-        through Peach Payments until delivery is confirmed:
+        through Stitch Express until delivery is confirmed:
       </p>
       <ol>
-        <li><strong>You pay</strong> — Peach captures the amount from your card or EFT and the transaction moves to <strong>Payment held</strong>.</li>
+        <li><strong>You pay</strong> — Stitch captures the amount from your card or EFT and the transaction moves to <strong>Payment held</strong>.</li>
         <li><strong>Seller dispatches</strong> — they confirm dispatch on the platform, which starts your delivery clock.</li>
         <li><strong>You receive the parcel</strong> — inspect it before doing anything else.</li>
         <li><strong>You confirm delivery</strong> — the funds release to the seller and the transaction completes.</li>
@@ -106,7 +106,7 @@ export default function RefundPolicyPage() {
         <li>The admin team gathers evidence from you, the seller and (where relevant) the courier's tracking record.</li>
         <li>One of four outcomes is recorded, with a written reason in the audit log:
           <ul>
-            <li><strong>Full refund to you</strong> — payment is reversed via Peach; you receive the full amount including shipping back to your original payment method (typically 3–7 business days).</li>
+            <li><strong>Full refund to you</strong> — payment is reversed via Stitch; you receive the full amount including shipping back to your original payment method (typically 3–7 business days).</li>
             <li><strong>Partial refund</strong> — for cases where the item is usable but not as-described; agreed split is refunded to you, the balance released to the seller.</li>
             <li><strong>Release to seller</strong> — where the dispute is not upheld; payment releases as normal. You will be told why.</li>
             <li><strong>Escalation</strong> — where there is suspected fraud or criminal conduct, the matter is referred to SAPS and may be paused indefinitely.</li>

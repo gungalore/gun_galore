@@ -123,7 +123,12 @@ export class KycService {
       result = await this.verifyNow.verifyIdNumber(idNumber);
     } catch (err) {
       if (err instanceof KycException) {
-        throw new BadRequestException(err.message);
+        this.log.warn(
+          `VerifyNow ID lookup failed for ${clerkId}: ${err.message}`,
+        );
+        throw new BadRequestException(
+          'We could not verify your ID right now. Please try again in a moment.',
+        );
       }
       throw err;
     }
@@ -246,19 +251,29 @@ export class KycService {
       result = await this.verifyNow.faceMatch(idNumber, selfieBase64);
     } catch (err) {
       if (err instanceof KycException) {
-        throw new BadRequestException(err.message);
+        this.log.warn(
+          `VerifyNow face match failed for ${clerkId}: ${err.message}`,
+        );
+        throw new BadRequestException(
+          'We could not verify your selfie right now. Please try again in a moment.',
+        );
       }
       throw err;
     }
 
-    const newAttempts = (user.kycAttempts ?? 0) + 1;
     const approved =
       result.confidenceScore >= 75 && result.matchStatus === 'Approved';
 
-    await this.prisma.user.update({
-      where: { clerkId },
+    // Guarded transition: only update if the user is still in a non-terminal
+    // KYC state. Two concurrent selfie submissions would otherwise both
+    // double-increment kycAttempts and double-fire the approval notifications.
+    const guarded = await this.prisma.user.updateMany({
+      where: {
+        clerkId,
+        kycStatus: { in: ['PENDING', 'REJECTED'] },
+      },
       data: {
-        kycAttempts: newAttempts,
+        kycAttempts: { increment: 1 },
         kycFaceMatchScore: result.confidenceScore,
         kycFaceMatchStatus: result.matchStatus,
         kycVerifyNowTransactionId: result.transactionId,
@@ -266,6 +281,23 @@ export class KycService {
         kycVerifiedAt: approved ? new Date() : undefined,
       },
     });
+
+    if (guarded.count === 0) {
+      this.log.log(
+        `submitFaceMatch no-op for ${clerkId} (already processed by another request)`,
+      );
+      return {
+        success: false,
+        message: 'KYC already processed. Check your account status.',
+      };
+    }
+
+    // Re-read so strike-count logic and admin alert reflect the post-increment value.
+    const fresh = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { kycAttempts: true },
+    });
+    const newAttempts = fresh?.kycAttempts ?? (user.kycAttempts ?? 0) + 1;
 
     if (approved) {
       // Tell the seller — they can now ship the pending sale.
@@ -462,7 +494,12 @@ export class KycService {
       live = await this.verifyNow.getCreditBalance();
     } catch (err) {
       if (err instanceof KycException) {
-        throw new BadRequestException(err.message);
+        this.log.warn(
+          `VerifyNow credit balance refresh failed: ${err.message}`,
+        );
+        throw new BadRequestException(
+          'Could not refresh VerifyNow credit balance. Try again shortly.',
+        );
       }
       throw err;
     }

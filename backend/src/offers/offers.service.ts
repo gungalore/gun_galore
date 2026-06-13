@@ -137,13 +137,21 @@ export class OffersService {
       );
     }
 
-    const updated = await this.prisma.offer.update({
-      where: { id: offerId },
+    // Atomic guard: include status=PENDING in the WHERE clause so a
+    // concurrent counter() / reject() cannot interleave between the
+    // read above and this write. If another transition already won,
+    // updateMany returns count=0 and we surface the same error.
+    const guard = await this.prisma.offer.updateMany({
+      where: { id: offerId, status: OfferStatus.PENDING },
       data: {
         status: OfferStatus.ACCEPTED,
         expiresAt: new Date(Date.now() + COUNTER_TTL_HOURS * 3_600_000),
       },
     });
+    if (guard.count === 0) {
+      throw new BadRequestException('Offer is no longer pending');
+    }
+    const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
 
     void this.notifyBuyerOfAccept(offerId);
     // Resolve the seller's "offer received" notification — they just
@@ -351,6 +359,16 @@ export class OffersService {
     const isBuyer = offer.buyerId === user.id;
     const isSeller = offer.listing.seller.clerkId === clerkId;
     if (!isBuyer && !isSeller) throw new ForbiddenException('Access denied');
+
+    // PRIVATE_ARRANGE is legal only for firearms (SAPS inter-dealer
+    // peer transfer). Strip it from the offer-checkout options on
+    // non-firearm listings so the buyer never sees a method the
+    // transaction layer would reject at submit (validateShipping).
+    if (!offer.listing.isFirearm && Array.isArray(offer.listing.shippingMethods)) {
+      offer.listing.shippingMethods = offer.listing.shippingMethods.filter(
+        (m) => m !== 'PRIVATE_ARRANGE',
+      );
+    }
 
     return offer;
   }

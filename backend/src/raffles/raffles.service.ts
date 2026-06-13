@@ -635,21 +635,10 @@ export class RafflesService {
       throw new BadRequestException('Incorrect answer to the question');
     }
 
-    // Refuse oversells — if the requested quantity would push sold past
-    // target, bail out before reserving anything.
-    const totalSold = raffle.ticketsSoldPaid + raffle.ticketsSoldPostal;
-    if (totalSold + dto.quantity > raffle.targetTicketCount) {
-      const remaining = raffle.targetTicketCount - totalSold;
-      throw new BadRequestException(
-        remaining <= 0
-          ? 'This raffle is sold out'
-          : `Only ${remaining} ticket${remaining === 1 ? '' : 's'} remaining`,
-      );
-    }
-
     // Allocate ticket numbers atomically — we read the next number from the
     // raffle and bump it inside a transaction so two concurrent buyers can
-    // never collide.
+    // never collide. The oversell check also lives inside the transaction
+    // because the pre-tx counter is stale under concurrent buyers.
     return this.prisma.$transaction(async (tx) => {
       const counted = await tx.ticket.count({
         where: {
@@ -657,6 +646,18 @@ export class RafflesService {
           status: { in: ['CONFIRMED', 'POSTAL', 'PENDING_PAYMENT'] },
         },
       });
+
+      const freshRaffle = await tx.raffle.findUnique({ where: { id: raffleId } });
+      if (!freshRaffle) throw new NotFoundException('Raffle not found');
+
+      if (counted + dto.quantity > freshRaffle.targetTicketCount) {
+        const remaining = freshRaffle.targetTicketCount - counted;
+        throw new BadRequestException(
+          remaining <= 0
+            ? 'This raffle is sold out'
+            : `Only ${remaining} ticket${remaining === 1 ? '' : 's'} remaining`,
+        );
+      }
 
       const created: { id: string; ticketNumber: number; referenceCode: string }[] = [];
       for (let i = 0; i < dto.quantity; i += 1) {
@@ -667,7 +668,7 @@ export class RafflesService {
             ticketNumber: counted + i + 1,
             referenceCode: generateRef(),
             status: 'PENDING_PAYMENT',
-            amountCents: raffle.ticketPriceCents,
+            amountCents: freshRaffle.ticketPriceCents,
           },
         });
         created.push({
@@ -680,8 +681,8 @@ export class RafflesService {
       return {
         ticketIds: created.map((t) => t.id),
         tickets: created,
-        totalCents: raffle.ticketPriceCents * dto.quantity,
-        raffle: { id: raffle.id, title: raffle.title },
+        totalCents: freshRaffle.ticketPriceCents * dto.quantity,
+        raffle: { id: freshRaffle.id, title: freshRaffle.title },
       };
     });
   }

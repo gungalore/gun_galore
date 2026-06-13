@@ -257,11 +257,12 @@ export class UsersController {
 
   // Submitted by the post-first-publish ProfileCompletionModal. ALL
   // fields are required (the modal won't let the seller submit a
-  // partial). Backend validates again + runs Peach AVS on the
-  // banking quartet + encrypts the SA ID at rest. Sets
-  // profileCompletedAt + bankVerifiedAt on success. Throws a
+  // partial). Backend validates the banking quartet + encrypts the
+  // SA ID at rest. Sets profileCompletedAt on success. Throws a
   // BadRequestException with the modal-displayable message on any
-  // validation / AVS failure.
+  // validation failure. Note: Peach AVS was removed in 2026-06;
+  // bank details are now verified manually by admin at payout time
+  // (no automated verification with Stitch Express).
   @Post('me/profile-complete')
   @UseGuards(ClerkGuard)
   completeProfile(

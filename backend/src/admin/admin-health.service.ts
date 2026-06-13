@@ -271,6 +271,7 @@ export class AdminHealthService {
       { key: 'raffle-expire', label: 'Raffle claim expiry', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'verifynow-balance', label: 'VerifyNow balance refresh', schedule: 'every 5 min', expectedIntervalSec: 300 },
       { key: 'pending-tickets-sweep', label: 'Pending raffle tickets sweep', schedule: 'every 5 min', expectedIntervalSec: 300 },
+      { key: 'push-prune', label: 'Push subscription cleanup', schedule: 'every 1 week', expectedIntervalSec: 604800 },
     ];
 
     const rows = await this.prisma.setting.findMany({

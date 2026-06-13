@@ -602,11 +602,14 @@ export class ActionTokensController {
   }
 }
 
-/** Pull caller IP from Express req — handles proxy headers safely. */
+/**
+ * Pull caller IP from Express req. Trusts `app.set('trust proxy', 1)`
+ * in main.ts — Express populates `req.ip` with the FIRST entry of the
+ * single nginx hop's X-Forwarded-For. Manual X-Forwarded-For parsing
+ * was removed because it bypassed the single-hop trust boundary and
+ * let a client spoof upstream entries.
+ */
 function reqIp(req: Request): string {
-  const fwd = req.headers['x-forwarded-for'];
-  if (typeof fwd === 'string') return fwd.split(',')[0]?.trim() ?? '';
-  if (Array.isArray(fwd)) return fwd[0]?.split(',')[0]?.trim() ?? '';
   return req.ip ?? req.socket?.remoteAddress ?? '';
 }
 

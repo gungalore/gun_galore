@@ -8,7 +8,6 @@ import {
   Headers,
   HttpCode,
   Logger,
-  ForbiddenException,
 } from '@nestjs/common';
 import { PudoService } from './pudo.service';
 import { DealersService } from './dealers.service';
@@ -104,11 +103,18 @@ export class ShippingController {
     const expected = process.env.TCG_WEBHOOK_SECRET;
     if (expected && secret !== expected) {
       this.logger.warn('TCG webhook rejected — invalid secret');
-      throw new ForbiddenException('Invalid webhook secret');
+      return { received: true };
     }
 
-    const event = (body.event ?? body.eventType ?? 'unknown') as string;
-    await this.shipping.processTcgEvent(event, body);
+    try {
+      const event = (body.event ?? body.eventType ?? 'unknown') as string;
+      await this.shipping.processTcgEvent(event, body);
+    } catch (err) {
+      this.logger.error(
+        `TCG webhook handler failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
     return { received: true };
   }
 
@@ -119,7 +125,14 @@ export class ShippingController {
   @Post('webhook/pudo')
   @HttpCode(200)
   async pudoWebhook(@Body() body: Record<string, unknown>) {
-    await this.shipping.processPudoEvent(body);
+    try {
+      await this.shipping.processPudoEvent(body);
+    } catch (err) {
+      this.logger.error(
+        `Pudo webhook handler failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
     return { received: true };
   }
 }

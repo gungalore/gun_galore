@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { KycOrTokenGuard } from '../auth/kyc-or-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { KycService } from './kyc.service';
@@ -28,6 +29,7 @@ export class KycController {
   // frontend can show the seller a "is this you?" confirmation before
   // they move on to the selfie step.
   @Post('verify-id')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async verifyId(@CurrentUser() clerkId: string, @Body() dto: VerifyIdDto) {
     return this.kyc.verifyId(clerkId, dto.idNumber);
   }
@@ -36,6 +38,7 @@ export class KycController {
   // and posts the base64 image plus the same idNumber from step 1 so the
   // VerifyNow request body has both fields.
   @Post('face-match')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async faceMatch(
     @CurrentUser() clerkId: string,
     @Body() dto: FaceMatchDto,
@@ -49,6 +52,7 @@ export class KycController {
   // then purge the encrypted blob. The frontend only has to send the
   // selfie — no ID re-typing.
   @Post('selfie-only')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async selfieOnly(
     @CurrentUser() clerkId: string,
     @Body() body: { selfieBase64: string },

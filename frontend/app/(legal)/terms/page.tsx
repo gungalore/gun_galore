@@ -139,20 +139,20 @@ export default function TermsPage() {
       <h2>7. Payments and the funds-held mechanism</h2>
       <p>
         All payments on GunGalore are processed by{' '}
-        <strong>Peach Payments</strong>, a licensed South African
+        <strong>Stitch Express</strong>, a licensed South African
         payment service provider. By making a payment you authorise
-        Peach Payments to capture funds from your chosen payment
+        Stitch Express to capture funds from your chosen payment
         instrument, and you authorise GunGalore to instruct release of
         the seller payout in accordance with these Terms.
       </p>
       <p>
         For most transactions, GunGalore operates a{' '}
         <strong>funds-held mechanism</strong>: the Buyer's payment is
-        captured by Peach Payments at checkout and the resulting
+        captured by Stitch Express at checkout and the resulting
         amount (less commission and processing fees) is held until the
         Buyer confirms delivery of the item, the Buyer's confirmation
         window elapses, or a dispute is resolved. Once one of these
-        triggers occurs, GunGalore instructs Peach Payments to release
+        triggers occurs, GunGalore instructs Stitch Express to release
         the seller payout to the Seller's verified bank account.
       </p>
       <p>
@@ -162,7 +162,7 @@ export default function TermsPage() {
         not a bank and does not provide deposit-taking or fund-custody
         financial services. GunGalore does not pay interest on funds held, does not
         guarantee the availability of those funds against the
-        insolvency of Peach Payments, and is not a registered financial
+        insolvency of Stitch Express, and is not a registered financial
         services provider.
       </p>
       <p>
@@ -179,7 +179,7 @@ export default function TermsPage() {
       <p>
         GunGalore charges Sellers a <strong>banded commission</strong>{' '}
         on the listing price of each completed sale, plus a{' '}
-        <strong>processing fee</strong> charged by Peach Payments
+        <strong>processing fee</strong> charged by Stitch Express
         (passed through to the Seller in full). The exact commission
         bands and processing-fee structure are displayed to the Seller
         on the Sell form before publishing a listing and snapshotted
@@ -195,10 +195,11 @@ export default function TermsPage() {
       </p>
       <p>
         Payouts are made in South African Rand (ZAR) by electronic
-        funds transfer to the Seller's bank account, after Peach
-        Account Verification Service (AVS) has confirmed that the
-        account belongs to the Seller. We do not pay out to third
-        parties or to accounts not in the Seller's name.
+        funds transfer to the Seller's bank account. Before the first
+        payout we manually review the Seller's bank details against
+        their verified identity to confirm the account belongs to the
+        Seller. We do not pay out to third parties or to accounts not
+        in the Seller's name.
       </p>
 
       <h2>9. Shipping and delivery</h2>
@@ -334,7 +335,7 @@ export default function TermsPage() {
         performance caused by events beyond its reasonable control,
         including natural disasters, war, civil unrest, government
         action, power or internet outages, or acts or omissions of
-        third-party service providers (including Peach Payments,
+        third-party service providers (including Stitch Express,
         VerifyNow, Pudo, The Courier Guy, Cloudinary, Resend or
         Clerk).
       </p>

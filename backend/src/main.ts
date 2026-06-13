@@ -8,11 +8,12 @@
 import * as dotenv from 'dotenv';
 dotenv.config({ override: true });
 
-import { NestFactory } from '@nestjs/core';
+import { HttpAdapterHost, NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { adminJwtSecret } from './admin/admin-jwt-secret';
+import { RetryAfterFilter } from './common/filters/retry-after.filter';
 
 /**
  * Fail-closed production config gate. Runs after dotenv has loaded .env.
@@ -88,6 +89,13 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
+
+  // Global 429 Retry-After header (RFC 7231 §7.1.3). Covers throttler
+  // ThrottlerException AND our custom HttpException 429s (e.g. Ask GG
+  // fair-use cap). Without this, naive HTTP clients ignore the JSON
+  // `retryAfterSec` and retry immediately, defeating fair-use.
+  const { httpAdapter } = app.get(HttpAdapterHost);
+  app.useGlobalFilters(new RetryAfterFilter(httpAdapter));
 
   // CORS — allow the configured production FRONTEND_URL plus any
   // localhost port for local development (next dev → 3000, prod

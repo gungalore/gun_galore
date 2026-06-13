@@ -305,7 +305,13 @@ export class TransactionsService {
         data: { status: ListingStatus.ACTIVE },
       });
       await this.prisma.transaction.delete({ where: { id: tx.id } });
-      throw new BadRequestException(`Payment checkout failed: ${(err as Error).message}`);
+      this.logger.error(
+        `Stitch createCheckout failed for tx ${tx.id}: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      throw new BadRequestException(
+        'Payment processing failed — please try again.',
+      );
     }
 
     // Persist the Stitch payment id (reusing the peachCheckoutId column

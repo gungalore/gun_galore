@@ -101,7 +101,7 @@ export default function PrivacyPage() {
       <h3>3.3 Banking (Sellers only)</h3>
       <ul>
         <li>Bank name, account holder name, account number, branch code, account type</li>
-        <li>Peach Account Verification Service (AVS) result confirming the account belongs to the named holder</li>
+        <li>The outcome of our manual review of these bank details before your first payout (we check the account-holder name matches your verified identity)</li>
       </ul>
 
       <h3>3.4 Address</h3>
@@ -133,8 +133,9 @@ export default function PrivacyPage() {
         purchase or use any other feature of the Platform. We also
         collect information from our service providers (for example,
         VerifyNow returns your name, ID status and face-match score;
-        Peach returns AVS verification results) and automatically when
-        you interact with the Platform (session, device, activity).
+        Stitch Express returns payment confirmation results) and
+        automatically when you interact with the Platform (session,
+        device, activity).
       </p>
 
       <h2>5. Why we collect it (purposes)</h2>
@@ -180,7 +181,7 @@ export default function PrivacyPage() {
         <tbody>
           {[
             ['Clerk', 'United States', 'Email, name, sessions, login activity'],
-            ['Peach Payments', 'South Africa', 'Payment instrument, transaction amount, bank account (for AVS + payout)'],
+            ['Stitch Express', 'South Africa', 'Payment instrument, transaction amount (pay-in and seller payout)'],
             ['VerifyNow', 'South Africa', 'ID number, name, selfie image (KYC face-match)'],
             ['Pudo', 'South Africa', 'Buyer address, parcel size + weight, shipping reference'],
             ['The Courier Guy', 'South Africa', 'Buyer address, parcel size + weight, waybill reference'],

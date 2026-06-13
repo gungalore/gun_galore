@@ -41,7 +41,8 @@ const SA_BANKS: { name: string; universalCode: string }[] = [
 //   - Phone: typed, no OTP (per operator decision)
 //   - Address: Google autocomplete + manual fields
 //   - SA ID number: stored encrypted at rest, decrypted at KYC time
-//   - Banking: validated against Peach AVS on save
+//   - Banking: captured as entered; reviewed manually by an admin
+//     before first payout (automated AVS was removed with Peach)
 //
 // The modal CANNOT be dismissed — no close button, Esc handler is
 // suppressed, click-outside does nothing. The seller can keep
@@ -526,8 +527,9 @@ export function ProfileCompletionModal({
               marginBottom: 12,
             }}
           >
-            We verify your bank details with Peach (your bank confirms the
-            account exists and the holder name matches) before we save them.
+            Our team reviews your bank details against your verified
+            identity before your first payout — make sure the account
+            holder name matches your ID.
           </p>
           <Row>
             <Field label="Bank *">

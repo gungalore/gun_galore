@@ -530,12 +530,17 @@ listing detail, transaction page, emails, SMS, admin panel.
 - **3DS/OTP:** Stitch handles cardholder authentication on its
   hosted page. Buyer is always present (cardholder-initiated, no
   recurring/tokenisation in scope for v1).
-- **Bank verification (AVS):** VerifyNow (NOT Stitch BANVR — Peach's
-  product was dropped with Peach). Result via webhook. AVS is tied
-  to the user's KYC identity (operator memory:
-  `project_avs_kyc_ordering`): bank-holder name + ID must match the
-  KYC-verified identity, so AVS passing means "this seller actually
-  owns this account."
+- **Bank verification:** there is NO automated AVS. Automated account
+  verification was Peach's BANVR product and was dropped along with
+  Peach; Stitch Express has no account-verification endpoint, and
+  VerifyNow only does ID lookup + selfie face-match (KYC), NOT bank
+  AVS. `completeProfile` captures bank details as entered
+  (`bankVerifiedAt: null`, `bankAvsResult: null`); an **admin reviews
+  the bank-holder name against the KYC-verified identity manually
+  before the first payout EFT**. Do not claim automated AVS in any
+  user-facing copy — the legal pages were corrected to say "manual
+  review before first payout" (operator memory:
+  `project_avs_kyc_ordering`).
 - **`VERIFYNOW_MODE=production`** at boot — asserted by config
   guard; sandbox is rejected outside dev. Operator memory:
   `feedback_env_mode_changes` — never flip sandbox↔production

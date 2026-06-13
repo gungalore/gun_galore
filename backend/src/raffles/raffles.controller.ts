@@ -14,6 +14,7 @@ import {
   HttpCode,
   Res,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
@@ -154,7 +155,7 @@ export class RafflesBuyerController {
   @Post('tickets/dev-confirm')
   devConfirm(@Body() body: { ticketIds: string[] }) {
     if (process.env.NODE_ENV === 'production') {
-      throw new Error('Dev confirm is disabled in production');
+      throw new BadRequestException('Dev confirm is disabled in production');
     }
     return this.raffles.confirmTickets(body.ticketIds, 'dev-bypass');
   }

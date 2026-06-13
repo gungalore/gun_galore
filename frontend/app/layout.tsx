@@ -156,6 +156,13 @@ export default function RootLayout({
           ClerkProvider because the hook depends on useAuth/useUser. */}
       <html lang="en-ZA">
         <head>
+          {/* Defense-in-depth fallback for the HTTP Referrer-Policy
+              header set in next.config.mjs. Some older browsers and
+              intermediaries strip or ignore the header; the meta tag
+              guarantees the policy is applied so URLs carrying action
+              tokens are never leaked in the Referer on cross-origin
+              navigation. */}
+          <meta name="referrer" content="strict-origin-when-cross-origin" />
           {/* Pre-paint standalone-mode detection — sets
               <html data-standalone="true"> when the app is running as
               an installed PWA so CSS gated on that attribute applies

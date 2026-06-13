@@ -241,7 +241,7 @@ export class TransactionsController {
     const allowed = ['DAMAGED', 'WRONG_ITEM', 'NEVER_ARRIVED', 'OTHER'] as const;
     const reason = (body.reason ?? '').toUpperCase() as (typeof allowed)[number];
     if (!allowed.includes(reason)) {
-      throw new Error('Invalid dispute reason');
+      throw new BadRequestException('Invalid dispute reason');
     }
     return this.txService.raiseDispute(id, clerkId, reason, body.details ?? '');
   }
@@ -338,7 +338,14 @@ export class PaymentsWebhookController {
       return { received: true };
     }
 
-    await this.txService.handleStitchWebhook(body);
+    try {
+      await this.txService.handleStitchWebhook(body);
+    } catch (err) {
+      this.logger.error(
+        `Stitch webhook handler failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
     return { received: true };
   }
 }

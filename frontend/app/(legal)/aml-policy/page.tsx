@@ -44,7 +44,7 @@ export default function AmlPolicyPage() {
         GunGalore is <strong>not a designated accountable institution</strong>{' '}
         under the Financial Intelligence Centre Act 38 of 2001 ("FICA")
         and is not licensed as a financial services provider. We
-        process payments through Peach Payments, which is licensed.
+        process payments through Stitch Express, which is licensed.
         Nevertheless, we voluntarily implement a number of controls
         that mirror accountable-institution practice, because doing so
         protects our buyers, sellers and the integrity of the
@@ -60,7 +60,7 @@ export default function AmlPolicyPage() {
       <ul>
         <li>South African ID number lookup against the Department of Home Affairs;</li>
         <li>Selfie face-match against the Home Affairs ID photo;</li>
-        <li>Bank account verification via Peach Account Verification Service ("AVS") to confirm the payout account belongs to the verified person.</li>
+        <li>A manual review of the Seller's bank details against their verified identity before the first payout, to confirm the payout account belongs to the verified person.</li>
       </ul>
       <p>
         If face-match fails three times, the account is flagged for

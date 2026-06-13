@@ -15,7 +15,7 @@ import {
   MaxFileSizeValidator,
   FileTypeValidator,
 } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ListingsService } from './listings.service';
@@ -73,6 +73,7 @@ export class ListingsController {
   // randoms can't burn through our Anthropic quota.
   @Post('enhance-description')
   @UseGuards(ClerkGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(200)
   enhanceDescription(
     @Body()
@@ -102,6 +103,7 @@ export class ListingsController {
   // preview with prohibited content highlighted, or a clean confirm-publish).
   @Post('preview')
   @UseGuards(ClerkGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(200)
   preview(
     @CurrentUser() clerkId: string,

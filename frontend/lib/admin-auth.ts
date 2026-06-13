@@ -13,7 +13,10 @@
  *     exposure is minimal
  *   - Middleware can't gate admin pages anymore (server can't read
  *     localStorage); each admin page must do its own client-side gate
- *   - 30-day lifetime is set client-side; server still issues 8h JWTs
+ *   - Client lifetime is aligned with the server's 8h JWT: we decode
+ *     the exp claim on every read and clear stale tokens locally so a
+ *     dead JWT never reaches the API. Server JWT is still the source
+ *     of truth.
  *
  * Usage in a client component admin page:
  *
@@ -35,6 +38,29 @@ const STORAGE_KEY = 'gg_admin_token';
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
+// Pull the exp claim out of a JWT payload without verifying signature
+// (the server is the one that verifies; we just need to know when to
+// stop sending a token we already know is dead).
+function getTokenExpiryMs(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = payload + '==='.slice((payload.length + 3) % 4);
+    const json = JSON.parse(atob(padded));
+    if (typeof json.exp !== 'number') return null;
+    return json.exp * 1000;
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpired(token: string): boolean {
+  const expMs = getTokenExpiryMs(token);
+  if (expMs === null) return false;
+  return Date.now() >= expMs;
+}
+
 /**
  * Save the admin JWT after a successful /admin/auth/login.
  */
@@ -49,11 +75,19 @@ export function setAdminToken(token: string): void {
 
 /**
  * Read the stored admin JWT, or null if missing / not in browser.
+ * Returns null and clears the entry if the JWT's exp has passed —
+ * matches the server's 8h lifetime so we never ship a dead token.
  */
 export function getAdminToken(): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    return localStorage.getItem(STORAGE_KEY);
+    const token = localStorage.getItem(STORAGE_KEY);
+    if (!token) return null;
+    if (isTokenExpired(token)) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return token;
   } catch {
     return null;
   }
