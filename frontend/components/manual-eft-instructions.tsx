@@ -95,9 +95,14 @@ export function ManualEftInstructions({
     return () => clearInterval(t);
   }, [data.payByAt]);
 
-  const mins = Math.floor(remaining / 60000);
-  const secs = Math.floor((remaining % 60000) / 1000);
   const expired = remaining <= 0;
+  const totalMin = Math.floor(remaining / 60000);
+  const hrs = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  const secs = Math.floor((remaining % 60000) / 1000);
+  // Long window → show "23h 45m"; final hour → "45m 12s" with a live tick.
+  const countdownLabel =
+    hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m ${String(secs).padStart(2, '0')}s`;
 
   const b = data.bankDetails;
 
@@ -122,14 +127,16 @@ export function ManualEftInstructions({
       >
         {expired ? (
           <span style={{ color: 'var(--red)' }}>
-            Your 1-hour payment window has passed — this order may have been
-            released. Make a fresh order if the item is still available.
+            Your payment window has passed — this order may have been
+            released. If you&apos;ve already paid, don&apos;t pay again — contact
+            support with your reference. Otherwise make a fresh order if the
+            item is still available.
           </span>
         ) : (
           <>
-            Your item is held for{' '}
+            Your item is reserved for you for{' '}
             <strong style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-              {mins}m {String(secs).padStart(2, '0')}s
+              {countdownLabel}
             </strong>{' '}
             — pay within this window to secure it.
           </>

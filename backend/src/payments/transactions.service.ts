@@ -27,8 +27,13 @@ import {
 // Defaults to 'manual' since the gateway is dormant.
 export const PAYMENT_MODE: 'manual' | 'paygate' =
   process.env.PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
-// How long a listing stays frozen awaiting the buyer's EFT (operator: 1h).
-export const MANUAL_PAY_WINDOW_MS = 60 * 60 * 1000;
+// How long a listing stays frozen awaiting the committed buyer's EFT.
+// 24h (operator decision): long enough that the daily FNB statement
+// reconciliation runs at least once while the item is still reserved for
+// THIS buyer — so a genuine payment is caught + confirmed before the
+// listing is ever released to other buyers. Fairer to the first buyer
+// than a short window, and the statement stays the source of truth.
+export const MANUAL_PAY_WINDOW_MS = 24 * 60 * 60 * 1000;
 // GG's FNB receiving account, shown to the buyer at manual checkout.
 export const GG_BANK_DETAILS = {
   accountName: 'Gun Galore (Pty) Ltd',

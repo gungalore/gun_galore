@@ -62,10 +62,11 @@ export class TasksService {
     }
   }
 
-  // ─── Manual EFT — freeze expiry + payment countdown ──────────────
-  // Every 5 min: (1) release listings whose 1-hour pay-by window lapsed
-  // with no payment detected, cancelling the stale order; (2) fire the
-  // 30-min and 10-min "time left to pay" reminders to the buyer.
+  // ─── Manual EFT — freeze expiry + payment reminders ──────────────
+  // Every 5 min: (1) release listings whose 24-hour pay-by window lapsed
+  // with no payment detected, SOFT-cancelling the stale order (the row
+  // is kept so a late statement payment is still recoverable); (2) fire
+  // the 12-hours-left and 1-hour-left "time to pay" SMS reminders.
   @Cron(CronExpression.EVERY_5_MINUTES)
   async manualPaymentFreezeSweep() {
     const now = new Date();
@@ -111,12 +112,13 @@ export class TasksService {
         }
       }
 
-      // (2) Countdown reminders. 30-min warning when ≤30 min remain;
-      // 10-min when ≤10 min remain. Idempotent via the warn timestamps.
-      const in30 = new Date(now.getTime() + 30 * 60 * 1000);
-      const in10 = new Date(now.getTime() + 10 * 60 * 1000);
-      await this.fireManualWarnings('manualWarn30At', in30, '30 minutes');
-      await this.fireManualWarnings('manualWarn10At', in10, '10 minutes');
+      // (2) Payment reminders across the 24h window: a nudge when ≤12h
+      // remain and a final one when ≤1h remains. Idempotent via the warn
+      // timestamps. (The first touchpoint is the checkout screen itself.)
+      const in12h = new Date(now.getTime() + 12 * 60 * 60 * 1000);
+      const in1h = new Date(now.getTime() + 60 * 60 * 1000);
+      await this.fireManualWarnings('manualWarn12hAt', in12h, '12 hours');
+      await this.fireManualWarnings('manualWarn1hAt', in1h, '1 hour');
     } catch (err) {
       this.logger.error(
         `manualPaymentFreezeSweep failed: ${(err as Error).message}`,
@@ -126,11 +128,11 @@ export class TasksService {
     }
   }
 
-  // Fire a single countdown reminder tier. `field` is the idempotency
-  // stamp; `before` is the upper bound on manualPayByAt (≤30m / ≤10m
+  // Fire a single payment-reminder tier. `field` is the idempotency
+  // stamp; `before` is the upper bound on manualPayByAt (≤12h / ≤1h
   // out). Only un-detected, un-warned, still-pending orders qualify.
   private async fireManualWarnings(
-    field: 'manualWarn30At' | 'manualWarn10At',
+    field: 'manualWarn12hAt' | 'manualWarn1hAt',
     before: Date,
     label: string,
   ) {

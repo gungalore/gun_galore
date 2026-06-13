@@ -875,17 +875,21 @@ model Transaction {
   // statement confirmed it (authoritative → markPaid runs).
   manualDetectedAt DateTime?
   manualVerifiedAt DateTime?
-  // 1-hour pay-by deadline shown to the buyer; the freeze-expiry cron
-  // releases the listing back to ACTIVE if nothing is detected by then.
+  // 24-hour pay-by deadline shown to the buyer. The item stays reserved
+  // for the committed buyer for the full window (long enough that the
+  // daily statement reconciliation runs at least once while it's still
+  // theirs); the freeze-expiry cron only releases the listing back to
+  // ACTIVE if NOTHING has been detected/paid by then.
   manualPayByAt    DateTime?
   // Set when the freeze-expiry cron soft-cancels an un-paid manual order
   // (releases the listing but KEEPS this row so a LATE statement payment
   // for orderReference can still be matched → surfaced as "paid after
   // expiry" for admin refund/re-fulfil instead of being lost).
   manualCancelledAt DateTime?
-  // Countdown-notice idempotency guards (30-min + 10-min warnings).
-  manualWarn30At   DateTime?
-  manualWarn10At   DateTime?
+  // Payment-reminder idempotency guards: a "12 hours left" and a
+  // "1 hour left" SMS nudge across the 24h window.
+  manualWarn12hAt  DateTime?
+  manualWarn1hAt   DateTime?
 
   // Admin
   adminNote         String?
