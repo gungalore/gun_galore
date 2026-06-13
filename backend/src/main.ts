@@ -52,6 +52,21 @@ function assertProductionConfig() {
       '⚠️  STITCH_WEBHOOK_SECRET is not set — incoming Stitch webhooks will be REJECTED (fail-closed). Register the webhook (POST /api/v1/webhook) and set the returned Svix secret before relying on webhooks.',
     );
   }
+  // WARN: Clerk webhook secret missing — user.created/updated/deleted sync
+  // events arrive UNVERIFIED and are dropped (the handler fails closed and
+  // does not process them), so new signups won't land in our DB.
+  if (!process.env.CLERK_WEBHOOK_SECRET) {
+    log.error(
+      '⚠️  CLERK_WEBHOOK_SECRET is not set — incoming Clerk webhooks cannot be verified and will be DROPPED (user sync breaks). Set the Svix signing secret from the Clerk dashboard.',
+    );
+  }
+  // WARN: TCG shipping webhook secret missing — without it the TCG webhook
+  // can't authenticate callers; it fails closed in production (rejects).
+  if (!process.env.TCG_WEBHOOK_SECRET) {
+    log.error(
+      '⚠️  TCG_WEBHOOK_SECRET is not set — TCG shipping webhooks will be REJECTED in production (fail-closed). Set the shared secret agreed with The Courier Guy.',
+    );
+  }
 }
 
 async function bootstrap() {

@@ -1001,9 +1001,15 @@ export class TransactionsService {
     }
 
     const now = new Date();
-    await this.prisma.$transaction([
-      this.prisma.transaction.update({
-        where: { id: transactionId },
+    // Atomic guarded release: include paymentStatus='HELD' +
+    // confirmedDeliveryAt=null in the WHERE so a concurrent admin
+    // dispute (HELD→DISPUTED) or a double-click can't slip between the
+    // read above and this write and release funds on a disputed order.
+    // count===0 → the row moved out of HELD since we read it; abort and
+    // roll the whole interactive transaction back (seller increment too).
+    await this.prisma.$transaction(async (txc) => {
+      const guard = await txc.transaction.updateMany({
+        where: { id: transactionId, paymentStatus: 'HELD', confirmedDeliveryAt: null },
         data: {
           paymentStatus: 'RELEASED',
           releasedAt: now,
@@ -1011,12 +1017,17 @@ export class TransactionsService {
           deliveredAt: tx.deliveredAt ?? now,
           shippingStatus: 'DELIVERED',
         },
-      }),
-      this.prisma.user.update({
+      });
+      if (guard.count === 0) {
+        throw new BadRequestException(
+          'Payment is no longer in a releasable state — it may have been disputed or already released.',
+        );
+      }
+      await txc.user.update({
         where: { id: tx.sellerId },
         data: { totalSales: { increment: 1 } },
-      }),
-    ]);
+      });
+    });
 
     this.logger.log(`Transaction ${transactionId} delivery confirmed — payment released`);
     // Two INTERNAL timeline rows back-to-back: the buyer's explicit
@@ -1173,32 +1184,38 @@ export class TransactionsService {
       paidAt.getTime() + ACCEPT_DEADLINE_HOURS * 60 * 60 * 1000,
     );
 
-    // ─── ATOMIC idempotency guard ─────────────────────────────────────
+    // ─── ATOMIC idempotency guard + listing flip ──────────────────────
     // updateMany with a paidAt=null predicate so only ONE concurrent
     // caller (result-page race vs webhook race vs double-click) can flip
     // the row to paid. count===0 means another path already claimed it —
-    // a successful no-op, not an error.
-    const claim = await this.prisma.transaction.updateMany({
-      where: { id: txId, paidAt: null },
-      data: {
-        paymentStatus: 'HELD',
-        peachPaymentId: result.paymentId,
-        peachResultCode: result.resultCode,
-        paidAt,
-        acceptDeadlineAt,
-      },
+    // a successful no-op, not an error. The listing→SOLD flip is in the
+    // SAME interactive transaction so we can never end up with a paid
+    // transaction whose listing is still PAYMENT_PENDING (a process crash
+    // between the two writes previously left that inconsistency).
+    const claimed = await this.prisma.$transaction(async (txc) => {
+      const claim = await txc.transaction.updateMany({
+        where: { id: txId, paidAt: null },
+        data: {
+          paymentStatus: 'HELD',
+          peachPaymentId: result.paymentId,
+          peachResultCode: result.resultCode,
+          paidAt,
+          acceptDeadlineAt,
+        },
+      });
+      if (claim.count === 0) return false;
+      await txc.listing.update({
+        where: { id: listing.id },
+        data: { status: 'SOLD', soldAt: new Date() },
+      });
+      return true;
     });
-    if (claim.count === 0) {
+    if (!claimed) {
       this.logger.log(
         `markPaid: transaction ${txId} was already claimed by another path — skipping`,
       );
       return;
     }
-
-    await this.prisma.listing.update({
-      where: { id: listing.id },
-      data: { status: 'SOLD', soldAt: new Date() },
-    });
 
     this.logger.log(`Transaction ${txId} paid — listing ${listing.id} marked SOLD`);
 

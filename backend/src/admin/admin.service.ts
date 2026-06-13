@@ -1001,12 +1001,17 @@ export class AdminService {
     // ─── Only HELD or DISPUTED orders can be refunded ────────────────
     // A RELEASED order has already paid the seller (refunding would be a
     // double payout); an already-REFUNDED order must not refund twice.
-    // Enforce as an atomic conditional update so two concurrent admin
-    // clicks can't both pass the check. count===0 → not in a refundable
-    // state (already refunded / released / etc).
+    // Enforce as an atomic conditional update that ALSO flips the status
+    // to REFUNDED in the same statement — this makes the flip the
+    // concurrency LOCK: two near-simultaneous admin clicks can't both
+    // pass (the second sees count===0 and aborts BEFORE calling the
+    // gateway, so we never double-charge the refund). If the gateway
+    // call below fails we roll the status back to its prior value, so
+    // the buyer is never shown a REFUNDED that didn't actually move money.
     const claim = await this.prisma.transaction.updateMany({
       where: { id: txId, paymentStatus: { in: ['HELD', 'DISPUTED'] } },
       data: {
+        paymentStatus: 'REFUNDED',
         adminNote: note ?? null,
         adminReviewedById: adminId,
         adminReviewedAt: new Date(),
@@ -1018,13 +1023,12 @@ export class AdminService {
       );
     }
 
-    // ─── Actually move the money back via Peach BEFORE flipping ──────
-    // Previously this method told the buyer "refund issued" but never
-    // called the gateway, so funds never returned. Refund first; only
-    // mark REFUNDED + notify + credit-note on gateway success. On
-    // failure, roll the status back to its prior value and raise an
-    // urgent alert so an admin can retry — never tell the buyer they
-    // were refunded when they weren't.
+    // ─── Move the money back via the gateway ─────────────────────────
+    // The status was flipped to REFUNDED above purely as the concurrency
+    // lock. We now actually call the gateway; on failure we roll the
+    // status back to its prior value so the buyer is never shown a
+    // REFUNDED that didn't move money. (Method previously told the buyer
+    // "refund issued" but never called the gateway — funds never returned.)
     // peachPaymentId holds the Stitch payment id (column reused during the
     // Peach→Stitch transition).
     const refund = tx.peachPaymentId
@@ -1032,7 +1036,8 @@ export class AdminService {
       : { success: false, resultCode: 'NO_PAYMENT_ID' };
 
     if (!refund.success) {
-      // Revert the review stamps we just set (best-effort) and abort.
+      // Roll the status (and review stamps) back to the prior value so the
+      // row returns to its refundable state for a retry. Best-effort.
       await this.prisma.transaction
         .update({
           where: { id: txId },
@@ -1054,7 +1059,8 @@ export class AdminService {
       );
     }
 
-    // Gateway refund succeeded — now flip to REFUNDED.
+    // Gateway refund succeeded — status is already REFUNDED from the
+    // claim-lock above; re-read for the return value (idempotent).
     const updated = await this.prisma.transaction.update({
       where: { id: txId },
       data: { paymentStatus: 'REFUNDED' },

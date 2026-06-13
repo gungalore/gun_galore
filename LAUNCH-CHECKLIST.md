@@ -71,7 +71,7 @@ Items already fixed in code and pushed to origin are crossed off the audit; they
 ### Reliability / hardening (Claude can build)
 
 - [ ] **Global Nest exception filter** (audit EXC-1 defense-in-depth). Add an `APP_FILTER` global exception filter in `app.module.ts` that returns sanitised `{statusCode, message}` JSON for all errors and prevents stack-trace leakage on 5xx.
-- [ ] **Pudo + TCG webhook hardening** (audit M1, M2). Pudo webhook is currently fully unauthenticated; TCG fails open when `TCG_WEBHOOK_SECRET` is unset. Require shared secrets, fail closed in prod, constant-time compare.
+- [ ] **Pudo webhook signature verification** (audit M1). The Pudo webhook (`POST /api/shipping/webhook/pudo`) is fully unauthenticated — anyone can POST shipping events. Needs Pudo's webhook signing scheme (header name + HMAC algo) from Pudo's docs/support, then verify fail-closed in prod. **TCG half of this is DONE** (2026-06-13 audit pass): `webhook/tcg` now fails closed in production when `TCG_WEBHOOK_SECRET` is unset (`shipping.controller.ts`). Still TODO for TCG: constant-time secret compare.
 - [ ] **Consume CHECKOUT token on transaction creation** (audit M3). The CHECKOUT action token lives 24h and isn't consumed on use — a leaked URL stays a valid bearer credential. Consume it in `TransactionsService.create()` when the bound transaction is created.
 - [ ] **Fee math: rename `PEACH_*` → Stitch (or successor)** (audit M7). `fee.calculator.ts:28-33` hard-codes Peach's 3.5% + R1.50 + VAT. Replace with the live gateway's real fee schedule (confirm exact rate with operator). The constants are persisted on every order — wrong rates over- or under-charge sellers.
 

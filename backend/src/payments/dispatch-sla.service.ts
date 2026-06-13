@@ -125,14 +125,38 @@ export class DispatchSlaService {
     let refunded = 0;
     for (const tx of stale) {
       try {
+        // ─── Atomic claim BEFORE touching the gateway ─────────────────
+        // Flip HELD→REFUNDED guarded on { paymentStatus:'HELD',
+        // dispatchedAt:null } so a seller dispatching at the same instant
+        // (or an overlapping cron run) can't both refund the buyer AND
+        // let the seller ship. count===0 → another path won; skip. On
+        // gateway failure we roll the claim back to HELD for admin review.
+        const claim = await this.prisma.transaction.updateMany({
+          where: { id: tx.id, paymentStatus: 'HELD', dispatchedAt: null },
+          data: { paymentStatus: 'REFUNDED', releasedAt: null },
+        });
+        if (claim.count === 0) {
+          this.logger.log(
+            `Auto-refund cron: ${tx.id} no longer HELD/undispatched — skipping (seller dispatched or already handled)`,
+          );
+          continue;
+        }
+
         const r = tx.peachPaymentId
           ? await this.stitch.refundPayment(tx.peachPaymentId, tx.buyerTotal)
           : { success: true, resultCode: 'NO_PAYMENT_ID' };
 
         if (!r.success) {
           this.logger.warn(
-            `Auto-refund cron: Stitch refund failed for ${tx.id} (${r.resultCode}) — leaving HELD for admin review`,
+            `Auto-refund cron: Stitch refund failed for ${tx.id} (${r.resultCode}) — rolling back to HELD for admin review`,
           );
+          // Roll the claim back so the row returns to HELD for a retry.
+          await this.prisma.transaction
+            .update({
+              where: { id: tx.id },
+              data: { paymentStatus: 'HELD' },
+            })
+            .catch(() => undefined);
           // Raise admin alert so a human can intervene + manually
           // refund / contact the seller.
           await this.prisma.adminAlert.create({
@@ -146,15 +170,9 @@ export class DispatchSlaService {
           continue;
         }
 
-        // Apply refund + strike + reactivate listing atomically.
+        // Status already flipped to REFUNDED by the claim above. Now
+        // reactivate the listing + strike the seller atomically.
         await this.prisma.$transaction([
-          this.prisma.transaction.update({
-            where: { id: tx.id },
-            data: {
-              paymentStatus: 'REFUNDED',
-              releasedAt: null,
-            },
-          }),
           this.prisma.listing.update({
             where: { id: tx.listingId },
             data: { status: 'ACTIVE', soldAt: null },

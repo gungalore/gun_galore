@@ -101,7 +101,18 @@ export class ShippingController {
     @Body() body: Record<string, unknown>,
   ) {
     const expected = process.env.TCG_WEBHOOK_SECRET;
-    if (expected && secret !== expected) {
+    // Fail CLOSED: if the secret isn't configured, reject in production
+    // (a missing secret previously short-circuited the check entirely,
+    // letting anyone POST shipping events). Dev is allowed through so
+    // local testing works without the secret wired.
+    if (!expected) {
+      if (process.env.NODE_ENV === 'production') {
+        this.logger.error(
+          'TCG webhook rejected — TCG_WEBHOOK_SECRET not configured in production',
+        );
+        return { received: true };
+      }
+    } else if (secret !== expected) {
       this.logger.warn('TCG webhook rejected — invalid secret');
       return { received: true };
     }
