@@ -19,6 +19,7 @@ const ITEMS = [
   { href: '/admin/listings', label: 'Listings' },
   { href: '/admin/users', label: 'Users' },
   { href: '/admin/transactions', label: 'Transactions' },
+  { href: '/admin/manual-payments', label: 'Manual Payments' },
   { href: '/admin/competitions', label: 'Competitions' },
   { href: '/admin/featured', label: 'Featured Slots' },
   { href: '/admin/postal-entries', label: 'Postal Entries' },

@@ -317,4 +317,115 @@ export class ManualPaymentsService {
       take: limit,
     });
   }
+
+  // ── Payouts due (read-only) ─────────────────────────────────────────
+  // Seller payouts: transactions whose funds have been RELEASED (buyer
+  // confirmed delivery / dealer-verify approved / PRIVATE_ARRANGE) and
+  // are owed to the seller. Buyer refunds: transactions marked REFUNDED
+  // that still need the money sent back. The admin downloads these as a
+  // CSV, makes ONE FNB bulk payment, then marks the batch paid.
+  //
+  // NOTE: this is read-only today. The "mark batch paid" settle + Zoho
+  // payout trigger is intentionally NOT wired yet — it lands with the
+  // real FNB bulk-payment template (operator delivering Monday) so the
+  // CSV columns + the settle step ship together against a confirmed
+  // format rather than a guessed one. See buildPayoutCsv() TODO.
+  async getPayoutsDue() {
+    const payouts = await this.prisma.transaction.findMany({
+      where: { paymentStatus: 'RELEASED', sellerPayout: { gt: 0 } },
+      orderBy: { releasedAt: 'asc' },
+      select: {
+        id: true,
+        orderReference: true,
+        sellerPayout: true,
+        releasedAt: true,
+        seller: {
+          select: {
+            username: true,
+            bankAccountHolder: true,
+            bankName: true,
+            bankAccountNumber: true,
+            bankBranchCode: true,
+            bankAccountType: true,
+          },
+        },
+      },
+    });
+    const refunds = await this.prisma.transaction.findMany({
+      where: { paymentStatus: 'REFUNDED', buyerTotal: { gt: 0 } },
+      orderBy: { updatedAt: 'asc' },
+      select: {
+        id: true,
+        orderReference: true,
+        buyerTotal: true,
+        updatedAt: true,
+        buyer: {
+          select: {
+            username: true,
+            bankAccountHolder: true,
+            bankName: true,
+            bankAccountNumber: true,
+            bankBranchCode: true,
+          },
+        },
+      },
+    });
+    return { payouts, refunds };
+  }
+
+  // Placeholder FNB bulk-payment CSV. The COLUMN LAYOUT here is a
+  // best-guess and MUST be swapped for FNB's real "Pay Multiple
+  // Recipients" template (operator delivering Monday) before any real
+  // bulk payment is made — FNB imports are strict. Until then this is a
+  // human-readable export the operator can eyeball.
+  async buildPayoutCsv(): Promise<string> {
+    const { payouts, refunds } = await this.getPayoutsDue();
+    const header = [
+      'Type',
+      'Recipient',
+      'AccountHolder',
+      'Bank',
+      'AccountNumber',
+      'BranchCode',
+      'AccountType',
+      'AmountZAR',
+      'Reference',
+      'TransactionId',
+    ].join(',');
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rows: string[] = [];
+    for (const p of payouts) {
+      rows.push(
+        [
+          esc('PAYOUT'),
+          esc(p.seller.username),
+          esc(p.seller.bankAccountHolder),
+          esc(p.seller.bankName),
+          esc(p.seller.bankAccountNumber),
+          esc(p.seller.bankBranchCode),
+          esc(p.seller.bankAccountType),
+          (p.sellerPayout / 100).toFixed(2),
+          esc(p.orderReference),
+          esc(p.id),
+        ].join(','),
+      );
+    }
+    for (const r of refunds) {
+      rows.push(
+        [
+          esc('REFUND'),
+          esc(r.buyer.username),
+          esc(r.buyer.bankAccountHolder),
+          esc(r.buyer.bankName),
+          esc(r.buyer.bankAccountNumber),
+          esc(r.buyer.bankBranchCode),
+          esc(''),
+          (r.buyerTotal / 100).toFixed(2),
+          esc(r.orderReference),
+          esc(r.id),
+        ].join(','),
+      );
+    }
+    return [header, ...rows].join('\r\n');
+  }
 }

@@ -9,7 +9,9 @@ import {
   MaxFileSizeValidator,
   BadRequestException,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
@@ -65,5 +67,26 @@ export class ManualPaymentsController {
   @Post('scan')
   scan() {
     return this.manual.scanInbox();
+  }
+
+  // Payments the platform owes out today — seller payouts (RELEASED) +
+  // buyer refunds (REFUNDED). Read-only preview for the admin.
+  @Get('payouts-due')
+  payoutsDue() {
+    return this.manual.getPayoutsDue();
+  }
+
+  // Download the payout batch as CSV. PLACEHOLDER column layout — swap
+  // for FNB's real bulk-payment template before using it for a real
+  // payment (see service TODO).
+  @Get('payouts-due.csv')
+  async payoutsCsv(@Res() res: Response) {
+    const csv = await this.manual.buildPayoutCsv();
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="gungalore-payouts-PLACEHOLDER.csv"',
+    );
+    res.send(csv);
   }
 }
