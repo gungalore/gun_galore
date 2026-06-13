@@ -45,14 +45,15 @@ export function parseRandToCents(token: string | null | undefined): number | nul
 // Real sample (2026-06):
 //   "FNB :-) R110.00 paid to Current a/c..989191 @ Payshap. Ref.Test. 10Jun 12:50"
 // We only act on INCOMING credits ("paid to <our account>"); outgoing
-// ("paid from") alerts are ignored.
+// ("paid from") alerts are ignored. The payment RAIL (PayShap / EFT /
+// etc.) is irrelevant — matching keys ONLY on amount + reference — so we
+// don't parse or care about it.
 export interface ParsedInContact {
   isCredit: boolean;
   accountSuffix: string | null; // trailing digits of the credited account
   amountCents: number | null;
   reference: string | null; // normalised buyer reference (uppercased, no spaces)
   orderRef: string | null; // the UM/AU/… token if one is present in the ref/body
-  channel: string | null; // "Payshap" | "EFT" | …
 }
 
 export function parseInContact(text: string | null | undefined): ParsedInContact | null {
@@ -75,10 +76,7 @@ export function parseInContact(text: string | null | undefined): ParsedInContact
   const reference = normaliseReference(rawRef);
   const orderRef = extractOrderRef(rawRef) ?? extractOrderRef(norm);
 
-  const chMatch = norm.match(/@\s*([A-Za-z][A-Za-z ]*?)[.\s]/);
-  const channel = chMatch ? chMatch[1].trim() : null;
-
-  return { isCredit, accountSuffix, amountCents, reference, orderRef, channel };
+  return { isCredit, accountSuffix, amountCents, reference, orderRef };
 }
 
 // ───────────────────────────────────────────────────────────────────
