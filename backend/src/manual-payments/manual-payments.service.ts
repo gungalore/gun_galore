@@ -37,7 +37,13 @@ export interface ReconcileResult {
   alreadyDone: number;
 }
 
-type MatchStatus = 'MATCHED' | 'UNMATCHED' | 'AMBIGUOUS' | 'ALREADY';
+type MatchStatus =
+  | 'MATCHED'
+  | 'UNMATCHED'
+  | 'AMBIGUOUS'
+  | 'ALREADY'
+  | 'EXPIRED'; // reference matched a soft-cancelled order — paid after the
+//             // 1-hour window lapsed; needs admin refund / re-fulfil.
 
 @Injectable()
 export class ManualPaymentsService {
@@ -65,10 +71,20 @@ export class ManualPaymentsService {
     if (!ref) return { status: 'UNMATCHED', transactionId: null };
     const tx = await this.prisma.transaction.findUnique({
       where: { orderReference: ref },
-      select: { id: true, buyerTotal: true, manualVerifiedAt: true },
+      select: {
+        id: true,
+        buyerTotal: true,
+        manualVerifiedAt: true,
+        manualCancelledAt: true,
+      },
     });
     if (!tx) return { status: 'UNMATCHED', transactionId: null };
     if (tx.manualVerifiedAt) return { status: 'ALREADY', transactionId: tx.id };
+    // Order was soft-cancelled when its 1-hour window lapsed (inContact
+    // never fired) but the buyer evidently DID pay — the statement carries
+    // its reference. Don't auto-confirm (the item may have been re-sold);
+    // surface for admin refund / re-fulfil.
+    if (tx.manualCancelledAt) return { status: 'EXPIRED', transactionId: tx.id };
     if (tx.buyerTotal !== amountCents) {
       return { status: 'AMBIGUOUS', transactionId: tx.id };
     }
@@ -171,6 +187,8 @@ export class ManualPaymentsService {
       parsed.amountCents,
     );
 
+    const needsAdmin =
+      match.status === 'AMBIGUOUS' || match.status === 'EXPIRED';
     await this.prisma.manualPayment.create({
       data: {
         source: 'INCONTACT',
@@ -181,14 +199,11 @@ export class ManualPaymentsService {
         status:
           match.status === 'MATCHED'
             ? 'MATCHED'
-            : match.status === 'AMBIGUOUS'
+            : needsAdmin
               ? 'AMBIGUOUS'
               : 'UNMATCHED',
         matchedTransactionId: match.transactionId,
-        note:
-          match.status === 'AMBIGUOUS'
-            ? 'Reference matched but amount differs — verify against statement'
-            : null,
+        note: this.matchNote(match.status),
       },
     });
 
@@ -203,6 +218,17 @@ export class ManualPaymentsService {
       res.unmatched += 1;
     }
     return true;
+  }
+
+  // Human-readable note for the admin investigation queue, by match kind.
+  private matchNote(status: MatchStatus): string | null {
+    if (status === 'AMBIGUOUS') {
+      return 'Reference matched an order but the amount differs — investigate.';
+    }
+    if (status === 'EXPIRED') {
+      return 'Buyer paid AFTER the 1-hour window expired and the item was released. Refund the buyer, or re-fulfil manually if the item is still available.';
+    }
+    return null;
   }
 
   // ── 2. Statement CSV reconciliation (authoritative) ─────────────────
@@ -274,14 +300,11 @@ export class ManualPaymentsService {
         status:
           match.status === 'MATCHED' || match.status === 'ALREADY'
             ? 'MATCHED'
-            : match.status === 'AMBIGUOUS'
+            : match.status === 'AMBIGUOUS' || match.status === 'EXPIRED'
               ? 'AMBIGUOUS'
               : 'UNMATCHED',
         matchedTransactionId: match.transactionId,
-        note:
-          match.status === 'AMBIGUOUS'
-            ? 'Statement reference matched an order but the amount differs — investigate'
-            : null,
+        note: this.matchNote(match.status),
       },
     });
 
@@ -289,7 +312,9 @@ export class ManualPaymentsService {
       // AUTHORITATIVE confirm — runs the full paid transition.
       await this.transactions.confirmManualPayment(match.transactionId);
       out.verified += 1;
-    } else if (match.status === 'AMBIGUOUS') {
+    } else if (match.status === 'AMBIGUOUS' || match.status === 'EXPIRED') {
+      // EXPIRED = paid after the 1-hour window; needs admin refund/re-fulfil
+      // (never auto-confirmed — the item may already be re-sold).
       out.ambiguous += 1;
     } else if (match.status === 'UNMATCHED') {
       out.unmatched += 1;

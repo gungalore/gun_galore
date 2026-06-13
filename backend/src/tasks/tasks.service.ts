@@ -77,6 +77,7 @@ export class TasksService {
           paidAt: null,
           manualDetectedAt: null,
           manualVerifiedAt: null,
+          manualCancelledAt: null,
           manualPayByAt: { not: null, lte: now },
         },
         select: { id: true, listingId: true, orderReference: true },
@@ -84,18 +85,24 @@ export class TasksService {
       });
       for (const tx of expired) {
         try {
-          // Release the listing back to ACTIVE and drop the dead order so
-          // it stops occupying the item. Mirrors the gateway-checkout
-          // rollback path.
+          // Release the listing back to ACTIVE, but SOFT-CANCEL the order
+          // (keep the row) rather than deleting it. If the buyer actually
+          // paid and inContact just never fired, the later FNB statement
+          // still carries orderReference — the reconciler can then find
+          // this row and surface it as "paid after expiry" for a refund /
+          // re-fulfil decision instead of the payment being orphaned.
           await this.prisma.$transaction([
             this.prisma.listing.updateMany({
               where: { id: tx.listingId, status: 'PAYMENT_PENDING' },
               data: { status: 'ACTIVE' },
             }),
-            this.prisma.transaction.delete({ where: { id: tx.id } }),
+            this.prisma.transaction.update({
+              where: { id: tx.id },
+              data: { manualCancelledAt: now },
+            }),
           ]);
           this.logger.log(
-            `Manual EFT freeze expired for order ${tx.orderReference ?? tx.id} — listing ${tx.listingId} released`,
+            `Manual EFT freeze expired for order ${tx.orderReference ?? tx.id} — listing ${tx.listingId} released, order soft-cancelled`,
           );
         } catch (err) {
           this.logger.warn(

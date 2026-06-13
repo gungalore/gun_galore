@@ -878,6 +878,11 @@ model Transaction {
   // 1-hour pay-by deadline shown to the buyer; the freeze-expiry cron
   // releases the listing back to ACTIVE if nothing is detected by then.
   manualPayByAt    DateTime?
+  // Set when the freeze-expiry cron soft-cancels an un-paid manual order
+  // (releases the listing but KEEPS this row so a LATE statement payment
+  // for orderReference can still be matched → surfaced as "paid after
+  // expiry" for admin refund/re-fulfil instead of being lost).
+  manualCancelledAt DateTime?
   // Countdown-notice idempotency guards (30-min + 10-min warnings).
   manualWarn30At   DateTime?
   manualWarn10At   DateTime?
