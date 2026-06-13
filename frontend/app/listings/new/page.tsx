@@ -951,7 +951,6 @@ export default function NewListingPage() {
     }
     setSubmitting(true);
     setPublishError(null);
-    const token = await getToken();
     let createdListingId: string | null = null;
     try {
       const body = buildListingPayload();
@@ -962,11 +961,19 @@ export default function NewListingPage() {
       if (useCleanedDescription && previewResult.cleanedDescription) {
         body.description = previewResult.cleanedDescription;
       }
+      // Fresh token per request. Clerk session JWTs are short-lived
+      // (~60s) and verified by exp on the backend. Capturing ONE token
+      // for create + every photo upload meant a slow create (moderation
+      // hooks) or a slow first upload could leave the token expired by
+      // the time the upload request arrived → 401 "Unauthorized" on
+      // "Photo 1". getToken() returns the cached token while valid and
+      // only refreshes near expiry, so calling it per request is cheap.
+      const createToken = await getToken();
       const res = await fetch(`${API_URL}/listings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${createToken}`,
         },
         body: JSON.stringify(body),
       });
@@ -993,9 +1000,13 @@ export default function NewListingPage() {
         // request 200'd as an empty upload and listings published
         // with zero photos.
         fd.append('image', file);
+        // Fresh token per upload — a multi-photo upload on a slow mobile
+        // connection can easily outlive a single 60s token, so refresh
+        // before each one rather than reusing the create-time token.
+        const upToken = await getToken();
         const up = await fetch(`${API_URL}/listings/${listing.id}/images`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${upToken}` },
           body: fd,
         });
         if (!up.ok) {
@@ -1043,9 +1054,13 @@ export default function NewListingPage() {
       // seller; admin can purge the orphan separately.
       const wasRolledBack = !!createdListingId;
       if (createdListingId) {
+        // Fresh token for the rollback DELETE too — the publish failure
+        // may itself have been a stale token, so reusing it would also
+        // fail and leave the orphan listing behind.
+        const delToken = await getToken().catch(() => null);
         void fetch(`${API_URL}/listings/${createdListingId}`, {
           method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${delToken}` },
         }).catch(() => undefined);
       }
       const baseMsg =
