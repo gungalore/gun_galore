@@ -82,17 +82,23 @@ const nextConfig = {
         headers: securityHeaders,
       },
       {
-        // Cap shared-cache lifetime for HTML/SSR routes so a brief edge
-        // miscache (or a stale Cloudflare Cache Rule) cannot pin
-        // coming-soon / legal copy indefinitely. Static fingerprinted
-        // assets under /_next/static/* are matched LAST by Next.js and
-        // keep their default immutable cache; only non-static paths
-        // pick up this Cache-Control.
+        // Dynamic HTML/SSR routes must be LIVE: a newly published listing
+        // appears immediately and a cancelled/sold one disappears
+        // immediately, with no edge staleness. `private` forbids any
+        // shared cache (Cloudflare) from holding a snapshot — this kills
+        // the staleness landmine even if a "Cache Everything" CDN rule is
+        // ever switched on. `no-cache, must-revalidate` lets the browser
+        // keep a copy but always revalidate with the origin before reuse
+        // (so it stays fresh AND remains bfcache-eligible for snappy
+        // back/forward). Fingerprinted assets under /_next/static/* are
+        // matched LAST by Next.js and keep their immutable cache, so the
+        // app shell / JS / CSS / images stay CDN-cached — that's where the
+        // snappiness comes from, not from caching the dynamic HTML.
         source: '/((?!_next/static|_next/image|favicon).*)',
         headers: [
           {
             key: 'Cache-Control',
-            value: 'public, s-maxage=300, stale-while-revalidate=86400',
+            value: 'private, no-cache, must-revalidate',
           },
         ],
       },

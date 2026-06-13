@@ -84,10 +84,15 @@ export class CreateTransactionDto {
   @Type(() => DeliveryAddressDto)
   deliveryAddress?: DeliveryAddressDto;
 
-  // Dealer transfer: buyer's chosen receiving dealer
-  @ValidateIf((o) => o.shippingMethod === 'DEALER_TRANSFER')
+  // Dealer transfer: buyer's chosen receiving dealer. OPTIONAL — the
+  // dealer dropdown was removed from checkout (the buyer nominates any
+  // SAPS-licensed dealer after the sale, and payout is gated by
+  // DealerVerificationService on the SAPS 534 stock-in, not by a
+  // pre-selected dealerId). TransactionsService only looks a dealer up
+  // when one is supplied, so requiring it here just 400'd the default
+  // firearm DEALER_TRANSFER checkout before it could reach the paygate.
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   dealerId?: string;
 
   // PRIVATE_ARRANGE: explicit consent flag — the buyer ticked both
