@@ -16,6 +16,27 @@ import { ShippingService } from '../shipping/shipping.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { Inject, forwardRef } from '@nestjs/common';
 import { ActionTokensService } from '../actions/action-tokens.service';
+import {
+  ReferenceNumberService,
+  type OrderRefSource,
+} from '../common/reference-number.service';
+
+// Manual EFT mode (no live card gateway). When PAYMENT_MODE=manual the
+// checkout issues bank-deposit instructions + an order reference instead
+// of a Stitch payment link; the FNB statement reconciliation confirms it.
+// Defaults to 'manual' since the gateway is dormant.
+export const PAYMENT_MODE: 'manual' | 'paygate' =
+  process.env.PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
+// How long a listing stays frozen awaiting the buyer's EFT (operator: 1h).
+export const MANUAL_PAY_WINDOW_MS = 60 * 60 * 1000;
+// GG's FNB receiving account, shown to the buyer at manual checkout.
+export const GG_BANK_DETAILS = {
+  accountName: 'Gun Galore (Pty) Ltd',
+  bank: 'First National Bank (FNB)',
+  accountNumber: '63210989191',
+  branchCode: '250655',
+  accountType: 'Gold Business Account',
+};
 
 // TOK-7 — accept→dispatch state machine deadlines.
 // Spec (operator-confirmed 2026-05-27):
@@ -58,6 +79,7 @@ export class TransactionsService {
     // handles it with two forwardRefs.
     @Inject(forwardRef(() => ActionTokensService))
     private readonly tokens: ActionTokensService,
+    private readonly referenceNumbers: ReferenceNumberService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -200,6 +222,7 @@ export class TransactionsService {
       listing.passFeeToBuyer,
       isTopSeller,
       shippingCostCents,
+      PAYMENT_MODE, // manual = flat 1.5% EFT fee; paygate = card rate
     );
 
     // Reserve the listing ATOMICALLY. Only ONE buyer can flip it from
@@ -276,6 +299,50 @@ export class TransactionsService {
             `triggerSellerVerification failed for ${listing.sellerId}: ${(err as Error).message}`,
           ),
         );
+    }
+
+    // ── Manual EFT branch (PAYMENT_MODE=manual) ────────────────────────
+    // No card gateway: issue an order reference + GG bank-deposit
+    // instructions instead of a Stitch link. The buyer EFTs using the
+    // reference; the 10-min inContact scan detects it (provisional, stops
+    // the 1-hour freeze) and the daily FNB statement reconciliation
+    // confirms it (→ confirmManualPayment → SOLD → seller notified).
+    if (PAYMENT_MODE === 'manual') {
+      const orderRefSource: OrderRefSource = offerRecord
+        ? 'TAKE_A_SHOT'
+        : (listing.listingType as OrderRefSource);
+      const orderReference =
+        await this.referenceNumbers.allocateOrderReference(orderRefSource);
+      const manualPayByAt = new Date(Date.now() + MANUAL_PAY_WINDOW_MS);
+      const [updatedManual] = await this.prisma.$transaction([
+        this.prisma.transaction.update({
+          where: { id: tx.id },
+          data: { orderReference, manualPayByAt },
+        }),
+        ...(offerRecord
+          ? [
+              this.prisma.offer.update({
+                where: { id: offerRecord.id },
+                data: { status: 'CONVERTED', transactionId: tx.id },
+              }),
+            ]
+          : []),
+      ]);
+      return {
+        transactionId: updatedManual.id,
+        manual: true as const,
+        orderReference,
+        amountCents: buyerTotal,
+        payByAt: manualPayByAt.toISOString(),
+        bankDetails: GG_BANK_DETAILS,
+        breakdown: {
+          listingPrice,
+          commissionZar,
+          processingFee,
+          buyerTotal,
+          sellerPayout,
+        },
+      };
     }
 
     // Create the Stitch Express checkout (hosted payment link). We pass
