@@ -687,6 +687,75 @@ export class RafflesService {
     });
   }
 
+  // -------------------------------------------------------------------
+  // Buy tickets → Stitch paygate (the real production purchase path)
+  // -------------------------------------------------------------------
+  //
+  // Reserves the tickets (createPendingTickets) then opens a Stitch
+  // hosted payment link for the bundle and binds the Stitch payment id
+  // to every ticket on `peachCheckoutId` (column reused for the Stitch
+  // id). The buyer is redirected to `redirectUrl` to pay.
+  //
+  // Payment CONFIRMATION (marking the tickets CONFIRMED) is wired
+  // separately via the Stitch webhook → confirmTickets(ids, paymentId)
+  // matching on peachCheckoutId — that reconciliation is the deferred
+  // "complete the payment" step. Until Stitch creds are live the
+  // service returns a mock checkout (redirectUrl ''), exactly like the
+  // buy-now flow, and the frontend shows a test-mode / dev path.
+  async buyTickets(
+    clerkId: string,
+    raffleId: string,
+    dto: BuyTicketsDto,
+    frontendUrl: string,
+  ) {
+    const bundle = await this.createPendingTickets(clerkId, raffleId, dto);
+
+    const buyer = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { firstName: true, lastName: true, email: true },
+    });
+
+    let checkout: { paymentId: string; redirectUrl: string };
+    try {
+      checkout = await this.stitch.createCheckout({
+        amountZarCents: bundle.totalCents,
+        // Reconciliation is by the Stitch payment id stored on every
+        // ticket's peachCheckoutId below; this reference is just a
+        // human-readable handle in the Stitch dashboard.
+        merchantTransactionId: bundle.ticketIds[0],
+        shopperResultUrl: `${frontendUrl}/checkout/complete`,
+        shopperName:
+          [buyer?.firstName, buyer?.lastName].filter(Boolean).join(' ') || null,
+        shopperEmail: buyer?.email ?? null,
+      });
+    } catch (err) {
+      // Roll the reservation back so abandoned tickets don't sit in the
+      // oversell/remaining math until the sweep reclaims them.
+      await this.prisma.ticket
+        .deleteMany({ where: { id: { in: bundle.ticketIds } } })
+        .catch(() => undefined);
+      this.logger.error(
+        `Raffle checkout failed for ${raffleId}: ${(err as Error).message}`,
+      );
+      throw new BadRequestException(
+        'Could not start payment — please try again.',
+      );
+    }
+
+    // Bind the Stitch payment to the reserved tickets so the webhook can
+    // confirm exactly this bundle later.
+    await this.prisma.ticket.updateMany({
+      where: { id: { in: bundle.ticketIds } },
+      data: { peachCheckoutId: checkout.paymentId },
+    });
+
+    return {
+      ...bundle,
+      paymentId: checkout.paymentId,
+      redirectUrl: checkout.redirectUrl,
+    };
+  }
+
   // Called by the transactions/payment success handler. Marks the bundle
   // of tickets CONFIRMED and bumps the sold counter on the raffle. If
   // this purchase pushes the raffle to sold-out, immediately moves it

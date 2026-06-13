@@ -118,15 +118,19 @@ export class RafflesBuyerController {
     return this.raffles.getMySubscriberRaffles(clerkId);
   }
 
-  // Buyer initiates a ticket purchase. Returns pending tickets + total cents,
-  // which the front-end then sends to /transactions to create a Peach checkout.
+  // Buyer initiates a ticket purchase: reserves the tickets AND opens a
+  // Stitch hosted payment link. Returns { ticketIds, tickets, totalCents,
+  // raffle, paymentId, redirectUrl }; the frontend redirects the buyer to
+  // redirectUrl to pay (or shows the test-mode/dev path when Stitch is
+  // unconfigured and redirectUrl is empty).
   @Post(':id/tickets')
   buy(
     @CurrentUser() clerkId: string,
     @Param('id') id: string,
     @Body() dto: BuyTicketsDto,
   ) {
-    return this.raffles.createPendingTickets(clerkId, id, dto);
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+    return this.raffles.buyTickets(clerkId, id, dto, frontendUrl);
   }
 
   // Buyer's own confirmed tickets

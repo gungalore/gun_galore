@@ -155,12 +155,19 @@ export default function EnterPanel({
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
 
-      // Confirm tickets. In dev mode we auto-confirm via the bypass
-      // endpoint; in prod this would redirect to a Peach checkout
-      // (TODO: full Peach integration for raffle tickets — until that
-      // ships, the bypass fails loudly server-side and we surface a
-      // clear message rather than the previous silent-success bug
-      // that left buyers thinking they had tickets when they didn't).
+      // Stitch paygate: the backend reserved the tickets AND created a
+      // Stitch hosted payment link. Redirect the buyer there to pay.
+      if (data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+        return;
+      }
+
+      // No redirect URL = Stitch isn't configured yet (mock mode —
+      // STITCH_CLIENT_ID/SECRET unset on the server). In dev we fall
+      // back to the dev-confirm bypass so the flow stays testable; in
+      // prod we tell the buyer card payments aren't live yet (the
+      // 30-minute reservation lapses on its own and the pending-ticket
+      // sweep reclaims it).
       const ticketIds: string[] = data.ticketIds ?? [];
       const isDev =
         process.env.NEXT_PUBLIC_ENV !== 'production' &&
@@ -168,7 +175,7 @@ export default function EnterPanel({
 
       if (!isDev) {
         throw new Error(
-          'Raffle payment integration is being finalised. Your ticket reservation will expire in 30 minutes — please contact support to complete payment manually.',
+          'Card payments are being switched on. Your ticket reservation will expire in 30 minutes — please try again shortly.',
         );
       }
 
