@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { formatPrice } from '@/lib/utils';
+import { ManualEftInstructions } from '@/components/manual-eft-instructions';
 import { FeeBreakdown, ShippingMethod } from '@/lib/types';
 import { LockerPicker, PudoLocker } from '@/components/locker-picker';
 
@@ -18,11 +19,23 @@ const PENDING_TX_KEY = 'gg:pendingTx';
 interface CreateTxResponse {
   transactionId: string;
   // Stitch payment id; `mock-` prefix in dev (gateway unconfigured).
-  paymentId: string;
+  paymentId?: string;
   // Hosted Stitch checkout URL to redirect to. Empty in mock mode.
-  redirectUrl: string;
+  redirectUrl?: string;
   provider?: string;
   breakdown: FeeBreakdown;
+  // Manual EFT mode — bank-deposit instructions + order reference.
+  manual?: boolean;
+  orderReference?: string;
+  amountCents?: number;
+  payByAt?: string;
+  bankDetails?: {
+    accountName: string;
+    bank: string;
+    accountNumber: string;
+    branchCode: string;
+    accountType?: string;
+  };
 }
 
 const inputStyle: React.CSSProperties = {
@@ -139,6 +152,12 @@ export function OfferCheckoutForm({
       }
       const data: CreateTxResponse = await res.json();
 
+      // Manual EFT mode → bank-deposit instructions + order reference.
+      if (data.manual && data.orderReference && data.bankDetails && data.payByAt) {
+        setCheckout(data);
+        return;
+      }
+
       // Mock mode (gateway unconfigured) → show the test card.
       if (!data.redirectUrl || data.paymentId?.startsWith('mock-')) {
         setCheckout(data);
@@ -157,6 +176,21 @@ export function OfferCheckoutForm({
       setError(e instanceof Error ? e.message : 'Something went wrong');
       setSubmitting(false);
     }
+  }
+
+  // Manual EFT mode — bank-deposit instructions + order reference.
+  if (checkout?.manual && checkout.orderReference && checkout.bankDetails && checkout.payByAt) {
+    return (
+      <ManualEftInstructions
+        data={{
+          transactionId: checkout.transactionId,
+          orderReference: checkout.orderReference,
+          amountCents: checkout.amountCents ?? checkout.breakdown.buyerTotal,
+          payByAt: checkout.payByAt,
+          bankDetails: checkout.bankDetails,
+        }}
+      />
+    );
   }
 
   // Mock mode only — live checkout redirects away to Stitch above.

@@ -11,6 +11,7 @@ import {
   ShippingQuote,
 } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
+import { ManualEftInstructions } from '@/components/manual-eft-instructions';
 import { LockerPicker, PudoLocker } from '@/components/locker-picker';
 import {
   AddressAutocomplete,
@@ -29,12 +30,25 @@ interface CreateTxResponse {
   // Stitch payment id. Carries the `mock-` prefix when the gateway
   // isn't configured (dev) → we render the test-mode card instead of
   // redirecting.
-  paymentId: string;
+  paymentId?: string;
   // Hosted Stitch checkout URL the browser is redirected to. Empty in
   // mock mode.
-  redirectUrl: string;
+  redirectUrl?: string;
   provider?: string;
   breakdown: FeeBreakdown;
+  // Manual EFT mode (PAYMENT_MODE=manual): instead of a gateway link the
+  // backend returns bank-deposit instructions + an order reference.
+  manual?: boolean;
+  orderReference?: string;
+  amountCents?: number;
+  payByAt?: string;
+  bankDetails?: {
+    accountName: string;
+    bank: string;
+    accountNumber: string;
+    branchCode: string;
+    accountType?: string;
+  };
 }
 
 // localStorage key that carries the transaction id across the Stitch
@@ -557,6 +571,13 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
 
       const data: CreateTxResponse = await res.json();
 
+      // Manual EFT mode → show bank-deposit instructions + the order
+      // reference instead of a gateway redirect.
+      if (data.manual && data.orderReference && data.bankDetails && data.payByAt) {
+        setCheckout(data);
+        return;
+      }
+
       // Mock mode (gateway not configured) → no hosted link to send the
       // buyer to. Render the test-mode card via the `checkout` state.
       if (!data.redirectUrl || data.paymentId?.startsWith('mock-')) {
@@ -579,6 +600,22 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
       setSubmitting(false);
     }
+  }
+
+  // Manual EFT mode — bank-deposit instructions + order reference.
+  if (checkout?.manual && checkout.orderReference && checkout.bankDetails && checkout.payByAt) {
+    return (
+      <ManualEftInstructions
+        data={{
+          transactionId: checkout.transactionId,
+          orderReference: checkout.orderReference,
+          amountCents: checkout.amountCents ?? checkout.breakdown.buyerTotal,
+          payByAt: checkout.payByAt,
+          bankDetails: checkout.bankDetails,
+        }}
+        listingTitle={listing.title}
+      />
+    );
   }
 
   // Mock mode only — live checkout redirects away to Stitch above.
