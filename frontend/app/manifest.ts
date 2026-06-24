@@ -21,7 +21,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'Gun Galore',
     short_name: 'Gun Galore',
     description:
-      'South Africa’s verified firearms, hunting and outdoor marketplace.',
+      'South Africa’s verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more.',
     start_url: '/',
     scope: '/',
     display: 'standalone',

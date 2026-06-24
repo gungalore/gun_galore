@@ -16,7 +16,7 @@ export default function AcceptableUsePage() {
     <>
       <LegalDocHeader
         title="Acceptable Use Policy"
-        lastUpdated="pre-launch · v0.1 draft"
+        lastUpdated="Effective 24 June 2026"
       />
 
       <h2>1. Who this applies to</h2>

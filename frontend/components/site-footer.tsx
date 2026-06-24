@@ -55,7 +55,7 @@ export function SiteFooter() {
             Gun Galore
           </p>
           <p style={{ color: 'var(--text-tertiary-on-card)', lineHeight: 1.6, margin: 0 }}>
-            South Africa&apos;s verified firearms, hunting and outdoor
+            South Africa&apos;s verified outdoor, hunting and sport
             marketplace. Every seller verified. Every transaction
             protected.
           </p>

@@ -14,7 +14,7 @@ export const metadata = {
 export default function CookiesPage() {
   return (
     <>
-      <LegalDocHeader title="Cookie Policy" lastUpdated="pre-launch · v0.1 draft" />
+      <LegalDocHeader title="Cookie Policy" lastUpdated="Effective 24 June 2026" />
 
       <h2>1. What cookies are</h2>
       <p>

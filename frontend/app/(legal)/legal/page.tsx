@@ -60,7 +60,7 @@ const DOCS: { href: string; title: string; description: string }[] = [
 export default function LegalIndexPage() {
   return (
     <>
-      <LegalDocHeader title="Legal & compliance" lastUpdated="pre-launch · v0.1 draft" />
+      <LegalDocHeader title="Legal & compliance" lastUpdated="Effective 24 June 2026" />
 
       <p>
         This page collects every legal document and statutory

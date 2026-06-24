@@ -26,7 +26,7 @@ export default function AmlPolicyPage() {
     <>
       <LegalDocHeader
         title="AML & Competitions Policy"
-        lastUpdated="pre-launch · v0.1 draft"
+        lastUpdated="Effective 24 June 2026"
       />
 
       <h2>1. Why this policy exists</h2>

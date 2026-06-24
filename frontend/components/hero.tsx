@@ -1,5 +1,7 @@
-// Homepage hero. Cinematic full-width banner with the bullet-trail photo,
-// dark overlay so headline reads, and two CTAs. Server component — no JS.
+// Homepage hero. Cinematic full-width banner with an outdoor scene photo,
+// dark overlay so the headline reads, and two CTAs. Server component — no JS.
+// Focus: outdoor, hunting & sport recreation (firearms stay in the catalogue
+// + nav, just not the landing headline).
 
 import Link from 'next/link';
 
@@ -68,13 +70,21 @@ export function Hero() {
           stops washing out into grey-on-grey when the image crops. */}
       <style>{`
         .hero-bg {
-          background-image: image-set(url('/hero.webp') type('image/webp') 1x, url('/hero.png') type('image/png') 1x);
+          /* PLACEHOLDER backdrop. NOTE: none of the existing /public images
+             are outdoor — the only "marketplace" photo is literally handguns,
+             which would defeat the reframe, so we use the neutral tools photo
+             (setting.jpg). Under the grayscale + dark overlay it reads as an
+             abstract muted-metal texture and the copy carries the message.
+             TODO: replace with a dedicated outdoor / hunting / sport hero
+             photo (drop e.g. /hero-outdoor.webp in /public and point this
+             url() + the preload link in app/layout.tsx at it; with a real
+             outdoor shot you can also relax the grayscale filter below). */
+          background-image: url('/setting.jpg');
           background-size: cover;
-          background-position: left center;
+          background-position: center center;
           background-repeat: no-repeat;
-          /* Desaturate to pure B&W and lift brightness so the bullet +
-             smoke detail reads through. Higher contrast keeps it from
-             looking washed out at the higher brightness. */
+          /* Desaturate + dark so the headline reads over any part of the
+             photo (the overlay gradients below are tuned for a muted image). */
           filter: grayscale(1) brightness(0.85) contrast(1.15);
         }
         .hero-overlay {
@@ -85,10 +95,9 @@ export function Hero() {
         }
         @media (max-width: 768px) {
           .hero-bg {
-            /* Push the brightest part (bullet + smoke) off-screen so
-               the text-bearing left side sits over a near-uniform
-               dark patch of the photo. */
-            background-position: 70% center;
+            /* Keep the scene centred on mobile; the vertical gradient
+               below carries the text contrast. */
+            background-position: center center;
           }
           .hero-overlay {
             /* Vertical fade — soft top, near-black at bottom where
@@ -129,7 +138,7 @@ export function Hero() {
               fontWeight: 500,
             }}
           >
-            South Africa&apos;s firearms marketplace
+            South Africa&apos;s outdoor &amp; sport marketplace
           </p>
 
           {/* Headline. text-shadow gives the white letters a crisp
@@ -150,7 +159,7 @@ export function Hero() {
             Buy, sell, bid and{' '}
             <span style={{ color: 'var(--red)' }}>win</span>
             <br />
-            firearms and gear.
+            outdoor, hunting &amp; sport gear.
           </h1>
 
           {/* Subhead. The previous color (var(--text-secondary) =
@@ -168,9 +177,9 @@ export function Hero() {
               textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
             }}
           >
-            Verified sellers. Payment protection on every transaction.
-            Dealer-routed transfers for firearms. Run by South Africans,
-            for South African shooters.
+            Optics, camping, fishing, knives and more. Verified sellers,
+            payment protection on every transaction. Run by South Africans,
+            for the outdoors.
           </p>
 
           {/* Primary CTA — drops the user straight into the Marketplace

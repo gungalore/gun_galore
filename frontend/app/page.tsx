@@ -25,7 +25,7 @@ const SURFACE_TITLES: Record<string, { title: string; subtitle: string }> = {
     // "Marketplace" is the user-facing label for the BUY_NOW surface — these
     // are used-gear listings priced and ready to ship.
     title: 'Marketplace',
-    subtitle: 'Used firearms and gear — pay the listed price and go',
+    subtitle: 'Gear, optics & outdoor kit — pay the listed price and go',
   },
   AUCTION: {
     title: 'Auctions',
@@ -64,7 +64,7 @@ export async function generateMetadata({
   return {
     title: listingType
       ? `${surface.title} — Gun Galore`
-      : 'Gun Galore — SA Firearms Marketplace',
+      : 'Gun Galore — Outdoor, Hunting & Sport Marketplace',
   };
 }
 

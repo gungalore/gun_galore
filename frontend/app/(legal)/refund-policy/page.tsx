@@ -23,7 +23,7 @@ export default function RefundPolicyPage() {
     <>
       <LegalDocHeader
         title="Refund & Dispute Policy"
-        lastUpdated="pre-launch · v0.1 draft"
+        lastUpdated="Effective 24 June 2026"
       />
 
       <h2>Quick reference</h2>

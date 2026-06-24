@@ -58,11 +58,11 @@ const SITE_URL =
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Gun Galore — SA Firearms Marketplace',
+    default: 'Gun Galore — Outdoor, Hunting & Sport Marketplace',
     template: '%s — Gun Galore',
   },
   description:
-    "South Africa's verified firearms, hunting and outdoor marketplace.",
+    "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Every seller verified, every transaction protected.",
   // AUDIT M29 — Open Graph + Twitter Card metadata. Without this,
   // every link shared on WhatsApp / Facebook / X unfurls blank, which
   // for a share-driven SA marketplace suppresses organic referral.
@@ -72,9 +72,9 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_ZA',
     siteName: 'Gun Galore',
-    title: 'Gun Galore — SA Firearms Marketplace',
+    title: 'Gun Galore — Outdoor, Hunting & Sport Marketplace',
     description:
-      "South Africa's verified firearms, hunting and outdoor marketplace.",
+      "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Every seller verified, every transaction protected.",
     url: SITE_URL,
     images: [
       {
@@ -87,9 +87,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Gun Galore — SA Firearms Marketplace',
+    title: 'Gun Galore — Outdoor, Hunting & Sport Marketplace',
     description:
-      "South Africa's verified firearms, hunting and outdoor marketplace.",
+      "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Every seller verified, every transaction protected.",
     images: ['/icon-512.png'],
   },
   alternates: {
@@ -188,11 +188,14 @@ export default function RootLayout({
               route because the file is tiny + cached after first hit;
               non-homepage routes pay a one-time ~30 KB hit and warm
               the cache for the inevitable hero-page visit. */}
+          {/* Preload the hero LCP image. Points at the current placeholder
+              backdrop (setting.jpg — neutral tools texture; see hero.tsx note).
+              Swap both this href and the .hero-bg url() together when a
+              dedicated outdoor photo lands. */}
           <link
             rel="preload"
             as="image"
-            href="/hero.webp"
-            type="image/webp"
+            href="/setting.jpg"
           />
           {/* iOS apple-touch-startup-image splash screens. iOS picks
               the right image via the media-attribute device match

@@ -26,7 +26,7 @@ export const metadata = {
 export default function PrivacyPage() {
   return (
     <>
-      <LegalDocHeader title="Privacy Policy" lastUpdated="pre-launch · v0.1 draft" />
+      <LegalDocHeader title="Privacy Policy" lastUpdated="Effective 24 June 2026" />
 
       <h2>1. Who we are</h2>
       <p>
