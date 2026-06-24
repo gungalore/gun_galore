@@ -34,14 +34,18 @@ interface ParentCat {
   requiresLicence?: boolean;
   availableSecondhand?: boolean;
   availableNewStore?: boolean;
+  isActive?: boolean;
   sortOrder: number;
 }
 
 const categories: ParentCat[] = [
   { name: 'Air Rifles', slug: 'air-rifles', sortOrder: 1 },
-  // Live ammo cannot be sold between private individuals on the used
-  // marketplace — only available on the dealer New Store (M3).
-  { name: 'Ammo', slug: 'ammo', sortOrder: 2, availableSecondhand: false, availableNewStore: true },
+  // Live ammunition disabled entirely (isActive:false) — the platform is
+  // not permitted to sell live ammo, primers or gun powder (2026-06-24).
+  // isActive:false hides it everywhere AND blocks listing creation. Primers
+  // and powder have no category at all, so they cannot be listed. Re-enable
+  // only once proper dealer-ammo licensing is in place.
+  { name: 'Ammo', slug: 'ammo', sortOrder: 2, availableSecondhand: false, availableNewStore: false, isActive: false },
   { name: 'Cleaning Equipment', slug: 'cleaning-equipment', sortOrder: 3, availableNewStore: true },
   // The Firearms parent — all sub-categories require dealer transfer.
   { name: 'Firearms', slug: 'firearms', sortOrder: 4, isFirearm: true, requiresLicence: true },
@@ -301,7 +305,7 @@ async function main() {
       availableSecondhand: cat.availableSecondhand ?? true,
       availableNewStore: cat.availableNewStore ?? false,
       sortOrder: cat.sortOrder,
-      isActive: true,
+      isActive: cat.isActive ?? true,
       parentId: null,
     };
     await prisma.category.upsert({
