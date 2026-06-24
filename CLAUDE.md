@@ -1445,10 +1445,21 @@ they survive any future memory wipe:
 - CLI config: `backend/prisma.config.ts` (Prisma 7 requirement — `url` is
   not allowed in `schema.prisma` datasource block).
 
+**Production status — LIVE since 2026-06-24.** Site is public
+(`COMING_SOON_GATE=off`), payments run in **manual EFT mode**
+(`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
+legal docs finalised (draft notices removed). Deployed at commit
+`9725daa` + the `20260624120000_add_manual_payments` migration.
+
 Pending external items (operator track — none of these are coding
 work, but the platform can't fully launch without them; see
 LAUNCH-CHECKLIST.md for the authoritative list):
 
+- **VERIFYNOW_MODE=production (CRITICAL — site is public).** KYC
+  identity checks are currently running against SANDBOX data, so
+  sellers are NOT genuinely ID-verified. Set `VERIFYNOW_MODE=production`
+  + the production VerifyNow API key in `backend/.env` and reload the
+  backend. Accepted as a known gap at the 2026-06-24 go-live.
 - Stitch live merchant + payout-bank account fully configured
   (sandbox→production cutover, redirect URL registered via
   `scripts/stitch-redirect-setup.cjs`).
