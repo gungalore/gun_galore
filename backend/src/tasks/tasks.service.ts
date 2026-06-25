@@ -62,6 +62,102 @@ export class TasksService {
     }
   }
 
+  // ─── Firearm licence expiry — auto-delist + warnings ─────────────
+  // Daily: any ACTIVE firearm listing whose licence is ≤30 days from
+  // expiry (or already expired) is delisted (status EXPIRED) and the
+  // seller is told to renew + relist. Listings in the 31–90-day window
+  // get a one-time "expiring soon" warning (licenceExpiryWarnedAt guards
+  // against re-warning daily).
+  @Cron(CronExpression.EVERY_DAY_AT_6AM)
+  async checkFirearmLicenceExpiry() {
+    const now = new Date();
+    const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const in90 = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+    const fullName = (f?: string | null, l?: string | null) =>
+      [f, l].filter(Boolean).join(' ') || 'there';
+    try {
+      // (1) Delist anything ≤30 days from expiry (or already expired).
+      const toDelist = await this.prisma.listing.findMany({
+        where: {
+          isFirearm: true,
+          status: 'ACTIVE',
+          licenceExpiresAt: { not: null, lte: in30 },
+        },
+        select: {
+          id: true,
+          title: true,
+          seller: { select: { email: true, firstName: true, lastName: true } },
+        },
+      });
+      for (const l of toDelist) {
+        await this.prisma.listing.update({
+          where: { id: l.id },
+          data: { status: 'EXPIRED' },
+        });
+        if (l.seller?.email) {
+          await this.notifications.firearmLicenceExpiry({
+            sellerEmail: l.seller.email,
+            sellerName: fullName(l.seller.firstName, l.seller.lastName),
+            listingTitle: l.title,
+            listingId: l.id,
+            kind: 'delisted',
+          });
+        }
+      }
+
+      // (2) One-time warning for the 31–90-day window.
+      const toWarn = await this.prisma.listing.findMany({
+        where: {
+          isFirearm: true,
+          status: 'ACTIVE',
+          licenceExpiryWarnedAt: null,
+          licenceExpiresAt: { gt: in30, lte: in90 },
+        },
+        select: {
+          id: true,
+          title: true,
+          licenceExpiresAt: true,
+          seller: { select: { email: true, firstName: true, lastName: true } },
+        },
+      });
+      for (const l of toWarn) {
+        await this.prisma.listing.update({
+          where: { id: l.id },
+          data: { licenceExpiryWarnedAt: now },
+        });
+        if (l.seller?.email && l.licenceExpiresAt) {
+          const daysLeft = Math.max(
+            0,
+            Math.floor(
+              (l.licenceExpiresAt.getTime() - now.getTime()) /
+                (1000 * 60 * 60 * 24),
+            ),
+          );
+          await this.notifications.firearmLicenceExpiry({
+            sellerEmail: l.seller.email,
+            sellerName: fullName(l.seller.firstName, l.seller.lastName),
+            listingTitle: l.title,
+            listingId: l.id,
+            kind: 'warn',
+            daysLeft,
+          });
+        }
+      }
+
+      if (toDelist.length || toWarn.length) {
+        this.logger.log(
+          `firearm licence expiry: delisted ${toDelist.length}, warned ${toWarn.length}`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `checkFirearmLicenceExpiry failed: ${(err as Error).message}`,
+      );
+    } finally {
+      await this.recordCronRun('firearm-licence-expiry');
+    }
+  }
+
   // ─── Manual EFT — freeze expiry + payment reminders ──────────────
   // Every 5 min: (1) release listings whose 24-hour pay-by window lapsed
   // with no payment detected, SOFT-cancelling the stale order (the row

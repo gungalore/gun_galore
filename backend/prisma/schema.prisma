@@ -557,6 +557,9 @@ model Listing {
   licencePhotoUrl   String?
   licenceHolderName String?
   licenceExpiresAt  DateTime?
+  // Set once when the 31–90-day "licence expiring" warning is sent, so the
+  // daily expiry cron warns only once (then delists at ≤30 days).
+  licenceExpiryWarnedAt DateTime?
 
   // Parcel weight + dimensions captured by the seller in the Sell form.
   // Required for non-firearm listings (Pudo + TCG need them to quote
