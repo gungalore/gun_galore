@@ -188,14 +188,14 @@ export default function RootLayout({
               route because the file is tiny + cached after first hit;
               non-homepage routes pay a one-time ~30 KB hit and warm
               the cache for the inevitable hero-page visit. */}
-          {/* Preload the hero LCP image. Points at the current placeholder
-              backdrop (setting.jpg — neutral tools texture; see hero.tsx note).
-              Swap both this href and the .hero-bg url() together when a
-              dedicated outdoor photo lands. */}
+          {/* Preload the hero LCP image (the outdoor golden-hour photo).
+              WebP is what modern browsers fetch via the .hero-bg image-set;
+              keep this href in sync with that url(). */}
           <link
             rel="preload"
             as="image"
-            href="/setting.jpg"
+            href="/hero-outdoor.webp"
+            type="image/webp"
           />
           {/* iOS apple-touch-startup-image splash screens. iOS picks
               the right image via the media-attribute device match

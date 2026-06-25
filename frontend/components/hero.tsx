@@ -70,22 +70,21 @@ export function Hero() {
           stops washing out into grey-on-grey when the image crops. */}
       <style>{`
         .hero-bg {
-          /* PLACEHOLDER backdrop. NOTE: none of the existing /public images
-             are outdoor — the only "marketplace" photo is literally handguns,
-             which would defeat the reframe, so we use the neutral tools photo
-             (setting.jpg). Under the grayscale + dark overlay it reads as an
-             abstract muted-metal texture and the copy carries the message.
-             TODO: replace with a dedicated outdoor / hunting / sport hero
-             photo (drop e.g. /hero-outdoor.webp in /public and point this
-             url() + the preload link in app/layout.tsx at it; with a real
-             outdoor shot you can also relax the grayscale filter below). */
-          background-image: url('/setting.jpg');
+          /* Outdoor hero — a hunter glassing a golden-hour Karoo landscape
+             (operator-supplied 2026-06-24). WebP with a JPG fallback; the
+             first url() is the fallback for browsers without image-set. */
+          background-image: url('/hero-outdoor.jpg');
+          background-image: image-set(
+            url('/hero-outdoor.webp') type('image/webp'),
+            url('/hero-outdoor.jpg') type('image/jpeg')
+          );
           background-size: cover;
           background-position: center center;
           background-repeat: no-repeat;
-          /* Desaturate + dark so the headline reads over any part of the
-             photo (the overlay gradients below are tuned for a muted image). */
-          filter: grayscale(1) brightness(0.85) contrast(1.15);
+          /* Real golden-hour photo — keep its warm colour (no grayscale).
+             A slight darken keeps the white headline crisp over the left of
+             the frame, where the overlay gradient below also sits. */
+          filter: brightness(0.9);
         }
         .hero-overlay {
           /* Desktop default — horizontal fade with red corner glow. */
