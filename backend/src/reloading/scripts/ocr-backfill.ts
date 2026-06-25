@@ -40,7 +40,7 @@ const STORAGE_DIR =
 const MODEL = process.env.ANTHROPIC_MODEL_JUDGE ?? 'claude-sonnet-4-6';
 const CHUNK_PAGES = Math.max(
   1,
-  parseInt(process.env.OCR_CHUNK_PAGES ?? '15', 10) || 15,
+  parseInt(process.env.OCR_CHUNK_PAGES ?? '6', 10) || 6,
 );
 
 // Rough Sonnet pricing (USD per MTok) for the cost note only.
@@ -81,14 +81,23 @@ async function sliceChunk(
   return Buffer.from(bytes);
 }
 
-/** Extract the first balanced JSON array from a text blob. */
+/** Extract a JSON array from a model blob, tolerating markdown fences and
+ *  truncation (close at the last complete object so we keep partial pages). */
 function extractJsonArray(raw: string): unknown {
-  const start = raw.indexOf('[');
-  const end = raw.lastIndexOf(']');
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error('No JSON array found in model output.');
+  let s = raw.replace(/```(?:json)?/gi, '').trim();
+  const start = s.indexOf('[');
+  if (start === -1) throw new Error('No JSON array found in model output.');
+  let end = s.lastIndexOf(']');
+  if (end <= start) {
+    const lastObj = s.lastIndexOf('}');
+    if (lastObj > start) {
+      s = s.slice(0, lastObj + 1) + ']';
+      end = s.length - 1;
+    } else {
+      throw new Error('No closing bracket / salvageable object in output.');
+    }
   }
-  return JSON.parse(raw.slice(start, end + 1));
+  return JSON.parse(s.slice(start, end + 1));
 }
 
 /**
@@ -120,7 +129,7 @@ Use the ABSOLUTE page numbers (${firstPage1}..${lastPage1}), one object per page
 
   const r = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 8000,
+    max_tokens: 16000,
     messages: [
       {
         role: 'user',
@@ -205,22 +214,38 @@ async function backfillManual(manualId: string): Promise<void> {
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
 
+  let failedChunks = 0;
   for (let start = 1; start <= totalPages; start += CHUNK_PAGES) {
     const end = Math.min(start + CHUNK_PAGES - 1, totalPages);
     const count = end - start + 1;
     console.log(`  chunk pages ${start}-${end} (${count})…`);
     const chunkBuffer = await sliceChunk(srcBuffer, start, end);
-    const { pages, inputTokens, outputTokens } = await ocrChunk(
-      chunkBuffer,
-      start,
-      count,
-    );
-    totalInputTokens += inputTokens;
-    totalOutputTokens += outputTokens;
-    allPages.push(...pages);
-    console.log(
-      `    → ${pages.length} pages transcribed (in:${inputTokens} out:${outputTokens} tok)`,
-    );
+    // Per-chunk resilience: one bad chunk must NOT lose the whole book.
+    // Try twice, then skip (those pages stay blank) and continue.
+    let done = false;
+    for (let attempt = 1; attempt <= 2 && !done; attempt++) {
+      try {
+        const { pages, inputTokens, outputTokens } = await ocrChunk(
+          chunkBuffer,
+          start,
+          count,
+        );
+        totalInputTokens += inputTokens;
+        totalOutputTokens += outputTokens;
+        allPages.push(...pages);
+        console.log(
+          `    → ${pages.length} pages transcribed (in:${inputTokens} out:${outputTokens} tok)`,
+        );
+        done = true;
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        console.warn(`    ! chunk ${start}-${end} attempt ${attempt} failed: ${m}`);
+        if (attempt === 2) failedChunks++;
+      }
+    }
+  }
+  if (failedChunks > 0) {
+    console.warn(`  ${failedChunks} chunk(s) failed — their pages will be blank.`);
   }
 
   if (allPages.length === 0) {
