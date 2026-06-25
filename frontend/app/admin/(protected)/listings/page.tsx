@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { AdminPageHeader } from '@/components/admin/page-header';
 import BulkListingsTable from './bulk-listings-table';
 import ReviewActions from './review-actions';
 import DeleteListingButton from './delete-button';
@@ -98,9 +99,7 @@ export default function AdminListingsPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-medium mb-5" style={{ color: 'var(--text-primary)' }}>
-        Listings
-      </h1>
+      <AdminPageHeader title="Listings" />
 
       {/* Tabs — swapped raw <a> for next/link so tab switching is
           client-side navigation, not a full page reload. */}
@@ -141,6 +140,7 @@ export default function AdminListingsPage() {
             className="rounded-[8px] overflow-hidden"
             style={{ border: '0.5px solid var(--border)' }}
           >
+            <div className="overflow-x-auto">
             <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-inset)' }}>
@@ -303,6 +303,7 @@ export default function AdminListingsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Pagination */}

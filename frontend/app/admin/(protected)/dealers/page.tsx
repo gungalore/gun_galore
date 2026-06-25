@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { AdminPageHeader } from '@/components/admin/page-header';
 import DealersTable from './dealers-table';
 
 interface Dealer {
@@ -58,20 +59,17 @@ export default function DealersPage() {
 
   return (
     <div>
-      <div className="flex items-baseline justify-between flex-wrap gap-3 mb-3">
-        <h1 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
-          SAPS-licensed dealers
-        </h1>
-        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          {count} {count === 1 ? 'dealer' : 'dealers'} in directory
-        </p>
-      </div>
-
-      <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
-        Dealers in this directory are offered to buyers at checkout when shipping is
-        <strong style={{ color: 'var(--text-primary)' }}> DEALER_TRANSFER </strong>
-        (firearms only). Verify the licence before adding.
-      </p>
+      <AdminPageHeader
+        title="SAPS-licensed dealers"
+        meta={<>{count} {count === 1 ? 'dealer' : 'dealers'} in directory</>}
+        description={
+          <>
+            Dealers in this directory are offered to buyers at checkout when shipping is
+            <strong style={{ color: 'var(--text-primary)' }}> DEALER_TRANSFER </strong>
+            (firearms only). Verify the licence before adding.
+          </>
+        }
+      />
 
       {loaded && <DealersTable initialDealers={dealers} />}
     </div>

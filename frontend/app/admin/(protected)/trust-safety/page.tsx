@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { AdminSection as Section } from '@/components/admin/section';
 
 interface Rejection {
   id: string;
@@ -310,32 +311,6 @@ export default function TrustSafetyPage() {
           </div>
         )}
       </Section>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="mb-6">
-      <div className="mb-2">
-        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-          {title}
-        </p>
-        {subtitle && (
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            {subtitle}
-          </p>
-        )}
-      </div>
-      {children}
     </div>
   );
 }

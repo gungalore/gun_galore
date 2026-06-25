@@ -214,10 +214,10 @@ export default function UserDossierPage() {
     <div>
       <Link
         href="/admin/users"
-        className="text-xs inline-block mb-4"
+        className="text-xs inline-block mb-3"
         style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }}
       >
-        ← All users
+        ← Users
       </Link>
 
       {/* ─── Header strip — identity + ban state + actions ─────── */}

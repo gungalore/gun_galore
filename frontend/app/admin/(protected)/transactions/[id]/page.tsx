@@ -220,10 +220,10 @@ export default function TransactionDossierPage() {
     <div>
       <Link
         href="/admin/transactions"
-        className="text-xs inline-block mb-4"
+        className="text-xs inline-block mb-3"
         style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }}
       >
-        ← All transactions
+        ← Transactions
       </Link>
 
       {/* ─── Header strip ──────────────────────────────────────── */}

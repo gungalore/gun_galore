@@ -203,10 +203,10 @@ export default function ListingDossierPage() {
     <div>
       <Link
         href="/admin/listings"
-        className="text-xs inline-block mb-4"
+        className="text-xs inline-block mb-3"
         style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }}
       >
-        ← All listings
+        ← Listings
       </Link>
 
       {/* ─── Header strip ──────────────────────────────────────── */}

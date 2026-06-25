@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { AdminPageHeader } from '@/components/admin/page-header';
 
 // ─── Types matching backend response ────────────────────────────────
 
@@ -119,12 +120,24 @@ export default function AdminCommandCenterPage() {
   // zero-state cards but in a calmer tone so the operator can see at
   // a glance that everything is clear).
   type Tone = 'urgent' | 'warn' | 'calm';
+  // Group buckets, in the order they should appear on the dashboard.
+  // Payments first (money at stake), then Fulfilment, Verification,
+  // Content, and finally cross-cutting Alerts.
+  type Group = 'Payments' | 'Fulfilment' | 'Verification' | 'Content' | 'Alerts';
+  const GROUP_ORDER: Group[] = [
+    'Payments',
+    'Fulfilment',
+    'Verification',
+    'Content',
+    'Alerts',
+  ];
   const attentionCards: {
     label: string;
     value: number;
     href: string;
     tone: Tone;
     hint: string;
+    group: Group;
   }[] = attention
     ? [
         {
@@ -133,6 +146,7 @@ export default function AdminCommandCenterPage() {
           href: '/admin/listings?status=PENDING_REVIEW',
           tone: attention.pendingListings > 0 ? 'warn' : 'calm',
           hint: 'Awaiting Claude + admin review',
+          group: 'Content',
         },
         {
           label: 'Disputed payments',
@@ -140,6 +154,7 @@ export default function AdminCommandCenterPage() {
           href: '/admin/transactions?status=DISPUTED',
           tone: attention.disputedPayments > 0 ? 'urgent' : 'calm',
           hint: 'Buyer raised dispute',
+          group: 'Payments',
         },
         {
           label: 'Pending verification',
@@ -147,6 +162,7 @@ export default function AdminCommandCenterPage() {
           href: '/admin/transactions?status=PENDING_ADMIN_VERIFICATION',
           tone: attention.pendingPayments > 0 ? 'warn' : 'calm',
           hint: 'Manual verification needed',
+          group: 'Payments',
         },
         {
           label: 'Dispatch SLA at risk',
@@ -154,6 +170,7 @@ export default function AdminCommandCenterPage() {
           href: '/admin/transactions?status=HELD',
           tone: attention.dispatchSlaAtRisk > 0 ? 'warn' : 'calm',
           hint: 'Paid >24h, not dispatched',
+          group: 'Fulfilment',
         },
         {
           label: 'KYC stalled',
@@ -161,6 +178,7 @@ export default function AdminCommandCenterPage() {
           href: '/admin/users?kyc=stalled',
           tone: attention.kycStalled > 0 ? 'warn' : 'calm',
           hint: 'KYC required >24h, not verified',
+          group: 'Verification',
         },
         {
           label: 'Unresolved alerts',
@@ -168,6 +186,7 @@ export default function AdminCommandCenterPage() {
           href: '/admin/audit?resourceType=Alert',
           tone: attention.unresolvedAlerts > 0 ? 'warn' : 'calm',
           hint: 'System-raised flags',
+          group: 'Alerts',
         },
         // Raffle prize dispatch — primary winner has claimed but the
         // operator has not stamped the parcel as shipped yet. Tone is
@@ -181,6 +200,7 @@ export default function AdminCommandCenterPage() {
           href: '/admin/competitions?tab=dispatch',
           tone: attention.rafflesPendingDispatch > 0 ? 'urgent' : 'calm',
           hint: 'Claimed but not shipped',
+          group: 'Fulfilment',
         },
         // Newly drawn raffles — primary winner has been picked but
         // hasn't claimed yet. Calm/warn so it doesn't compete with the
@@ -192,6 +212,7 @@ export default function AdminCommandCenterPage() {
           href: '/admin/competitions?tab=drawn',
           tone: attention.rafflesNewlyDrawn > 0 ? 'warn' : 'calm',
           hint: 'Winner picked, awaiting claim',
+          group: 'Fulfilment',
         },
         // Service credits below alarm — silent-failure risk. SMS/email
         // alerts also fire from the cron, but this card keeps the
@@ -202,6 +223,7 @@ export default function AdminCommandCenterPage() {
           href: '/admin/credits',
           tone: attention.creditsBelowAlarm > 0 ? 'urgent' : 'calm',
           hint: 'Below alarm threshold',
+          group: 'Alerts',
         },
         // TOK-7 Phase 2: stalled sales — buyer paid, seller missed the
         // 48h accept deadline. Urgent because the buyer's money has
@@ -212,30 +234,47 @@ export default function AdminCommandCenterPage() {
           href: '/admin/transactions?status=HELD&filter=accept-stalled',
           tone: attention.salesAwaitingAccept > 0 ? 'urgent' : 'calm',
           hint: 'Seller didn’t accept in 48h',
+          group: 'Payments',
         },
       ]
     : [];
 
+  // Bucket the cards by group, preserving the GROUP_ORDER and the
+  // original card order within each group. Only groups that actually
+  // have cards are rendered.
+  const groupedCards = GROUP_ORDER.map((group) => ({
+    group,
+    cards: attentionCards.filter((c) => c.group === group),
+  })).filter((g) => g.cards.length > 0);
+
   return (
     <div>
-      <div className="flex items-baseline justify-between flex-wrap gap-3 mb-5">
-        <h1 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
-          Command Center
-        </h1>
-        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          Live snapshot · refreshes on every page load
-        </p>
-      </div>
+      <AdminPageHeader
+        title="Command Center"
+        meta="Live snapshot · refreshes on every page load"
+      />
 
-      {/* ─── ATTENTION QUEUE — 8 clickable cards ─────────────────
-          Bumped from 6 to 8 with the addition of the raffle prize-
-          dispatch + newly-drawn cards. We use grid-cols-4 at the lg
-          breakpoint so two rows of four wrap evenly instead of an
-          awkward 6+2. */}
+      {/* ─── ATTENTION QUEUE — cards grouped by category ─────────
+          The ~11 cards are bucketed under small uppercase sub-headers
+          (Payments / Fulfilment / Verification / Content / Alerts) so
+          the operator scans a tidy section at a time instead of a flat
+          wall. Each group keeps the SAME card grid + styling as before. */}
       {attention ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-          {attentionCards.map((c) => (
-            <AttentionCard key={c.label} {...c} />
+        <div className="mb-6">
+          {groupedCards.map(({ group, cards }) => (
+            <div key={group} className="mb-5 last:mb-0">
+              <p
+                className="text-[11px] font-semibold uppercase tracking-wider mb-2"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                {group}
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {cards.map((c) => (
+                  <AttentionCard key={c.label} {...c} />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       ) : (
@@ -372,6 +411,9 @@ function AttentionCard({
   href: string;
   tone: 'calm' | 'warn' | 'urgent';
   hint: string;
+  // Cards carry a `group` field for dashboard bucketing; the card itself
+  // doesn't render it, but it's accepted here so {...c} spreads cleanly.
+  group?: string;
 }) {
   const accent =
     tone === 'urgent' ? 'var(--red)' : tone === 'warn' ? '#f59e0b' : 'var(--border)';

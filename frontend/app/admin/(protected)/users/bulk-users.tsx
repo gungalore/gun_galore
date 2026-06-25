@@ -94,6 +94,7 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
   return (
     <>
       <div className="rounded-[8px] overflow-hidden" style={{ border: '0.5px solid var(--border)' }}>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'var(--bg-inset)' }}>
@@ -202,6 +203,7 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       {selected.size > 0 && (

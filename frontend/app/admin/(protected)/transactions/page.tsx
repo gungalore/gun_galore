@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { AdminPageHeader } from '@/components/admin/page-header';
 import TransactionActions from './transaction-actions';
 
 interface Tx {
@@ -56,9 +57,7 @@ export default function AdminTransactionsPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-medium mb-5" style={{ color: 'var(--text-primary)' }}>
-        Transactions
-      </h1>
+      <AdminPageHeader title="Transactions" />
 
       <div className="flex gap-2 mb-5 flex-wrap">
         {STATUS_TABS.map((t) => (
@@ -87,6 +86,7 @@ export default function AdminTransactionsPage() {
       ) : (
         <>
           <div className="rounded-[8px] overflow-hidden" style={{ border: '0.5px solid var(--border)' }}>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-inset)' }}>
@@ -136,6 +136,7 @@ export default function AdminTransactionsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
 
           <div className="flex justify-between items-center mt-4 text-xs" style={{ color: 'var(--text-tertiary)' }}>

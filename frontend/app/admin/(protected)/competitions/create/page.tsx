@@ -4,17 +4,7 @@ import { useState, FormEvent, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { PhotoDropzone } from '@/components/photo-dropzone';
 import { adminFetch } from '@/lib/admin-auth';
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  background: 'var(--bg-inset)',
-  border: '0.5px solid var(--border)',
-  color: 'var(--text-primary)',
-  borderRadius: '6px',
-  padding: '8px 12px',
-  fontSize: '14px',
-  outline: 'none',
-};
+import { adminInputStyle as inputStyle } from '@/components/admin/form';
 
 function Field({ label, children, hint }: {
   label: string;

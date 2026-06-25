@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { AdminPageHeader } from '@/components/admin/page-header';
 import BulkUsersTable from './bulk-users';
 
 interface User {
@@ -69,9 +70,7 @@ export default function AdminUsersPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-medium mb-5" style={{ color: 'var(--text-primary)' }}>
-        Users
-      </h1>
+      <AdminPageHeader title="Users" />
 
       {/* Active filter chip — appears when arriving via a command-center
           deep-link (e.g. /admin/users?kyc=stalled). Clicking the X
