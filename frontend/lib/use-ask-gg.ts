@@ -20,10 +20,15 @@
 // Sign-in is enforced by ClerkGuard on the backend. The hook bails
 // early when there's no Clerk session.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
+// localStorage key holding the id of the user's most-recent active
+// conversation, so a page refresh / return rehydrates the thread
+// (messages + citation chips) instead of dropping it. Cleared on reset.
+const LAST_CONVERSATION_KEY = 'askgg:lastConversationId';
 
 export type AskGgRole = 'user' | 'assistant';
 
@@ -134,13 +139,43 @@ interface SendResponse {
   };
 }
 
+/** Shape of GET /ask-gg/conversations/:id — a conversation plus all
+ *  its persisted messages (oldest → newest), used to rehydrate a thread
+ *  on reload. citations come back as the raw JSON the backend stored. */
+interface ConversationMessageRow {
+  id: string;
+  role: AskGgRole;
+  content: string;
+  imageUrls?: string[] | null;
+  model?: string | null;
+  citations?: AskGgCitation[] | null;
+  createdAt?: string;
+}
+
+interface ConversationResponse {
+  id: string;
+  title?: string | null;
+  outcome?: AskGgConversationOutcome | null;
+  messages: ConversationMessageRow[];
+}
+
 export interface UseAskGg {
   /** Current conversation's messages (oldest → newest). */
   messages: AskGgUiMessage[];
-  /** ID of the active conversation. Null until the first send. */
+  /** ID of the active conversation. Null until the first send (or until
+   *  a past conversation is rehydrated on mount). */
   conversationId: string | null;
   /** True while a send is in flight (button spinner). */
   sending: boolean;
+  /** True while a past conversation is being rehydrated (on mount or
+   *  via loadConversation). Lets the page suppress the empty-state so
+   *  it doesn't flash "ask me anything" before history paints. */
+  historyLoading: boolean;
+  /** Load a past conversation by id and replace the current thread
+   *  (messages + citations) with it. Returns false when it couldn't be
+   *  loaded (404 / not owned / network). Used to rehydrate the last
+   *  active thread on mount and by any future history picker. */
+  loadConversation: (id: string) => Promise<boolean>;
   /** True if the backend says the FREE tier has hit its 5/month
    *  cap. Caller swaps the composer for an upgrade card. Sticky for
    *  the rest of the session — re-checked on mount via the quota
@@ -211,6 +246,9 @@ export function useAskGg(): UseAskGg {
   const [fairUseCoolOff, setFairUseCoolOff] =
     useState<AskGgFairUseCoolOff | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  // Guards the once-per-mount auto-restore of the last conversation.
+  const hydratedRef = useRef(false);
 
   /** Fetch + apply the latest quota snapshot. Quietly fails if the
    *  user is signed-out, the token is unavailable, or the backend
@@ -260,6 +298,80 @@ export function useAskGg(): UseAskGg {
     }, ms);
     return () => clearTimeout(t);
   }, [fairUseCoolOff, refreshQuota]);
+
+  /** Load a past conversation by id, mapping persisted messages (and
+   *  their stored citations) into the UI and making it the active
+   *  thread. Returns false on 404 / not-owned / network so callers can
+   *  clear a stale id. */
+  const loadConversation = useCallback(
+    async (id: string): Promise<boolean> => {
+      if (!isSignedIn || !id) return false;
+      setHistoryLoading(true);
+      try {
+        const token = await getToken();
+        if (!token) return false;
+        const r = await fetch(`${API_URL}/ask-gg/conversations/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!r.ok) return false; // 404 (deleted / not owned) etc.
+        const data = (await r.json()) as ConversationResponse;
+        const mapped: AskGgUiMessage[] = (data.messages ?? []).map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          model: m.model ?? undefined,
+          citations: Array.isArray(m.citations) ? m.citations : undefined,
+          imageUrls:
+            m.imageUrls && m.imageUrls.length > 0 ? m.imageUrls : undefined,
+        }));
+        setMessages(mapped);
+        setConversationId(data.id);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        setHistoryLoading(false);
+      }
+    },
+    [getToken, isSignedIn],
+  );
+
+  // Persist the active conversation id so a refresh / return can
+  // rehydrate the thread. Only writes non-null ids; reset() clears it.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !conversationId) return;
+    try {
+      window.localStorage.setItem(LAST_CONVERSATION_KEY, conversationId);
+    } catch {
+      // private mode / storage disabled — degrade to no-persistence
+    }
+  }, [conversationId]);
+
+  // On mount (signed-in), restore the last active conversation ONCE so
+  // the thread + citation chips survive a page reload. If it can't be
+  // loaded (deleted / not owned), drop the stale id.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || hydratedRef.current) return;
+    hydratedRef.current = true;
+    if (typeof window === 'undefined') return;
+    let last: string | null = null;
+    try {
+      last = window.localStorage.getItem(LAST_CONVERSATION_KEY);
+    } catch {
+      last = null;
+    }
+    if (!last) return;
+    void loadConversation(last).then((ok) => {
+      if (!ok && typeof window !== 'undefined') {
+        try {
+          window.localStorage.removeItem(LAST_CONVERSATION_KEY);
+        } catch {
+          // ignore
+        }
+      }
+    });
+  }, [isLoaded, isSignedIn, loadConversation]);
 
   const send = useCallback(
     async (
@@ -416,6 +528,15 @@ export function useAskGg(): UseAskGg {
     setMessages([]);
     setConversationId(null);
     setError(null);
+    // Drop the persisted id so a fresh thread doesn't get clobbered by
+    // the previous one on the next reload.
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.removeItem(LAST_CONVERSATION_KEY);
+      } catch {
+        // ignore
+      }
+    }
     // tierGated / quota / fairUseCoolOff are intentionally NOT reset
     // — they reflect server state, not conversation state.
   }, []);
@@ -526,6 +647,8 @@ export function useAskGg(): UseAskGg {
     messages,
     conversationId,
     sending,
+    historyLoading,
+    loadConversation,
     tierGated,
     quota,
     quotaLoading,

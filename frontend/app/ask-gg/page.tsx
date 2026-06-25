@@ -212,7 +212,11 @@ export default function AskGgPage() {
   // If they have history we keep the chat visible and only swap the
   // composer for an inline nudge.
   const showUpgradeHero =
-    isLoaded && isSignedIn && ag.tierGated && ag.messages.length === 0;
+    isLoaded &&
+    isSignedIn &&
+    ag.tierGated &&
+    ag.messages.length === 0 &&
+    !ag.historyLoading;
 
   function handlePickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     setPhotoError(null);
@@ -398,7 +402,9 @@ export default function AskGgPage() {
               padding: '16px 0 12px',
             }}
           >
-            {ag.messages.length === 0 && <EmptyState quota={ag.quota} />}
+            {ag.messages.length === 0 && !ag.historyLoading && (
+              <EmptyState quota={ag.quota} />
+            )}
             {ag.messages.map((m) => (
               <MessageBubble
                 key={m.id}
