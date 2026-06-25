@@ -233,6 +233,16 @@ export default function NewListingPage() {
   // to dealer-stock this firearm. Only collected + sent when isFirearm.
   // Buyers near that dealer see it on listing detail.
   const [plannedDealerLocation, setPlannedDealerLocation] = useState('');
+  // Firearm compliance capture — serial number + two photos (the serial
+  // stamping and the seller's licence). Only collected + sent when
+  // isFirearm. The backend runs Claude vision on these and BLOCKs the
+  // create (HTTP 400 with a message) on serial/holder mismatch, an
+  // unreadable photo, or a licence within 30 days of expiry. The two
+  // File objects are deliberately NOT persisted to the localStorage
+  // draft (same reasoning as the listing photos — File can't serialise).
+  const [serialNumber, setSerialNumber] = useState('');
+  const [serialPhoto, setSerialPhoto] = useState<File | null>(null);
+  const [licencePhoto, setLicencePhoto] = useState<File | null>(null);
   const [pickupAddress, setPickupAddress] = useState<ManualAddressValue>(
     emptyManualAddress,
   );
@@ -949,6 +959,16 @@ export default function NewListingPage() {
       setPublishError('Add at least one photo before publishing.');
       return;
     }
+    // Firearm compliance guard — serial number + both photos are
+    // mandatory for firearm listings. Abort before touching the API if
+    // any is missing so the seller gets an instant, clear message rather
+    // than a server-side 400. Non-firearm listings skip this entirely.
+    if (isFirearm && (!serialNumber.trim() || !serialPhoto || !licencePhoto)) {
+      setPublishError(
+        'Firearm listings need the serial number, a photo of the serial, and a photo of your licence. Add the missing items in the Delivery & address step.',
+      );
+      return;
+    }
     setSubmitting(true);
     setPublishError(null);
     let createdListingId: string | null = null;
@@ -960,6 +980,41 @@ export default function NewListingPage() {
       body.imageCount = images.length;
       if (useCleanedDescription && previewResult.cleanedDescription) {
         body.description = previewResult.cleanedDescription;
+      }
+
+      // Firearm compliance — upload the serial + licence photos FIRST,
+      // BEFORE creating the listing. The create endpoint runs Claude
+      // vision over these URLs and may BLOCK the listing (serial /
+      // holder mismatch, expired-or-near-expiry licence, unreadable
+      // photo). If this upload fails we abort outright — no listing is
+      // created. Mirrors the Authorization header pattern used by the
+      // /users/me fetch and the per-image upload below.
+      if (isFirearm && serialPhoto && licencePhoto) {
+        const docsForm = new FormData();
+        docsForm.append('serialPhoto', serialPhoto);
+        docsForm.append('licencePhoto', licencePhoto);
+        const docsToken = await getToken();
+        const docsRes = await fetch(`${API_URL}/listings/firearm-docs`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${docsToken}` },
+          body: docsForm,
+        });
+        if (!docsRes.ok) {
+          const errBody = await docsRes.json().catch(() => ({}));
+          const msg = Array.isArray(errBody.message)
+            ? errBody.message.join(', ')
+            : (errBody.message ?? `Error ${docsRes.status}`);
+          throw new Error(
+            `Couldn't upload your firearm documents — ${msg}`,
+          );
+        }
+        const { serialPhotoUrl, licencePhotoUrl } = (await docsRes.json()) as {
+          serialPhotoUrl: string;
+          licencePhotoUrl: string;
+        };
+        body.serialNumber = serialNumber.trim();
+        body.serialPhotoUrl = serialPhotoUrl;
+        body.licencePhotoUrl = licencePhotoUrl;
       }
       // Fresh token per request. Clerk session JWTs are short-lived
       // (~60s) and verified by exp on the backend. Capturing ONE token
@@ -2078,6 +2133,87 @@ export default function NewListingPage() {
                 </div>
               )}
             </Field>
+
+            {/* Firearm compliance — serial number + serial photo +
+                licence photo. Required for all firearm listings. The
+                backend runs Claude vision on publish and BLOCKs the
+                listing if the serial doesn't match the licence, the
+                licence holder isn't you, the licence is within 30 days
+                of expiry, or any photo is unreadable. Rendered ONLY for
+                firearms so nothing extra is collected (or sent) for
+                ordinary gear. */}
+            {isFirearm && (
+              <div className="space-y-4">
+                <Field
+                  label="Serial number"
+                  required
+                  hint="The serial stamped on the firearm or barrel. It must match the serial on your licence exactly."
+                >
+                  <input
+                    type="text"
+                    maxLength={60}
+                    value={serialNumber}
+                    onChange={(e) => setSerialNumber(e.target.value)}
+                    style={inputStyle}
+                    placeholder="e.g. ABC123456"
+                  />
+                </Field>
+
+                <Field
+                  label="Clear photo of the serial number"
+                  required
+                  hint="A sharp, well-lit close-up of the stamped serial. We check it reads cleanly and matches your licence."
+                >
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) =>
+                      setSerialPhoto(e.target.files?.[0] ?? null)
+                    }
+                    style={{
+                      ...inputStyle,
+                      padding: '8px 12px',
+                      cursor: 'pointer',
+                    }}
+                  />
+                  {serialPhoto && (
+                    <p
+                      className="text-xs mt-1.5"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
+                      Selected: {serialPhoto.name}
+                    </p>
+                  )}
+                </Field>
+
+                <Field
+                  label="Photo of your firearm licence"
+                  required
+                  hint="The licence holder must be you, and a licence within 30 days of expiry can't be listed. Make sure the serial and expiry date are legible."
+                >
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) =>
+                      setLicencePhoto(e.target.files?.[0] ?? null)
+                    }
+                    style={{
+                      ...inputStyle,
+                      padding: '8px 12px',
+                      cursor: 'pointer',
+                    }}
+                  />
+                  {licencePhoto && (
+                    <p
+                      className="text-xs mt-1.5"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
+                      Selected: {licencePhoto.name}
+                    </p>
+                  )}
+                </Field>
+              </div>
+            )}
 
             <Field
               label="Pickup address"

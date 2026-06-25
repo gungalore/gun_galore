@@ -540,6 +540,24 @@ model Listing {
   model     String?
   calibre   String?
 
+  // ----- Firearm/barrel licence + serial capture (SAP 534 workflow) -----
+  // Only populated for isFirearm / licence-controlled listings. Collected
+  // in the Sell form and cross-checked by Claude vision at create time:
+  //   - serialNumber: seller-typed; must match the serial photo AND the
+  //     serial printed on the licence.
+  //   - serialPhotoUrl / licencePhotoUrl: Cloudinary URLs of the proof
+  //     photos (serial stamp on the firearm/barrel, and the licence doc).
+  //   - licenceHolderName: name vision read off the licence (must match
+  //     the seller).
+  //   - licenceExpiresAt: expiry date vision read off the licence. Drives
+  //     the listing gate (expired/≤30d blocked, 31–90d warn) and the daily
+  //     auto-delist cron (set EXPIRED once ≤30d out).
+  serialNumber      String?
+  serialPhotoUrl    String?
+  licencePhotoUrl   String?
+  licenceHolderName String?
+  licenceExpiresAt  DateTime?
+
   // Parcel weight + dimensions captured by the seller in the Sell form.
   // Required for non-firearm listings (Pudo + TCG need them to quote
   // rates). Firearm listings can leave them null because DEALER_TRANSFER

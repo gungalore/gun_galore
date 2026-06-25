@@ -22,6 +22,7 @@ import {
 import { PreviewListingDto } from './dto/preview-listing.dto';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
+import { FirearmLicenceService } from './firearm-licence.service';
 
 // Shape returned by previewDraft() — the frontend uses this to render the
 // soft-block preview screen. canPublish gates the "Confirm publish" button;
@@ -60,7 +61,32 @@ export class ListingsService {
     private readonly moderation: ListingModerationService,
     private readonly settings: SettingsService,
     private readonly referenceNumbers: ReferenceNumberService,
+    private readonly firearmLicence: FirearmLicenceService,
   ) {}
+
+  // Pre-upload the firearm serial + licence proof photos to Cloudinary
+  // BEFORE create(), so create() can run the Claude-vision licence check
+  // against their URLs. The Sell form calls this, then passes the returned
+  // URLs (+ the typed serial) into POST /listings.
+  async uploadFirearmDocs(
+    clerkId: string,
+    serial: Express.Multer.File | undefined,
+    licence: Express.Multer.File | undefined,
+  ): Promise<{ serialPhotoUrl: string; licencePhotoUrl: string }> {
+    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+    if (!user) throw new ForbiddenException('User not synced — try again in a moment');
+    if (user.isBanned) throw new ForbiddenException('Account is suspended');
+    if (!serial || !licence) {
+      throw new BadRequestException(
+        'Both a serial photo and a licence photo are required.',
+      );
+    }
+    const [s, l] = await Promise.all([
+      this.cloudinary.uploadImage(serial.buffer, `firearm-docs/${user.id}`),
+      this.cloudinary.uploadImage(licence.buffer, `firearm-docs/${user.id}`),
+    ]);
+    return { serialPhotoUrl: s.url, licencePhotoUrl: l.url };
+  }
 
   // Ask Claude to rewrite a draft description. Used by the "Enhance
   // wording" button on the Sell form before the user commits to publishing.
@@ -245,6 +271,38 @@ export class ListingsService {
       );
     }
 
+    // ---- Firearm/barrel licence + serial verification (SAP 534 flow) ----
+    // For licence-controlled categories the seller must supply a typed
+    // serial + a serial photo + a licence photo (uploaded to Cloudinary
+    // first via POST /listings/firearm-docs). Claude vision confirms the
+    // serials match, the holder matches the seller, and reads the expiry —
+    // BLOCKing expired/≤30-day/mismatched licences. A 31–90-day licence is
+    // allowed; the frontend surfaces that warning from licenceExpiresAt.
+    let firearmLicenceExpiresAt: Date | null = null;
+    let firearmLicenceHolderName: string | null = null;
+    if (category.isFirearm) {
+      if (!dto.serialNumber || !dto.serialPhotoUrl || !dto.licencePhotoUrl) {
+        throw new BadRequestException(
+          'Firearm and barrel listings need the serial number, a clear serial photo, and a licence photo.',
+        );
+      }
+      const sellerName =
+        [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+        user.email ||
+        '';
+      const verdict = await this.firearmLicence.verify({
+        typedSerial: dto.serialNumber,
+        serialPhotoUrl: dto.serialPhotoUrl,
+        licencePhotoUrl: dto.licencePhotoUrl,
+        sellerName,
+      });
+      if (verdict.gate === 'BLOCK') {
+        throw new BadRequestException(verdict.reason);
+      }
+      firearmLicenceExpiresAt = verdict.licenceExpiresAt;
+      firearmLicenceHolderName = verdict.licenceHolderName;
+    }
+
     // Auction-specific validation + derived fields
     let startTime: Date | null = null;
     let endTime: Date | null = null;
@@ -381,6 +439,11 @@ export class ListingsService {
         make: dto.make,
         model: dto.model,
         calibre: dto.calibre,
+        serialNumber: dto.serialNumber ?? null,
+        serialPhotoUrl: dto.serialPhotoUrl ?? null,
+        licencePhotoUrl: dto.licencePhotoUrl ?? null,
+        licenceHolderName: firearmLicenceHolderName,
+        licenceExpiresAt: firearmLicenceExpiresAt,
         passFeeToBuyer: dto.passFeeToBuyer,
         autoAcceptThreshold: dto.autoAcceptThreshold,
         reservePrice: dto.reservePrice ?? null,

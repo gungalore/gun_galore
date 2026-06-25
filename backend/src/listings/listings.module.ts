@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ListingsService } from './listings.service';
 import { ListingsController } from './listings.controller';
+import { FirearmLicenceService } from './firearm-licence.service';
 import { ListingQuestionsService } from './listing-questions.service';
 import {
   ListingQuestionsController,

@@ -10,13 +10,14 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   HttpCode,
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
 } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ListingsService } from './listings.service';
 import { CreateListingDto } from './dto/create-listing.dto';
@@ -65,6 +66,37 @@ export class ListingsController {
   @UseGuards(ClerkGuard)
   create(@CurrentUser() clerkId: string, @Body() dto: CreateListingDto) {
     return this.listingsService.create(clerkId, dto);
+  }
+
+  // POST /listings/firearm-docs — pre-upload the serial + licence proof
+  // photos for a firearm/barrel listing. Returns Cloudinary URLs the Sell
+  // form then passes into POST /listings, where Claude vision verifies
+  // them. Two named files: serialPhoto + licencePhoto.
+  @Post('firearm-docs')
+  @UseGuards(ClerkGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'serialPhoto', maxCount: 1 },
+        { name: 'licencePhoto', maxCount: 1 },
+      ],
+      { storage: memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } },
+    ),
+  )
+  uploadFirearmDocs(
+    @CurrentUser() clerkId: string,
+    @UploadedFiles()
+    files: {
+      serialPhoto?: Express.Multer.File[];
+      licencePhoto?: Express.Multer.File[];
+    },
+  ) {
+    return this.listingsService.uploadFirearmDocs(
+      clerkId,
+      files?.serialPhoto?.[0],
+      files?.licencePhoto?.[0],
+    );
   }
 
   // POST /listings/enhance-description — used by the "Enhance wording"

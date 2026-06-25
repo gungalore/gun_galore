@@ -61,6 +61,18 @@ export class CreateListingDto {
   @MaxLength(50)
   calibre?: string;
 
+  // ---- Firearm/barrel licence + serial -------------------------------
+  // Required when the category is a firearm/barrel (enforced in
+  // ListingsService.create). The seller types the serial; the serial +
+  // licence proof photos are uploaded to Cloudinary BEFORE create, and
+  // their URLs are passed here so Claude vision can verify at create time
+  // that (a) the photo's serial matches the typed serial, (b) the
+  // licence's serial matches it, (c) the licence holder matches the
+  // seller, and (d) the licence isn't expired / inside 30 days.
+  @IsOptional() @IsString() @MaxLength(60) serialNumber?: string;
+  @IsOptional() @IsString() @MaxLength(500) serialPhotoUrl?: string;
+  @IsOptional() @IsString() @MaxLength(500) licencePhotoUrl?: string;
+
   // ZAR cents; TAKE_A_SHOT only — auto-accepts offers at or above this amount
   @IsOptional()
   @IsInt()
