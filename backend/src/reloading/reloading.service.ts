@@ -54,6 +54,87 @@ const DEFAULT_STORAGE_DIR =
   process.env.RELOADING_MANUALS_STORAGE_DIR ??
   path.resolve(process.cwd(), '..', 'manuals');
 
+/**
+ * Spell-error / alias mitigation for reloading queries.
+ *
+ * Maps common misspellings + shorthand of powder names and brand
+ * proper-nouns to the canonical spelling used in the manuals. Applied
+ * case-insensitively, token-by-token, in normalizeQuery(). Unknown
+ * words pass through unchanged. Keys MUST be lower-case (the lookup
+ * lower-cases each token before matching). Extend freely — it's a
+ * simple flat lookup, no precedence rules.
+ *
+ * Two query passes use this:
+ *   1. before building the websearch tsquery (so "hornaday" → "Hornady"
+ *      matches the indexed token), and
+ *   2. before the pg_trgm fuzzy fallback (the trgm catches the long
+ *      tail of typos this map doesn't enumerate).
+ */
+const RELOADING_ALIAS_MAP: Record<string, string> = {
+  // ── Brands ───────────────────────────────────────────────────────
+  hornaday: 'Hornady',
+  hornady: 'Hornady',
+  hornidy: 'Hornady',
+  hornandy: 'Hornady',
+  vihtoviori: 'Vihtavuori',
+  vihtavouri: 'Vihtavuori',
+  vihtavuori: 'Vihtavuori',
+  vihta: 'Vihtavuori',
+  vit: 'Vihtavuori',
+  vihtevouri: 'Vihtavuori',
+  hodgson: 'Hodgdon',
+  hodgdson: 'Hodgdon',
+  hogdon: 'Hodgdon',
+  hodgdon: 'Hodgdon',
+  hodgdonreloadingmanual: 'Hodgdon',
+  layman: 'Lyman',
+  lyman: 'Lyman',
+  somchen: 'Somchem',
+  somchem: 'Somchem',
+  somchemm: 'Somchem',
+  sierra: 'Sierra',
+  siera: 'Sierra',
+  sierraa: 'Sierra',
+  serria: 'Sierra',
+  nosler: 'Nosler',
+  noslar: 'Nosler',
+  nossler: 'Nosler',
+  barnes: 'Barnes',
+  barns: 'Barnes',
+  barness: 'Barnes',
+  alliant: 'Alliant',
+  aliant: 'Alliant',
+  alliantt: 'Alliant',
+  imr: 'IMR',
+  // ── Powders ──────────────────────────────────────────────────────
+  varget: 'Varget',
+  vargit: 'Varget',
+  h4350: 'H4350',
+  'h-4350': 'H4350',
+  hh4350: 'H4350',
+  h4831: 'H4831',
+  'h-4831': 'H4831',
+  h1000: 'H1000',
+  'h-1000': 'H1000',
+  h335: 'H335',
+  'h-335': 'H335',
+  cfe223: 'CFE223',
+  'cfe-223': 'CFE223',
+  benchmark: 'Benchmark',
+  benchmrk: 'Benchmark',
+  n140: 'N140',
+  n150: 'N150',
+  n160: 'N160',
+  n133: 'N133',
+  n550: 'N550',
+  s321: 'S321',
+  s335: 'S335',
+  s341: 'S341',
+  s365: 'S365',
+  mp200: 'MP200',
+  tac: 'TAC',
+};
+
 @Injectable()
 export class ReloadingService implements OnModuleInit {
   private readonly logger = new Logger(ReloadingService.name);
@@ -86,6 +167,36 @@ export class ReloadingService implements OnModuleInit {
       // until the operator runs the DDL manually.
       this.logger.warn(
         `Failed to ensure FTS index (search will be slow until fixed): ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+    }
+
+    // pg_trgm fuzzy-match support — powers the typo-tolerant fallback in
+    // searchPages() when the primary FTS query returns nothing. Each
+    // statement is wrapped independently: CREATE EXTENSION can fail on a
+    // role without the SUPERUSER/createrole privilege, but the GIN index
+    // is still worth attempting if the extension already exists. Neither
+    // failure is fatal — the fuzzy fallback just won't fire.
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `CREATE EXTENSION IF NOT EXISTS pg_trgm;`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to ensure pg_trgm extension (fuzzy search disabled): ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+    }
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "ReloadingManualPage_extractedText_trgm_idx"
+          ON "ReloadingManualPage" USING GIN ("extractedText" gin_trgm_ops);
+      `);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to ensure pg_trgm GIN index (fuzzy search will be slow): ${
           err instanceof Error ? err.message : err
         }`,
       );
@@ -510,20 +621,62 @@ export class ReloadingService implements OnModuleInit {
   }
 
   /**
-   * Postgres FTS lookup across all ACTIVE manuals. Used by Ask GG's
-   * `searchReloadingManuals` tool. Returns top hits with a 240-char
-   * snippet for Claude to evaluate which page to fetch next.
+   * Normalise a user query before it becomes a tsquery.
    *
-   * Uses websearch_to_tsquery so users-typed queries like
+   * Two passes:
+   *   1. Collapse spaced powder-code forms ("h 4350" → "h4350",
+   *      "cfe 223" → "cfe223", "n 140" → "n140") so the next pass can
+   *      look them up as a single token.
+   *   2. Token-by-token alias replacement via RELOADING_ALIAS_MAP
+   *      (case-insensitive). Unknown words pass through unchanged.
+   *
+   * Punctuation that matters to load-data queries (`.308`, `.30-06`,
+   * `6.5`) is preserved — we only split on whitespace, never on dots
+   * or hyphens, so calibre designations stay intact.
+   */
+  normalizeQuery(q: string): string {
+    const collapsed = q
+      // "h 4350" / "h-4350"(handled by map) → "h4350"; bounded so we
+      // don't merge across unrelated words. Letter(s)+space+3-4 digits.
+      .replace(/\b([a-zA-Z]{1,3})\s+(\d{3,4})\b/g, '$1$2')
+      // "cfe 223" → "cfe223"
+      .replace(/\bcfe\s+(\d{2,3})\b/gi, 'cfe$1');
+    return collapsed
+      .split(/(\s+)/) // keep the whitespace delimiters so spacing survives
+      .map((tok) => {
+        if (/^\s+$/.test(tok) || tok.length === 0) return tok;
+        const alias = RELOADING_ALIAS_MAP[tok.toLowerCase()];
+        return alias ?? tok;
+      })
+      .join('')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Postgres FTS lookup across all ACTIVE manuals. Used by Ask GG's
+   * `searchReloadingManuals` tool. Returns top hits with a big snippet
+   * for Claude to evaluate which page to fetch next.
+   *
+   * Uses websearch_to_tsquery so user-typed queries like
    *   ".308 168gr Sierra MatchKing H4350"
    * work without manual quoting — Postgres handles ranking via
    * ts_rank against the GIN-indexed tsvector column.
+   *
+   * Three robustness layers sit in front of the raw FTS:
+   *   - normalizeQuery() rewrites known powder/brand misspellings to
+   *     their canonical spelling.
+   *   - BULLET-WEIGHT TOLERANCE: a "180gr" in the query is expanded to
+   *     also match 175..185gr load data (charges are listed per exact
+   *     weight; nearby weights are useful reference).
+   *   - pg_trgm FUZZY FALLBACK: if the primary FTS returns 0 rows, a
+   *     trigram-similarity pass catches typos the alias map missed.
    */
   async searchPages(
     query: string,
     limit = 5,
-  ): Promise<
-    Array<{
+  ): Promise<{
+    results: Array<{
       manualId: string;
       manufacturer: string;
       title: string;
@@ -531,13 +684,27 @@ export class ReloadingService implements OnModuleInit {
       pageNumber: number;
       snippet: string;
       rank: number;
-    }>
-  > {
+      ocr: boolean;
+    }>;
+    /** Detected target bullet weight (grains), if the query had one. */
+    weight: number | null;
+    /** Inclusive ±5gr tolerance window applied for that weight. */
+    weightWindow: [number, number] | null;
+    /** True when the primary FTS returned nothing and the pg_trgm
+     *  fuzzy fallback supplied these results instead. */
+    fuzzy: boolean;
+  }> {
     const trimmed = query.trim();
-    if (!trimmed) return [];
+    if (!trimmed) {
+      return { results: [], weight: null, weightWindow: null, fuzzy: false };
+    }
+    // Alias / spell-error normalisation FIRST — everything downstream
+    // operates on the canonical spelling.
+    const normalized = this.normalizeQuery(trimmed) || trimmed;
     // Cap limit to a sane range so a hallucinated huge value doesn't
     // blow up the response payload.
     const safeLimit = Math.max(1, Math.min(limit, 10));
+
     type Row = {
       manualId: string;
       manufacturer: string;
@@ -546,40 +713,210 @@ export class ReloadingService implements OnModuleInit {
       pageNumber: number;
       snippet: string;
       rank: number;
+      ocr: boolean;
     };
-    // Raw SQL because Prisma doesn't surface tsvector / websearch_to_tsquery
-    // natively. The tsvector column is the GENERATED ALWAYS AS column we
-    // create on app boot (see onModuleInit).
-    // Snippets are deliberately big (250+ words across 2 fragments).
-    // Claude often answers reloading questions from search snippets
-    // alone and never needs to fetch the PDF — that skips the slow
-    // vision pass entirely. ~350 tokens per hit × 5 hits ≈ 1.7k
-    // tokens of context, well worth it for the win.
-    return this.prisma.$queryRawUnsafe<Row[]>(
-      `
-      SELECT
-        m."id"          AS "manualId",
-        m."manufacturer",
-        m."title",
-        m."edition",
-        p."pageNumber",
-        ts_headline(
-          'english',
-          p."extractedText",
-          websearch_to_tsquery('english', $1),
-          'MaxWords=250, MinWords=150, ShortWord=2, MaxFragments=2, FragmentDelimiter=" … "'
-        ) AS "snippet",
-        ts_rank(p."textTsv", websearch_to_tsquery('english', $1)) AS "rank"
-      FROM "ReloadingManualPage" p
-      JOIN "ReloadingManual" m ON m."id" = p."manualId"
-      WHERE m."status" = 'ACTIVE'
-        AND p."textTsv" @@ websearch_to_tsquery('english', $1)
-      ORDER BY "rank" DESC, m."manufacturer" ASC, p."pageNumber" ASC
-      LIMIT $2;
-      `,
-      trimmed,
-      safeLimit,
-    );
+
+    // ── BULLET-WEIGHT DETECTION ──────────────────────────────────────
+    // Match 180gr / 180 gr / 180grain / 180 grain / 180gn. Capture the
+    // 2-3 digit integer; only realistic bullet weights (30..600gr).
+    const weightRegex = /\b(\d{2,3})\s?(?:gr(?:ains?|s)?|gn|grains?)\b/gi;
+    const detectedWeights: number[] = [];
+    let weightMatch: RegExpExecArray | null;
+    // Track the exact matched substrings so we can strip them from the
+    // base terms (the weight is handled by its own dedicated tsquery).
+    const matchedWeightTokens: string[] = [];
+    while ((weightMatch = weightRegex.exec(normalized)) !== null) {
+      const w = parseInt(weightMatch[1], 10);
+      if (w >= 30 && w <= 600) {
+        detectedWeights.push(w);
+        matchedWeightTokens.push(weightMatch[0]);
+      }
+    }
+    // Use the FIRST realistic weight as the primary target for the
+    // tolerance window we report back to the caller. (Multiple weights
+    // are rare; all detected weights still feed the OR'd weight query.)
+    const targetWeight = detectedWeights.length > 0 ? detectedWeights[0] : null;
+    const weightWindow: [number, number] | null =
+      targetWeight !== null
+        ? [targetWeight - 5, targetWeight + 5]
+        : null;
+
+    // ── tsquery CONSTRUCTION ─────────────────────────────────────────
+    // Base = the normalized query with the matched weight tokens stripped
+    // out (whatever the user typed minus "180gr" etc.). We feed the base
+    // through websearch_to_tsquery as a PARAMETER ($1) — no raw user text
+    // ever enters a to_tsquery() string. The weight tsquery is built only
+    // from validated integers + a whitelist of grain suffixes, so it's
+    // safe to interpolate.
+    let baseText = normalized;
+    for (const tok of matchedWeightTokens) {
+      baseText = baseText.split(tok).join(' ');
+    }
+    baseText = baseText.replace(/\s+/g, ' ').trim();
+
+    // For each detected weight N, expand to the inclusive set N-5..N+5
+    // and build the OR'd variant string. Variants per integer V:
+    //   Vgr  (single token)
+    //   V <-> gr / V <-> grain / V <-> grains / V <-> gn  (phrase forms)
+    // SUFFIX_WHITELIST is fixed; V is a validated integer — no injection
+    // surface in the to_tsquery() string.
+    const SUFFIX_WHITELIST = ['gr', 'grain', 'grains', 'gn'] as const;
+    const weightVariantClauses: string[] = [];
+    if (detectedWeights.length > 0) {
+      const expanded = new Set<number>();
+      for (const w of detectedWeights) {
+        for (let v = w - 5; v <= w + 5; v++) {
+          if (v >= 1 && v <= 9999) expanded.add(v);
+        }
+      }
+      for (const v of expanded) {
+        // single fused token, e.g. 180gr
+        weightVariantClauses.push(`${v}gr`);
+        for (const suffix of SUFFIX_WHITELIST) {
+          // phrase form, e.g. 180 <-> gr
+          weightVariantClauses.push(`${v} <-> ${suffix}`);
+        }
+      }
+    }
+
+    // ── PRIMARY QUERY ────────────────────────────────────────────────
+    // If a weight was detected, AND (&&) the base websearch query with a
+    // to_tsquery built from the validated weight variants. Otherwise it's
+    // the plain websearch query, identical to the original behaviour.
+    let primaryRows: Row[];
+    if (weightVariantClauses.length > 0) {
+      // OR all weight variants together. Built purely from validated
+      // ints + whitelisted suffixes (see above), so no user text reaches
+      // to_tsquery — safe.
+      const weightTsqueryStr = weightVariantClauses.join(' | ');
+      // Combined predicate: base (param $1) && weights (param $2).
+      // Both compiled server-side; the base stays parameterised.
+      primaryRows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT
+          m."id"          AS "manualId",
+          m."manufacturer",
+          m."title",
+          m."edition",
+          m."ocr",
+          p."pageNumber",
+          ts_headline(
+            'english',
+            p."extractedText",
+            websearch_to_tsquery('english', $1) && to_tsquery('english', $2),
+            'MaxWords=250, MinWords=150, ShortWord=2, MaxFragments=2, FragmentDelimiter=" … "'
+          ) AS "snippet",
+          ts_rank(
+            p."textTsv",
+            websearch_to_tsquery('english', $1) && to_tsquery('english', $2)
+          ) AS "rank"
+        FROM "ReloadingManualPage" p
+        JOIN "ReloadingManual" m ON m."id" = p."manualId"
+        WHERE m."status" = 'ACTIVE'
+          AND p."textTsv" @@ (
+            websearch_to_tsquery('english', $1) && to_tsquery('english', $2)
+          )
+        ORDER BY "rank" DESC, m."manufacturer" ASC, p."pageNumber" ASC
+        LIMIT $3;
+        `,
+        // The base may be empty if the user typed ONLY a weight; an empty
+        // websearch_to_tsquery is the "match anything" identity under &&,
+        // which is exactly what we want (just the weight constraint).
+        baseText,
+        weightTsqueryStr,
+        safeLimit,
+      );
+    } else {
+      // No weight detected — behave exactly as the original search did,
+      // just on the normalized query string + the new ocr column.
+      primaryRows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT
+          m."id"          AS "manualId",
+          m."manufacturer",
+          m."title",
+          m."edition",
+          m."ocr",
+          p."pageNumber",
+          ts_headline(
+            'english',
+            p."extractedText",
+            websearch_to_tsquery('english', $1),
+            'MaxWords=250, MinWords=150, ShortWord=2, MaxFragments=2, FragmentDelimiter=" … "'
+          ) AS "snippet",
+          ts_rank(p."textTsv", websearch_to_tsquery('english', $1)) AS "rank"
+        FROM "ReloadingManualPage" p
+        JOIN "ReloadingManual" m ON m."id" = p."manualId"
+        WHERE m."status" = 'ACTIVE'
+          AND p."textTsv" @@ websearch_to_tsquery('english', $1)
+        ORDER BY "rank" DESC, m."manufacturer" ASC, p."pageNumber" ASC
+        LIMIT $2;
+        `,
+        normalized,
+        safeLimit,
+      );
+    }
+
+    if (primaryRows.length > 0) {
+      return {
+        results: primaryRows.map((r) => ({ ...r, ocr: Boolean(r.ocr) })),
+        weight: targetWeight,
+        weightWindow,
+        fuzzy: false,
+      };
+    }
+
+    // ── FUZZY FALLBACK (pg_trgm) ─────────────────────────────────────
+    // Primary FTS found nothing. Catch typos the alias map didn't cover
+    // via trigram word-similarity. word_similarity(query, text) > 0.3
+    // finds pages where some run of words is close to the query. The
+    // snippet falls back to plainto_tsquery (websearch can return an
+    // empty query for short fuzzy input; plainto is more forgiving).
+    // If pg_trgm isn't installed this throws — caught so search degrades
+    // to "no hits" rather than erroring the whole tool call.
+    let fuzzyRows: Row[] = [];
+    try {
+      fuzzyRows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT
+          m."id"          AS "manualId",
+          m."manufacturer",
+          m."title",
+          m."edition",
+          m."ocr",
+          p."pageNumber",
+          ts_headline(
+            'english',
+            p."extractedText",
+            plainto_tsquery('english', $1),
+            'MaxWords=250, MinWords=150, ShortWord=2, MaxFragments=2, FragmentDelimiter=" … "'
+          ) AS "snippet",
+          word_similarity($1, p."extractedText") AS "rank"
+        FROM "ReloadingManualPage" p
+        JOIN "ReloadingManual" m ON m."id" = p."manualId"
+        WHERE m."status" = 'ACTIVE'
+          AND word_similarity($1, p."extractedText") > 0.3
+        ORDER BY "rank" DESC, m."manufacturer" ASC, p."pageNumber" ASC
+        LIMIT $2;
+        `,
+        normalized,
+        safeLimit,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `pg_trgm fuzzy fallback failed (extension missing?): ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      fuzzyRows = [];
+    }
+
+    return {
+      results: fuzzyRows.map((r) => ({ ...r, ocr: Boolean(r.ocr) })),
+      weight: targetWeight,
+      weightWindow,
+      fuzzy: fuzzyRows.length > 0,
+    };
   }
 
   /**

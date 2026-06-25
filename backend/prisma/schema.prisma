@@ -2353,6 +2353,11 @@ model ReloadingManual {
   fileSizeBytes   Int
   pageCount       Int                   @default(0)
   status          ReloadingManualStatus @default(PROCESSING)
+  // True when the page text was produced by the Anthropic OCR backfill
+  // script (src/reloading/scripts/ocr-backfill.ts) rather than pdf-parse.
+  // Ask GG appends a "double-check this exact figure" nudge when it
+  // quotes numbers from an OCR-digitised manual.
+  ocr             Boolean               @default(false)
   // Admin who triggered the inbox scan that ingested this manual.
   // FK to AdminUser (separate table from regular User) — admin JWT
   // payloads carry AdminUser.id as `sub`, not a User.id.

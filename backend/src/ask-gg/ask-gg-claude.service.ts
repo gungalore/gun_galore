@@ -43,7 +43,7 @@ const TOOLS: Tool[] = [
   {
     name: 'searchReloadingManuals',
     description:
-      'Full-text search across the operator-uploaded reloading manual library (Hodgdon, Vihtavuori, Hornady, Lyman, IMR, Alliant, Somchem, ABCs of Reloading, etc.). Returns the top hits with manufacturer, title, page number, and a short text snippet. ALWAYS call this first for any reloading question — both specific load-data ("max charge of H4350 under 168gr in .308") AND general theory ("when should I anneal brass?"). The published manual is the authoritative source; your training data is not.',
+      'Full-text search across the operator-uploaded reloading manual library (Hodgdon, Vihtavuori, Hornady, Lyman, IMR, Alliant, Somchem, ABCs of Reloading, etc.). Returns the top hits with manufacturer, title, page number, a short text snippet, and an "ocr" flag per hit. ALWAYS call this first for any reloading question — both specific load-data ("max charge of H4350 under 168gr in .308") AND general theory ("when should I anneal brass?"). The search is robust: it tolerates spelling errors in powder + brand names (e.g. "hornaday", "vihtoviori") and, when you include a bullet weight, it AUTO-BROADENS to also surface load data for nearby weights within ±5 grains (a "weightToleranceApplied" field tells you the target weight + window when this happened). The published manual is the authoritative source; your training data is not.',
     input_schema: {
       type: 'object',
       properties: {
@@ -188,6 +188,18 @@ For ANY reloading question (specific load data, brass prep, primer selection, an
 
 **Citation format:** always include the manual name + page in the answer. The user must be able to verify against the original.
 
+## BULLET-WEIGHT TOLERANCE (load data)
+
+Reloading load data is listed per EXACT bullet weight. When a user asks for a load for a specific weight (e.g. "180gr .30-06"), the search automatically also surfaces data for nearby weights within ±5 grains. Use it like this:
+- Lead with the user's EXACT weight when it's published, and cite it precisely.
+- You may also show nearby weights (±5gr) as helpful reference, but you MUST label each with its real weight — e.g. "(this is 175gr data, not your 180gr)".
+- NEVER present another weight's charge as if it applies to the user's bullet. Charges are NOT interchangeable across bullet weights — a heavier bullet on the same charge raises pressure and can be dangerous.
+- If the user's exact weight isn't published, say so, then offer the nearest published weight(s) as a STARTING REFERENCE only: drop the charge, work up, and confirm against data for the exact bullet.
+
+## OCR-DIGITISED MANUALS
+
+Some manuals were digitised automatically (the search result marks these with "ocr": true). When you quote a NUMBER (charge weight, velocity, pressure) from an OCR-digitised manual, add a brief nudge: "double-check this exact figure against the manufacturer's published data — this manual was digitised automatically." General prose/theory from OCR'd manuals does not need this caveat.
+
 ## BALLISTIC QUESTIONS — TOOL USE REQUIRED
 
 For ANY question asking for drop, holdover, dial-up, windage, retained velocity, retained energy, or time-of-flight at a specific range, call \`calculateBallistics\` — never invent these numbers from training memory.
@@ -208,6 +220,7 @@ Every reloading answer also includes a short reminder:
 - Work up watching for pressure signs
 - Your rifle, brass, and primers differ from the manual's test rig
 - Stop at any sign of overpressure
+- Load data is specific to the EXACT bullet weight and type — never reuse a charge across different bullet weights.
 
 ## STYLE
 
@@ -576,12 +589,27 @@ export class AskGgClaudeService {
       if (block.name === 'searchReloadingManuals') {
         const input = block.input as { query?: string };
         const query = input.query ?? '';
-        const hits = await this.reloading.searchPages(query, 5);
+        const search = await this.reloading.searchPages(query, 5);
+        // Surface each hit's ocr flag so the model knows when to add the
+        // "double-check this exact figure" nudge (see system prompt
+        // INSERT BLOCK B). When a bullet weight was detected, also tell
+        // the model that nearby-weight rows (±5gr) may be present so it
+        // labels them correctly (INSERT BLOCK A).
+        const payload: {
+          hits: typeof search.results;
+          weightToleranceApplied?: { target: number; window: [number, number] };
+        } = { hits: search.results };
+        if (search.weight !== null && search.weightWindow !== null) {
+          payload.weightToleranceApplied = {
+            target: search.weight,
+            window: search.weightWindow,
+          };
+        }
         return [
           {
             type: 'tool_result',
             tool_use_id: toolUseId,
-            content: JSON.stringify({ hits }),
+            content: JSON.stringify(payload),
           },
         ];
       }
