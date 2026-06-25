@@ -622,7 +622,40 @@ export class ListingsService {
             .slice(0, 3)
             .join(', ')}`
         : null;
+
+    // Demand signal: the buyer wanted complements here but we found NONE.
+    // Log it (fire-and-forget, keyed by category + normalised calibre) so
+    // the operator can see what stock to recruit — the supply side of the
+    // flywheel. Only when there's a real calibre signal; generic misses
+    // are noise. Never let a logging failure break the response.
+    if (suggestions.length === 0 && fromCategoryId) {
+      const calKey = this.calibreKey(calibre);
+      if (calKey) {
+        void this.prisma.crossSellMiss
+          .upsert({
+            where: {
+              fromCategoryId_calibre: { fromCategoryId, calibre: calKey },
+            },
+            create: { fromCategoryId, calibre: calKey, count: 1 },
+            update: { count: { increment: 1 }, lastSeenAt: new Date() },
+          })
+          .catch(() => undefined);
+      }
+    }
     return { suggestions, reason };
+  }
+
+  /**
+   * Normalise a calibre string to a comparable key for demand-miss
+   * aggregation: ".308 Win" → "308", "6.5 Creedmoor" → "65creedmoor".
+   * Falls back to the alphanumerics of the raw value when no known
+   * cartridge matches; null when there's nothing usable.
+   */
+  private calibreKey(raw?: string | null): string | null {
+    const token = this.extractCalibre(raw ?? undefined);
+    if (token) return token.replace(/[^a-z0-9]/gi, '').toLowerCase();
+    const alnum = (raw ?? '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+    return alnum.length >= 2 ? alnum : null;
   }
 
   /**

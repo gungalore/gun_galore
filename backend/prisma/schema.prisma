@@ -539,6 +539,24 @@ model CategoryRelation {
   @@index([fromCategoryId])
 }
 
+// Cross-sell demand signal: one row per (fromCategory, normalised calibre)
+// where a buyer's cross-sell lookup returned NO eligible complements.
+// Incremented on each miss; surfaced in the admin "unmet demand" report so
+// the operator knows what stock to recruit (the supply side of the
+// flywheel). No FK to Category — a loose link the report joins by id, so a
+// deactivated category never cascade-deletes the signal.
+model CrossSellMiss {
+  id             String   @id @default(cuid())
+  fromCategoryId String
+  calibre        String
+  count          Int      @default(1)
+  lastSeenAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  @@unique([fromCategoryId, calibre])
+  @@index([count])
+}
+
 model Listing {
   id              String  @id @default(cuid())
   // Human-trackable reference shown to buyers + sellers (e.g. UM000123,

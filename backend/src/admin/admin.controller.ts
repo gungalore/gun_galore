@@ -730,6 +730,13 @@ export class AdminCategoriesController {
     return this.categories.list();
   }
 
+  // Unmet cross-sell demand report. Distinct path so it doesn't collide
+  // with any param route.
+  @Get('cross-sell-demand')
+  crossSellDemand() {
+    return this.categories.crossSellDemand();
+  }
+
   @Post()
   @HttpCode(201)
   create(

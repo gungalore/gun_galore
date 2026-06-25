@@ -219,6 +219,33 @@ export class AdminCategoriesService {
     });
     return { fromCategoryId, toCategoryIds: finalIds };
   }
+
+  /**
+   * "Unmet demand" report — cross-sell lookups that returned nothing,
+   * aggregated by category + normalised calibre, most-wanted first. Tells
+   * the operator exactly which complementary stock to recruit.
+   */
+  async crossSellDemand() {
+    const misses = await this.prisma.crossSellMiss.findMany({
+      orderBy: [{ count: 'desc' }, { lastSeenAt: 'desc' }],
+      take: 100,
+    });
+    const ids = Array.from(new Set(misses.map((m) => m.fromCategoryId)));
+    const cats = ids.length
+      ? await this.prisma.category.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const nameById = new Map(cats.map((c) => [c.id, c.name]));
+    return misses.map((m) => ({
+      fromCategoryId: m.fromCategoryId,
+      fromCategoryName: nameById.get(m.fromCategoryId) ?? '(removed category)',
+      calibre: m.calibre,
+      count: m.count,
+      lastSeenAt: m.lastSeenAt,
+    }));
+  }
 }
 
 function slugify(s: string): string {
