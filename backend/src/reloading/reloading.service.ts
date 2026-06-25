@@ -703,7 +703,9 @@ export class ReloadingService implements OnModuleInit {
     const normalized = this.normalizeQuery(trimmed) || trimmed;
     // Cap limit to a sane range so a hallucinated huge value doesn't
     // blow up the response payload.
-    const safeLimit = Math.max(1, Math.min(limit, 10));
+    // Cap raised to 40: with per-manual diversity (≤2 pages/manual) this
+    // lets a query span all ~19 manuals so Ask GG can consolidate across them.
+    const safeLimit = Math.max(1, Math.min(limit, 40));
 
     type Row = {
       manualId: string;
@@ -783,79 +785,64 @@ export class ReloadingService implements OnModuleInit {
     // If a weight was detected, AND (&&) the base websearch query with a
     // to_tsquery built from the validated weight variants. Otherwise it's
     // the plain websearch query, identical to the original behaviour.
-    let primaryRows: Row[];
-    if (weightVariantClauses.length > 0) {
-      // OR all weight variants together. Built purely from validated
-      // ints + whitelisted suffixes (see above), so no user text reaches
-      // to_tsquery — safe.
-      const weightTsqueryStr = weightVariantClauses.join(' | ');
-      // Combined predicate: base (param $1) && weights (param $2).
-      // Both compiled server-side; the base stays parameterised.
-      primaryRows = await this.prisma.$queryRawUnsafe<Row[]>(
-        `
+    // Build the tsquery expression + bound params once. A weighted query
+    // ANDs the base websearch query (param $1) with the validated weight
+    // variants (param $2); unweighted is just the base. The expression
+    // references only $1/$2 — no raw user text is interpolated into SQL.
+    const tsqExpr =
+      weightVariantClauses.length > 0
+        ? `websearch_to_tsquery('english', $1) && to_tsquery('english', $2)`
+        : `websearch_to_tsquery('english', $1)`;
+    const baseParams: unknown[] =
+      weightVariantClauses.length > 0
+        ? // base may be empty if the user typed ONLY a weight — an empty
+          // websearch query is the "match anything" identity under &&.
+          [baseText, weightVariantClauses.join(' | ')]
+        : [normalized];
+    const limitIdx = baseParams.length + 1;
+
+    // PER-MANUAL DIVERSITY: rank every matching page, keep the best
+    // PER_MANUAL_CAP pages PER manual, then take the global top `safeLimit`.
+    // Without this, the largest manual (Hornady, ~1024pp) monopolises every
+    // result slot and Ask GG only ever sees one source. This guarantees the
+    // top hits span ALL manuals that have the data, so the model can
+    // consolidate across them. ts_headline runs only on the final rows.
+    const PER_MANUAL_CAP = 2;
+    const primaryRows = await this.prisma.$queryRawUnsafe<Row[]>(
+      `
+      WITH ranked AS (
         SELECT
-          m."id"          AS "manualId",
-          m."manufacturer",
-          m."title",
-          m."edition",
-          m."ocr",
-          p."pageNumber",
-          ts_headline(
-            'english',
-            p."extractedText",
-            websearch_to_tsquery('english', $1) && to_tsquery('english', $2),
-            'MaxWords=250, MinWords=150, ShortWord=2, MaxFragments=2, FragmentDelimiter=" … "'
-          ) AS "snippet",
-          ts_rank(
-            p."textTsv",
-            websearch_to_tsquery('english', $1) && to_tsquery('english', $2)
-          ) AS "rank"
+          p."manualId", p."pageNumber",
+          ts_rank(p."textTsv", ${tsqExpr}) AS rank,
+          ROW_NUMBER() OVER (
+            PARTITION BY p."manualId"
+            ORDER BY ts_rank(p."textTsv", ${tsqExpr}) DESC, p."pageNumber" ASC
+          ) AS rn
         FROM "ReloadingManualPage" p
         JOIN "ReloadingManual" m ON m."id" = p."manualId"
-        WHERE m."status" = 'ACTIVE'
-          AND p."textTsv" @@ (
-            websearch_to_tsquery('english', $1) && to_tsquery('english', $2)
-          )
-        ORDER BY "rank" DESC, m."manufacturer" ASC, p."pageNumber" ASC
-        LIMIT $3;
-        `,
-        // The base may be empty if the user typed ONLY a weight; an empty
-        // websearch_to_tsquery is the "match anything" identity under &&,
-        // which is exactly what we want (just the weight constraint).
-        baseText,
-        weightTsqueryStr,
-        safeLimit,
-      );
-    } else {
-      // No weight detected — behave exactly as the original search did,
-      // just on the normalized query string + the new ocr column.
-      primaryRows = await this.prisma.$queryRawUnsafe<Row[]>(
-        `
-        SELECT
-          m."id"          AS "manualId",
-          m."manufacturer",
-          m."title",
-          m."edition",
-          m."ocr",
-          p."pageNumber",
-          ts_headline(
-            'english',
-            p."extractedText",
-            websearch_to_tsquery('english', $1),
-            'MaxWords=250, MinWords=150, ShortWord=2, MaxFragments=2, FragmentDelimiter=" … "'
-          ) AS "snippet",
-          ts_rank(p."textTsv", websearch_to_tsquery('english', $1)) AS "rank"
-        FROM "ReloadingManualPage" p
-        JOIN "ReloadingManual" m ON m."id" = p."manualId"
-        WHERE m."status" = 'ACTIVE'
-          AND p."textTsv" @@ websearch_to_tsquery('english', $1)
-        ORDER BY "rank" DESC, m."manufacturer" ASC, p."pageNumber" ASC
-        LIMIT $2;
-        `,
-        normalized,
-        safeLimit,
-      );
-    }
+        WHERE m."status" = 'ACTIVE' AND p."textTsv" @@ (${tsqExpr})
+      ),
+      picked AS (
+        SELECT * FROM ranked WHERE rn <= ${PER_MANUAL_CAP}
+        ORDER BY rank DESC LIMIT $${limitIdx}
+      )
+      SELECT
+        m."id" AS "manualId", m."manufacturer", m."title", m."edition", m."ocr",
+        pk."pageNumber",
+        ts_headline(
+          'english', p."extractedText", ${tsqExpr},
+          'MaxWords=220, MinWords=130, ShortWord=2, MaxFragments=2, FragmentDelimiter=" … "'
+        ) AS "snippet",
+        pk.rank AS "rank"
+      FROM picked pk
+      JOIN "ReloadingManualPage" p
+        ON p."manualId" = pk."manualId" AND p."pageNumber" = pk."pageNumber"
+      JOIN "ReloadingManual" m ON m."id" = pk."manualId"
+      ORDER BY pk.rank DESC, m."manufacturer" ASC, pk."pageNumber" ASC;
+      `,
+      ...baseParams,
+      safeLimit,
+    );
 
     if (primaryRows.length > 0) {
       return {
@@ -878,26 +865,33 @@ export class ReloadingService implements OnModuleInit {
     try {
       fuzzyRows = await this.prisma.$queryRawUnsafe<Row[]>(
         `
+        WITH ranked AS (
+          SELECT p."manualId", p."pageNumber",
+            word_similarity($1, p."extractedText") AS rank,
+            ROW_NUMBER() OVER (
+              PARTITION BY p."manualId"
+              ORDER BY word_similarity($1, p."extractedText") DESC, p."pageNumber" ASC
+            ) AS rn
+          FROM "ReloadingManualPage" p
+          JOIN "ReloadingManual" m ON m."id" = p."manualId"
+          WHERE m."status" = 'ACTIVE' AND word_similarity($1, p."extractedText") > 0.3
+        ),
+        picked AS (
+          SELECT * FROM ranked WHERE rn <= 2 ORDER BY rank DESC LIMIT $2
+        )
         SELECT
-          m."id"          AS "manualId",
-          m."manufacturer",
-          m."title",
-          m."edition",
-          m."ocr",
-          p."pageNumber",
+          m."id" AS "manualId", m."manufacturer", m."title", m."edition", m."ocr",
+          pk."pageNumber",
           ts_headline(
-            'english',
-            p."extractedText",
-            plainto_tsquery('english', $1),
-            'MaxWords=250, MinWords=150, ShortWord=2, MaxFragments=2, FragmentDelimiter=" … "'
+            'english', p."extractedText", plainto_tsquery('english', $1),
+            'MaxWords=220, MinWords=130, ShortWord=2, MaxFragments=2, FragmentDelimiter=" … "'
           ) AS "snippet",
-          word_similarity($1, p."extractedText") AS "rank"
-        FROM "ReloadingManualPage" p
-        JOIN "ReloadingManual" m ON m."id" = p."manualId"
-        WHERE m."status" = 'ACTIVE'
-          AND word_similarity($1, p."extractedText") > 0.3
-        ORDER BY "rank" DESC, m."manufacturer" ASC, p."pageNumber" ASC
-        LIMIT $2;
+          pk.rank AS "rank"
+        FROM picked pk
+        JOIN "ReloadingManualPage" p
+          ON p."manualId" = pk."manualId" AND p."pageNumber" = pk."pageNumber"
+        JOIN "ReloadingManual" m ON m."id" = pk."manualId"
+        ORDER BY pk.rank DESC, m."manufacturer" ASC, pk."pageNumber" ASC;
         `,
         normalized,
         safeLimit,

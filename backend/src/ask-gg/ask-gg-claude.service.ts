@@ -32,7 +32,10 @@ const MODEL_ESCALATED =
 // stuck in a tool loop (e.g. repeatedly searching different phrasings
 // without ever fetching a page). 6 is enough for: search → fetch →
 // search again → fetch → maybe one more pair, then answer.
-const MAX_TOOL_ITERATIONS = 6;
+// Raised from 6 → 14 so a load-data answer can fetch pages from several
+// manuals and consolidate across them (search now returns hits spanning all
+// manuals, not just the biggest one).
+const MAX_TOOL_ITERATIONS = 14;
 
 // ─── Tool definitions ──────────────────────────────────────────────
 // Both tools target Ask GG's reloading-data + reloading-theory
@@ -172,21 +175,25 @@ Make this framing visible when relevant. You're a knowledgeable assistant, not a
 
 For ANY reloading question (specific load data, brass prep, primer selection, annealing theory, ballistic theory, etc.), you have two tools that give you access to the operator's verified reloading-manual library:
 
-1. **searchReloadingManuals({ query })** — Postgres full-text search across every page of every uploaded manual. Returns top hits with manualId, manufacturer, title, edition, page number, and a SUBSTANTIAL snippet (~250 words of the actual page text around the matched terms).
+1. **searchReloadingManuals({ query })** — Postgres full-text search across every page of every uploaded manual. Returns hits with manualId, manufacturer, title, edition, page number, and a SUBSTANTIAL snippet (~220 words of the actual page text). Results are deliberately spread ACROSS manuals (the best pages per manual) so you see EVERY source that has the data — not just the largest manual.
 
 2. **fetchManualPages({ manualId, pages })** — slices specific pages out of a manual and attaches them to the conversation as a PDF you can read directly. Use this AFTER search **only when** the snippet alone isn't enough — typically for tables with precise numbers you need to read exactly.
 
-**Decision flow for every reloading question:**
-1. Call \`searchReloadingManuals\` with the user's calibre/bullet/powder/topic terms verbatim.
-2. Read the snippets carefully — they contain the actual page text around the matched terms.
-3. **If the snippets already contain the answer** (common for theory questions, brass prep, general guidance), answer directly from them. Skip the fetch. Faster + cheaper for everyone.
-4. **If the snippets show a TABLE you need to read precisely** (specific charge weights, velocities, pressures), call \`fetchManualPages\` with 1–3 pages around the hit and read the actual PDF.
-5. Answer the user in natural language with EXPLICIT CITATION at the end:
-   > "Per Hodgdon Reloading Manual, p.41: max load of 168gr SMK with H4350 is 41.5gr at ~2,650 fps. Start at 38.5gr and work up, watching for pressure signs."
+**Decision flow for a LOAD-DATA question (specific calibre + bullet + powder) — CONSOLIDATE ACROSS MANUALS:**
+1. Call \`searchReloadingManuals\` with the user's calibre / bullet weight / powder terms. The results span every manual that has matching data.
+2. **Do NOT stop at the first manual.** Identify every manual in the results with data for the user's components, and \`fetchManualPages\` the relevant page(s) from EACH of them (target page ±1). Read the actual tables from as many of the matching manuals as the data exists in — the goal is a cross-referenced answer, not a single source.
+3. **Consolidate** what you read into the single best answer:
+   - A compact comparison — one line per source: "Manufacturer (p.X): START → MAX gr, ~velocity".
+   - Then a synthesised recommendation: a consolidated START at or below the LOWEST published start; note the spread of MAX charges across sources and tell the user to work up to the **lowest** published max first, watching for pressure.
+   - If sources disagree, show the spread and default to the most conservative (lowest max).
+   - Cite EVERY manual + page you used.
+4. Only consolidate the SAME powder + the same (or ±5gr, clearly labelled) bullet. NEVER blend different powders, and never present one bullet weight's charge as another's.
 
-**Never invent load-data numbers from your training memory.** If \`searchReloadingManuals\` returns no relevant hits, say so honestly and direct the user to the manufacturer's published data (Hodgdon Reloading Center, Vihtavuori reloading tables, etc.) plus the general "start low, work up" reminder.
+**For THEORY questions** (brass prep, annealing, neck tension, headspace, etc.): the snippets are usually enough — answer directly and cite the manual(s); fetch only if you need exact figures.
 
-**Citation format:** always include the manual name + page in the answer. The user must be able to verify against the original.
+**Never invent load-data numbers from training memory.** If the search returns no relevant hits, say so honestly and point the user to the manufacturers' published data (Hodgdon Reloading Center, Vihtavuori tables, etc.) plus the "start low, work up" reminder.
+
+**Citation format:** always include the manual name + page for every figure. The user must be able to verify against the originals.
 
 ## BULLET-WEIGHT TOLERANCE (load data)
 
@@ -423,7 +430,7 @@ export class AskGgClaudeService {
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         const r = await this.client.messages.create({
           model,
-          max_tokens: opts.escalate ? 2048 : 1024,
+          max_tokens: opts.escalate ? 4096 : 3072,
           system: systemBlocks,
           tools: toolsWithCache,
           messages,
@@ -589,7 +596,7 @@ export class AskGgClaudeService {
       if (block.name === 'searchReloadingManuals') {
         const input = block.input as { query?: string };
         const query = input.query ?? '';
-        const search = await this.reloading.searchPages(query, 5);
+        const search = await this.reloading.searchPages(query, 24);
         // Surface each hit's ocr flag so the model knows when to add the
         // "double-check this exact figure" nudge (see system prompt
         // INSERT BLOCK B). When a bullet weight was detected, also tell
