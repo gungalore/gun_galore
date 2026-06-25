@@ -97,7 +97,7 @@ export function SiteFooter() {
             <li><Link href="/privacy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Privacy Policy</Link></li>
             <li><Link href="/acceptable-use" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Acceptable Use</Link></li>
             <li><Link href="/refund-policy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Refund &amp; Disputes</Link></li>
-            <li><Link href="/firearms-compliance" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Firearms Compliance</Link></li>
+            <li><Link href="/firearms-compliance" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Regulated Items &amp; Compliance</Link></li>
             <li><Link href="/aml-policy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>AML &amp; Competitions</Link></li>
             <li><Link href="/cookies" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Cookie Policy</Link></li>
             <li><Link href="/legal" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>All legal &amp; ECT § 43</Link></li>

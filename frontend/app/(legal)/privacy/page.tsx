@@ -143,7 +143,7 @@ export default function PrivacyPage() {
       <ul>
         <li><strong>To provide the Platform</strong> — register and authenticate your account, display your listings, route your transactions, accept your payments and pay out your earnings.</li>
         <li><strong>To verify your identity</strong> — meet our KYC obligations before releasing seller payouts, prevent fraud and identity theft.</li>
-        <li><strong>To comply with the law</strong> — including the Firearms Control Act, the Consumer Protection Act, the Financial Intelligence Centre Act (FICA) and tax obligations.</li>
+        <li><strong>To comply with the law</strong> — including the regulatory regimes that govern licence- and age-restricted categories (such as the Firearms Control Act 60 of 2000), the Consumer Protection Act, the Financial Intelligence Centre Act (FICA) and tax obligations.</li>
         <li><strong>To detect and prevent fraud, abuse and platform misuse</strong> — including off-platform contact-detail sharing, sock-puppet accounts and money-laundering risk.</li>
         <li><strong>To communicate with you</strong> — transactional notifications (order updates, dispatch confirmations, dispute outcomes) and, with your opt-in consent, marketing communications.</li>
         <li><strong>To improve the Platform</strong> — analytics, debugging, A/B testing (always against aggregated or de-identified data where possible).</li>
@@ -157,9 +157,9 @@ export default function PrivacyPage() {
       </p>
       <ul>
         <li><strong>Performance of a contract:</strong> processing necessary to deliver the Platform you signed up for (§ 11(1)(b)).</li>
-        <li><strong>Compliance with legal obligation:</strong> KYC, Firearms Control Act records, tax (§ 11(1)(c)).</li>
+        <li><strong>Compliance with legal obligation:</strong> KYC, statutory records for regulated categories (including those required under the Firearms Control Act 60 of 2000), tax (§ 11(1)(c)).</li>
         <li><strong>Legitimate interest:</strong> fraud prevention, platform safety, dispute investigation (§ 11(1)(f)) — balanced against your rights.</li>
-        <li><strong>Consent:</strong> KYC Home Affairs lookup, direct marketing, sharing of contact details for private-arrangement firearm transfers (§ 11(1)(a)).</li>
+        <li><strong>Consent:</strong> KYC Home Affairs lookup, direct marketing, sharing of contact details for private-arrangement transfers of regulated items requiring a licensed dealer or competency/licence holder (§ 11(1)(a)).</li>
       </ul>
 
       <h2>7. Who we share your information with</h2>

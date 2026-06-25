@@ -209,12 +209,14 @@ export default function AmlPolicyPage() {
       <p>
         To enter any GunGalore competition you must be at least 18
         years old and a permanent resident of, or lawfully present in,
-        the Republic of South Africa. Where the prize is a firearm or
-        any item subject to the Firearms Control Act, the winner must
-        hold the relevant SAPS Competency Certificate and Possession
-        Licence before the prize can be transferred. If the winner is
-        not able to lawfully take possession, the prize will be
-        redirected to the next backup winner.
+        the Republic of South Africa. Where the prize is a
+        licence- or age-restricted item — for example any item subject
+        to the Firearms Control Act 60 of 2000 — the winner must hold
+        the relevant authorisation (such as the applicable SAPS
+        Competency Certificate and Possession Licence) before the prize
+        can be transferred. If the winner is not able to lawfully take
+        possession, the prize will be redirected to the next backup
+        winner.
       </p>
 
       <h3>3.8 Independent verification</h3>

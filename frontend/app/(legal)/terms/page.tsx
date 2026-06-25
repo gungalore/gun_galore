@@ -46,16 +46,18 @@ export default function TermsPage() {
       <h2>2. What GunGalore does</h2>
       <p>
         GunGalore is an online marketplace that allows registered users
-        ("<strong>Sellers</strong>") to list firearms, ammunition,
-        accessories and related outdoor goods for sale or auction, and
+        ("<strong>Sellers</strong>") to list outdoor, hunting and sport
+        goods — including optics, camping and fishing gear, knives,
+        self-defence items, air rifles, and regulated categories such as
+        firearms, ammunition and accessories — for sale or auction, and
         allows other registered users ("<strong>Buyers</strong>") to
         purchase those goods. GunGalore is a <strong>platform</strong> —
         we do not own, stock, dispatch or directly sell any of the goods
-        listed on the Platform. Where a transaction involves a firearm
-        or any other item subject to the Firearms Control Act, physical
+        listed on the Platform. Where a transaction involves an item
+        subject to the Firearms Control Act 60 of 2000, physical
         possession is transferred only through a SAPS-licensed dealer.
         GunGalore is not a SAPS-licensed dealer and does not handle
-        firearms in any physical capacity.
+        such items in any physical capacity.
       </p>
 
       <h2>3. Acceptance and changes</h2>
@@ -67,7 +69,7 @@ export default function TermsPage() {
         our{' '}
         <a href="/acceptable-use" style={{ color: 'var(--red)' }}>Acceptable Use Policy</a>{' '}
         and (where applicable) our{' '}
-        <a href="/firearms-compliance" style={{ color: 'var(--red)' }}>Firearms Compliance Policy</a>{' '}
+        <a href="/firearms-compliance" style={{ color: 'var(--red)' }}>Regulated Items &amp; Compliance</a>{' '}
         and{' '}
         <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>.
       </p>
@@ -89,7 +91,7 @@ export default function TermsPage() {
         <li>be a permanent resident of, or lawfully present in, the Republic of South Africa;</li>
         <li>have the legal capacity to enter into a binding contract;</li>
         <li>not have been previously banned by GunGalore;</li>
-        <li>where you list, bid on or purchase a firearm or any item subject to the Firearms Control Act, hold (and continue to hold throughout the transaction) the relevant <strong>SAPS Competency Certificate</strong> and any required <strong>Possession Licence</strong>; and</li>
+        <li>where you list, bid on or purchase any item subject to the Firearms Control Act 60 of 2000, hold (and continue to hold throughout the transaction) the relevant <strong>SAPS Competency Certificate</strong> and any required <strong>Possession Licence</strong>; and</li>
         <li>where applicable, complete our identity verification (KYC) process before payouts are released to you.</li>
       </ul>
 
@@ -208,9 +210,11 @@ export default function TermsPage() {
         shipping method chosen by the Buyer at checkout from the
         options the Seller has enabled. Available methods include
         locker-to-locker (Pudo), door-to-door courier (The Courier
-        Guy), licensed-dealer transfer (for firearms and barrels) and
-        private arrangement (firearms only — see paragraph 7). Shipping
-        costs are quoted live at checkout and paid by the Buyer.
+        Guy), licensed-dealer transfer (for firearms, barrels and other
+        items subject to the Firearms Control Act 60 of 2000) and
+        private arrangement (for those regulated items only — see
+        paragraph 7). Shipping costs are quoted live at checkout and
+        paid by the Buyer.
       </p>
       <p>
         The Seller must dispatch within 48 hours of payment being

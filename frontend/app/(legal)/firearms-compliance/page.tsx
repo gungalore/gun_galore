@@ -1,10 +1,11 @@
-// Firearms Compliance Policy — explains GunGalore's role and the
-// legal obligations of buyers and sellers under the Firearms Control
-// Act 60 of 2000 (FCA).
+// Regulated Items & Compliance — explains GunGalore's role and the
+// legal obligations of buyers and sellers for licence- and
+// age-restricted categories, with firearms as the most heavily
+// regulated example under the Firearms Control Act 60 of 2000 (FCA).
 //
 // Key positions:
 //   - GunGalore is NOT a SAPS-licensed dealer and does NOT handle
-//     firearms in any physical capacity.
+//     regulated goods in any physical capacity.
 //   - Every firearm transfer routes through a SAPS-licensed dealer.
 //   - Live ammo is never sold P2P between private individuals.
 //   - 18+ and valid competency cert required for both parties.
@@ -12,27 +13,31 @@
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
-  title: 'Firearms Compliance Policy — Gun Galore',
+  title: 'Regulated Items & Compliance — Gun Galore',
   description:
-    'Our role, your responsibilities, and the legal framework for firearm sales on GunGalore under the Firearms Control Act 60 of 2000.',
+    'Our role, your responsibilities, and the legal framework for regulated and licence-controlled items on GunGalore, including firearms under the Firearms Control Act 60 of 2000.',
 };
 
 export default function FirearmsCompliancePage() {
   return (
     <>
       <LegalDocHeader
-        title="Firearms Compliance Policy"
+        title="Regulated Items & Compliance"
         lastUpdated="Effective 24 June 2026"
       />
 
       <h2>1. About this policy</h2>
       <p>
-        This document explains the legal framework that governs the
-        sale of firearms, ammunition and related items on GunGalore,
-        and the responsibilities of every party involved. It is
-        drafted with reference to the Firearms Control Act 60 of 2000
-        ("the <strong>FCA</strong>") and its associated regulations.
-        Where this document and the FCA conflict, the FCA prevails.
+        GunGalore lists many categories, several of which are
+        licence- or age-restricted under South African law. This
+        document explains the legal framework that governs the sale of
+        those regulated items and the responsibilities of every party
+        involved. Firearms and ammunition are the most heavily
+        regulated category we support, so most of this policy concerns
+        them. Where firearms or ammunition are involved it is drafted
+        with reference to the Firearms Control Act 60 of 2000 ("the{' '}
+        <strong>FCA</strong>") and its associated regulations. Where
+        this document and the FCA conflict, the FCA prevails.
       </p>
 
       <div
@@ -60,8 +65,8 @@ export default function FirearmsCompliancePage() {
 
       <h2>2. Eligibility — buyer and seller</h2>
       <p>
-        To list, bid on, offer for or purchase a firearm or any item
-        subject to the FCA on GunGalore, you must:
+        To list, bid on, offer for or purchase any item subject to the
+        FCA on GunGalore, you must:
       </p>
       <ul>
         <li>be at least <strong>18 years old</strong>;</li>
@@ -74,8 +79,8 @@ export default function FirearmsCompliancePage() {
 
       <h2>3. What counts as a "firearm" for this policy</h2>
       <p>
-        For the purposes of GunGalore's firearm-compliance rules, the
-        following are treated as firearms requiring dealer transfer:
+        For the purposes of these compliance rules, the following are
+        treated as firearms requiring dealer transfer:
       </p>
       <ul>
         <li>Any handgun, rifle or shotgun (whether self-loading, manually-operated or bolt-action) regulated under the FCA;</li>
@@ -111,10 +116,10 @@ export default function FirearmsCompliancePage() {
       </p>
       <ol>
         <li><strong>Buyer chooses a dealer</strong> at checkout, from the directory of dealers GunGalore has vetted. The chosen dealer is recorded against the transaction.</li>
-        <li><strong>Seller dispatches</strong> the firearm to the chosen dealer using a courier service approved for firearm consignment, with full insurance and tracking.</li>
-        <li><strong>Dealer receives, verifies and holds</strong> the firearm pending the buyer's appointment.</li>
+        <li><strong>Seller dispatches</strong> the firearm to the chosen dealer using a courier service approved for such consignment, with full insurance and tracking.</li>
+        <li><strong>Dealer receives, verifies and holds</strong> the item pending the buyer's appointment.</li>
         <li><strong>Buyer presents</strong> their Competency Certificate, Possession Licence (or proof of pending application, if the buyer is purchasing on the basis of an open application), and ID at the dealer's premises.</li>
-        <li><strong>Dealer completes the SAPS transfer paperwork</strong> (SAPS 271 / Section 17 forms as applicable) and hands the firearm to the buyer.</li>
+        <li><strong>Dealer completes the SAPS transfer paperwork</strong> (SAPS 271 / Section 17 forms as applicable) and hands the item to the buyer.</li>
         <li><strong>Buyer confirms delivery</strong> on the GunGalore transaction page, which releases the seller payout.</li>
       </ol>
       <p>
@@ -124,7 +129,7 @@ export default function FirearmsCompliancePage() {
         the buyer has the right to take possession.
       </p>
 
-      <h2>6. Private Arrangement (alternative for firearm transfers)</h2>
+      <h2>6. Private Arrangement (alternative transfer route)</h2>
       <p>
         Buyer and Seller may, by mutual agreement, choose{' '}
         <strong>Private Arrangement</strong> at checkout. Under this
@@ -146,9 +151,9 @@ export default function FirearmsCompliancePage() {
       </p>
 
       <h2>7. Seller responsibilities</h2>
-      <p>As a seller of a firearm on GunGalore, you must:</p>
+      <p>As a seller of a regulated item on GunGalore, you must:</p>
       <ul>
-        <li>only list firearms you lawfully own, with proof of ownership available on request;</li>
+        <li>only list items you lawfully own, with proof of ownership available on request;</li>
         <li>list the correct serial number (partially masked in photographs — last 3 digits hidden);</li>
         <li>retain a copy of the SAPS Disposal Notification (SAPS 522) and the dealer's receipt of consignment for at least 5 years after the sale;</li>
         <li>cooperate fully with any SAPS investigation or audit relating to the transaction;</li>
@@ -156,7 +161,7 @@ export default function FirearmsCompliancePage() {
       </ul>
 
       <h2>8. Buyer responsibilities</h2>
-      <p>As a buyer of a firearm on GunGalore, you must:</p>
+      <p>As a buyer of a regulated item on GunGalore, you must:</p>
       <ul>
         <li>hold (or have a pending application for) the relevant Possession Licence and a current Competency Certificate;</li>
         <li>present those documents in person at the receiving dealer;</li>
@@ -190,10 +195,10 @@ export default function FirearmsCompliancePage() {
       <h2>11. GunGalore's role and limitation</h2>
       <p>
         GunGalore facilitates the discovery, negotiation and payment
-        of firearm sales. We are not the seller and we do not warrant
-        the condition or provenance of any firearm listed by a
-        third-party Seller. Our role in respect of firearm transfers
-        is limited to:
+        of sales across its categories, including firearms. We are not
+        the seller and we do not warrant the condition or provenance
+        of any item listed by a third-party Seller. Our role in
+        respect of firearm transfers is limited to:
       </p>
       <ul>
         <li>Verifying the Seller's identity via Home Affairs lookup and selfie face-match before payouts are released;</li>
@@ -210,7 +215,7 @@ export default function FirearmsCompliancePage() {
 
       <h2>12. Contact</h2>
       <p>
-        For any firearms-compliance enquiry, contact{' '}
+        For any compliance enquiry, contact{' '}
         <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
           support@gungalore.co.za
         </a>

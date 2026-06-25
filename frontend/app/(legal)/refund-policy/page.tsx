@@ -68,11 +68,11 @@ export default function RefundPolicyPage() {
       </p>
       <p>
         Where a transaction uses the{' '}
-        <strong>Private Arrangement</strong> firearm-transfer option
-        (buyer and seller go to a SAPS-licensed dealer together),
-        payment captures and releases immediately. The funds-held
-        mechanism does not apply, because the buyer expressly waives
-        it at checkout and physical possession happens face-to-face.
+        <strong>Private Arrangement</strong> transfer option for a
+        licence-controlled item (buyer and seller go to a SAPS-licensed
+        dealer together), payment captures and releases immediately. The
+        funds-held mechanism does not apply, because the buyer expressly
+        waives it at checkout and physical possession happens face-to-face.
         See our{' '}
         <a href="/terms" style={{ color: 'var(--red)' }}>Terms of Service</a>{' '}
         paragraph 7 for the binding text.

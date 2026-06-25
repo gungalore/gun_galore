@@ -39,9 +39,9 @@ const DOCS: { href: string; title: string; description: string }[] = [
   },
   {
     href: '/firearms-compliance',
-    title: 'Firearms Compliance Policy',
+    title: 'Regulated Items & Compliance',
     description:
-      'Our role and your obligations under the Firearms Control Act 60 of 2000.',
+      'Our role and your obligations for licence- and age-restricted categories, including firearms under the Firearms Control Act 60 of 2000.',
   },
   {
     href: '/aml-policy',

@@ -38,10 +38,10 @@ export default function AcceptableUsePage() {
       <ul>
         <li>You own the item (or have express authority from the owner to sell it on their behalf).</li>
         <li>The item is lawful to sell, possess and transfer in South Africa.</li>
-        <li>The item fits one of GunGalore's category trees (firearms, ammunition, accessories, optics, hunting, outdoor, ranges, etc.).</li>
+        <li>The item fits one of GunGalore's category trees (optics, hunting, outdoor, camping, fishing, ranges, accessories, ammunition, firearms, etc.).</li>
         <li>The item is accurately described, with the correct condition (New, Like New, Good, Fair or Poor) and clear, recent photographs showing the actual item.</li>
-        <li>For firearms and items subject to the Firearms Control Act, both you and the buyer hold the relevant SAPS Competency Certificate and the transfer is routed through a SAPS-licensed dealer — see our{' '}
-          <a href="/firearms-compliance" style={{ color: 'var(--red)' }}>Firearms Compliance Policy</a>.
+        <li>For licence- and age-restricted items subject to the Firearms Control Act 60 of 2000, both you and the buyer hold the relevant SAPS Competency Certificate and the transfer is routed through a SAPS-licensed dealer — see our{' '}
+          <a href="/firearms-compliance" style={{ color: 'var(--red)' }}>Regulated Items &amp; Compliance</a>.
         </li>
       </ul>
 
@@ -53,7 +53,7 @@ export default function AcceptableUsePage() {
       </p>
       <ul>
         <li><strong>Stolen goods</strong> — including goods you cannot prove ownership of, or goods whose serial numbers have been removed or altered.</li>
-        <li><strong>Counterfeit or replica firearms / accessories</strong> sold as genuine.</li>
+        <li><strong>Counterfeit or replica regulated items / accessories</strong> (including replica firearms) sold as genuine.</li>
         <li><strong>Fully automatic firearms</strong> or any firearm component prohibited under the Firearms Control Act for civilian possession.</li>
         <li><strong>Loose live ammunition</strong> traded peer-to-peer between private individuals — these may be listed only by SAPS-licensed dealers operating on our New Store surface where supported.</li>
         <li><strong>Explosives, suppressors, silencers, prohibited large-capacity magazines</strong> or any other item explicitly restricted under SA law.</li>
