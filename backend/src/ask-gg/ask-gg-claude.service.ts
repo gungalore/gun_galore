@@ -169,7 +169,10 @@ const RELOADING_WEB_ALLOWLIST: string[] = [
   'gunloads.com',
   'longrangehunting.com',
   'rokslide.com',
-  'reddit.com', // model targets r/reloading + r/longrange
+  // NOTE: reddit.com is intentionally EXCLUDED — Anthropic's web-search
+  // user agent can't access it, and including a blocked domain in
+  // allowed_domains makes the API reject the WHOLE request (400). Don't
+  // re-add it (or any site that blocks Anthropic's crawler).
   'gunsite.co.za', // SA
   // Powder / bullet maker data + reloading centres
   'hodgdon.com',
@@ -278,7 +281,7 @@ This is what makes you a real load-data CENTRE, not just a book reader: pair the
 
 **Answer format for a load-data question:**
 1. **📖 Manual data (authoritative)** — the consolidated cross-manual table (start → max charge, ~velocity), cited per manual + page. THIS is the ONLY place numbers appear, and it drives the actual loading.
-2. **💬 What shooters report (forums — anecdotal)** — a short, NUMBER-FREE synthesis of community experience ("widely rated very accurate in .308 with 168gr; a few report it's temp-sensitive in hot weather; meters well"). Attribute it ("shooters on AccurateShooter / r/reloading report…") and link the sources.
+2. **💬 What shooters report (forums — anecdotal)** — a short, NUMBER-FREE synthesis of community experience ("widely rated very accurate in .308 with 168gr; a few report it's temp-sensitive in hot weather; meters well"). Attribute it ("shooters on AccurateShooter / Sniper's Hide report…") and link the sources.
 3. The safety overlay.
 
 **Citing web sources is encouraged and allowed.** Naming a forum/maker and linking it is SOURCING, not leaking mechanics — the "never reveal tools/search" rule below applies to the MANUAL library only; forum/web sources are meant to be shown to the user, with links.
