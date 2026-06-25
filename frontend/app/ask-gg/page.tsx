@@ -1112,30 +1112,65 @@ function CitationsRow({ citations }: { citations: AskGgCitation[] }) {
       >
         Sources
       </span>
-      {citations.map((c, i) => (
-        <span
-          key={`${c.manualId}-${i}`}
-          title={`${c.manufacturer} — ${c.title}${
-            c.edition ? ` (${c.edition})` : ''
-          }, page${c.pages.length > 1 ? 's' : ''} ${c.pages.join(', ')}`}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '3px 9px',
-            borderRadius: 999,
-            background: 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
-            color: 'var(--text-secondary)',
-            fontSize: 11,
-            lineHeight: 1.3,
-          }}
-        >
-          {c.manufacturer} {c.title}
-          {c.edition ? ` (${c.edition})` : ''} ·{' '}
-          p.{c.pages.length === 1 ? c.pages[0] : c.pages.join(',')}
-        </span>
-      ))}
+      {citations.map((c, i) => {
+        const chipStyle = {
+          display: 'inline-flex' as const,
+          alignItems: 'center' as const,
+          gap: 4,
+          padding: '3px 9px',
+          borderRadius: 999,
+          background: 'var(--bg-inset)',
+          border: '0.5px solid var(--border)',
+          color: 'var(--text-secondary)',
+          fontSize: 11,
+          lineHeight: 1.3,
+        };
+        // Web (forum/maker) source → clickable link chip.
+        if (c.sourceType === 'web' && c.url) {
+          let host = c.url;
+          try {
+            host = new URL(c.url).hostname.replace(/^www\./, '');
+          } catch {
+            /* leave host as the raw url */
+          }
+          const label =
+            c.title.length > 46 ? `${c.title.slice(0, 46)}…` : c.title;
+          return (
+            <a
+              key={`web-${i}`}
+              href={c.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`${c.title} — ${c.url}`}
+              style={{ ...chipStyle, textDecoration: 'none' }}
+            >
+              💬 {label} · {host} ↗
+            </a>
+          );
+        }
+        // Manual source → plain (non-link) chip.
+        const pages = c.pages ?? [];
+        return (
+          <span
+            key={`man-${c.manualId ?? i}`}
+            title={`${c.manufacturer ?? ''} — ${c.title}${
+              c.edition ? ` (${c.edition})` : ''
+            }${
+              pages.length
+                ? `, page${pages.length > 1 ? 's' : ''} ${pages.join(', ')}`
+                : ''
+            }`}
+            style={chipStyle}
+          >
+            {c.manufacturer ? `${c.manufacturer} ` : ''}
+            {c.title}
+            {c.edition ? ` (${c.edition})` : ''}
+            {pages.length
+              ? ` · p.${pages.length === 1 ? pages[0] : pages.join(',')}`
+              : ''}
+          </span>
+        );
+      })}
     </div>
   );
 }

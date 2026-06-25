@@ -27,15 +27,22 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 export type AskGgRole = 'user' | 'assistant';
 
-/** A reloading-manual page-fetch Claude performed while answering.
- *  Rendered as a citation chip below the assistant message so the
- *  user can verify the answer against the source PDF. */
+/** A source Ask GG used while answering, rendered as a citation chip
+ *  below the assistant message so the user can verify. Two kinds:
+ *   - manual (default): a reloading-manual page fetch — manualId/
+ *     manufacturer/edition/pages set; rendered as a plain chip.
+ *   - web: a forum/maker source from web search — url + title set;
+ *     rendered as a clickable link.
+ *  Manual fields are optional so web citations don't carry them; older
+ *  stored rows without `sourceType` are treated as manual. */
 export interface AskGgCitation {
-  manualId: string;
-  manufacturer: string;
+  sourceType?: 'manual' | 'web';
+  manualId?: string;
+  manufacturer?: string;
   title: string;
-  edition: string | null;
-  pages: number[];
+  edition?: string | null;
+  pages?: number[];
+  url?: string;
 }
 
 /** A verified KB entry surfaced by the search-first flow. Rendered
