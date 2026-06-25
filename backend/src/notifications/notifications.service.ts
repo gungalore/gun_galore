@@ -4,6 +4,7 @@ import { NotificationCategory } from '@prisma/client';
 import { SmsService } from '../sms/sms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../push/push.service';
+import { Saps534Service, Saps534Data } from '../payments/saps534.service';
 
 // Compile-time list of the entity types we can link a Notification
 // row to. Used by resolveByEntity() callers so typos don't sit silently
@@ -350,6 +351,7 @@ export class NotificationsService {
     private readonly sms: SmsService,
     private readonly prisma: PrismaService,
     private readonly push: PushService,
+    private readonly saps534: Saps534Service,
   ) {
     const key = process.env.RESEND_API_KEY;
     this.resend = key ? new Resend(key) : null;
@@ -640,6 +642,125 @@ export class NotificationsService {
       smsBody,
       `new-sale-${d.transactionId}`,
     );
+  }
+
+  // ---------------------------------------------------------------
+  // Seller: SAP 534 prefilled form for a firearm DEALER_TRANSFER sale
+  // (Phase 3). Builds the "Transfer of Firearm Ownership" PDF prefilled
+  // with the particulars we already hold (Section C = seller, Section D
+  // = firearm), emails it to the seller WITH THE PDF ATTACHED, and drops
+  // an action-required inbox row telling them to complete it, get it
+  // dealer-stamped, and upload it back.
+  //
+  // FIRE-AND-FORGET + FULLY NON-THROWING. This sits on the payment path
+  // (TransactionsService.markPaid → sendSaleNotifications). A PDF build
+  // failure, a Resend hiccup, or a DB blip must NEVER bubble up and
+  // break the payment finalisation. Everything is wrapped; the worst
+  // case is the seller doesn't get the prefilled PDF and completes a
+  // blank one (the dealer-transfer email from newSaleSeller already
+  // tells them what's required).
+  // ---------------------------------------------------------------
+  async sap534ForSeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+    orderReference: string;
+    form: Saps534Data;
+  }) {
+    try {
+      const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+      const ref = d.orderReference || d.transactionId.slice(-8).toUpperCase();
+
+      // 1) Build the prefilled PDF. Isolated try/catch so an email still
+      //    goes out (sans attachment) if the PDF build fails.
+      let pdfBuffer: Buffer | null = null;
+      try {
+        pdfBuffer = await this.saps534.build(d.form);
+      } catch (err) {
+        this.logger.error(
+          `sap534ForSeller: PDF build failed for tx ${d.transactionId}: ${
+            err instanceof Error ? err.message : err
+          } — sending email without attachment`,
+        );
+      }
+
+      // 2) Email — with the PDF attached when we have one. We call
+      //    Resend directly here (not the private send() helper) because
+      //    send() doesn't support attachments.
+      const html = this.email({
+        status: { tone: 'pending', label: 'Action needed' },
+        headline: 'Complete your SAPS 534 transfer form',
+        body: `Hi ${b(d.sellerName)}, your firearm ${b(d.listingTitle)} has sold via licensed-dealer transfer. We've attached a <strong>SAPS 534 "Transfer of Firearm Ownership"</strong> form, pre-filled with the details we already hold (your particulars and the firearm details).<br><br>What to do next:
+<ol style="margin: 12px 0; padding-left: 22px; line-height: 1.7;">
+  <li><b>Check</b> the pre-filled details and complete anything that's blank (in <b>BLOCK LETTERS</b>).</li>
+  <li><b>Sign</b> the form and take it to your SAPS-licensed dealer to be completed and stamped when you hand over the firearm.</li>
+  <li><b>Upload</b> a clear photo of the completed, stamped form back to Gun Galore so we can verify the stock-in and release your payment.</li>
+</ol>
+<p style="margin: 8px 0; font-size: 13px; color: #666;">Pre-filled fields are a convenience only — please double-check every value against your licence before signing. Sections for the police and the dealer have been left blank on purpose.</p>`,
+        rows: [
+          { label: 'Reference', value: ref },
+          { label: 'Item', value: d.listingTitle },
+        ],
+        cta: { label: 'View sale & upload', url: txUrl },
+        preheader: `Complete your SAPS 534 form for ${d.listingTitle}`,
+      });
+
+      if (this.resend) {
+        try {
+          const filename = `SAP534-${ref}.pdf`;
+          await this.resend.emails.send({
+            from: FROM,
+            to: d.sellerEmail,
+            subject: 'Action needed: complete your SAPS 534 form — ' + d.listingTitle,
+            html,
+            ...(pdfBuffer
+              ? {
+                  attachments: [
+                    {
+                      filename,
+                      content: pdfBuffer.toString('base64'),
+                    },
+                  ],
+                }
+              : {}),
+          });
+          this.logger.debug(
+            `SAPS 534 email sent → ${d.sellerEmail} (tx ${d.transactionId}, attachment=${Boolean(pdfBuffer)})`,
+          );
+        } catch (err) {
+          this.logger.error(
+            `sap534ForSeller: Resend send failed for tx ${d.transactionId}: ${
+              err instanceof Error ? err.message : err
+            }`,
+          );
+        }
+      }
+
+      // 3) In-app inbox: action-required, NOT dismissible — the seller
+      //    must upload the completed form. Linked to the transaction so
+      //    the dealer-verification approval clears it via resolveByEntity.
+      await this.persistByEmail(d.sellerEmail, {
+        category: 'SELLER',
+        type: 'sap534_required',
+        title: 'Complete your SAPS 534 form',
+        body: `${d.listingTitle} — we've emailed a pre-filled SAPS 534. Complete it, get it dealer-stamped, and upload it back to release your payment.`,
+        url: `/transactions/${d.transactionId}`,
+        iconKey: 'dispatch',
+        linkedType: 'transaction',
+        linkedId: d.transactionId,
+        dismissible: false,
+      });
+    } catch (err) {
+      // Outermost guard — nothing in this method may ever throw into
+      // the caller (markPaid is on the money path).
+      this.logger.error(
+        `sap534ForSeller failed for tx ${d.transactionId}: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+    }
   }
 
   // ---------------------------------------------------------------

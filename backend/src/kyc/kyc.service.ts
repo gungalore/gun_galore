@@ -205,14 +205,18 @@ export class KycService {
     // strike counting, and the AdminAlert on repeated failure.
     const result = await this.submitFaceMatch(clerkId, selfieBase64, idNumber);
 
-    // Step 3 — purge the encrypted ID once VERIFIED (or even on
-    // intermediate state — once we've passed Home Affairs lookup
-    // we don't need the raw ID anymore; the hash on kycIdHash is
-    // enough for "this ID is associated with this seller" lookups).
-    await this.prisma.user.update({
-      where: { clerkId },
-      data: { idNumberEncrypted: null },
-    });
+    // Step 3 — RETAIN the encrypted SA ID after verification (we used to
+    // purge it here). This is a firearms marketplace: when any of a
+    // seller's firearms later sells via dealer transfer we must prefill
+    // the seller's SA ID into Section C of the SAP 534 "Transfer of
+    // Firearm Ownership" form. That need can arise long after KYC, and
+    // the raw ID is ONLY ever available here at submission time — so we
+    // cannot purge-then-recover it later (gating on "has firearm
+    // listings" fails because KYC almost always precedes the first
+    // firearm listing). The blob stays AES-GCM encrypted at rest and is
+    // retained under the firearms-transfer regulatory-compliance basis
+    // (FCA s125 / SAP 534). If POPIA minimisation later requires
+    // narrowing this, re-capture the ID at firearm-listing time instead.
 
     return result;
   }

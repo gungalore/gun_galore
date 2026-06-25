@@ -1516,7 +1516,10 @@ export class TransactionsService {
       const tx = await this.prisma.transaction.findUnique({
         where: { id: txId },
         include: {
-          listing: true,
+          // Pull the listing's category too so the firearm SAP 534 flow
+          // can tell a barrel listing apart (serial goes on the Barrel
+          // line vs the Frame line on the form).
+          listing: { include: { category: true } },
           buyer: true,
           seller: true,
         },
@@ -1574,8 +1577,103 @@ export class TransactionsService {
         this.notifications.orderConfirmedBuyer(details),
         this.notifications.newSaleSeller(details),
       ]);
+
+      // ─── Phase 3: SAP 534 prefilled form for firearm dealer-transfer ──
+      // When a FIREARM sells via DEALER_TRANSFER, prefill the SAPS 534
+      // "Transfer of Firearm Ownership" PDF with the particulars we hold
+      // and email it (attached) to the seller + drop an action-required
+      // inbox row to complete + upload it back.
+      //
+      // FULLY FIRE-AND-FORGET + wrapped: sap534ForSeller is itself
+      // non-throwing, but we still belt-and-braces it here (await inside
+      // the outer try, and the whole thing void-fired isn't necessary
+      // because the outer catch already swallows). This must NEVER break
+      // the payment finalisation.
+      if (tx.listing.isFirearm && tx.shippingMethod === 'DEALER_TRANSFER') {
+        try {
+          const cat = tx.listing.category;
+          const isBarrel =
+            /barrel/i.test(cat?.name ?? '') || /barrel/i.test(cat?.slug ?? '');
+          await this.notifications.sap534ForSeller({
+            sellerEmail: tx.seller.email,
+            sellerName: details.sellerName,
+            sellerPhone: tx.seller.phone,
+            listingTitle: tx.listing.title,
+            transactionId: txId,
+            orderReference:
+              tx.orderReference ?? txId.slice(-8).toUpperCase(),
+            form: {
+              // ─── Section C (seller / current owner) ───
+              surname: tx.seller.lastName,
+              firstNames: tx.seller.firstName,
+              idNumber: this.readSellerIdNumber(tx.seller.idNumberEncrypted),
+              // Compose a single-line residential address from the
+              // seller's stored address parts.
+              residentialAddress: [
+                tx.seller.addrBuilding,
+                tx.seller.addrStreet,
+                tx.seller.addrAddress2,
+                tx.seller.addrSuburb,
+                tx.seller.addrCity,
+              ]
+                .filter(Boolean)
+                .join(', '),
+              residentialPostalCode: tx.seller.addrPostalCode,
+              // We only hold one address on User — reuse it for the
+              // postal address too (seller can amend by hand if needed).
+              postalAddress: [
+                tx.seller.addrBuilding,
+                tx.seller.addrStreet,
+                tx.seller.addrAddress2,
+                tx.seller.addrSuburb,
+                tx.seller.addrCity,
+              ]
+                .filter(Boolean)
+                .join(', '),
+              postalPostalCode: tx.seller.addrPostalCode,
+              cellPhone: tx.seller.phone,
+              email: tx.seller.email,
+              // ─── Section D (firearm) ───
+              calibre: tx.listing.calibre,
+              make: tx.listing.make,
+              model: tx.listing.model,
+              serialNumber: tx.listing.serialNumber,
+              isBarrel,
+            },
+          });
+        } catch (err) {
+          this.logger.error(
+            `SAP 534 dispatch failed for ${txId}: ${(err as Error).message}`,
+          );
+        }
+      }
     } catch (err) {
       this.logger.error(`sendSaleNotifications failed for ${txId}: ${(err as Error).message}`);
+    }
+  }
+
+  // Decrypt the seller's at-rest SA ID number for the SAP 534 form.
+  // Returns null (never throws) when the column is empty (purged after
+  // KYC for non-firearm sellers, or never captured) or the ciphertext
+  // can't be read — the form is simply left with a blank ID line in
+  // that case, which the seller fills by hand. We do NOT block the
+  // email on a missing ID.
+  private readSellerIdNumber(
+    idNumberEncrypted: string | null | undefined,
+  ): string | null {
+    if (!idNumberEncrypted) return null;
+    try {
+      // Lazy import keeps the crypto module off the boot path.
+
+      const { decryptSaIdNumber } = require('../common/id-crypto') as {
+        decryptSaIdNumber: (s: string) => string;
+      };
+      return decryptSaIdNumber(idNumberEncrypted);
+    } catch (err) {
+      this.logger.warn(
+        `readSellerIdNumber: could not decrypt stored SA ID — leaving form ID blank: ${(err as Error).message}`,
+      );
+      return null;
     }
   }
 
