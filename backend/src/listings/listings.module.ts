@@ -14,7 +14,7 @@ import {
     ListingQuestionsController,
     SellerQuestionsController,
   ],
-  providers: [ListingsService, ListingQuestionsService],
+  providers: [ListingsService, ListingQuestionsService, FirearmLicenceService],
   exports: [ListingsService, ListingQuestionsService],
 })
 export class ListingsModule {}
