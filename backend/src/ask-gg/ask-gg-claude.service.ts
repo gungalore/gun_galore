@@ -34,10 +34,15 @@ const MODEL_ESCALATED =
 // stuck in a tool loop (e.g. repeatedly searching different phrasings
 // without ever fetching a page). 6 is enough for: search → fetch →
 // search again → fetch → maybe one more pair, then answer.
-// Raised from 6 → 14 so a load-data answer can fetch pages from several
-// manuals and consolidate across them (search now returns hits spanning all
-// manuals, not just the biggest one).
-const MAX_TOOL_ITERATIONS = 14;
+// Bound on client tool round-trips per user turn. Each iteration is a
+// full Claude call (a manual-page fetch loads a big PDF → slow), so this
+// also bounds latency: the whole request runs synchronously behind nginx
+// (90s) + Cloudflare (~100s), and blowing past that returns a 504/524.
+// 9 is plenty now that the prompt consolidates from the cross-manual
+// SEARCH SNIPPETS and only fetches a PDF for the 1-2 manuals that need
+// exact table figures (web search is a server tool — it resolves inside
+// one turn and does NOT consume an iteration).
+const MAX_TOOL_ITERATIONS = 9;
 
 // ─── Tool definitions ──────────────────────────────────────────────
 // Both tools target Ask GG's reloading-data + reloading-theory
@@ -190,13 +195,14 @@ const RELOADING_WEB_ALLOWLIST: string[] = [
   'speer.com',
 ];
 
-// max_uses caps web searches per user turn (cost control — Anthropic
-// bills ~$10/1k searches). 5 is enough to gather forum sentiment on a
-// couple of component combos without runaway cost.
+// max_uses caps web searches per user turn — both for cost (Anthropic
+// bills ~$10/1k searches) AND latency (each search adds several seconds
+// to the synchronous request, which must finish inside the nginx/CF
+// timeout). 3 is enough to gather forum sentiment on a combo or two.
 const WEB_SEARCH_TOOL = {
   type: 'web_search_20250305' as const,
   name: 'web_search' as const,
-  max_uses: 5,
+  max_uses: 3,
   allowed_domains: RELOADING_WEB_ALLOWLIST,
 };
 
@@ -240,7 +246,7 @@ For ANY reloading question (specific load data, brass prep, primer selection, an
 
 **Decision flow for a LOAD-DATA question (specific calibre + bullet + powder) — CONSOLIDATE ACROSS MANUALS:**
 1. Call \`searchReloadingManuals\` with the user's calibre / bullet weight / powder terms. The results span every manual that has matching data.
-2. **Do NOT stop at the first manual.** Identify every manual in the results with data for the user's components, and \`fetchManualPages\` the relevant page(s) from EACH of them (target page ±1). Read the actual tables from as many of the matching manuals as the data exists in — the goal is a cross-referenced answer, not a single source.
+2. **Consolidate across the manuals — but lean on the SNIPPETS first.** The search already returns substantial per-manual snippets spanning every matching manual; when those snippets already show the charges you need, build the cross-referenced answer straight from them. Only \`fetchManualPages\` for the ONE or TWO manuals whose exact table figures you genuinely can't read from the snippet (target page ±1). DON'T fetch every manual — each fetch is slow and usually unnecessary once the snippets line up.
 3. **Consolidate** what you read into the single best answer:
    - A compact comparison — one line per source: "Manufacturer (p.X): START → MAX gr, ~velocity".
    - Then a synthesised recommendation: a consolidated START at or below the LOWEST published start; note the spread of MAX charges across sources and tell the user to work up to the **lowest** published max first, watching for pressure.
