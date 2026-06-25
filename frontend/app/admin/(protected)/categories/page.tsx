@@ -13,8 +13,10 @@ interface Category {
   requiresLicence: boolean;
   availableSecondhand: boolean;
   availableNewStore: boolean;
+  crossSellEligible: boolean;
   isActive: boolean;
   sortOrder: number;
+  crossSellTo?: { toCategoryId: string; requireExactMatch: boolean; sortOrder: number }[];
   _count: { listings: number };
 }
 

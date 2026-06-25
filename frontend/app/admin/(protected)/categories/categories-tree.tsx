@@ -12,6 +12,7 @@
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/admin-auth';
+import { MultiSelectPillGroup } from '@/components/pill';
 
 interface Category {
   id: string;
@@ -22,8 +23,11 @@ interface Category {
   requiresLicence: boolean;
   availableSecondhand: boolean;
   availableNewStore: boolean;
+  crossSellEligible: boolean;
   isActive: boolean;
   sortOrder: number;
+  // Cross-sell complements (the "to" categories) for this category.
+  crossSellTo?: { toCategoryId: string; requireExactMatch: boolean; sortOrder: number }[];
   _count: { listings: number };
 }
 
@@ -109,6 +113,7 @@ export default function CategoriesTree({ initial }: { initial: Category[] }) {
         <CategoryFormModal
           mode="create"
           parentId={createParent}
+          allCategories={initial}
           onClose={() => setCreateParent(undefined)}
           onDone={() => {
             setCreateParent(undefined);
@@ -120,6 +125,7 @@ export default function CategoriesTree({ initial }: { initial: Category[] }) {
         <CategoryFormModal
           mode="edit"
           category={editing}
+          allCategories={initial}
           onClose={() => setEditing(null)}
           onDone={() => {
             setEditing(null);
@@ -233,12 +239,14 @@ function CategoryFormModal({
   mode,
   category,
   parentId,
+  allCategories,
   onClose,
   onDone,
 }: {
   mode: 'create' | 'edit';
   category?: Category;
   parentId?: string | null;
+  allCategories: Category[];
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -248,8 +256,13 @@ function CategoryFormModal({
     requiresLicence: category?.requiresLicence ?? false,
     availableSecondhand: category?.availableSecondhand ?? true,
     availableNewStore: category?.availableNewStore ?? false,
+    crossSellEligible: category?.crossSellEligible ?? true,
     sortOrder: category?.sortOrder ?? 0,
   });
+  // Cross-sell complementary set (edit mode) — saved via PATCH :id/relations.
+  const [relIds, setRelIds] = useState<string[]>(
+    category?.crossSellTo?.map((r) => r.toCategoryId) ?? [],
+  );
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -281,6 +294,21 @@ function CategoryFormModal({
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { message?: string };
         throw new Error(data.message ?? `Error ${res.status}`);
+      }
+      // Edit mode: also persist the cross-sell complementary set.
+      if (mode === 'edit') {
+        const relRes = await adminFetch(
+          `/admin/categories/${category!.id}/relations`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ toCategoryIds: relIds, reason: reason.trim() }),
+          },
+        );
+        if (!relRes.ok) {
+          const data = (await relRes.json().catch(() => ({}))) as { message?: string };
+          throw new Error(data.message ?? `Cross-sell save failed (${relRes.status})`);
+        }
       }
       onDone();
     } catch (err) {
@@ -320,6 +348,8 @@ function CategoryFormModal({
         style={{
           maxWidth: 480,
           width: '100%',
+          maxHeight: '90vh',
+          overflowY: 'auto',
           padding: 24,
           borderRadius: 10,
           background: 'var(--bg-card)',
@@ -386,6 +416,45 @@ function CategoryFormModal({
             checked={form.availableNewStore}
             onChange={(v) => setForm((f) => ({ ...f, availableNewStore: v }))}
           />
+          <Toggle
+            label="Eligible for cross-sell suggestions"
+            hint="Show this category's items in 'you might also need' rows. Turn OFF for prohibited categories (e.g. live ammo)."
+            checked={form.crossSellEligible}
+            onChange={(v) => setForm((f) => ({ ...f, crossSellEligible: v }))}
+          />
+
+          {mode === 'edit' && (
+            <div>
+              <label className="text-xs uppercase tracking-wider mb-1 block" style={{ color: 'var(--text-tertiary)' }}>
+                Complementary categories — “you might also need”
+              </label>
+              <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
+                When a buyer is on {category?.name}, suggest items from these
+                categories. Leave empty for none.
+              </p>
+              <div
+                style={{
+                  maxHeight: 200,
+                  overflowY: 'auto',
+                  padding: 8,
+                  background: 'var(--bg-inset)',
+                  border: '0.5px solid var(--border)',
+                  borderRadius: 6,
+                }}
+              >
+                <MultiSelectPillGroup
+                  size="sm"
+                  options={allCategories
+                    .filter((c) => c.id !== category?.id && c.isActive)
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((c) => ({ value: c.id, label: c.name }))}
+                  value={relIds}
+                  onChange={setRelIds}
+                />
+              </div>
+            </div>
+          )}
 
           {mode === 'edit' && (
             <div>

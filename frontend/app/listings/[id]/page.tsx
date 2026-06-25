@@ -27,6 +27,7 @@ import { UserBadges } from '@/components/user-badges';
 import { ShareListingButton } from '@/components/share-listing-button';
 import { SocialProofPill } from '@/components/social-proof-pill';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
+import { CrossSellRow } from '@/components/cross-sell-row';
 import { RecordVisit } from '@/components/record-visit';
 
 export async function generateMetadata({
@@ -538,6 +539,13 @@ export default async function ListingDetailPage({
       </div>
       </PageReveal>
         </div>
+      </div>
+
+      {/* Cross-sell — "Complete your kit". Complements for THIS listing's
+          category, calibre-matched where relevant (uses the listing's
+          structured calibre). Self-hides when nothing eligible to show. */}
+      <div style={{ padding: '0 16px' }}>
+        <CrossSellRow listingId={listing.id} title="Complete your kit" />
       </div>
 
       {/* Recently-viewed rail — "More from your recent views". Self-

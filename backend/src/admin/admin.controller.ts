@@ -739,6 +739,23 @@ export class AdminCategoriesController {
     return this.categories.create(admin.sub, dto);
   }
 
+  // Replace a category's cross-sell complementary set ("when browsing
+  // THIS category, also suggest these"). Declared BEFORE @Patch(':id') so
+  // the two-segment path matches first.
+  @Patch(':id/relations')
+  setRelations(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { toCategoryIds?: string[]; reason?: string },
+  ) {
+    return this.categories.setRelations(
+      admin.sub,
+      id,
+      body.toCategoryIds ?? [],
+      body.reason ?? '',
+    );
+  }
+
   @Patch(':id')
   update(
     @Param('id') id: string,

@@ -24,6 +24,7 @@ export interface CreateCategoryDto {
   requiresLicence?: boolean;
   availableSecondhand?: boolean;
   availableNewStore?: boolean;
+  crossSellEligible?: boolean;
   sortOrder?: number;
 }
 
@@ -43,7 +44,15 @@ export class AdminCategoriesService {
   async list() {
     const all = await this.prisma.category.findMany({
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      include: { _count: { select: { listings: true } } },
+      include: {
+        _count: { select: { listings: true } },
+        // Cross-sell complements (the "to" categories) so the admin UI can
+        // prefill the relationship picker.
+        crossSellTo: {
+          select: { toCategoryId: true, requireExactMatch: true, sortOrder: true },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
     });
     return all;
   }
@@ -70,6 +79,7 @@ export class AdminCategoriesService {
         requiresLicence: dto.requiresLicence ?? false,
         availableSecondhand: dto.availableSecondhand ?? true,
         availableNewStore: dto.availableNewStore ?? false,
+        crossSellEligible: dto.crossSellEligible ?? true,
         sortOrder: dto.sortOrder ?? 0,
       },
     });
@@ -120,6 +130,7 @@ export class AdminCategoriesService {
         ...(dto.requiresLicence !== undefined ? { requiresLicence: dto.requiresLicence } : {}),
         ...(dto.availableSecondhand !== undefined ? { availableSecondhand: dto.availableSecondhand } : {}),
         ...(dto.availableNewStore !== undefined ? { availableNewStore: dto.availableNewStore } : {}),
+        ...(dto.crossSellEligible !== undefined ? { crossSellEligible: dto.crossSellEligible } : {}),
         ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
@@ -134,11 +145,79 @@ export class AdminCategoriesService {
           : 'CATEGORY_UPDATE',
       resourceType: 'Category',
       resourceId: id,
-      oldValue: { name: before.name, isActive: before.isActive },
-      newValue: { name: updated.name, isActive: updated.isActive },
+      oldValue: { name: before.name, isActive: before.isActive, crossSellEligible: before.crossSellEligible },
+      newValue: { name: updated.name, isActive: updated.isActive, crossSellEligible: updated.crossSellEligible },
       reason: trimmedReason,
     });
     return updated;
+  }
+
+  /**
+   * Replace a category's cross-sell complementary set ("when browsing
+   * THIS category, also suggest these"). Preserves the requireExactMatch
+   * (calibre-hard) flag on relations that survive the edit — so the
+   * seeded reloading matches aren't lost — and defaults new links to a
+   * soft match. Self-references + unknown/duplicate targets are dropped.
+   */
+  async setRelations(
+    adminId: string,
+    fromCategoryId: string,
+    toCategoryIds: string[],
+    reason: string,
+  ) {
+    const trimmedReason = (reason ?? '').trim();
+    if (trimmedReason.length < 3) {
+      throw new BadRequestException(
+        'A reason of ≥3 chars is required when editing cross-sell links.',
+      );
+    }
+    const from = await this.prisma.category.findUnique({
+      where: { id: fromCategoryId },
+      include: { crossSellTo: true },
+    });
+    if (!from) throw new NotFoundException('Category not found');
+
+    const wanted = Array.from(
+      new Set((toCategoryIds ?? []).filter((t) => t && t !== fromCategoryId)),
+    );
+    const existing = wanted.length
+      ? await this.prisma.category.findMany({
+          where: { id: { in: wanted } },
+          select: { id: true },
+        })
+      : [];
+    const validIds = new Set(existing.map((c) => c.id));
+    const finalIds = wanted.filter((t) => validIds.has(t));
+
+    const prevByTo = new Map(
+      from.crossSellTo.map((r) => [r.toCategoryId, r.requireExactMatch]),
+    );
+    const before = from.crossSellTo.map((r) => r.toCategoryId);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.categoryRelation.deleteMany({ where: { fromCategoryId } });
+      if (finalIds.length > 0) {
+        await tx.categoryRelation.createMany({
+          data: finalIds.map((toCategoryId, i) => ({
+            fromCategoryId,
+            toCategoryId,
+            sortOrder: i,
+            requireExactMatch: prevByTo.get(toCategoryId) ?? false,
+          })),
+        });
+      }
+    });
+
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'CATEGORY_RELATIONS_SET',
+      resourceType: 'Category',
+      resourceId: fromCategoryId,
+      oldValue: { toCategoryIds: before },
+      newValue: { toCategoryIds: finalIds },
+      reason: trimmedReason,
+    });
+    return { fromCategoryId, toCategoryIds: finalIds };
   }
 }
 
