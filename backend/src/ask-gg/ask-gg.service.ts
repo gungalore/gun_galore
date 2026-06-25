@@ -10,8 +10,24 @@ import { AskGgQuotaService, maxPhotosPerRequest } from './ask-gg-quota.service';
 import { AskGgKbService } from './ask-gg-kb.service';
 import {
   AskGgConversationOutcome,
+  AskGgMessage,
   SubscriptionTier,
 } from '@prisma/client';
+
+/** Everything needed to generate + persist an assistant reply — produced
+ *  by preflight() (which does all the throwing quota/validation work +
+ *  persists the user message) and consumed by finishReply(). Splitting
+ *  these lets the SSE controller run preflight, surface any HTTP error,
+ *  THEN open the stream. */
+export interface PreparedSend {
+  user: { id: string; subscriptionTier: SubscriptionTier };
+  conversationId: string;
+  isNew: boolean;
+  userMessage: AskGgMessage;
+  imageUrls: string[];
+  escalate: boolean;
+  claudeHistory: AskGgChatMessage[];
+}
 
 /**
  * Ask GG orchestration service.
@@ -70,13 +86,13 @@ export class AskGgService {
   }
 
   /**
-   * Send a new user message. If `conversationId` is omitted, starts
-   * a new conversation and seeds its title from the first user
-   * message. Returns both the persisted user message and the
-   * persisted assistant reply so the frontend can render them in
-   * one round-trip.
+   * Preflight a new user message: quota + validation checks, resolve or
+   * create the conversation, persist the user message, and build the
+   * Claude history. Throws (403 / 429 / 400 / 404) BEFORE any reply
+   * work, so the SSE controller can surface an HTTP error before it
+   * opens a stream. Returns everything `finishReply` needs.
    */
-  async sendMessage(
+  async preflight(
     clerkId: string,
     input: {
       conversationId?: string;
@@ -86,7 +102,7 @@ export class AskGgService {
        *  photo identification. Max 5 per message. */
       imageUrls?: string[];
     },
-  ) {
+  ): Promise<PreparedSend> {
     const user = await this.userIdFromClerk(clerkId);
     // Quota checks FIRST, before any DB writes for this turn. FREE
     // over-cap throws 403, MEMBER/PRO over-cap throws 429 — both
@@ -200,28 +216,51 @@ export class AskGgService {
       imageUrls: m.imageUrls ?? [],
     }));
 
+    return {
+      user,
+      conversationId: conversationId!,
+      isNew,
+      userMessage,
+      imageUrls,
+      escalate: input.escalate ?? false,
+      claudeHistory,
+    };
+  }
+
+  /**
+   * Generate + persist the assistant reply for a prepared send. When
+   * `onText` is supplied the answer is STREAMED — the callback receives
+   * each text delta so the controller can forward it over SSE — but the
+   * persisted message + usage rollup are identical either way. Returns
+   * the persisted assistant message.
+   */
+  async finishReply(
+    prep: PreparedSend,
+    onText?: (delta: string) => void,
+  ): Promise<AskGgMessage> {
     // Call Claude. AskGgClaudeService handles its own failures and
-    // returns a placeholder rather than throwing — keeps the
-    // assistant message row creation on the happy path.
-    const reply = await this.claude.complete(claudeHistory, {
-      escalate: input.escalate,
+    // returns a placeholder rather than throwing — keeps the assistant
+    // message row creation on the happy path.
+    const reply = await this.claude.complete(prep.claudeHistory, {
+      escalate: prep.escalate,
       // Phase D ballistics — pass user tier so the calculator tool
       // can refuse FREE users with a friendly upgrade nudge.
-      subscriptionTier: user.subscriptionTier,
+      subscriptionTier: prep.user.subscriptionTier,
+      onText,
     });
 
     const assistantMessage = await this.prisma.askGgMessage.create({
       data: {
-        conversationId: conversationId!,
+        conversationId: prep.conversationId,
         role: 'assistant',
         content: reply.content,
         model: reply.model,
         promptTokens: reply.promptTokens ?? null,
         completionTokens: reply.completionTokens ?? null,
         costUsd: reply.costUsd ?? null,
-        // Reloading-manual citations Claude collected via tool-use.
-        // Stored as Json so the frontend can render verification
-        // chips on every assistant turn, both live and on reload.
+        // Reloading-manual / forum citations Claude collected via
+        // tool-use. Stored as Json so the frontend can render chips
+        // on every assistant turn, both live and on reload.
         citations:
           reply.citations.length > 0
             ? (reply.citations as unknown as object[])
@@ -232,22 +271,21 @@ export class AskGgService {
     // Bump the conversation's updatedAt so the history list orders by
     // most-recent activity.
     await this.prisma.askGgConversation.update({
-      where: { id: conversationId! },
+      where: { id: prep.conversationId },
       data: { updatedAt: new Date() },
     });
 
-    // Daily usage rollup. Phase B: separate counter for photo-IDs
-    // so the operator-facing usage dashboard can split message vs
-    // photo spend. photoIdCount increments by 1 per photo-bearing
-    // request (NOT per photo) so the rollup matches the FREE-tier
-    // quota semantics (1 request = 1 photo-ID for cap purposes).
+    // Daily usage rollup. Phase B: separate counter for photo-IDs so
+    // the operator-facing usage dashboard can split message vs photo
+    // spend. photoIdCount increments by 1 per photo-bearing request
+    // (NOT per photo) so it matches the FREE-tier quota semantics.
     const todayUtc = new Date();
     todayUtc.setUTCHours(0, 0, 0, 0);
-    const photoIdIncrement = imageUrls.length > 0 ? 1 : 0;
+    const photoIdIncrement = prep.imageUrls.length > 0 ? 1 : 0;
     await this.prisma.askGgUsage.upsert({
-      where: { userId_day: { userId: user.id, day: todayUtc } },
+      where: { userId_day: { userId: prep.user.id, day: todayUtc } },
       create: {
-        userId: user.id,
+        userId: prep.user.id,
         day: todayUtc,
         messageCount: 1,
         photoIdCount: photoIdIncrement,
@@ -260,10 +298,28 @@ export class AskGgService {
       },
     });
 
+    return assistantMessage;
+  }
+
+  /**
+   * Send a new user message (non-streaming JSON path). Preflight →
+   * generate → persist, returning both messages in one round-trip.
+   */
+  async sendMessage(
+    clerkId: string,
+    input: {
+      conversationId?: string;
+      content: string;
+      escalate?: boolean;
+      imageUrls?: string[];
+    },
+  ) {
+    const prep = await this.preflight(clerkId, input);
+    const assistantMessage = await this.finishReply(prep);
     return {
-      conversationId: conversationId!,
-      isNew,
-      userMessage,
+      conversationId: prep.conversationId,
+      isNew: prep.isNew,
+      userMessage: prep.userMessage,
       assistantMessage,
     };
   }

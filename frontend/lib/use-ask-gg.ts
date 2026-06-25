@@ -139,6 +139,32 @@ interface SendResponse {
   };
 }
 
+/** Server-Sent-Event payloads from POST /ask-gg/messages/stream. */
+type StreamEvent =
+  | {
+      type: 'meta';
+      conversationId: string;
+      isNew: boolean;
+      userMessage: {
+        id: string;
+        role: 'user';
+        content: string;
+        imageUrls?: string[];
+      };
+    }
+  | { type: 'delta'; text: string }
+  | {
+      type: 'done';
+      assistantMessage: {
+        id: string;
+        role: 'assistant';
+        content: string;
+        model: string | null;
+        citations?: AskGgCitation[] | null;
+      };
+    }
+  | { type: 'error'; message?: string };
+
 /** Shape of GET /ask-gg/conversations/:id — a conversation plus all
  *  its persisted messages (oldest → newest), used to rehydrate a thread
  *  on reload. citations come back as the raw JSON the backend stored. */
@@ -394,6 +420,8 @@ export function useAskGg(): UseAskGg {
       // Optimistic user message — shows immediately, gets replaced
       // when the server confirms.
       const optimisticId = `local-${Date.now()}`;
+      // The assistant bubble that fills in as tokens stream.
+      const streamId = `stream-${optimisticId}`;
       const optimisticUser: AskGgUiMessage = {
         id: optimisticId,
         role: 'user',
@@ -411,10 +439,11 @@ export function useAskGg(): UseAskGg {
           setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
           return;
         }
-        const r = await fetch(`${API_URL}/ask-gg/messages`, {
+        const r = await fetch(`${API_URL}/ask-gg/messages/stream`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
@@ -481,35 +510,103 @@ export function useAskGg(): UseAskGg {
           setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
           return;
         }
-        const data = (await r.json()) as SendResponse;
-        setConversationId(data.conversationId);
-        // Replace the optimistic user with the confirmed user +
-        // append the assistant reply.
-        setMessages((prev) => [
-          ...prev.filter((m) => m.id !== optimisticId),
-          {
-            id: data.userMessage.id,
-            role: 'user',
-            content: data.userMessage.content,
-            imageUrls:
-              data.userMessage.imageUrls && data.userMessage.imageUrls.length > 0
-                ? data.userMessage.imageUrls
-                : undefined,
-          },
-          {
-            id: data.assistantMessage.id,
-            role: 'assistant',
-            content: data.assistantMessage.content,
-            model: data.assistantMessage.model ?? undefined,
-            citations: data.assistantMessage.citations ?? undefined,
-          },
-        ]);
+        // ── Stream the answer (SSE) ──────────────────────────────────
+        // Backend streams: meta (conversation id + confirmed user
+        // message) → many delta (answer text, incl. the heads-up line
+        // for deep forum answers) → done (persisted assistant message +
+        // citations). Tokens render live, so the experience is seamless
+        // and the connection never idle-times-out.
+        if (!r.body) {
+          setError('Streaming not supported here — try again.');
+          setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+          return;
+        }
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let streamStarted = false;
+
+        const handleEvent = (evt: StreamEvent) => {
+          if (evt.type === 'meta') {
+            streamStarted = true;
+            setConversationId(evt.conversationId);
+            // Swap the optimistic user for the confirmed one + add an
+            // empty assistant bubble that fills as tokens arrive.
+            setMessages((prev) => [
+              ...prev.filter((m) => m.id !== optimisticId),
+              {
+                id: evt.userMessage.id,
+                role: 'user',
+                content: evt.userMessage.content,
+                imageUrls:
+                  evt.userMessage.imageUrls &&
+                  evt.userMessage.imageUrls.length > 0
+                    ? evt.userMessage.imageUrls
+                    : undefined,
+              },
+              { id: streamId, role: 'assistant', content: '', pending: true },
+            ]);
+          } else if (evt.type === 'delta') {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamId ? { ...m, content: m.content + evt.text } : m,
+              ),
+            );
+          } else if (evt.type === 'done') {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamId
+                  ? {
+                      id: evt.assistantMessage.id,
+                      role: 'assistant',
+                      content: evt.assistantMessage.content,
+                      model: evt.assistantMessage.model ?? undefined,
+                      citations: evt.assistantMessage.citations ?? undefined,
+                    }
+                  : m,
+              ),
+            );
+          } else if (evt.type === 'error') {
+            setError(evt.message ?? 'Something went wrong.');
+            setMessages((prev) => prev.filter((m) => m.id !== streamId));
+          }
+        };
+
+        // Read the SSE stream, dispatching each `data: {json}` event
+        // (events are separated by a blank line) as it arrives.
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let sep: number;
+          while ((sep = buffer.indexOf('\n\n')) !== -1) {
+            const rawEvent = buffer.slice(0, sep).trim();
+            buffer = buffer.slice(sep + 2);
+            if (!rawEvent.startsWith('data:')) continue;
+            const json = rawEvent.slice(5).trim();
+            if (!json) continue;
+            try {
+              handleEvent(JSON.parse(json) as StreamEvent);
+            } catch {
+              // skip a malformed chunk; keep streaming
+            }
+          }
+        }
+
+        // Stream closed before any meta (backend died at the start) —
+        // clean up the optimistic bubble.
+        if (!streamStarted) {
+          setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+          setError((e) => e ?? 'No response — try again.');
+        }
         // Refresh the quota so the "N left" pill updates immediately
         // for FREE users. Best-effort — silent on failure.
         void refreshQuota();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Network error');
-        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+        setMessages((prev) =>
+          prev.filter((m) => m.id !== optimisticId && m.id !== streamId),
+        );
       } finally {
         setSending(false);
       }

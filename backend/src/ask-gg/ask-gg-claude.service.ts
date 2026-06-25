@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type {
   ContentBlock,
   ContentBlockParam,
+  Message,
   MessageParam,
   Tool,
   ToolUnion,
@@ -417,6 +418,12 @@ interface CompleteOpts {
    *  the actual drop table. Defaults to FREE so misconfigured callers
    *  fail closed. */
   subscriptionTier?: 'FREE' | 'MEMBER' | 'PRO';
+  /** When provided, the answer is STREAMED: every assistant text delta
+   *  (across all tool-loop turns — the heads-up line then the answer) is
+   *  pushed to this callback as it's generated, so the controller can
+   *  forward it over SSE for a live, seamless UX with no gateway timeout.
+   *  The returned `content` still holds the full text for persistence. */
+  onText?: (delta: string) => void;
 }
 
 /**
@@ -542,15 +549,45 @@ export class AskGgClaudeService {
         : t,
     );
 
+    // Streaming mode accumulates every text delta across ALL turns (the
+    // heads-up line + the final answer) so the persisted message matches
+    // exactly what the user watched stream in.
+    let streamedText = '';
     try {
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-        const r = await this.client.messages.create({
-          model,
-          max_tokens: opts.escalate ? 4096 : 3072,
-          system: systemBlocks,
-          tools: toolsWithCache,
-          messages,
-        });
+        let r: Message;
+        if (opts.onText) {
+          const stream = this.client.messages.stream({
+            model,
+            max_tokens: opts.escalate ? 4096 : 3072,
+            system: systemBlocks,
+            tools: toolsWithCache,
+            messages,
+          });
+          let firstDeltaThisTurn = true;
+          stream.on('text', (delta) => {
+            if (firstDeltaThisTurn) {
+              firstDeltaThisTurn = false;
+              // Blank-line separate a new turn's text (e.g. the answer)
+              // from a prior turn's (e.g. the heads-up line).
+              if (streamedText.length > 0) {
+                streamedText += '\n\n';
+                opts.onText!('\n\n');
+              }
+            }
+            streamedText += delta;
+            opts.onText!(delta);
+          });
+          r = await stream.finalMessage();
+        } else {
+          r = await this.client.messages.create({
+            model,
+            max_tokens: opts.escalate ? 4096 : 3072,
+            system: systemBlocks,
+            tools: toolsWithCache,
+            messages,
+          });
+        }
 
         totalPromptTokens += r.usage?.input_tokens ?? 0;
         totalCompletionTokens += r.usage?.output_tokens ?? 0;
@@ -575,8 +612,12 @@ export class AskGgClaudeService {
             .map((b) => (b as Extract<ContentBlock, { type: 'text' }>).text)
             .join('\n\n')
             .trim();
+          // In streaming mode the persisted content is the full text the
+          // user watched stream across every turn (heads-up + answer);
+          // otherwise it's the final turn's text blocks joined.
+          const finalText = opts.onText ? streamedText.trim() : joined;
           const content =
-            joined ||
+            finalText ||
             (citations.some((c) => c.sourceType === 'web')
               ? "I found some sources but couldn't pull a clear summary together — try rephrasing your question."
               : "I couldn't generate a reply — try rephrasing your question.");

@@ -4,16 +4,19 @@ import {
   Controller,
   FileTypeValidator,
   Get,
+  HttpException,
   MaxFileSizeValidator,
   Param,
   ParseFilePipe,
   Post,
   Query,
+  Res,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ClerkGuard } from '../auth/clerk.guard';
@@ -65,6 +68,87 @@ export class AskGgController {
     },
   ) {
     return this.askGg.sendMessage(clerkId, body);
+  }
+
+  /**
+   * Streaming variant of POST /messages — Server-Sent Events. Delivers
+   * a seamless UX: the heads-up + answer stream in token-by-token, and
+   * because bytes flow continuously neither nginx nor Cloudflare idle-
+   * times-out (no more 504 on deep forum answers).
+   *
+   * Protocol — newline-delimited `data: {json}` events:
+   *   { type: 'meta',  conversationId, isNew, userMessage }   (once, first)
+   *   { type: 'delta', text }                                 (many)
+   *   { type: 'done',  assistantMessage }                     (once, last)
+   *   { type: 'error', message }                              (on failure)
+   *
+   * Quota / validation errors are returned as a normal HTTP 4xx BEFORE
+   * the stream opens (the frontend handles 403/429 exactly as for the
+   * JSON endpoint).
+   */
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Post('messages/stream')
+  async sendStream(
+    @CurrentUser() clerkId: string,
+    @Body()
+    body: {
+      conversationId?: string;
+      content: string;
+      escalate?: boolean;
+      imageUrls?: string[];
+    },
+    @Res() res: Response,
+  ): Promise<void> {
+    // Preflight FIRST — surfaces quota/validation errors as a normal
+    // HTTP response before we switch to SSE.
+    let prep;
+    try {
+      prep = await this.askGg.preflight(clerkId, body);
+    } catch (err) {
+      const status = err instanceof HttpException ? err.getStatus() : 500;
+      const payload =
+        err instanceof HttpException
+          ? err.getResponse()
+          : { message: 'Could not start — try again.' };
+      res.status(status).json(payload);
+      return;
+    }
+
+    // Open the SSE stream. X-Accel-Buffering:no stops nginx buffering so
+    // deltas flush in real time; text/event-stream + no-transform keep
+    // the proxies from re-chunking or idle-closing the connection.
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const send = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+    // Tell the client the conversation id + confirmed user message up
+    // front, so it renders the user bubble + persists the id before any
+    // answer tokens arrive.
+    send({
+      type: 'meta',
+      conversationId: prep.conversationId,
+      isNew: prep.isNew,
+      userMessage: prep.userMessage,
+    });
+
+    try {
+      const assistantMessage = await this.askGg.finishReply(prep, (delta) =>
+        send({ type: 'delta', text: delta }),
+      );
+      send({ type: 'done', assistantMessage });
+    } catch {
+      send({
+        type: 'error',
+        message:
+          "I hit a problem generating that — try again. If it keeps failing, the operator's been pinged.",
+      });
+    } finally {
+      res.end();
+    }
   }
 
   /**

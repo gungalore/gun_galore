@@ -218,6 +218,13 @@ export default function AskGgPage() {
     ag.messages.length === 0 &&
     !ag.historyLoading;
 
+  // Once the streaming assistant bubble starts filling, drop the
+  // standalone "Thinking…" indicator so the streamed answer carries the
+  // UX (no spinner alongside live text).
+  const lastMsg = ag.messages[ag.messages.length - 1];
+  const answerHasStarted =
+    lastMsg?.role === 'assistant' && lastMsg.content.length > 0;
+
   function handlePickFiles(e: React.ChangeEvent<HTMLInputElement>) {
     setPhotoError(null);
     const list = e.target.files ? Array.from(e.target.files) : [];
@@ -413,7 +420,7 @@ export default function AskGgPage() {
                 priorUserContent={priorUserContent(ag.messages, m.id)}
               />
             ))}
-            {ag.sending && (
+            {ag.sending && !answerHasStarted && (
               <div
                 aria-live="polite"
                 style={{
