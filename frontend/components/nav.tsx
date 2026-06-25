@@ -7,6 +7,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import { ProfileCompletionRing } from '@/components/profile-completion-ring';
 import { LiveSearch } from '@/components/live-search';
+import { UrgentBell } from '@/components/urgent-bell';
 
 export function Nav() {
   const { isSignedIn, isLoaded, user } = useUser();
@@ -175,6 +176,13 @@ export function Nav() {
               >
                 Sell
               </Link>
+
+              {/* Urgent-notifications bell — shows a red count badge only
+                  when there are must-act items (replaces the old always-on
+                  sticky strip). Visible on desktop + mobile-web; the
+                  installed-PWA bottom tab bar has its own bell. Self-gates
+                  to signed-in users. */}
+              <UrgentBell />
 
               {/* Desktop sign-in / account chip. Mobile uses hamburger. */}
               <div className="hidden md:flex items-center gap-3">

@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from 'next';
 import { Suspense } from 'react';
 import { ClerkProvider } from '@clerk/nextjs';
 import { PublicNav, PublicFooter } from '@/components/public-chrome';
-import { UrgentNotifications } from '@/components/urgent-notifications';
 import { InstallPrompt } from '@/components/install-prompt';
 import { SwKillSwitch } from '@/components/sw-killswitch';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
@@ -239,7 +238,6 @@ export default function RootLayout({
               in standalone mode, so this fills the gap. Self-gates on
               both display-mode + pathname, no-op everywhere else. */}
           <MobileSearchBar />
-          <UrgentNotifications />
           {/* NOTE on View Transitions: React 19.2.6 stable doesn't
               expose `unstable_ViewTransition` yet — only the React
               experimental channel does. We've left

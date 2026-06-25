@@ -55,11 +55,9 @@ export function MobileSearchBar() {
       style={{
         position: 'sticky',
         top: 0,
-        // Must sit ABOVE UrgentNotifications (zIndex 49) so the
-        // LiveSearch dropdown — which renders absolute-positioned
-        // inside this container — stacks above the urgent strip.
-        // Without this the dropdown disappears behind the urgent
-        // notifications bar in PWA mode.
+        // Above page content so the LiveSearch dropdown — which renders
+        // absolute-positioned inside this container — stacks over the
+        // page below it in PWA mode.
         zIndex: 50,
         padding: '10px 12px',
         background: 'var(--bg-deep)',
