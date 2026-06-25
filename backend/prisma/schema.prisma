@@ -560,6 +560,10 @@ model Listing {
   // Set once when the 31–90-day "licence expiring" warning is sent, so the
   // daily expiry cron warns only once (then delists at ≤30 days).
   licenceExpiryWarnedAt DateTime?
+  // Firearm "type" (e.g. Pistol/Rifle/Shotgun) — left blank on the
+  // prefilled SAP 534 and read back from the completed, dealer-stamped
+  // form at dealer-verification time.
+  firearmType       String?
 
   // Parcel weight + dimensions captured by the seller in the Sell form.
   // Required for non-firearm listings (Pudo + TCG need them to quote

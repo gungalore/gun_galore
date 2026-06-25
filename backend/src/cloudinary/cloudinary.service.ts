@@ -44,6 +44,32 @@ export class CloudinaryService implements OnModuleInit {
     });
   }
 
+  // Upload a non-image file (e.g. a PDF) as a raw asset — stored
+  // byte-for-byte with no image transformation, so the original
+  // downloads/opens intact. Used for the dealer-stamped SAP 534 when the
+  // seller uploads a PDF rather than a photo.
+  async uploadRaw(
+    fileBuffer: Buffer,
+    folder: string,
+    publicId?: string,
+  ): Promise<{ url: string; publicId: string }> {
+    if (!this.configured) throw new Error('Cloudinary not configured');
+    return new Promise((resolve, reject) => {
+      const options: Record<string, unknown> = {
+        folder: `gun-galore/${folder}`,
+        resource_type: 'raw',
+      };
+      if (publicId) options.public_id = publicId;
+
+      cloudinary.uploader
+        .upload_stream(options, (error, result: UploadApiResponse | undefined) => {
+          if (error || !result) return reject(error ?? new Error('Upload failed'));
+          resolve({ url: result.secure_url, publicId: result.public_id });
+        })
+        .end(fileBuffer);
+    });
+  }
+
   async deleteImage(publicId: string): Promise<void> {
     if (!this.configured) return;
     await cloudinary.uploader.destroy(publicId);

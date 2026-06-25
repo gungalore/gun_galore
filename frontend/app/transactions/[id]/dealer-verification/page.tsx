@@ -32,12 +32,12 @@ interface SlotConfig {
 const SLOTS: SlotConfig[] = [
   {
     key: 'saps534',
-    title: 'SAPS 534 form',
-    what: "The completed Notification of Change in Possession form. The dealer fills this in when they receive your firearm.",
+    title: 'SAP 534 form',
+    what: "The completed SAP 534 (Transfer of Firearm Ownership) form, stamped by the dealer. Upload a clear photo or a PDF scan.",
     tips: [
       'BLOCK LETTERS only — cursive or mixed-case slows the process down.',
       'The dealer stamp OR a clear signature + printed dealer name must be visible.',
-      'Avoid glare from overhead lights — angle the page or step to the side.',
+      'A PDF scan of the stamped form works too — or a clear photo.',
       'Capture the full page edge-to-edge with all fields readable.',
     ],
   },
@@ -110,6 +110,9 @@ type FileState = {
   previewUrl: string;
   processing: boolean;
   error: string | null;
+  // True when the SAP 534 was uploaded as a PDF (skips image processing
+  // and the thumbnail; the server reads the PDF directly).
+  isPdf?: boolean;
 };
 
 export default function DealerVerificationPage() {
@@ -147,6 +150,28 @@ export default function DealerVerificationPage() {
   }, []);
 
   async function pickFile(slot: SlotConfig['key'], rawFile: File) {
+    // PDFs (only offered for the SAP 534 slot) bypass the image
+    // pipeline — they're uploaded as-is and read directly by the server.
+    const isPdf =
+      rawFile.type === 'application/pdf' ||
+      rawFile.name.toLowerCase().endsWith('.pdf');
+    if (isPdf) {
+      setFiles((prev) => {
+        const prevSlot = prev[slot];
+        if (prevSlot?.previewUrl) URL.revokeObjectURL(prevSlot.previewUrl);
+        return {
+          ...prev,
+          [slot]: {
+            file: rawFile,
+            previewUrl: '',
+            processing: false,
+            error: null,
+            isPdf: true,
+          },
+        };
+      });
+      return;
+    }
     // Show an immediate "processing" state — HEIF conversion +
     // canvas resize can take 1-2s on older phones.
     setFiles((prev) => ({
@@ -593,20 +618,36 @@ function Slot({
         ))}
       </ul>
 
-      {state?.previewUrl ? (
+      {state?.file && !state.processing && !state.error ? (
         <div className="flex items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={state.previewUrl}
-            alt={config.title}
-            style={{
-              width: 72,
-              height: 72,
-              objectFit: 'cover',
-              borderRadius: 6,
-              border: '0.5px solid var(--border)',
-            }}
-          />
+          {state.isPdf ? (
+            <div
+              className="flex items-center justify-center text-xs font-medium"
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 6,
+                border: '0.5px solid var(--border)',
+                background: 'var(--bg-inset)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              PDF
+            </div>
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={state.previewUrl}
+              alt={config.title}
+              style={{
+                width: 72,
+                height: 72,
+                objectFit: 'cover',
+                borderRadius: 6,
+                border: '0.5px solid var(--border)',
+              }}
+            />
+          )}
           <div className="flex-1 min-w-0">
             <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
               {state.file.name} · {(state.file.size / 1024).toFixed(0)} KB
@@ -646,7 +687,7 @@ function Slot({
             Upload from gallery
             <input
               type="file"
-              accept="image/*"
+              accept={config.key === 'saps534' ? 'image/*,application/pdf' : 'image/*'}
               hidden
               onChange={(e) => {
                 const f = e.target.files?.[0];

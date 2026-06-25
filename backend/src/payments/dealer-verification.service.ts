@@ -60,6 +60,13 @@ export interface DealerVerificationFindings {
     block_letters: number;              // handwriting is in block capitals
     dealer_licence_visible: number;     // dealer's licence number readable on the form
     extracted_dealer_licence: string | null; // what Claude read; we compare to our Dealer record
+    // Section D firearm "type" — deliberately left blank on the prefilled
+    // form (P3); the dealer fills it, and we read it back here.
+    firearm_type: string | null;
+    // Serial as written in Section D of the returned form, cross-checked
+    // against the listing's recorded serial.
+    extracted_firearm_serial: string | null;
+    firearm_serial_matches_listing: number; // 0..100
     issues: string[];
   };
   stockRegister: {
@@ -164,9 +171,23 @@ export class DealerVerificationService {
     // Upload all 3 photos in parallel. Cloudinary handles HEIF→JPEG
     // on its side too as a belt-and-braces fallback to the
     // client-side conversion the frontend does.
+    // The stamped 534 may be a PDF (dealer scan) or a photo. A PDF is
+    // stored raw (byte-for-byte, opens intact for admin) and sent to
+    // Claude as a document block; a photo goes through the image path.
+    const saps534IsPdf =
+      files.saps534.mimetype === 'application/pdf' ||
+      files.saps534.buffer.subarray(0, 5).toString('latin1') === '%PDF-';
     const [saps534Upload, stockRegisterUpload, firearmSerialUpload] =
       await Promise.all([
-        this.cloudinary.uploadImage(files.saps534.buffer, `dealer-verification/${transactionId}`),
+        saps534IsPdf
+          ? this.cloudinary.uploadRaw(
+              files.saps534.buffer,
+              `dealer-verification/${transactionId}`,
+            )
+          : this.cloudinary.uploadImage(
+              files.saps534.buffer,
+              `dealer-verification/${transactionId}`,
+            ),
         this.cloudinary.uploadImage(files.stockRegister.buffer, `dealer-verification/${transactionId}`),
         this.cloudinary.uploadImage(files.firearmSerial.buffer, `dealer-verification/${transactionId}`),
       ]);
@@ -203,6 +224,7 @@ export class DealerVerificationService {
       try {
         findings = await this.runClaudeVisionScan({
           saps534Url: saps534Upload.url,
+          saps534Pdf: saps534IsPdf ? files.saps534.buffer : undefined,
           stockRegisterUrl: stockRegisterUpload.url,
           firearmSerialUrl: firearmSerialUpload.url,
           expectedSerial,
@@ -237,6 +259,23 @@ export class DealerVerificationService {
         dealerVerifiedAt: status === 'APPROVED' ? new Date() : null,
       },
     });
+
+    // Read-back: persist the firearm "type" the dealer wrote into Section
+    // D of the returned 534 (it was left blank on the prefill). Best-effort
+    // — never let it disturb the verification flow.
+    const readType = findings?.saps534?.firearm_type?.trim();
+    if (readType) {
+      try {
+        await this.prisma.listing.update({
+          where: { id: tx.listingId },
+          data: { firearmType: readType.slice(0, 60) },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Could not persist firearmType for ${transactionId}: ${(err as Error).message}`,
+        );
+      }
+    }
 
     // Fire-and-forget notifications based on the outcome. PENDING_ADMIN_REVIEW
     // doesn't send the seller anything yet — the verification result page
@@ -462,6 +501,11 @@ export class DealerVerificationService {
   // -------------------------------------------------------------------
   private async runClaudeVisionScan(args: {
     saps534Url: string;
+    // When the seller uploaded the stamped 534 as a PDF, the raw bytes
+    // are passed here and sent to Claude as a document block (no
+    // rasterisation needed — the model reads the PDF directly). When
+    // it's a photo, this is undefined and we use saps534Url as an image.
+    saps534Pdf?: Buffer;
     stockRegisterUrl: string;
     firearmSerialUrl: string;
     expectedSerial: string | null;
@@ -475,8 +519,8 @@ export class DealerVerificationService {
 
     const systemPrompt = `You are the dealer stock-in verifier for Gun Galore, a South African firearms marketplace.
 
-You will be shown THREE photos in order:
-  1. A completed SAPS 534 form (Notification of Change in Possession) stamped or signed by a SAPS-licensed dealer.
+You will be shown THREE documents in order:
+  1. A completed SAP 534 form (Transfer of Firearm Ownership, s125(2)(a)(iii)) stamped or signed by a SAPS-licensed dealer. This may be a multi-page PDF or a photo — read every page.
   2. The last line of the dealer's stock register (FCA Reg. 86) — only ONE line should be visible to protect other customers' privacy.
   3. The firearm itself with its serial number visible, next to a slip of paper showing the Gun Galore order reference.
 
@@ -492,6 +536,9 @@ Schema:
     "block_letters": <0-100>,               // handwriting is in block capitals — Gun Galore requires this
     "dealer_licence_visible": <0-100>,
     "extracted_dealer_licence": "<string or null>",  // what you read on the form
+    "firearm_type": "<the firearm TYPE from Section D, e.g. Pistol / Rifle / Shotgun / Self-loading rifle, or null>",
+    "extracted_firearm_serial": "<the firearm serial number written in Section D, or null>",
+    "firearm_serial_matches_listing": <0-100>,  // does Section D's serial match the expected serial in the user context?
     "issues": ["short human-readable string", ...]
   },
   "stockRegister": {
@@ -520,11 +567,34 @@ Rules:
 - If the extracted_serial values across the three photos disagree, score serial_consistency_across_photos low and add an issue.
 - Block letters is REQUIRED for SAPS 534 — cursive / mixed case scores low.
 - "Stamp" includes an inked rubber stamp, a printed dealer letterhead, or a clearly signed + printed name + date combination.
-- Be conservative with REJECT — only recommend REJECT when at least one field is below 50 and cannot be salvaged by a reshoot. Recommend ADMIN_REVIEW when you're uncertain.`;
+- Be conservative with REJECT — only recommend REJECT when at least one field is below 50 and cannot be salvaged by a reshoot. Recommend ADMIN_REVIEW when you're uncertain.
+- Read the firearm TYPE and SERIAL from Section D of the 534. If Section D's serial does not match the expected serial in the user context, score firearm_serial_matches_listing low and add an issue. If the type is blank or unreadable, set firearm_type to null and do not penalise other scores for it.`;
+
+    const saps534Block = args.saps534Pdf
+      ? ({
+          type: 'document' as const,
+          source: {
+            type: 'base64' as const,
+            media_type: 'application/pdf' as const,
+            data: args.saps534Pdf.toString('base64'),
+          },
+        })
+      : ({
+          type: 'image' as const,
+          source: { type: 'url' as const, url: args.saps534Url },
+        });
 
     const userContent: Array<
       | { type: 'text'; text: string }
       | { type: 'image'; source: { type: 'url'; url: string } }
+      | {
+          type: 'document';
+          source: {
+            type: 'base64';
+            media_type: 'application/pdf';
+            data: string;
+          };
+        }
     > = [
       {
         type: 'text',
@@ -535,10 +605,10 @@ Rules:
           `Expected listing: ${[args.listingMake, args.listingModel].filter(Boolean).join(' ') || '(unknown)'}`,
           `Order reference that should appear on photo 3: ${args.orderReference}`,
           '',
-          'Photo 1: SAPS 534 form',
+          'Document 1: SAP 534 form (PDF or photo)',
         ].join('\n'),
       },
-      { type: 'image', source: { type: 'url', url: args.saps534Url } },
+      saps534Block,
       { type: 'text', text: 'Photo 2: Stock register last line' },
       { type: 'image', source: { type: 'url', url: args.stockRegisterUrl } },
       { type: 'text', text: 'Photo 3: Firearm with serial + order reference' },
@@ -573,6 +643,7 @@ Rules:
       f.saps534.dealer_stamp_or_signature,
       f.saps534.block_letters,
       f.saps534.dealer_licence_visible,
+      f.saps534.firearm_serial_matches_listing,
       f.stockRegister.last_line_only,
       f.stockRegister.serial_matches_listing,
       f.firearm.serial_legible,
@@ -595,7 +666,10 @@ Rules:
   // ships, this method returns it; today it falls back to null and
   // Claude skips the cross-check.
   private async findExpectedSerial(transactionId: string): Promise<string | null> {
-    void transactionId;
-    return null;
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: { listing: { select: { serialNumber: true } } },
+    });
+    return tx?.listing?.serialNumber?.trim() || null;
   }
 }

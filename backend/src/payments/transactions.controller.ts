@@ -195,9 +195,18 @@ export class TransactionsController {
     // the bound used in the ask-gg uploads endpoint. Reject the whole
     // submission on any single file failing — these are linked
     // payout-gating evidence; one bad file means the seller resubmits.
-    const TYPE_RE = /^image\/(jpeg|png|webp|heic|heif)$/;
-    for (const f of [saps534, stockRegister, firearmSerial]) {
-      if (!TYPE_RE.test(f.mimetype)) {
+    const PHOTO_RE = /^image\/(jpeg|png|webp|heic|heif)$/;
+    // The dealer-stamped SAP 534 may come back as a scanned PDF OR a
+    // phone photo; the two evidence photos must be images. A PDF 534 is
+    // sent to Claude vision as a document block (no rasterisation needed).
+    const SAPS534_RE = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/;
+    if (!SAPS534_RE.test(saps534.mimetype)) {
+      throw new BadRequestException(
+        `Unsupported SAP 534 file type "${saps534.mimetype}" — upload a PDF or a JPEG/PNG/WebP/HEIC photo.`,
+      );
+    }
+    for (const f of [stockRegister, firearmSerial]) {
+      if (!PHOTO_RE.test(f.mimetype)) {
         throw new BadRequestException(
           `Unsupported file type "${f.mimetype}" — please upload JPEG, PNG, WebP or HEIC photos only.`,
         );
