@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { AdminStatusChip as StatusChip } from '@/components/admin/status-chip';
 import DossierActions from './dossier-actions';
 import DealerVerificationPanel from './dealer-verification-panel';
 import { ZohoSyncPanel } from './zoho-sync-panel';
@@ -149,31 +150,7 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  HELD: '#f59e0b',
-  PENDING_ADMIN_VERIFICATION: '#f59e0b',
-  RELEASED: '#22c55e',
-  REFUNDED: '#6366f1',
-  DISPUTED: 'var(--red)',
-  PENDING_DISPATCH: '#f59e0b',
-  DISPATCHED: '#3b82f6',
-  IN_TRANSIT: '#3b82f6',
-  DELIVERED: '#22c55e',
-  COLLECTED: '#22c55e',
-  FAILED_DELIVERY: 'var(--red)',
-};
-
-function StatusChip({ status }: { status: string }) {
-  const color = STATUS_COLOR[status] ?? 'var(--text-tertiary)';
-  return (
-    <span
-      className="text-xs px-2 py-0.5 rounded-full inline-block"
-      style={{ color, background: `${color}18` }}
-    >
-      {status.replace(/_/g, ' ')}
-    </span>
-  );
-}
+// Status pills come from the shared <StatusChip> (AdminStatusChip).
 
 // ─── Page ───────────────────────────────────────────────────────────
 

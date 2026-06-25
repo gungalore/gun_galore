@@ -12,6 +12,7 @@
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/admin-auth';
+import { useReasonModal } from '@/components/admin/reason-modal';
 import { MultiSelectPillGroup } from '@/components/pill';
 
 interface Category {
@@ -35,6 +36,7 @@ export default function CategoriesTree({ initial }: { initial: Category[] }) {
   const router = useRouter();
   const [createParent, setCreateParent] = useState<string | null | undefined>(undefined);
   const [editing, setEditing] = useState<Category | null>(null);
+  const { ask, modal } = useReasonModal();
 
   // Group: parents first (parentId === null), then children indexed by parentId.
   const parents = initial
@@ -51,9 +53,12 @@ export default function CategoriesTree({ initial }: { initial: Category[] }) {
 
   async function toggleActive(c: Category) {
     const newActive = !c.isActive;
-    const reason = window.prompt(
-      `${newActive ? 'Reactivate' : 'Deactivate'} "${c.name}"? Briefly explain why for the audit log (≥3 chars):`,
-    );
+    const reason = await ask({
+      title: `${newActive ? 'Reactivate' : 'Deactivate'} “${c.name}”?`,
+      message: 'Briefly explain why — recorded in the audit log.',
+      confirmLabel: newActive ? 'Reactivate' : 'Deactivate',
+      danger: !newActive,
+    });
     if (!reason || reason.trim().length < 3) return;
     await adminFetch(`/admin/categories/${c.id}`, {
       method: 'PATCH',
@@ -65,6 +70,7 @@ export default function CategoriesTree({ initial }: { initial: Category[] }) {
 
   return (
     <>
+      {modal}
       <div className="mb-4">
         <button
           onClick={() => setCreateParent(null)}

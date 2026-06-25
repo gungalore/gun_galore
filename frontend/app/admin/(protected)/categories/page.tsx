@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { AdminPageHeader } from '@/components/admin/page-header';
 import CategoriesTree from './categories-tree';
 
 interface Category {
@@ -55,20 +56,13 @@ export default function CategoriesPage() {
 
   return (
     <div>
-      <div className="flex items-baseline justify-between flex-wrap gap-3 mb-3">
-        <h1 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
-          Categories
-        </h1>
-        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          {categories.length} total · {categories.filter((c) => c.isActive).length} active
-        </p>
-      </div>
-
-      <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
-        Marketplace category tree. Deactivating a category hides it from
-        the Sell form and browse filters but keeps existing listings
-        intact. Renaming a category re-slugs the public URL.
-      </p>
+      <AdminPageHeader
+        title="Categories"
+        meta={`${categories.length} total · ${
+          categories.filter((c) => c.isActive).length
+        } active`}
+        description="Marketplace category tree. Deactivating a category hides it from the Sell form and browse filters but keeps existing listings intact. Renaming a category re-slugs the public URL."
+      />
 
       {demand.length > 0 && (
         <div

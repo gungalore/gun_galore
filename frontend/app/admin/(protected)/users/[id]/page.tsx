@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { AdminStatusChip as StatusChip } from '@/components/admin/status-chip';
 import UserActions from '../user-actions';
 
 // ─── Types — kept loose because the backend returns a rich object ────
@@ -155,37 +156,7 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  ACTIVE: '#22c55e',
-  PENDING_REVIEW: '#f59e0b',
-  SOLD: '#3b82f6',
-  CANCELLED: 'var(--text-tertiary)',
-  EXPIRED: 'var(--text-tertiary)',
-  DRAFT: 'var(--text-tertiary)',
-  HELD: '#f59e0b',
-  RELEASED: '#22c55e',
-  REFUNDED: '#6366f1',
-  DISPUTED: 'var(--red)',
-  PENDING: '#f59e0b',
-  ACCEPTED: '#22c55e',
-  REJECTED: 'var(--text-tertiary)',
-  COUNTERED: '#3b82f6',
-  WITHDRAWN: 'var(--text-tertiary)',
-  EXPIRED_OFFER: 'var(--text-tertiary)',
-  VERIFIED: '#22c55e',
-};
-
-function StatusChip({ status }: { status: string }) {
-  const color = STATUS_COLOR[status] ?? 'var(--text-tertiary)';
-  return (
-    <span
-      className="text-xs px-2 py-0.5 rounded-full"
-      style={{ color, background: `${color}18` }}
-    >
-      {status.replace(/_/g, ' ')}
-    </span>
-  );
-}
+// Status pills come from the shared <StatusChip> (AdminStatusChip).
 
 // ─── Page ───────────────────────────────────────────────────────────
 

@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { useReasonModal } from '@/components/admin/reason-modal';
 
 type Tab = 'QUEUE' | 'GRANTED';
 
@@ -62,6 +63,7 @@ export default function ExpertQueuePage() {
   const [granted, setGranted] = useState<GrantedResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { ask, modal } = useReasonModal();
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -87,10 +89,12 @@ export default function ExpertQueuePage() {
   }, [refresh]);
 
   const onGrant = async (userId: string, verifiedKbCount: number) => {
-    const reason = window.prompt(
-      `Grant verified-expert badge?\n\nThis user has ${verifiedKbCount} verified KB contributions. The reason you enter is recorded to the audit log AND shown publicly on their seller profile (so write something users can read).\n\nReason:`,
-      '',
-    );
+    const reason = await ask({
+      title: 'Grant verified-expert badge?',
+      message: `This user has ${verifiedKbCount} verified KB contributions. Your reason is recorded to the audit log AND shown publicly on their seller profile — write something users can read.`,
+      placeholder: 'Reason (shown on their public profile)…',
+      confirmLabel: 'Grant badge',
+    });
     if (!reason || !reason.trim()) return;
     try {
       const res = await adminFetch(
@@ -112,10 +116,12 @@ export default function ExpertQueuePage() {
   };
 
   const onRevoke = async (userId: string, username: string | null) => {
-    const reason = window.prompt(
-      `Revoke verified-expert badge from ${username ?? 'this user'}?\n\nReason (required, logged to audit):`,
-      '',
-    );
+    const reason = await ask({
+      title: `Revoke badge from ${username ?? 'this user'}?`,
+      message: 'Reason is required and logged to the audit trail.',
+      confirmLabel: 'Revoke badge',
+      danger: true,
+    });
     if (!reason || !reason.trim()) return;
     try {
       const res = await adminFetch(
@@ -146,6 +152,7 @@ export default function ExpertQueuePage() {
 
   return (
     <div>
+      {modal}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1

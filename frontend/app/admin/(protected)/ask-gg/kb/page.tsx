@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import { useReasonModal } from '@/components/admin/reason-modal';
 
 type Status = 'DRAFT' | 'VERIFIED' | 'SUBMITTED' | 'ARCHIVED';
 
@@ -55,6 +56,7 @@ export default function KbAdminPage() {
   const [statusFilter, setStatusFilter] = useState<Status | 'ALL'>('DRAFT');
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const { ask, modal } = useReasonModal();
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -81,10 +83,13 @@ export default function KbAdminPage() {
   }, [refresh]);
 
   async function handleVerify(id: string) {
-    const reason = window.prompt(
-      'Reason for verifying (will appear in the audit log):',
-      'Reviewed; answer is correct and useful.',
-    );
+    const reason = await ask({
+      title: 'Verify this KB entry?',
+      message:
+        'It will be surfaced to users. Your reason is logged to the audit trail.',
+      defaultValue: 'Reviewed; answer is correct and useful.',
+      confirmLabel: 'Verify',
+    });
     if (!reason) return;
     try {
       const res = await adminFetch(`/admin/ask-gg/kb/${id}/verify`, {
@@ -103,10 +108,12 @@ export default function KbAdminPage() {
   }
 
   async function handleArchive(id: string) {
-    const reason = window.prompt(
-      'Reason for archiving:',
-      'Low quality / not useful enough.',
-    );
+    const reason = await ask({
+      title: 'Archive this KB entry?',
+      message: 'It will be soft-hidden from users. Reason is logged.',
+      defaultValue: 'Low quality / not useful enough.',
+      confirmLabel: 'Archive',
+    });
     if (!reason) return;
     try {
       const res = await adminFetch(`/admin/ask-gg/kb/${id}/archive`, {
@@ -142,18 +149,14 @@ export default function KbAdminPage() {
   }
 
   async function handleDelete(id: string) {
-    const reason = window.prompt(
-      'Hard-delete (cannot be undone). Reason:',
-      'Mis-collapsed conversation; unsalvageable.',
-    );
+    const reason = await ask({
+      title: 'Hard-delete this KB entry?',
+      message: 'This is permanent and cannot be undone.',
+      defaultValue: 'Mis-collapsed conversation; unsalvageable.',
+      confirmLabel: 'Delete permanently',
+      danger: true,
+    });
     if (!reason) return;
-    if (
-      !window.confirm(
-        'Hard-delete this KB entry? This is permanent.',
-      )
-    ) {
-      return;
-    }
     try {
       const res = await adminFetch(`/admin/ask-gg/kb/${id}`, {
         method: 'DELETE',
@@ -200,6 +203,7 @@ export default function KbAdminPage() {
 
   return (
     <div>
+      {modal}
       <div className="flex items-baseline justify-between flex-wrap gap-3 mb-3">
         <h1
           className="text-lg font-medium"
