@@ -23,6 +23,7 @@ import { ListingsService } from './listings.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { BrowseListingsDto } from './dto/browse-listings.dto';
+import { CrossSellDto } from './dto/cross-sell.dto';
 import { PreviewListingDto } from './dto/preview-listing.dto';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -41,6 +42,15 @@ export class ListingsController {
   @SkipThrottle()
   browse(@Query() dto: BrowseListingsDto) {
     return this.listingsService.browse(dto);
+  }
+
+  // Cross-sell ("you might also need…"). MUST stay above @Get(':id') so
+  // 'cross-sell' isn't captured as an id. Public read → SkipThrottle like
+  // browse (SSR fans these out from one IP).
+  @Get('cross-sell')
+  @SkipThrottle()
+  crossSell(@Query() dto: CrossSellDto) {
+    return this.listingsService.crossSell(dto);
   }
 
   // --- Protected ---

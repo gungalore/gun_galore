@@ -8,6 +8,7 @@ import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
 import { SignedInWelcome } from '@/components/signed-in-welcome';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
+import { CrossSellRow } from '@/components/cross-sell-row';
 
 interface SearchParams {
   q?: string;
@@ -143,6 +144,35 @@ export default async function HomePage({
   const currentPage = browse.page;
   const hasNext = currentPage * browse.limit < browse.total;
   const hasPrev = currentPage > 1;
+
+  // Cross-sell context — a SECONDARY "you might also need…" row shown below
+  // the results on a real search/filter (never the bare landing page).
+  // Drawn from the dominant category of the current results (or the active
+  // category filter), narrowed by the search query for the calibre signal.
+  const crossSellExcludeIds = browse.listings.map((l) => l.id).join(',');
+  const crossSellFromCategoryId =
+    params.categoryId ??
+    (() => {
+      const counts = new Map<string, number>();
+      for (const l of browse.listings) {
+        const cid = l.category?.id;
+        if (cid) counts.set(cid, (counts.get(cid) ?? 0) + 1);
+      }
+      let best: string | undefined;
+      let bestN = 0;
+      for (const [cid, n] of counts) {
+        if (n > bestN) {
+          best = cid;
+          bestN = n;
+        }
+      }
+      return best;
+    })();
+  const showCrossSell =
+    !showHero &&
+    (Boolean(params.q) || Boolean(params.categoryId)) &&
+    browse.listings.length > 0 &&
+    Boolean(crossSellFromCategoryId);
 
   function pageHref(p: number) {
     const next = new URLSearchParams(
@@ -479,6 +509,14 @@ export default async function HomePage({
                   </a>
                 )}
               </div>
+            )}
+
+            {showCrossSell && crossSellFromCategoryId && (
+              <CrossSellRow
+                fromCategoryId={crossSellFromCategoryId}
+                q={params.q}
+                excludeIds={crossSellExcludeIds}
+              />
             )}
           </>
         )}

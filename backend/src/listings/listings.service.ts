@@ -518,6 +518,139 @@ export class ListingsService {
     return this.browseViaPrisma(dto);
   }
 
+  /**
+   * Cross-sell engine — "you might also need…". Generic + data-driven via
+   * CategoryRelation, so it works for EVERY category (firearms, reloading,
+   * optics, fishing, camping, knives + any future category) with no
+   * per-category code. Returns a separate suggestion set the caller renders
+   * as a distinct row; it never touches the user's primary results.
+   *
+   * Compliance: only ever returns status=ACTIVE listings (via browse) from
+   * crossSellEligible categories (relation filter), so powder / primers /
+   * live ammunition — Ammo is ineligible AND can't be an active P2P listing
+   * — can never surface here.
+   */
+  async crossSell(dto: {
+    listingId?: string;
+    fromCategoryId?: string;
+    q?: string;
+    excludeIds?: string;
+  }): Promise<{ suggestions: unknown[]; reason: string | null }> {
+    const exclude = new Set(
+      (dto.excludeIds ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+
+    // Resolve the context: which category to draw complements FROM + the
+    // best narrowing signal (calibre / brand).
+    let fromCategoryId = dto.fromCategoryId;
+    let calibre: string | null = null;
+    let make: string | null = null;
+    if (dto.listingId) {
+      const l = await this.prisma.listing.findUnique({
+        where: { id: dto.listingId },
+        select: { categoryId: true, calibre: true, make: true },
+      });
+      if (l) {
+        fromCategoryId = l.categoryId;
+        calibre = l.calibre;
+        make = l.make;
+      }
+      exclude.add(dto.listingId);
+    }
+    if (!calibre) calibre = this.extractCalibre(dto.q);
+    if (!fromCategoryId) return { suggestions: [], reason: null };
+
+    const relations = await this.prisma.categoryRelation.findMany({
+      where: {
+        fromCategoryId,
+        toCategory: { crossSellEligible: true, isActive: true },
+      },
+      include: { toCategory: { select: { id: true, name: true } } },
+      orderBy: { sortOrder: 'asc' },
+      take: 8,
+    });
+    if (relations.length === 0) return { suggestions: [], reason: null };
+
+    const groups: { name: string; listings: { id: string }[] }[] = [];
+    for (const rel of relations) {
+      // Signal precedence: a HARD calibre match when the relation requires
+      // it (skip entirely if we have no calibre — never guess compatibility);
+      // otherwise brand / calibre / the raw query as a soft relevance boost.
+      let signal: string | undefined;
+      if (rel.requireExactMatch) {
+        if (!calibre) continue;
+        signal = calibre;
+      } else {
+        signal = make ?? calibre ?? (dto.q || undefined);
+      }
+      const res = await this.browse({
+        categoryId: rel.toCategoryId,
+        q: signal,
+        limit: 8,
+        sort: 'newest',
+      } as BrowseListingsDto);
+      const picks = (res.listings as { id: string }[]).filter(
+        (l) => !exclude.has(l.id),
+      );
+      for (const p of picks) exclude.add(p.id);
+      if (picks.length > 0) {
+        groups.push({ name: rel.toCategory.name, listings: picks.slice(0, 4) });
+      }
+    }
+
+    // Round-robin across complementary categories (cap 12) so the row is
+    // varied rather than four of one kind then four of another.
+    const suggestions: unknown[] = [];
+    for (let i = 0; suggestions.length < 12; i++) {
+      let added = false;
+      for (const g of groups) {
+        if (g.listings[i]) {
+          suggestions.push(g.listings[i]);
+          added = true;
+          if (suggestions.length >= 12) break;
+        }
+      }
+      if (!added) break;
+    }
+    const reason =
+      groups.length > 0
+        ? `Pairs with ${groups
+            .map((g) => g.name)
+            .slice(0, 3)
+            .join(', ')}`
+        : null;
+    return { suggestions, reason };
+  }
+
+  /**
+   * Pull a calibre/cartridge token out of free text (search query) using a
+   * curated list of common SA cartridges — specific entries first. Returns
+   * null when nothing recognisable is present, so the engine declines to
+   * guess a compatibility match. (Phase 3 makes calibre a filterable index
+   * attribute for exact matching.)
+   */
+  private extractCalibre(text?: string): string | null {
+    if (!text) return null;
+    const tokens = [
+      '6.5 creedmoor', '6.5 prc', '6.5x55', '6.5', '300 win', '300 prc',
+      '300 blackout', '30-06', '30-30', '308', '7.62x39', '7.62x51', '7.62',
+      '7mm rem', '7mm', '5.56', '22-250', '223', '243', '270', '25-06', '280',
+      '338 lapua', '338', '9mm', '45 acp', '40 s&w', '357', '38 special',
+      '44 mag', '44', '380', '10mm', '303', '375', '416', '458',
+      '12 gauge', '12g', '20 gauge', '410', '22lr', '22 lr', '17 hmr', '17',
+      '6mm', '284',
+    ];
+    const t = ` ${text.toLowerCase().replace(/\./g, ' ').replace(/\s+/g, ' ')} `;
+    for (const c of tokens) {
+      const norm = ` ${c.replace(/\./g, ' ').replace(/\s+/g, ' ')} `;
+      if (t.includes(norm)) return c;
+    }
+    return null;
+  }
+
   // Multi-ID lookup. Capped at 50 IDs per request to avoid
   // pathological response sizes; the recently-viewed rail never
   // displays more than ~20 anyway. SOLD / CANCELLED / EXPIRED

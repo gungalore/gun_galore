@@ -503,11 +503,40 @@ model Category {
   availableSecondhand Boolean    @default(true)
   // Whether this category appears on the dealer New Store (M3 phase).
   availableNewStore   Boolean    @default(false)
+  // Cross-sell: may THIS category's listings be shown as a "you might also
+  // need" suggestion? Default true; set false for prohibited/sensitive
+  // categories (e.g. Ammo). Generic gate governing every category incl.
+  // future ones, so the cross-sell engine needs no per-category code.
+  crossSellEligible   Boolean    @default(true)
   isActive            Boolean    @default(true)
   sortOrder           Int        @default(0)
   createdAt           DateTime   @default(now())
 
   listings Listing[]
+
+  // Cross-sell complementary relationships (directional). Admin-managed.
+  crossSellFrom CategoryRelation[] @relation("CrossSellFrom")
+  crossSellTo   CategoryRelation[] @relation("CrossSellTo")
+}
+
+// Directional category complement for marketplace cross-sell. One row =
+// "when a buyer is on a listing/search in the FROM category, also suggest
+// listings from the TO category." requireExactMatch narrows the suggestion
+// by a hard compatibility attribute (calibre) — true for reloading (a .308
+// die ≠ 9mm), false for soft pairings (rod → line). Fully data-driven so a
+// new category lights up cross-sell with no code change.
+model CategoryRelation {
+  id                String   @id @default(cuid())
+  fromCategoryId    String
+  fromCategory      Category @relation("CrossSellFrom", fields: [fromCategoryId], references: [id], onDelete: Cascade)
+  toCategoryId      String
+  toCategory        Category @relation("CrossSellTo", fields: [toCategoryId], references: [id], onDelete: Cascade)
+  sortOrder         Int      @default(0)
+  requireExactMatch Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  @@unique([fromCategoryId, toCategoryId])
+  @@index([fromCategoryId])
 }
 
 model Listing {
