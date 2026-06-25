@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import AnalyticsTabs from '../../analytics-tabs';
 
 // Operational Health — second tab on /admin/analytics. Three blocks:
 //   1. KYC funnel drop-off
@@ -77,27 +78,7 @@ export default function OpsHealthPage() {
         Operational Health
       </h1>
 
-      {/* Tab strip — Sales (existing analytics page) / Health (this one) */}
-      <div className="flex gap-2 mb-6">
-        <Link
-          href="/admin/analytics"
-          className="px-3 py-1.5 rounded-full text-xs"
-          style={{
-            background: 'var(--bg-card)',
-            border: '0.5px solid var(--border)',
-            color: 'var(--text-secondary)',
-            textDecoration: 'none',
-          }}
-        >
-          Sales
-        </Link>
-        <span
-          className="px-3 py-1.5 rounded-full text-xs font-medium"
-          style={{ background: 'var(--red)', color: '#fff' }}
-        >
-          Operational Health
-        </span>
-      </div>
+      <AnalyticsTabs />
 
       {/* ─── KYC funnel ─────────────────────────────────────────── */}
       <Section

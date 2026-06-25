@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import AnalyticsTabs from '../analytics-tabs';
 import { useSearchParams } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import PeriodSwitcher from './period-switcher';
@@ -143,27 +143,7 @@ export default function AnalyticsPage() {
         </p>
       </div>
 
-      {/* Tab strip — Sales (this page) / Operational Health (sibling). */}
-      <div className="flex gap-2 mb-4">
-        <span
-          className="px-3 py-1.5 rounded-full text-xs font-medium"
-          style={{ background: 'var(--red)', color: '#fff' }}
-        >
-          Sales
-        </span>
-        <Link
-          href="/admin/analytics/health"
-          className="px-3 py-1.5 rounded-full text-xs"
-          style={{
-            background: 'var(--bg-card)',
-            border: '0.5px solid var(--border)',
-            color: 'var(--text-secondary)',
-            textDecoration: 'none',
-          }}
-        >
-          Operational Health
-        </Link>
-      </div>
+      <AnalyticsTabs />
 
       <PeriodSwitcher currentPeriod={period} currentBucket={bucket} />
 

@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from 'react';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import AnalyticsTabs from '../analytics-tabs';
 
 interface Service {
   name: string;
@@ -122,6 +123,8 @@ export default function HealthPage() {
             : 'Live probes · 5s timeout each · refresh by reloading the page'}
         </p>
       </div>
+
+      <AnalyticsTabs />
 
       {/* Headline summary chip strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
