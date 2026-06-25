@@ -16,7 +16,7 @@
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
-  title: 'Terms of Service — Gun Galore',
+  title: 'Terms of Service',
   description:
     'The contract governing your use of GunGalore (Pty) Ltd. Drafted under South African law.',
 };

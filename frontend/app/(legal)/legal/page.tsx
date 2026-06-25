@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
-  title: 'Legal — Gun Galore',
+  title: 'Legal',
   description:
     'All GunGalore legal documents and statutory disclosures in one place.',
 };

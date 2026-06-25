@@ -16,7 +16,7 @@
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
-  title: 'AML & Competitions Policy — Gun Galore',
+  title: 'AML & Competitions Policy',
   description:
     'How GunGalore handles anti-money-laundering controls and complies with the Consumer Protection Act Section 36 for paid competitions.',
 };

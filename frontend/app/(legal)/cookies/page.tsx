@@ -6,7 +6,7 @@
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
-  title: 'Cookie Policy — Gun Galore',
+  title: 'Cookie Policy',
   description:
     'What cookies GunGalore uses, why, and how to manage them.',
 };

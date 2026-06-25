@@ -6,7 +6,7 @@
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
-  title: 'Acceptable Use Policy — Gun Galore',
+  title: 'Acceptable Use Policy',
   description:
     'What is and is not allowed on GunGalore — listings, content and behaviour rules.',
 };

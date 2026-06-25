@@ -18,7 +18,7 @@
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
-  title: 'Privacy Policy — Gun Galore',
+  title: 'Privacy Policy',
   description:
     'How GunGalore (Pty) Ltd collects, uses and protects your personal information under POPIA.',
 };

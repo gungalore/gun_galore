@@ -13,7 +13,7 @@
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
-  title: 'Refund & Dispute Policy — Gun Galore',
+  title: 'Refund & Dispute Policy',
   description:
     'When refunds happen, how the dispute process works, and your statutory rights under the Consumer Protection Act.',
 };

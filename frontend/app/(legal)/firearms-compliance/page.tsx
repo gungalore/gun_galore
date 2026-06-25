@@ -13,7 +13,7 @@
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
-  title: 'Regulated Items & Compliance — Gun Galore',
+  title: 'Regulated Items & Compliance',
   description:
     'Our role, your responsibilities, and the legal framework for regulated and licence-controlled items on GunGalore, including firearms under the Firearms Control Act 60 of 2000.',
 };
