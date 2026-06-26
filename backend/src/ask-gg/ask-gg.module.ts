@@ -13,6 +13,7 @@ import { AdminAuditService } from '../admin/admin-audit.service';
 import { adminJwtSecret } from '../admin/admin-jwt-secret';
 import { ReloadingModule } from '../reloading/reloading.module';
 import { BallisticsModule } from '../ballistics/ballistics.module';
+import { LoadLabModule } from '../load-lab/load-lab.module';
 
 @Module({
   // ReloadingModule exports ReloadingService so AskGgClaudeService can
@@ -21,6 +22,7 @@ import { BallisticsModule } from '../ballistics/ballistics.module';
   imports: [
     ReloadingModule,
     BallisticsModule,
+    LoadLabModule,
     // For the admin KB-verification controller (uses AdminJwtGuard).
     // Same secret/config as AdminModule — kept local here so we
     // don't create a circular dep importing AdminModule.

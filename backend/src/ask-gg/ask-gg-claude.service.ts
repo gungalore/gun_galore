@@ -14,6 +14,8 @@ import {
   BallisticsService,
   type BallisticsInput,
 } from '../ballistics/ballistics.service';
+import { LoadLabService, type LoadLabInput } from '../load-lab/load-lab.service';
+import { ComponentDataService } from '../load-lab/component-data.service';
 
 // ─── Model strategy ─────────────────────────────────────────────────
 // Two-tier: Sonnet by default, Opus on user-triggered escalation.
@@ -145,6 +147,50 @@ const TOOLS: Tool[] = [
         },
       },
       required: ['bulletWeightGr', 'bcG1', 'muzzleVelocityFps', 'zeroM'],
+    },
+  },
+  {
+    name: 'computeLoadData',
+    description:
+      'Predict INTERNAL ballistics for a specific handload — muzzle velocity, peak chamber pressure, % powder burnt, barrel time — plus the chained downrange drop / retained velocity / energy. Use for load-development questions: "what velocity/pressure with X gr of Y powder behind a Z bullet in <cartridge>?". The engine is GRT-calibrated (~1% velocity; ~1-3% pressure for rifle powders in their normal cartridge). ESTIMATE ONLY: published manual data is authoritative for charge weights — ALSO call searchReloadingManuals to cross-check, keep the start-low / work-up / verify-against-a-manual framing, and warn if peak pressure is near/over the cartridge maximum (the result carries a safety block with the over-pressure flag). Required: cartridge, bullet, powder, chargeGr, barrelLengthIn.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        cartridge: {
+          type: 'string',
+          description:
+            'CIP/SAAMI cartridge name, e.g. "6.5 Creedmoor", ".308 Winchester".',
+        },
+        bullet: {
+          type: 'string',
+          description:
+            'Bullet search text including weight, e.g. "Sierra 140 HPBT", "Hornady 140 ELD-M". Matched against the bullet database (diameter auto-filtered to the cartridge).',
+        },
+        powder: {
+          type: 'string',
+          description: 'Powder product name, e.g. "N540", "H4350", "Varget".',
+        },
+        powderMaker: {
+          type: 'string',
+          description:
+            'Powder manufacturer if known (e.g. "Vihtavuori", "Hodgdon", "ADI") — helps disambiguate same-named powders.',
+        },
+        chargeGr: { type: 'number', description: 'Powder charge in grains.' },
+        barrelLengthIn: {
+          type: 'number',
+          description: 'Barrel length in inches (e.g. 24).',
+        },
+        zeroM: {
+          type: 'number',
+          description: 'Zero range in metres for the downrange table. Default 100.',
+        },
+        caseVolGrH2O: {
+          type: 'number',
+          description:
+            'Measured case water capacity in grains H₂O, if the user gave one (overrides the cartridge default).',
+        },
+      },
+      required: ['cartridge', 'bullet', 'powder', 'chargeGr', 'barrelLengthIn'],
     },
   },
 ];
@@ -316,6 +362,17 @@ For ANY question asking for drop, holdover, dial-up, windage, retained velocity,
 
 **If \`calculateBallistics\` returns an upgrade-required notice** (the user is on the FREE tier), DON'T retry — answer the user honestly: "The ballistic calculator is a GG+ Member/Pro feature. I can give you the general approach — for the actual numbers you'll need a quick subscription, or a tool like Strelok+ or JBM Ballistics."
 
+## LOAD LAB — INTERNAL-BALLISTICS PREDICTION (computeLoadData)
+
+For load-development questions — "what velocity / pressure will I get from N gr of <powder> behind a <bullet> in my <cartridge>?", "how does charge change pressure?", "is this load hot?" — call \`computeLoadData\`. It returns predicted muzzle velocity, peak chamber pressure, % burnt, barrel time, a charge ladder, the downrange table, and a \`safety\` block (\`pressureCeilingBar\`, \`pctOfCeiling\`, \`overPressure\`, \`nearMax\`).
+
+**This is a PREDICTION, never a load recommendation. Non-negotiable framing:**
+- Published manual data is AUTHORITATIVE for charge weights. ALSO call \`searchReloadingManuals\` for the same powder+bullet+cartridge and lead with that; present the Load Lab numbers as a model estimate to compare against it, not as a load to use.
+- State pressure as a % of the cartridge ceiling. If \`nearMax\`/\`overPressure\` is set, warn clearly: near or over maximum permissible pressure — back off, this is not a load to fire.
+- NEVER tell the user "load X grains". Show the prediction + always overlay start-low / work-up / verify-against-a-published-manual.
+- The engine is accurate (~1% velocity) for mainstream rifle powders in their normal cartridge. For very fast (pistol) powders in rifle cases or very slow magnum powders out of their element, say the estimate is less reliable.
+- **If \`computeLoadData\` returns an upgrade-required notice** (user not on PRO), DON'T retry — tell them the Load Lab is a Gun Galore PRO feature and offer published manual data via \`searchReloadingManuals\` instead.
+
 ## SAFETY OVERLAY (always present for reloading)
 
 Every reloading answer also includes a short reminder:
@@ -445,6 +502,8 @@ export class AskGgClaudeService {
   constructor(
     private readonly reloading: ReloadingService,
     private readonly ballistics: BallisticsService,
+    private readonly loadLab: LoadLabService,
+    private readonly components: ComponentDataService,
   ) {
     this.client = process.env.ANTHROPIC_API_KEY
       ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -933,6 +992,113 @@ export class AskGgClaudeService {
               type: 'tool_result',
               tool_use_id: toolUseId,
               content: `Ballistics calculation failed: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+              is_error: true,
+            },
+          ];
+        }
+      }
+
+      if (block.name === 'computeLoadData') {
+        // Load Lab — PRO-only (operator decision). FREE/MEMBER get a nudge.
+        if (subscriptionTier !== 'PRO') {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: JSON.stringify({
+                upgradeRequired: true,
+                reason:
+                  'The Load Lab is a Gun Galore PRO feature. The user is NOT on PRO — do NOT retry. Tell them it is a PRO feature, and offer published manual data instead (call searchReloadingManuals) with the start-low / work-up framing.',
+              }),
+              is_error: true,
+            },
+          ];
+        }
+        const input = block.input as {
+          cartridge?: string;
+          bullet?: string;
+          powder?: string;
+          powderMaker?: string;
+          chargeGr?: number;
+          barrelLengthIn?: number;
+          zeroM?: number;
+          caseVolGrH2O?: number;
+        };
+        if (
+          !input.cartridge ||
+          !input.bullet ||
+          !input.powder ||
+          typeof input.chargeGr !== 'number' ||
+          typeof input.barrelLengthIn !== 'number'
+        ) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content:
+                'Error: cartridge, bullet, powder, chargeGr and barrelLengthIn are all required. Ask the user for whatever is missing.',
+              is_error: true,
+            },
+          ];
+        }
+        try {
+          const cart =
+            this.components.getCartridge(input.cartridge) ??
+            (this.components.searchCartridges(input.cartridge, 1)[0]
+              ? this.components.getCartridge(
+                  this.components.searchCartridges(input.cartridge, 1)[0].name,
+                )
+              : undefined);
+          if (!cart) {
+            return [
+              {
+                type: 'tool_result',
+                tool_use_id: toolUseId,
+                content: `No cartridge in the database matches "${input.cartridge}". Ask the user to confirm the cartridge name.`,
+                is_error: true,
+              },
+            ];
+          }
+          const bullet =
+            this.components.searchBullets(input.bullet, 1, cart.c_Z)[0] ??
+            this.components.searchBullets(input.bullet, 1)[0];
+          if (!bullet) {
+            return [
+              {
+                type: 'tool_result',
+                tool_use_id: toolUseId,
+                content: `No bullet matches "${input.bullet}". Ask the user for the maker + weight.`,
+                is_error: true,
+              },
+            ];
+          }
+          const loadInput: LoadLabInput = {
+            cartridge: cart.cipname,
+            bulletId: bullet.id,
+            powderName: input.powder,
+            powderMaker: input.powderMaker,
+            chargeGr: input.chargeGr,
+            barrelLengthIn: input.barrelLengthIn,
+            zeroM: input.zeroM,
+            caseVolGrH2O: input.caseVolGrH2O,
+            ladder: { steps: 5, stepGr: 0.5 },
+          };
+          const result = this.loadLab.compute(loadInput);
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: JSON.stringify(result),
+            },
+          ];
+        } catch (err) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: `Load Lab calculation failed: ${
                 err instanceof Error ? err.message : String(err)
               }`,
               is_error: true,

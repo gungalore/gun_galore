@@ -40,6 +40,7 @@ import {
   type AskGgKbHit,
 } from '@/lib/use-ask-gg';
 import { SubscriberRaffleWidget } from '@/components/subscriber-raffle-widget';
+import { LoadLabPanel } from './load-lab/LoadLabPanel';
 
 function IconSparkles({ size = 22 }: { size?: number }) {
   return (
@@ -171,6 +172,10 @@ export default function AskGgPage() {
   // Phase C — resolve-prompt state. Reset whenever a new assistant
   // turn lands so the user gets one bite at the apple per answer.
   const [resolvedThisTurn, setResolvedThisTurn] = useState(false);
+  // Load Lab — PRO-gated internal/external ballistics panel. Toggled from
+  // the header; renders at the top of the messages-scroll region without
+  // touching the chat or composer.
+  const [loadLabOpen, setLoadLabOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -367,21 +372,59 @@ export default function AskGgPage() {
             </p>
           </div>
         </div>
-        <span
+        <div
           style={{
-            display: 'inline-flex',
+            display: 'flex',
             alignItems: 'center',
-            padding: '5px 10px',
-            borderRadius: 999,
-            background: 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
-            color: 'var(--text-tertiary)',
-            fontSize: 11,
-            lineHeight: 1.3,
+            gap: 8,
+            flexWrap: 'wrap',
           }}
         >
-          Informational, not advisory
-        </span>
+          {/* Load Lab toggle — opens the PRO ballistics panel above the
+              chat. Active state uses the red pill to match the segmented
+              toggle inside the panel. */}
+          {isSignedIn && (
+            <button
+              type="button"
+              onClick={() => setLoadLabOpen((v) => !v)}
+              aria-pressed={loadLabOpen}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '5px 12px',
+                borderRadius: 999,
+                background: loadLabOpen ? 'var(--red)' : 'var(--bg-inset)',
+                border: `0.5px solid ${
+                  loadLabOpen ? 'var(--red)' : 'var(--border)'
+                }`,
+                color: loadLabOpen ? '#fff' : 'var(--text-secondary)',
+                fontSize: 11,
+                fontWeight: 600,
+                lineHeight: 1.3,
+                cursor: 'pointer',
+                transition: 'background 140ms',
+              }}
+            >
+              Load Lab
+            </button>
+          )}
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '5px 10px',
+              borderRadius: 999,
+              background: 'var(--bg-inset)',
+              border: '0.5px solid var(--border)',
+              color: 'var(--text-tertiary)',
+              fontSize: 11,
+              lineHeight: 1.3,
+            }}
+          >
+            Informational, not advisory
+          </span>
+        </div>
       </header>
 
       {showSignInCard ? (
@@ -409,6 +452,9 @@ export default function AskGgPage() {
               padding: '16px 0 12px',
             }}
           >
+            {/* Load Lab panel — sits above the messages so it doesn't
+                disturb the composer or chat thread. */}
+            {loadLabOpen && <LoadLabPanel />}
             {ag.messages.length === 0 && !ag.historyLoading && (
               <EmptyState quota={ag.quota} />
             )}

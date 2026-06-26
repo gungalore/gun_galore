@@ -104,6 +104,13 @@ const STANDARD_PRESSURE_PA = 101325;  // 1013.25 hPa
 const STANDARD_AIR_DENSITY = 1.225;   // kg/m³ (15 °C, 1013.25 hPa, dry, sea level)
 const G_MPS2 = 9.80665;
 const SPEED_OF_SOUND_STANDARD_MPS = 340.3;
+// G1 ballistic coefficient is quoted in lb/in². The point-mass retardation is
+// a = ρ·v²·Cd(M)/(2·BC_SI), with BC_SI = BC·703.069 kg/m². Folding the unit
+// conversion into a single factor (applied on top of the rhoRatio·Cd/BC·v²/2
+// term) gives the deceleration in m/s². Without it the drag was ~574× too high
+// and the solver never reached the zero range (launch-angle search railed).
+const BC_LBIN2_TO_KGM2 = 703.069;
+const DRAG_K = STANDARD_AIR_DENSITY / BC_LBIN2_TO_KGM2; // ≈ 0.0017423
 
 /**
  * Abbreviated G1 drag function. Mach number → drag coefficient (Cd).
@@ -286,11 +293,15 @@ export class BallisticsService {
     let x = 0;
     let y = -sightHeightM;
     const dt = 0.001; // 1ms
-    while (x < targetX) {
+    // Guard: a degenerate (very low / NaN) muzzle velocity would otherwise
+    // let x crawl toward targetX forever. 60 000 steps = 60 s of flight —
+    // far beyond any real shot, but bounds the pathological case.
+    let guard = 0;
+    while (x < targetX && guard++ < 60000) {
       const v = Math.sqrt(vx * vx + vy * vy);
       const mach = v / SPEED_OF_SOUND_STANDARD_MPS;
       const cd = g1Cd(mach) / bc;
-      const drag = (cd * rhoRatio * v * v) / 2;
+      const drag = ((cd * rhoRatio * v * v) / 2) * DRAG_K;
       const ax = (-drag * vx) / v;
       const ay = (-drag * vy) / v - G_MPS2;
       vx += ax * dt;
@@ -299,7 +310,7 @@ export class BallisticsService {
       y += vy * dt;
       // Safety bail-out — if vx ever goes non-positive (bullet
       // arcing back) the loop would never terminate.
-      if (vx <= 0) break;
+      if (vx <= 0 || !Number.isFinite(x)) break;
     }
     return y;
   }
@@ -343,11 +354,12 @@ export class BallisticsService {
     let rangeIdx = 0;
     const maxRange = ranges[ranges.length - 1];
 
-    while (x < maxRange + 5 && rangeIdx < ranges.length) {
+    let guard = 0;
+    while (x < maxRange + 5 && rangeIdx < ranges.length && guard++ < 120000) {
       const v = Math.sqrt(vx * vx + vy * vy);
       const mach = v / SPEED_OF_SOUND_STANDARD_MPS;
       const cd = g1Cd(mach) / bc;
-      const drag = (cd * rhoRatio * v * v) / 2;
+      const drag = ((cd * rhoRatio * v * v) / 2) * DRAG_K;
       const ax = (-drag * vx) / v;
       const ay = (-drag * vy) / v - G_MPS2;
       vx += ax * dt;
