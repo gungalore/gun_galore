@@ -77,6 +77,18 @@ function toSi(load: IbLoad, powder: IbPowder, calib: IbCalib): SiModel {
   const m = load.projectileMassGr * GR_TO_KG;
   const C = load.chargeMassGr * GR_TO_KG;
   const sebert = load.sebert ?? 0.5;
+  // Loading density (g/cm³) = charge mass / initial gas volume. Drives the
+  // loading-density heat-loss correction: a packed case (high LD) loses less
+  // heat per unit energy → higher pressure; a light fill loses more.
+  const loadDensityGCm3 =
+    load.initialGasVolumeCm3 > 0
+      ? load.chargeMassGr * 0.06479891 / load.initialGasVolumeCm3
+      : calib.ldRefGCm3;
+  const ldFactor = 1 + calib.ldSlope * (calib.ldRefGCm3 - loadDensityGCm3);
+  // Effective heat-loss fraction, clamped to a sane range.
+  let heatFrac = calib.sebertScale * sebert * ldFactor;
+  if (heatFrac < 0) heatFrac = 0;
+  if (heatFrac > 0.6) heatFrac = 0.6;
   return {
     V0: load.initialGasVolumeCm3 * CM3_TO_M3,
     A: load.boreAreaMm2 * MM2_TO_M2,
@@ -85,7 +97,7 @@ function toSi(load: IbLoad, powder: IbPowder, calib: IbCalib): SiModel {
     C,
     ps: (load.shotStartBar ?? 250) * BAR_TO_PA,
     mEff: m + calib.lagrange * C,
-    QexEff: powder.Qex * KJKG_TO_JKG * (1 - calib.sebertScale * sebert),
+    QexEff: powder.Qex * KJKG_TO_JKG * (1 - heatFrac),
     QexFull: powder.Qex * KJKG_TO_JKG,
     k: powder.k,
     eta: powder.eta * CM3G_TO_M3KG,

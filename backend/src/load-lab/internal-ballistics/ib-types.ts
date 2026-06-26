@@ -101,6 +101,14 @@ export interface IbCalib {
   burnExp: number;
   /** Reference pressure (bar) the exponent is anchored to (≈ typical peak). */
   pNormBar: number;
+  /** Loading-density heat-loss slope. Effective Sebert heat loss is scaled by
+   *  (1 + ldSlope·(ldRefGCm3 − loadingDensity)): a densely packed case loses
+   *  LESS heat per unit energy (less free-volume/surface exposure) → higher
+   *  pressure, and a lightly packed case loses more. Corrects the GRT-measured
+   *  pressure-vs-fill slope (engine ran too shallow). 0 = no LD dependence. */
+  ldSlope: number;
+  /** Reference loading density (g/cm³) where the LD heat-loss term is neutral. */
+  ldRefGCm3: number;
   /** Integration time step (s). */
   dt: number;
   /** Hard cap on simulated time (s) — squib / runaway guard. */
@@ -111,15 +119,23 @@ export const DEFAULT_CALIB: IbCalib = {
   // Burn law is dz/dt = kBurn · L(z) · P[bar], where the L01..L09 curve is
   // already in 1/(bar·s) (GRT's real burn-rate coefficients). So kBurn is a
   // fine-tuning multiplier around 1.0 — the L-curve sets the physical scale.
-  // Global fit from the full GRT benchmark (56 realistic loads, calibrate/
-  // holdout) with the Vieille exponent: velocity median ~1.0%, core rifle
-  // powders (Ba 0.4-0.6) Pmax within ~1%. One global set across cartridges.
-  kBurn: 1.025,
+  //
+  // Calibrated against the DEEP cross-cartridge GRT oracle (.223 / 6.5CM /
+  // .30-06 / .50BMG, 59 realistic loads) — NOT just 6.5CM, which the previous
+  // (1.025/0.225/exp0.86, no LD term) fit over-fitted: it under-predicted
+  // pressure −16% on .223 and −8% on .30-06. Adding the physical loading-
+  // density heat-loss term (ldSlope) flattened the pressure-vs-fill slope and
+  // centered the bias: velocity median ~1.35%, Pmax signed ~+1.7% (was −5.3%),
+  // under-predicting loads 38→22/59. Pressure remains an ESTIMATE (~6-7% median,
+  // ±15-20% at fast/very-slow extremes) — the safety layer pads it conservatively.
+  kBurn: 1.06,
   pRef: 1e8, // unused by the L-curve burn law; kept for experiments
   lagrange: 1 / 3,
-  sebertScale: 0.225,
+  sebertScale: 0.21,
   burnExp: 0.86, // Vieille pressure exponent (sub-linear burn)
   pNormBar: 3000,
+  ldSlope: 1.5, // loading-density heat-loss slope (packed case loses less heat)
+  ldRefGCm3: 0.85,
   dt: 1e-6,
   maxTimeS: 0.02,
 };
