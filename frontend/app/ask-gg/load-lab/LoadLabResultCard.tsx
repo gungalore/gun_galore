@@ -58,7 +58,8 @@ export function LoadLabResultCard({
   onPickCharge?: (chargeGr: number) => void;
 }) {
   const isComp = mode === 'competition';
-  const { internal, external, safety, ladder, warnings } = result;
+  const { internal, external, safety, ladder, warnings, load, geometry } =
+    result;
   const e300 = energyNear300(result);
 
   const pressureTone: 'neutral' | 'warning' | 'danger' = safety.overPressure
@@ -106,6 +107,21 @@ export function LoadLabResultCard({
           label={e300 ? `Energy @ ${num(e300.rangeM)} m` : 'Muzzle energy'}
           value={e300 ? fmtJoules(e300.energyJ) : fmtJoules(internal.muzzleEnergyJ)}
           sub={e300 ? `muzzle ${fmtJoules(internal.muzzleEnergyJ)}` : undefined}
+        />
+        <MetricCard
+          label="Case fill"
+          value={fmtPct(load.caseFillPct)}
+          sub={`loading density ${load.loadingDensityGCm3} g/cm³`}
+          chip={
+            load.compressed
+              ? { text: 'compressed', tone: 'warning' }
+              : undefined
+          }
+        />
+        <MetricCard
+          label="Case capacity"
+          value={`${num(load.caseWaterGrH2O)} gr H₂O`}
+          sub={`eff. volume ${geometry.initialGasVolumeCm3} cm³`}
         />
 
         {/* Competition-only internal-ballistics tiles */}

@@ -204,6 +204,7 @@ export class ComponentDataService {
       k: p.k,
       eta: p.eta,
       pc: p.pc,
+      pcd: p.pcd,
       a0: p.a0,
       a1: p.a1,
       z1: p.z1,

@@ -96,6 +96,12 @@ export interface LoadLabResult {
     caseVolGrH2O: number;
     bcG1: number;
   };
+  load: {
+    caseWaterGrH2O: number;
+    caseFillPct: number;
+    loadingDensityGCm3: number;
+    compressed: boolean;
+  };
   internal: {
     pMaxBar: number;
     vMuzzleFps: number;

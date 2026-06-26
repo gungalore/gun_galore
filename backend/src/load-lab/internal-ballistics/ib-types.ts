@@ -50,6 +50,9 @@ export interface IbPowder {
   eta: number;
   /** Solid (material) density of the powder (kg/m³). */
   pc: number;
+  /** Bulk (poured) density (kg/m³) — for case-fill / load-ratio metrics.
+   *  Not used by the burn solver; carried for the Load Lab fill calc. */
+  pcd: number;
   /** Form-function progressivity coefficients. */
   a0: number;
   a1: number;

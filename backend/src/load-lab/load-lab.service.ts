@@ -58,6 +58,17 @@ export interface LoadLabResult {
     caseVolGrH2O: number;
     bcG1: number;
   };
+  load: {
+    /** Case water capacity (grains H₂O). */
+    caseWaterGrH2O: number;
+    /** Load ratio = powder bulk volume / effective case volume (%).
+     *  >100% = a compressed charge. */
+    caseFillPct: number;
+    /** Charge mass per effective case volume (g/cm³). */
+    loadingDensityGCm3: number;
+    /** True when the charge volume exceeds the available case volume. */
+    compressed: boolean;
+  };
   internal: {
     pMaxBar: number;
     vMuzzleFps: number;
@@ -190,6 +201,18 @@ export class LoadLabService {
     const ceiling = cart.Pmax || 0;
     const pctOfCeiling = ceiling > 0 ? (ib.pMaxBar / ceiling) * 100 : 0;
 
+    // Case-fill / load-ratio metrics (GRT-style) — how full the case is with
+    // powder by volume. Bulk density pcd (kg/m³) → g/cm³; charge grains → g.
+    const chargeG = input.chargeGr * 0.06479891;
+    const bulkGCm3 = powder.pcd > 0 ? powder.pcd / 1000 : 0;
+    const powderBulkVolCm3 = bulkGCm3 > 0 ? chargeG / bulkGCm3 : 0;
+    const caseFillPct =
+      geom.initialGasVolumeCm3 > 0
+        ? (powderBulkVolCm3 / geom.initialGasVolumeCm3) * 100
+        : 0;
+    const loadingDensityGCm3 =
+      geom.initialGasVolumeCm3 > 0 ? chargeG / geom.initialGasVolumeCm3 : 0;
+
     return {
       inputs: {
         cartridge: cart.cipname,
@@ -204,6 +227,12 @@ export class LoadLabService {
         travelMm: round(geom.travelMm, 1),
         caseVolGrH2O: round(geom.caseVolGrH2O, 1),
         bcG1: bc,
+      },
+      load: {
+        caseWaterGrH2O: round(geom.caseVolGrH2O, 1),
+        caseFillPct: Math.round(caseFillPct),
+        loadingDensityGCm3: round(loadingDensityGCm3, 3),
+        compressed: caseFillPct > 100,
       },
       internal: {
         pMaxBar: Math.round(ib.pMaxBar),
