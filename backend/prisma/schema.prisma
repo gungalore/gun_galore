@@ -2481,8 +2481,10 @@ model ManualLoad {
   pageNumber     Int
   createdAt      DateTime        @default(now())
 
-  // One row per (manual, page, powder, bullet weight, start) — idempotent seed.
-  @@unique([manualLabel, pageNumber, powderName, bulletWeightGr, startGr], map: "ManualLoad_dedup_key")
+  // One row per distinct published load. Includes bullet maker/name + max so
+  // different bullets of the SAME weight (e.g. Hornady V-MAX vs HP on one page
+  // with the same powder + start charge) are kept as separate loads, not merged.
+  @@unique([manualLabel, pageNumber, powderName, bulletMaker, bulletName, bulletWeightGr, startGr, maxGr], name: "dedupKey", map: "ManualLoad_dedup_key")
   @@index([cartridgeKey, bulletWeightGr])
   @@index([manualId])
 }

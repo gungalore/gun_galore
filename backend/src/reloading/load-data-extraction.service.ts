@@ -120,12 +120,15 @@ export class LoadDataExtractionService {
         try {
           await this.prisma.manualLoad.upsert({
             where: {
-              manualLabel_pageNumber_powderName_bulletWeightGr_startGr: {
+              dedupKey: {
                 manualLabel,
                 pageNumber: hit.pageNumber,
                 powderName: r.powderName,
+                bulletMaker: r.bulletMaker ?? '',
+                bulletName: r.bulletName ?? '',
                 bulletWeightGr: r.bulletWeightGr,
                 startGr: r.startGr,
+                maxGr: r.maxGr,
               },
             },
             create: {
