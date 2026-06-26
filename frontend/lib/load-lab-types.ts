@@ -94,6 +94,7 @@ export interface LoadLabResult {
     boreAreaMm2: number;
     travelMm: number;
     caseVolGrH2O: number;
+    seatingDepthMm: number;
     bcG1: number;
   };
   load: {

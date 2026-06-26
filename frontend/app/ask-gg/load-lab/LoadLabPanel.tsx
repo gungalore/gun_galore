@@ -44,6 +44,7 @@ export function LoadLabPanel() {
   // Numeric inputs are held as strings (NumberStepper is string-controlled).
   const [chargeGr, setChargeGr] = useState('');
   const [barrelIn, setBarrelIn] = useState('24');
+  const [coalIn, setCoalIn] = useState('');
   const [caseVol, setCaseVol] = useState('');
   const [zeroM, setZeroM] = useState('100');
   const [tempC, setTempC] = useState('15');
@@ -76,6 +77,11 @@ export function LoadLabPanel() {
       chargeGr: Number.parseFloat(chargeGr),
       barrelLengthIn: Number.parseFloat(barrelIn),
     };
+    // COAL (cartridge overall length, inches → mm) sets the bullet seating
+    // depth, hence how much case volume the bullet base displaces — drives the
+    // effective case volume and the case fill %. Applies in both modes.
+    if (coalIn.trim() !== '')
+      input.coalMm = Number.parseFloat(coalIn) * 25.4;
     // Competition surfaces the advanced environmental + case inputs, plus a
     // charge ladder centred on the entered charge.
     if (isComp) {
@@ -222,6 +228,19 @@ export function LoadLabPanel() {
             max={50}
             suffix="in"
             aria-label="Barrel length in inches"
+          />
+        </div>
+        <div>
+          <label style={fieldLabelStyle}>Cartridge OAL (in)</label>
+          <NumberStepper
+            value={coalIn}
+            onChange={setCoalIn}
+            step={0.01}
+            min={0}
+            max={6}
+            suffix="in"
+            placeholder="auto (max)"
+            aria-label="Cartridge overall length in inches"
           />
         </div>
         {/* Hunter shows zero only; Competition adds the advanced inputs. */}

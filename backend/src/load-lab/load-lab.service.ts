@@ -56,6 +56,9 @@ export interface LoadLabResult {
     boreAreaMm2: number;
     travelMm: number;
     caseVolGrH2O: number;
+    /** Bullet base seating depth below the case mouth (mm) — drives the
+     *  intrusion volume subtracted from case capacity. */
+    seatingDepthMm: number;
     bcG1: number;
   };
   load: {
@@ -226,6 +229,7 @@ export class LoadLabService {
         boreAreaMm2: geom.boreAreaMm2,
         travelMm: round(geom.travelMm, 1),
         caseVolGrH2O: round(geom.caseVolGrH2O, 1),
+        seatingDepthMm: round(geom.seatingDepthMm, 2),
         bcG1: bc,
       },
       load: {

@@ -121,7 +121,7 @@ export function LoadLabResultCard({
         <MetricCard
           label="Case capacity"
           value={`${num(load.caseWaterGrH2O)} gr H₂O`}
-          sub={`eff. volume ${geometry.initialGasVolumeCm3} cm³`}
+          sub={`eff. ${geometry.initialGasVolumeCm3} cm³ · bullet seated ${geometry.seatingDepthMm} mm`}
         />
 
         {/* Competition-only internal-ballistics tiles */}
