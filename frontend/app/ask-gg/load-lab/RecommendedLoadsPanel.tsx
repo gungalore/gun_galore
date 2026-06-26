@@ -15,9 +15,14 @@ import { isUpgradeRequired } from '@/lib/load-lab-types';
 
 function ladderText(r: RecommendedLoadRow): string {
   if (r.incrementGr <= 0 || r.steps <= 1) {
-    return `single published charge ${r.startGr} gr`;
+    return `published charge ${r.maxGr} gr — start ~10% lower and work up`;
   }
-  return `start ${r.startGr} gr · +${r.incrementGr} gr × ${r.steps} steps → ${r.maxGr} gr`;
+  const base = `start ${r.startGr} gr · +${r.incrementGr} gr × ${r.steps} steps → ${r.maxGr} gr`;
+  // Max-only manuals (ADI/Hodgdon/IMR): the start is derived at −10% per the
+  // manual's own instruction, not a published figure.
+  return r.singleCharge
+    ? `${base} · start derived −10% (manual lists max only)`
+    : base;
 }
 
 export function RecommendedLoadsPanel({

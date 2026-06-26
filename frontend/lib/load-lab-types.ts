@@ -174,6 +174,11 @@ export interface RecommendedLoadRow {
   /** Suggested work-up increment (gr) + number of charges start→max. */
   incrementGr: number;
   steps: number;
+  /**
+   * True when the manual publishes a MAXIMUM charge only (ADI/Hodgdon/IMR).
+   * startGr is then a derived −10% ladder start, not a published start.
+   */
+  singleCharge: boolean;
   coalMm: number | null;
   primer: string | null;
   /** "Vihtavuori — Reloading Guide (2023)" */

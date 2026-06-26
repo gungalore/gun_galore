@@ -67,6 +67,12 @@ export interface RecommendedLoadRow {
   maxVelFps: number | null;
   incrementGr: number;
   steps: number;
+  /**
+   * True when the manual publishes a MAXIMUM charge only (ADI / Hodgdon / IMR
+   * style). startGr is then a derived ladder start at −10% per the manuals'
+   * own "start 10% below max and work up" instruction — not a published start.
+   */
+  singleCharge: boolean;
   coalMm: number | null;
   primer: string | null;
   manual: string; // "Vihtavuori — Reloading Guide (2023)"
@@ -155,7 +161,13 @@ export class RecommendedLoadsService {
     const sources = new Set<string>();
     const powders: RecommendedLoadRow[] = [...byPowder.values()]
       .map((r) => {
-        const { incrementGr, steps } = workUpLadder(r.startGr, r.maxGr);
+        const singleCharge = r.startGr >= r.maxGr;
+        // Max-only manuals (ADI / Hodgdon / IMR) instruct "start 10% below the
+        // maximum and work up". When only a max is published, derive a −10%
+        // ladder start so the work-up stays useful AND conservative.
+        const maxGr = round2(r.maxGr);
+        const startGr = singleCharge ? round2(r.maxGr * 0.9) : round2(r.startGr);
+        const { incrementGr, steps } = workUpLadder(startGr, maxGr);
         const manual = r.manualLabel;
         sources.add(manual);
         return {
@@ -164,12 +176,15 @@ export class RecommendedLoadsService {
           bulletWeightGr: r.bulletWeightGr,
           bulletMaker: r.bulletMaker,
           bulletName: r.bulletName,
-          startGr: round2(r.startGr),
-          maxGr: round2(r.maxGr),
-          startVelFps: r.startVelFps,
-          maxVelFps: r.maxVelFps,
+          startGr,
+          maxGr,
+          // For a max-only row the published velocity belongs to the max charge;
+          // we don't know the velocity at the derived start, so leave it null.
+          startVelFps: singleCharge ? null : r.startVelFps,
+          maxVelFps: r.maxVelFps ?? r.startVelFps,
           incrementGr,
           steps,
+          singleCharge,
           coalMm: r.coalMm,
           primer: r.primer,
           manual,
