@@ -10,6 +10,7 @@
 import 'dotenv/config';
 import * as fs from 'fs';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { cartridgeKey } from '../src/load-lab/recommended-loads.service';
 
 interface SeedRow {
@@ -99,7 +100,9 @@ async function main() {
     });
   }
 
-  const prisma = new PrismaClient();
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg(process.env.DATABASE_URL!),
+  });
   // Refresh: clear existing rows for the manuals in this seed, then insert.
   const del = await prisma.manualLoad.deleteMany({
     where: { manualLabel: { in: [...labels] } },
