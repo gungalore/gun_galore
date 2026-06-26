@@ -7,7 +7,7 @@
 // nudge instead of a result. Mounts at the top of the Ask GG messages
 // scroll region.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useLoadLab } from '@/lib/use-load-lab';
 import {
@@ -44,7 +44,10 @@ export function LoadLabPanel() {
   // Numeric inputs are held as strings (NumberStepper is string-controlled).
   const [chargeGr, setChargeGr] = useState('');
   const [barrelIn, setBarrelIn] = useState('24');
-  const [coalIn, setCoalIn] = useState('');
+  // COAL is held in the user-chosen unit; the unit (mm | in) is remembered.
+  // SA reloaders split between metric and imperial, so both are first-class.
+  const [coalVal, setCoalVal] = useState('');
+  const [coalUnit, setCoalUnit] = useState<'mm' | 'in'>('in');
   const [caseVol, setCaseVol] = useState('');
   const [zeroM, setZeroM] = useState('100');
   const [tempC, setTempC] = useState('15');
@@ -54,6 +57,26 @@ export function LoadLabPanel() {
   const [upgrade, setUpgrade] = useState<LoadLabUpgradeRequired | null>(null);
 
   const isComp = mode === 'competition';
+
+  // Restore the remembered COAL unit (client-only to avoid hydration mismatch;
+  // the field starts empty so there's no value to convert on first load).
+  useEffect(() => {
+    const saved = localStorage.getItem('loadlab:coalUnit');
+    if (saved === 'mm' || saved === 'in') setCoalUnit(saved);
+  }, []);
+
+  // Switch COAL unit and convert the current value so the physical length is
+  // preserved (2.80 in ⇄ 71.12 mm), then remember the choice.
+  function switchCoalUnit(next: 'mm' | 'in') {
+    if (next === coalUnit) return;
+    setCoalUnit(next);
+    localStorage.setItem('loadlab:coalUnit', next);
+    const v = Number.parseFloat(coalVal);
+    if (coalVal.trim() !== '' && Number.isFinite(v)) {
+      const mm = coalUnit === 'mm' ? v : v * 25.4;
+      setCoalVal(next === 'mm' ? String(round2(mm)) : String(round3(mm / 25.4)));
+    }
+  }
 
   const canCompute = useMemo(
     () =>
@@ -77,11 +100,15 @@ export function LoadLabPanel() {
       chargeGr: Number.parseFloat(chargeGr),
       barrelLengthIn: Number.parseFloat(barrelIn),
     };
-    // COAL (cartridge overall length, inches → mm) sets the bullet seating
-    // depth, hence how much case volume the bullet base displaces — drives the
-    // effective case volume and the case fill %. Applies in both modes.
-    if (coalIn.trim() !== '')
-      input.coalMm = Number.parseFloat(coalIn) * 25.4;
+    // COAL (cartridge overall length) sets the bullet seating depth, hence how
+    // much case volume the bullet base displaces — drives the effective case
+    // volume and the case fill %. Normalised to mm for the backend regardless
+    // of the unit the user entered. Applies in both modes.
+    if (coalVal.trim() !== '') {
+      const v = Number.parseFloat(coalVal);
+      if (Number.isFinite(v) && v > 0)
+        input.coalMm = coalUnit === 'mm' ? v : v * 25.4;
+    }
     // Competition surfaces the advanced environmental + case inputs, plus a
     // charge ladder centred on the entered charge.
     if (isComp) {
@@ -231,16 +258,31 @@ export function LoadLabPanel() {
           />
         </div>
         <div>
-          <label style={fieldLabelStyle}>Cartridge OAL (in)</label>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 6,
+              marginBottom: 5,
+            }}
+          >
+            <label style={{ ...fieldLabelStyle, marginBottom: 0 }}>
+              Cartridge OAL
+            </label>
+            <UnitToggle unit={coalUnit} onChange={switchCoalUnit} />
+          </div>
           <NumberStepper
-            value={coalIn}
-            onChange={setCoalIn}
-            step={0.01}
+            value={coalVal}
+            onChange={setCoalVal}
+            step={coalUnit === 'mm' ? 0.1 : 0.01}
             min={0}
-            max={6}
-            suffix="in"
+            max={coalUnit === 'mm' ? 150 : 6}
+            suffix={coalUnit}
             placeholder="auto (max)"
-            aria-label="Cartridge overall length in inches"
+            aria-label={`Cartridge overall length in ${
+              coalUnit === 'mm' ? 'millimetres' : 'inches'
+            }`}
           />
         </div>
         {/* Hunter shows zero only; Competition adds the advanced inputs. */}
@@ -356,6 +398,62 @@ export function LoadLabPanel() {
         />
       )}
     </section>
+  );
+}
+
+const round2 = (x: number) => Math.round(x * 100) / 100;
+const round3 = (x: number) => Math.round(x * 1000) / 1000;
+
+// ─── COAL unit toggle (mm | in) — small inline segmented control ─────
+
+function UnitToggle({
+  unit,
+  onChange,
+}: {
+  unit: 'mm' | 'in';
+  onChange: (u: 'mm' | 'in') => void;
+}) {
+  const opts: ('mm' | 'in')[] = ['mm', 'in'];
+  return (
+    <div
+      role="group"
+      aria-label="Cartridge OAL unit"
+      style={{
+        display: 'inline-flex',
+        background: 'var(--bg-inset)',
+        border: '0.5px solid var(--border)',
+        borderRadius: 999,
+        padding: 2,
+        gap: 2,
+      }}
+    >
+      {opts.map((u) => {
+        const active = unit === u;
+        return (
+          <button
+            key={u}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(u)}
+            style={{
+              padding: '2px 9px',
+              borderRadius: 999,
+              border: 'none',
+              background: active ? 'var(--red)' : 'transparent',
+              color: active ? '#fff' : 'var(--text-secondary)',
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: 0.4,
+              cursor: 'pointer',
+              transition: 'background 140ms',
+              fontFamily: 'inherit',
+            }}
+          >
+            {u}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
