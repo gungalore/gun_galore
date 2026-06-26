@@ -9,9 +9,31 @@ import { PrismaService } from '../prisma/prisma.service';
  * and an auto work-up ladder (grain increment + number of steps).
  */
 
-/** Lowercase, strip punctuation/space — mirrors the extractor's key. */
-function cartridgeKey(name: string): string {
-  return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+/**
+ * Canonical cartridge key — used identically by the importer (seed side) and
+ * the query (picker side) so the Load Lab cartridge name (GRT, e.g.
+ * ".308 Win. (7.62x51)") matches the manual's (".308 Winchester").
+ * Strips parentheticals, expands common abbreviations, drops punctuation.
+ */
+const CART_ALIASES: Record<string, string> = {
+  win: 'winchester',
+  rem: 'remington',
+  mag: 'magnum',
+  spr: 'springfield',
+  sprg: 'springfield',
+  spring: 'springfield',
+  spfld: 'springfield',
+  sprfld: 'springfield',
+  wby: 'weatherby',
+  creed: 'creedmoor',
+  nato: '',
+  rcbs: '',
+};
+export function cartridgeKey(name: string): string {
+  let s = (name || '').toLowerCase();
+  s = s.replace(/\([^)]*\)/g, ' '); // drop parenthetical aliases/specs
+  s = s.replace(/[a-z]+/g, (w) => CART_ALIASES[w] ?? w); // expand abbreviations
+  return s.replace(/[^a-z0-9]/g, '');
 }
 
 /**
@@ -93,9 +115,7 @@ export class RecommendedLoadsService {
         coalMm: true,
         primer: true,
         pageNumber: true,
-        manual: {
-          select: { manufacturer: true, title: true, edition: true },
-        },
+        manualLabel: true,
       },
     });
 
@@ -136,9 +156,7 @@ export class RecommendedLoadsService {
     const powders: RecommendedLoadRow[] = [...byPowder.values()]
       .map((r) => {
         const { incrementGr, steps } = workUpLadder(r.startGr, r.maxGr);
-        const manual = `${r.manual.manufacturer} — ${r.manual.title}${
-          r.manual.edition ? ` (${r.manual.edition})` : ''
-        }`;
+        const manual = r.manualLabel;
         sources.add(manual);
         return {
           powderMaker: r.powderMaker,

@@ -2471,14 +2471,18 @@ model ManualLoad {
   caseMaker      String?
   barrelLenIn    Float?
   notes          String?         @db.Text
-  manualId       String
-  manual         ReloadingManual @relation(fields: [manualId], references: [id], onDelete: Cascade)
+  // Display label of the source manual, e.g. "Somchem Reloading Data". Carried
+  // directly so a locally-built seed is self-contained (no server-id lookup).
+  manualLabel    String
+  // Optional link to the ingested manual (for the PDF viewer); nullable so a
+  // seed row works even if the manual isn't separately ingested.
+  manualId       String?
+  manual         ReloadingManual? @relation(fields: [manualId], references: [id], onDelete: SetNull)
   pageNumber     Int
   createdAt      DateTime        @default(now())
 
-  // One row per (manual, page, powder, bullet weight, start) — lets the
-  // extractor upsert idempotently without duplicating on re-runs.
-  @@unique([manualId, pageNumber, powderName, bulletWeightGr, startGr])
+  // One row per (manual, page, powder, bullet weight, start) — idempotent seed.
+  @@unique([manualLabel, pageNumber, powderName, bulletWeightGr, startGr], map: "ManualLoad_dedup_key")
   @@index([cartridgeKey, bulletWeightGr])
   @@index([manualId])
 }

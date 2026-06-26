@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReloadingService } from './reloading.service';
+import { cartridgeKey } from '../load-lab/recommended-loads.service';
 
 /**
  * Load-data extraction — reads the ingested reloading-manual pages and pulls
@@ -36,11 +37,6 @@ interface ExtractedRow {
   maxVelFps: number | null;
   coalMm: number | null;
   primer: string | null;
-}
-
-/** Lowercase, strip punctuation/space — "6.5 Creedmoor" → "65creedmoor". */
-export function cartridgeKey(name: string): string {
-  return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 @Injectable()
@@ -118,11 +114,14 @@ export class LoadDataExtractionService {
         ) {
           continue;
         }
+        const manualLabel = `${hit.manufacturer} — ${hit.title}${
+          hit.edition ? ` (${hit.edition})` : ''
+        }`;
         try {
           await this.prisma.manualLoad.upsert({
             where: {
-              manualId_pageNumber_powderName_bulletWeightGr_startGr: {
-                manualId: hit.manualId,
+              manualLabel_pageNumber_powderName_bulletWeightGr_startGr: {
+                manualLabel,
                 pageNumber: hit.pageNumber,
                 powderName: r.powderName,
                 bulletWeightGr: r.bulletWeightGr,
@@ -143,6 +142,7 @@ export class LoadDataExtractionService {
               maxVelFps: r.maxVelFps,
               coalMm: r.coalMm,
               primer: r.primer,
+              manualLabel,
               manualId: hit.manualId,
               pageNumber: hit.pageNumber,
             },
