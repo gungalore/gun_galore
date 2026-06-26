@@ -57,6 +57,18 @@ export default function ReloadingManualsPage() {
   const [scanning, setScanning] = useState(false);
   const [lastScan, setLastScan] = useState<ScanSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Recommended-loads extraction (populates the ManualLoad table).
+  const [extractInput, setExtractInput] = useState('');
+  const [extracting, setExtracting] = useState(false);
+  const [extractResult, setExtractResult] = useState<{
+    totalRows: number;
+    results: Array<{
+      cartridge: string;
+      pagesProcessed: number;
+      rowsUpserted: number;
+      manuals: string[];
+    }>;
+  } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -97,6 +109,49 @@ export default function ReloadingManualsPage() {
       setError(err instanceof Error ? err.message : 'Network error.');
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function handleExtract() {
+    const cartridges = extractInput
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    if (cartridges.length === 0) {
+      setError('Enter at least one cartridge (comma-separated).');
+      return;
+    }
+    setExtracting(true);
+    setError(null);
+    setExtractResult(null);
+    try {
+      const res = await adminFetch('/admin/reloading/extract-loads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cartridges }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          message?: string;
+        } | null;
+        setError(body?.message ?? `Extract failed (${res.status}).`);
+        return;
+      }
+      setExtractResult(
+        (await res.json()) as {
+          totalRows: number;
+          results: Array<{
+            cartridge: string;
+            pagesProcessed: number;
+            rowsUpserted: number;
+            manuals: string[];
+          }>;
+        },
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error.');
+    } finally {
+      setExtracting(false);
     }
   }
 
@@ -399,6 +454,70 @@ export default function ReloadingManualsPage() {
           </ul>
         </div>
       )}
+
+      {/* Recommended-loads extraction */}
+      <div
+        style={{
+          background: 'var(--bg-card)',
+          border: '0.5px solid var(--border)',
+          borderRadius: 10,
+          padding: 16,
+          marginBottom: 18,
+        }}
+      >
+        <h2
+          className="text-sm font-medium mb-1"
+          style={{ color: 'var(--text-primary)' }}
+        >
+          Recommended loads — extract from manuals
+        </h2>
+        <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+          Pulls published start→max charges per powder into the structured table
+          that powers the Load Lab &ldquo;Recommended loads&rdquo; panel. Enter
+          cartridges (comma-separated, exactly as they should display, e.g.{' '}
+          <code style={codeStyle}>6.5 Creedmoor, .308 Winchester, .223 Remington</code>
+          ). Re-running is safe (idempotent). Reads every active manual + runs
+          Claude per page, so it takes a minute or two per cartridge.
+        </p>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            type="text"
+            value={extractInput}
+            onChange={(e) => setExtractInput(e.target.value)}
+            placeholder="6.5 Creedmoor, .308 Winchester"
+            style={{ ...inlineInput, flex: '1 1 320px', fontSize: 13 }}
+          />
+          <button
+            type="button"
+            onClick={() => void handleExtract()}
+            disabled={extracting}
+            style={{
+              padding: '10px 22px',
+              background: extracting ? 'var(--bg-inset)' : 'var(--red)',
+              color: extracting ? 'var(--text-tertiary)' : '#fff',
+              border: 'none',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: extracting ? 'wait' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {extracting ? 'Extracting…' : 'Extract loads'}
+          </button>
+        </div>
+        {extractResult && (
+          <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-secondary)' }}>
+            <strong>{extractResult.totalRows}</strong> loads extracted.
+            {extractResult.results.map((r) => (
+              <div key={r.cartridge} style={{ color: 'var(--text-tertiary)' }}>
+                {r.cartridge}: {r.rowsUpserted} rows · {r.pagesProcessed} pages ·{' '}
+                {r.manuals.length} manuals
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Manuals list */}
       {loaded && manuals.length === 0 && (
