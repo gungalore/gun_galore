@@ -45,7 +45,7 @@ export function SafetyOverlay({ safety }: { safety: LoadLabResult['safety'] }) {
       >
         {danger
           ? 'Near/over maximum pressure — do not use this charge.'
-          : 'Estimate only — start low, work up, and verify against a published load manual.'}
+          : 'Estimate only — the predicted pressure can read LOW for some powders, so it is not a “safe” verdict. Start low, work up, and verify every charge against a published load manual.'}
       </span>
     </div>
   );

@@ -86,11 +86,11 @@ export function LoadLabResultCard({
           sub={`${num(internal.vMuzzleMps)} m/s · ${fmtMach(machFromFps(internal.vMuzzleFps))}`}
         />
         <MetricCard
-          label="Peak pressure"
-          value={fmtBar(internal.pMaxBar)}
-          sub={`ceiling ${fmtBar(safety.pressureCeilingBar)}`}
+          label="Peak pressure (est.)"
+          value={`≥ ${fmtBar(internal.pMaxBar)}`}
+          sub={`ceiling ${fmtBar(safety.pressureCeilingBar)} · est. may read low ±${safety.estimateUncertaintyPct}%`}
           chip={{
-            text: `${fmtPct(safety.pctOfCeiling)} of max`,
+            text: `${fmtPct(safety.pctOfCeilingConservative)} of max (safety basis)`,
             tone: pressureTone,
           }}
         />

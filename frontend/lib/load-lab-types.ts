@@ -139,7 +139,15 @@ export interface LoadLabResult {
   safety: {
     advisoryOnly: true;
     pressureCeilingBar: number;
+    /** Raw engine peak pressure as a % of ceiling — an ESTIMATE that can read
+     *  low; never the basis for a safety call on its own. */
     pctOfCeiling: number;
+    /** Engine peak inflated by the known under-call margin — what the verdict
+     *  is computed against. */
+    pMaxConservativeBar: number;
+    pctOfCeilingConservative: number;
+    /** Upward pad applied to the estimate for the safety verdict (%). */
+    estimateUncertaintyPct: number;
     overPressure: boolean;
     nearMax: boolean;
   };

@@ -97,7 +97,16 @@ export interface LoadLabResult {
   safety: {
     advisoryOnly: true;
     pressureCeilingBar: number;
+    /** Raw engine peak pressure as a % of the cartridge ceiling. This is an
+     *  ESTIMATE that can read LOW — never use it alone for a safety call. */
     pctOfCeiling: number;
+    /** Engine peak pressure inflated by the known under-call margin — the
+     *  conservative figure every safety verdict is computed against. */
+    pMaxConservativeBar: number;
+    /** Conservative peak pressure as a % of the cartridge ceiling. */
+    pctOfCeilingConservative: number;
+    /** How far the raw estimate is padded upward for the safety verdict (%). */
+    estimateUncertaintyPct: number;
     overPressure: boolean;
     nearMax: boolean;
   };
@@ -204,6 +213,33 @@ export class LoadLabService {
     const ceiling = cart.Pmax || 0;
     const pctOfCeiling = ceiling > 0 ? (ib.pMaxBar / ceiling) * 100 : 0;
 
+    // SAFETY GATE (interim, until the per-powder rebuild lands). The engine is
+    // a single-global GRT approximation that can under-predict GRT peak pressure
+    // — validated worst ~-27% on fast/medium powders outside the calibration
+    // envelope. Reporting that raw number as a safety verdict would give false
+    // headroom, which is the one error that hurts people. So every over/near-max
+    // verdict is computed against a CONSERVATIVELY inflated pressure, and the UI
+    // never shows a green "safe". This pad is removed once the rebuilt engine
+    // passes a hard never-under-predict gate against a broadened GRT oracle.
+    const PRESSURE_UNDERCALL_PAD = 0.3; // ≥ worst observed under-call (~27%)
+    const pMaxConservativeBar = Math.round(ib.pMaxBar * (1 + PRESSURE_UNDERCALL_PAD));
+    const pctOfCeilingConservative =
+      ceiling > 0 ? (pMaxConservativeBar / ceiling) * 100 : 0;
+    const overPressure = pctOfCeilingConservative >= 100;
+    const nearMax = pctOfCeilingConservative >= 90;
+    if (overPressure) {
+      ib.warnings.unshift(
+        `Conservative peak pressure (${pMaxConservativeBar} bar, est. +${Math.round(PRESSURE_UNDERCALL_PAD * 100)}% margin) meets or exceeds the cartridge ceiling (${ceiling} bar). Do NOT use this charge — follow published load data.`,
+      );
+    } else if (nearMax) {
+      ib.warnings.unshift(
+        `Conservative peak pressure (${pMaxConservativeBar} bar) is within 10% of the cartridge ceiling (${ceiling} bar). Treat as a maximum load; verify against a published manual.`,
+      );
+    }
+    ib.warnings.push(
+      'Peak pressure is an ESTIMATE and can read LOW for some powders — treat published max-charge data as authoritative; start low and work up.',
+    );
+
     // Case-fill / load-ratio metrics (GRT-style) — how full the case is with
     // powder by volume. Bulk density pcd (kg/m³) → g/cm³; charge grains → g.
     const chargeG = input.chargeGr * 0.06479891;
@@ -259,8 +295,11 @@ export class LoadLabService {
         advisoryOnly: true,
         pressureCeilingBar: ceiling,
         pctOfCeiling: Math.round(pctOfCeiling),
-        overPressure: pctOfCeiling >= 100,
-        nearMax: pctOfCeiling >= 96,
+        pMaxConservativeBar,
+        pctOfCeilingConservative: Math.round(pctOfCeilingConservative),
+        estimateUncertaintyPct: Math.round(PRESSURE_UNDERCALL_PAD * 100),
+        overPressure,
+        nearMax,
       },
       warnings: ib.warnings,
     };
