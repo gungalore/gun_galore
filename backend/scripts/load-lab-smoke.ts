@@ -31,6 +31,23 @@ const r = lab.compute({
 
 console.log('\n=== geometry (computed, vs GRT eff vol 3.10 / area 34.66 / travel 570) ===');
 console.log(r.geometry);
+console.log('\n=== load (case fill) ===');
+console.log(r.load);
+console.log('\n=== COAL effect on case fill (deeper seating → less volume → higher fill) ===');
+for (const coalIn of [2.95, 2.80, 2.70, 2.60]) {
+  const rc = lab.compute({
+    cartridge: '6.5 Creedmoor',
+    bulletId: b120.id,
+    powderName: 'N540',
+    powderMaker: 'Vihtavuori',
+    chargeGr: 41,
+    barrelLengthIn: 24,
+    coalMm: coalIn * 25.4,
+  });
+  console.log(
+    `  COAL ${coalIn}" -> seated ${rc.geometry.seatingDepthMm}mm, eff ${rc.geometry.initialGasVolumeCm3}cm³, fill ${rc.load.caseFillPct}%`,
+  );
+}
 console.log('\n=== internal (vs GRT: MV 2981 fps, Pmax 4233 bar) ===');
 console.log({
   pMaxBar: r.internal.pMaxBar,
