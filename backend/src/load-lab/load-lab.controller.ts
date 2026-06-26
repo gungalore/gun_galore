@@ -11,6 +11,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { ComponentDataService } from './component-data.service';
 import { LoadLabService, LoadLabInput } from './load-lab.service';
+import { RecommendedLoadsService } from './recommended-loads.service';
 
 /**
  * Load Lab HTTP surface. The interactive panel calls /compute directly (no
@@ -23,6 +24,7 @@ export class LoadLabController {
   constructor(
     private readonly loadLab: LoadLabService,
     private readonly components: ComponentDataService,
+    private readonly recommended: RecommendedLoadsService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -55,6 +57,41 @@ export class LoadLabController {
       };
     }
     return this.loadLab.compute(body);
+  }
+
+  /**
+   * Recommended published loads for a cartridge + bullet weight (±tolerance,
+   * default 5gr), quoted from the manual library. PRO-gated like /compute.
+   * Powers the Load Lab right-hand "Recommended loads" panel.
+   */
+  @Get('recommended-loads')
+  async recommendedLoads(
+    @CurrentUser() clerkId: string,
+    @Query('cartridge') cartridge: string,
+    @Query('bulletWeightGr') bulletWeightGr: string,
+    @Query('toleranceGr') toleranceGr?: string,
+  ) {
+    const tier = await this.tierOf(clerkId);
+    if (tier !== 'PRO') {
+      return {
+        upgradeRequired: true,
+        reason:
+          'Recommended loads are a Gun Galore PRO feature. Upgrade to see published manual loads.',
+      };
+    }
+    const w = parseFloat(bulletWeightGr);
+    if (!cartridge || !(w > 0)) {
+      return {
+        cartridge: cartridge ?? '',
+        bulletWeightGr: Number.isFinite(w) ? w : 0,
+        toleranceGr: 5,
+        notIndexed: true,
+        powders: [],
+        sources: [],
+      };
+    }
+    const tol = toleranceGr ? parseFloat(toleranceGr) : 5;
+    return this.recommended.recommend(cartridge, w, tol);
   }
 
   private async tierOf(clerkId: string): Promise<string> {

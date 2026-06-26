@@ -3,6 +3,7 @@ import { AdminAuditService } from '../admin/admin-audit.service';
 import { JwtModule } from '@nestjs/jwt';
 import { adminJwtSecret } from '../admin/admin-jwt-secret';
 import { ReloadingService } from './reloading.service';
+import { LoadDataExtractionService } from './load-data-extraction.service';
 import { ReloadingAdminController } from './reloading-admin.controller';
 
 /**
@@ -31,7 +32,7 @@ import { ReloadingAdminController } from './reloading-admin.controller';
     }),
   ],
   controllers: [ReloadingAdminController],
-  providers: [ReloadingService, AdminAuditService],
+  providers: [ReloadingService, LoadDataExtractionService, AdminAuditService],
   exports: [ReloadingService],
 })
 export class ReloadingModule {}

@@ -158,8 +158,46 @@ export interface LoadLabResult {
  *  `upgradeRequired` key before touching result fields. */
 export type LoadLabComputeResponse = LoadLabResult | LoadLabUpgradeRequired;
 
+// ─── Recommended loads (published manual data) ──────────────────────
+
+/** One published load quoted from a manual, for the right-hand panel. */
+export interface RecommendedLoadRow {
+  powderMaker: string;
+  powderName: string;
+  bulletWeightGr: number;
+  bulletMaker: string | null;
+  bulletName: string | null;
+  startGr: number;
+  maxGr: number;
+  startVelFps: number | null;
+  maxVelFps: number | null;
+  /** Suggested work-up increment (gr) + number of charges start→max. */
+  incrementGr: number;
+  steps: number;
+  coalMm: number | null;
+  primer: string | null;
+  /** "Vihtavuori — Reloading Guide (2023)" */
+  manual: string;
+  pageNumber: number;
+}
+
+export interface RecommendedLoadsResult {
+  cartridge: string;
+  bulletWeightGr: number;
+  toleranceGr: number;
+  /** True when no manual data has been indexed for this cartridge yet. */
+  notIndexed: boolean;
+  powders: RecommendedLoadRow[];
+  /** Distinct manuals the rows came from. */
+  sources: string[];
+}
+
+export type RecommendedLoadsResponse =
+  | RecommendedLoadsResult
+  | LoadLabUpgradeRequired;
+
 export function isUpgradeRequired(
-  r: LoadLabComputeResponse,
+  r: LoadLabComputeResponse | RecommendedLoadsResponse,
 ): r is LoadLabUpgradeRequired {
   return (r as LoadLabUpgradeRequired).upgradeRequired === true;
 }

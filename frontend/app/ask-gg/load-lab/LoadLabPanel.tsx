@@ -19,10 +19,12 @@ import {
   type LoadLabPowderHit,
   type LoadLabResult,
   type LoadLabUpgradeRequired,
+  type RecommendedLoadsResponse,
 } from '@/lib/load-lab-types';
 import { NumberStepper } from '@/components/number-stepper';
 import { ComponentPicker } from './ComponentPicker';
 import { LoadLabResultCard } from './LoadLabResultCard';
+import { RecommendedLoadsPanel } from './RecommendedLoadsPanel';
 
 const fieldLabelStyle: React.CSSProperties = {
   fontSize: 10,
@@ -35,7 +37,8 @@ const fieldLabelStyle: React.CSSProperties = {
 };
 
 export function LoadLabPanel() {
-  const { mode, setMode, loading, error, compute } = useLoadLab();
+  const { mode, setMode, loading, error, compute, search, recommendedLoads } =
+    useLoadLab();
 
   const [cartridge, setCartridge] = useState<LoadLabCartridgeHit | null>(null);
   const [bullet, setBullet] = useState<LoadLabBulletHit | null>(null);
@@ -56,7 +59,47 @@ export function LoadLabPanel() {
   const [result, setResult] = useState<LoadLabResult | null>(null);
   const [upgrade, setUpgrade] = useState<LoadLabUpgradeRequired | null>(null);
 
+  // Recommended (published) loads for the chosen cartridge + bullet weight.
+  const [recLoads, setRecLoads] = useState<RecommendedLoadsResponse | null>(null);
+  const [recLoading, setRecLoading] = useState(false);
+
   const isComp = mode === 'competition';
+
+  // Fetch published loads whenever the cartridge or bullet changes — the
+  // right-hand panel quotes the manuals for this exact bullet weight (±5gr).
+  useEffect(() => {
+    if (!cartridge || !bullet) {
+      setRecLoads(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    setRecLoading(true);
+    recommendedLoads(cartridge.name, bullet.weightGr, 5, ctrl.signal)
+      .then((r) => {
+        if (!ctrl.signal.aborted) setRecLoads(r);
+      })
+      .finally(() => {
+        if (!ctrl.signal.aborted) setRecLoading(false);
+      });
+    return () => ctrl.abort();
+  }, [cartridge, bullet, recommendedLoads]);
+
+  // Click a recommended powder → load it + its start charge into the form.
+  async function pickRecommendedPowder(
+    powderName: string,
+    powderMaker: string,
+    startGr: number,
+  ) {
+    setChargeGr(String(startGr));
+    const hits = await search('powder', powderName);
+    const hit =
+      hits.find(
+        (h) =>
+          'name' in h &&
+          (h as LoadLabPowderHit).name.toLowerCase() === powderName.toLowerCase(),
+      ) ?? hits[0];
+    if (hit && 'maker' in hit) setPowder(hit as LoadLabPowderHit);
+  }
 
   // Restore the remembered COAL unit (client-only to avoid hydration mismatch;
   // the field starts empty so there's no value to convert on first load).
@@ -140,16 +183,26 @@ export function LoadLabPanel() {
   }
 
   return (
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 12,
+        alignItems: 'flex-start',
+        marginBottom: 12,
+      }}
+    >
     <section
       style={{
         background: 'var(--bg-card)',
         border: '0.5px solid var(--border)',
         borderRadius: 8,
         padding: 16,
-        marginBottom: 12,
         display: 'flex',
         flexDirection: 'column',
         gap: 14,
+        flex: '1 1 460px',
+        minWidth: 0,
       }}
       aria-label="Load Lab"
     >
@@ -398,6 +451,18 @@ export function LoadLabPanel() {
         />
       )}
     </section>
+
+      {/* Right-hand: published manual loads for the chosen cartridge + bullet */}
+      <div style={{ flex: '1 1 300px', minWidth: 0, alignSelf: 'stretch' }}>
+        <RecommendedLoadsPanel
+          result={recLoads}
+          loading={recLoading}
+          cartridgeName={cartridge?.name ?? null}
+          bulletWeightGr={bullet?.weightGr ?? null}
+          onPickPowder={pickRecommendedPowder}
+        />
+      </div>
+    </div>
   );
 }
 

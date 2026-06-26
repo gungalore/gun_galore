@@ -19,6 +19,7 @@ import type {
   LoadLabComputeResponse,
   LoadLabMode,
   LoadLabSearchHit,
+  RecommendedLoadsResponse,
 } from '@/lib/load-lab-types';
 
 // Same base + fallback as useAskGg — keep them in lockstep.
@@ -56,6 +57,15 @@ export interface UseLoadLab {
    *  { upgradeRequired } — narrow with isUpgradeRequired(). Throws on
    *  network / auth failure (caller catches → error state). */
   compute: (input: LoadLabComputeInput) => Promise<LoadLabComputeResponse>;
+  /** Published manual loads for a cartridge + bullet weight (±tolerance).
+   *  Resolves to a RecommendedLoadsResult OR { upgradeRequired }. Returns
+   *  null on network/auth failure so the panel can stay quiet. */
+  recommendedLoads: (
+    cartridge: string,
+    bulletWeightGr: number,
+    toleranceGr?: number,
+    signal?: AbortSignal,
+  ) => Promise<RecommendedLoadsResponse | null>;
 }
 
 export function useLoadLab(): UseLoadLab {
@@ -148,5 +158,38 @@ export function useLoadLab(): UseLoadLab {
     [getToken],
   );
 
-  return { mode, setMode, loading, error, search, compute };
+  const recommendedLoads = useCallback(
+    async (
+      cartridge: string,
+      bulletWeightGr: number,
+      toleranceGr = 5,
+      signal?: AbortSignal,
+    ): Promise<RecommendedLoadsResponse | null> => {
+      try {
+        const token = await getToken();
+        if (!token) return null;
+        const params = new URLSearchParams({
+          cartridge,
+          bulletWeightGr: String(bulletWeightGr),
+          toleranceGr: String(toleranceGr),
+        });
+        const r = await fetch(
+          `${API_URL}/load-lab/recommended-loads?${params.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+            signal,
+          },
+        );
+        if (!r.ok) return null;
+        return (await r.json()) as RecommendedLoadsResponse;
+      } catch (err) {
+        if ((err as Error)?.name === 'AbortError') return null;
+        return null;
+      }
+    },
+    [getToken],
+  );
+
+  return { mode, setMode, loading, error, search, compute, recommendedLoads };
 }

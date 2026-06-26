@@ -4,6 +4,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { UsersModule } from '../users/users.module';
 import { ComponentDataService } from './component-data.service';
 import { LoadLabService } from './load-lab.service';
+import { RecommendedLoadsService } from './recommended-loads.service';
 import { LoadLabController } from './load-lab.controller';
 
 /**
@@ -16,7 +17,7 @@ import { LoadLabController } from './load-lab.controller';
 @Module({
   imports: [BallisticsModule, PrismaModule, UsersModule],
   controllers: [LoadLabController],
-  providers: [ComponentDataService, LoadLabService],
+  providers: [ComponentDataService, LoadLabService, RecommendedLoadsService],
   exports: [LoadLabService, ComponentDataService],
 })
 export class LoadLabModule {}

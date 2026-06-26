@@ -2414,6 +2414,7 @@ model ReloadingManual {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   pages           ReloadingManualPage[]
+  loads           ManualLoad[]
 
   @@index([status, manufacturer])
 }
@@ -2440,6 +2441,46 @@ model ReloadingManualPage {
 
   @@unique([manualId, pageNumber])
   @@index([manualId, pageNumber])
+}
+
+// ─── Recommended Loads — structured load data extracted from manuals ──
+// Pre-extracted PUBLISHED load rows from the reloading manuals, so the Load
+// Lab "Recommended loads" panel can serve authoritative start→max charges per
+// powder by cartridge + bullet weight instantly (no per-request PDF reading).
+// Populated by LoadDataExtractionService (Claude reads the manual load-table
+// pages → structured rows). Manuals are AUTHORITATIVE for charges — every row
+// carries its manual + page so the UI can cite it. Engine output never feeds
+// this table.
+model ManualLoad {
+  id             String          @id @default(cuid())
+  // Display cartridge name as printed, e.g. "6.5 Creedmoor".
+  cartridge      String
+  // Lowercase, punctuation/space-normalised key for matching (e.g. "65creedmoor").
+  cartridgeKey   String
+  powderMaker    String
+  powderName     String
+  bulletMaker    String?
+  bulletName     String?
+  bulletWeightGr Float
+  startGr        Float
+  maxGr          Float
+  startVelFps    Int?
+  maxVelFps      Int?
+  coalMm         Float?
+  primer         String?
+  caseMaker      String?
+  barrelLenIn    Float?
+  notes          String?         @db.Text
+  manualId       String
+  manual         ReloadingManual @relation(fields: [manualId], references: [id], onDelete: Cascade)
+  pageNumber     Int
+  createdAt      DateTime        @default(now())
+
+  // One row per (manual, page, powder, bullet weight, start) — lets the
+  // extractor upsert idempotently without duplicating on re-runs.
+  @@unique([manualId, pageNumber, powderName, bulletWeightGr, startGr])
+  @@index([cartridgeKey, bulletWeightGr])
+  @@index([manualId])
 }
 
 // ─── Hunt Ballistics — RangeEstimate ─────────────────────────────────

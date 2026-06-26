@@ -17,6 +17,7 @@ import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { CurrentAdmin } from '../admin/decorators/current-admin.decorator';
 import { AdminAuditService } from '../admin/admin-audit.service';
 import { ReloadingService } from './reloading.service';
+import { LoadDataExtractionService } from './load-data-extraction.service';
 
 /**
  * Admin-only endpoints for managing the reloading-manual library
@@ -42,8 +43,43 @@ import { ReloadingService } from './reloading.service';
 export class ReloadingAdminController {
   constructor(
     private readonly reloading: ReloadingService,
+    private readonly loadExtract: LoadDataExtractionService,
     private readonly audit: AdminAuditService,
   ) {}
+
+  /**
+   * Extract structured published loads for one or more cartridges from the
+   * ingested manuals into the ManualLoad table (powers the Load Lab
+   * "Recommended loads" panel). Body: { cartridges: string[] }. Idempotent —
+   * re-running re-reads the pages and upserts. Runs Claude per candidate page.
+   */
+  @Post('extract-loads')
+  async extractLoads(
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { cartridges?: string[]; cartridge?: string },
+  ) {
+    const list = (
+      body.cartridges ?? (body.cartridge ? [body.cartridge] : [])
+    )
+      .map((c) => (c || '').trim())
+      .filter(Boolean);
+    if (list.length === 0) {
+      return { ok: false, error: 'Provide cartridges: string[] (or cartridge).' };
+    }
+    const results: Array<Awaited<ReturnType<LoadDataExtractionService['extractForCartridge']>>> = [];
+    for (const cartridge of list) {
+      results.push(await this.loadExtract.extractForCartridge(cartridge));
+    }
+    const totalRows = results.reduce((s, r) => s + r.rowsUpserted, 0);
+    await this.audit.record({
+      adminUserId: admin.sub,
+      action: 'RELOADING_LOADS_EXTRACTED',
+      resourceType: 'ManualLoad',
+      newValue: { cartridges: list, totalRows },
+      reason: `Extracted ${totalRows} published loads across ${list.length} cartridge(s) from the manual library.`,
+    });
+    return { ok: true, results, totalRows };
+  }
 
   /**
    * Scan the inbox and ingest any new PDFs found. Returns a summary
