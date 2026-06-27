@@ -14,6 +14,10 @@ const isPublicRoute = createRouteMatcher([
   '/buy-and-sell(.*)',
   '/welcome(.*)',
   '/sellers(.*)', // public seller profiles
+  '/category(.*)', // public category landing/browse pages
+  '/faq',          // public help/FAQ page
+  '/sitemap.xml',  // SEO — must be crawlable without auth (.xml isn't
+  '/robots.txt',   // excluded by the matcher, so it hits this middleware)
   '/admin(.*)',   // admin uses its own JWT auth, not Clerk
   '/offline',     // PWA offline fallback — must be reachable without auth
                   // because the service worker serves it whenever the
