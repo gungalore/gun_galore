@@ -173,22 +173,6 @@ export function RecommendedLoadsPanel({
                                 manual parsing, so we don't prepend it. */}
                             {r.powderName}
                           </span>
-                          {r.isSomchem && (
-                            <span
-                              title="Somchem — locally made and the most widely available powder in South Africa"
-                              style={{
-                                fontSize: 9.5,
-                                fontWeight: 700,
-                                whiteSpace: 'nowrap',
-                                padding: '1px 6px',
-                                borderRadius: 999,
-                                color: '#fff',
-                                background: 'var(--success, #1a7f37)',
-                              }}
-                            >
-                              Somchem · local
-                            </span>
-                          )}
                           <span
                             title={`Published in ${r.manualCount} of the reloading manuals — a rough popularity signal`}
                             style={{
