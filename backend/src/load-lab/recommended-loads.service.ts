@@ -33,6 +33,7 @@ const CART_ALIASES: Record<string, string> = {
 export function cartridgeKey(name: string): string {
   let s = (name || '').toLowerCase();
   s = s.replace(/\([^)]*\)/g, ' '); // drop parenthetical aliases/specs
+  s = s.replace(/(\d)\s*mm\b/g, '$1'); // "6.5mm"→"6.5", "9.3x62mm"→"9.3x62" (Somchem site uses mm)
   s = s.replace(/[a-z]+/g, (w) => CART_ALIASES[w] ?? w); // expand abbreviations
   return s.replace(/[^a-z0-9]/g, '');
 }
@@ -114,9 +115,9 @@ export function powderKey(name: string): string {
   return s.replace(/[^a-z0-9]/g, '');
 }
 
-/** The Somchem manual's label — Somchem is the locally-made/available powder in
- * South Africa, so its loads are surfaced FIRST regardless of corroboration. */
-const SOMCHEM_LABEL = 'Somchem Reloading Data';
+/* Somchem is the locally-made/available powder in South Africa, so its loads
+ * are surfaced FIRST regardless of corroboration — matched by label substring
+ * (covers both the manual PDF and the somchemreload.com site source). */
 
 export interface RecommendedLoadsResult {
   cartridge: string;
@@ -282,7 +283,7 @@ export class RecommendedLoadsService {
           manual: r.manualLabel,
           pageNumber: r.pageNumber,
           manualCount: manuals.size,
-          isSomchem: manuals.has(SOMCHEM_LABEL),
+          isSomchem: [...manuals].some((m) => /somchem/i.test(m)),
           fillPct,
           fillSource,
           compressed: fillPct != null && fillPct >= 100,

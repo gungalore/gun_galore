@@ -111,10 +111,10 @@ async function main() {
   const prisma = new PrismaClient({
     adapter: new PrismaPg(process.env.DATABASE_URL!),
   });
-  // Refresh: clear existing rows for the manuals in this seed, then insert.
-  const del = await prisma.manualLoad.deleteMany({
-    where: { manualLabel: { in: [...labels] } },
-  });
+  // The seed is the COMPLETE source of truth (all manuals) — clear the whole
+  // table so renamed/removed sources (e.g. the old "Somchem Reloading Data"
+  // PDF, now replaced by the somchemreload.com site rows) don't linger.
+  const del = await prisma.manualLoad.deleteMany({});
   let inserted = 0;
   for (let i = 0; i < data.length; i += 1000) {
     const res = await prisma.manualLoad.createMany({
