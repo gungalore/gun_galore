@@ -15,6 +15,8 @@ interface TransactionDossier {
   transaction: {
     id: string;
     paymentStatus: string;
+    riskScore?: number;
+    riskFlags?: string[];
     shippingStatus: string | null;
     listingPrice: number;
     commissionZar: number;
@@ -252,6 +254,22 @@ export default function TransactionDossierPage() {
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <StatusChip status={t.paymentStatus} />
               {t.shippingStatus && <StatusChip status={t.shippingStatus} />}
+              {typeof t.riskScore === 'number' && t.riskScore > 0 && (
+                <span
+                  title={`Fraud-risk flags: ${(t.riskFlags ?? []).join(', ') || 'none'}`}
+                  className="text-xs px-2 py-0.5 rounded-full"
+                  style={{
+                    background: t.riskScore >= 50 ? 'var(--red)' : '#f59e0b',
+                    color: '#fff',
+                    fontWeight: 600,
+                  }}
+                >
+                  ⚠ Risk {t.riskScore}
+                  {(t.riskFlags ?? []).length > 0
+                    ? ` · ${(t.riskFlags ?? []).map((f) => f.replace(/_/g, ' ')).join(', ')}`
+                    : ''}
+                </span>
+              )}
               {t.listing.referenceNumber && (
                 <code
                   className="text-xs px-2 py-0.5 rounded"

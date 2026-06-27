@@ -800,6 +800,12 @@ model Transaction {
   buyerTotal          Int // what buyer is charged by Peach
   sellerPayout        Int // what seller receives after deductions
 
+  // Fraud-risk signals (Phase 3b). Computed AFTER payment capture
+  // (fire-and-forget in markPaid) — log-only, never blocks payment.
+  // 0–100 score + the triggered flag keys; surfaced to admin for review.
+  riskScore  Int      @default(0)
+  riskFlags  String[] @default([])
+
   // Payment
   paymentStatus   PaymentStatus @default(HELD)
   peachCheckoutId String?

@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { FeeCalculator } from './fee.calculator';
 import { StitchService, StitchPaymentResult } from './stitch.service';
+import { FraudRiskService } from './fraud-risk.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ListingStatus, Province, ShippingMethod } from '@prisma/client';
@@ -85,6 +86,7 @@ export class TransactionsService {
     @Inject(forwardRef(() => ActionTokensService))
     private readonly tokens: ActionTokensService,
     private readonly referenceNumbers: ReferenceNumberService,
+    private readonly fraudRisk: FraudRiskService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -1362,6 +1364,10 @@ export class TransactionsService {
 
     // Fire-and-forget notifications
     void this.sendSaleNotifications(txId);
+
+    // Fire-and-forget fraud-risk scoring — log-only, post-capture, never
+    // blocks payment (its own try/catch swallows everything).
+    void this.fraudRisk.evaluate(txId);
   }
 
   // ------------------------------------------------------------------
