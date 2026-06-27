@@ -293,6 +293,25 @@ export class AdminTransactionsController {
     );
   }
 
+  // Order / financial CSV export (Phase 7 P7.3). Static segment, declared
+  // before the :id routes. Admin-only accounting export over a date range.
+  @Get('export.csv')
+  async exportCsv(
+    @CurrentAdmin() admin: { sub: string },
+    @Res() res: Response,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('status') status?: string,
+  ) {
+    const { csv, filename } = await this.adminService.exportTransactionsCsv(
+      { fromISO: from, toISO: to, status },
+      admin.sub,
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  }
+
   // Dossier — parties, listing, payment + shipping timeline, messages,
   // raw Peach result codes, dealer (if firearm), rating. One round-trip
   // so the admin can resolve a dispute from one screen.

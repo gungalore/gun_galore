@@ -32,6 +32,7 @@ import { ZohoBooksModule } from './zoho/zoho-books.module';
 import { ActionTokensModule } from './actions/action-tokens.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { ReportsModule } from './reports/reports.module';
+import { SupportModule } from './support/support.module';
 import { PushModule } from './push/push.module';
 import { AskGgModule } from './ask-gg/ask-gg.module';
 import { ReloadingModule } from './reloading/reloading.module';
@@ -89,6 +90,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     HuntBallisticsModule,
     ManualPaymentsModule,
     LoadLabModule,
+    SupportModule,
   ],
   controllers: [AppController],
   providers: [

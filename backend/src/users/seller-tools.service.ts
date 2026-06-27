@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { csvCell } from '../common/csv.util';
 
 // Seller self-service tools (Phase 6): payout statement + analytics.
 // Read-only aggregations over the existing schema scoped to the signed-in
@@ -18,13 +19,6 @@ function rand(cents: number): string {
       maximumFractionDigits: 2,
     })
   );
-}
-
-// RFC-4180 field escape: wrap in quotes + double internal quotes when the
-// value contains a comma, quote, or newline.
-function csvCell(v: string | number | null | undefined): string {
-  const s = v == null ? '' : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 function periodDays(period: SellerPeriod): number | null {

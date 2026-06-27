@@ -43,6 +43,7 @@ const GROUPS: NavGroup[] = [
     label: 'Moderation',
     items: [
       { href: '/admin/trust-safety', label: 'Trust & Safety' },
+      { href: '/admin/support', label: 'Support Tickets' },
       { href: '/admin/freshness-graveyard', label: 'Stale Listings' },
     ],
   },

@@ -33,6 +33,37 @@ export default function AdminTransactionsPage() {
 
   const [data, setData] = useState<TxResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // CSV export (Phase 7 P7.3)
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportErr, setExportErr] = useState<string | null>(null);
+
+  async function downloadCsv() {
+    setExporting(true);
+    setExportErr(null);
+    try {
+      const qs = new URLSearchParams();
+      if (from) qs.set('from', from);
+      if (to) qs.set('to', to);
+      const res = await adminFetch(`/admin/transactions/export.csv?${qs.toString()}`);
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.message ?? `Error ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'gungalore-orders.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportErr(e instanceof Error ? e.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     if (!requireAdminToken()) return;
@@ -75,6 +106,49 @@ export default function AdminTransactionsPage() {
             {t.replace(/_/g, ' ')}
           </a>
         ))}
+      </div>
+
+      {/* Order / financial CSV export (Phase 7 P7.3) — date-ranged
+          accounting export. Default last 30 days; max 180. */}
+      <div
+        className="flex items-end gap-2 mb-5 flex-wrap p-3 rounded-lg"
+        style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+      >
+        <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          From
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="block mt-1 px-2 py-1 rounded text-sm"
+            style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
+          />
+        </label>
+        <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          To
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="block mt-1 px-2 py-1 rounded text-sm"
+            style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={downloadCsv}
+          disabled={exporting}
+          className="px-3 py-1.5 rounded text-sm font-medium"
+          style={{ background: 'var(--red)', color: '#fff', opacity: exporting ? 0.6 : 1 }}
+        >
+          {exporting ? 'Exporting…' : 'Export orders CSV'}
+        </button>
+        <span className="text-xs self-center" style={{ color: 'var(--text-tertiary)' }}>
+          Default last 30 days · max 180
+        </span>
+        {exportErr && (
+          <span className="text-xs self-center" style={{ color: 'var(--red)' }}>{exportErr}</span>
+        )}
       </div>
 
       {!loaded ? (

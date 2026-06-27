@@ -15,6 +15,7 @@ import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { StitchService } from '../payments/stitch.service';
 import { ListingReviewDto, ReviewAction } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { toCsv } from '../common/csv.util';
 
 @Injectable()
 export class AdminService {
@@ -918,6 +919,103 @@ export class AdminService {
       this.prisma.transaction.count({ where }),
     ]);
     return { transactions, total, page, limit };
+  }
+
+  // ------------------------------------------------------------------
+  // Order / financial CSV export (Phase 7 P7.3) — admin accounting.
+  // Date-ranged (by createdAt), optional status filter. Admin-only, so it
+  // may include party usernames + emails (the admin already sees these in
+  // the dossier); it does NOT include bank-account numbers, Clerk ids, or
+  // the encrypted SA ID. Range capped at 180 days + 20k rows.
+  // ------------------------------------------------------------------
+  async exportTransactionsCsv(
+    opts: { fromISO?: string; toISO?: string; status?: string },
+    adminId: string,
+  ): Promise<{ csv: string; filename: string }> {
+    const to = opts.toISO ? new Date(opts.toISO) : new Date();
+    const from = opts.fromISO
+      ? new Date(opts.fromISO)
+      : new Date(to.getTime() - 30 * 24 * 3600 * 1000);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new BadRequestException('Invalid from/to date');
+    }
+    if (from.getTime() > to.getTime()) {
+      throw new BadRequestException('"from" must be before "to"');
+    }
+    if (to.getTime() - from.getTime() > 186 * 24 * 3600 * 1000) {
+      throw new BadRequestException('Export range is limited to 180 days');
+    }
+
+    const where: { createdAt: { gte: Date; lte: Date }; paymentStatus?: never } = {
+      createdAt: { gte: from, lte: to },
+    };
+    if (opts.status) {
+      (where as { paymentStatus?: string }).paymentStatus = opts.status;
+    }
+
+    const rows = await this.prisma.transaction.findMany({
+      where: where as never,
+      select: {
+        orderReference: true,
+        createdAt: true,
+        paidAt: true,
+        releasedAt: true,
+        paymentStatus: true,
+        listingPrice: true,
+        commissionZar: true,
+        processingFee: true,
+        shippingCost: true,
+        buyerTotal: true,
+        sellerPayout: true,
+        refundedAmount: true,
+        listing: { select: { title: true } },
+        buyer: { select: { username: true, email: true } },
+        seller: { select: { username: true, email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20_000,
+    });
+
+    const r = (c: number) => (c / 100).toFixed(2);
+    const d = (v: Date | null) => (v ? v.toISOString().slice(0, 10) : '');
+    const header = [
+      'Order ref', 'Created', 'Paid', 'Released', 'Status', 'Item',
+      'Buyer', 'Buyer email', 'Seller', 'Seller email',
+      'Item price', 'Gross (buyer paid)', 'Commission', 'Processing fee',
+      'Shipping', 'Net payout', 'Refunded',
+    ];
+    const body = rows.map((t) => [
+      t.orderReference ?? '',
+      d(t.createdAt),
+      d(t.paidAt),
+      d(t.releasedAt),
+      t.paymentStatus,
+      t.listing?.title ?? '',
+      t.buyer?.username ?? '',
+      t.buyer?.email ?? '',
+      t.seller?.username ?? '',
+      t.seller?.email ?? '',
+      r(t.listingPrice),
+      r(t.buyerTotal),
+      r(t.commissionZar),
+      r(t.processingFee),
+      r(t.shippingCost),
+      r(t.sellerPayout),
+      r(t.refundedAmount),
+    ]);
+
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'TRANSACTIONS_EXPORT',
+      resourceType: 'Transaction',
+      resourceId: 'export',
+      reason: `Exported ${rows.length} orders ${d(from)}..${d(to)}${opts.status ? ` (status ${opts.status})` : ''}`,
+    });
+
+    return {
+      csv: toCsv([header, ...body]),
+      filename: `gungalore-orders-${d(from)}-to-${d(to)}.csv`,
+    };
   }
 
   async releaseTransaction(txId: string, adminId: string) {

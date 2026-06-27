@@ -394,6 +394,9 @@ model User {
   // addr* fields above stays as the fallback default at checkout.
   savedAddresses Address[] @relation("SavedAddresses")
 
+  // ── Support tickets (Phase 7 P7.2) ───────────────────────────────
+  supportTickets SupportTicket[] @relation("UserSupportTickets")
+
   // ── Wishlist back-relation ───────────────────────────────────────
   // Saved listings the user wants to come back to. See WatchedListing.
   // Distinct from AuctionWatch (which is bidding-specific notification
@@ -2711,4 +2714,52 @@ model Address {
 
   @@index([userId])
   @@index([userId, isDefault])
+}
+
+// ── Support tickets (Phase 7 P7.2) ─────────────────────────────────
+// A user-initiated, non-dispute support channel (disputes stay
+// per-transaction in Transaction). Threaded: a ticket has many replies
+// from either the user or an admin. Status drives the admin queue.
+enum SupportTicketStatus {
+  OPEN // user is waiting on us
+  AWAITING_USER // we replied; waiting on the user
+  RESOLVED // closed by admin
+  CLOSED // closed by user
+}
+
+model SupportTicket {
+  id      String              @id @default(cuid())
+  userId  String
+  user    User                @relation("UserSupportTickets", fields: [userId], references: [id], onDelete: Cascade)
+  subject String
+  // Free-string category: general | payment | shipping | account | listing | other
+  category String             @default("general")
+  status   SupportTicketStatus @default(OPEN)
+  // Optional link to an order the ticket is about.
+  transactionId String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  resolvedAt DateTime?
+
+  replies SupportTicketReply[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model SupportTicketReply {
+  id       String        @id @default(cuid())
+  ticketId String
+  ticket   SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  body     String
+  // true = written by an admin; false = written by the ticket's user.
+  fromAdmin Boolean @default(false)
+  // Who wrote it — clerkId for a user reply, AdminUser.id for an admin reply.
+  authorClerkId String?
+  adminId       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId, createdAt])
 }
