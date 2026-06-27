@@ -184,6 +184,8 @@ export interface RecommendedLoadRow {
   /** "Vihtavuori — Reloading Guide (2023)" */
   manual: string;
   pageNumber: number;
+  /** How many distinct manuals publish this powder for this load — popularity. */
+  manualCount: number;
 }
 
 export interface RecommendedLoadsResult {

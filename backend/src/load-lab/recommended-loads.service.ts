@@ -77,6 +77,29 @@ export interface RecommendedLoadRow {
   primer: string | null;
   manual: string; // "Vihtavuori — Reloading Guide (2023)"
   pageNumber: number;
+  /**
+   * Popularity proxy: how many DISTINCT manuals publish this powder for this
+   * cartridge + bullet weight (±tol). A powder multiple independent manuals
+   * chose to list is more widely-used/standard. Drives the default sort.
+   */
+  manualCount: number;
+}
+
+/**
+ * Powder identity key for corroboration counting — merges formatting variants
+ * of the SAME powder across manuals (e.g. "Hodgdon H4350" vs "H4350", "RL-17"
+ * vs "RL 17") WITHOUT merging genuinely different powders. We strip only maker
+ * words that are redundant with the product code (Hodgdon codes are H###/named,
+ * Vihtavuori N###, etc.) and deliberately KEEP "IMR"/"Accurate" because their
+ * codes are bare numbers (IMR 4350 ≠ Accurate 4350 ≠ H4350).
+ */
+const POWDER_REDUNDANT_MAKER =
+  /^(hodgdon|vihtavuori|vv|viht|alliant|winchester|norma|somchem|ramshot|nobelsport|nobel sport|lovex)\s+/;
+export function powderKey(name: string): string {
+  let s = (name || '').toLowerCase().trim();
+  s = s.replace(POWDER_REDUNDANT_MAKER, '');
+  s = s.replace(/^reloder\s*/, 'rl'); // "Reloder 17" → "rl17" (= "RL-17")
+  return s.replace(/[^a-z0-9]/g, '');
 }
 
 export interface RecommendedLoadsResult {
@@ -136,31 +159,42 @@ export class RecommendedLoadsService {
       };
     }
 
-    // One recommended row per powder (maker+name). When a powder has several
-    // rows (different manuals / nearby bullet weights), pick the one whose
-    // bullet weight is CLOSEST to the requested weight; tie-break on the wider
-    // start→max spread (more work-up room).
-    const byPowder = new Map<string, typeof rows[number]>();
+    // Group every band row by powder identity (formatting-normalised, maker-
+    // aware). Per powder: keep a representative row (bullet weight CLOSEST to the
+    // request, tie-break wider work-up spread) for the quoted charge, count the
+    // DISTINCT manuals that publish it (popularity), and prefer a maker-qualified
+    // name for display.
+    type Row = (typeof rows)[number];
+    const groups = new Map<
+      string,
+      { rep: Row; manuals: Set<string>; displayMaker: string }
+    >();
     for (const r of rows) {
-      const pk = `${r.powderMaker}|${r.powderName}`.toLowerCase();
-      const cur = byPowder.get(pk);
-      if (!cur) {
-        byPowder.set(pk, r);
+      const pk = powderKey(r.powderName);
+      const g = groups.get(pk);
+      if (!g) {
+        groups.set(pk, {
+          rep: r,
+          manuals: new Set([r.manualLabel]),
+          displayMaker: r.powderMaker || '',
+        });
         continue;
       }
+      g.manuals.add(r.manualLabel);
+      if (!g.displayMaker && r.powderMaker) g.displayMaker = r.powderMaker;
       const dNew = Math.abs(r.bulletWeightGr - w);
-      const dCur = Math.abs(cur.bulletWeightGr - w);
+      const dCur = Math.abs(g.rep.bulletWeightGr - w);
       if (
         dNew < dCur ||
-        (dNew === dCur && r.maxGr - r.startGr > cur.maxGr - cur.startGr)
+        (dNew === dCur && r.maxGr - r.startGr > g.rep.maxGr - g.rep.startGr)
       ) {
-        byPowder.set(pk, r);
+        g.rep = r;
       }
     }
 
     const sources = new Set<string>();
-    const powders: RecommendedLoadRow[] = [...byPowder.values()]
-      .map((r) => {
+    const powders: RecommendedLoadRow[] = [...groups.values()]
+      .map(({ rep: r, manuals, displayMaker }) => {
         const singleCharge = r.startGr >= r.maxGr;
         // Max-only manuals (ADI / Hodgdon / IMR) instruct "start 10% below the
         // maximum and work up". When only a max is published, derive a −10%
@@ -168,10 +202,9 @@ export class RecommendedLoadsService {
         const maxGr = round2(r.maxGr);
         const startGr = singleCharge ? round2(r.maxGr * 0.9) : round2(r.startGr);
         const { incrementGr, steps } = workUpLadder(startGr, maxGr);
-        const manual = r.manualLabel;
-        sources.add(manual);
+        manuals.forEach((m) => sources.add(m));
         return {
-          powderMaker: r.powderMaker,
+          powderMaker: displayMaker,
           powderName: r.powderName,
           bulletWeightGr: r.bulletWeightGr,
           bulletMaker: r.bulletMaker,
@@ -187,13 +220,15 @@ export class RecommendedLoadsService {
           singleCharge,
           coalMm: r.coalMm,
           primer: r.primer,
-          manual,
+          manual: r.manualLabel,
           pageNumber: r.pageNumber,
+          manualCount: manuals.size,
         };
       })
-      // Fastest (highest max velocity) first, then alphabetical.
+      // Most-published (popularity) first, then fastest, then alphabetical.
       .sort(
         (a, b) =>
+          b.manualCount - a.manualCount ||
           (b.maxVelFps ?? 0) - (a.maxVelFps ?? 0) ||
           a.powderName.localeCompare(b.powderName),
       );

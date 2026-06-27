@@ -74,7 +74,7 @@ export function RecommendedLoadsPanel({
           }}
         >
           {ready
-            ? `${cartridgeName} · ${bulletWeightGr} gr (±5 gr) · published manual data`
+            ? `${cartridgeName} · ${bulletWeightGr} gr (±5 gr) · most-published powders first`
             : 'Pick a cartridge + bullet to see published loads.'}
         </p>
       </div>
@@ -153,13 +153,44 @@ export function RecommendedLoadsPanel({
                       >
                         <span
                           style={{
-                            fontSize: 12.5,
-                            fontWeight: 600,
-                            color: 'var(--text-primary)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            flexWrap: 'wrap',
+                            minWidth: 0,
                           }}
                         >
-                          {r.powderMaker ? `${r.powderMaker} ` : ''}
-                          {r.powderName}
+                          <span
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 600,
+                              color: 'var(--text-primary)',
+                            }}
+                          >
+                            {r.powderMaker ? `${r.powderMaker} ` : ''}
+                            {r.powderName}
+                          </span>
+                          <span
+                            title={`Published in ${r.manualCount} of the reloading manuals — a rough popularity signal`}
+                            style={{
+                              fontSize: 9.5,
+                              fontWeight: 700,
+                              whiteSpace: 'nowrap',
+                              padding: '1px 6px',
+                              borderRadius: 999,
+                              border: '0.5px solid var(--border)',
+                              background:
+                                r.manualCount >= 3
+                                  ? 'var(--text-primary)'
+                                  : 'transparent',
+                              color:
+                                r.manualCount >= 3
+                                  ? 'var(--bg-card)'
+                                  : 'var(--text-tertiary)',
+                            }}
+                          >
+                            {r.manualCount} manual{r.manualCount === 1 ? '' : 's'}
+                          </span>
                         </span>
                         <span
                           style={{
@@ -214,8 +245,10 @@ export function RecommendedLoadsPanel({
                   paddingTop: 8,
                 }}
               >
-                Published manual data — <strong>authoritative for charges</strong>.
-                Always start at the START charge, work up watching for pressure,
+                Ranked by how many manuals publish each powder — a rough
+                popularity signal, <strong>not</strong> a safety ranking.
+                Published manual data is <strong>authoritative for charges</strong>:
+                always start at the START charge, work up watching for pressure,
                 and verify against the cited manual. Your rifle, brass, and primers
                 differ from the test rig.
               </p>
