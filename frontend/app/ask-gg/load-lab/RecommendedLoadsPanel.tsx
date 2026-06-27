@@ -167,7 +167,10 @@ export function RecommendedLoadsPanel({
                               color: 'var(--text-primary)',
                             }}
                           >
-                            {r.powderMaker ? `${r.powderMaker} ` : ''}
+                            {/* Powder name only — it's already brand-qualified
+                                where it matters (IMR 4350, H4350, N550); the
+                                separate maker field is unreliable from bullet-
+                                manual parsing, so we don't prepend it. */}
                             {r.powderName}
                           </span>
                           <span
