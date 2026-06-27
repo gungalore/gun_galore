@@ -176,7 +176,9 @@ export default function AskGgPage() {
   // Load Lab — PRO-gated internal/external ballistics panel. Toggled from
   // the header; renders at the top of the messages-scroll region without
   // touching the chat or composer.
-  const [loadLabOpen, setLoadLabOpen] = useState(false);
+  // Top-level mode: the chat thread vs the Load Lab. Switched with the
+  // prominent segmented toggle below the header (not a tucked-away button).
+  const [mode, setMode] = useState<'chat' | 'loadlab'>('chat');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -420,35 +422,8 @@ export default function AskGgPage() {
             flexWrap: 'wrap',
           }}
         >
-          {/* Load Lab toggle — opens the PRO ballistics panel above the
-              chat. Active state uses the red pill to match the segmented
-              toggle inside the panel. */}
-          {isSignedIn && (
-            <button
-              type="button"
-              onClick={() => setLoadLabOpen((v) => !v)}
-              aria-pressed={loadLabOpen}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '5px 12px',
-                borderRadius: 999,
-                background: loadLabOpen ? 'var(--red)' : 'var(--bg-inset)',
-                border: `0.5px solid ${
-                  loadLabOpen ? 'var(--red)' : 'var(--border)'
-                }`,
-                color: loadLabOpen ? '#fff' : 'var(--text-secondary)',
-                fontSize: 11,
-                fontWeight: 600,
-                lineHeight: 1.3,
-                cursor: 'pointer',
-                transition: 'background 140ms',
-              }}
-            >
-              Load Lab
-            </button>
-          )}
+          {/* Mode is switched via the prominent segmented toggle below
+              the header (see ModeToggle), not a button up here. */}
           <span
             style={{
               display: 'inline-flex',
@@ -473,12 +448,24 @@ export default function AskGgPage() {
         <UpgradeCard />
       ) : (
         <>
+          {/* Prominent segmented toggle — switches the whole view between
+              the AI chat and the Load Lab. */}
+          <ModeToggle mode={mode} onChange={setMode} />
+
+          {mode === 'loadlab' && (
+            <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0 16px' }}>
+              <LoadLabPanel />
+            </div>
+          )}
+
+          {mode === 'chat' && (
+            <>
           {/* Phase E3 — subscriber raffle widget. Sits above the
               messages scroll so subscribers see their auto-entered
               raffle on every visit. FREE users see an upsell card
               here; non-signed-in users see nothing (handled inside
               the widget). */}
-          <div style={{ padding: '12px 0 0' }}>
+          <div style={{ padding: '4px 0 0' }}>
             <SubscriberRaffleWidget />
           </div>
 
@@ -492,13 +479,10 @@ export default function AskGgPage() {
               padding: '16px 0 12px',
             }}
           >
-            {/* Load Lab panel — sits above the messages so it doesn't
-                disturb the composer or chat thread. */}
-            {loadLabOpen && <LoadLabPanel />}
             {ag.messages.length === 0 && !ag.historyLoading && (
               <EmptyState
                 quota={ag.quota}
-                onOpenLoadLab={() => setLoadLabOpen(true)}
+                onOpenLoadLab={() => setMode('loadlab')}
                 onStartChat={startChat}
               />
             )}
@@ -786,6 +770,8 @@ export default function AskGgPage() {
               <IconSend />
             </button>
           </form>
+            </>
+          )}
         </>
       )}
     </main>
@@ -793,6 +779,60 @@ export default function AskGgPage() {
 }
 
 // ─── Subcomponents ──────────────────────────────────────────────────
+
+/** Prominent two-segment toggle switching the whole Ask GG view between
+ *  the AI chat and the Load Lab. Replaces the old tucked-away pill. */
+function ModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: 'chat' | 'loadlab';
+  onChange: (m: 'chat' | 'loadlab') => void;
+}) {
+  const seg = (m: 'chat' | 'loadlab', label: string) => {
+    const active = mode === m;
+    return (
+      <button
+        type="button"
+        role="tab"
+        aria-selected={active}
+        onClick={() => onChange(m)}
+        style={{
+          flex: 1,
+          padding: '11px 12px',
+          borderRadius: 9,
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: 14,
+          fontWeight: 600,
+          background: active ? 'var(--red)' : 'transparent',
+          color: active ? '#fff' : 'var(--text-secondary)',
+          transition: 'background 140ms, color 140ms',
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+  return (
+    <div
+      role="tablist"
+      aria-label="Ask GG mode"
+      style={{
+        display: 'flex',
+        gap: 4,
+        padding: 4,
+        marginTop: 12,
+        background: 'var(--bg-inset)',
+        border: '0.5px solid var(--border)',
+        borderRadius: 12,
+      }}
+    >
+      {seg('chat', 'AI Chat')}
+      {seg('loadlab', 'Load Lab')}
+    </div>
+  );
+}
 
 function MessageBubble({
   message,
