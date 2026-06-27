@@ -48,6 +48,7 @@ export class SearchService implements OnModuleInit {
       'province',
       'sellerId',
       'priceRange',
+      'make',
     ]);
     await listingsIndex.updateSortableAttributes(['price', 'createdAt']);
     await listingsIndex.updateSearchableAttributes([

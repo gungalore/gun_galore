@@ -9,6 +9,7 @@ import { FeaturedRail } from '@/components/featured-rail';
 import { SignedInWelcome } from '@/components/signed-in-welcome';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
+import { Pagination } from '@/components/pagination';
 
 interface SearchParams {
   q?: string;
@@ -16,6 +17,9 @@ interface SearchParams {
   listingType?: string;
   condition?: string;
   province?: string;
+  make?: string;
+  minPrice?: string;
+  maxPrice?: string;
   sort?: string;
   page?: string;
 }
@@ -109,6 +113,9 @@ export default async function HomePage({
   if (params.listingType) qs.set('listingType', params.listingType);
   if (params.condition) qs.set('condition', params.condition);
   if (params.province) qs.set('province', params.province);
+  if (params.make) qs.set('make', params.make);
+  if (params.minPrice) qs.set('minPrice', params.minPrice);
+  if (params.maxPrice) qs.set('maxPrice', params.maxPrice);
   if (params.sort) qs.set('sort', params.sort);
   if (params.page) qs.set('page', params.page);
   qs.set('limit', '24');
@@ -117,7 +124,7 @@ export default async function HomePage({
   // with the FEATURED grid. On every other surface we keep the
   // standard browse. Both queries fire in parallel so the slower
   // doesn't block the other.
-  const [browse, categories, featuredListings] = await Promise.all([
+  const [browse, categories, featuredListings, brands] = await Promise.all([
     apiFetch<BrowseResponse>(`/listings?${qs}`, { cache: 'no-store' }).catch(
       () => ({ listings: [], total: 0, page: 1, limit: 24 }),
     ),
@@ -139,11 +146,13 @@ export default async function HomePage({
             listing: import('@/lib/types').Listing | null;
           }[],
         ),
+    // Brand/make facet values for the FilterBar (most-listed first).
+    apiFetch<string[]>('/listings/brands', {
+      next: { revalidate: 3600 },
+    } as RequestInit).catch(() => [] as string[]),
   ]);
 
   const currentPage = browse.page;
-  const hasNext = currentPage * browse.limit < browse.total;
-  const hasPrev = currentPage > 1;
 
   // Cross-sell context — a SECONDARY "you might also need…" row shown below
   // the results on a real search/filter (never the bare landing page).
@@ -408,7 +417,11 @@ export default async function HomePage({
         </div>
 
         <div data-reveal>
-          <FilterBar categories={categories} currentParams={params} />
+          <FilterBar
+            categories={categories}
+            currentParams={params}
+            brands={brands}
+          />
         </div>
 
         {browse.listings.length === 0 ? (
@@ -485,31 +498,16 @@ export default async function HomePage({
               ))}
             </div>
 
-            {(hasPrev || hasNext) && (
-              <div
-                data-reveal
-                className="flex justify-center gap-2 mt-10"
-              >
-                {hasPrev && (
-                  <a
-                    href={pageHref(currentPage - 1)}
-                    className="px-4 py-2 rounded-[6px] text-sm"
-                    style={{ border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
-                  >
-                    ← Previous
-                  </a>
+            <div data-reveal>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.max(
+                  1,
+                  Math.ceil(browse.total / browse.limit),
                 )}
-                {hasNext && (
-                  <a
-                    href={pageHref(currentPage + 1)}
-                    className="px-4 py-2 rounded-[6px] text-sm"
-                    style={{ border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
-                  >
-                    Next →
-                  </a>
-                )}
-              </div>
-            )}
+                hrefFor={pageHref}
+              />
+            </div>
 
             {showCrossSell && crossSellFromCategoryId && (
               <CrossSellRow

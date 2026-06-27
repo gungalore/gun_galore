@@ -40,9 +40,22 @@ export async function generateMetadata({
     cache: 'no-store',
   }).catch(() => null);
   if (!listing) return { title: 'Listing not found — Gun Galore' };
+  const url = `/listings/${id}`;
+  const title = `${listing.title} — Gun Galore`;
+  const description = listing.description.slice(0, 160);
+  const primary =
+    listing.images?.find((i) => i.isPrimary) ?? listing.images?.[0];
   return {
-    title: `${listing.title} — Gun Galore`,
-    description: listing.description.slice(0, 160),
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title,
+      description,
+      url,
+      type: 'website',
+      images: primary ? [{ url: primary.url }] : undefined,
+    },
   };
 }
 
@@ -66,6 +79,42 @@ export default async function ListingDetailPage({
   const { userId } = await auth();
   const isOwnListing = !!userId && userId === listing.seller.clerkId;
 
+  // Product/Offer structured data so Google can show rich price/availability
+  // results. Only emit an Offer when there's a fixed price (BUY_NOW /
+  // AUCTION); Take-a-Shot has no listed price. `make` is deliberately left
+  // out — it's hidden from buyers on this page by product decision.
+  const siteUrl = (
+    process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gungalore.co.za'
+  ).replace(/\/$/, '');
+  const ldImages = (listing.images ?? []).map((i) => i.url).slice(0, 6);
+  const ldPrice = listing.price ?? listing.buyNowPrice ?? listing.currentBid;
+  const productLd: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: listing.title,
+    description: listing.description.slice(0, 300),
+    ...(ldImages.length ? { image: ldImages } : {}),
+    ...(listing.category?.name ? { category: listing.category.name } : {}),
+    ...(ldPrice != null
+      ? {
+          offers: {
+            '@type': 'Offer',
+            price: (ldPrice / 100).toFixed(2),
+            priceCurrency: 'ZAR',
+            availability:
+              listing.status === 'ACTIVE'
+                ? 'https://schema.org/InStock'
+                : 'https://schema.org/OutOfStock',
+            url: `${siteUrl}/listings/${listing.id}`,
+            itemCondition:
+              listing.condition === 'NEW'
+                ? 'https://schema.org/NewCondition'
+                : 'https://schema.org/UsedCondition',
+          },
+        }
+      : {}),
+  };
+
   // Pre-sort by `order` so the gallery's thumbnail strip + lightbox
   // step in the seller's intended sequence (the API doesn't
   // guarantee order; sort here once).
@@ -76,6 +125,12 @@ export default async function ListingDetailPage({
       className="relative max-w-[1280px] mx-auto px-4 py-6"
       style={{ zIndex: 1 }}
     >
+      {/* Product/Offer structured data for search engines (not visible). */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(productLd) }}
+      />
+
       {/* House standard scenery — marketplace.jpg ties the listing
           detail to the marketplace index visually. opacity:0.18
           matches the marketplace homepage so the product photo stays

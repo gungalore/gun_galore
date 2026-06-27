@@ -53,6 +53,23 @@ export class ListingsController {
     return this.listingsService.crossSell(dto);
   }
 
+  // Brand/make facet values for the storefront filter. MUST stay above
+  // @Get(':id') so 'brands' isn't captured as an id. Public read →
+  // SkipThrottle like browse (SSR fans these out from one IP).
+  @Get('brands')
+  @SkipThrottle()
+  brands() {
+    return this.listingsService.listBrands();
+  }
+
+  // ACTIVE listing ids + lastModified for the XML sitemap. MUST stay above
+  // @Get(':id'). Public read → SkipThrottle.
+  @Get('sitemap')
+  @SkipThrottle()
+  sitemap() {
+    return this.listingsService.sitemapEntries();
+  }
+
   // --- Protected ---
   // IMPORTANT: this route MUST appear before @Get(':id') below. Nest
   // matches routes in declaration order — if @Get(':id') comes first,

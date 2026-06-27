@@ -519,6 +519,39 @@ export class ListingsService {
   }
 
   /**
+   * Distinct brands/makes across ACTIVE listings, most-listed first. Powers
+   * the storefront brand facet (GET /listings/brands). Capped so the dropdown
+   * stays usable; blank/whitespace makes are dropped.
+   */
+  async listBrands(limit = 60): Promise<string[]> {
+    const rows = await this.prisma.listing.groupBy({
+      by: ['make'],
+      where: { status: 'ACTIVE', make: { not: null } },
+      _count: { make: true },
+      orderBy: { _count: { make: 'desc' } },
+      take: limit,
+    });
+    return rows
+      .map((r) => r.make)
+      .filter((m): m is string => !!m && m.trim().length > 0);
+  }
+
+  /**
+   * Lightweight feed for the XML sitemap — every ACTIVE listing's id +
+   * last-modified, newest first, capped so the sitemap stays bounded.
+   */
+  async sitemapEntries(
+    limit = 5000,
+  ): Promise<{ id: string; updatedAt: Date }[]> {
+    return this.prisma.listing.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, updatedAt: true },
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+    });
+  }
+
+  /**
    * Cross-sell engine — "you might also need…". Generic + data-driven via
    * CategoryRelation, so it works for EVERY category (firearms, reloading,
    * optics, fishing, camping, knives + any future category) with no
@@ -732,6 +765,7 @@ export class ListingsService {
       listingType,
       condition,
       province,
+      make,
       minPrice,
       maxPrice,
     } = dto;
@@ -742,6 +776,10 @@ export class ListingsService {
     if (listingType) filterParts.push(`listingType = "${listingType}"`);
     if (condition) filterParts.push(`condition = "${condition}"`);
     if (province) filterParts.push(`province = "${province}"`);
+    // Escape backslash + double-quote so a brand like 6.5" or O'Dell can't
+    // break out of the Meilisearch filter string.
+    if (make)
+      filterParts.push(`make = "${make.replace(/(["\\])/g, '\\$1')}"`);
     if (minPrice !== undefined) filterParts.push(`price >= ${minPrice}`);
     if (maxPrice !== undefined) filterParts.push(`price <= ${maxPrice}`);
 
@@ -814,6 +852,7 @@ export class ListingsService {
       listingType,
       condition,
       province,
+      make,
       minPrice,
       maxPrice,
       sellerClerkId,
@@ -825,6 +864,7 @@ export class ListingsService {
     if (listingType) where.listingType = listingType;
     if (condition) where.condition = condition;
     if (province) where.province = province;
+    if (make) where.make = make;
     if (minPrice !== undefined || maxPrice !== undefined) {
       const priceFilter: Record<string, number> = {};
       if (minPrice !== undefined) priceFilter.gte = minPrice;

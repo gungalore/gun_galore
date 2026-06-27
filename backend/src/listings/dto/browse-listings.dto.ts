@@ -27,6 +27,12 @@ export class BrowseListingsDto {
   @IsEnum(Province)
   province?: Province;
 
+  // Brand / manufacturer facet (e.g. "Glock", "CZ"). Matched exactly against
+  // Listing.make — values come from GET /listings/brands so they line up.
+  @IsOptional()
+  @IsString()
+  make?: string;
+
   // Filter to a single seller's listings (public — used by the
   // seller-profile page to show "this seller's active listings").
   // We accept Clerk's ID here because that's what the public URLs

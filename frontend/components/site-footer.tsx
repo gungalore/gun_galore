@@ -78,6 +78,7 @@ export function SiteFooter() {
             <li><Link href="/?listingType=TAKE_A_SHOT" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Take a Shot</Link></li>
             <li><Link href="/competitions" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Competitions</Link></li>
             <li><Link href="/listings/new" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Sell</Link></li>
+            <li><Link href="/faq" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Help &amp; FAQ</Link></li>
           </ul>
         </div>
 

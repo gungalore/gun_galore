@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Category } from '@/lib/types';
 import { PROVINCE_LABELS, CONDITION_LABELS } from '@/lib/utils';
@@ -11,7 +12,13 @@ interface FilterParams {
   listingType?: string;
   condition?: string;
   province?: string;
+  make?: string;
+  // Price is carried in the URL as ZAR cents (matches the API); the inputs
+  // below display Rands.
+  minPrice?: string;
+  maxPrice?: string;
   sort?: string;
+  page?: string;
 }
 
 const selectStyle: React.CSSProperties = {
@@ -25,22 +32,54 @@ const selectStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+const priceInputStyle: React.CSSProperties = {
+  background: 'var(--bg-inset)',
+  border: '0.5px solid var(--border)',
+  color: 'var(--text-secondary)',
+  borderRadius: '6px',
+  padding: '7px 8px',
+  fontSize: '13px',
+  outline: 'none',
+  width: '92px',
+};
+
 export function FilterBar({
   categories,
   currentParams,
+  brands = [],
 }: {
   categories: Category[];
   currentParams: FilterParams;
+  brands?: string[];
 }) {
   const router = useRouter();
 
+  // Price is held locally (in Rands) so typing doesn't fire a navigation per
+  // keystroke; we apply on blur / Enter. Seed from the URL's cents value.
+  const centsToRand = (c?: string) =>
+    c && Number.isFinite(Number(c)) ? String(Number(c) / 100) : '';
+  const [minR, setMinR] = useState(centsToRand(currentParams.minPrice));
+  const [maxR, setMaxR] = useState(centsToRand(currentParams.maxPrice));
+
   function push(updates: Partial<FilterParams>) {
-    const next = new URLSearchParams();
     const merged = { ...currentParams, ...updates };
+    // Any filter change returns to page 1 — otherwise a narrower result set
+    // can land the user on an empty deep page. (Explicit page changes pass
+    // `page` in updates and are respected.)
+    if (!('page' in updates)) delete merged.page;
+    const next = new URLSearchParams();
     Object.entries(merged).forEach(([k, v]) => {
-      if (v) next.set(k, v);
+      if (v) next.set(k, String(v));
     });
     router.push(`/?${next}`);
+  }
+
+  function applyPrice() {
+    const toCents = (r: string): string | undefined => {
+      const n = parseFloat(r);
+      return Number.isFinite(n) && n >= 0 ? String(Math.round(n * 100)) : undefined;
+    };
+    push({ minPrice: toCents(minR), maxPrice: toCents(maxR) });
   }
 
   return (
@@ -67,6 +106,22 @@ export function FilterBar({
           </option>
         ))}
       </select>
+
+      {brands.length > 0 && (
+        <select
+          aria-label="Filter by brand"
+          value={currentParams.make ?? ''}
+          onChange={(e) => push({ make: e.target.value || undefined })}
+          style={selectStyle}
+        >
+          <option value="">All brands</option>
+          {brands.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
+      )}
 
       <select
         aria-label="Filter by province"
@@ -107,6 +162,41 @@ export function FilterBar({
         <option value="AUCTION">Auction</option>
         <option value="TAKE_A_SHOT">Take a Shot</option>
       </select>
+
+      {/* Price range (Rands). Applies on blur or Enter so we don't navigate
+          on every keystroke. */}
+      <div className="flex items-center gap-1">
+        <span style={{ color: 'var(--text-tertiary)', fontSize: '12px' }}>R</span>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          aria-label="Minimum price (Rands)"
+          placeholder="Min"
+          value={minR}
+          onChange={(e) => setMinR(e.target.value)}
+          onBlur={applyPrice}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') applyPrice();
+          }}
+          style={priceInputStyle}
+        />
+        <span style={{ color: 'var(--text-tertiary)', fontSize: '12px' }}>–</span>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          aria-label="Maximum price (Rands)"
+          placeholder="Max"
+          value={maxR}
+          onChange={(e) => setMaxR(e.target.value)}
+          onBlur={applyPrice}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') applyPrice();
+          }}
+          style={priceInputStyle}
+        />
+      </div>
 
       <select
         aria-label="Sort results"
