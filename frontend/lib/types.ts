@@ -86,6 +86,8 @@ export interface PublicSellerProfile {
   isVerifiedExpert: boolean;
   verifiedExpertAt: string | null;
   expertBadgeReason: string | null;
+  // Identity (KYC) verified — boolean trust tick, no PII.
+  idVerified?: boolean;
 }
 
 export interface Address {

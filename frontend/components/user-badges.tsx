@@ -22,6 +22,8 @@ interface UserBadgesProps {
   subscriptionTier?: SubscriptionTier | null;
   isVerifiedExpert?: boolean;
   expertBadgeReason?: string | null;
+  // Identity-verified (KYC passed). A boolean trust tick — never any PII.
+  idVerified?: boolean;
   // Pinch sizes for tight layouts (browse-card vs profile-header).
   size?: 'sm' | 'md';
 }
@@ -30,11 +32,13 @@ export function UserBadges({
   subscriptionTier,
   isVerifiedExpert,
   expertBadgeReason,
+  idVerified,
   size = 'sm',
 }: UserBadgesProps) {
   const hasGgPlus = subscriptionTier === 'MEMBER' || subscriptionTier === 'PRO';
   const hasExpert = !!isVerifiedExpert;
-  if (!hasGgPlus && !hasExpert) return null;
+  const hasIdVerified = !!idVerified;
+  if (!hasGgPlus && !hasExpert && !hasIdVerified) return null;
 
   const dim = size === 'md'
     ? { px: '6px', py: '1px', fontSize: '11px', gap: '4px' }
@@ -50,8 +54,40 @@ export function UserBadges({
         verticalAlign: 'middle',
       }}
     >
+      {hasIdVerified && <IdVerifiedBadge dim={dim} />}
       {hasGgPlus && <GgPlusPill tier={subscriptionTier!} dim={dim} />}
       {hasExpert && <ExpertBadge dim={dim} reason={expertBadgeReason ?? null} />}
+    </span>
+  );
+}
+
+function IdVerifiedBadge({
+  dim,
+}: {
+  dim: { px: string; py: string; fontSize: string; gap: string };
+}) {
+  // Blue "ID verified" tick — the seller passed Gun Galore's identity
+  // (KYC) check. Blue distinguishes it from the green Expert badge and
+  // the red GG+ pill. Boolean trust signal only; no name or ID shown.
+  return (
+    <span
+      title="Identity verified — this seller passed Gun Galore's KYC identity check"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '2px',
+        padding: `${dim.py} ${dim.px}`,
+        fontSize: dim.fontSize,
+        fontWeight: 600,
+        letterSpacing: '0.02em',
+        borderRadius: '3px',
+        lineHeight: 1.2,
+        color: '#3b82f6',
+        background: 'rgba(59,130,246,0.08)',
+        border: '0.5px solid rgba(59,130,246,0.40)',
+      }}
+    >
+      ✓ ID
     </span>
   );
 }
@@ -143,10 +179,12 @@ export function UserBadgesWithTooltip({
   subscriptionTier,
   isVerifiedExpert,
   expertBadgeReason,
+  idVerified,
 }: UserBadgesProps) {
   const hasGgPlus = subscriptionTier === 'MEMBER' || subscriptionTier === 'PRO';
   const hasExpert = !!isVerifiedExpert;
-  if (!hasGgPlus && !hasExpert) return null;
+  const hasIdVerified = !!idVerified;
+  if (!hasGgPlus && !hasExpert && !hasIdVerified) return null;
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
@@ -154,6 +192,7 @@ export function UserBadgesWithTooltip({
         subscriptionTier={subscriptionTier}
         isVerifiedExpert={isVerifiedExpert}
         expertBadgeReason={expertBadgeReason}
+        idVerified={idVerified}
         size="md"
       />
       {hasExpert && (

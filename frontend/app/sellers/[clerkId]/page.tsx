@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { ListingCard } from '@/components/listing-card';
 import { PageReveal } from '@/components/page-reveal';
 import { UserBadgesWithTooltip } from '@/components/user-badges';
+import { ReportButton } from '@/components/report-button';
+import { auth } from '@clerk/nextjs/server';
 import type { BrowseResponse, PublicSellerProfile } from '@/lib/types';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -31,6 +33,8 @@ export default async function SellerProfilePage({
   params: Promise<{ clerkId: string }>;
 }) {
   const { clerkId } = await params;
+  const { userId } = await auth();
+  const isOwnProfile = !!userId && userId === clerkId;
 
   const [profileRes, ratingsRes, listingsRes] = await Promise.all([
     // Phase E1 — public seller profile with badge fields. 404 here
@@ -85,6 +89,7 @@ export default async function SellerProfilePage({
                 subscriptionTier={profile.subscriptionTier}
                 isVerifiedExpert={profile.isVerifiedExpert}
                 expertBadgeReason={profile.expertBadgeReason}
+                idVerified={profile.idVerified}
               />
             </p>
             {avgRating && (
@@ -105,6 +110,9 @@ export default async function SellerProfilePage({
               })}
             </p>
           </div>
+          {!isOwnProfile && (
+            <ReportButton kind="seller" targetId={clerkId} label="⚑ Report" />
+          )}
         </div>
       </div>
 

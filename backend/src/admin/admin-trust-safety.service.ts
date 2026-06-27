@@ -1,6 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+// AdminAlert.context is a JSON string ({ reason, note, reporterId, ... }).
+// Pull a human reason out of it for the trust-safety queue, falling back
+// gracefully for legacy / malformed rows.
+function parseReason(context: string | null): string {
+  if (!context) return 'unspecified';
+  try {
+    const o = JSON.parse(context) as { reason?: string; note?: string };
+    return o.note?.trim() || o.reason || 'unspecified';
+  } catch {
+    return context.slice(0, 80);
+  }
+}
+
 /**
  * Trust & Safety queue — surfaces evidence of off-platform-coordination
  * attempts and other guardrail trips so an operator can decide whether
@@ -113,6 +126,67 @@ export class AdminTrustSafetyService {
           lastRejectionAt: g._max.createdAt ?? new Date(0),
         };
       });
+  }
+
+  // ── User-initiated reports (Phase 3) ─────────────────────────────
+  // Listing + seller reports land as AdminAlert rows (LISTING_REPORTED /
+  // SELLER_REPORTED). Surface the unresolved ones, joined to the subject.
+  async reportedListings(): Promise<
+    {
+      id: string;
+      reason: string;
+      createdAt: Date;
+      listing: { id: string; title: string } | null;
+    }[]
+  > {
+    const alerts = await this.prisma.adminAlert.findMany({
+      where: { type: 'LISTING_REPORTED', resolved: false },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    const ids = alerts
+      .map((a) => a.referenceId)
+      .filter((x): x is string => !!x);
+    const listings = await this.prisma.listing.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, title: true },
+    });
+    const byId = new Map(listings.map((l) => [l.id, l]));
+    return alerts.map((a) => ({
+      id: a.id,
+      reason: parseReason(a.context),
+      createdAt: a.createdAt,
+      listing: a.referenceId ? (byId.get(a.referenceId) ?? null) : null,
+    }));
+  }
+
+  async reportedSellers(): Promise<
+    {
+      id: string;
+      reason: string;
+      createdAt: Date;
+      seller: { id: string; username: string | null; email: string } | null;
+    }[]
+  > {
+    const alerts = await this.prisma.adminAlert.findMany({
+      where: { type: 'SELLER_REPORTED', resolved: false },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    const ids = alerts
+      .map((a) => a.referenceId)
+      .filter((x): x is string => !!x);
+    const sellers = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, username: true, email: true },
+    });
+    const byId = new Map(sellers.map((s) => [s.id, s]));
+    return alerts.map((a) => ({
+      id: a.id,
+      reason: parseReason(a.context),
+      createdAt: a.createdAt,
+      seller: a.referenceId ? (byId.get(a.referenceId) ?? null) : null,
+    }));
   }
 
   // Reported Q&A — any listing question with reportedCount > 0.

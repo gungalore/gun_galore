@@ -32,6 +32,20 @@ interface ReportedQuestion {
   asker: { username: string | null };
 }
 
+interface ReportedListing {
+  id: string;
+  reason: string;
+  createdAt: string;
+  listing: { id: string; title: string } | null;
+}
+
+interface ReportedSeller {
+  id: string;
+  reason: string;
+  createdAt: string;
+  seller: { id: string; username: string | null; email: string } | null;
+}
+
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-ZA', {
     day: 'numeric',
@@ -62,20 +76,26 @@ export default function TrustSafetyPage() {
   const [rejections, setRejections] = useState<Rejection[] | null>(null);
   const [repeats, setRepeats] = useState<RepeatOffender[] | null>(null);
   const [reports, setReports] = useState<ReportedQuestion[] | null>(null);
+  const [repListings, setRepListings] = useState<ReportedListing[] | null>(null);
+  const [repSellers, setRepSellers] = useState<ReportedSeller[] | null>(null);
 
   useEffect(() => {
     if (!requireAdminToken()) return;
     let cancelled = false;
     (async () => {
-      const [rRes, oRes, qRes] = await Promise.all([
+      const [rRes, oRes, qRes, lRes, sRes] = await Promise.all([
         adminFetch('/admin/trust-safety/rejections'),
         adminFetch('/admin/trust-safety/repeat-offenders'),
         adminFetch('/admin/trust-safety/reported-questions'),
+        adminFetch('/admin/trust-safety/reported-listings'),
+        adminFetch('/admin/trust-safety/reported-sellers'),
       ]);
       if (cancelled) return;
       if (rRes.ok) setRejections(await rRes.json());
       if (oRes.ok) setRepeats(await oRes.json());
       if (qRes.ok) setReports(await qRes.json());
+      if (lRes.ok) setRepListings(await lRes.json());
+      if (sRes.ok) setRepSellers(await sRes.json());
     })();
     return () => {
       cancelled = true;
@@ -154,6 +174,133 @@ export default function TrustSafetyPage() {
                       >
                         Review →
                       </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      {/* ─── Reported listings ────────────────────────────────── */}
+      <Section
+        title={`Reported listings (${repListings?.length ?? 0})`}
+        subtitle="Listings flagged by a user. Review and resolve / remove as needed."
+      >
+        {!repListings || repListings.length === 0 ? (
+          <Empty message="No reported listings right now." />
+        ) : (
+          <div
+            className="rounded-[8px] overflow-hidden"
+            style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+          >
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: '0.5px solid var(--border)' }}>
+                  <Th>Listing</Th>
+                  <Th>Reason</Th>
+                  <Th>When</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {repListings.map((r, i) => (
+                  <tr
+                    key={r.id}
+                    style={
+                      i < repListings.length - 1
+                        ? { borderBottom: '0.5px solid var(--border)' }
+                        : undefined
+                    }
+                  >
+                    <td className="px-4 py-3 text-xs">
+                      {r.listing ? (
+                        <Link
+                          href={`/admin/listings/${r.listing.id}`}
+                          style={{ color: 'var(--text-primary)', textDecoration: 'none' }}
+                        >
+                          {r.listing.title}
+                        </Link>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)' }}>(deleted)</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)', maxWidth: 380 }}>
+                      {r.reason}
+                    </td>
+                    <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      {formatDateTime(r.createdAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      {/* ─── Reported sellers ─────────────────────────────────── */}
+      <Section
+        title={`Reported sellers (${repSellers?.length ?? 0})`}
+        subtitle="Sellers flagged by a user. Review the dossier; ban if warranted."
+      >
+        {!repSellers || repSellers.length === 0 ? (
+          <Empty message="No reported sellers right now." />
+        ) : (
+          <div
+            className="rounded-[8px] overflow-hidden"
+            style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+          >
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: '0.5px solid var(--border)' }}>
+                  <Th>Seller</Th>
+                  <Th>Reason</Th>
+                  <Th>When</Th>
+                  <Th align="right" />
+                </tr>
+              </thead>
+              <tbody>
+                {repSellers.map((r, i) => (
+                  <tr
+                    key={r.id}
+                    style={
+                      i < repSellers.length - 1
+                        ? { borderBottom: '0.5px solid var(--border)' }
+                        : undefined
+                    }
+                  >
+                    <td className="px-4 py-3 text-xs">
+                      {r.seller ? (
+                        <Link
+                          href={`/admin/users/${r.seller.id}`}
+                          style={{ color: 'var(--text-primary)', textDecoration: 'none' }}
+                        >
+                          @{r.seller.username ?? 'anon'}
+                          <span className="block" style={{ color: 'var(--text-tertiary)' }}>
+                            {r.seller.email}
+                          </span>
+                        </Link>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)' }}>(deleted)</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)', maxWidth: 320 }}>
+                      {r.reason}
+                    </td>
+                    <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      {formatDateTime(r.createdAt)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {r.seller && (
+                        <Link
+                          href={`/admin/users/${r.seller.id}`}
+                          className="text-xs"
+                          style={{ color: 'var(--red)', textDecoration: 'underline' }}
+                        >
+                          Review →
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))}

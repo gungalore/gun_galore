@@ -49,9 +49,14 @@ export class SellersPublicController {
         isVerifiedExpert: true,
         verifiedExpertAt: true,
         expertBadgeReason: true,
+        // Identity-verified trust signal. We expose ONLY the boolean
+        // (kycStatus === VERIFIED) as `idVerified` — never the SA ID,
+        // name, or any KYC detail. A yes/no tick, no PII.
+        kycStatus: true,
       },
     });
     if (!user) throw new NotFoundException('Seller not found');
-    return user;
+    const { kycStatus, ...rest } = user;
+    return { ...rest, idVerified: kycStatus === 'VERIFIED' };
   }
 }

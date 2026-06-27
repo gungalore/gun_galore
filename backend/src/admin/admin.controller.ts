@@ -826,6 +826,16 @@ export class AdminTrustSafetyController {
   reportedQuestions() {
     return this.ts.reportedQuestions();
   }
+
+  @Get('reported-listings')
+  reportedListings() {
+    return this.ts.reportedListings();
+  }
+
+  @Get('reported-sellers')
+  reportedSellers() {
+    return this.ts.reportedSellers();
+  }
 }
 
 // ---------------------------------------------------------------

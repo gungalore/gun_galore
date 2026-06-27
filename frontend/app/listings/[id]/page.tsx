@@ -25,6 +25,7 @@ import { HelpText } from '@/components/help-text';
 import { WishlistButton } from '@/components/wishlist-button';
 import { UserBadges } from '@/components/user-badges';
 import { ShareListingButton } from '@/components/share-listing-button';
+import { ReportButton } from '@/components/report-button';
 import { SocialProofPill } from '@/components/social-proof-pill';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
@@ -330,6 +331,13 @@ export default async function ListingDetailPage({
               text={`Check out this listing on Gun Galore: ${listing.title}`}
             />
           </div>
+
+          {/* Report — hidden on your own listing. */}
+          {!isOwnListing && (
+            <div className="mb-3">
+              <ReportButton kind="listing" targetId={listing.id} />
+            </div>
+          )}
 
           {/* Social-proof pill. Self-hides below 3 saves so the
               cold-start case (first day a listing is up, nobody has

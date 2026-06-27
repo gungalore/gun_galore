@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth, useUser, useClerk } from '@clerk/nextjs';
 import Link from 'next/link';
 import type { Address } from '@/lib/types';
 import { PROVINCE_LABELS } from '@/lib/utils';
@@ -52,6 +52,9 @@ const input: React.CSSProperties = {
 
 export default function SettingsPage() {
   const { getToken } = useAuth();
+  const { user, isLoaded: userLoaded } = useUser();
+  const { openUserProfile } = useClerk();
+  const mfaOn = !!user?.twoFactorEnabled;
   const [loading, setLoading] = useState(true);
   const [emailOn, setEmailOn] = useState(true);
   const [smsOn, setSmsOn] = useState(true);
@@ -265,6 +268,56 @@ export default function SettingsPage() {
                 </p>
               </div>
               <Toggle on={smsOn} onClick={() => savePrefs({ smsEnabled: !smsOn })} />
+            </div>
+          </section>
+
+          {/* ─── Security (2FA via Clerk) ─── */}
+          <section style={card} className="p-4 mb-6">
+            <h2
+              className="text-base mb-1"
+              style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+            >
+              Security
+            </h2>
+            <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
+              Two-factor authentication adds a second step at sign-in. Strongly
+              recommended for sellers — your account can hold payout details.
+            </p>
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                  Two-factor authentication
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  {!userLoaded
+                    ? 'Checking…'
+                    : mfaOn
+                      ? '✓ Enabled — your account has 2FA.'
+                      : 'Not enabled.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openUserProfile()}
+                className="text-sm px-3 py-1.5 rounded-[6px] whitespace-nowrap"
+                style={
+                  mfaOn
+                    ? {
+                        background: 'var(--bg-inset)',
+                        color: 'var(--text-secondary)',
+                        border: '0.5px solid var(--border)',
+                        cursor: 'pointer',
+                      }
+                    : {
+                        background: 'var(--red)',
+                        color: '#fff',
+                        border: 'none',
+                        cursor: 'pointer',
+                      }
+                }
+              >
+                {mfaOn ? 'Manage' : 'Enable 2FA'}
+              </button>
             </div>
           </section>
 
