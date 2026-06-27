@@ -135,6 +135,24 @@ export class ComponentDataService {
     );
   }
 
+  // ─── Bulk accessors (for case-fill estimation) ────────────────────
+  /** Every powder with a positive bulk density (pcd, g/cm³). */
+  listPowderDensities(): { name: string; maker: string; pcd: number }[] {
+    return this.data.propellant
+      .filter(
+        (p) =>
+          (p as RawPropellant & { geloescht?: number }).geloescht !== 1 &&
+          p.pcd > 0,
+      )
+      .map((p) => ({ name: p.pname, maker: p.mname, pcd: p.pcd }));
+  }
+  /** Every cartridge with its case water capacity (grains). */
+  listCaseCapacities(): { cipname: string; vGrH2O: number }[] {
+    return this.data.caliber
+      .filter((c) => c.cipname && c.V > 0)
+      .map((c) => ({ cipname: c.cipname, vGrH2O: c.V }));
+  }
+
   // ─── Geometry (cartridge + bullet + barrel → engine inputs) ────────
   computeGeometry(
     cart: RawCartridge,

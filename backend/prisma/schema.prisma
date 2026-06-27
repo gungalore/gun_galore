@@ -2466,6 +2466,10 @@ model ManualLoad {
   maxGr          Float
   startVelFps    Int?
   maxVelFps      Int?
+  // Published case-fill / load-density % at the start and max charge, where the
+  // manual prints it (Somchem, Nosler). Null otherwise (panel estimates it).
+  fillPctStart   Float?
+  fillPctMax     Float?
   coalMm         Float?
   primer         String?
   caseMaker      String?

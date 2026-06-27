@@ -188,6 +188,12 @@ export interface RecommendedLoadRow {
   manualCount: number;
   /** Locally-made/available powder (Somchem) — pinned to the top of the list. */
   isSomchem: boolean;
+  /** Case fill (load density) % at max charge; null if unknown. */
+  fillPct: number | null;
+  /** 'manual' = printed in the manual, 'estimate' = computed from GRT data. */
+  fillSource: 'manual' | 'estimate' | null;
+  /** Fill ≥ 100% — compressed charge. */
+  compressed: boolean;
 }
 
 export interface RecommendedLoadsResult {

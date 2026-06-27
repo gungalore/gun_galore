@@ -7,6 +7,7 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { RecommendedLoadsService } from '../src/load-lab/recommended-loads.service';
+import { ComponentDataService } from '../src/load-lab/component-data.service';
 
 async function main() {
   const cartridge = process.argv[2] ?? '6.5 Creedmoor';
@@ -14,7 +15,10 @@ async function main() {
   const prisma = new PrismaClient({
     adapter: new PrismaPg(process.env.DATABASE_URL!),
   });
-  const svc = new RecommendedLoadsService(prisma as never);
+  const svc = new RecommendedLoadsService(
+    prisma as never,
+    new ComponentDataService(),
+  );
   const res = await svc.recommend(cartridge, weight, 5);
   console.log(
     `\n${cartridge} @ ${weight}gr (±5) — notIndexed=${res.notIndexed}, ${res.powders.length} powders`,
@@ -26,7 +30,8 @@ async function main() {
         : 'vel n/a';
     console.log(
       `  ${p.isSomchem ? 'SA' : '  '}[${String(p.manualCount).padStart(2)} man] ${(p.powderMaker + ' ' + p.powderName).trim().padEnd(20)} ${p.startGr}-${p.maxGr}gr ` +
-        `+${p.incrementGr}x${p.steps} ${vel}${p.singleCharge ? ' [max-only]' : ''} ` +
+        `+${p.incrementGr}x${p.steps} ${vel}${p.singleCharge ? ' [max-only]' : ''}` +
+        `${p.fillPct != null ? ` fill ${p.fillPct}%${p.fillSource === 'estimate' ? '~' : ''}${p.compressed ? 'C' : ''}` : ''} ` +
         `· ${p.bulletWeightGr}gr ${p.bulletName ?? ''} — ${p.manual} p${p.pageNumber}`,
     );
   }

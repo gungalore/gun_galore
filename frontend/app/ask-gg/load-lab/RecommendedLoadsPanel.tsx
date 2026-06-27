@@ -227,6 +227,25 @@ export function RecommendedLoadsPanel({
                       >
                         {ladderText(r)}
                       </div>
+                      {r.fillPct != null && (
+                        <div style={{ fontSize: 11 }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>
+                            case fill {r.fillPct}%
+                            {r.fillSource === 'estimate' ? ' (est.)' : ''}
+                          </span>
+                          {r.compressed && (
+                            <span
+                              style={{
+                                marginLeft: 6,
+                                fontWeight: 700,
+                                color: 'var(--red, #c0392b)',
+                              }}
+                            >
+                              · compressed
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <div
                         style={{
                           fontSize: 10.5,

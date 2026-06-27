@@ -28,6 +28,8 @@ interface SeedRow {
   primer?: string | null;
   manualLabel?: string | null;
   page?: number | null;
+  fillPctStart?: number | null;
+  fillPctMax?: number | null;
 }
 
 const n = (v: unknown): number | null => {
@@ -38,6 +40,9 @@ const s = (v: unknown): string | null => {
   const t = typeof v === 'string' ? v.trim() : '';
   return t.length ? t : null;
 };
+// Case fill is a plausible 1–200% (compressed loads can exceed 100). Drop junk.
+const clampFill = (v: number | null): number | null =>
+  v != null && v >= 1 && v <= 200 ? v : null;
 
 async function main() {
   const path = process.argv[2];
@@ -97,6 +102,9 @@ async function main() {
       primer: s(r.primer),
       manualLabel: label,
       pageNumber: Math.max(0, Math.round(n(r.page) ?? 0)),
+      // Published case-fill %, where the manual prints it (clamp out absurd OCR).
+      fillPctStart: clampFill(n(r.fillPctStart)),
+      fillPctMax: clampFill(n(r.fillPctMax)),
     });
   }
 

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ComponentDataService } from './component-data.service';
 
 /**
  * Recommended Loads — serves PUBLISHED manual loads for the Load Lab right-hand
@@ -85,6 +86,15 @@ export interface RecommendedLoadRow {
   manualCount: number;
   /** Locally-made/available powder (Somchem) — pinned to the top of the list. */
   isSomchem: boolean;
+  /**
+   * Case fill (load density) % at the MAX charge — how full the case is. From
+   * the manual where it prints one ('manual'), otherwise estimated from GRT
+   * powder density + case capacity ('estimate'). null if neither is available.
+   */
+  fillPct: number | null;
+  fillSource: 'manual' | 'estimate' | null;
+  /** Fill ≥ 100% — the charge is compressed. */
+  compressed: boolean;
 }
 
 /**
@@ -121,7 +131,10 @@ export interface RecommendedLoadsResult {
 
 @Injectable()
 export class RecommendedLoadsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly componentData: ComponentDataService,
+  ) {}
 
   async recommend(
     cartridge: string,
@@ -131,6 +144,28 @@ export class RecommendedLoadsService {
     const key = cartridgeKey(cartridge);
     const tol = Math.min(20, Math.max(0, toleranceGr || 5));
     const w = bulletWeightGr;
+
+    // For estimating case fill where a manual doesn't print it: GRT powder
+    // bulk densities (pcd, g/cm³) + this cartridge's case water capacity.
+    // fill% = 100 · charge(gr) / (pcd · caseCapacity(grH2O)) — the grain↔cm³
+    // factor cancels. Reads slightly low vs published (uses full case volume).
+    const pcdByKey = new Map<string, number>();
+    for (const p of this.componentData.listPowderDensities()) {
+      const pk = powderKey(p.name);
+      if (p.pcd > 0 && !pcdByKey.has(pk)) pcdByKey.set(pk, p.pcd);
+    }
+    let caseVolGrH2O: number | undefined;
+    for (const c of this.componentData.listCaseCapacities()) {
+      if (cartridgeKey(c.cipname) === key) {
+        caseVolGrH2O = c.vGrH2O;
+        break;
+      }
+    }
+    const estimateFill = (powderName: string, chargeGr: number): number | null => {
+      const pcd = pcdByKey.get(powderKey(powderName));
+      if (!pcd || !caseVolGrH2O) return null;
+      return (100 * chargeGr) / (pcd * caseVolGrH2O);
+    };
 
     const rows = await this.prisma.manualLoad.findMany({
       where: {
@@ -151,6 +186,8 @@ export class RecommendedLoadsService {
         primer: true,
         pageNumber: true,
         manualLabel: true,
+        fillPctStart: true,
+        fillPctMax: true,
       },
     });
 
@@ -209,6 +246,20 @@ export class RecommendedLoadsService {
         const startGr = singleCharge ? round2(r.maxGr * 0.9) : round2(r.startGr);
         const { incrementGr, steps } = workUpLadder(startGr, maxGr);
         manuals.forEach((m) => sources.add(m));
+        // Case fill at the max charge: published if the manual prints it, else
+        // estimated from GRT powder density + case capacity.
+        let fillPct: number | null = null;
+        let fillSource: 'manual' | 'estimate' | null = null;
+        if (r.fillPctMax != null) {
+          fillPct = round1(r.fillPctMax);
+          fillSource = 'manual';
+        } else {
+          const est = estimateFill(r.powderName, r.maxGr);
+          if (est != null) {
+            fillPct = round1(est);
+            fillSource = 'estimate';
+          }
+        }
         return {
           powderMaker: displayMaker,
           powderName: r.powderName,
@@ -230,6 +281,9 @@ export class RecommendedLoadsService {
           pageNumber: r.pageNumber,
           manualCount: manuals.size,
           isSomchem: manuals.has(SOMCHEM_LABEL),
+          fillPct,
+          fillSource,
+          compressed: fillPct != null && fillPct >= 100,
         };
       })
       // Locally-available Somchem powders FIRST, then most-published (popularity),
@@ -255,4 +309,8 @@ export class RecommendedLoadsService {
 
 function round2(x: number): number {
   return Math.round(x * 100) / 100;
+}
+
+function round1(x: number): number {
+  return Math.round(x * 10) / 10;
 }
