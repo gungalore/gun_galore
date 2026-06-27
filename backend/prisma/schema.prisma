@@ -372,6 +372,19 @@ model User {
   // addition to every email/SMS dispatch. Cascade-deleted with the user.
   notifications Notification[]
 
+  // ── Notification channel preferences ─────────────────────────────
+  // Per-channel mute for email + SMS (default ON = the historical
+  // behaviour). Enforced centrally in NotificationsService.send /
+  // sendSms. The in-app inbox is always written; web-push opt-out is
+  // per-device via PushSubscription.category.
+  notifyEmailEnabled Boolean @default(true)
+  notifySmsEnabled   Boolean @default(true)
+
+  // ── Saved delivery addresses (address book) ──────────────────────
+  // Multiple reusable addresses. The legacy single address on the
+  // addr* fields above stays as the fallback default at checkout.
+  savedAddresses Address[] @relation("SavedAddresses")
+
   // ── Wishlist back-relation ───────────────────────────────────────
   // Saved listings the user wants to come back to. See WatchedListing.
   // Distinct from AuctionWatch (which is bidding-specific notification
@@ -2625,4 +2638,34 @@ model RangeEstimate {
 
   @@index([deviceId, createdAt])
   @@index([biomeId, createdAt])
+}
+
+// ─── Address book (Phase 2) ──────────────────────────────────────────
+// Multiple reusable delivery addresses per user. The legacy single
+// address on User.addr* stays as the fallback default at checkout, so
+// this is purely additive. Transaction.deliveryAddress remains an
+// immutable JSON snapshot taken at checkout — it is NEVER an FK to this
+// table, so deleting a saved address can't corrupt order history.
+model Address {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation("SavedAddresses", fields: [userId], references: [id], onDelete: Cascade)
+
+  label      String? // "Home", "Work", etc. — user-defined, optional
+  building   String?
+  street     String
+  address2   String?
+  suburb     String?
+  city       String
+  postalCode String
+  province   Province
+  lat        Float?
+  lng        Float?
+  isDefault  Boolean   @default(false)
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([userId, isDefault])
 }

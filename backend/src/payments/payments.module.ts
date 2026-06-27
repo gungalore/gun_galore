@@ -4,6 +4,7 @@ import { StitchService } from './stitch.service';
 import { TransactionsService } from './transactions.service';
 import { DispatchSlaService } from './dispatch-sla.service';
 import { DealerVerificationService } from './dealer-verification.service';
+import { ReceiptService } from './receipt.service';
 import { TransactionsController, PaymentsWebhookController } from './transactions.controller';
 import { KycModule } from '../kyc/kyc.module';
 import { ShippingModule } from '../shipping/shipping.module';
@@ -23,6 +24,7 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
     TransactionsService,
     DispatchSlaService,
     DealerVerificationService,
+    ReceiptService,
   ],
   controllers: [TransactionsController, PaymentsWebhookController],
   // StitchService exported so admin / raffles / featured can issue

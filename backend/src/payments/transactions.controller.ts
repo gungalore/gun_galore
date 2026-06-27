@@ -22,6 +22,10 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { TransactionsService } from './transactions.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { DealerVerificationService } from './dealer-verification.service';
+import { ReceiptService } from './receipt.service';
+import { StreamableFile } from '@nestjs/common';
+import type { Response } from 'express';
+import { Res } from '@nestjs/common';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { BANDS, MIN_COMMISSION_CENTS } from './fee.calculator';
 
@@ -33,6 +37,7 @@ export class TransactionsController {
     private readonly txService: TransactionsService,
     private readonly tracking: TrackingService,
     private readonly dealerVerification: DealerVerificationService,
+    private readonly receipts: ReceiptService,
   ) {}
 
   // Public — exposes the platform fee schedule for the Sell form
@@ -131,6 +136,29 @@ export class TransactionsController {
   @UseGuards(ClerkGuard)
   findOne(@Param('id') id: string, @CurrentUser() clerkId: string) {
     return this.txService.findById(id, clerkId);
+  }
+
+  // ---------------------------------------------------------------
+  // Buyer downloads their purchase receipt (PDF). Buyer-only, paid
+  // orders only — both enforced in ReceiptService.
+  // ---------------------------------------------------------------
+  @Get(':id/receipt')
+  @UseGuards(ClerkGuard)
+  async receipt(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { pdf, filename } = await this.receipts.generateReceiptPdf(
+      id,
+      clerkId,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Length': String(pdf.length),
+    });
+    return new StreamableFile(Buffer.from(pdf));
   }
 
   // ---------------------------------------------------------------

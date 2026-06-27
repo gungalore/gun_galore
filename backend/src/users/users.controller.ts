@@ -3,6 +3,8 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
+  Param,
   Body,
   Req,
   UseGuards,
@@ -85,6 +87,12 @@ export class UsersController {
         addrProvince: true,
         addrLat: true,
         addrLng: true,
+        // Saved address book + notification channel preferences (Phase 2).
+        savedAddresses: {
+          orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+        },
+        notifyEmailEnabled: true,
+        notifySmsEnabled: true,
         // Post-publish profile-completion modal state. The frontend
         // checks profileCompletedAt to decide whether to show the
         // modal on first listing publish; bankVerifiedAt + bankName
@@ -253,6 +261,51 @@ export class UsersController {
       }
     }
     return this.users.updateProfile(clerkId, safe);
+  }
+
+  // ─────────────────── Address book (Phase 2) ────────────────────────
+  // Multiple saved delivery addresses. Clerk-only (managing the book
+  // needs a real account; the SMS-token checkout flow still works via
+  // the inline address override on the checkout form).
+  @Get('me/addresses')
+  @UseGuards(ClerkGuard)
+  listAddresses(@CurrentUser() clerkId: string) {
+    return this.users.listAddresses(clerkId);
+  }
+
+  @Post('me/addresses')
+  @UseGuards(ClerkGuard)
+  createAddress(
+    @CurrentUser() clerkId: string,
+    @Body() body: import('./users.service').AddressInput,
+  ) {
+    return this.users.createAddress(clerkId, body);
+  }
+
+  @Patch('me/addresses/:id')
+  @UseGuards(ClerkGuard)
+  updateAddress(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body() body: Partial<import('./users.service').AddressInput>,
+  ) {
+    return this.users.updateAddress(clerkId, id, body);
+  }
+
+  @Delete('me/addresses/:id')
+  @UseGuards(ClerkGuard)
+  deleteAddress(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.users.deleteAddress(clerkId, id);
+  }
+
+  // ─────────────────── Notification preferences (Phase 2) ────────────
+  @Patch('me/notification-prefs')
+  @UseGuards(ClerkGuard)
+  updateNotificationPrefs(
+    @CurrentUser() clerkId: string,
+    @Body() body: { emailEnabled?: boolean; smsEnabled?: boolean },
+  ) {
+    return this.users.updateNotificationPrefs(clerkId, body);
   }
 
   // Submitted by the post-first-publish ProfileCompletionModal. ALL

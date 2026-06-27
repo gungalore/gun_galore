@@ -6,10 +6,25 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SmsService } from '../sms/sms.service';
-import { User, Province } from '@prisma/client';
+import { User, Province, NotificationCategory } from '@prisma/client';
 import { createHash, randomInt } from 'crypto';
 import { createClerkClient } from '@clerk/backend';
 import { encryptSaIdNumber, hashSaIdNumber } from '../common/id-crypto';
+
+// Address-book create/update payload (Phase 2).
+export interface AddressInput {
+  label?: string | null;
+  building?: string | null;
+  street: string;
+  address2?: string | null;
+  suburb?: string | null;
+  city: string;
+  postalCode: string;
+  province: Province;
+  lat?: number | null;
+  lng?: number | null;
+  isDefault?: boolean;
+}
 
 // Submitted by the ProfileCompletionModal post-first-publish. Hard
 // wall — the seller can't skip it before the modal closes. Backend
@@ -560,5 +575,151 @@ export class UsersService {
       },
     });
     return { verified: true };
+  }
+
+  // ─────────────────── Address book (Phase 2) ────────────────────────
+  private async userIdFor(clerkId: string): Promise<string> {
+    const u = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+    if (!u) throw new NotFoundException('User not found');
+    return u.id;
+  }
+
+  async listAddresses(clerkId: string) {
+    const userId = await this.userIdFor(clerkId);
+    return this.prisma.address.findMany({
+      where: { userId },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  async createAddress(clerkId: string, input: AddressInput) {
+    const userId = await this.userIdFor(clerkId);
+    this.assertAddress(input);
+    const count = await this.prisma.address.count({ where: { userId } });
+    // First saved address is the default; otherwise honour the flag.
+    const makeDefault = count === 0 ? true : !!input.isDefault;
+    return this.prisma.$transaction(async (tx) => {
+      if (makeDefault) {
+        await tx.address.updateMany({
+          where: { userId, isDefault: true },
+          data: { isDefault: false },
+        });
+      }
+      return tx.address.create({
+        data: {
+          ...(this.cleanAddress(input) as object),
+          street: input.street.trim(),
+          city: input.city.trim(),
+          postalCode: input.postalCode.trim(),
+          province: input.province,
+          userId,
+          isDefault: makeDefault,
+        },
+      });
+    });
+  }
+
+  async updateAddress(
+    clerkId: string,
+    id: string,
+    input: Partial<AddressInput>,
+  ) {
+    const userId = await this.userIdFor(clerkId);
+    const existing = await this.prisma.address.findFirst({
+      where: { id, userId },
+    });
+    if (!existing) throw new NotFoundException('Address not found');
+    const data = this.cleanAddress(input);
+    return this.prisma.$transaction(async (tx) => {
+      if (input.isDefault === true) {
+        await tx.address.updateMany({
+          where: { userId, isDefault: true },
+          data: { isDefault: false },
+        });
+        data.isDefault = true;
+      }
+      return tx.address.update({ where: { id }, data });
+    });
+  }
+
+  async deleteAddress(clerkId: string, id: string) {
+    const userId = await this.userIdFor(clerkId);
+    const existing = await this.prisma.address.findFirst({
+      where: { id, userId },
+    });
+    if (!existing) throw new NotFoundException('Address not found');
+    await this.prisma.address.delete({ where: { id } });
+    // If the default was removed, promote the most recent remaining address.
+    if (existing.isDefault) {
+      const next = await this.prisma.address.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (next) {
+        await this.prisma.address.update({
+          where: { id: next.id },
+          data: { isDefault: true },
+        });
+      }
+    }
+    return { deleted: true };
+  }
+
+  private assertAddress(input: AddressInput) {
+    if (!input.street?.trim())
+      throw new BadRequestException('Street address is required');
+    if (!input.city?.trim())
+      throw new BadRequestException('City is required');
+    if (!input.postalCode?.trim())
+      throw new BadRequestException('Postal code is required');
+    if (!input.province)
+      throw new BadRequestException('Province is required');
+  }
+
+  // Normalise the optional/string fields; leaves required fields to the
+  // caller (create supplies them explicitly).
+  private cleanAddress(input: Partial<AddressInput>): Record<string, unknown> {
+    const data: Record<string, unknown> = {};
+    const strFields: (keyof AddressInput)[] = [
+      'label',
+      'building',
+      'street',
+      'address2',
+      'suburb',
+      'city',
+      'postalCode',
+    ];
+    for (const f of strFields) {
+      if (f in input) {
+        const v = input[f] as string | null | undefined;
+        data[f] = v != null && v.toString().trim() ? v.toString().trim() : null;
+      }
+    }
+    if ('province' in input && input.province) data.province = input.province;
+    if ('lat' in input) data.lat = input.lat ?? null;
+    if ('lng' in input) data.lng = input.lng ?? null;
+    return data;
+  }
+
+  // ─────────────────── Notification preferences (Phase 2) ────────────
+  // Per-channel mute. The in-app inbox is always on; web-push is managed
+  // per-device. Only email + SMS are user-mutable here.
+  async updateNotificationPrefs(
+    clerkId: string,
+    prefs: { emailEnabled?: boolean; smsEnabled?: boolean },
+  ) {
+    const data: { notifyEmailEnabled?: boolean; notifySmsEnabled?: boolean } = {};
+    if (typeof prefs.emailEnabled === 'boolean')
+      data.notifyEmailEnabled = prefs.emailEnabled;
+    if (typeof prefs.smsEnabled === 'boolean')
+      data.notifySmsEnabled = prefs.smsEnabled;
+    return this.prisma.user.update({
+      where: { clerkId },
+      data,
+      select: { notifyEmailEnabled: true, notifySmsEnabled: true },
+    });
   }
 }

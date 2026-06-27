@@ -88,6 +88,21 @@ export interface PublicSellerProfile {
   expertBadgeReason: string | null;
 }
 
+export interface Address {
+  id: string;
+  label: string | null;
+  building: string | null;
+  street: string;
+  address2: string | null;
+  suburb: string | null;
+  city: string;
+  postalCode: string;
+  province: Province;
+  lat: number | null;
+  lng: number | null;
+  isDefault: boolean;
+}
+
 export interface Me {
   id: string;
   email: string;
@@ -123,6 +138,12 @@ export interface Me {
   addrProvince: Province | null;
   addrLat: number | null;
   addrLng: number | null;
+  // Address book (Phase 2) — multiple saved delivery addresses. The
+  // legacy single address above stays as the fallback default.
+  savedAddresses?: Address[];
+  // Per-channel notification mute (Phase 2). Default true.
+  notifyEmailEnabled?: boolean;
+  notifySmsEnabled?: boolean;
   // Set by POST /users/me/profile-complete (the post-publish modal).
   // Null = the seller still owes us the profile-completion step;
   // payout flow is gated on this being non-null.

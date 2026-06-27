@@ -2522,6 +2522,10 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   private async send(to: string, subject: string, html: string) {
     if (!this.resend) return;
+    if (await this.emailMuted(to)) {
+      this.logger.debug(`Email muted by preference → ${to} "${subject}"`);
+      return;
+    }
     try {
       await this.resend.emails.send({ from: FROM, to, subject, html });
       this.logger.debug(`Email sent → ${to} "${subject}"`);
@@ -2543,12 +2547,46 @@ export class NotificationsService {
     reference: string,
   ) {
     if (!to || to.trim().length === 0) return;
+    if (await this.smsMuted(to)) {
+      this.logger.debug(`SMS muted by preference → ${to} (${reference})`);
+      return;
+    }
     try {
       await this.sms.sendSms({ to: to.trim(), message, reference });
     } catch (err) {
       this.logger.warn(
         `SMS failed → ${to} (${reference}): ${(err as Error).message}`,
       );
+    }
+  }
+
+  // ─────────────────── Notification preference gate ──────────────────
+  // A registered user can mute email or SMS entirely. NotificationsService
+  // is the single chokepoint for both channels, so the check lives here.
+  // Resolves the recipient by address and fails OPEN — a lookup error must
+  // never silently swallow a notification. Anonymous recipients (no
+  // matching user, e.g. a checkout email before sign-up) are always sent.
+  private async emailMuted(to: string): Promise<boolean> {
+    try {
+      const u = await this.prisma.user.findUnique({
+        where: { email: to.trim() },
+        select: { notifyEmailEnabled: true },
+      });
+      return u ? u.notifyEmailEnabled === false : false;
+    } catch {
+      return false;
+    }
+  }
+
+  private async smsMuted(to: string): Promise<boolean> {
+    try {
+      const u = await this.prisma.user.findFirst({
+        where: { phone: to.trim() },
+        select: { notifySmsEnabled: true },
+      });
+      return u ? u.notifySmsEnabled === false : false;
+    } catch {
+      return false;
     }
   }
 }

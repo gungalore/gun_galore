@@ -539,7 +539,7 @@ export default async function ProfilePage() {
                 { href: '/my/offers', label: 'Offers' },
                 { href: '/my/bids', label: 'Bids' },
                 { href: '/wishlist', label: 'Wishlist' },
-                { href: '/messages', label: 'Messages' },
+                { href: '/settings', label: 'Settings' },
               ].map(({ href, label }) => (
                 <li key={href}>
                   <Link

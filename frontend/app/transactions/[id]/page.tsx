@@ -6,6 +6,7 @@ import { Transaction, PaymentStatus, ShippingStatus } from '@/lib/types';
 import { formatPrice, PROVINCE_LABELS } from '@/lib/utils';
 import { DispatchButton } from './dispatch-button';
 import { ConfirmDeliveryButton } from './confirm-delivery-button';
+import { DownloadReceiptButton } from './download-receipt-button';
 import { RaiseDisputeButton } from './raise-dispute-button';
 import { RatingWidget } from './rating-widget';
 import { TrackingTimeline } from './tracking-timeline';
@@ -428,6 +429,22 @@ export default async function TransactionPage({
                   ? "Your payment is held while we investigate. We'll contact you within 48 hours with next steps. Please don't confirm delivery until the dispute is resolved."
                   : 'The buyer has raised a dispute. Payment is paused while admin reviews. You will be contacted with the outcome.'}
               </p>
+            </div>
+          )}
+
+          {/* Buyer: download purchase receipt — available once paid. */}
+          {isBuyer && !!tx.paidAt && (
+            <div
+              className="rounded-[8px] p-4"
+              style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+            >
+              <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                Receipt
+              </p>
+              <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                Your proof of purchase. (Not a tax invoice.)
+              </p>
+              <DownloadReceiptButton transactionId={tx.id} />
             </div>
           )}
 
