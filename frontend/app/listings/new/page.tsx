@@ -423,6 +423,15 @@ export default function NewListingPage() {
         const me = (await res.json()) as Me;
         if (cancelled) return;
         setCurrentMe(me);
+        // Phase 6 P6.3 — pre-fill parcel dims from the seller's saved
+        // defaults, but only fields the seller (or a restored draft) hasn't
+        // already filled, so we never clobber their input.
+        setParcel((p) => ({
+          weightKg: p.weightKg || (me.defaultWeightGrams ? String(me.defaultWeightGrams / 1000) : ''),
+          lengthCm: p.lengthCm || (me.defaultLengthCm ? String(me.defaultLengthCm) : ''),
+          widthCm: p.widthCm || (me.defaultWidthCm ? String(me.defaultWidthCm) : ''),
+          heightCm: p.heightCm || (me.defaultHeightCm ? String(me.defaultHeightCm) : ''),
+        }));
         if (prefilledRef.current) return;
         if (!me.addrStreet || me.addrLat == null || me.addrLng == null) {
           // No saved address yet — leave the form blank, seller fills

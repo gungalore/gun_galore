@@ -93,6 +93,11 @@ export class UsersController {
         },
         notifyEmailEnabled: true,
         notifySmsEnabled: true,
+        // Seller default parcel size (Phase 6 P6.3) — pre-fills the sell form.
+        defaultWeightGrams: true,
+        defaultLengthCm: true,
+        defaultWidthCm: true,
+        defaultHeightCm: true,
         // Post-publish profile-completion modal state. The frontend
         // checks profileCompletedAt to decide whether to show the
         // modal on first listing publish; bankVerifiedAt + bankName
@@ -306,6 +311,22 @@ export class UsersController {
     @Body() body: { emailEnabled?: boolean; smsEnabled?: boolean },
   ) {
     return this.users.updateNotificationPrefs(clerkId, body);
+  }
+
+  // ─────────────────── Seller shipping defaults (Phase 6 P6.3) ────────
+  @Patch('me/shipping-defaults')
+  @UseGuards(ClerkGuard)
+  updateShippingDefaults(
+    @CurrentUser() clerkId: string,
+    @Body()
+    body: {
+      weightGrams?: number | null;
+      lengthCm?: number | null;
+      widthCm?: number | null;
+      heightCm?: number | null;
+    },
+  ) {
+    return this.users.updateShippingDefaults(clerkId, body);
   }
 
   // Submitted by the post-first-publish ProfileCompletionModal. ALL

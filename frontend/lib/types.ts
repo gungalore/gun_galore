@@ -146,6 +146,11 @@ export interface Me {
   // Per-channel notification mute (Phase 2). Default true.
   notifyEmailEnabled?: boolean;
   notifySmsEnabled?: boolean;
+  // Seller default parcel size (Phase 6 P6.3) — pre-fills the sell form.
+  defaultWeightGrams?: number | null;
+  defaultLengthCm?: number | null;
+  defaultWidthCm?: number | null;
+  defaultHeightCm?: number | null;
   // Set by POST /users/me/profile-complete (the post-publish modal).
   // Null = the seller still owes us the profile-completion step;
   // payout flow is gated on this being non-null.

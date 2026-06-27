@@ -536,6 +536,7 @@ export default async function ProfilePage() {
                 { href: '/my/listings', label: 'My listings' },
                 { href: '/my/orders', label: 'Orders' },
                 { href: '/my/sales', label: 'Sales' },
+                { href: '/my/earnings', label: 'Earnings & insights' },
                 { href: '/my/offers', label: 'Offers' },
                 { href: '/my/bids', label: 'Bids' },
                 { href: '/wishlist', label: 'Wishlist' },

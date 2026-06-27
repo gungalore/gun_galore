@@ -3,6 +3,8 @@ import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { UsersPublicController } from './users-public.controller';
 import { SellersPublicController } from './sellers-public.controller';
+import { SellerToolsController } from './seller-tools.controller';
+import { SellerToolsService } from './seller-tools.service';
 import { WebhooksController } from './webhooks.controller';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 
@@ -22,9 +24,10 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
     WebhooksController,
     UsersPublicController,
     SellersPublicController,
+    SellerToolsController,
     UsersController,
   ],
-  providers: [UsersService],
+  providers: [UsersService, SellerToolsService],
   exports: [UsersService],
 })
 export class UsersModule {}

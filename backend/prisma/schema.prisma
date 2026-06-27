@@ -380,6 +380,15 @@ model User {
   notifyEmailEnabled Boolean @default(true)
   notifySmsEnabled   Boolean @default(true)
 
+  // ── Seller default parcel size (Phase 6 P6.3) ────────────────────
+  // Pre-fills the parcel dimensions on the sell form so a seller who
+  // ships similar-sized items doesn't re-enter them each time. Listings
+  // still store their own dims (these are just defaults).
+  defaultWeightGrams Int?
+  defaultLengthCm    Int?
+  defaultWidthCm     Int?
+  defaultHeightCm    Int?
+
   // ── Saved delivery addresses (address book) ──────────────────────
   // Multiple reusable addresses. The legacy single address on the
   // addr* fields above stays as the fallback default at checkout.

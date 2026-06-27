@@ -62,6 +62,10 @@ export default function SettingsPage() {
   const [form, setForm] = useState<AddrForm | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Seller default parcel size (Phase 6 P6.3). Strings for forgiving input;
+  // weight shown in kg, dims in cm.
+  const [ship, setShip] = useState({ weightKg: '', lengthCm: '', widthCm: '', heightCm: '' });
+  const [shipSaved, setShipSaved] = useState(false);
 
   const authed = useCallback(
     async (path: string, init?: RequestInit) => {
@@ -91,6 +95,12 @@ export default function SettingsPage() {
       ]);
       setEmailOn(me?.notifyEmailEnabled !== false);
       setSmsOn(me?.notifySmsEnabled !== false);
+      setShip({
+        weightKg: me?.defaultWeightGrams ? String(me.defaultWeightGrams / 1000) : '',
+        lengthCm: me?.defaultLengthCm ? String(me.defaultLengthCm) : '',
+        widthCm: me?.defaultWidthCm ? String(me.defaultWidthCm) : '',
+        heightCm: me?.defaultHeightCm ? String(me.defaultHeightCm) : '',
+      });
       setAddresses(Array.isArray(addrs) ? addrs : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load settings');
@@ -118,6 +128,33 @@ export default function SettingsPage() {
       setEmailOn(prevEmail);
       setSmsOn(prevSms);
       setError(e instanceof Error ? e.message : 'Could not save preference');
+    }
+  }
+
+  async function saveShippingDefaults() {
+    setBusy(true);
+    setError(null);
+    setShipSaved(false);
+    try {
+      const num = (s: string) => {
+        const n = parseFloat(s);
+        return Number.isFinite(n) && n > 0 ? n : null;
+      };
+      const kg = num(ship.weightKg);
+      await authed('/users/me/shipping-defaults', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          weightGrams: kg != null ? Math.round(kg * 1000) : null,
+          lengthCm: num(ship.lengthCm) != null ? Math.round(num(ship.lengthCm)!) : null,
+          widthCm: num(ship.widthCm) != null ? Math.round(num(ship.widthCm)!) : null,
+          heightCm: num(ship.heightCm) != null ? Math.round(num(ship.heightCm)!) : null,
+        }),
+      });
+      setShipSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save parcel defaults');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -268,6 +305,79 @@ export default function SettingsPage() {
                 </p>
               </div>
               <Toggle on={smsOn} onClick={() => savePrefs({ smsEnabled: !smsOn })} />
+            </div>
+          </section>
+
+          {/* ─── Default parcel size (Phase 6 P6.3) ─── */}
+          <section style={card} className="p-4 mb-6">
+            <h2 className="text-base mb-1" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+              Default parcel size
+            </h2>
+            <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
+              Selling items of a similar size? Set defaults here and the sell
+              form will pre-fill them, so you can get a shipping quote without
+              re-typing every time. You can still change them per listing.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                Weight (kg)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={ship.weightKg}
+                  onChange={(e) => { setShip((s) => ({ ...s, weightKg: e.target.value })); setShipSaved(false); }}
+                  style={input}
+                  className="mt-1"
+                />
+              </label>
+              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                Length (cm)
+                <input
+                  type="number"
+                  min="0"
+                  value={ship.lengthCm}
+                  onChange={(e) => { setShip((s) => ({ ...s, lengthCm: e.target.value })); setShipSaved(false); }}
+                  style={input}
+                  className="mt-1"
+                />
+              </label>
+              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                Width (cm)
+                <input
+                  type="number"
+                  min="0"
+                  value={ship.widthCm}
+                  onChange={(e) => { setShip((s) => ({ ...s, widthCm: e.target.value })); setShipSaved(false); }}
+                  style={input}
+                  className="mt-1"
+                />
+              </label>
+              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                Height (cm)
+                <input
+                  type="number"
+                  min="0"
+                  value={ship.heightCm}
+                  onChange={(e) => { setShip((s) => ({ ...s, heightCm: e.target.value })); setShipSaved(false); }}
+                  style={input}
+                  className="mt-1"
+                />
+              </label>
+            </div>
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                type="button"
+                onClick={saveShippingDefaults}
+                disabled={busy}
+                className="text-sm px-3 py-1.5 rounded-md"
+                style={{ background: 'var(--accent, #2563eb)', color: '#fff', opacity: busy ? 0.6 : 1 }}
+              >
+                {busy ? 'Saving…' : 'Save defaults'}
+              </button>
+              {shipSaved && (
+                <span className="text-xs" style={{ color: 'var(--green, #16a34a)' }}>Saved ✓</span>
+              )}
             </div>
           </section>
 

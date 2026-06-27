@@ -722,4 +722,38 @@ export class UsersService {
       select: { notifyEmailEnabled: true, notifySmsEnabled: true },
     });
   }
+
+  // Seller default parcel size (Phase 6 P6.3). Each field is independently
+  // settable; passing null clears it. Non-negative ints only.
+  async updateShippingDefaults(
+    clerkId: string,
+    dims: {
+      weightGrams?: number | null;
+      lengthCm?: number | null;
+      widthCm?: number | null;
+      heightCm?: number | null;
+    },
+  ) {
+    const clean = (v: number | null | undefined): number | null | undefined => {
+      if (v === undefined) return undefined;
+      if (v === null) return null;
+      const n = Math.floor(Number(v));
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    return this.prisma.user.update({
+      where: { clerkId },
+      data: {
+        defaultWeightGrams: clean(dims.weightGrams),
+        defaultLengthCm: clean(dims.lengthCm),
+        defaultWidthCm: clean(dims.widthCm),
+        defaultHeightCm: clean(dims.heightCm),
+      },
+      select: {
+        defaultWeightGrams: true,
+        defaultLengthCm: true,
+        defaultWidthCm: true,
+        defaultHeightCm: true,
+      },
+    });
+  }
 }
