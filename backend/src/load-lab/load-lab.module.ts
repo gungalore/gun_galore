@@ -18,6 +18,6 @@ import { LoadLabController } from './load-lab.controller';
   imports: [BallisticsModule, PrismaModule, UsersModule],
   controllers: [LoadLabController],
   providers: [ComponentDataService, LoadLabService, RecommendedLoadsService],
-  exports: [LoadLabService, ComponentDataService],
+  exports: [LoadLabService, ComponentDataService, RecommendedLoadsService],
 })
 export class LoadLabModule {}

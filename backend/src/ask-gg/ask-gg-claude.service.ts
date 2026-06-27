@@ -16,6 +16,7 @@ import {
 } from '../ballistics/ballistics.service';
 import { LoadLabService, type LoadLabInput } from '../load-lab/load-lab.service';
 import { ComponentDataService } from '../load-lab/component-data.service';
+import { RecommendedLoadsService } from '../load-lab/recommended-loads.service';
 
 // ─── Model strategy ─────────────────────────────────────────────────
 // Two-tier: Sonnet by default, Opus on user-triggered escalation.
@@ -193,6 +194,31 @@ const TOOLS: Tool[] = [
       required: ['cartridge', 'bullet', 'powder', 'chargeGr', 'barrelLengthIn'],
     },
   },
+  {
+    name: 'lookupPublishedLoads',
+    description:
+      'Look up PUBLISHED manual loads for a cartridge + bullet weight from Gun Galore’s structured load dataset — the SAME data the Load Lab "Recommended loads" panel uses. Returns one row per powder (within ±tolerance grains of the bullet weight): published start & max charge, velocities, case-fill %, the source manual + page, and a suggested work-up ladder. Use this FIRST for any "what load / what charge / which powder for <cartridge> + <bullet weight>" question — it is the authoritative, fast, structured source (Somchem, ADI, Hodgdon, IMR, Vihtavuori, Hornady, Nosler, Accurate, Ramshot, Alliant). Only fall back to searchReloadingManuals/fetchManualPages when this returns nothing for the cartridge, or when you need prose/context (COAL notes, primers, cautions) beyond the charge table. Charges are AUTHORITATIVE; keep the start-low / work-up / verify framing.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        cartridge: {
+          type: 'string',
+          description:
+            'Cartridge name, e.g. "6.5 Creedmoor", ".308 Winchester", "9mm Luger".',
+        },
+        bulletWeightGr: {
+          type: 'number',
+          description: 'Bullet weight in grains, e.g. 139.',
+        },
+        toleranceGr: {
+          type: 'number',
+          description:
+            'Bullet-weight tolerance in grains (default 5) — widens the match window around bulletWeightGr.',
+        },
+      },
+      required: ['cartridge', 'bulletWeightGr'],
+    },
+  },
 ];
 
 // ─── Web search (forum / real-world experience) ─────────────────────
@@ -286,15 +312,17 @@ Make this framing visible when relevant. You're a knowledgeable assistant, not a
 
 ## RELOADING QUESTIONS — TOOL USE REQUIRED
 
-For ANY reloading question (specific load data, brass prep, primer selection, annealing theory, ballistic theory, etc.), you have two tools that give you access to the operator's verified reloading-manual library:
+For ANY reloading question (specific load data, brass prep, primer selection, annealing theory, ballistic theory, etc.), you have these tools:
 
-1. **searchReloadingManuals({ query })** — Postgres full-text search across every page of every uploaded manual. Returns hits with manualId, manufacturer, title, edition, page number, and a SUBSTANTIAL snippet (~220 words of the actual page text). Results are deliberately spread ACROSS manuals (the best pages per manual) so you see EVERY source that has the data — not just the largest manual.
+0. **lookupPublishedLoads({ cartridge, bulletWeightGr, toleranceGr? })** — the PRIMARY, authoritative source for charge lookups. It queries Gun Galore's structured published-load dataset — **the exact same data the Load Lab "Recommended loads" panel uses** (Somchem, ADI, Hodgdon, IMR, Vihtavuori, Hornady, Nosler, Accurate, Ramshot, Alliant), so your answer ALWAYS matches the Load Lab. Returns one row per powder (within ±tolerance gr of the bullet weight): published start & max charge, velocities, case-fill %, source manual + page, how many manuals list it, and a work-up ladder. **For any "what load / what charge / which powder for <cartridge> at <bullet weight>" question, call THIS FIRST.**
 
-2. **fetchManualPages({ manualId, pages })** — slices specific pages out of a manual and attaches them to the conversation as a PDF you can read directly. Use this AFTER search **only when** the snippet alone isn't enough — typically for tables with precise numbers you need to read exactly.
+1. **searchReloadingManuals({ query })** — full-text search across the manual PDF pages. Use for PROSE/CONTEXT (COAL notes, primers, cautions, brass prep, theory) and as a FALLBACK when lookupPublishedLoads returns \`notIndexed\` / no powders for the cartridge.
 
-**Decision flow for a LOAD-DATA question (specific calibre + bullet + powder) — CONSOLIDATE ACROSS MANUALS:**
-1. Call \`searchReloadingManuals\` with the user's calibre / bullet weight / powder terms. The results span every manual that has matching data.
-2. **Consolidate across the manuals — but lean on the SNIPPETS first.** The search already returns substantial per-manual snippets spanning every matching manual; when those snippets already show the charges you need, build the cross-referenced answer straight from them. Only \`fetchManualPages\` for the ONE or TWO manuals whose exact table figures you genuinely can't read from the snippet (target page ±1). DON'T fetch every manual — each fetch is slow and usually unnecessary once the snippets line up.
+2. **fetchManualPages({ manualId, pages })** — slices specific pages out of a manual as a PDF you can read. Use AFTER search only when a snippet isn't enough for exact figures.
+
+**Decision flow for a LOAD-DATA question (specific calibre + bullet + powder):**
+1. Call \`lookupPublishedLoads\` with the cartridge + bullet weight. Build the answer from its rows — these are the authoritative charges and match the Load Lab exactly. If the user named a powder, lead with that powder's row; otherwise present the top powders.
+2. If \`lookupPublishedLoads\` returns \`notIndexed: true\` (or no row for the powder the user wants), THEN call \`searchReloadingManuals\` and consolidate across the manual snippets; \`fetchManualPages\` only for the one or two whose exact figures you can't read from the snippet (target page ±1). DON'T fetch every manual.
 3. **Consolidate** what you read into the single best answer:
    - A compact comparison — one line per source: "Manufacturer (p.X): START → MAX gr, ~velocity".
    - Then a synthesised recommendation: a consolidated START at or below the LOWEST published start; note the spread of MAX charges across sources and tell the user to work up to the **lowest** published max first, watching for pressure.
@@ -504,6 +532,7 @@ export class AskGgClaudeService {
     private readonly ballistics: BallisticsService,
     private readonly loadLab: LoadLabService,
     private readonly components: ComponentDataService,
+    private readonly recommendedLoads: RecommendedLoadsService,
   ) {
     this.client = process.env.ANTHROPIC_API_KEY
       ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -1099,6 +1128,80 @@ export class AskGgClaudeService {
               type: 'tool_result',
               tool_use_id: toolUseId,
               content: `Load Lab calculation failed: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+              is_error: true,
+            },
+          ];
+        }
+      }
+
+      if (block.name === 'lookupPublishedLoads') {
+        // SAME structured ManualLoad dataset the Load Lab Recommended-Loads
+        // panel serves, so chat + Load Lab always agree. Available to all
+        // tiers (published manual data, like the manual search).
+        const input = block.input as {
+          cartridge?: string;
+          bulletWeightGr?: number;
+          toleranceGr?: number;
+        };
+        if (!input.cartridge || typeof input.bulletWeightGr !== 'number') {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content:
+                'Error: cartridge and bulletWeightGr are required. Ask the user for the cartridge and bullet weight (grains).',
+              is_error: true,
+            },
+          ];
+        }
+        try {
+          const res = await this.recommendedLoads.recommend(
+            input.cartridge,
+            input.bulletWeightGr,
+            input.toleranceGr ?? 5,
+          );
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: JSON.stringify({
+                cartridge: res.cartridge,
+                bulletWeightGr: res.bulletWeightGr,
+                toleranceGr: res.toleranceGr,
+                notIndexed: res.notIndexed,
+                sources: res.sources,
+                powderCount: res.powders.length,
+                // Cap to keep the payload lean; ordered Somchem-first then by
+                // manual-corroboration (same order the panel shows).
+                powders: res.powders.slice(0, 40).map((p) => ({
+                  powder: p.powderName,
+                  bulletWeightGr: p.bulletWeightGr,
+                  bullet: p.bulletName,
+                  startGr: p.startGr,
+                  maxGr: p.maxGr,
+                  startVelFps: p.startVelFps,
+                  maxVelFps: p.maxVelFps,
+                  fillPct: p.fillPct,
+                  fillSource: p.fillSource,
+                  compressed: p.compressed,
+                  maxOnly: p.singleCharge,
+                  incrementGr: p.incrementGr,
+                  steps: p.steps,
+                  manual: p.manual,
+                  page: p.pageNumber,
+                  inManuals: p.manualCount,
+                })),
+              }),
+            },
+          ];
+        } catch (err) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: `Published-load lookup failed: ${
                 err instanceof Error ? err.message : String(err)
               }`,
               is_error: true,
