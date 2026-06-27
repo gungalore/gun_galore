@@ -145,10 +145,12 @@ export class RecommendedLoadsService {
     const tol = Math.min(20, Math.max(0, toleranceGr || 5));
     const w = bulletWeightGr;
 
-    // For estimating case fill where a manual doesn't print it: GRT powder
-    // bulk densities (pcd, g/cm³) + this cartridge's case water capacity.
-    // fill% = 100 · charge(gr) / (pcd · caseCapacity(grH2O)) — the grain↔cm³
-    // factor cancels. Reads slightly low vs published (uses full case volume).
+    // For estimating case fill where a manual doesn't print it: GRT powder bulk
+    // densities (pcd, in kg/m³ ≈ 860–1046) + this cartridge's case water
+    // capacity (grains). Powder bulk g/cm³ = pcd/1000, so
+    //   fill% = 100 · (charge_g / (pcd/1000)) / (caseGrH2O · g_per_grain)
+    //         = 100000 · charge(gr) / (pcd · caseGrH2O)   (grain↔cm³ cancels).
+    // Reads slightly low vs published (uses full case volume, not under-bullet).
     const pcdByKey = new Map<string, number>();
     for (const p of this.componentData.listPowderDensities()) {
       const pk = powderKey(p.name);
@@ -164,7 +166,7 @@ export class RecommendedLoadsService {
     const estimateFill = (powderName: string, chargeGr: number): number | null => {
       const pcd = pcdByKey.get(powderKey(powderName));
       if (!pcd || !caseVolGrH2O) return null;
-      return (100 * chargeGr) / (pcd * caseVolGrH2O);
+      return (100000 * chargeGr) / (pcd * caseVolGrH2O);
     };
 
     const rows = await this.prisma.manualLoad.findMany({
