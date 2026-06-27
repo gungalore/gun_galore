@@ -29,14 +29,37 @@ type Action =
 interface Props {
   txId: string;
   paymentStatus: string;
+  buyerTotal: number;
+  refundedAmount?: number;
 }
 
-export default function DossierActions({ txId, paymentStatus }: Props) {
+export default function DossierActions({
+  txId,
+  paymentStatus,
+  buyerTotal,
+  refundedAmount = 0,
+}: Props) {
   const router = useRouter();
   const [action, setAction] = useState<Action | null>(null);
   const [reason, setReason] = useState('');
+  // Optional partial-refund amount in RANDS (blank = full remaining balance).
+  const [amountRands, setAmountRands] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const remainingCents = Math.max(0, buyerTotal - refundedAmount);
+  const isRefundAction =
+    action?.kind === 'refund' || action?.kind === 'dispute-refund';
+  // Parse the Rands input → cents. Empty string => full refund (undefined).
+  const parsedAmountCents =
+    amountRands.trim() === ''
+      ? undefined
+      : Math.round(parseFloat(amountRands) * 100);
+  const amountValid =
+    parsedAmountCents === undefined ||
+    (Number.isFinite(parsedAmountCents) &&
+      parsedAmountCents >= 100 &&
+      parsedAmountCents <= remainingCents);
 
   const isPending = paymentStatus === 'PENDING_ADMIN_VERIFICATION';
   const isHeld = paymentStatus === 'HELD';
@@ -62,7 +85,8 @@ export default function DossierActions({ txId, paymentStatus }: Props) {
     action?.kind === 'dispute-release' ||
     action?.kind === 'dispute-refund';
   const reasonOk = !requiresReason || reason.trim().length >= 5;
-  const canSubmit = action !== null && reasonOk && !busy;
+  const canSubmit =
+    action !== null && reasonOk && (!isRefundAction || amountValid) && !busy;
 
   async function execute() {
     if (!action) return;
@@ -81,7 +105,14 @@ export default function DossierActions({ txId, paymentStatus }: Props) {
           ? undefined
           : action.kind === 'dispute-release'
             ? JSON.stringify({ reason: reason.trim() })
-            : JSON.stringify({ note: reason.trim() });
+            : JSON.stringify({
+                note: reason.trim(),
+                // Partial refund: only sent when the admin typed an amount;
+                // omitted => backend refunds the full remaining balance.
+                ...(parsedAmountCents !== undefined
+                  ? { amountZarCents: parsedAmountCents }
+                  : {}),
+              });
 
       const res = await adminFetch(path, {
         method: 'POST',
@@ -94,6 +125,7 @@ export default function DossierActions({ txId, paymentStatus }: Props) {
       }
       setAction(null);
       setReason('');
+      setAmountRands('');
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Action failed');
@@ -113,7 +145,7 @@ export default function DossierActions({ txId, paymentStatus }: Props) {
     release:
       'Payment moves to RELEASED, seller payout is initiated. Hard-gated on seller KYC + bank verification + profile completion — backend rejects if any are missing.',
     refund:
-      'Payment moves to REFUNDED, full amount is sent back to the buyer via Peach. This is reversible only by manual Peach intervention.',
+      'The amount below is sent back to the buyer via the payment gateway. A full refund moves the order to REFUNDED; a partial refund keeps it open so the balance can still be released or refunded later. Reversible only by manual gateway intervention.',
     'dispute-release':
       'You have investigated and found in favour of the seller. Payment moves to RELEASED, seller payout is initiated, dispute alert closes. The reason below is recorded in the audit log and visible to the buyer.',
     'dispute-refund':
@@ -215,6 +247,38 @@ export default function DossierActions({ txId, paymentStatus }: Props) {
             >
               {SUBTITLE[action.kind]}
             </p>
+
+            {isRefundAction && (
+              <div className="mb-4">
+                <label
+                  className="text-xs uppercase tracking-wider mb-1 block"
+                  style={{ color: 'var(--text-tertiary)' }}
+                >
+                  Refund amount (Rands) — leave blank for full
+                </label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="1"
+                  step="0.01"
+                  value={amountRands}
+                  onChange={(e) => setAmountRands(e.target.value)}
+                  placeholder={`Full balance: R${(remainingCents / 100).toFixed(2)}`}
+                  className="w-full px-3 py-2 rounded text-sm outline-none"
+                  style={{
+                    background: 'var(--bg-inset)',
+                    border: `0.5px solid ${amountValid ? 'var(--border)' : 'var(--red)'}`,
+                    color: 'var(--text-primary)',
+                  }}
+                />
+                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  {refundedAmount > 0
+                    ? `Already refunded R${(refundedAmount / 100).toFixed(2)} of R${(buyerTotal / 100).toFixed(2)}. Remaining R${(remainingCents / 100).toFixed(2)}.`
+                    : `Order total R${(buyerTotal / 100).toFixed(2)}. Min R1.00; partial refunds keep the order open.`}
+                  {!amountValid && ' — amount must be between R1.00 and the remaining balance.'}
+                </p>
+              </div>
+            )}
 
             {requiresReason && (
               <div className="mb-4">

@@ -806,6 +806,20 @@ model Transaction {
   riskScore  Int      @default(0)
   riskFlags  String[] @default([])
 
+  // Partial-refund accounting (Phase 4). Cumulative amount actually
+  // refunded to the buyer (ZAR cents). 0 = none; == buyerTotal when fully
+  // refunded (at which point paymentStatus flips to REFUNDED). Lets admin
+  // issue several partial refunds without ever exceeding buyerTotal.
+  refundedAmount Int       @default(0)
+  lastRefundAt   DateTime?
+
+  // Buyer-initiated cancellation (Phase 4 P4.2). Set when the buyer
+  // cancels a paid-but-undispatched courier order; the cancel path
+  // full-refunds + reactivates the listing. Distinct from rejectedAt
+  // (seller declined) so admin/trust-safety can tell the two apart.
+  cancelledByBuyerAt DateTime?
+  cancelledReason    String?
+
   // Payment
   paymentStatus   PaymentStatus @default(HELD)
   peachCheckoutId String?

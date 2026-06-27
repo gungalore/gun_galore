@@ -2332,6 +2332,61 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Buyer cancelled a paid-but-undispatched order (Phase 4 P4.2).
+  // Confirms the refund to the buyer and tells the seller the order is
+  // off + the item is back on the marketplace. NO strike — a buyer
+  // changing their mind is not the seller's fault.
+  // ---------------------------------------------------------------
+  async orderCancelledByBuyer(d: {
+    listingTitle: string;
+    transactionId: string;
+    buyerTotal: number;
+    reason: string;
+    buyer: { email: string; firstName: string | null; phone: string | null };
+    seller: { email: string; firstName: string | null; phone: string | null };
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const buyerName = d.buyer.firstName ?? 'there';
+    const sellerName = d.seller.firstName ?? 'Seller';
+
+    const buyerHtml = this.email({
+      status: { tone: 'success', label: 'Cancelled & refunded' },
+      headline: 'Order cancelled',
+      body: `Hi ${b(buyerName)}, we've cancelled your order for ${b(d.listingTitle)} and refunded ${b(formatRand(d.buyerTotal))} to your card. Allow 3–7 working days for it to reflect.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Refund', value: formatRand(d.buyerTotal) },
+      ],
+      cta: { label: 'Browse listings', url: `${this.appUrl}/` },
+      preheader: `Cancelled & refunded ${formatRand(d.buyerTotal)} for ${d.listingTitle}`,
+    });
+    await this.send(d.buyer.email, 'Order cancelled: ' + d.listingTitle, buyerHtml);
+    await this.sendSms(
+      d.buyer.phone,
+      `Gun Galore: order for ${truncate(d.listingTitle, 30)} cancelled. ${formatRand(d.buyerTotal)} refunded to your card.`,
+      `buyer-cancel-buyer-${d.transactionId}`,
+    );
+
+    const sellerHtml = this.email({
+      status: { tone: 'pending', label: 'Order cancelled' },
+      headline: 'Buyer cancelled — item relisted',
+      body: `Hi ${b(sellerName)}, the buyer cancelled their order for ${b(d.listingTitle)} before you dispatched it. The funds held have been returned to them and your listing is back on the marketplace — no action needed and no strike to your account.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Buyer reason', value: truncate(d.reason, 120) },
+      ],
+      cta: { label: 'Open order', url: txUrl },
+      preheader: `${d.listingTitle} cancelled by buyer — relisted`,
+    });
+    await this.send(d.seller.email, 'Buyer cancelled: ' + d.listingTitle, sellerHtml);
+    await this.sendSms(
+      d.seller.phone,
+      `Gun Galore: buyer cancelled ${truncate(d.listingTitle, 30)} before dispatch. It's back on the marketplace. No strike.`,
+      `buyer-cancel-seller-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
   // PRIVATE_ARRANGE — buyer waived payment protection + opted into a peer
   // arrangement. Two emails go out (one to each party) with the
   // OTHER party's contact details so they can coordinate the SAPS

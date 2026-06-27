@@ -11,6 +11,7 @@ import { RaiseDisputeButton } from './raise-dispute-button';
 import { RatingWidget } from './rating-widget';
 import { TrackingTimeline } from './tracking-timeline';
 import { AcceptRejectPanel } from './accept-reject-panel';
+import BuyerCancelPanel from './buyer-cancel-panel';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -117,6 +118,17 @@ export default async function TransactionPage({
     tx.paymentStatus === 'HELD' &&
     !!tx.dispatchedAt &&
     !tx.confirmedDeliveryAt;
+
+  // Phase 4 P4.2 — buyer can self-cancel a paid courier order that hasn't
+  // shipped yet (full refund). Self-service only for PUDO/TCG; firearm
+  // dealer-transfer + PRIVATE_ARRANGE route through dispute/support.
+  const canCancel =
+    isBuyer &&
+    tx.paymentStatus === 'HELD' &&
+    !!tx.paidAt &&
+    !tx.dispatchedAt &&
+    !tx.rejectedAt &&
+    (tx.shippingMethod === 'PUDO' || tx.shippingMethod === 'TCG');
 
   const canRate =
     isBuyer &&
@@ -386,6 +398,12 @@ export default async function TransactionPage({
               </div>
               <RaiseDisputeButton transactionId={tx.id} />
             </div>
+          )}
+
+          {/* Buyer: cancel a paid-but-undispatched courier order for a
+              full refund (Phase 4 P4.2). */}
+          {canCancel && (
+            <BuyerCancelPanel txId={tx.id} buyerTotalRand={formatPrice(tx.buyerTotal)} />
           )}
 
           {/* Buyer: standalone dispute panel if we're past confirm

@@ -25,6 +25,7 @@ interface TransactionDossier {
     shippingServiceCode: string | null;
     passFeeToBuyer: boolean;
     buyerTotal: number;
+    refundedAmount?: number;
     sellerPayout: number;
     peachCheckoutId: string | null;
     peachPaymentId: string | null;
@@ -309,7 +310,18 @@ export default function TransactionDossierPage() {
           className="mt-4 pt-4"
           style={{ borderTop: '0.5px solid var(--border)' }}
         >
-          <DossierActions txId={t.id} paymentStatus={t.paymentStatus} />
+          <DossierActions
+            txId={t.id}
+            paymentStatus={t.paymentStatus}
+            buyerTotal={t.buyerTotal}
+            refundedAmount={t.refundedAmount ?? 0}
+          />
+          {(t.refundedAmount ?? 0) > 0 && t.paymentStatus !== 'REFUNDED' && (
+            <p className="text-xs mt-2" style={{ color: 'var(--amber, #f59e0b)' }}>
+              Partially refunded: R{((t.refundedAmount ?? 0) / 100).toFixed(2)} of R
+              {(t.buyerTotal / 100).toFixed(2)} returned to buyer.
+            </p>
+          )}
         </div>
       </div>
 

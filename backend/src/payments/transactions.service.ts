@@ -502,6 +502,14 @@ export class TransactionsService {
       return;
     }
 
+    // Chargeback / dispute / reversal events take a different path: never
+    // auto-refund (the chargeback IS the reversal) — just hold the payout
+    // and raise an admin alert for manual handling (Phase 4 P4.3).
+    if (this.isChargebackEvent(evt.type)) {
+      await this.handleChargebackEvent(evt);
+      return;
+    }
+
     // The Stitch payment id is stored on peachCheckoutId at create() time.
     // Match on that first; fall back to merchantReference (= our tx id).
     const tx = await this.prisma.transaction.findFirst({
@@ -575,6 +583,143 @@ export class TransactionsService {
         })
         .catch(() => undefined);
     }
+  }
+
+  // ------------------------------------------------------------------
+  // Chargeback / dispute / reversal webhook (Phase 4 P4.3)
+  // ------------------------------------------------------------------
+  // The exact Stitch event name isn't pinned in the OpenAPI, so we match
+  // defensively on the type string. A chargeback means the buyer's bank is
+  // clawing the money back through the card/EFT scheme — it is itself the
+  // reversal, so we MUST NOT also refund (that double-pays the buyer). We
+  // hold the payout (→ DISPUTED) and raise an urgent admin alert for a
+  // human to investigate + contest or concede.
+  private isChargebackEvent(type?: string): boolean {
+    if (!type) return false;
+    return /charge.?back|dispute|reversal|reverse/i.test(type);
+  }
+
+  private async handleChargebackEvent(evt: {
+    paymentId?: string;
+    merchantReference?: string;
+    type?: string;
+  }) {
+    const tx = await this.prisma.transaction.findFirst({
+      where: evt.paymentId
+        ? { peachCheckoutId: evt.paymentId }
+        : { id: evt.merchantReference },
+    });
+    if (!tx) {
+      this.logger.warn(
+        `Stitch chargeback: no transaction for ${evt.paymentId ?? evt.merchantReference} (type=${evt.type})`,
+      );
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'STITCH_CHARGEBACK_UNMATCHED',
+            referenceId: evt.paymentId ?? evt.merchantReference ?? 'unknown',
+            urgent: true,
+            context: `Chargeback/dispute webhook (${evt.type}) could not be matched to a transaction. payment=${evt.paymentId ?? '—'} ref=${evt.merchantReference ?? '—'}.`,
+          },
+        })
+        .catch(() => undefined);
+      return;
+    }
+
+    // Idempotent — a retried webhook on an already-DISPUTED tx is a no-op.
+    if (tx.paymentStatus === 'DISPUTED') {
+      this.logger.log(`Stitch chargeback: ${tx.id} already DISPUTED — skipping`);
+      return;
+    }
+
+    // Already refunded — the buyer was made whole through our own refund;
+    // a chargeback on top would double-pay them. Flag so the operator can
+    // contest the chargeback with the bank ("already refunded").
+    if (tx.paymentStatus === 'REFUNDED') {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'STITCH_CHARGEBACK_AFTER_REFUND',
+            referenceId: tx.id,
+            urgent: true,
+            context: `Chargeback (${evt.type}) on ${tx.id}, but the order was already REFUNDED. Likely a double-claim — contest with the bank. Do NOT refund again.`,
+          },
+        })
+        .catch(() => undefined);
+      void this.tracking.recordInternal(tx.id, 'STITCH_CHARGEBACK_RECEIVED', {
+        message: `Chargeback received after refund (${evt.type}). Flagged for the bank.`,
+      });
+      return;
+    }
+
+    // Payout already released to the seller — we can't auto-reverse their
+    // funds. This is the dangerous case: raise an URGENT alert so the
+    // operator can recover from the seller / decide. Status stays RELEASED.
+    if (tx.paymentStatus === 'RELEASED') {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'STITCH_CHARGEBACK_AFTER_PAYOUT',
+            referenceId: tx.id,
+            urgent: true,
+            context: `Chargeback (${evt.type}) on ${tx.id} AFTER payout was RELEASED to the seller (${tx.buyerTotal}c). Funds already left to the seller — cannot auto-reverse. Manual recovery required.`,
+          },
+        })
+        .catch(() => undefined);
+      void this.tracking.recordInternal(tx.id, 'STITCH_CHARGEBACK_RECEIVED', {
+        message: `Chargeback received after payout (${evt.type}). Manual recovery required.`,
+      });
+      return;
+    }
+
+    // Funds still held (HELD or PENDING_ADMIN_VERIFICATION) — flip to
+    // DISPUTED so confirm-delivery / payout are blocked until an admin
+    // resolves it. Atomic guard prevents racing a confirm-delivery release.
+    const claim = await this.prisma.transaction.updateMany({
+      where: {
+        id: tx.id,
+        paymentStatus: { in: ['HELD', 'PENDING_ADMIN_VERIFICATION'] },
+      },
+      data: { paymentStatus: 'DISPUTED' },
+    });
+    if (claim.count === 0) {
+      // Status changed out from under us (e.g. released between read and
+      // write). Don't recurse — just alert with the latest status so an
+      // admin handles it manually.
+      const fresh = await this.prisma.transaction.findUnique({
+        where: { id: tx.id },
+        select: { paymentStatus: true },
+      });
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'STITCH_CHARGEBACK_RACE',
+            referenceId: tx.id,
+            urgent: true,
+            context: `Chargeback (${evt.type}) on ${tx.id} arrived as the order changed state (now ${fresh?.paymentStatus ?? 'unknown'}). Could not auto-flip to DISPUTED — handle manually.`,
+          },
+        })
+        .catch(() => undefined);
+      this.logger.warn(
+        `Stitch chargeback: ${tx.id} state changed during handling (now ${fresh?.paymentStatus}) — alerted`,
+      );
+      return;
+    }
+
+    await this.prisma.adminAlert
+      .create({
+        data: {
+          type: 'STITCH_CHARGEBACK_INITIATED',
+          referenceId: tx.id,
+          urgent: true,
+          context: `Chargeback/dispute (${evt.type}) on ${tx.id}. Funds were held → moved to DISPUTED, payout blocked. Investigate + resolve (release to seller or concede the chargeback). Do NOT issue a separate refund.`,
+        },
+      })
+      .catch(() => undefined);
+    void this.tracking.recordInternal(tx.id, 'STITCH_CHARGEBACK_RECEIVED', {
+      message: `Chargeback received (${evt.type}). Order moved to DISPUTED; payout blocked.`,
+    });
+    this.logger.warn(`Stitch chargeback: ${tx.id} → DISPUTED (${evt.type})`);
   }
 
   // ------------------------------------------------------------------
@@ -811,6 +956,178 @@ export class TransactionsService {
 
     this.logger.log(
       `Transaction ${transactionId} REJECTED by seller ${seller.id} (reason: ${trimmedReason.slice(0, 80)})`,
+    );
+    return this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Buyer-initiated cancellation (Phase 4 P4.2)
+  // ------------------------------------------------------------------
+  // A buyer may cancel + full-refund a paid order that hasn't shipped yet,
+  // mirroring the seller-reject mechanics. Self-service is limited to
+  // courier orders (PUDO/TCG): PRIVATE_ARRANGE pays out immediately (no
+  // funds to return), and firearm DEALER_TRANSFER must go through the
+  // dispute/admin path while verification is in flight. Unlike a seller
+  // reject, cancelling carries NO seller strike — the buyer changing their
+  // mind isn't the seller's fault.
+  async cancelByBuyer(
+    transactionId: string,
+    buyerClerkId: string,
+    reason: string,
+  ) {
+    const trimmedReason = (reason ?? '').trim();
+    if (trimmedReason.length < 3) {
+      throw new BadRequestException('Reason is required (min 3 characters)');
+    }
+    if (trimmedReason.length > 500) {
+      throw new BadRequestException('Reason is too long (max 500 characters)');
+    }
+
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        listing: { select: { id: true, title: true } },
+        buyer: {
+          select: { id: true, email: true, firstName: true, phone: true },
+        },
+        seller: {
+          select: { email: true, firstName: true, phone: true },
+        },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+
+    const buyer = await this.prisma.user.findUnique({
+      where: { clerkId: buyerClerkId },
+      select: { id: true },
+    });
+    if (!buyer || tx.buyerId !== buyer.id) {
+      throw new ForbiddenException('Not authorised');
+    }
+
+    if (!tx.paidAt) {
+      throw new BadRequestException('Payment not confirmed yet — nothing to cancel.');
+    }
+    if (tx.cancelledByBuyerAt) {
+      // Idempotent — already cancelled is a successful no-op.
+      return tx;
+    }
+    if (tx.rejectedAt) {
+      throw new BadRequestException('This order was already cancelled by the seller.');
+    }
+    if (tx.dispatchedAt) {
+      throw new BadRequestException('Already dispatched — it can no longer be cancelled. If there is a problem, raise a dispute.');
+    }
+    if (tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException(`Order is no longer cancellable (status: ${tx.paymentStatus}).`);
+    }
+    if (!['PUDO', 'TCG'].includes(tx.shippingMethod ?? '')) {
+      throw new BadRequestException(
+        'This order type cannot be self-cancelled. Please contact support or raise a dispute.',
+      );
+    }
+    // PAY-8 — a paid order MUST have a stored gateway payment id to refund.
+    if (!tx.peachPaymentId) {
+      await this.prisma.adminAlert.create({
+        data: {
+          type: 'BUYER_CANCEL_NO_PAYMENT_ID',
+          referenceId: transactionId,
+          urgent: true,
+          context: `Buyer tried to cancel ${transactionId}; tx is paid but has no stored gateway payment id. Manual refund + status flip required.`,
+        },
+      });
+      throw new BadRequestException(
+        'Refund could not be issued automatically — support has been alerted and will resolve manually within 24h.',
+      );
+    }
+
+    // Atomic claim BEFORE the gateway call — the guards make the flip the
+    // concurrency lock against a simultaneous seller dispatch/reject. On
+    // gateway failure we roll the claim back.
+    const claim = await this.prisma.transaction.updateMany({
+      where: {
+        id: transactionId,
+        paymentStatus: 'HELD',
+        dispatchedAt: null,
+        rejectedAt: null,
+        cancelledByBuyerAt: null,
+        shippingMethod: { in: ['PUDO', 'TCG'] },
+      },
+      data: {
+        paymentStatus: 'REFUNDED',
+        cancelledByBuyerAt: new Date(),
+        cancelledReason: trimmedReason,
+        releasedAt: null,
+      },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException(
+        'Order could not be cancelled — its state just changed (it may have been dispatched). Reload and try again.',
+      );
+    }
+
+    const refundRes = await this.stitch.refundPayment(
+      tx.peachPaymentId,
+      tx.buyerTotal,
+    );
+    if (!refundRes.success) {
+      // Roll the reservation back so the row returns to its prior state.
+      await this.prisma.transaction
+        .update({
+          where: { id: transactionId },
+          data: {
+            paymentStatus: 'HELD',
+            cancelledByBuyerAt: null,
+            cancelledReason: null,
+          },
+        })
+        .catch(() => undefined);
+      await this.prisma.adminAlert.create({
+        data: {
+          type: 'BUYER_CANCEL_REFUND_FAILED',
+          referenceId: transactionId,
+          urgent: true,
+          context: `Buyer cancel of ${transactionId}: Stitch refund failed (${refundRes.resultCode}). Buyer still owed ${tx.buyerTotal} cents.`,
+        },
+      });
+      throw new BadRequestException(
+        'Refund failed — support has been alerted and will resolve manually within 24h.',
+      );
+    }
+
+    // Refund succeeded — reactivate the listing so it can sell again.
+    await this.prisma.listing
+      .update({
+        where: { id: tx.listingId },
+        data: { status: 'ACTIVE', soldAt: null },
+      })
+      .catch(() => undefined);
+
+    void this.tracking.recordInternal(transactionId, 'BUYER_CANCELLED', {
+      message: `Buyer cancelled: ${trimmedReason}`,
+    });
+    void this.notifications.resolveByEntity('transaction', transactionId);
+    void this.notifications.orderCancelledByBuyer({
+      listingTitle: tx.listing.title,
+      transactionId: tx.id,
+      buyerTotal: tx.buyerTotal,
+      reason: trimmedReason,
+      buyer: {
+        email: tx.buyer.email,
+        firstName: tx.buyer.firstName,
+        phone: tx.buyer.phone,
+      },
+      seller: {
+        email: tx.seller.email,
+        firstName: tx.seller.firstName,
+        phone: tx.seller.phone,
+      },
+    });
+
+    this.logger.log(
+      `Transaction ${transactionId} CANCELLED by buyer ${buyer.id} (reason: ${trimmedReason.slice(0, 80)})`,
     );
     return this.prisma.transaction.findUnique({
       where: { id: transactionId },

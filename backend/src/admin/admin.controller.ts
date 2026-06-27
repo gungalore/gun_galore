@@ -313,8 +313,11 @@ export class AdminTransactionsController {
     @Param('id') id: string,
     @CurrentAdmin() admin: { sub: string },
     @Body('note') note?: string,
+    // Optional partial-refund amount in ZAR cents. Omit for a full refund
+    // of the remaining balance.
+    @Body('amountZarCents') amountZarCents?: number,
   ) {
-    return this.adminService.refundTransaction(id, admin.sub, note);
+    return this.adminService.refundTransaction(id, admin.sub, note, amountZarCents);
   }
 
   // Resolve a DISPUTED transaction in favour of the seller — force

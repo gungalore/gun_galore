@@ -334,6 +334,22 @@ export class TransactionsController {
   ) {
     return this.txService.rejectTransaction(id, clerkId, body?.reason ?? '');
   }
+
+  // ---------------------------------------------------------------
+  // Buyer cancels their own paid-but-undispatched courier order
+  // (Phase 4 P4.2). Reason required; full-refunds + reactivates the
+  // listing + notifies both parties. Self-service only for PUDO/TCG.
+  // ---------------------------------------------------------------
+  @Post(':id/cancel')
+  @UseGuards(ClerkGuard)
+  @HttpCode(200)
+  cancel(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.txService.cancelByBuyer(id, clerkId, body?.reason ?? '');
+  }
 }
 
 // ---------------------------------------------------------------

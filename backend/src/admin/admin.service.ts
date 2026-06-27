@@ -991,57 +991,96 @@ export class AdminService {
     ]);
   }
 
-  async refundTransaction(txId: string, adminId: string, note?: string) {
+  // Refund a buyer. `amountZarCents` issues a PARTIAL refund of that many
+  // cents; omit it for a full refund of the remaining balance. Several
+  // partial refunds may stack but never exceed buyerTotal. The order only
+  // flips to REFUNDED once the cumulative refunded amount reaches
+  // buyerTotal — a partial refund leaves the order in its current state
+  // (HELD/DISPUTED) so the remaining balance can still be released or
+  // refunded later.
+  async refundTransaction(
+    txId: string,
+    adminId: string,
+    note?: string,
+    amountZarCents?: number,
+  ) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: txId },
       include: { listing: true, buyer: true },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
 
-    // ─── Only HELD or DISPUTED orders can be refunded ────────────────
-    // A RELEASED order has already paid the seller (refunding would be a
-    // double payout); an already-REFUNDED order must not refund twice.
-    // Enforce as an atomic conditional update that ALSO flips the status
-    // to REFUNDED in the same statement — this makes the flip the
-    // concurrency LOCK: two near-simultaneous admin clicks can't both
-    // pass (the second sees count===0 and aborts BEFORE calling the
-    // gateway, so we never double-charge the refund). If the gateway
-    // call below fails we roll the status back to its prior value, so
-    // the buyer is never shown a REFUNDED that didn't actually move money.
-    const claim = await this.prisma.transaction.updateMany({
-      where: { id: txId, paymentStatus: { in: ['HELD', 'DISPUTED'] } },
-      data: {
-        paymentStatus: 'REFUNDED',
-        adminNote: note ?? null,
-        adminReviewedById: adminId,
-        adminReviewedAt: new Date(),
-      },
-    });
-    if (claim.count === 0) {
+    if (!['HELD', 'DISPUTED'].includes(tx.paymentStatus)) {
       throw new BadRequestException(
         `Transaction is not in a refundable state (current: ${tx.paymentStatus}). Only HELD or DISPUTED orders can be refunded.`,
       );
     }
 
+    // ─── Resolve + validate the refund amount ────────────────────────
+    const remaining = tx.buyerTotal - tx.refundedAmount;
+    if (remaining <= 0) {
+      throw new BadRequestException('This order has already been fully refunded.');
+    }
+    // No amount → full refund of whatever balance is left.
+    const amount =
+      amountZarCents == null ? remaining : Math.floor(amountZarCents);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Refund amount must be a positive number of cents.');
+    }
+    if (amount < 100) {
+      throw new BadRequestException('Minimum refund is R1.00 (100 cents).');
+    }
+    if (amount > remaining) {
+      throw new BadRequestException(
+        `Refund of ${amount}c exceeds the remaining balance of ${remaining}c (buyerTotal ${tx.buyerTotal}c, already refunded ${tx.refundedAmount}c).`,
+      );
+    }
+    const willBeFullyRefunded = tx.refundedAmount + amount >= tx.buyerTotal;
+
+    // ─── Atomic claim (concurrency + over-refund lock) ───────────────
+    // Reserve the amount in a single conditional update BEFORE the gateway
+    // call. The guards make it the lock: two near-simultaneous refunds
+    // can't both pass because `refundedAmount <= buyerTotal - amount`
+    // (a constant) plus the increment means the second sees count===0 and
+    // aborts before moving money. Only flip to REFUNDED when this refund
+    // settles the whole balance; a partial leaves paymentStatus untouched.
+    const claim = await this.prisma.transaction.updateMany({
+      where: {
+        id: txId,
+        paymentStatus: { in: ['HELD', 'DISPUTED'] },
+        refundedAmount: { lte: tx.buyerTotal - amount },
+      },
+      data: {
+        refundedAmount: { increment: amount },
+        lastRefundAt: new Date(),
+        adminNote: note ?? null,
+        adminReviewedById: adminId,
+        adminReviewedAt: new Date(),
+        ...(willBeFullyRefunded ? { paymentStatus: 'REFUNDED' as const } : {}),
+      },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException(
+        'Refund could not be reserved — the order state or refunded balance changed. Reload and try again.',
+      );
+    }
+
     // ─── Move the money back via the gateway ─────────────────────────
-    // The status was flipped to REFUNDED above purely as the concurrency
-    // lock. We now actually call the gateway; on failure we roll the
-    // status back to its prior value so the buyer is never shown a
-    // REFUNDED that didn't move money. (Method previously told the buyer
-    // "refund issued" but never called the gateway — funds never returned.)
     // peachPaymentId holds the Stitch payment id (column reused during the
-    // Peach→Stitch transition).
+    // Peach→Stitch transition). On failure roll back the reservation (and
+    // the status flip, if any) so the row returns to its refundable state.
     const refund = tx.peachPaymentId
-      ? await this.stitch.refundPayment(tx.peachPaymentId, tx.buyerTotal)
+      ? await this.stitch.refundPayment(tx.peachPaymentId, amount)
       : { success: false, resultCode: 'NO_PAYMENT_ID' };
 
     if (!refund.success) {
-      // Roll the status (and review stamps) back to the prior value so the
-      // row returns to its refundable state for a retry. Best-effort.
       await this.prisma.transaction
         .update({
           where: { id: txId },
-          data: { paymentStatus: tx.paymentStatus },
+          data: {
+            refundedAmount: { decrement: amount },
+            ...(willBeFullyRefunded ? { paymentStatus: tx.paymentStatus } : {}),
+          },
         })
         .catch(() => undefined);
       await this.prisma.adminAlert
@@ -1050,7 +1089,7 @@ export class AdminService {
             type: 'ADMIN_REFUND_GATEWAY_FAILED',
             referenceId: txId,
             urgent: true,
-            context: `Admin ${adminId} refund of ${tx.buyerTotal}c failed at gateway (${refund.resultCode ?? 'unknown'}${tx.peachPaymentId ? '' : ' — no peachPaymentId on tx'}). Buyer NOT refunded; retry needed.`,
+            context: `Admin ${adminId} refund of ${amount}c failed at gateway (${refund.resultCode ?? 'unknown'}${tx.peachPaymentId ? '' : ' — no peachPaymentId on tx'}). Buyer NOT refunded; retry needed.`,
           },
         })
         .catch(() => undefined);
@@ -1059,34 +1098,34 @@ export class AdminService {
       );
     }
 
-    // Gateway refund succeeded — status is already REFUNDED from the
-    // claim-lock above; re-read for the return value (idempotent).
-    const updated = await this.prisma.transaction.update({
+    // Re-read for the return value (the claim updated the row).
+    const updated = await this.prisma.transaction.findUnique({
       where: { id: txId },
-      data: { paymentStatus: 'REFUNDED' },
     });
 
-    // Mark any related dispute alert as resolved so the
-    // command-center attention queue clears the count.
-    void this.prisma.adminAlert.updateMany({
-      where: {
-        type: 'BUYER_DISPUTE_RAISED',
-        referenceId: txId,
-        resolved: false,
-      },
-      data: { resolved: true, resolvedAt: new Date() },
-    });
+    // Only a FULL/final refund clears the dispute alert + inbox, since a
+    // partial leaves the order live.
+    if (willBeFullyRefunded) {
+      void this.prisma.adminAlert.updateMany({
+        where: {
+          type: 'BUYER_DISPUTE_RAISED',
+          referenceId: txId,
+          resolved: false,
+        },
+        data: { resolved: true, resolvedAt: new Date() },
+      });
+    }
 
     // Audit row — refunds change real money state; the operator
     // must explain why (handed in via the dossier's confirm-modal).
     if (note && note.trim()) {
       await this.audit.record({
         adminUserId: adminId,
-        action: 'TRANSACTION_REFUND',
+        action: willBeFullyRefunded ? 'TRANSACTION_REFUND' : 'TRANSACTION_REFUND_PARTIAL',
         resourceType: 'Transaction',
         resourceId: txId,
-        oldValue: tx.paymentStatus,
-        newValue: 'REFUNDED',
+        oldValue: `${tx.paymentStatus} (refunded ${tx.refundedAmount}c)`,
+        newValue: `${willBeFullyRefunded ? 'REFUNDED' : tx.paymentStatus} (refunded ${tx.refundedAmount + amount}c of ${tx.buyerTotal}c)`,
         reason: note.trim(),
       });
     }
@@ -1096,22 +1135,22 @@ export class AdminService {
       buyerName: [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') || 'Buyer',
       buyerPhone: tx.buyer.phone,
       listingTitle: tx.listing.title,
-      buyerTotal: tx.buyerTotal,
+      buyerTotal: amount, // the amount refunded in THIS operation
       transactionId: txId,
       note,
     });
-    // Inbox: refund is a terminal state — clear any unresolved
-    // notifications tied to this transaction for both buyer + seller
-    // (auction_won, offer_accepted, new_sale, order_dispatched all
-    // become moot once the tx is refunded).
-    void this.notifications.resolveByEntity('transaction', txId);
+    if (willBeFullyRefunded) {
+      // Inbox: a fully-refunded order is terminal — clear unresolved
+      // notifications tied to it (auction_won, offer_accepted, new_sale,
+      // order_dispatched all become moot).
+      void this.notifications.resolveByEntity('transaction', txId);
 
-    // Zoho Books: post a Credit Note against the original commission
-    // invoice so the seller's open balance reverses. No-op if the
-    // transaction never had a commission invoice (PRIVATE_ARRANGE or
-    // pre-verification refunds). Feature-flagged — safe to call when
-    // ZOHO_BOOKS_ENABLED is off.
-    void this.zohoBooks.createCommissionCreditNote(txId, note);
+      // Zoho Books: post a Credit Note reversing the commission. Only on a
+      // FULL refund — a partial would otherwise credit the full commission
+      // (the credit-note helper isn't proportional), so we skip it for
+      // partials and let the operator reconcile the final settlement.
+      void this.zohoBooks.createCommissionCreditNote(txId, note);
+    }
 
     return updated;
   }
