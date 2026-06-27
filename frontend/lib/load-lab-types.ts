@@ -186,6 +186,8 @@ export interface RecommendedLoadRow {
   pageNumber: number;
   /** How many distinct manuals publish this powder for this load — popularity. */
   manualCount: number;
+  /** Locally-made/available powder (Somchem) — pinned to the top of the list. */
+  isSomchem: boolean;
 }
 
 export interface RecommendedLoadsResult {

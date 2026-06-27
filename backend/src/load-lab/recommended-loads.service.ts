@@ -83,6 +83,8 @@ export interface RecommendedLoadRow {
    * chose to list is more widely-used/standard. Drives the default sort.
    */
   manualCount: number;
+  /** Locally-made/available powder (Somchem) — pinned to the top of the list. */
+  isSomchem: boolean;
 }
 
 /**
@@ -101,6 +103,10 @@ export function powderKey(name: string): string {
   s = s.replace(/^reloder\s*/, 'rl'); // "Reloder 17" → "rl17" (= "RL-17")
   return s.replace(/[^a-z0-9]/g, '');
 }
+
+/** The Somchem manual's label — Somchem is the locally-made/available powder in
+ * South Africa, so its loads are surfaced FIRST regardless of corroboration. */
+const SOMCHEM_LABEL = 'Somchem Reloading Data';
 
 export interface RecommendedLoadsResult {
   cartridge: string;
@@ -223,11 +229,14 @@ export class RecommendedLoadsService {
           manual: r.manualLabel,
           pageNumber: r.pageNumber,
           manualCount: manuals.size,
+          isSomchem: manuals.has(SOMCHEM_LABEL),
         };
       })
-      // Most-published (popularity) first, then fastest, then alphabetical.
+      // Locally-available Somchem powders FIRST, then most-published (popularity),
+      // then fastest, then alphabetical.
       .sort(
         (a, b) =>
+          Number(b.isSomchem) - Number(a.isSomchem) ||
           b.manualCount - a.manualCount ||
           (b.maxVelFps ?? 0) - (a.maxVelFps ?? 0) ||
           a.powderName.localeCompare(b.powderName),

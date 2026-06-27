@@ -25,7 +25,7 @@ async function main() {
         ? `${p.startVelFps ?? '?'}-${p.maxVelFps ?? '?'}fps`
         : 'vel n/a';
     console.log(
-      `  [${String(p.manualCount).padStart(2)} man] ${(p.powderMaker + ' ' + p.powderName).trim().padEnd(20)} ${p.startGr}-${p.maxGr}gr ` +
+      `  ${p.isSomchem ? 'SA' : '  '}[${String(p.manualCount).padStart(2)} man] ${(p.powderMaker + ' ' + p.powderName).trim().padEnd(20)} ${p.startGr}-${p.maxGr}gr ` +
         `+${p.incrementGr}x${p.steps} ${vel}${p.singleCharge ? ' [max-only]' : ''} ` +
         `· ${p.bulletWeightGr}gr ${p.bulletName ?? ''} — ${p.manual} p${p.pageNumber}`,
     );
