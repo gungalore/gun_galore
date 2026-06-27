@@ -28,6 +28,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useUser, SignInButton } from '@clerk/nextjs';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -178,6 +179,39 @@ export default function AskGgPage() {
   const [loadLabOpen, setLoadLabOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const router = useRouter();
+
+  // First-visit gate: an 18+ / liability disclaimer that must be accepted
+  // before Ask GG is usable. Persisted in localStorage so it shows once.
+  // null = not yet determined (avoids a flash before we read storage).
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState<boolean | null>(
+    null,
+  );
+  useEffect(() => {
+    try {
+      setDisclaimerAccepted(
+        localStorage.getItem('askgg:disclaimer:v1') === 'yes',
+      );
+    } catch {
+      setDisclaimerAccepted(true); // storage blocked — don't hard-block the page
+    }
+  }, []);
+  function acceptDisclaimer() {
+    try {
+      localStorage.setItem('askgg:disclaimer:v1', 'yes');
+    } catch {
+      /* ignore */
+    }
+    setDisclaimerAccepted(true);
+  }
+  function declineDisclaimer() {
+    router.push('/');
+  }
+  function startChat() {
+    composerRef.current?.focus();
+    composerRef.current?.scrollIntoView({ block: 'center' });
+  }
 
   // Auto-scroll to bottom on new messages.
   useEffect(() => {
@@ -320,6 +354,12 @@ export default function AskGgPage() {
         padding: '0 14px',
       }}
     >
+      {/* First-visit 18+ / liability gate. Must be accepted before use;
+          declining returns the user to the homepage. */}
+      {disclaimerAccepted === false && (
+        <AskGgDisclaimer onAccept={acceptDisclaimer} onDecline={declineDisclaimer} />
+      )}
+
       {/* Header — sparkles + name + disclaimer chip. Always visible
           regardless of which body card renders below. */}
       <header
@@ -456,7 +496,11 @@ export default function AskGgPage() {
                 disturb the composer or chat thread. */}
             {loadLabOpen && <LoadLabPanel />}
             {ag.messages.length === 0 && !ag.historyLoading && (
-              <EmptyState quota={ag.quota} />
+              <EmptyState
+                quota={ag.quota}
+                onOpenLoadLab={() => setLoadLabOpen(true)}
+                onStartChat={startChat}
+              />
             )}
             {ag.messages.map((m) => (
               <MessageBubble
@@ -662,6 +706,7 @@ export default function AskGgPage() {
               <IconPaperclip />
             </button>
             <textarea
+              ref={composerRef}
               value={composerValue}
               onChange={(e) => setComposerValue(e.target.value)}
               placeholder={
@@ -1508,40 +1553,259 @@ function KbHitCard({
   );
 }
 
-function EmptyState({ quota }: { quota: AskGgQuota | null }) {
-  // FREE users see the trial allowance up-front so they know what
-  // they're getting. MEMBER / PRO see the standard "ask me anything"
-  // line. Signed-in but quota-not-yet-loaded falls back to the same.
-  const isFreeWithRemaining =
-    quota?.tier === 'FREE' && quota.remaining > 0;
+/** First-visit modal: 18+ confirmation + liability waiver. Declining
+ *  returns the user to the homepage (handled by the parent). */
+function AskGgDisclaimer({
+  onAccept,
+  onDecline,
+}: {
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Before you start"
       style={{
-        textAlign: 'center',
-        padding: '40px 0',
-        color: 'var(--text-tertiary)',
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1000,
+        background: 'rgba(0,0,0,0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
       }}
     >
-      <p style={{ margin: 0, fontSize: 14 }}>
-        Ask me anything firearms-related.
-      </p>
-      <p
+      <div
         style={{
-          margin: '8px 0 0',
-          fontSize: 12,
-          color: 'var(--text-tertiary)',
+          width: '100%',
+          maxWidth: 460,
+          background: 'var(--bg-card)',
+          border: '0.5px solid var(--border)',
+          borderRadius: 14,
+          padding: 22,
+          boxShadow: '0 18px 50px rgba(0,0,0,0.35)',
         }}
       >
-        Identifying a part · troubleshooting · ammo questions · gear
-        comparison · SA-law overview
-      </p>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 18,
+            fontWeight: 700,
+            color: 'var(--text-primary)',
+          }}
+        >
+          Before you continue
+        </h2>
+        <p
+          style={{
+            margin: '12px 0 0',
+            fontSize: 13.5,
+            lineHeight: 1.55,
+            color: 'var(--text-secondary)',
+          }}
+        >
+          Ask GG gives <strong>general information only</strong> — it is not
+          professional, legal, or safety advice. Firearms, ammunition and
+          reloading are inherently dangerous; you alone are responsible for how
+          you use anything you read here, and you must verify it against the
+          manufacturer&rsquo;s official data and applicable law before acting.
+        </p>
+        <p
+          style={{
+            margin: '10px 0 0',
+            fontSize: 13.5,
+            lineHeight: 1.55,
+            color: 'var(--text-secondary)',
+          }}
+        >
+          To the fullest extent permitted by law, <strong>Gun Galore accepts
+          no liability</strong> for any loss, injury or damage arising from use
+          of Ask GG. By continuing you confirm that you are{' '}
+          <strong>18 years or older</strong> and that you accept these terms.
+        </p>
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+            marginTop: 20,
+            flexWrap: 'wrap',
+          }}
+        >
+          <button
+            type="button"
+            onClick={onAccept}
+            style={{
+              flex: '1 1 200px',
+              padding: '11px 16px',
+              borderRadius: 10,
+              border: 'none',
+              background: 'var(--red)',
+              color: '#fff',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            I&rsquo;m 18+ and I agree
+          </button>
+          <button
+            type="button"
+            onClick={onDecline}
+            style={{
+              flex: '1 1 120px',
+              padding: '11px 16px',
+              borderRadius: 10,
+              background: 'var(--bg-inset)',
+              border: '0.5px solid var(--border)',
+              color: 'var(--text-secondary)',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Decline
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({
+  quota,
+  onOpenLoadLab,
+  onStartChat,
+}: {
+  quota: AskGgQuota | null;
+  onOpenLoadLab: () => void;
+  onStartChat: () => void;
+}) {
+  const isFreeWithRemaining = quota?.tier === 'FREE' && quota.remaining > 0;
+  const USES = [
+    ['Identify it', 'Snap a photo of a part, firearm or headstamp and ask what it is.'],
+    ['Ammo & optics', 'Calibre, bullet and powder questions, zeroing, scope and gear comparisons.'],
+    ['Hunting & field', 'Species, shot placement, ranging and ethical-range guidance.'],
+    ['Reloading data', 'Look up published manual loads by cartridge, bullet and powder.'],
+    ['Sell smarter', 'Turn a few photos into a ready-to-post listing description.'],
+    ['SA firearms law', 'Plain-language overview of licensing, transport and transfers.'],
+  ];
+  return (
+    <div style={{ padding: '12px 0 8px', color: 'var(--text-secondary)' }}>
+      <div style={{ textAlign: 'center', maxWidth: 560, margin: '0 auto' }}>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 20,
+            fontWeight: 700,
+            color: 'var(--text-primary)',
+          }}
+        >
+          Welcome to Ask <span style={{ color: 'var(--red)' }}>GG</span>
+        </h2>
+        <p style={{ margin: '8px 0 0', fontSize: 13.5, lineHeight: 1.55 }}>
+          Your firearms-knowledgeable assistant for South African shooters,
+          hunters and reloaders. Ask in plain language, attach photos, and get
+          clear answers — plus a PRO <strong>Load Lab</strong> for internal
+          ballistics, downrange trajectory and published load lookups.
+        </p>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: 10,
+          margin: '20px auto 0',
+          maxWidth: 700,
+        }}
+      >
+        {USES.map(([title, desc]) => (
+          <div
+            key={title}
+            style={{
+              background: 'var(--bg-inset)',
+              border: '0.5px solid var(--border)',
+              borderRadius: 10,
+              padding: '11px 13px',
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12.5,
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+              }}
+            >
+              {title}
+            </div>
+            <div
+              style={{
+                fontSize: 11.5,
+                lineHeight: 1.45,
+                color: 'var(--text-tertiary)',
+                marginTop: 2,
+              }}
+            >
+              {desc}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+          marginTop: 22,
+        }}
+      >
+        <button
+          type="button"
+          onClick={onOpenLoadLab}
+          style={{
+            padding: '11px 22px',
+            borderRadius: 10,
+            border: 'none',
+            background: 'var(--red)',
+            color: '#fff',
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Open Load Lab
+        </button>
+        <button
+          type="button"
+          onClick={onStartChat}
+          style={{
+            padding: '11px 22px',
+            borderRadius: 10,
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--border)',
+            color: 'var(--text-primary)',
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          AI assistance
+        </button>
+      </div>
+
       {isFreeWithRemaining && quota && (
         <p
           style={{
-            margin: '14px 0 0',
+            margin: '16px 0 0',
             fontSize: 11,
             color: 'var(--text-tertiary)',
             fontStyle: 'italic',
+            textAlign: 'center',
           }}
         >
           {quota.remaining} of {quota.cap} free messages left this month
