@@ -37,7 +37,7 @@ function makeService(opts: {
   const stitch = { refundPayment };
 
   // Positional constructor args: prisma, fees, notifications, stitch, kyc,
-  // shipping, tracking, tokens, referenceNumbers, fraudRisk.
+  // shipping, tracking, tokens, referenceNumbers, fraudRisk, cloudinary.
   const service = new TransactionsService(
     prisma as never,
     {} as never,
@@ -46,6 +46,7 @@ function makeService(opts: {
     {} as never,
     {} as never,
     tracking as never,
+    {} as never,
     {} as never,
     {} as never,
     {} as never,

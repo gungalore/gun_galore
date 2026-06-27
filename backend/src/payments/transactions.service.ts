@@ -9,6 +9,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FeeCalculator } from './fee.calculator';
 import { StitchService, StitchPaymentResult } from './stitch.service';
 import { FraudRiskService } from './fraud-risk.service';
+import { estimateDeliveryDate } from '../shipping/delivery-estimate';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ListingStatus, Province, ShippingMethod } from '@prisma/client';
@@ -87,6 +89,8 @@ export class TransactionsService {
     private readonly tokens: ActionTokensService,
     private readonly referenceNumbers: ReferenceNumberService,
     private readonly fraudRisk: FraudRiskService,
+    // CloudinaryModule is @Global — used by uploadPodProof (Phase 5 P5.3).
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -1238,10 +1242,20 @@ export class TransactionsService {
       );
     }
 
+    // Best-effort estimated delivery window (Phase 5 P5.1). Computed once
+    // at dispatch from the courier's transit days; null for non-courier
+    // methods. Always shown to the buyer as "estimated", never guaranteed.
+    const dispatchedAt = new Date();
+    const estimatedDeliveryAt = estimateDeliveryDate(
+      tx.shippingMethod,
+      dispatchedAt,
+    );
+
     const updated = await this.prisma.transaction.update({
       where: { id: transactionId },
       data: {
-        dispatchedAt: new Date(),
+        dispatchedAt,
+        estimatedDeliveryAt,
         shippingStatus: 'COLLECTED',
         pudoDropoffLockerId: data.pudoDropoffLockerId,
         trackingReference: data.trackingReference,
@@ -1258,6 +1272,46 @@ export class TransactionsService {
     // via confirmDelivery.
     void this.notifications.resolveByEntity('transaction', transactionId);
     return updated;
+  }
+
+  // ------------------------------------------------------------------
+  // Proof-of-delivery photo upload (Phase 5 P5.3)
+  // ------------------------------------------------------------------
+  // Either party may attach ONE delivery photo as dispute evidence. This
+  // does NOT release or gate payout — payout stays on the buyer's
+  // confirmDelivery attestation. Owner-checked + dispatch-gated.
+  async uploadPodProof(
+    transactionId: string,
+    clerkId: string,
+    file?: Express.Multer.File,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('No photo uploaded');
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: { id: true, buyerId: true, sellerId: true, dispatchedAt: true },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+    if (!user || (tx.buyerId !== user.id && tx.sellerId !== user.id)) {
+      throw new ForbiddenException('Not authorised');
+    }
+    if (!tx.dispatchedAt) {
+      throw new BadRequestException(
+        'Proof of delivery can only be added after the order has been dispatched.',
+      );
+    }
+    const { url } = await this.cloudinary.uploadImage(
+      file.buffer,
+      `transactions/pod/${transactionId}`,
+    );
+    return this.prisma.transaction.update({
+      where: { id: transactionId },
+      data: { podProofUrl: url },
+      select: { id: true, podProofUrl: true },
+    });
   }
 
   // ------------------------------------------------------------------

@@ -9,10 +9,11 @@ import {
   HttpCode,
   UseGuards,
   UploadedFiles,
+  UploadedFile,
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { UseInterceptors } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
@@ -349,6 +350,26 @@ export class TransactionsController {
     @Body() body: { reason?: string },
   ) {
     return this.txService.cancelByBuyer(id, clerkId, body?.reason ?? '');
+  }
+
+  // ---------------------------------------------------------------
+  // Proof-of-delivery photo upload (Phase 5 P5.3). Buyer OR seller may
+  // attach a single delivery photo as dispute evidence — does NOT gate
+  // payout (that stays on the buyer's Confirm Delivery). Owner-checked +
+  // dispatch-gated in the service.
+  // ---------------------------------------------------------------
+  @Post(':id/pod-proof')
+  @UseGuards(ClerkGuard)
+  @HttpCode(200)
+  @UseInterceptors(
+    FileInterceptor('photo', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  uploadPodProof(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @UploadedFile() photo: Express.Multer.File,
+  ) {
+    return this.txService.uploadPodProof(id, clerkId, photo);
   }
 }
 

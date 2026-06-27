@@ -29,6 +29,13 @@ const TERMINAL_STATUSES = new Set<string>([
   'PAYOUT_RELEASED',
 ]);
 
+// Collapsed statuses that mean the buyer has the parcel — used to
+// auto-capture a proof-of-delivery reference (Phase 5 P5.3).
+const DELIVERY_DONE_STATUSES = new Set<string>([
+  'DELIVERED',
+  'COLLECTED_BY_BUYER',
+]);
+
 @Injectable()
 export class TrackingService {
   private readonly logger = new Logger(TrackingService.name);
@@ -199,6 +206,28 @@ export class TrackingService {
               `applyShippingUpdate(${transactionId}, ${prismaStatus}) failed: ${(err as Error).message}`,
             ),
           );
+      }
+
+      // Proof-of-delivery auto-capture (Phase 5 P5.3). On the carrier's
+      // delivery/collection event, stamp a human-readable POD reference
+      // from the event (locker/terminal + time) — carriers expose no
+      // signature/photo, so this is the best automatic artefact. Set once
+      // (guard on podReference: null) so re-polls don't overwrite it.
+      if (DELIVERY_DONE_STATUSES.has(collapsed)) {
+        const podReference = [
+          'PUDO',
+          raw.terminal_name ?? raw.location ?? 'locker',
+          raw.terminal_id ? `(${raw.terminal_id})` : null,
+          raw.event_time ? `@ ${raw.event_time}` : null,
+        ]
+          .filter(Boolean)
+          .join(' ');
+        await this.prisma.transaction
+          .updateMany({
+            where: { id: transactionId, podReference: null },
+            data: { podReference },
+          })
+          .catch(() => undefined);
       }
     }
 

@@ -268,6 +268,12 @@ export interface Transaction {
   trackingReference: string | null;
   dispatchedAt: string | null;
   deliveredAt: string | null;
+  // Phase 5 — fulfilment. estimatedDeliveryAt = best-effort window set at
+  // dispatch (null for non-courier). podReference = auto-captured carrier
+  // delivery event; podProofUrl = optional uploaded delivery photo.
+  estimatedDeliveryAt: string | null;
+  podReference: string | null;
+  podProofUrl: string | null;
   // TOK-7 — seller accept→dispatch state machine. acceptDeadlineAt =
   // paidAt + 48h (stamped at payment), dispatchDeadlineAt = acceptedAt
   // + 5d (stamped at accept). rejectedAt + rejectedReason set when

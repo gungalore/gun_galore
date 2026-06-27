@@ -840,6 +840,20 @@ model Transaction {
   dispatchedAt      DateTime?
   deliveredAt       DateTime?
 
+  // Estimated delivery (Phase 5 P5.1). Computed at dispatch from the
+  // courier's transit window — best-effort "expected by", never a
+  // guarantee. Null for PRIVATE_ARRANGE / DEALER_TRANSFER (no carrier
+  // transit the platform can estimate).
+  estimatedDeliveryAt DateTime?
+
+  // Proof of delivery (Phase 5 P5.3). podReference is auto-captured from
+  // the carrier's delivery event (locker/terminal + time) — carriers don't
+  // expose a signature/photo, so this is the best automatic artefact.
+  // podProofUrl is an OPTIONAL buyer/seller-uploaded photo kept as dispute
+  // EVIDENCE; neither gates payout (that stays on the buyer's confirmDelivery).
+  podReference String?
+  podProofUrl  String?
+
   // Pudo locker-to-locker
   pudoDropoffLockerId String? // seller's drop-off locker (set at dispatch)
   pudoPickupLockerId  String? // buyer's chosen pickup locker

@@ -12,6 +12,7 @@ import { RatingWidget } from './rating-widget';
 import { TrackingTimeline } from './tracking-timeline';
 import { AcceptRejectPanel } from './accept-reject-panel';
 import BuyerCancelPanel from './buyer-cancel-panel';
+import PodProofSection from './pod-proof-section';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -347,6 +348,20 @@ export default async function TransactionPage({
                 </div>
               )}
 
+              {/* Estimated delivery (Phase 5 P5.1) — best-effort window,
+                  hidden once actually delivered. Labelled "estimated". */}
+              {tx.estimatedDeliveryAt && !tx.deliveredAt && (
+                <div className="flex justify-between">
+                  <span style={{ color: 'var(--text-tertiary)' }}>Estimated delivery</span>
+                  <span style={{ color: 'var(--text-primary)' }}>
+                    ~{new Date(tx.estimatedDeliveryAt).toLocaleDateString('en-ZA', {
+                      day: 'numeric',
+                      month: 'short',
+                    })}
+                  </span>
+                </div>
+              )}
+
               {tx.deliveredAt && (
                 <div className="flex justify-between">
                   <span style={{ color: 'var(--text-tertiary)' }}>Delivered</span>
@@ -355,7 +370,28 @@ export default async function TransactionPage({
                   </span>
                 </div>
               )}
+
+              {/* Proof of delivery (Phase 5 P5.3) — carrier-captured
+                  reference, evidence only (does not affect payout). */}
+              {tx.podReference && (
+                <div className="flex justify-between">
+                  <span style={{ color: 'var(--text-tertiary)' }}>Proof of delivery</span>
+                  <span style={{ color: 'var(--text-primary)', textAlign: 'right', maxWidth: '60%' }}>
+                    {tx.podReference}
+                  </span>
+                </div>
+              )}
             </div>
+
+            {/* POD photo (Phase 5 P5.3) — optional uploaded delivery photo
+                + upload control for buyer/seller after dispatch. Evidence
+                for disputes; never gates payout. */}
+            {tx.dispatchedAt && (isBuyer || isSeller) && (
+              <PodProofSection
+                transactionId={tx.id}
+                podProofUrl={tx.podProofUrl}
+              />
+            )}
 
             {/* Tracking timeline — append-only event log fed by both
                 internal milestones AND the 10-min Pudo polling cron. */}
