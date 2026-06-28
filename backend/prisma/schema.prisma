@@ -917,6 +917,19 @@ model Transaction {
   deliveryAddress Json? // { building?, streetAddress, address2?, suburb, city, province, postalCode, lat?, lng? } — contactName + contactPhone resolved from User at shipment-creation time
   tcgWaybill      String?
 
+  // Platform-arranged shipment booking (P5.2). When the seller ACCEPTS a
+  // courier sale we book the real shipment with the carrier (Pudo L2L /
+  // TCG D2D) and stamp the result here. trackingReference (above) holds the
+  // carrier waybill. carrierShipmentId is the ShipLogic id used to fetch
+  // the label PDF + cancel. carrierDropoffPin is the Pudo locker drop PIN
+  // (null for TCG door-to-door). shipmentBookingStartedAt is an idempotency
+  // claim set BEFORE the (wallet-billed) carrier call so a retry/race can
+  // never double-book; shipmentBookedAt marks a confirmed booking.
+  carrierShipmentId        String?
+  carrierDropoffPin        String?
+  shipmentBookingStartedAt DateTime?
+  shipmentBookedAt         DateTime?
+
   // Firearm dealer transfer
   dealerId String?
   dealer   Dealer? @relation(fields: [dealerId], references: [id])

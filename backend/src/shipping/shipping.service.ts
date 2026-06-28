@@ -14,6 +14,7 @@ import {
   type ShippingQuote,
 } from './pudo.service';
 import { TcgService, type TcgResidentialAddress } from './tcg.service';
+import { CarrierContact, CarrierShipmentResult } from './carrier.types';
 
 export type ShippingMethod = 'PUDO' | 'TCG' | 'DEALER_TRANSFER';
 
@@ -241,6 +242,223 @@ export class ShippingService {
     throw new BadRequestException(
       `${body.shippingMethod} doesn't use a courier rate.`,
     );
+  }
+
+  // ------------------------------------------------------------------
+  // Platform-arranged shipment booking (P5.2)
+  // ------------------------------------------------------------------
+  // Books the real carrier shipment for a transaction and stamps the
+  // waybill + (Pudo) drop-off PIN onto it. Triggered when the seller
+  // ACCEPTS a courier sale. This SPENDS the carrier wallet, so it is built
+  // to be safe under retries/races and to NEVER throw into its caller:
+  //
+  //   • Idempotency — an atomic claim on `shipmentBookingStartedAt` (set
+  //     BEFORE the wallet-billed call) means only the first caller books;
+  //     a concurrent accept / re-fire is a no-op.
+  //   • Scope — courier sales only. Firearms (DEALER_TRANSFER) and
+  //     PRIVATE_ARRANGE never auto-book.
+  //   • Fail-safe — any error releases the claim, logs, and raises an admin
+  //     alert; the seller still has the manual tracking-entry fallback, so a
+  //     carrier outage can't freeze a sale. The method always resolves.
+  //
+  // Returns the booking result on success, or null when it skipped/failed
+  // (caller treats both as "no booking happened, fall back to manual").
+  async bookForTransaction(
+    transactionId: string,
+  ): Promise<CarrierShipmentResult | null> {
+    // Atomic claim — only the first caller past this point books.
+    const claim = await this.prisma.transaction.updateMany({
+      where: {
+        id: transactionId,
+        shipmentBookingStartedAt: null,
+        shipmentBookedAt: null,
+      },
+      data: { shipmentBookingStartedAt: new Date() },
+    });
+    if (claim.count === 0) {
+      this.logger.log(
+        `bookForTransaction ${transactionId}: already booked or in progress — skipping`,
+      );
+      return null;
+    }
+
+    try {
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: transactionId },
+        include: { listing: true, buyer: true, seller: true },
+      });
+      if (!tx) throw new Error('transaction not found');
+
+      // Courier sales only. Release the claim for everything else so the
+      // row never looks like a stuck in-progress booking.
+      if (tx.shippingMethod !== 'PUDO' && tx.shippingMethod !== 'TCG') {
+        await this.releaseBookingClaim(transactionId);
+        return null;
+      }
+      if (!tx.shippingServiceCode) {
+        throw new Error('transaction has no shippingServiceCode (not quoted?)');
+      }
+
+      // Contacts go to the CARRIER (collection/delivery coordination + the
+      // PIN SMS), never exposed to the other party — so real names + phones
+      // are correct and required here.
+      const collectionContact: CarrierContact = {
+        name:
+          [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
+          tx.seller.username ||
+          'Seller',
+        email: tx.seller.email ?? undefined,
+        mobile: tx.seller.phone ?? '',
+      };
+      const deliveryContact: CarrierContact = {
+        name:
+          [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') ||
+          tx.buyer.username ||
+          'Buyer',
+        email: tx.buyer.email ?? undefined,
+        mobile: tx.buyer.phone ?? '',
+      };
+
+      let result: CarrierShipmentResult;
+      if (tx.shippingMethod === 'PUDO') {
+        if (!tx.pudoPickupLockerId) {
+          throw new Error('no destination locker on transaction');
+        }
+        result = await this.pudo.createShipment({
+          serviceCode: tx.shippingServiceCode,
+          toLockerId: tx.pudoPickupLockerId,
+          collectionContact,
+          deliveryContact,
+        });
+      } else {
+        const L = tx.listing;
+        if (
+          !L.pickupStreet ||
+          !L.pickupCity ||
+          L.pickupLat == null ||
+          L.pickupLng == null
+        ) {
+          throw new Error('seller pickup address incomplete');
+        }
+        const d = tx.deliveryAddress as {
+          streetAddress: string;
+          suburb: string;
+          city: string;
+          province: Province;
+          postalCode: string;
+          lat?: number;
+          lng?: number;
+        } | null;
+        if (!d?.streetAddress) throw new Error('no delivery address on transaction');
+        result = await this.tcg.createShipment({
+          serviceCode: tx.shippingServiceCode,
+          from: {
+            streetAddress: L.pickupStreet,
+            suburb: L.pickupSuburb ?? '',
+            city: L.pickupCity,
+            postalCode: L.pickupPostalCode ?? '',
+            province: PROVINCE_LONG[L.province],
+            lat: L.pickupLat,
+            lng: L.pickupLng,
+          },
+          to: {
+            streetAddress: d.streetAddress,
+            suburb: d.suburb,
+            city: d.city,
+            postalCode: d.postalCode,
+            province: PROVINCE_LONG[d.province],
+            lat: d.lat,
+            lng: d.lng,
+          },
+          parcel: {
+            weightKg: (L.weightGrams ?? 0) / 1000,
+            lengthCm: L.lengthCm ?? 0,
+            widthCm: L.widthCm ?? 0,
+            heightCm: L.heightCm ?? 0,
+          },
+          declaredValueCents: L.price ?? 0,
+          collectionContact,
+          deliveryContact,
+        });
+      }
+
+      // Persist the booking. trackingReference is the carrier waybill the
+      // existing tracking poll/webhook already keys on.
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: {
+          carrierShipmentId: result.shipmentId,
+          carrierDropoffPin: result.pin ?? null,
+          trackingReference: result.trackingReference,
+          shipmentBookedAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Shipment booked for ${transactionId}: ${result.carrier} waybill ${result.trackingReference}${result.pin ? ` (PIN ${result.pin})` : ''}`,
+      );
+
+      // TODO(P5.2 Phase 3): notify the seller (SMS + email) with the waybill,
+      // Pudo PIN, label link, and the "write it on the package" fallback —
+      // this.notifications.shipmentBooked(...). Wired together with the
+      // acceptTransaction hook so the codebase never books without notifying.
+      return result;
+    } catch (err) {
+      // Release the claim so an admin can retry + the seller keeps the
+      // manual-dispatch fallback. Never rethrow — accept must not fail
+      // because the carrier did.
+      await this.releaseBookingClaim(transactionId);
+      this.logger.error(
+        `bookForTransaction ${transactionId} failed: ${(err as Error).message}`,
+      );
+      await this.raiseBookingFailedAlert(transactionId, (err as Error).message);
+      return null;
+    }
+  }
+
+  private async releaseBookingClaim(transactionId: string): Promise<void> {
+    await this.prisma.transaction
+      .update({
+        where: { id: transactionId },
+        data: { shipmentBookingStartedAt: null },
+      })
+      .catch(() => undefined);
+  }
+
+  private async raiseBookingFailedAlert(
+    transactionId: string,
+    reason: string,
+  ): Promise<void> {
+    // Best-effort admin surface — dedup on the transaction (no compound
+    // unique on AdminAlert) so repeated retries refresh one alert rather
+    // than spamming the queue.
+    const context = `Shipment booking failed: ${reason}`.slice(0, 500);
+    try {
+      const existing = await this.prisma.adminAlert.findFirst({
+        where: {
+          type: 'SHIPMENT_BOOKING_FAILED',
+          referenceId: transactionId,
+          resolved: false,
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        await this.prisma.adminAlert.update({
+          where: { id: existing.id },
+          data: { context },
+        });
+      } else {
+        await this.prisma.adminAlert.create({
+          data: {
+            type: 'SHIPMENT_BOOKING_FAILED',
+            referenceId: transactionId,
+            urgent: true,
+            context,
+          },
+        });
+      }
+    } catch {
+      // best-effort — never let alerting failure mask the booking failure
+    }
   }
 
   // ------------------------------------------------------------------
