@@ -17,10 +17,11 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg(process.env.DATABASE_URL!),
 });
 
-const LISTING_TYPE_TO_PREFIX: Record<ListingType, 'UM' | 'AU' | 'TS'> = {
+const LISTING_TYPE_TO_PREFIX: Record<ListingType, 'UM' | 'AU' | 'TS' | 'SW'> = {
   BUY_NOW: 'UM',
   AUCTION: 'AU',
   TAKE_A_SHOT: 'TS',
+  SWOP: 'SW',
 };
 
 function fmt(prefix: string, count: number): string {

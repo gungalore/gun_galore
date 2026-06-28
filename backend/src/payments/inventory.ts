@@ -13,11 +13,11 @@
 //   releaseSold(q)  (refund/cancel/reject AFTER pay) → quantityAvailable += q, ACTIVE
 //   releaseReserve(q) (gateway failed BEFORE pay)    → quantityReserved −= q
 
-export type ListingTypeLike = 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT';
+export type ListingTypeLike = 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT' | 'SWOP';
 
 // A listing may only be inventory-tracked (qty > 1) if it is a plain
 // BUY_NOW, non-firearm listing. Firearms are 1-serial-per-SAPS-534;
-// auctions + take-a-shot are inherently single-item.
+// auctions + take-a-shot + swop are inherently single-item.
 export function inventoryEligible(
   listingType: ListingTypeLike,
   isFirearm: boolean,

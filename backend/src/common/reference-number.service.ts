@@ -15,12 +15,13 @@ import { PrismaService } from '../prisma/prisma.service';
 // references reuse these per-prefix counters, so every issued number is
 // globally unique within its prefix whether it labels a listing or an
 // order (no two things ever share UM000042).
-export type ReferencePrefix = 'UM' | 'AU' | 'TS' | 'RA' | 'FS';
+export type ReferencePrefix = 'UM' | 'AU' | 'TS' | 'RA' | 'FS' | 'SW';
 
 const LISTING_TYPE_TO_PREFIX: Record<ListingType, ReferencePrefix> = {
   BUY_NOW: 'UM',
   AUCTION: 'AU',
   TAKE_A_SHOT: 'TS',
+  SWOP: 'SW', // Swop/Trade listing (SWOP) — used by the swap funding EFT memo
 };
 
 // Per-order reference source — the thing being paid for. Drives the
@@ -31,6 +32,7 @@ const ORDER_SOURCE_TO_PREFIX: Record<OrderRefSource, ReferencePrefix> = {
   BUY_NOW: 'UM',
   AUCTION: 'AU',
   TAKE_A_SHOT: 'TS',
+  SWOP: 'SW',
   RAFFLE: 'RA',
   FEATURED: 'FS',
 };

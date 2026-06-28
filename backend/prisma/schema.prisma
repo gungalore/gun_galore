@@ -43,6 +43,7 @@ enum ListingType {
   BUY_NOW
   TAKE_A_SHOT
   AUCTION
+  SWOP
 }
 
 enum ListingStatus {
@@ -400,6 +401,12 @@ model User {
   // ── Multi-item orders (Phase 8b) ─────────────────────────────────
   orders Order[] @relation("BuyerOrders")
 
+  // ── Swop/Trade back-relations (SWOP) ─────────────────────────────
+  swapProposalsMade     SwapProposal[] @relation("SwapProposalsMade")
+  swapProposalsReceived SwapProposal[] @relation("SwapProposalsReceived")
+  swapsInitiated        Swap[]         @relation("SwapsInitiated")
+  swapsReceived         Swap[]         @relation("SwapsReceived")
+
   // ── Wishlist back-relation ───────────────────────────────────────
   // Saved listings the user wants to come back to. See WatchedListing.
   // Distinct from AuctionWatch (which is bidding-specific notification
@@ -745,6 +752,8 @@ model Listing {
   offers         Offer[]
   bids           Bid[]
   watchers       AuctionWatch[]
+  swapProposals        SwapProposal[] @relation("SwapProposalTarget")
+  swapProposalsOffered SwapProposal[] @relation("SwapProposalOffered")
   // Users who saved this listing to their wishlist. Distinct from
   // `watchers` (auction-bidding opt-in). Used for the heart-icon
   // state across browse grids + /wishlist page + future "X people
@@ -929,6 +938,15 @@ model Transaction {
   carrierDropoffPin        String?
   shipmentBookingStartedAt DateTime?
   shipmentBookedAt         DateTime?
+
+  // Swop/Trade leg (SWOP). A swap is ONE Swap parent fanning out to TWO
+  // Transaction legs (one per shipping direction); seller = the party
+  // shipping this leg, buyer = the recipient. Leg money fields stay ZERO —
+  // cash + GG fees are captured once on the Swap parent. swapRole marks
+  // which item this leg ships.
+  swapId   String?
+  swap     Swap?     @relation("SwapLegs", fields: [swapId], references: [id])
+  swapRole SwapRole?
 
   // Firearm dealer transfer
   dealerId String?
@@ -2951,4 +2969,121 @@ model PayoutBatch {
   transactions Transaction[]
 
   @@index([status, createdAt])
+}
+
+// ── Swop / Trade (fully-managed two-way swap) ───────────────────────
+// A swap = a SwapProposal negotiation (modelled on Offer) that, on accept,
+// creates a Swap parent fanning out to TWO Transaction legs (one per shipping
+// direction; Transaction is reused wholesale as the leg). The ONE funding
+// capture + the per-party flat GG fees live on the parent; legs carry zero
+// money. Mirrors the Order→Transaction fan-out + the manual-EFT lifecycle.
+// GG revenue = a flat service fee per leg (courier markup / firearm handling).
+
+enum SwapProposalStatus {
+  PENDING // awaiting owner response (48h TTL)
+  COUNTERED // owner countered the cash; proposer must respond (24h TTL)
+  ACCEPTED // both sides agreed → Swap created
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+  CONVERTED // Swap created from this proposal
+}
+
+enum SwapStatus {
+  AWAITING_FUNDING // accepted; waiting on the single funding EFT
+  LOCKED // funded; both legs about to be / being booked
+  IN_TRANSIT // both legs booked + shipping
+  AWAITING_VERIFICATION // delivered but a firearm leg still pending dealer-verify
+  COMPLETED // both legs done (+ verified) → cash released → closed
+  CANCELLED // pre-lock cancel / proposal or funding lapse
+  DISPUTED // admin-owned: a leg failed / never shipped post-lock
+}
+
+enum SwapRole {
+  INITIATOR_GIVES // leg ships the initiator's item → owner; cash from initiator
+  OWNER_GIVES // leg ships the owner's item → initiator; cash from owner
+}
+
+model SwapProposal {
+  id        String  @id @default(cuid())
+  listingId String // the SWOP listing being proposed against
+  listing   Listing @relation("SwapProposalTarget", fields: [listingId], references: [id])
+
+  proposerId String
+  proposer   User   @relation("SwapProposalsMade", fields: [proposerId], references: [id])
+  ownerId    String // denormalised listing.sellerId for the unique guard + "received" query
+  owner      User   @relation("SwapProposalsReceived", fields: [ownerId], references: [id])
+
+  // v1: the proposer offers ONE existing SWOP listing they own (reuses its
+  // photos + firearm/licence gating). Free-text/multi-item is a later add.
+  offeredListingId String
+  offeredListing   Listing @relation("SwapProposalOffered", fields: [offeredListingId], references: [id])
+
+  // Optional cash top-up. cashAmount in ZAR cents; cashDirection = who pays.
+  cashAmount    Int       @default(0)
+  cashDirection SwapRole?
+  // Owner's single counter (cash only).
+  counterCashAmount    Int?
+  counterCashDirection SwapRole?
+
+  proposerNote String?
+  ownerNote    String?
+  status       SwapProposalStatus @default(PENDING)
+  expiresAt    DateTime
+
+  swapId String? @unique
+  swap   Swap?   @relation(fields: [swapId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([listingId, proposerId]) // one active proposal per proposer per listing
+  @@index([listingId])
+  @@index([proposerId])
+  @@index([ownerId])
+  @@index([status])
+}
+
+model Swap {
+  id     String     @id @default(cuid())
+  status SwapStatus @default(AWAITING_FUNDING)
+
+  initiatorId String
+  initiator   User   @relation("SwapsInitiated", fields: [initiatorId], references: [id])
+  ownerId     String
+  owner       User   @relation("SwapsReceived", fields: [ownerId], references: [id])
+
+  // Cash top-up (ZAR cents) + who pays it. Per-party flat GG fee snapshotted
+  // at lock (courier service fee / firearm handling fee).
+  cashPayerId      String?
+  cashAmount       Int     @default(0)
+  swapFeeInitiator Int     @default(0)
+  swapFeeOwner     Int     @default(0)
+
+  // ONE funding capture for the whole swap. cashOrderReference = the single
+  // EFT memo (SW prefix). gateway* = the neutral seam for the future paygate.
+  cashOrderReference String? @unique
+  gatewayCheckoutId  String?
+  gatewayPaymentId   String? @unique
+
+  // Manual-EFT funding lifecycle (mirrors Order.manual*).
+  cashPayByAt     DateTime?
+  cashDetectedAt  DateTime?
+  cashVerifiedAt  DateTime?
+  cashCancelledAt DateTime?
+
+  lockedAt        DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  cancelledReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  proposal     SwapProposal?
+  transactions Transaction[] @relation("SwapLegs")
+
+  @@index([initiatorId, status])
+  @@index([ownerId, status])
+  @@index([status, cashPayByAt])
 }
