@@ -12,6 +12,7 @@ import {
 } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
 import { ManualEftInstructions } from '@/components/manual-eft-instructions';
+import { PaygateComingSoon } from '@/components/paygate-coming-soon';
 import { LockerPicker, PudoLocker } from '@/components/locker-picker';
 import {
   AddressAutocomplete,
@@ -1269,6 +1270,9 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
             </div>
           );
         })()}
+
+      {/* Payment method — paygate placeholder above the live EFT flow */}
+      <PaygateComingSoon />
 
       {/* Proceed button */}
       <button

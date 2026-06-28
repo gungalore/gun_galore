@@ -6,6 +6,7 @@ import { useAuth } from '@clerk/nextjs';
 import { useCart, removeFromCart, clearCart } from '@/lib/cart-store';
 import { formatPrice } from '@/lib/utils';
 import { ManualEftInstructions, type ManualEftData } from '@/components/manual-eft-instructions';
+import { PaygateComingSoon } from '@/components/paygate-coming-soon';
 import { LockerPicker, type PudoLocker } from '@/components/locker-picker';
 import {
   ManualAddressFields,
@@ -243,6 +244,9 @@ export default function CartPage() {
           <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
         )}
       </div>
+
+      {/* Payment method — paygate placeholder + EFT (the live method) */}
+      <PaygateComingSoon />
 
       {/* Totals */}
       <div

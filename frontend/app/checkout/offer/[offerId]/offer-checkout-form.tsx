@@ -5,6 +5,7 @@ import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { formatPrice } from '@/lib/utils';
 import { ManualEftInstructions } from '@/components/manual-eft-instructions';
+import { PaygateComingSoon } from '@/components/paygate-coming-soon';
 import { FeeBreakdown, ShippingMethod } from '@/lib/types';
 import { LockerPicker, PudoLocker } from '@/components/locker-picker';
 
@@ -366,6 +367,8 @@ export function OfferCheckoutForm({
           </p>
         </div>
       )}
+
+      <PaygateComingSoon />
 
       <button
         type="button"
