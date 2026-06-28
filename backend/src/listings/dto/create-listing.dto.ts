@@ -140,6 +140,10 @@ export class CreateListingDto {
   @IsOptional() @IsNumber() widthCm?: number;
   @IsOptional() @IsNumber() heightCm?: number;
 
+  // Inventory / stock (Phase 8a). Only honoured for BUY_NOW non-firearm
+  // listings; >1 opts the listing into multi-unit inventory tracking.
+  @IsOptional() @IsInt() @Min(1) quantityAvailable?: number;
+
   // Number of photos the frontend is about to upload AFTER the create
   // call returns. We use this to fail-fast at create-time when the
   // seller has zero staged images — before this gate, photos uploaded

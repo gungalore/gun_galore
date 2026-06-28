@@ -265,6 +265,11 @@ export default function NewListingPage() {
     heightCm: '',
   });
 
+  // Stock / quantity (Phase 8a). Only meaningful for BUY_NOW non-firearm
+  // listings — a value > 1 opts the listing into inventory tracking so it
+  // stays live until every unit sells. Empty / 1 = a single item (default).
+  const [stock, setStock] = useState('');
+
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -824,6 +829,11 @@ export default function NewListingPage() {
       heightCm: parsedParcel.heightCm
         ? Math.round(parsedParcel.heightCm)
         : undefined,
+      // Stock (Phase 8a) — only for BUY_NOW non-firearm + >1; backend
+      // ignores it otherwise and keeps the listing a single item.
+      ...(form.listingType === 'BUY_NOW' && !isFirearm && Math.floor(Number(stock)) > 1
+        ? { quantityAvailable: Math.floor(Number(stock)) }
+        : {}),
     };
     if (!isTakeAShot) {
       body.price = Math.round(parseFloat(form.price) * 100);
@@ -1959,6 +1969,22 @@ export default function NewListingPage() {
                 can disable PUDO if the parcel overshoots locker limits.
                 Hidden for firearms because DEALER_TRANSFER and
                 PRIVATE_ARRANGE don't use the courier API. */}
+            {form.listingType === 'BUY_NOW' && !isFirearm && (
+              <Field
+                label="Quantity in stock"
+                hint="Selling more than one identical unit? Set the stock here and your listing stays live until every unit sells. Leave blank or 1 for a single item."
+              >
+                <div className="max-w-[160px]">
+                  <SmallNumberField
+                    label="Units available"
+                    value={stock}
+                    onChange={(v) => setStock(v)}
+                    placeholder="1"
+                  />
+                </div>
+              </Field>
+            )}
+
             {!isFirearm && (
               <Field
                 label="Parcel weight & size"

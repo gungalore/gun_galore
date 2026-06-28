@@ -195,6 +195,9 @@ export interface Listing {
   condition: Condition;
   province: Province;
   isFirearm: boolean;
+  // Inventory / quantity (Phase 8a). trackInventory=false for single items.
+  trackInventory?: boolean;
+  quantityAvailable?: number;
   make: string | null;
   model: string | null;
   calibre: string | null;

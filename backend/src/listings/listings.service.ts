@@ -23,6 +23,7 @@ import { PreviewListingDto } from './dto/preview-listing.dto';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { FirearmLicenceService } from './firearm-licence.service';
+import { inventoryEligible } from '../payments/inventory';
 
 // Shape returned by previewDraft() — the frontend uses this to render the
 // soft-block preview screen. canPublish gates the "Confirm publish" button;
@@ -423,6 +424,20 @@ export class ListingsService {
       dto.listingType,
     );
 
+    // Inventory / quantity (Phase 8a). Only a plain BUY_NOW non-firearm
+    // listing may carry stock > 1 — firearms are 1-per-SAPS-534, auctions
+    // and take-a-shot are single-item. A seller opts in by setting a
+    // quantity above 1; everything else stays the legacy single item
+    // (trackInventory=false, quantityAvailable=1).
+    const requestedStock = Math.floor(Number(dto.quantityAvailable ?? 1));
+    const trackInventory =
+      inventoryEligible(dto.listingType, category.isFirearm) &&
+      Number.isFinite(requestedStock) &&
+      requestedStock > 1;
+    const quantityAvailable = trackInventory
+      ? Math.min(requestedStock, 9999)
+      : 1;
+
     const listing = await this.prisma.listing.create({
       data: {
         referenceNumber,
@@ -436,6 +451,8 @@ export class ListingsService {
         condition: dto.condition,
         province: dto.province,
         isFirearm: category.isFirearm,
+        trackInventory,
+        quantityAvailable,
         make: dto.make,
         model: dto.model,
         calibre: dto.calibre,
