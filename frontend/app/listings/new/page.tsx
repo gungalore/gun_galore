@@ -1699,6 +1699,25 @@ export default function NewListingPage() {
               </Field>
             )}
 
+            {/* Quantity — right under the Buy-Now price so it's part of the
+                pricing decision, not buried in the delivery step. Only
+                Buy-Now non-firearm (auctions + firearms are single-item). */}
+            {form.listingType === 'BUY_NOW' && !isFirearm && (
+              <Field
+                label="Quantity available"
+                hint="How many identical units are you selling? Your listing stays live until every unit sells. Leave at 1 for a single item."
+              >
+                <div className="max-w-[160px]">
+                  <SmallNumberField
+                    label="Units available"
+                    value={stock}
+                    onChange={(v) => setStock(v)}
+                    placeholder="1"
+                  />
+                </div>
+              </Field>
+            )}
+
             {/* Auction block — Duration + Reserve + Starting bid.
                 When the seller sets a reserve, the starting bid is
                 hidden + derived as floor(reserve * 0.7). When they
@@ -1969,22 +1988,6 @@ export default function NewListingPage() {
                 can disable PUDO if the parcel overshoots locker limits.
                 Hidden for firearms because DEALER_TRANSFER and
                 PRIVATE_ARRANGE don't use the courier API. */}
-            {form.listingType === 'BUY_NOW' && !isFirearm && (
-              <Field
-                label="Quantity in stock"
-                hint="Selling more than one identical unit? Set the stock here and your listing stays live until every unit sells. Leave blank or 1 for a single item."
-              >
-                <div className="max-w-[160px]">
-                  <SmallNumberField
-                    label="Units available"
-                    value={stock}
-                    onChange={(v) => setStock(v)}
-                    placeholder="1"
-                  />
-                </div>
-              </Field>
-            )}
-
             {!isFirearm && (
               <Field
                 label="Parcel weight & size"
