@@ -53,6 +53,35 @@ const COMMISSION_BANDS: { limit: number; rate: number; label: string }[] = [
 ];
 const MIN_COMMISSION_CENTS = 3_000; // R30 floor — see backend fee.calculator.ts
 
+// The three ways to list — rendered as descriptive choice cards in Step 3
+// so sellers can compare and know where to list before picking. Copy mirrors
+// the /how-selling-works help page.
+const SELL_MODES: {
+  value: 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT';
+  name: string;
+  tagline: string;
+  bestFor: string[];
+}[] = [
+  {
+    value: 'BUY_NOW',
+    name: 'Marketplace',
+    tagline: 'Fixed price — the fastest, cleanest sale.',
+    bestFor: ['Known market price', 'Sell it now', 'Multiple identical units'],
+  },
+  {
+    value: 'AUCTION',
+    name: 'Auction',
+    tagline: 'Let buyers compete and bid it up.',
+    bestFor: ['Rare or in-demand', 'Unsure how high it’ll go', 'Hidden reserve protects you'],
+  },
+  {
+    value: 'TAKE_A_SHOT',
+    name: 'Take a Shot',
+    tagline: 'Buyers make offers; you decide.',
+    bestFor: ['Hard to price', 'Open to offers', 'Optional instant auto-accept'],
+  },
+];
+
 function calcCommissionCents(priceCents: number): number {
   let commission = 0;
   let remaining = priceCents;
@@ -1600,62 +1629,80 @@ export default function NewListingPage() {
                 </>
               }
             >
-              {/* equalCols=true → 3-column grid with each pill
-                  stretching to fill its column. Forces all three
-                  options onto the same row regardless of label
-                  width (the old flex-wrap left "Take a Shot"
-                  alone on row two, which downplayed it). Empty
-                  string is passed when the seller hasn't picked
-                  yet — none of the pills render as selected. */}
-              <PillGroup
-                value={
-                  (form.listingType || null) as
-                    | 'BUY_NOW'
-                    | 'AUCTION'
-                    | 'TAKE_A_SHOT'
-                    | null
-                }
-                onChange={(v) => set('listingType', v)}
-                options={[
-                  { value: 'BUY_NOW', label: 'Marketplace' },
-                  { value: 'AUCTION', label: 'Auction' },
-                  { value: 'TAKE_A_SHOT', label: 'Take a Shot' },
-                ]}
-                equalCols
-              />
-              {!form.listingType && (
-                <p
-                  style={{
-                    marginTop: 8,
-                    fontSize: 12,
-                    color: 'var(--text-tertiary)',
-                  }}
-                >
-                  Pick how you want to sell — each option has different
-                  pricing, timing and bidder behaviour.
-                </p>
-              )}
+              {/* Descriptive choice cards — each mode shows what it is and
+                  what it's best for, visible BEFORE the seller picks, so they
+                  know where to list and why. Selecting one sets listingType. */}
+              <div className="flex flex-col gap-2">
+                {SELL_MODES.map((m) => {
+                  const selected = form.listingType === m.value;
+                  return (
+                    <button
+                      key={m.value}
+                      type="button"
+                      onClick={() => set('listingType', m.value)}
+                      aria-pressed={selected}
+                      className="text-left rounded-[8px] p-3"
+                      style={{
+                        background: selected
+                          ? 'rgba(200,16,46,0.06)'
+                          : 'var(--bg-card)',
+                        border: `1px solid ${selected ? 'var(--red)' : 'var(--border)'}`,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className="text-sm"
+                          style={{ color: 'var(--text-primary)', fontWeight: 600 }}
+                        >
+                          {m.name}
+                        </span>
+                        <span
+                          aria-hidden
+                          className="text-[11px]"
+                          style={{
+                            color: selected ? 'var(--red)' : 'var(--text-tertiary)',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {selected ? '✓ Selected' : 'Choose'}
+                        </span>
+                      </div>
+                      <p
+                        className="text-xs mt-0.5 mb-2"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {m.tagline}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {m.bestFor.map((b) => (
+                          <span
+                            key={b}
+                            className="text-[11px] px-2 py-0.5 rounded-full"
+                            style={{
+                              background: 'var(--bg-inset)',
+                              color: 'var(--text-tertiary)',
+                            }}
+                          >
+                            {b}
+                          </span>
+                        ))}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <a
+                href="/how-selling-works"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-xs mt-2"
+                style={{ color: 'var(--red)' }}
+              >
+                Not sure which to pick? See how selling works →
+              </a>
             </Field>
 
-            {/* Per-type explanation banner */}
-            {form.listingType === 'BUY_NOW' && (
-              <ExplainBanner
-                title="Marketplace"
-                body="Fixed price. Buyer pays the listed amount and you ship. Fastest path to sale."
-              />
-            )}
-            {form.listingType === 'AUCTION' && (
-              <ExplainBanner
-                title="Auction"
-                body="Timed bidding. Bidders set a max; the system bids the minimum increment for them. Bids in the last 2 minutes extend the end time by 2 minutes."
-              />
-            )}
-            {form.listingType === 'TAKE_A_SHOT' && (
-              <ExplainBanner
-                title="Take a Shot"
-                body="Buyers name their price. You get one counter-offer. Optional hidden auto-accept threshold lets the system close instantly."
-              />
-            )}
 
             {/* ─── Pricing UI per surface ──────────────────────────
                 BUY_NOW  → single Price input.
@@ -2683,25 +2730,6 @@ function BreakdownRow({
       >
         {value}
       </span>
-    </div>
-  );
-}
-
-function ExplainBanner({ title, body }: { title: string; body: string }) {
-  return (
-    <div
-      className="rounded-[6px] px-4 py-3 text-xs"
-      style={{
-        background: 'var(--bg-inset)',
-        border: '0.5px solid var(--border)',
-        color: 'var(--text-tertiary)',
-        lineHeight: 1.6,
-      }}
-    >
-      <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
-        {title}
-      </span>{' '}
-      — {body}
     </div>
   );
 }
