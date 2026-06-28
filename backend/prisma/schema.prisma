@@ -294,21 +294,21 @@ model User {
   // rest; SA bank account numbers aren't classed as PII under POPIA
   // the same way an ID number is, and we need the plaintext to run
   // future payouts via Peach.
-  bankName           String?
-  bankAccountHolder  String?
-  bankAccountNumber  String?
-  bankBranchCode     String?
-  bankAccountType    String? // "cheque" | "savings" | "transmission"
+  bankName          String?
+  bankAccountHolder String?
+  bankAccountNumber String?
+  bankBranchCode    String?
+  bankAccountType   String? // "cheque" | "savings" | "transmission"
   // Stamp set when Peach AVS returns "match" on the bank details.
   // We re-run AVS on every save (per operator decision) so this
   // always reflects the most recent confirmation.
-  bankVerifiedAt     DateTime?
+  bankVerifiedAt    DateTime?
   // Last raw Peach AVS response code, for audit if a payout fails
   // and we need to trace why.
-  bankAvsResult      String?
+  bankAvsResult     String?
 
-  createdAt                 DateTime  @default(now())
-  updatedAt                 DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Auction system — non-payment strikes
   auctionStrikes Int       @default(0)
@@ -321,16 +321,16 @@ model User {
   // strikes because the rules + consequences are different.
   dispatchStrikes Int @default(0)
 
-  listings           Listing[]
-  buyerTransactions  Transaction[]  @relation("BuyerTransactions")
-  sellerTransactions Transaction[]  @relation("SellerTransactions")
-  ratingsGiven       Rating[]       @relation("RatingsGiven")
-  ratingsReceived    Rating[]       @relation("RatingsReceived")
-  offersPlaced       Offer[]        @relation("BuyerOffers")
-  bidsPlaced         Bid[]          @relation("BidderBids")
-  highBidOnListings  Listing[]      @relation("CurrentHighBidder")
+  listings                Listing[]
+  buyerTransactions       Transaction[]            @relation("BuyerTransactions")
+  sellerTransactions      Transaction[]            @relation("SellerTransactions")
+  ratingsGiven            Rating[]                 @relation("RatingsGiven")
+  ratingsReceived         Rating[]                 @relation("RatingsReceived")
+  offersPlaced            Offer[]                  @relation("BuyerOffers")
+  bidsPlaced              Bid[]                    @relation("BidderBids")
+  highBidOnListings       Listing[]                @relation("CurrentHighBidder")
   contactDetailRejections ContactDetailRejection[]
-  watchlist          AuctionWatch[]
+  watchlist               AuctionWatch[]
 
   // Q&A on listings — back-relations for "questions I've asked" and
   // "questions I've answered" (the latter is virtually always the
@@ -397,6 +397,9 @@ model User {
   // ── Support tickets (Phase 7 P7.2) ───────────────────────────────
   supportTickets SupportTicket[] @relation("UserSupportTickets")
 
+  // ── Multi-item orders (Phase 8b) ─────────────────────────────────
+  orders Order[] @relation("BuyerOrders")
+
   // ── Wishlist back-relation ───────────────────────────────────────
   // Saved listings the user wants to come back to. See WatchedListing.
   // Distinct from AuctionWatch (which is bidding-specific notification
@@ -420,31 +423,31 @@ model User {
   // billing (see Subscription model). Admin can grant MEMBER/PRO
   // manually for testing / comp accounts (recorded in
   // AdminAuditEvent like any tier change).
-  subscriptionTier        SubscriptionTier @default(FREE)
+  subscriptionTier      SubscriptionTier @default(FREE)
   // Peach card-vault ID. Created lazily on first paid subscription;
   // reused for every subsequent recurring charge. Mirrors the
   // zohoContactId pattern. NULL until the subscription billing
   // rail goes live (operator-side blocker — separate work).
-  peachCustomerId         String?          @unique
+  peachCustomerId       String?          @unique
   // Verified-expert badge (Pro tier). Awarded by admin after the
   // user has 5+ verified KB submissions. Visible site-wide next to
   // their username on listings + KB entries + Q&A answers.
-  isVerifiedExpert        Boolean          @default(false)
-  verifiedExpertAt        DateTime?
-  expertBadgeReason       String?
+  isVerifiedExpert      Boolean          @default(false)
+  verifiedExpertAt      DateTime?
+  expertBadgeReason     String?
   // Lifetime counters for FREE-tier caps. Free users get 5 messages
   // + 5 photo IDs per rolling 30 days; the AskGgUsage daily rollup
   // is the source of truth for windows, but these lifetime counts
   // make it cheap to render "you've used N total" in the UI without
   // a daily-rollup aggregation query.
-  askGgLifetimeMessages   Int              @default(0)
-  askGgLifetimePhotoIds   Int              @default(0)
+  askGgLifetimeMessages Int              @default(0)
+  askGgLifetimePhotoIds Int              @default(0)
 
   // Back-relations (Ask GG subscription + assistant)
-  subscription              Subscription?
-  askGgConversations        AskGgConversation[]
-  askGgKbEntries            AskGgKbEntry[]       @relation("KbAuthor")
-  askGgUsage                AskGgUsage[]
+  subscription       Subscription?
+  askGgConversations AskGgConversation[]
+  askGgKbEntries     AskGgKbEntry[]      @relation("KbAuthor")
+  askGgUsage         AskGgUsage[]
 }
 
 // =====================================================================
@@ -467,41 +470,41 @@ model User {
 // was the explicit user-spec'd behaviour. The badge only drops when
 // the user actually acts on the underlying entity.
 enum NotificationCategory {
-  BUYER    // events relevant to the user as a buyer
-  SELLER   // events relevant to the user as a seller
-  ACCOUNT  // KYC / AVS / broadcasts / admin messages
+  BUYER // events relevant to the user as a buyer
+  SELLER // events relevant to the user as a seller
+  ACCOUNT // KYC / AVS / broadcasts / admin messages
 }
 
 model Notification {
-  id        String               @id @default(cuid())
-  userId    String
-  category  NotificationCategory
+  id       String               @id @default(cuid())
+  userId   String
+  category NotificationCategory
   // Discriminator for the event (e.g. 'offer_received', 'bid_outbid').
   // Free-form string so we can add new event types without a migration.
-  type      String
+  type     String
 
-  title     String
-  body      String
-  url       String?              // deep-link path (e.g. /transactions/abc)
-  iconKey   String?              // UI icon hint (offer | bid | sold | ...)
+  title   String
+  body    String
+  url     String? // deep-link path (e.g. /transactions/abc)
+  iconKey String? // UI icon hint (offer | bid | sold | ...)
 
   // Linkage to the underlying entity. resolveByEntity() in the service
   // looks up unresolved rows by (linkedType, linkedId) and stamps
   // resolvedAt on them when the entity transitions.
-  linkedType String?             // 'offer' | 'transaction' | 'bid' | 'listing' | 'raffle'
+  linkedType String? // 'offer' | 'transaction' | 'bid' | 'listing' | 'raffle'
   linkedId   String?
 
   // Resolution state.
   resolvedAt DateTime?
-  resolvedBy String?             // 'user_action' | 'dismissed' | 'auto_expired'
+  resolvedBy String? // 'user_action' | 'dismissed' | 'auto_expired'
 
   // True for informational notifications the user can swipe/tap to
   // dismiss. False for action-required ones — those can ONLY clear
   // via resolveByEntity when the underlying entity transitions.
-  dismissible Boolean             @default(false)
+  dismissible Boolean @default(false)
 
-  createdAt   DateTime            @default(now())
-  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Bell-badge / active-feed query: WHERE userId=? AND resolvedAt IS NULL
   @@index([userId, resolvedAt, createdAt(sort: Desc)])
@@ -624,18 +627,18 @@ model Listing {
   //   - licenceExpiresAt: expiry date vision read off the licence. Drives
   //     the listing gate (expired/≤30d blocked, 31–90d warn) and the daily
   //     auto-delist cron (set EXPIRED once ≤30d out).
-  serialNumber      String?
-  serialPhotoUrl    String?
-  licencePhotoUrl   String?
-  licenceHolderName String?
-  licenceExpiresAt  DateTime?
+  serialNumber          String?
+  serialPhotoUrl        String?
+  licencePhotoUrl       String?
+  licenceHolderName     String?
+  licenceExpiresAt      DateTime?
   // Set once when the 31–90-day "licence expiring" warning is sent, so the
   // daily expiry cron warns only once (then delists at ≤30 days).
   licenceExpiryWarnedAt DateTime?
   // Firearm "type" (e.g. Pistol/Rifle/Shotgun) — left blank on the
   // prefilled SAP 534 and read back from the completed, dealer-stamped
   // form at dealer-verification time.
-  firearmType       String?
+  firearmType           String?
 
   // Parcel weight + dimensions captured by the seller in the Sell form.
   // Required for non-firearm listings (Pudo + TCG need them to quote
@@ -736,17 +739,18 @@ model Listing {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  images       ListingImage[]
-  transactions Transaction[]
-  offers       Offer[]
-  bids         Bid[]
-  watchers     AuctionWatch[]
+  images         ListingImage[]
+  transactions   Transaction[]
+  orderLineItems OrderLineItem[]
+  offers         Offer[]
+  bids           Bid[]
+  watchers       AuctionWatch[]
   // Users who saved this listing to their wishlist. Distinct from
   // `watchers` (auction-bidding opt-in). Used for the heart-icon
   // state across browse grids + /wishlist page + future "X people
   // saved this" social-proof signal.
-  wishlistedBy WatchedListing[]
-  questions    ListingQuestion[]
+  wishlistedBy   WatchedListing[]
+  questions      ListingQuestion[]
 
   // Featured-slot back-relation. When a seller wins a featured slot
   // auction + binds this listing to it, the slot's
@@ -799,6 +803,17 @@ model Dealer {
 model Transaction {
   id String @id @default(cuid())
 
+  // Cart / multi-item order (Phase 8b). Null for every single-item
+  // checkout (the entire Phase 1–7 flow). When set, this transaction is
+  // one line of a multi-item Order; the Order owns the single payment
+  // capture and the buyer-facing rollup, while this row stays exactly a
+  // one-listing sub-order (so all dispatch / payout / SAPS / Zoho logic is
+  // unchanged). One Transaction per line item.
+  orderId  String?
+  order    Order?         @relation(fields: [orderId], references: [id])
+  // Inverse of OrderLineItem.transaction (1:1) — the cart line this fills.
+  lineItem OrderLineItem? @relation("OrderLineTransaction")
+
   // Parties
   listingId String
   listing   Listing @relation(fields: [listingId], references: [id])
@@ -810,7 +825,7 @@ model Transaction {
   // Units purchased (Phase 8a). 1 for every legacy/single-item sale.
   // For an inventory-tracked listing, listingPrice below is the LINE TOTAL
   // (unit price × quantity) so all downstream money math is unchanged.
-  quantity            Int @default(1)
+  quantity Int @default(1)
 
   // Pricing — all ZAR cents, snapshot at point of sale
   listingPrice        Int // snapshot of listing.price × quantity
@@ -833,8 +848,8 @@ model Transaction {
   // Fraud-risk signals (Phase 3b). Computed AFTER payment capture
   // (fire-and-forget in markPaid) — log-only, never blocks payment.
   // 0–100 score + the triggered flag keys; surfaced to admin for review.
-  riskScore  Int      @default(0)
-  riskFlags  String[] @default([])
+  riskScore Int      @default(0)
+  riskFlags String[] @default([])
 
   // Partial-refund accounting (Phase 4). Cumulative amount actually
   // refunded to the buyer (ZAR cents). 0 = none; == buyerTotal when fully
@@ -919,15 +934,15 @@ model Transaction {
   // accept/dispatch deadlines are stored so the UI countdown chips
   // can use a single field instead of recomputing paidAt+48h on every
   // render, and the cron can do an indexed scan on the deadline column.
-  acceptedAt          DateTime?
-  acceptDeadlineAt    DateTime?  // = paidAt + 48h, set when payment captured
-  dispatchDeadlineAt  DateTime?  // = acceptedAt + 5d, set when seller accepts
+  acceptedAt         DateTime?
+  acceptDeadlineAt   DateTime? // = paidAt + 48h, set when payment captured
+  dispatchDeadlineAt DateTime? // = acceptedAt + 5d, set when seller accepts
 
   // Seller rejection of the sale — instead of accepting, seller can
   // reject. Triggers Peach refund + buyer notification. rejectedReason
   // surfaces in the buyer's notification and in the admin audit log.
-  rejectedAt      DateTime?
-  rejectedReason  String?
+  rejectedAt     DateTime?
+  rejectedReason String?
 
   // Set when the 48h-no-accept cron escalates the order to the admin
   // queue (operator-confirmed 2026-05-27: no auto-refund on this
@@ -963,21 +978,21 @@ model Transaction {
   //
   // The Cloudinary URLs are nullable so admin can render whichever
   // ones uploaded successfully (one-or-two-failed retry path).
-  saps534PhotoUrl              String?
-  stockRegisterPhotoUrl        String?
-  firearmSerialPhotoUrl        String?
-  dealerVerificationStatus     String?
+  saps534PhotoUrl            String?
+  stockRegisterPhotoUrl      String?
+  firearmSerialPhotoUrl      String?
+  dealerVerificationStatus   String?
   // 0..100, weighted average of per-criterion confidence scores.
-  dealerVerificationScore      Float?
+  dealerVerificationScore    Float?
   // Full structured JSON returned by Claude — per-criterion scores +
   // extracted values + issues list. Stored verbatim for audit + so
   // the admin panel can re-render Claude's reasoning without a re-run.
-  dealerVerificationFindings   Json?
-  dealerVerifiedAt             DateTime?
+  dealerVerificationFindings Json?
+  dealerVerifiedAt           DateTime?
   // Stock-register entry number the dealer (or seller) types in, for
   // SAPS audit cross-reference. Optional — not always available at
   // upload time.
-  dealerStockRegisterRef       String?
+  dealerStockRegisterRef     String?
 
   // ── Stocked-at dealer contact (sent to buyer on payout release) ──
   // When verification approves, Gun Galore's job ends. We notify the
@@ -986,9 +1001,9 @@ model Transaction {
   // collection. Captured on the seller's verification upload form
   // alongside the 3 photos; surfaced on the buyer's transaction page
   // and in the payout-released notification email/SMS.
-  stockedAtDealerName     String?
-  stockedAtDealerAddress  String?
-  stockedAtDealerPhone    String?
+  stockedAtDealerName    String?
+  stockedAtDealerAddress String?
+  stockedAtDealerPhone   String?
 
   // ── Zoho Books linkage ────────────────────────────────────────────
   // Documents created in Books for this transaction:
@@ -1018,18 +1033,18 @@ model Transaction {
   // inContact alerts (provisional) + the daily FNB statement
   // (authoritative) against this reference + the exact amount. Distinct
   // from the listing's own reference number; unique per order.
-  orderReference   String?   @unique
+  orderReference    String?   @unique
   // EFT lifecycle: manualDetectedAt = an inContact alert matched
   // (provisional, seller NOT yet notified); manualVerifiedAt = the FNB
   // statement confirmed it (authoritative → markPaid runs).
-  manualDetectedAt DateTime?
-  manualVerifiedAt DateTime?
+  manualDetectedAt  DateTime?
+  manualVerifiedAt  DateTime?
   // 24-hour pay-by deadline shown to the buyer. The item stays reserved
   // for the committed buyer for the full window (long enough that the
   // daily statement reconciliation runs at least once while it's still
   // theirs); the freeze-expiry cron only releases the listing back to
   // ACTIVE if NOTHING has been detected/paid by then.
-  manualPayByAt    DateTime?
+  manualPayByAt     DateTime?
   // Set when the freeze-expiry cron soft-cancels an un-paid manual order
   // (releases the listing but KEEPS this row so a LATE statement payment
   // for orderReference can still be matched → surfaced as "paid after
@@ -1037,8 +1052,8 @@ model Transaction {
   manualCancelledAt DateTime?
   // Payment-reminder idempotency guards: a "12 hours left" and a
   // "1 hour left" SMS nudge across the 24h window.
-  manualWarn12hAt  DateTime?
-  manualWarn1hAt   DateTime?
+  manualWarn12hAt   DateTime?
+  manualWarn1hAt    DateTime?
 
   // Admin
   adminNote         String?
@@ -1053,13 +1068,13 @@ model Transaction {
   rating              Rating?
   manualPayments      ManualPayment[]
   confirmedDeliveryAt DateTime?
+  // peachPaymentId now has a @unique on the field (creates its own index).
 
   @@index([listingId])
   @@index([buyerId])
   @@index([sellerId])
   @@index([paymentStatus])
   @@index([manualPayByAt])
-  // peachPaymentId now has a @unique on the field (creates its own index).
 }
 
 // Append-only timeline of shipping + payment milestones per Transaction.
@@ -1215,27 +1230,27 @@ model AdminUser {
 // broad ops surface — user bans / tier changes / KYC overrides /
 // transaction refunds / etc.
 model AdminAuditEvent {
-  id            String   @id @default(cuid())
-  adminUserId   String
-  adminUser     AdminUser @relation(fields: [adminUserId], references: [id])
+  id           String    @id @default(cuid())
+  adminUserId  String
+  adminUser    AdminUser @relation(fields: [adminUserId], references: [id])
   // Free-form action verb — e.g. "USER_BAN", "USER_UNBAN",
   // "USER_TIER_CHANGE", "USER_KYC_OVERRIDE", "TRANSACTION_REFUND",
   // "LISTING_FORCE_HIDE". String not enum so new actions don't need
   // schema migrations.
-  action        String
+  action       String
   // Resource being acted upon — usually a User.id, Transaction.id,
   // Listing.id. Nullable for actions that don't have a single target.
-  resourceType  String?  // 'User' | 'Transaction' | 'Listing' | 'Raffle' | ...
-  resourceId    String?
+  resourceType String? // 'User' | 'Transaction' | 'Listing' | 'Raffle' | ...
+  resourceId   String?
   // Snapshot of what changed. Both nullable so single-direction
   // events (e.g. force-hide a listing) can record just newValue.
-  oldValue      String?  // JSON-stringified
-  newValue      String?  // JSON-stringified
+  oldValue     String? // JSON-stringified
+  newValue     String? // JSON-stringified
   // Reason the admin typed in the confirmation dialog. NOT nullable
   // for any USER_* / TRANSACTION_* / LISTING_* action; the service
   // enforces this at insert time.
-  reason        String
-  createdAt     DateTime @default(now())
+  reason       String
+  createdAt    DateTime  @default(now())
 
   @@index([adminUserId, createdAt])
   @@index([resourceType, resourceId])
@@ -1460,7 +1475,7 @@ model Raffle {
 
   // Item being raffled. Item is platform-owned by default — sellers can
   // apply via RaffleSellerApplication, gated by the feature flag.
-  itemSource     ItemSource @default(PLATFORM_OWNED)
+  itemSource ItemSource @default(PLATFORM_OWNED)
 
   // Pricing model — three operator inputs:
   //   * itemValueCents   = the prize's selling price (what we'd list it at)
@@ -1472,10 +1487,10 @@ model Raffle {
   // itemValueCents - itemCostCents). Stored on the row so all the
   // downstream code that reads target (progress bar, sold-out trigger,
   // refund-all) keeps working without per-query division.
-  itemValueCents     Int // selling price of the prize (ZAR cents)
-  itemCostCents      Int @default(0) // what we paid for the prize
-  ticketPriceCents   Int
-  targetTicketCount  Int // derived = ceil(itemValueCents / ticketPriceCents)
+  itemValueCents    Int // selling price of the prize (ZAR cents)
+  itemCostCents     Int @default(0) // what we paid for the prize
+  ticketPriceCents  Int
+  targetTicketCount Int // derived = ceil(itemValueCents / ticketPriceCents)
 
   // Sold counts (cheap to read on the public detail page)
   ticketsSoldPaid   Int @default(0) // CONFIRMED tickets only
@@ -1487,11 +1502,11 @@ model Raffle {
   // can't progress to payment until they've answered, and the
   // backend rejects ticket purchases with answer != 'C'. Frontend
   // greys out the Pay button until any radio is picked.
-  question  String
-  optionA   String
-  optionB   String
-  optionC   String // ALWAYS the correct answer (hardcoded — see RafflesService)
-  optionD   String
+  question String
+  optionA  String
+  optionB  String
+  optionC  String // ALWAYS the correct answer (hardcoded — see RafflesService)
+  optionD  String
 
   // Timeline. End-time was dropped per operator request — raffles
   // run until all tickets sell out. Cooling-window draw still applies
@@ -1657,10 +1672,10 @@ model RaffleWinner {
   // The Command-Center attention queue uses the index to surface
   // "claimed but not dispatched yet" winners as a TO-DO for admins.
   prizeDispatchedAt        DateTime?
-  prizeTrackingRef         String?   // courier tracking number (Pudo / TCG / other)
-  prizeCarrierLabel        String?   // 'Pudo' | 'The Courier Guy' | 'Aramex' | 'Other' (freeform)
-  prizeDispatchedByAdminId String?   // AdminUser.id of who marked dispatched
-  prizeDispatchNote        String?   // optional admin note (e.g. waybill #, condition)
+  prizeTrackingRef         String? // courier tracking number (Pudo / TCG / other)
+  prizeCarrierLabel        String? // 'Pudo' | 'The Courier Guy' | 'Aramex' | 'Other' (freeform)
+  prizeDispatchedByAdminId String? // AdminUser.id of who marked dispatched
+  prizeDispatchNote        String? // optional admin note (e.g. waybill #, condition)
 
   createdAt DateTime @default(now())
 
@@ -1768,17 +1783,17 @@ enum ManualPaymentStatus {
 }
 
 model ManualPayment {
-  id         String              @id @default(cuid())
-  source     ManualPaymentSource
+  id          String              @id @default(cuid())
+  source      ManualPaymentSource
   // Dedupe key: the email Message-ID for inContact, or a stable hash of
   // (statementUploadId + row) for statement rows, so re-scanning the
   // inbox or re-uploading a statement never double-processes a payment.
-  externalId String              @unique
-  rawText    String              @db.Text
+  externalId  String              @unique
+  rawText     String              @db.Text
   amountCents Int
-  reference  String? // parsed buyer reference, trimmed/uppercased
-  paidAt     DateTime? // value date/time from the alert or statement
-  status     ManualPaymentStatus @default(UNMATCHED)
+  reference   String? // parsed buyer reference, trimmed/uppercased
+  paidAt      DateTime? // value date/time from the alert or statement
+  status      ManualPaymentStatus @default(UNMATCHED)
 
   matchedTransactionId String?
   matchedTransaction   Transaction? @relation(fields: [matchedTransactionId], references: [id])
@@ -1875,9 +1890,9 @@ model FeaturedSlot {
   // Auction tracking. `currentAuctionId` is the auction that's either
   // OPEN now (pre-auction or ad-hoc) or recently closed and in the
   // BIND_WINDOW phase. Cron creates new auctions as slots free up.
-  currentAuctionId String?            @unique
-  currentAuction   FeaturedAuction?   @relation("SlotCurrentAuction", fields: [currentAuctionId], references: [id])
-  auctions         FeaturedAuction[]  @relation("SlotAuctions")
+  currentAuctionId String?                  @unique
+  currentAuction   FeaturedAuction?         @relation("SlotCurrentAuction", fields: [currentAuctionId], references: [id])
+  auctions         FeaturedAuction[]        @relation("SlotAuctions")
   events           FeaturedSlotAuditEvent[]
 
   createdAt DateTime @default(now())
@@ -1943,11 +1958,11 @@ model FeaturedSlotBid {
   // gamed by upgrading right before settlement OR penalised by a
   // downgrade between bid + bind. Charged cents = floor(
   // amountCents * (100 - discountPercent) / 100).
-  discountPercent     Int @default(0)
+  discountPercent    Int  @default(0)
   // Actual ZAR cents Peach charged. Null until the bid wins + binds.
   // Once set, Zoho receipt + admin revenue reports use this value
   // (NOT amountCents) so the books match the cash that landed.
-  chargedAmountCents  Int?
+  chargedAmountCents Int?
 
   status FeaturedBidStatus @default(ACTIVE)
 
@@ -1959,7 +1974,7 @@ model FeaturedSlotBid {
   // If the winner doesn't bind a listing within the 15-min bind window
   // we cascade to the next-highest bid. `cascadedFromId` records the
   // forfeited bid we replaced. Read-only audit trail.
-  cascadedFromId String?  @unique
+  cascadedFromId String?          @unique
   cascadedFrom   FeaturedSlotBid? @relation("BidCascade", fields: [cascadedFromId], references: [id])
   cascadedTo     FeaturedSlotBid? @relation("BidCascade")
 
@@ -2024,7 +2039,7 @@ model FeaturedSlotConfig {
   // 15-min bind window the winner has to pick a listing.
   bindWindowSec Int @default(900)
 
-  updatedAt   DateTime @updatedAt
+  updatedAt        DateTime @updatedAt
   updatedByAdminId String?
 }
 
@@ -2033,11 +2048,11 @@ model FeaturedSlotConfig {
 // the listing-side `isBanned` flag so featured-slot bans don't kill
 // the user's whole account.
 model FeaturedSlotBidderBan {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  reason    String
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  reason          String
   bannedByAdminId String
-  createdAt DateTime @default(now())
+  createdAt       DateTime @default(now())
 }
 
 // Audit log — every featured-slot event. Lets the operator answer
@@ -2051,11 +2066,11 @@ model FeaturedSlotBidderBan {
 //   FORCE_EVICTED, MANUALLY_AWARDED, REFUND_ISSUED, CONFIG_CHANGED,
 //   BIDDER_BANNED, BIDDER_UNBANNED
 model FeaturedSlotAuditEvent {
-  id       String @id @default(cuid())
-  slotId   String?
-  slot     FeaturedSlot? @relation(fields: [slotId], references: [id])
+  id     String        @id @default(cuid())
+  slotId String?
+  slot   FeaturedSlot? @relation(fields: [slotId], references: [id])
 
-  eventType String
+  eventType   String
   payloadJson String? // JSON-encoded payload; freeform per eventType
 
   // Who fired this. EITHER a user (bidder action) OR an admin
@@ -2238,23 +2253,23 @@ enum SubscriptionTier {
 }
 
 enum SubscriptionPaymentStatus {
-  ACTIVE       // current period valid, will auto-renew at currentPeriodEnd
-  PAST_DUE     // last charge failed; in retry window
-  SUSPENDED    // 3rd retry failed; tier downgraded to FREE pending payment update
-  CANCELLED    // user-initiated cancel; remains valid until currentPeriodEnd
+  ACTIVE // current period valid, will auto-renew at currentPeriodEnd
+  PAST_DUE // last charge failed; in retry window
+  SUSPENDED // 3rd retry failed; tier downgraded to FREE pending payment update
+  CANCELLED // user-initiated cancel; remains valid until currentPeriodEnd
 }
 
 enum AskGgConversationOutcome {
-  UNRESOLVED   // default; user hasn't responded to the "did this solve it?" prompt
-  RESOLVED     // user marked the conversation as helpful — eligible for KB
-  ABANDONED    // user marked unhelpful or never returned
+  UNRESOLVED // default; user hasn't responded to the "did this solve it?" prompt
+  RESOLVED // user marked the conversation as helpful — eligible for KB
+  ABANDONED // user marked unhelpful or never returned
 }
 
 enum AskGgKbStatus {
-  DRAFT        // auto-created from a RESOLVED conversation, awaiting admin review
-  SUBMITTED    // user-edited a draft and re-submitted for admin attention
-  VERIFIED     // admin approved — surfaces in search results first
-  ARCHIVED     // soft-deleted; admin can resurrect
+  DRAFT // auto-created from a RESOLVED conversation, awaiting admin review
+  SUBMITTED // user-edited a draft and re-submitted for admin attention
+  VERIFIED // admin approved — surfaces in search results first
+  ARCHIVED // soft-deleted; admin can resurrect
 }
 
 // Subscription billing record. ONE row per User; the user's tier
@@ -2273,8 +2288,8 @@ model Subscription {
   user               User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   tier               SubscriptionTier
   status             SubscriptionPaymentStatus @default(ACTIVE)
-  billingCycle       String                    // 'monthly' | 'annual' | 'comp' (admin grant, no billing)
-  amountCents        Int                       // ZAR cents per cycle. 0 for comp accounts.
+  billingCycle       String // 'monthly' | 'annual' | 'comp' (admin grant, no billing)
+  amountCents        Int // ZAR cents per cycle. 0 for comp accounts.
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
   cancelAtPeriodEnd  Boolean                   @default(false)
@@ -2308,7 +2323,7 @@ model SubscriptionCharge {
   subscriptionId String
   subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   amountCents    Int
-  status         String       // 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'REFUNDED'
+  status         String // 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'REFUNDED'
   peachPaymentId String?
   zohoReceiptId  String?
   errorMessage   String?
@@ -2361,10 +2376,10 @@ model AskGgMessage {
   id               String            @id @default(cuid())
   conversationId   String
   conversation     AskGgConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  role             String            // 'user' | 'assistant' | 'system'
+  role             String // 'user' | 'assistant' | 'system'
   content          String
   imageUrls        String[]
-  model            String?           // 'claude-sonnet-4-6', 'claude-haiku-4-5-…', for cost audit
+  model            String? // 'claude-sonnet-4-6', 'claude-haiku-4-5-…', for cost audit
   promptTokens     Int?
   completionTokens Int?
   costUsd          Float?
@@ -2457,41 +2472,41 @@ model AskGgUsage {
 
 enum ReloadingManualStatus {
   PROCESSING // upload finished, pdf-parse running
-  ACTIVE     // text extracted + indexed, queryable by Ask GG
-  ARCHIVED   // hidden from new queries (replaced by newer edition)
-  FAILED     // pdf-parse threw; admin can retry or delete
+  ACTIVE // text extracted + indexed, queryable by Ask GG
+  ARCHIVED // hidden from new queries (replaced by newer edition)
+  FAILED // pdf-parse threw; admin can retry or delete
 }
 
 model ReloadingManual {
-  id              String                @id @default(cuid())
-  manufacturer    String                // "Hodgdon" / "Vihtavuori" / etc.
-  title           String                // "Annual Manual" / "Reloading Handbook"
-  edition         String?               // "2024" / "49th Edition" — optional
+  id                String                @id @default(cuid())
+  manufacturer      String // "Hodgdon" / "Vihtavuori" / etc.
+  title             String // "Annual Manual" / "Reloading Handbook"
+  edition           String? // "2024" / "49th Edition" — optional
   // Relative path under RELOADING_STORAGE_DIR (env, default
   // ./uploads/reloading-manuals). Filename is a random hex string so
   // a directory listing leak doesn't reveal which manuals we hold.
   // PDFs are read by the backend (pdf-lib slicing for Ask GG) and
   // served through the authenticated download route — never exposed
   // via a public URL.
-  storedPath      String                @unique
-  fileSizeBytes   Int
-  pageCount       Int                   @default(0)
-  status          ReloadingManualStatus @default(PROCESSING)
+  storedPath        String                @unique
+  fileSizeBytes     Int
+  pageCount         Int                   @default(0)
+  status            ReloadingManualStatus @default(PROCESSING)
   // True when the page text was produced by the Anthropic OCR backfill
   // script (src/reloading/scripts/ocr-backfill.ts) rather than pdf-parse.
   // Ask GG appends a "double-check this exact figure" nudge when it
   // quotes numbers from an OCR-digitised manual.
-  ocr             Boolean               @default(false)
+  ocr               Boolean               @default(false)
   // Admin who triggered the inbox scan that ingested this manual.
   // FK to AdminUser (separate table from regular User) — admin JWT
   // payloads carry AdminUser.id as `sub`, not a User.id.
   uploadedByAdminId String
-  uploadedByAdmin   AdminUser           @relation("ReloadingUploader", fields: [uploadedByAdminId], references: [id])
-  errorMessage    String?               // populated when status = FAILED
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  pages           ReloadingManualPage[]
-  loads           ManualLoad[]
+  uploadedByAdmin   AdminUser             @relation("ReloadingUploader", fields: [uploadedByAdminId], references: [id])
+  errorMessage      String? // populated when status = FAILED
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  pages             ReloadingManualPage[]
+  loads             ManualLoad[]
 
   @@index([status, manufacturer])
 }
@@ -2512,7 +2527,7 @@ model ReloadingManualPage {
   id            String          @id @default(cuid())
   manualId      String
   manual        ReloadingManual @relation(fields: [manualId], references: [id], onDelete: Cascade)
-  pageNumber    Int             // 1-indexed; matches printed manual pagination
+  pageNumber    Int // 1-indexed; matches printed manual pagination
   extractedText String          @db.Text
   createdAt     DateTime        @default(now())
 
@@ -2529,7 +2544,7 @@ model ReloadingManualPage {
 // carries its manual + page so the UI can cite it. Engine output never feeds
 // this table.
 model ManualLoad {
-  id             String          @id @default(cuid())
+  id             String           @id @default(cuid())
   // Display cartridge name as printed, e.g. "6.5 Creedmoor".
   cartridge      String
   // Lowercase, punctuation/space-normalised key for matching (e.g. "65creedmoor").
@@ -2551,7 +2566,7 @@ model ManualLoad {
   primer         String?
   caseMaker      String?
   barrelLenIn    Float?
-  notes          String?         @db.Text
+  notes          String?          @db.Text
   // Display label of the source manual, e.g. "Somchem Reloading Data". Carried
   // directly so a locally-built seed is self-contained (no server-id lookup).
   manualLabel    String
@@ -2560,7 +2575,7 @@ model ManualLoad {
   manualId       String?
   manual         ReloadingManual? @relation(fields: [manualId], references: [id], onDelete: SetNull)
   pageNumber     Int
-  createdAt      DateTime        @default(now())
+  createdAt      DateTime         @default(now())
 
   // One row per distinct published load. Includes bullet maker/name + max so
   // different bullets of the SAME weight (e.g. Hornady V-MAX vs HP on one page
@@ -2610,40 +2625,40 @@ model ManualLoad {
 //      optional rendered image.
 
 enum HuntPdfCategory {
-  SPECIES_GUIDE        // field guides for SA / African wildlife
-  CARTRIDGE_DATA       // ammo data sheets, factory load tables
-  REGULATIONS          // hunting regs per province / country
-  BALLISTICS_THEORY    // wind, drag, exterior ballistics theory
-  HUNTING_TECHNIQUE    // stalking, calling, field-care
-  FLORA_REFERENCE      // SA vegetation references (Trees of S Africa, etc.)
-  GENERAL              // catch-all for anything else
+  SPECIES_GUIDE // field guides for SA / African wildlife
+  CARTRIDGE_DATA // ammo data sheets, factory load tables
+  REGULATIONS // hunting regs per province / country
+  BALLISTICS_THEORY // wind, drag, exterior ballistics theory
+  HUNTING_TECHNIQUE // stalking, calling, field-care
+  FLORA_REFERENCE // SA vegetation references (Trees of S Africa, etc.)
+  GENERAL // catch-all for anything else
 }
 
 enum HuntPdfStatus {
-  DRAFT      // imported but not visible to users yet
-  ACTIVE     // searchable + readable in the iOS app
-  ARCHIVED   // hidden from new queries (older edition, superseded)
+  DRAFT // imported but not visible to users yet
+  ACTIVE // searchable + readable in the iOS app
+  ARCHIVED // hidden from new queries (older edition, superseded)
 }
 
 model HuntPdf {
-  id           String           @id @default(cuid())
-  title        String           // "Trees of Southern Africa"
-  author       String?          // "van Wyk & van Wyk" — optional
-  edition      String?          // "3rd Edition (2018)" — optional
-  publisher    String?          // "Struik Nature" — optional
-  publishedYear Int?            // 2018
-  category     HuntPdfCategory  @default(GENERAL)
-  language     String           @default("en")   // BCP47: en, af, en+af
-  pageCount    Int              @default(0)
-  status       HuntPdfStatus    @default(DRAFT)
+  id            String          @id @default(cuid())
+  title         String // "Trees of Southern Africa"
+  author        String? // "van Wyk & van Wyk" — optional
+  edition       String? // "3rd Edition (2018)" — optional
+  publisher     String? // "Struik Nature" — optional
+  publishedYear Int? // 2018
+  category      HuntPdfCategory @default(GENERAL)
+  language      String          @default("en") // BCP47: en, af, en+af
+  pageCount     Int             @default(0)
+  status        HuntPdfStatus   @default(DRAFT)
   // Short description shown in browse + search result cards.
-  blurb        String?          @db.Text
+  blurb         String?         @db.Text
   // Display order within a category — lower sorts first. Defaults to 100
   // so the operator can prepend a "featured" entry by setting it to 0-50.
-  sortOrder    Int              @default(100)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  pages        HuntPdfPage[]
+  sortOrder     Int             @default(100)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  pages         HuntPdfPage[]
 
   @@index([status, category, sortOrder])
 }
@@ -2655,50 +2670,50 @@ model HuntPdf {
 // about dropping `textTsv`, it's safe to accept — onModuleInit
 // re-adds the column + index at next backend restart.
 model HuntPdfPage {
-  id           String   @id @default(cuid())
-  pdfId        String
-  pdf          HuntPdf  @relation(fields: [pdfId], references: [id], onDelete: Cascade)
-  pageNumber   Int      // 1-indexed; matches printed pagination
-  text         String   @db.Text
+  id          String   @id @default(cuid())
+  pdfId       String
+  pdf         HuntPdf  @relation(fields: [pdfId], references: [id], onDelete: Cascade)
+  pageNumber  Int // 1-indexed; matches printed pagination
+  text        String   @db.Text
   // Optional rendered page as base64 PNG. Only populated for pages
   // where visual layout matters (diagrams, anatomy plates, tables).
   // Most pages are text-only; this stays null and saves storage.
-  imageBase64  String?  @db.Text
+  imageBase64 String?  @db.Text
   // Mime type of imageBase64 when present — default png.
-  imageMime    String?
-  createdAt    DateTime @default(now())
+  imageMime   String?
+  createdAt   DateTime @default(now())
 
   @@unique([pdfId, pageNumber])
   @@index([pdfId, pageNumber])
 }
 
 model RangeEstimate {
-  id               String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Identity — anonymous per-device UUID from the iOS app
-  deviceId         String
+  deviceId String
 
   // Geo at capture time — for the future map-plot feature
-  lat              Float?   // GPS latitude (-90..90), null if location denied
-  lng              Float?   // GPS longitude (-180..180)
-  headingDeg       Float?   // compass bearing 0..360 (direction phone was pointing)
-  tiltDeg          Float?   // inclinometer pitch -89..89 (negative = downhill)
+  lat        Float? // GPS latitude (-90..90), null if location denied
+  lng        Float? // GPS longitude (-180..180)
+  headingDeg Float? // compass bearing 0..360 (direction phone was pointing)
+  tiltDeg    Float? // inclinometer pitch -89..89 (negative = downhill)
 
   // AI result
-  rangeM           Float    // estimated range in metres (already rounded server-side)
-  confidence       Float    // 0..1 self-assessed by Claude
-  species          String?  // identified subject if Claude is sure
-  notes            String?  @db.Text  // Claude's reasoning trace
-  modelUsed        String   // 'sonnet' | 'opus' — Opus = fallback fired
+  rangeM     Float // estimated range in metres (already rounded server-side)
+  confidence Float // 0..1 self-assessed by Claude
+  species    String? // identified subject if Claude is sure
+  notes      String? @db.Text // Claude's reasoning trace
+  modelUsed  String // 'sonnet' | 'opus' — Opus = fallback fired
 
   // Audit + cost tracking
-  biomeId          String?  // matched SA biome id (sa-biomes.ts), null if outside coverage
-  regionCode       String?  // ISO 3166-1 alpha-2 (usually 'ZA')
-  costUsd          Decimal? @db.Decimal(10, 6)   // total across all passes
-  promptTokens     Int?     // sum of input tokens (Sonnet + Opus if escalated)
-  completionTokens Int?     // sum of output tokens
+  biomeId          String? // matched SA biome id (sa-biomes.ts), null if outside coverage
+  regionCode       String? // ISO 3166-1 alpha-2 (usually 'ZA')
+  costUsd          Decimal? @db.Decimal(10, 6) // total across all passes
+  promptTokens     Int? // sum of input tokens (Sonnet + Opus if escalated)
+  completionTokens Int? // sum of output tokens
 
-  createdAt        DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([deviceId, createdAt])
   @@index([biomeId, createdAt])
@@ -2711,9 +2726,9 @@ model RangeEstimate {
 // immutable JSON snapshot taken at checkout — it is NEVER an FK to this
 // table, so deleting a saved address can't corrupt order history.
 model Address {
-  id         String    @id @default(cuid())
-  userId     String
-  user       User      @relation("SavedAddresses", fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation("SavedAddresses", fields: [userId], references: [id], onDelete: Cascade)
 
   label      String? // "Home", "Work", etc. — user-defined, optional
   building   String?
@@ -2725,10 +2740,10 @@ model Address {
   province   Province
   lat        Float?
   lng        Float?
-  isDefault  Boolean   @default(false)
+  isDefault  Boolean  @default(false)
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@index([userId, isDefault])
@@ -2746,13 +2761,13 @@ enum SupportTicketStatus {
 }
 
 model SupportTicket {
-  id      String              @id @default(cuid())
-  userId  String
-  user    User                @relation("UserSupportTickets", fields: [userId], references: [id], onDelete: Cascade)
-  subject String
+  id            String              @id @default(cuid())
+  userId        String
+  user          User                @relation("UserSupportTickets", fields: [userId], references: [id], onDelete: Cascade)
+  subject       String
   // Free-string category: general | payment | shipping | account | listing | other
-  category String             @default("general")
-  status   SupportTicketStatus @default(OPEN)
+  category      String              @default("general")
+  status        SupportTicketStatus @default(OPEN)
   // Optional link to an order the ticket is about.
   transactionId String?
 
@@ -2767,12 +2782,12 @@ model SupportTicket {
 }
 
 model SupportTicketReply {
-  id       String        @id @default(cuid())
-  ticketId String
-  ticket   SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  body     String
+  id            String        @id @default(cuid())
+  ticketId      String
+  ticket        SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  body          String
   // true = written by an admin; false = written by the ticket's user.
-  fromAdmin Boolean @default(false)
+  fromAdmin     Boolean       @default(false)
   // Who wrote it — clerkId for a user reply, AdminUser.id for an admin reply.
   authorClerkId String?
   adminId       String?
@@ -2780,4 +2795,80 @@ model SupportTicketReply {
   createdAt DateTime @default(now())
 
   @@index([ticketId, createdAt])
+}
+
+// ── Multi-item orders (Phase 8b) ───────────────────────────────────
+// An Order is a buyer's cart checked out in one payment. It fans out into
+// N Transactions (one per line item / listing) — each Transaction stays a
+// single-listing sub-order so all Phase 1–7 money/dispatch/payout/SAPS/Zoho
+// logic is unchanged. The Order owns the ONE payment capture (gateway-
+// neutral fields below — the new paygate drops into the same seam; EFT is
+// live today) and the buyer-facing rollup status. NOTE: no discount/voucher/
+// store-credit fields — that scope (8c) is intentionally not built.
+enum OrderStatus {
+  AWAITING_PAYMENT
+  PAID
+  PARTIALLY_FULFILLED
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum OrderPaymentMethod {
+  MANUAL_EFT
+  GATEWAY // reserved for the pending paygate; not used until approved
+}
+
+model Order {
+  id      String @id @default(cuid())
+  buyerId String
+  buyer   User   @relation("BuyerOrders", fields: [buyerId], references: [id])
+
+  status        OrderStatus        @default(AWAITING_PAYMENT)
+  paymentMethod OrderPaymentMethod @default(MANUAL_EFT)
+
+  // ONE payment capture for the whole cart. orderReference = the single EFT
+  // memo the buyer pays under; gateway* are the neutral seam for the future
+  // paygate (NOT Stitch-specific).
+  orderReference    String? @unique
+  gatewayCheckoutId String?
+  gatewayPaymentId  String? @unique
+
+  // Money snapshot (ZAR cents) = sums across child transactions.
+  itemsSubtotal    Int
+  shippingSubtotal Int
+  processingFee    Int
+  buyerTotal       Int
+
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  transactions Transaction[]
+  lineItems    OrderLineItem[]
+
+  @@index([buyerId, status])
+  @@index([status, createdAt])
+}
+
+model OrderLineItem {
+  id            String       @id @default(cuid())
+  orderId       String
+  order         Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // The per-listing Transaction this line produced (set at checkout).
+  transactionId String?      @unique
+  transaction   Transaction? @relation("OrderLineTransaction", fields: [transactionId], references: [id])
+
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id])
+  sellerId  String // denormalized for grouping / per-seller views
+
+  quantity     Int @default(1)
+  unitPrice    Int // snapshot of listing.price at checkout (ZAR cents)
+  lineSubtotal Int // unitPrice * quantity
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([listingId])
 }
