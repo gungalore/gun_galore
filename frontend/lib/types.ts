@@ -276,6 +276,13 @@ export interface Transaction {
   trackingReference: string | null;
   dispatchedAt: string | null;
   deliveredAt: string | null;
+  // P5.2 platform-arranged dispatch — set when the platform books the
+  // courier on seller-accept. carrierDropoffPin is the Pudo locker PIN
+  // (seller-only; blanked for the buyer). shipmentBookedAt present ⇒ a real
+  // waybill exists and the seller can print the label.
+  carrierShipmentId: string | null;
+  carrierDropoffPin: string | null;
+  shipmentBookedAt: string | null;
   // Phase 5 — fulfilment. estimatedDeliveryAt = best-effort window set at
   // dispatch (null for non-courier). podReference = auto-captured carrier
   // delivery event; podProofUrl = optional uploaded delivery photo.

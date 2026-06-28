@@ -749,12 +749,16 @@ export default async function TransactionPage({
               className="rounded-[8px] p-4"
               style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
             >
-              <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
-                Mark as dispatched
-              </p>
-              <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
-                Once you&apos;ve handed the item to the courier or transferred it to the receiving dealer, confirm dispatch here. Payment will be released after the buyer confirms delivery.
-              </p>
+              {!(tx.shipmentBookedAt && tx.trackingReference) && (
+                <>
+                  <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
+                    Mark as dispatched
+                  </p>
+                  <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
+                    Once you&apos;ve handed the item to the courier or transferred it to the receiving dealer, confirm dispatch here. Payment will be released after the buyer confirms delivery.
+                  </p>
+                </>
+              )}
               <DispatchButton tx={tx} />
             </div>
           )}

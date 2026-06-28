@@ -1868,6 +1868,15 @@ export class TransactionsService {
       }
     }
 
+    // The Pudo drop-off PIN is the SELLER's hand-over credential (P5.2) —
+    // never expose it to the buyer. The buyer gets their own collection PIN
+    // from Pudo directly. trackingReference stays visible to both (the buyer
+    // tracks with it). Applies regardless of shipping method.
+    if (tx.sellerId !== user.id) {
+      (tx as unknown as { carrierDropoffPin: string | null }).carrierDropoffPin =
+        null;
+    }
+
     return tx;
   }
 
