@@ -11,6 +11,7 @@ import { StitchService, StitchPaymentResult } from './stitch.service';
 import { FraudRiskService } from './fraud-risk.service';
 import { estimateDeliveryDate } from '../shipping/delivery-estimate';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { resolvePurchaseQuantity, reversalListingData } from './inventory';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ListingStatus, Province, ShippingMethod } from '@prisma/client';
@@ -182,6 +183,20 @@ export class TransactionsService {
 
     const isTopSeller = listing.seller.sellerTier === 'TOP_SELLER';
 
+    // Quantity (Phase 8a). For every legacy/single-item listing
+    // (trackInventory=false — the default) this resolves to exactly 1, so
+    // the entire flow below is byte-for-byte unchanged. Only an
+    // inventory-tracked BUY_NOW listing can resolve quantity > 1. Offers
+    // are always single-item.
+    const qres = resolvePurchaseQuantity({
+      requested: offerRecord ? 1 : (dto as { quantity?: number }).quantity,
+      trackInventory: listing.trackInventory,
+      quantityAvailable: listing.quantityAvailable,
+      quantityReserved: listing.quantityReserved,
+    });
+    if ('error' in qres) throw new BadRequestException(qres.error);
+    const quantity = qres.quantity;
+
     // Live shipping quote — re-fetched server-side so the buyer can't
     // tamper with the priceCents the frontend showed them. The same
     // quote endpoint the checkout UI hit pre-Pay runs again here. For
@@ -229,7 +244,7 @@ export class TransactionsService {
       buyerTotal,
       sellerPayout,
     } = this.fees.breakdown(
-      agreedPrice,
+      agreedPrice * quantity, // line subtotal — commission bands apply to the line
       listing.passFeeToBuyer,
       isTopSeller,
       shippingCostCents,
@@ -244,14 +259,43 @@ export class TransactionsService {
     // BUY_NOW read-check above is racy on its own; this makes both paths
     // correct. count===0 means another buyer already reserved it or it
     // has sold.
-    const reserve = await this.prisma.listing.updateMany({
-      where: { id: listing.id, status: ListingStatus.ACTIVE },
-      data: { status: ListingStatus.PAYMENT_PENDING },
-    });
+    // Phase 8a: inventory-tracked listings reserve via an atomic counter
+    // (quantityAvailable >= quantity → decrement) so multiple buyers can
+    // hold different units concurrently. quantityAvailable changes ONLY
+    // through these guarded ops, so the single-column guard is a correct
+    // compare-and-set (no oversell). Legacy listings keep the exact
+    // boolean ACTIVE→PAYMENT_PENDING flip.
+    const reserve = listing.trackInventory
+      ? await this.prisma.listing.updateMany({
+          where: {
+            id: listing.id,
+            status: ListingStatus.ACTIVE,
+            quantityAvailable: { gte: quantity },
+          },
+          data: {
+            quantityAvailable: { decrement: quantity },
+            quantityReserved: { increment: quantity },
+          },
+        })
+      : await this.prisma.listing.updateMany({
+          where: { id: listing.id, status: ListingStatus.ACTIVE },
+          data: { status: ListingStatus.PAYMENT_PENDING },
+        });
     if (reserve.count === 0) {
       throw new BadRequestException(
         'This item is no longer available — another buyer is completing checkout, or it has already sold.',
       );
+    }
+    // Tracked listing fully reserved → hide from browse (PAYMENT_PENDING)
+    // until paid (→ SOLD) or released (→ ACTIVE). Best-effort cosmetic flip;
+    // the counter above is the real oversell guard.
+    if (listing.trackInventory && listing.quantityAvailable - quantity <= 0) {
+      await this.prisma.listing
+        .updateMany({
+          where: { id: listing.id, quantityAvailable: { lte: 0 } },
+          data: { status: ListingStatus.PAYMENT_PENDING },
+        })
+        .catch(() => undefined);
     }
 
     // Create the transaction record first to get an ID
@@ -260,6 +304,7 @@ export class TransactionsService {
         listingId: listing.id,
         buyerId: buyer.id,
         sellerId: listing.sellerId,
+        quantity,
         listingPrice,
         commissionZar,
         processingFee,
@@ -378,9 +423,17 @@ export class TransactionsService {
       });
     } catch (err) {
       // Roll back the listing reservation if the gateway call fails.
+      // Tracked listing: give the units back (quantityAvailable += qty,
+      // quantityReserved -= qty) + re-activate. Legacy: flip back to ACTIVE.
       await this.prisma.listing.update({
         where: { id: listing.id },
-        data: { status: ListingStatus.ACTIVE },
+        data: listing.trackInventory
+          ? {
+              status: ListingStatus.ACTIVE,
+              quantityAvailable: { increment: quantity },
+              quantityReserved: { decrement: quantity },
+            }
+          : { status: ListingStatus.ACTIVE },
       });
       await this.prisma.transaction.delete({ where: { id: tx.id } });
       this.logger.error(
@@ -922,7 +975,12 @@ export class TransactionsService {
       );
     }
 
-    // Atomic state change — only after refund succeeded.
+    // Atomic state change — only after refund succeeded. Phase 8a:
+    // restock a tracked listing (legacy → plain ACTIVE reactivation).
+    const rejLi = await this.prisma.listing.findUnique({
+      where: { id: tx.listingId },
+      select: { trackInventory: true },
+    });
     await this.prisma.$transaction([
       this.prisma.transaction.update({
         where: { id: transactionId },
@@ -935,7 +993,7 @@ export class TransactionsService {
       }),
       this.prisma.listing.update({
         where: { id: tx.listingId },
-        data: { status: 'ACTIVE', soldAt: null },
+        data: reversalListingData(rejLi?.trackInventory ?? false, tx.quantity ?? 1),
       }),
     ]);
 
@@ -1102,10 +1160,15 @@ export class TransactionsService {
     }
 
     // Refund succeeded — reactivate the listing so it can sell again.
+    // Phase 8a: restock a tracked listing (legacy → plain reactivation).
+    const canLi = await this.prisma.listing.findUnique({
+      where: { id: tx.listingId },
+      select: { trackInventory: true },
+    });
     await this.prisma.listing
       .update({
         where: { id: tx.listingId },
-        data: { status: 'ACTIVE', soldAt: null },
+        data: reversalListingData(canLi?.trackInventory ?? false, tx.quantity ?? 1),
       })
       .catch(() => undefined);
 
@@ -1690,10 +1753,41 @@ export class TransactionsService {
         },
       });
       if (claim.count === 0) return false;
-      await txc.listing.update({
+      // Phase 8a: branch on the listing's own trackInventory (loaded fresh
+      // here so it's correct regardless of what the caller included).
+      // Legacy = the exact SOLD flip. Tracked = release the in-flight
+      // reservation (quantityReserved was incremented at reserve;
+      // quantityAvailable was already decremented at reserve), and flip
+      // SOLD only when stock AND in-flight reservations are both exhausted.
+      const L = await txc.listing.findUnique({
         where: { id: listing.id },
-        data: { status: 'SOLD', soldAt: new Date() },
+        select: { trackInventory: true, quantityAvailable: true, quantityReserved: true },
       });
+      if (L?.trackInventory) {
+        const txRow = await txc.transaction.findUnique({
+          where: { id: txId },
+          select: { quantity: true },
+        });
+        const qty = txRow?.quantity ?? 1;
+        const newReserved = L.quantityReserved - qty;
+        const soldOut = L.quantityAvailable <= 0 && newReserved <= 0;
+        await txc.listing.update({
+          where: { id: listing.id },
+          data: {
+            quantityReserved: { decrement: qty },
+            ...(soldOut
+              ? { status: 'SOLD', soldAt: new Date() }
+              : L.quantityAvailable > 0
+                ? { status: 'ACTIVE' }
+                : {}),
+          },
+        });
+      } else {
+        await txc.listing.update({
+          where: { id: listing.id },
+          data: { status: 'SOLD', soldAt: new Date() },
+        });
+      }
       return true;
     });
     if (!claimed) {

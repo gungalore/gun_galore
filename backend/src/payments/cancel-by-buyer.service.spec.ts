@@ -26,7 +26,10 @@ function makeService(opts: {
         .fn()
         .mockResolvedValue(opts.buyer === undefined ? { id: 'B' } : opts.buyer),
     },
-    listing: { update: jest.fn().mockResolvedValue({}) },
+    listing: {
+      update: jest.fn().mockResolvedValue({}),
+      findUnique: jest.fn().mockResolvedValue({ trackInventory: false }),
+    },
     adminAlert: { create: jest.fn().mockResolvedValue({}) },
   };
   const notifications = {

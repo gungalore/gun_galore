@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StitchService } from './stitch.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TrackingService } from '../shipping/tracking.service';
+import { reversalListingData } from './inventory';
 
 // Two thresholds for courier-shipped orders (PUDO / TCG only —
 // PRIVATE_ARRANGE has no dispatch step, DEALER_TRANSFER routes
@@ -171,11 +172,19 @@ export class DispatchSlaService {
         }
 
         // Status already flipped to REFUNDED by the claim above. Now
-        // reactivate the listing + strike the seller atomically.
+        // reactivate the listing + strike the seller atomically. Phase 8a:
+        // a tracked listing restocks the units (legacy → plain ACTIVE).
+        const fresh = await this.prisma.transaction.findUnique({
+          where: { id: tx.id },
+          select: { quantity: true, listing: { select: { trackInventory: true } } },
+        });
         await this.prisma.$transaction([
           this.prisma.listing.update({
             where: { id: tx.listingId },
-            data: { status: 'ACTIVE', soldAt: null },
+            data: reversalListingData(
+              fresh?.listing?.trackInventory ?? false,
+              fresh?.quantity ?? 1,
+            ),
           }),
           this.prisma.user.update({
             where: { id: tx.sellerId },

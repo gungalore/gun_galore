@@ -4,6 +4,8 @@ import {
   IsOptional,
   IsNotEmpty,
   IsBoolean,
+  IsInt,
+  Min,
   Equals,
   ValidateIf,
   ValidateNested,
@@ -119,4 +121,12 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsBoolean()
   firearmAttestation18Plus?: boolean;
+
+  // Units to buy (Phase 8a). Only honoured for inventory-tracked BUY_NOW
+  // listings; ignored (resolved to 1) for every other listing. Defaults
+  // to 1 when omitted.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  quantity?: number;
 }

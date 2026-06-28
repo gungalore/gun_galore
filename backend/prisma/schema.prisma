@@ -648,6 +648,19 @@ model Listing {
   widthCm     Int?
   heightCm    Int?
 
+  // Inventory / quantity (Phase 8a). trackInventory is the stable flag
+  // that switches a listing into multi-unit mode: when FALSE (the default
+  // for every existing listing, all firearms, and auctions) the listing is
+  // a single item using the legacy ACTIVE→PAYMENT_PENDING→SOLD status
+  // machine, UNCHANGED. When TRUE (a seller opts a BUY_NOW non-firearm
+  // listing into stock), purchases decrement quantityAvailable via an
+  // atomic counter and the listing only flips SOLD when it hits 0.
+  // quantityReserved = units currently in in-flight (pending-payment)
+  // checkouts. quantityAvailable = remaining sellable units.
+  trackInventory    Boolean @default(false)
+  quantityAvailable Int     @default(1)
+  quantityReserved  Int     @default(0)
+
   autoAcceptThreshold Int? // ZAR cents; Take a Shot only
 
   // ----- AUCTION-specific fields -----
@@ -794,8 +807,13 @@ model Transaction {
   sellerId  String
   seller    User    @relation("SellerTransactions", fields: [sellerId], references: [id])
 
+  // Units purchased (Phase 8a). 1 for every legacy/single-item sale.
+  // For an inventory-tracked listing, listingPrice below is the LINE TOTAL
+  // (unit price × quantity) so all downstream money math is unchanged.
+  quantity            Int @default(1)
+
   // Pricing — all ZAR cents, snapshot at point of sale
-  listingPrice        Int // snapshot of listing.price
+  listingPrice        Int // snapshot of listing.price × quantity
   commissionZar       Int
   processingFee       Int // Peach fee (3.5% + R1.50 fixed, ×1.15 VAT)
   // Shipping cost the buyer paid, sourced from a live Pudo / TCG rate
