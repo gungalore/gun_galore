@@ -163,6 +163,26 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
+  // Seller prints the platform-booked waybill/label (PDF). Seller-only,
+  // key-safe proxy — carrier auth is applied server-side in the service.
+  // ---------------------------------------------------------------
+  @Get(':id/waybill')
+  @UseGuards(ClerkGuard)
+  async waybill(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { pdf, filename } = await this.txService.getWaybillPdf(id, clerkId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Length': String(pdf.length),
+    });
+    return new StreamableFile(pdf);
+  }
+
+  // ---------------------------------------------------------------
   // Buyer confirms delivery → releases payment
   // ---------------------------------------------------------------
   @Post(':id/confirm-delivery')

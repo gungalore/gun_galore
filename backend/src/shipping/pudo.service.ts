@@ -399,6 +399,18 @@ export class PudoService {
     )}?api_key=${encodeURIComponent(key)}`;
   }
 
+  // Fetch the waybill PDF server-side (the api_key stays on the server).
+  // Streamed back to the seller via our own auth-checked proxy endpoint.
+  async fetchWaybillPdf(shipmentId: string): Promise<Buffer> {
+    const res = await fetch(this.waybillUrl(shipmentId), {
+      headers: { Accept: 'application/pdf' },
+    });
+    if (!res.ok) {
+      throw new Error(`Pudo waybill ${res.status} for ${shipmentId}`);
+    }
+    return Buffer.from(await res.arrayBuffer());
+  }
+
   // Invalidate cache manually (useful after admin override)
   invalidateCache(): void {
     this.cache = null;

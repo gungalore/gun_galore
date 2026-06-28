@@ -314,6 +314,21 @@ export class TcgService {
   waybillUrl(shipmentId: string): string {
     return `${this.baseUrl}/generate/waybill/${encodeURIComponent(shipmentId)}`;
   }
+
+  // Fetch the waybill PDF server-side (Bearer auth stays on the server).
+  // Streamed back to the seller via our own auth-checked proxy endpoint.
+  async fetchWaybillPdf(shipmentId: string): Promise<Buffer> {
+    const res = await fetch(this.waybillUrl(shipmentId), {
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        Accept: 'application/pdf',
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`TCG waybill ${res.status} for ${shipmentId}`);
+    }
+    return Buffer.from(await res.arrayBuffer());
+  }
 }
 
 // ────────────────────────── helpers ────────────────────────────────

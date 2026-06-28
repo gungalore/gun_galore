@@ -1188,6 +1188,13 @@ export class TransactionsService {
       data: { acceptedAt, dispatchDeadlineAt },
     });
 
+    // P5.2: book the real carrier shipment now that the seller has
+    // committed. Fire-and-forget + fully self-contained (idempotent,
+    // courier-only, fail-safe) — it must never make accept fail. On success
+    // it SMSes/emails the seller the waybill + Pudo PIN + label link; on
+    // failure the seller keeps the manual dispatch fallback.
+    void this.shipping.bookForTransaction(transactionId);
+
     // Timeline + notifications — fire-and-forget.
     void this.tracking.recordInternal(transactionId, 'SELLER_ACCEPTED');
     void this.notifications.resolveByEntity('transaction', transactionId);
@@ -1622,6 +1629,42 @@ export class TransactionsService {
       }
     }
     return { scanned: stale.length, escalated };
+  }
+
+  // P5.2: stream the platform-booked shipment's waybill/label PDF to the
+  // seller (key-safe proxy — carrier auth happens server-side). Seller-only,
+  // and only once a shipment has actually been booked.
+  async getWaybillPdf(
+    transactionId: string,
+    sellerClerkId: string,
+  ): Promise<{ pdf: Buffer; filename: string }> {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: {
+        shippingMethod: true,
+        carrierShipmentId: true,
+        trackingReference: true,
+        seller: { select: { clerkId: true } },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.seller.clerkId !== sellerClerkId) {
+      throw new ForbiddenException('Not authorised');
+    }
+    if (
+      !tx.carrierShipmentId ||
+      (tx.shippingMethod !== 'PUDO' && tx.shippingMethod !== 'TCG')
+    ) {
+      throw new BadRequestException('No waybill is available for this order yet.');
+    }
+    const pdf = await this.shipping.getWaybillPdf(
+      tx.shippingMethod,
+      tx.carrierShipmentId,
+    );
+    return {
+      pdf,
+      filename: `waybill-${tx.trackingReference ?? transactionId}.pdf`,
+    };
   }
 
   async confirmDispatch(

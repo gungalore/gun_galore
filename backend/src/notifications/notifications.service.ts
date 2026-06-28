@@ -1168,6 +1168,153 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Seller: shipment booked by the platform (P5.2)
+  // ---------------------------------------------------------------
+  // Fires when the seller accepts a courier sale and we've booked the
+  // carrier. Carries everything the seller needs to hand the parcel over:
+  // the waybill, the Pudo drop-off PIN (lockers only), a link to print the
+  // label, and the explicit "can't print? write the waybill on the parcel"
+  // fallback. SMS + email + action-required inbox row.
+  async shipmentBooked(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+    carrier: 'PUDO' | 'TCG';
+    trackingReference: string;
+    dropoffPin?: string | null;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const isPudo = d.carrier === 'PUDO';
+    const courier = isPudo
+      ? 'Pudo (locker-to-locker)'
+      : 'The Courier Guy (door-to-door)';
+    const handover = isPudo
+      ? 'Drop your parcel at any Pudo locker using the drop-off PIN below.'
+      : 'The Courier Guy will collect the parcel from your pickup address.';
+
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'shipment_booked',
+      title: 'Ship your sale',
+      body: `${d.listingTitle} — waybill ${d.trackingReference}${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'dispatch',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
+
+    const rows: { label: string; value: string }[] = [
+      { label: 'Courier', value: courier },
+      { label: 'Waybill / tracking', value: d.trackingReference },
+    ];
+    if (d.dropoffPin) {
+      rows.push({ label: 'Pudo drop-off PIN', value: d.dropoffPin });
+    }
+
+    const html = this.email({
+      status: { tone: 'success', label: 'Ready to ship' },
+      headline: 'Your sale is booked — ship it now',
+      body:
+        `Hi ${b(d.sellerName)}, great news — ${b(d.listingTitle)} is paid and we've booked the courier for you. ${handover}` +
+        `<br><br>Open your sale to <b>print the waybill</b> and tape it to the parcel. ` +
+        `<b>If you can't print it, write the waybill number ${b(d.trackingReference)} clearly on the package</b> so the courier can match it.` +
+        (d.dropoffPin
+          ? `<br><br>Your locker drop-off PIN is ${b(d.dropoffPin)} — you'll need it at the locker screen.`
+          : ''),
+      rows,
+      cta: { label: 'Print waybill & view details', url: txUrl },
+      preheader: `${d.listingTitle} is booked — waybill ${d.trackingReference}`,
+    });
+    await this.send(d.sellerEmail, 'Ready to ship — ' + d.listingTitle, html);
+
+    const smsHandover = isPudo
+      ? `Drop at any Pudo locker${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`
+      : 'Courier Guy will collect.';
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
+      `booked-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Seller: parcel collected by the courier (P5.2)
+  // ---------------------------------------------------------------
+  async sellerParcelCollected(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'shipment_collected',
+      title: 'Parcel collected',
+      body: `The courier has collected ${d.listingTitle}.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'dispatch',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'success', label: 'Collected' },
+      headline: 'Your parcel was collected',
+      body: `Hi ${b(d.sellerName)}, the courier has collected ${b(d.listingTitle)}. We'll let you know the moment it's delivered to the buyer.`,
+      cta: { label: 'View sale', url: txUrl },
+      preheader: `${d.listingTitle} was collected by the courier`,
+    });
+    await this.send(d.sellerEmail, 'Collected — ' + d.listingTitle, html);
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: ${truncate(d.listingTitle, 40)} was collected by the courier. We'll notify you on delivery.`,
+      `seller-collected-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Seller: parcel delivered to the buyer (P5.2)
+  // ---------------------------------------------------------------
+  async sellerParcelDelivered(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'shipment_delivered_seller',
+      title: 'Delivered to buyer',
+      body: `${d.listingTitle} was delivered. Payout follows once the buyer confirms.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'success', label: 'Delivered' },
+      headline: 'Delivered to the buyer',
+      body: `Hi ${b(d.sellerName)}, ${b(d.listingTitle)} was delivered to the buyer. Your payment will be released once the buyer confirms receipt — or automatically after 7 days.`,
+      cta: { label: 'View sale', url: txUrl },
+      preheader: `${d.listingTitle} was delivered to the buyer`,
+    });
+    await this.send(d.sellerEmail, 'Delivered — ' + d.listingTitle, html);
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: ${truncate(d.listingTitle, 38)} was delivered to the buyer. Payout follows once confirmed.`,
+      `seller-delivered-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
   // Buyer: refund issued
   // ---------------------------------------------------------------
   async refundIssuedBuyer(d: {

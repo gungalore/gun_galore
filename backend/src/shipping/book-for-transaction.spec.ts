@@ -18,7 +18,7 @@ function makeService(over: { claimCount?: number; tx?: unknown } = {}) {
   };
   const pudo = { createShipment: jest.fn() };
   const tcg = { createShipment: jest.fn() };
-  const notifications = {};
+  const notifications = { shipmentBooked: jest.fn().mockResolvedValue(undefined) };
   const svc = new ShippingService(
     prisma as never,
     notifications as never,

@@ -397,10 +397,29 @@ export class ShippingService {
         `Shipment booked for ${transactionId}: ${result.carrier} waybill ${result.trackingReference}${result.pin ? ` (PIN ${result.pin})` : ''}`,
       );
 
-      // TODO(P5.2 Phase 3): notify the seller (SMS + email) with the waybill,
-      // Pudo PIN, label link, and the "write it on the package" fallback —
-      // this.notifications.shipmentBooked(...). Wired together with the
-      // acceptTransaction hook so the codebase never books without notifying.
+      // Notify the seller (SMS + email + inbox) with the waybill, Pudo PIN,
+      // label link, and the "write it on the package" fallback. Best-effort —
+      // the booking already succeeded; a notification hiccup must not undo it.
+      const sellerName =
+        [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
+        tx.seller.username ||
+        'Seller';
+      void this.notifications
+        .shipmentBooked({
+          sellerEmail: tx.seller.email,
+          sellerName,
+          sellerPhone: tx.seller.phone,
+          listingTitle: tx.listing.title,
+          transactionId,
+          carrier: result.carrier,
+          trackingReference: result.trackingReference,
+          dropoffPin: result.pin ?? null,
+        })
+        .catch((e) =>
+          this.logger.warn(
+            `shipmentBooked notify failed for ${transactionId}: ${(e as Error).message}`,
+          ),
+        );
       return result;
     } catch (err) {
       // Release the claim so an admin can retry + the seller keeps the
@@ -413,6 +432,19 @@ export class ShippingService {
       await this.raiseBookingFailedAlert(transactionId, (err as Error).message);
       return null;
     }
+  }
+
+  // Fetch a booked shipment's waybill/label PDF from the right carrier.
+  // Auth (Pudo api_key / TCG bearer) is handled inside each carrier client,
+  // so the key never reaches the seller — our proxy endpoint streams the
+  // bytes back after checking ownership.
+  async getWaybillPdf(
+    carrier: 'PUDO' | 'TCG',
+    shipmentId: string,
+  ): Promise<Buffer> {
+    return carrier === 'PUDO'
+      ? this.pudo.fetchWaybillPdf(shipmentId)
+      : this.tcg.fetchWaybillPdf(shipmentId);
   }
 
   private async releaseBookingClaim(transactionId: string): Promise<void> {
@@ -494,6 +526,15 @@ export class ShippingService {
           deliveredAt: true,
           listing: { select: { title: true } },
           buyer: { select: { email: true, firstName: true } },
+          seller: {
+            select: {
+              email: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+              phone: true,
+            },
+          },
         },
       });
       if (!transaction) return null;
@@ -558,6 +599,35 @@ export class ShippingService {
         case 'RETURNED':
           // No notification for buyer on returned — admin handles it.
           break;
+      }
+
+      // Seller-side notifications (P5.2) — the seller wants to know when the
+      // courier picks the parcel up and when it reaches the buyer. Only on
+      // COLLECTED (pickup) + DELIVERED; other transitions stay buyer-only to
+      // avoid noise.
+      const seller = transaction.seller;
+      if (seller?.email) {
+        const sellerName =
+          [seller.firstName, seller.lastName].filter(Boolean).join(' ') ||
+          seller.username ||
+          'Seller';
+        if (newStatus === 'COLLECTED') {
+          void this.notifications.sellerParcelCollected({
+            sellerEmail: seller.email,
+            sellerName,
+            sellerPhone: seller.phone,
+            listingTitle: title,
+            transactionId,
+          });
+        } else if (newStatus === 'DELIVERED') {
+          void this.notifications.sellerParcelDelivered({
+            sellerEmail: seller.email,
+            sellerName,
+            sellerPhone: seller.phone,
+            listingTitle: title,
+            transactionId,
+          });
+        }
       }
 
       return newStatus;
