@@ -8,6 +8,12 @@ import {
   parseStatementCsv,
   type ParsedStatementRow,
 } from './manual-payment.parser';
+import {
+  buildFnbBulkFile,
+  sastActionDate,
+  type FnbRecipient,
+} from './fnb-bulk';
+import { GG_BANK_DETAILS } from '../payments/transactions.service';
 
 // Manual-EFT reconciliation. Two feeds match payments to orders:
 //   1. scanInbox()  — FNB inContact email alerts (fast, PROVISIONAL):
@@ -413,6 +419,8 @@ export class ManualPaymentsService {
         seller: {
           select: {
             username: true,
+            email: true,
+            phone: true,
             bankAccountHolder: true,
             bankName: true,
             bankAccountNumber: true,
@@ -433,10 +441,13 @@ export class ManualPaymentsService {
         buyer: {
           select: {
             username: true,
+            email: true,
+            phone: true,
             bankAccountHolder: true,
             bankName: true,
             bankAccountNumber: true,
             bankBranchCode: true,
+            bankAccountType: true,
           },
         },
       },
@@ -444,59 +455,86 @@ export class ManualPaymentsService {
     return { payouts, refunds };
   }
 
-  // Placeholder FNB bulk-payment CSV. The COLUMN LAYOUT here is a
-  // best-guess and MUST be swapped for FNB's real "Pay Multiple
-  // Recipients" template (operator delivering Monday) before any real
-  // bulk payment is made — FNB imports are strict. Until then this is a
-  // human-readable export the operator can eyeball.
+  // FNB "BInSol - U" bulk-payment file (real format, per operator's
+  // template). FNB ignores rows 1–4 on import and reads row 4's column order
+  // for the data rows. Includes BOTH seller payouts (RELEASED funds owed) and
+  // buyer refunds (REFUNDED) as recipient rows — every row is an outbound
+  // payment from GG's account. Rows missing essential bank details (account
+  // number / holder / branch) are SKIPPED so the file never carries an
+  // invalid line; the skipped count is logged + returned via buildPayoutFile.
+  // The operator reviews + authorises in FNB before any money moves.
   async buildPayoutCsv(): Promise<string> {
+    return (await this.buildPayoutFile()).csv;
+  }
+
+  async buildPayoutFile(): Promise<{
+    csv: string;
+    included: number;
+    skipped: number;
+    skippedRefs: string[];
+  }> {
     const { payouts, refunds } = await this.getPayoutsDue();
-    const header = [
-      'Type',
-      'Recipient',
-      'AccountHolder',
-      'Bank',
-      'AccountNumber',
-      'BranchCode',
-      'AccountType',
-      'AmountZAR',
-      'Reference',
-      'TransactionId',
-    ].join(',');
-    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const rows: string[] = [];
+    const recipients: FnbRecipient[] = [];
+    const skippedRefs: string[] = [];
+
+    const hasBank = (b: {
+      bankAccountHolder: string | null;
+      bankAccountNumber: string | null;
+      bankBranchCode: string | null;
+    }) => !!(b.bankAccountHolder && b.bankAccountNumber && b.bankBranchCode);
+
     for (const p of payouts) {
-      rows.push(
-        [
-          esc('PAYOUT'),
-          esc(p.seller.username),
-          esc(p.seller.bankAccountHolder),
-          esc(p.seller.bankName),
-          esc(p.seller.bankAccountNumber),
-          esc(p.seller.bankBranchCode),
-          esc(p.seller.bankAccountType),
-          (p.sellerPayout / 100).toFixed(2),
-          esc(p.orderReference),
-          esc(p.id),
-        ].join(','),
-      );
+      if (!hasBank(p.seller)) {
+        skippedRefs.push(`PAYOUT ${p.orderReference ?? p.id}`);
+        continue;
+      }
+      recipients.push({
+        name: p.seller.bankAccountHolder!,
+        account: p.seller.bankAccountNumber!,
+        accountType: p.seller.bankAccountType,
+        branchCode: p.seller.bankBranchCode!,
+        amountCents: p.sellerPayout,
+        ownReference: p.orderReference ?? p.id, // GG statement: which sale
+        recipientReference: `Gun Galore ${p.orderReference ?? ''}`.trim(),
+        email: p.seller.email,
+        phone: p.seller.phone,
+      });
     }
+
     for (const r of refunds) {
-      rows.push(
-        [
-          esc('REFUND'),
-          esc(r.buyer.username),
-          esc(r.buyer.bankAccountHolder),
-          esc(r.buyer.bankName),
-          esc(r.buyer.bankAccountNumber),
-          esc(r.buyer.bankBranchCode),
-          esc(''),
-          (r.buyerTotal / 100).toFixed(2),
-          esc(r.orderReference),
-          esc(r.id),
-        ].join(','),
+      if (!hasBank(r.buyer)) {
+        skippedRefs.push(`REFUND ${r.orderReference ?? r.id}`);
+        continue;
+      }
+      recipients.push({
+        name: r.buyer.bankAccountHolder!,
+        account: r.buyer.bankAccountNumber!,
+        accountType: r.buyer.bankAccountType,
+        branchCode: r.buyer.bankBranchCode!,
+        amountCents: r.buyerTotal,
+        ownReference: `Refund ${r.orderReference ?? r.id}`,
+        recipientReference: `Gun Galore refund`,
+        email: r.buyer.email,
+        phone: r.buyer.phone,
+      });
+    }
+
+    if (skippedRefs.length) {
+      this.logger.warn(
+        `Payout file: ${skippedRefs.length} row(s) skipped for missing bank details — ${skippedRefs.join('; ')}`,
       );
     }
-    return [header, ...rows].join('\r\n');
+
+    const csv = buildFnbBulkFile(recipients, {
+      sourceAccount: GG_BANK_DETAILS.accountNumber,
+      actionDate: sastActionDate(new Date()),
+      notify: true, // operator: notify sellers (EMAIL 1 + SMS 1 populated)
+    });
+    return {
+      csv,
+      included: recipients.length,
+      skipped: skippedRefs.length,
+      skippedRefs,
+    };
   }
 }
