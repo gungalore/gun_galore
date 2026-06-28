@@ -97,10 +97,17 @@ export class TransactionsService {
   // ------------------------------------------------------------------
   // Create a transaction and a Peach checkout session
   // ------------------------------------------------------------------
-  async create(
+  // Shared checkout CORE (Phase 8b). Validates buyer/listing/offer/shipping/
+  // firearm-attestation/dealer, resolves price + quantity (Phase 8a), quotes
+  // shipping, computes the fee breakdown, ATOMICALLY reserves the listing
+  // (oversell-safe), creates the Transaction, and fires the seller-KYC
+  // trigger — but performs NO payment. Both single-item create() and the
+  // multi-item order checkout (OrdersService) call this; the CALLER owns the
+  // payment step (one capture per order) and, for orders, the offer→CONVERTED
+  // update. Returns every local the payment step needs.
+  private async reserveAndCreateLine(
     buyerClerkId: string,
     dto: CreateTransactionDto,
-    frontendUrl: string,
   ) {
     const buyer = await this.prisma.user.findUnique({ where: { clerkId: buyerClerkId } });
     if (!buyer) throw new NotFoundException('Buyer not found');
@@ -356,6 +363,44 @@ export class TransactionsService {
           ),
         );
     }
+
+    return {
+      tx,
+      listing,
+      offerRecord,
+      buyer,
+      quantity,
+      listingPrice,
+      shippingCost,
+      commissionZar,
+      processingFee,
+      buyerTotal,
+      sellerPayout,
+    };
+  }
+
+  // Single-item checkout (the original create()). Reserves + creates ONE
+  // transaction via the shared core, then runs the payment branch (manual
+  // EFT today; gateway-neutral later). Behaviour is byte-identical to the
+  // pre-8b create() — the only change is that the core is now a reusable
+  // method that the multi-item order checkout also calls.
+  async create(
+    buyerClerkId: string,
+    dto: CreateTransactionDto,
+    frontendUrl: string,
+  ) {
+    const {
+      tx,
+      listing,
+      offerRecord,
+      buyer,
+      quantity,
+      listingPrice,
+      commissionZar,
+      processingFee,
+      buyerTotal,
+      sellerPayout,
+    } = await this.reserveAndCreateLine(buyerClerkId, dto);
 
     // ── Manual EFT branch (PAYMENT_MODE=manual) ────────────────────────
     // No card gateway: issue an order reference + GG bank-deposit
