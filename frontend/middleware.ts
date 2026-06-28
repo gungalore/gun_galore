@@ -16,6 +16,7 @@ const isPublicRoute = createRouteMatcher([
   '/sellers(.*)', // public seller profiles
   '/category(.*)', // public category landing/browse pages
   '/faq',          // public help/FAQ page
+  '/how-selling-works', // public "how selling works" explainer (linked from sell flow)
   '/sitemap.xml',  // SEO — must be crawlable without auth (.xml isn't
   '/robots.txt',   // excluded by the matcher, so it hits this middleware)
   '/admin(.*)',   // admin uses its own JWT auth, not Clerk
