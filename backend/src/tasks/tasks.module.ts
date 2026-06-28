@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TasksService } from './tasks.service';
 import { OffersModule } from '../offers/offers.module';
+import { SwapsModule } from '../swaps/swaps.module';
 import { AuctionsModule } from '../auctions/auctions.module';
 import { RafflesModule } from '../raffles/raffles.module';
 import { FeaturedModule } from '../featured/featured.module';
@@ -20,6 +21,7 @@ import { ManualPaymentsModule } from '../manual-payments/manual-payments.module'
   imports: [
     ScheduleModule.forRoot(),
     OffersModule,
+    SwapsModule,
     AuctionsModule,
     RafflesModule,
     FeaturedModule,

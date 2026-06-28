@@ -48,14 +48,28 @@ export type ActionTokenPurpose =
   // selfie face-matched against Home Affairs are still required); it only
   // removes the Clerk-login wall when the SMS opens in an external
   // browser. 7-day TTL — KYC isn't time-critical like a 24h checkout.
-  | 'KYC_VERIFY';
+  | 'KYC_VERIFY'
+  // SWAP_PROPOSAL_DECISION — the listing owner's one-tap link from the
+  // "you've received a swap proposal" SMS. Renders the proposal (their
+  // item ↔ the proposer's item ± cash) so they can Accept / Reject /
+  // Counter the cash WITHOUT signing in. targetType = 'swapProposal'.
+  | 'SWAP_PROPOSAL_DECISION'
+  // SWAP_COUNTER_DECISION — the proposer's one-tap link after the owner
+  // counters the cash. Tap → Accept / Reject the counter. 24h TTL.
+  | 'SWAP_COUNTER_DECISION'
+  // SWAP_DISPATCH — a swap party's one-tap dispatch link for THEIR leg
+  // (S4). targetType = 'transaction' (the leg). Added now so the union
+  // is stable; wired in S4.
+  | 'SWAP_DISPATCH';
 
 export type ActionTokenTargetType =
   | 'offer'
   | 'listing'
   | 'transaction'
   // KYC_VERIFY tokens target the user themselves (no offer/listing/tx).
-  | 'user';
+  | 'user'
+  // Swop/Trade negotiation tokens target a SwapProposal.
+  | 'swapProposal';
 
 /** Max wrong / invalid resolution attempts before the token locks. */
 const MAX_INVALID_ATTEMPTS = 5;

@@ -15,7 +15,9 @@ export type NotificationLinkedType =
   | 'transaction'
   | 'bid'
   | 'listing'
-  | 'raffle';
+  | 'raffle'
+  | 'swapProposal'
+  | 'swap';
 
 interface PersistOpts {
   userId: string;
@@ -2795,6 +2797,191 @@ export class NotificationsService {
 
   async sendBroadcastSms(to: string, message: string, reference: string) {
     return this.sendSms(to, message, reference);
+  }
+
+  // ---------------------------------------------------------------
+  // Swop / Trade (SWOP) — proposal lifecycle notifications
+  // ---------------------------------------------------------------
+  private swapCashLine(cashAmount: number, payerLabel: string): string {
+    return cashAmount > 0
+      ? `${payerLabel} ${formatRand(cashAmount)} cash`
+      : 'No cash top-up';
+  }
+
+  // Owner of the wanted listing receives a swap proposal.
+  async swapProposalReceived(d: {
+    ownerEmail: string;
+    ownerName: string;
+    ownerPhone?: string | null;
+    proposerName: string;
+    wantedTitle: string;
+    wantedListingId: string;
+    offeredTitle: string;
+    cashAmount: number;
+    cashFromProposer: boolean; // true = proposer adds cash; false = owner adds cash
+    proposalId: string;
+    actionUrl?: string;
+  }) {
+    const url = d.actionUrl ?? `${this.appUrl}/listings/${d.wantedListingId}`;
+    await this.persistByEmail(d.ownerEmail, {
+      category: 'SELLER',
+      type: 'swap_proposal_received',
+      title: 'New swap proposal',
+      body: `${d.proposerName} wants to swap their ${d.offeredTitle} for your ${d.wantedTitle}`,
+      url: `/listings/${d.wantedListingId}`,
+      iconKey: 'offer',
+      linkedType: 'swapProposal',
+      linkedId: d.proposalId,
+      dismissible: false,
+    });
+    const cashLine = this.swapCashLine(
+      d.cashAmount,
+      d.cashFromProposer ? 'They add' : 'You add',
+    );
+    const html = this.email({
+      status: { tone: 'pending', label: 'Swap proposal' },
+      headline: 'New swap proposal',
+      body: `Hi ${b(d.ownerName)}, ${b(d.proposerName)} wants to swap their ${b(d.offeredTitle)} for your ${b(d.wantedTitle)}. You can accept, decline, or counter the cash once. The proposal expires in 48 hours.`,
+      rows: [
+        { label: 'They give', value: d.offeredTitle },
+        { label: 'You give', value: d.wantedTitle },
+        { label: 'Cash', value: cashLine },
+      ],
+      cta: { label: 'Review swap', url },
+      preheader: `${d.proposerName} proposed a swap for ${d.wantedTitle}`,
+    });
+    await this.send(d.ownerEmail, 'New swap proposal: ' + d.wantedTitle, html);
+    if (d.actionUrl) {
+      await this.sendSms(
+        d.ownerPhone,
+        `Gun Galore: ${truncate(d.proposerName, 16)} wants to swap their ${truncate(d.offeredTitle, 20)} for your ${truncate(d.wantedTitle, 20)}. Decide: ${d.actionUrl}`,
+        `swap-${d.proposalId}`,
+      );
+    }
+  }
+
+  // Proposer is told the owner countered the cash.
+  async swapProposalCountered(d: {
+    proposerEmail: string;
+    proposerName: string;
+    proposerPhone?: string | null;
+    wantedTitle: string;
+    wantedListingId: string;
+    counterCashAmount: number;
+    counterCashFromProposer: boolean;
+    ownerNote?: string;
+    proposalId: string;
+    actionUrl?: string;
+  }) {
+    const url = d.actionUrl ?? `${this.appUrl}/listings/${d.wantedListingId}`;
+    await this.persistByEmail(d.proposerEmail, {
+      category: 'BUYER',
+      type: 'swap_proposal_countered',
+      title: 'Swap counter received',
+      body: `The owner countered your swap for ${d.wantedTitle}`,
+      url: `/listings/${d.wantedListingId}`,
+      iconKey: 'offer',
+      linkedType: 'swapProposal',
+      linkedId: d.proposalId,
+      dismissible: false,
+    });
+    const cashLine = this.swapCashLine(
+      d.counterCashAmount,
+      d.counterCashFromProposer ? 'You add' : 'They add',
+    );
+    const html = this.email({
+      status: { tone: 'pending', label: 'Counter' },
+      headline: 'The owner countered your swap',
+      body: `Hi ${b(d.proposerName)}, the owner of ${b(d.wantedTitle)} countered the cash on your swap. You can accept or decline.${d.ownerNote ? ` Their note: ${b(d.ownerNote)}` : ''}`,
+      rows: [{ label: 'Cash now', value: cashLine }],
+      cta: { label: 'Review counter', url },
+      preheader: `Counter on your swap for ${d.wantedTitle}`,
+    });
+    await this.send(
+      d.proposerEmail,
+      'Swap counter: ' + d.wantedTitle,
+      html,
+    );
+    if (d.actionUrl) {
+      await this.sendSms(
+        d.proposerPhone,
+        `Gun Galore: The owner countered your swap for ${truncate(d.wantedTitle, 26)}. Decide: ${d.actionUrl}`,
+        `swap-counter-${d.proposalId}`,
+      );
+    }
+  }
+
+  // A party is told the swap was AGREED (both items reserved). Funding +
+  // shipping details follow once the cash rail opens.
+  async swapAgreed(d: {
+    email: string;
+    name: string;
+    phone?: string | null;
+    counterpartyName: string;
+    yourItemTitle: string;
+    theirItemTitle: string;
+    swapId: string;
+  }) {
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'swap_agreed',
+      title: 'Swap agreed',
+      body: `You're swapping ${d.yourItemTitle} for ${d.theirItemTitle}`,
+      url: `/listings`,
+      iconKey: 'offer',
+      linkedType: 'swap',
+      linkedId: d.swapId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'success', label: 'Swap agreed' },
+      headline: 'Your swap is agreed',
+      body: `Hi ${b(d.name)}, you and ${b(d.counterpartyName)} have agreed to swap. Both items are now reserved. We'll send the funding (if any) and shipping details for your parcel shortly.`,
+      rows: [
+        { label: 'You give', value: d.yourItemTitle },
+        { label: 'You get', value: d.theirItemTitle },
+      ],
+      preheader: `Swap agreed with ${d.counterpartyName}`,
+    });
+    await this.send(d.email, 'Swap agreed — next steps coming', html);
+    await this.sendSms(
+      d.phone,
+      `Gun Galore: Your swap with ${truncate(d.counterpartyName, 18)} is agreed — both items reserved. Funding + shipping details to follow.`,
+      `swap-agreed-${d.swapId}`,
+    );
+  }
+
+  // Proposer/owner told their swap was declined or expired.
+  async swapDeclined(d: {
+    email: string;
+    name: string;
+    wantedTitle: string;
+    wantedListingId: string;
+    reason: 'declined' | 'expired';
+    proposalId: string;
+  }) {
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'swap_declined',
+      title: d.reason === 'expired' ? 'Swap proposal expired' : 'Swap declined',
+      body: `Your swap for ${d.wantedTitle} ${d.reason === 'expired' ? 'expired' : 'was declined'}`,
+      url: `/listings/${d.wantedListingId}`,
+      iconKey: 'offer',
+      linkedType: 'swapProposal',
+      linkedId: d.proposalId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: {
+        tone: 'pending',
+        label: d.reason === 'expired' ? 'Expired' : 'Declined',
+      },
+      headline: d.reason === 'expired' ? 'Your swap proposal expired' : 'Your swap was declined',
+      body: `Hi ${b(d.name)}, your swap proposal for ${b(d.wantedTitle)} ${d.reason === 'expired' ? 'expired before the owner responded' : 'was declined by the owner'}. You can propose a new swap any time.`,
+      cta: { label: 'View listing', url: `${this.appUrl}/listings/${d.wantedListingId}` },
+      preheader: `Swap ${d.reason} — ${d.wantedTitle}`,
+    });
+    await this.send(d.email, `Swap ${d.reason}: ` + d.wantedTitle, html);
   }
 
   // ---------------------------------------------------------------

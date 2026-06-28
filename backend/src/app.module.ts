@@ -23,6 +23,7 @@ import { OrdersModule } from './orders/orders.module';
 import { RatingsModule } from './ratings/ratings.module';
 import { AdminModule } from './admin/admin.module';
 import { OffersModule } from './offers/offers.module';
+import { SwapsModule } from './swaps/swaps.module';
 import { AuctionsModule } from './auctions/auctions.module';
 import { RafflesModule } from './raffles/raffles.module';
 import { FeaturedModule } from './featured/featured.module';
@@ -76,6 +77,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     RatingsModule,
     AdminModule,
     OffersModule,
+    SwapsModule,
     AuctionsModule,
     RafflesModule,
     FeaturedModule,
