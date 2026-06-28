@@ -156,9 +156,11 @@ export function ListingPreviewModal({
   const priceLabel =
     snapshot.listingType === 'TAKE_A_SHOT'
       ? 'Take a Shot'
-      : priceCents > 0
-        ? `R${(priceCents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 0 })}`
-        : '—';
+      : snapshot.listingType === 'SWOP'
+        ? 'Swop / Trade'
+        : priceCents > 0
+          ? `R${(priceCents / 100).toLocaleString('en-ZA', { minimumFractionDigits: 0 })}`
+          : '—';
 
   // The header colour reflects the verdict.
   const verdictColor =

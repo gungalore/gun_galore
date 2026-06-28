@@ -14,6 +14,7 @@ import {
 import SellerControls from './seller-controls';
 import OfferPanel from './offer-panel';
 import AuctionPanel from './auction-panel';
+import SwapPanel from './swap-panel';
 import ModerationBanner from './moderation-banner';
 import BackLink from './back-link';
 import { QuestionsPanel } from './questions-panel';
@@ -223,7 +224,9 @@ export default async function ListingDetailPage({
                   ? 'Marketplace: pay the listed price and go. No bidding, no negotiation. Goes straight to checkout.'
                   : listing.listingType === 'AUCTION'
                     ? 'Auction: timed bidding with proxy bids and snipe protection. The highest bid at close wins, provided the reserve is met.'
-                    : 'Take a Shot: make an offer below the listed price. The seller can accept, counter once, or decline. You get 48 hours to act on a counter.'}
+                    : listing.listingType === 'SWOP'
+                      ? 'Swop / Trade: the owner wants to trade this item rather than sell it. Propose a swap — your item, plus optional cash either way — and the owner can accept, counter the cash, or decline.'
+                      : 'Take a Shot: make an offer below the listed price. The seller can accept, counter once, or decline. You get 48 hours to act on a counter.'}
               </HelpTip>
             </span>
           </div>
@@ -323,6 +326,12 @@ export default async function ListingDetailPage({
             <AuctionPanel
               listingId={listing.id}
               sellerClerkId={listing.seller.clerkId}
+            />
+          ) : listing.status === 'ACTIVE' && listing.listingType === 'SWOP' ? (
+            <SwapPanel
+              listingId={listing.id}
+              sellerClerkId={listing.seller.clerkId}
+              isOwnListing={isOwnListing}
             />
           ) : listing.status !== 'ACTIVE' ? (
             <div

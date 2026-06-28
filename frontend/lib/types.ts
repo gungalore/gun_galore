@@ -1,4 +1,4 @@
-export type ListingType = 'BUY_NOW' | 'TAKE_A_SHOT' | 'AUCTION';
+export type ListingType = 'BUY_NOW' | 'TAKE_A_SHOT' | 'AUCTION' | 'SWOP';
 export type ListingStatus = 'DRAFT' | 'PENDING_REVIEW' | 'ACTIVE' | 'PAYMENT_PENDING' | 'SOLD' | 'CANCELLED' | 'EXPIRED';
 export type Condition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
 export type SellerTier = 'NEW' | 'ESTABLISHED' | 'TRUSTED' | 'TOP_SELLER' | 'DEALER';

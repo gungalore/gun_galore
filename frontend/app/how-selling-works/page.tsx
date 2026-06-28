@@ -58,6 +58,20 @@ const MODES: {
       'As with every sale, payment is held until delivery is confirmed before it reaches you.',
     ],
   },
+  {
+    name: 'Swop / Trade',
+    tagline: 'Trade your gear for someone else’s — add cash if it’s not an even deal.',
+    bestFor: [
+      'Upgrading your kit without laying out cash',
+      'Item-for-item deals, with optional cash either way',
+      'When you’d rather trade than sell',
+    ],
+    how: [
+      'You list the item you want to trade — no price. Buyers browse and propose a swap: their item, plus optional cash in either direction.',
+      'You accept, decline, or counter the cash once. Gun Galore arranges both couriers and any cash is held until both parcels are delivered, then released.',
+      'Firearms can be swapped too — each side transfers through a SAPS-licensed dealer, exactly like a normal firearm sale.',
+    ],
+  },
 ];
 
 export default function HowSellingWorksPage() {

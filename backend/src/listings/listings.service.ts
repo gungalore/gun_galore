@@ -25,6 +25,14 @@ import { ReferenceNumberService } from '../common/reference-number.service';
 import { FirearmLicenceService } from './firearm-licence.service';
 import { inventoryEligible } from '../payments/inventory';
 
+// Listing types that carry NO listed sale price — buyers name a price
+// (TAKE_A_SHOT) or trade an item (SWOP). The price guards below treat both
+// the same: price must be omitted, not required.
+const PRICELESS_LISTING_TYPES = new Set<ListingType>([
+  ListingType.TAKE_A_SHOT,
+  ListingType.SWOP,
+]);
+
 // Shape returned by previewDraft() — the frontend uses this to render the
 // soft-block preview screen. canPublish gates the "Confirm publish" button;
 // hardBlocked overrides everything when the seller is on attempt 2+ with
@@ -151,11 +159,11 @@ export class ListingsService {
       throw new BadRequestException('Invalid category');
     }
 
-    if (dto.listingType !== 'TAKE_A_SHOT' && !dto.price) {
+    if (!PRICELESS_LISTING_TYPES.has(dto.listingType) && !dto.price) {
       throw new BadRequestException('Price is required for BUY_NOW and AUCTION listings');
     }
-    if (dto.listingType === 'TAKE_A_SHOT' && dto.price) {
-      throw new BadRequestException('TAKE_A_SHOT listings must not have a listed price');
+    if (PRICELESS_LISTING_TYPES.has(dto.listingType) && dto.price) {
+      throw new BadRequestException('Take a Shot and Swop listings must not have a listed price');
     }
 
     // Firearm listings MUST include DEALER_TRANSFER in shippingMethods
@@ -248,11 +256,11 @@ export class ListingsService {
       throw new BadRequestException('Invalid category');
     }
 
-    if (dto.listingType !== 'TAKE_A_SHOT' && !dto.price) {
+    if (!PRICELESS_LISTING_TYPES.has(dto.listingType) && !dto.price) {
       throw new BadRequestException('Price is required for BUY_NOW and AUCTION listings');
     }
-    if (dto.listingType === 'TAKE_A_SHOT' && dto.price) {
-      throw new BadRequestException('TAKE_A_SHOT listings must not have a listed price');
+    if (PRICELESS_LISTING_TYPES.has(dto.listingType) && dto.price) {
+      throw new BadRequestException('Take a Shot and Swop listings must not have a listed price');
     }
 
     // Firearm listings MUST include DEALER_TRANSFER in shippingMethods

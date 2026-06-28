@@ -161,6 +161,7 @@ export function FilterBar({
         <option value="BUY_NOW">Marketplace</option>
         <option value="AUCTION">Auction</option>
         <option value="TAKE_A_SHOT">Take a Shot</option>
+        <option value="SWOP">Swop / Trade</option>
       </select>
 
       {/* Price range (Rands). Applies on blur or Enter so we don't navigate

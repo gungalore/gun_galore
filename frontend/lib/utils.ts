@@ -37,4 +37,5 @@ export const LISTING_TYPE_LABELS: Record<string, string> = {
   BUY_NOW: 'Buy Now',
   TAKE_A_SHOT: 'Take a Shot',
   AUCTION: 'Auction',
+  SWOP: 'Swop / Trade',
 };

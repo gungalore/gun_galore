@@ -67,6 +67,7 @@ export function Nav() {
     { href: '/?listingType=BUY_NOW', label: 'Marketplace' },
     { href: '/?listingType=AUCTION', label: 'Auctions' },
     { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
+    { href: '/?listingType=SWOP', label: 'Swop / Trade' },
     { href: '/competitions', label: 'Competitions' },
   ];
 

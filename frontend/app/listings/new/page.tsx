@@ -57,7 +57,7 @@ const MIN_COMMISSION_CENTS = 3_000; // R30 floor — see backend fee.calculator.
 // so sellers can compare and know where to list before picking. Copy mirrors
 // the /how-selling-works help page.
 const SELL_MODES: {
-  value: 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT';
+  value: 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT' | 'SWOP';
   name: string;
   tagline: string;
   bestFor: string[];
@@ -79,6 +79,12 @@ const SELL_MODES: {
     name: 'Take a Shot',
     tagline: 'Buyers make offers; you decide.',
     bestFor: ['Hard to price', 'Open to offers', 'Optional instant auto-accept'],
+  },
+  {
+    value: 'SWOP',
+    name: 'Swop / Trade',
+    tagline: 'Trade your gear for theirs — add cash if needed.',
+    bestFor: ['Upgrading your kit', 'No cash to spare', 'Item-for-item, ± a top-up'],
   },
 ];
 
@@ -616,8 +622,8 @@ export default function NewListingPage() {
     const step3 =
       !form.listingType
         ? false
-        : form.listingType === 'TAKE_A_SHOT'
-          ? true // no price required
+        : form.listingType === 'TAKE_A_SHOT' || form.listingType === 'SWOP'
+          ? true // no price required — buyer names a price / a swap has no sale price
           : form.listingType === 'AUCTION'
             ? (hasPrice || hasReserve) && !!form.durationDays
             : hasPrice;
@@ -810,6 +816,9 @@ export default function NewListingPage() {
   // and imageCount, which are preview-only.
   function buildListingPayload(): Record<string, unknown> {
     const isTakeAShot = form.listingType === 'TAKE_A_SHOT';
+    // Price-less types: TAKE_A_SHOT (buyer names a price) + SWOP (a swap has
+    // no sale price). Neither sends a `price` field.
+    const isPriceless = isTakeAShot || form.listingType === 'SWOP';
     // Province comes from the pickup address now (not a separate field on
     // Step 1). Fall back to the form's default if the seller somehow
     // didn't fill an address (shouldn't happen because step 3 gates it).
@@ -864,7 +873,7 @@ export default function NewListingPage() {
         ? { quantityAvailable: Math.floor(Number(stock)) }
         : {}),
     };
-    if (!isTakeAShot) {
+    if (!isPriceless) {
       body.price = Math.round(parseFloat(form.price) * 100);
     }
     if (form.autoAcceptThreshold) {
@@ -1605,7 +1614,9 @@ export default function NewListingPage() {
                       ? 'Marketplace'
                       : form.listingType === 'AUCTION'
                         ? 'Auction'
-                        : 'Take a Shot'
+                        : form.listingType === 'SWOP'
+                          ? 'Swop / Trade'
+                          : 'Take a Shot'
                   }${form.price ? ` · R${form.price}` : ''}`
                 : undefined
             }
@@ -1625,7 +1636,10 @@ export default function NewListingPage() {
                   <br />
                   <strong>Take a Shot:</strong> buyers send offers; you
                   accept, decline, or counter once. Good when you&apos;re
-                  open to negotiation.
+                  open to negotiation. <br />
+                  <strong>Swop / Trade:</strong> buyers propose trading their
+                  item for yours, with optional cash either way. Good when
+                  you&apos;d rather upgrade than sell.
                 </>
               }
             >
@@ -1761,6 +1775,30 @@ export default function NewListingPage() {
                     onChange={(v) => setStock(v)}
                     placeholder="1"
                   />
+                </div>
+              </Field>
+            )}
+
+            {/* Swop / Trade — no price. The seller publishes the item they
+                want to trade; buyers propose a swap (their item ± cash) on
+                the live listing. Negotiation happens there, not here. */}
+            {form.listingType === 'SWOP' && (
+              <Field label="No price needed">
+                <div
+                  className="rounded-[10px] p-4 text-sm"
+                  style={{
+                    background: 'var(--bg-inset)',
+                    border: '0.5px solid var(--border)',
+                    color: 'var(--text-secondary)',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  A Swop / Trade listing has no sale price. You&apos;re
+                  publishing the item you want to trade — buyers browse, then
+                  propose a swap (their item, plus optional cash either way) on
+                  your listing. You review each proposal and accept, decline, or
+                  counter the cash. Gun Galore arranges both couriers and the
+                  funds are held until both parcels are delivered.
                 </div>
               </Field>
             )}

@@ -25,8 +25,9 @@ export class CreateListingDto {
   @Length(10, 5000)
   description: string;
 
-  // Required for BUY_NOW and AUCTION; omit for TAKE_A_SHOT
-  @ValidateIf((o) => o.listingType !== 'TAKE_A_SHOT')
+  // Required for BUY_NOW and AUCTION; omit for TAKE_A_SHOT and SWOP (both
+  // price-less — buyers name a price / a swap has no sale price).
+  @ValidateIf((o) => o.listingType !== 'TAKE_A_SHOT' && o.listingType !== 'SWOP')
   @IsInt()
   @Min(100)
   price?: number; // ZAR cents

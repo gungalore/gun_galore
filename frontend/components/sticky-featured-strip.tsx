@@ -40,7 +40,7 @@ interface RailSlot {
     id: string;
     title: string;
     price: number | null;
-    listingType: 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT';
+    listingType: 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT' | 'SWOP';
     currentBid: number | null;
     buyNowPrice: number | null;
     seller: { username: string | null };
@@ -70,6 +70,9 @@ function listingHeadline(l: NonNullable<RailSlot['currentListing']>): string {
   }
   if (l.listingType === 'TAKE_A_SHOT') {
     return 'Make offer';
+  }
+  if (l.listingType === 'SWOP') {
+    return 'Swap';
   }
   return formatRand(l.price);
 }

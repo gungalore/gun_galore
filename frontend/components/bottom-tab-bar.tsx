@@ -664,6 +664,32 @@ function ShopSheet({
         pathname === '/' && searchParams.get('listingType') === 'TAKE_A_SHOT',
     },
     {
+      key: 'swop',
+      href: '/?listingType=SWOP',
+      title: 'Swop / Trade',
+      tagline: 'Trade your gear for someone else’s — add cash if needed',
+      icon: (
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M7 4 3 8l4 4" />
+          <path d="M3 8h13" />
+          <path d="m17 20 4-4-4-4" />
+          <path d="M21 16H8" />
+        </svg>
+      ),
+      isActive:
+        pathname === '/' && searchParams.get('listingType') === 'SWOP',
+    },
+    {
       key: 'competitions',
       href: '/competitions',
       title: 'Competitions',

@@ -103,9 +103,11 @@ export function ListingCard({ listing }: { listing: Listing }) {
               {/* For auctions, show the current bid (or starting bid if no bids yet). */}
               {listing.listingType === 'AUCTION'
                 ? formatPrice(listing.currentBid ?? listing.price ?? 0)
-                : listing.price
-                  ? formatPrice(listing.price)
-                  : 'Make an offer'}
+                : listing.listingType === 'SWOP'
+                  ? 'Swap'
+                  : listing.price
+                    ? formatPrice(listing.price)
+                    : 'Make an offer'}
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center' }}>
               <span
