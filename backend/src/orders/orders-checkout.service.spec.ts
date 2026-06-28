@@ -108,24 +108,26 @@ describe('TransactionsService.createOrderCheckout', () => {
     expect(txcMock.transaction.updateMany).toHaveBeenCalled();
   });
 
-  it('rejects a multi-seller cart and unwinds every reserved line', async () => {
-    const { service, prisma } = makeService();
+  it('accepts a MULTI-seller cart (Phase 8d): one order fans out per seller, no unwind', async () => {
+    const { service, prisma, referenceNumbers } = makeService();
     jest
       .spyOn(service as never, 'reserveAndCreateLine')
       .mockResolvedValueOnce(core({ n: 1, sellerId: 'S1' }) as never)
       .mockResolvedValueOnce(core({ n: 2, sellerId: 'S2' }) as never);
 
-    await expect(
-      service.createOrderCheckout(
-        'clerk_B',
-        { lines: [lineDto('L1'), lineDto('L2')] },
-        'https://x',
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    const res = await service.createOrderCheckout(
+      'clerk_B',
+      { lines: [lineDto('L1'), lineDto('L2')] },
+      'https://x',
+    );
 
-    // both reserved lines restocked + their txs deleted (compensation)
-    expect(prisma.listing.update).toHaveBeenCalledTimes(2);
-    expect(prisma.transaction.delete).toHaveBeenCalledTimes(2);
+    expect(res.manual).toBe(true);
+    expect(res.itemCount).toBe(2);
+    expect(res.amountCents).toBe(30_000); // 2 lines × 15 000
+    expect(referenceNumbers.allocateOrderReference).toHaveBeenCalledTimes(1); // ONE EFT for the basket
+    // happy path → no compensation
+    expect(prisma.listing.update).not.toHaveBeenCalled();
+    expect(prisma.transaction.delete).not.toHaveBeenCalled();
   });
 
   it('rejects a duplicate listing before reserving anything', async () => {

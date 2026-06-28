@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 
-// Phase 8b cart — client-only, localStorage-backed. A cart is SINGLE-SELLER
-// (every line from one seller) so it maps to exactly one Order with one EFT
-// reference. Firearms / auctions / take-a-shot never enter the cart (the
+// Phase 8b/8d cart — client-only, localStorage-backed. A cart may span
+// MULTIPLE sellers (Phase 8d): it maps to ONE Order + one buyer EFT, which
+// the backend fans out to a per-listing transaction so each seller is paid
+// independently. Firearms / auctions / take-a-shot never enter the cart (the
 // Add-to-cart button is only rendered for ACTIVE BUY_NOW non-firearm listings).
 
 export interface CartItem {
@@ -48,24 +49,16 @@ export function cartSeller(): string | null {
   return read()[0]?.sellerId ?? null;
 }
 
-export type AddResult =
-  | { status: 'added' }
-  | { status: 'exists' }
-  | { status: 'seller-conflict'; currentSeller: string };
+export type AddResult = { status: 'added' } | { status: 'exists' };
 
 /**
- * Add an item. Enforces the single-seller invariant: adding from a different
- * seller returns 'seller-conflict' (the UI prompts replace-or-cancel) rather
- * than silently mixing sellers. A listing already in the cart is a no-op
- * ('exists') — quantity-per-line is chosen at the cart, not by re-adding.
+ * Add an item. A cart may mix sellers (Phase 8d). A listing already in the
+ * cart is a no-op ('exists') — there's one line per listing.
  */
 export function addToCart(item: CartItem): AddResult {
   const items = read();
   if (items.some((i) => i.listingId === item.listingId)) {
     return { status: 'exists' };
-  }
-  if (items.length > 0 && items[0].sellerId !== item.sellerId) {
-    return { status: 'seller-conflict', currentSeller: items[0].sellerUsername };
   }
   write([...items, item]);
   return { status: 'added' };

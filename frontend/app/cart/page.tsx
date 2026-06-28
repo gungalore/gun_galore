@@ -38,6 +38,19 @@ export default function CartPage() {
 
   const itemsSubtotal = items.reduce((s, i) => s + i.price, 0);
 
+  // Group lines by seller (Phase 8d — a cart can mix sellers). One payment
+  // covers all; each seller ships + is paid independently.
+  const groups = Array.from(
+    items
+      .reduce((m, i) => {
+        const g = m.get(i.sellerId) ?? { username: i.sellerUsername, items: [] as typeof items };
+        g.items.push(i);
+        m.set(i.sellerId, g);
+        return m;
+      }, new Map<string, { username: string; items: typeof items }>())
+      .values(),
+  );
+
   const addrComplete =
     addr.street.trim() &&
     addr.suburb.trim() &&
@@ -134,54 +147,71 @@ export default function CartPage() {
         Your cart
       </h1>
       <p className="text-xs mb-5" style={{ color: 'var(--text-tertiary)' }}>
-        All from <strong>{items[0].sellerUsername}</strong> — one payment, one
-        delivery choice. Shipping is quoted per item and added to your total.
+        {groups.length === 1 ? (
+          <>All from <strong>{groups[0].username}</strong>. </>
+        ) : (
+          <>From <strong>{groups.length} sellers</strong> — each ships and is paid
+          separately. </>
+        )}
+        One payment, one delivery choice. Shipping is quoted per item and added to
+        your total.
       </p>
 
-      {/* Items */}
-      <div
-        className="rounded-[8px] mb-5 overflow-hidden"
-        style={{ border: '0.5px solid var(--border)' }}
-      >
-        {items.map((i) => (
-          <div
-            key={i.listingId}
-            className="flex items-center gap-3 p-3"
-            style={{ borderTop: '0.5px solid var(--border)' }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            {i.imageUrl ? (
-              <img
-                src={i.imageUrl}
-                alt={i.title}
-                className="w-12 h-12 rounded-[6px] object-cover"
-                style={{ background: 'var(--bg-inset)' }}
-              />
-            ) : (
-              <div className="w-12 h-12 rounded-[6px]" style={{ background: 'var(--bg-inset)' }} />
-            )}
-            <Link
-              href={`/listings/${i.listingId}`}
-              className="flex-1 text-sm"
-              style={{ color: 'var(--text-primary)' }}
+      {/* Items — grouped by seller (Phase 8d) */}
+      {groups.map((g) => (
+        <div
+          key={g.username}
+          className="rounded-[8px] mb-4 overflow-hidden"
+          style={{ border: '0.5px solid var(--border)' }}
+        >
+          {groups.length > 1 && (
+            <div
+              className="px-3 py-2 text-xs"
+              style={{ background: 'var(--bg-inset)', color: 'var(--text-tertiary)', fontWeight: 500 }}
             >
-              {i.title}
-            </Link>
-            <span className="text-sm" style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-              {formatPrice(i.price)}
-            </span>
-            <button
-              type="button"
-              onClick={() => removeFromCart(i.listingId)}
-              aria-label={`Remove ${i.title}`}
-              className="text-xs px-2 py-1 rounded-[4px]"
-              style={{ border: '0.5px solid var(--border)', color: 'var(--text-tertiary)' }}
+              {g.username}
+            </div>
+          )}
+          {g.items.map((i) => (
+            <div
+              key={i.listingId}
+              className="flex items-center gap-3 p-3"
+              style={{ borderTop: '0.5px solid var(--border)' }}
             >
-              Remove
-            </button>
-          </div>
-        ))}
-      </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {i.imageUrl ? (
+                <img
+                  src={i.imageUrl}
+                  alt={i.title}
+                  className="w-12 h-12 rounded-[6px] object-cover"
+                  style={{ background: 'var(--bg-inset)' }}
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-[6px]" style={{ background: 'var(--bg-inset)' }} />
+              )}
+              <Link
+                href={`/listings/${i.listingId}`}
+                className="flex-1 text-sm"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                {i.title}
+              </Link>
+              <span className="text-sm" style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                {formatPrice(i.price)}
+              </span>
+              <button
+                type="button"
+                onClick={() => removeFromCart(i.listingId)}
+                aria-label={`Remove ${i.title}`}
+                className="text-xs px-2 py-1 rounded-[4px]"
+                style={{ border: '0.5px solid var(--border)', color: 'var(--text-tertiary)' }}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      ))}
 
       {/* Delivery */}
       <h2 className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>

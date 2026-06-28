@@ -17,7 +17,6 @@ import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {
   computeOrderTotals,
-  assertSingleSeller,
   assertNoDuplicateListings,
   OrderLineBreakdown,
 } from '../orders/order-math';
@@ -603,7 +602,11 @@ export class TransactionsService {
         }
       }
 
-      const sellerId = assertSingleSeller(created.map((c) => c.listing.sellerId));
+      // Phase 8d — a cart may span MULTIPLE sellers. One Order + one EFT from
+      // the buyer fans out to N per-listing transactions; each seller is paid
+      // independently on their own delivery confirmation (standard
+      // marketplace split). The single-seller guard is intentionally gone.
+      const sellerCount = new Set(created.map((c) => c.listing.sellerId)).size;
       const totals = computeOrderTotals(created.map((c) => c.breakdown));
       const orderReference =
         await this.referenceNumbers.allocateOrderReference('BUY_NOW');
@@ -645,7 +648,7 @@ export class TransactionsService {
       });
 
       this.logger.log(
-        `Order ${order.id} (${orderReference}) created — ${created.length} lines, seller ${sellerId}, total ${totals.buyerTotal}c`,
+        `Order ${order.id} (${orderReference}) created — ${created.length} lines across ${sellerCount} seller(s), total ${totals.buyerTotal}c`,
       );
 
       return {
