@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import {
+  Prisma,
   ListingStatus,
   ListingType,
   SwapProposalStatus,
@@ -133,19 +134,35 @@ export class SwapProposalsService {
       await this.prisma.swapProposal.delete({ where: { id: existing.id } });
     }
 
-    const proposal = await this.prisma.swapProposal.create({
-      data: {
-        listingId: wanted.id,
-        proposerId: proposer.id,
-        ownerId: wanted.sellerId,
-        offeredListingId: offered.id,
-        cashAmount,
-        cashDirection,
-        proposerNote: dto.proposerNote,
-        status: SwapProposalStatus.PENDING,
-        expiresAt: new Date(Date.now() + PROPOSAL_TTL_HOURS * 3_600_000),
-      },
-    });
+    let proposal;
+    try {
+      proposal = await this.prisma.swapProposal.create({
+        data: {
+          listingId: wanted.id,
+          proposerId: proposer.id,
+          ownerId: wanted.sellerId,
+          offeredListingId: offered.id,
+          cashAmount,
+          cashDirection,
+          proposerNote: dto.proposerNote,
+          status: SwapProposalStatus.PENDING,
+          expiresAt: new Date(Date.now() + PROPOSAL_TTL_HOURS * 3_600_000),
+        },
+      });
+    } catch (e) {
+      // Two parallel proposes for the same (listingId, proposerId) can both
+      // pass the read-check above; the @@unique then trips on the second
+      // insert. Surface the friendly 400 instead of a raw P2002 → 500.
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        throw new BadRequestException(
+          'You already have an active proposal on this listing',
+        );
+      }
+      throw e;
+    }
 
     void this.notifyOwnerOfProposal(proposal.id);
     return proposal;
@@ -271,9 +288,16 @@ export class SwapProposalsService {
   ) {
     const swapId = await this.prisma.$transaction(async (tx) => {
       // 1. Claim the proposal — status guard makes a concurrent accept
-      //    return count=0 and abort.
+      //    return count=0 and abort. The expiresAt guard also rejects an
+      //    accept past the displayed TTL (the website Accept button can fire
+      //    in the ~10-min gap before the expiry cron flips a stale proposal;
+      //    the SMS token path already lapses with the proposal).
       const claim = await tx.swapProposal.updateMany({
-        where: { id: proposalId, status: expectedStatus },
+        where: {
+          id: proposalId,
+          status: expectedStatus,
+          expiresAt: { gt: new Date() },
+        },
         data: { status: SwapProposalStatus.CONVERTED },
       });
       if (claim.count === 0) {
@@ -558,17 +582,28 @@ export class SwapProposalsService {
   // Cron — expire stale proposals
   // ----------------------------------------------------------------
   async expireStale() {
-    const stale = await this.prisma.swapProposal.findMany({
-      where: { status: { in: OPEN_STATUSES }, expiresAt: { lt: new Date() } },
-      select: { id: true },
-    });
-    if (stale.length === 0) return;
-    await this.prisma.swapProposal.updateMany({
-      where: { id: { in: stale.map((s) => s.id) } },
+    const runStart = new Date();
+    // ONE atomic, status-guarded flip — a proposal that CONVERTED in the gap
+    // (accept committed concurrently) has left OPEN_STATUSES, so the DB
+    // excludes it here. This avoids the TOCTOU where a read-then-id-only-write
+    // would clobber a just-accepted proposal back to EXPIRED (and falsely SMS
+    // "expired" on a live swap). Mirrors OffersService.expireStale.
+    const res = await this.prisma.swapProposal.updateMany({
+      where: { status: { in: OPEN_STATUSES }, expiresAt: { lt: runStart } },
       data: { status: SwapProposalStatus.EXPIRED },
     });
-    this.logger.log(`Expired ${stale.length} swap proposal(s)`);
-    for (const s of stale) {
+    if (res.count === 0) return;
+    this.logger.log(`Expired ${res.count} swap proposal(s)`);
+    // Notify only the rows THIS run flipped (@updatedAt bumped to >= runStart),
+    // so a previous run's expirations aren't re-notified.
+    const justExpired = await this.prisma.swapProposal.findMany({
+      where: {
+        status: SwapProposalStatus.EXPIRED,
+        updatedAt: { gte: runStart },
+      },
+      select: { id: true },
+    });
+    for (const s of justExpired) {
       void this.notifyDeclined(s.id, 'expired');
       void this.notifications.resolveByEntity('swapProposal', s.id);
     }

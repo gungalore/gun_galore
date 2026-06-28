@@ -340,7 +340,15 @@ export class TasksService {
       // tx). The filter is tight enough it can NEVER touch a live tx: a real
       // single-item manual tx has orderReference + manualPayByAt; a gateway tx
       // has peachCheckoutId; an order child has orderId; a paid/refunded tx
-      // has paidAt. The 15-min age floor protects an in-flight same-request tx.
+      // has paidAt; a SWOP leg has a swapId. The 15-min age floor protects an
+      // in-flight same-request tx.
+      //
+      // swapId: null is LOAD-BEARING. A swap creates two ZERO-money Transaction
+      // legs that carry NO orderId / orderReference / peachCheckoutId /
+      // manualPayByAt / paidAt — they match every other orphan condition. Without
+      // this guard the sweep would delete both legs + un-reserve both listings
+      // ~15 min after every swap was agreed, orphaning the Swap parent. The legs'
+      // lifecycle is owned by the swap flow (lock/book/ship in S3+), never here.
       const orphanCutoff = new Date(now.getTime() - 15 * 60 * 1000);
       const orphans = await this.prisma.transaction.findMany({
         where: {
@@ -349,6 +357,7 @@ export class TasksService {
           orderReference: null,
           peachCheckoutId: null,
           manualPayByAt: null,
+          swapId: null,
           createdAt: { lt: orphanCutoff },
         },
         select: {

@@ -229,8 +229,11 @@ describe('SwapProposalsService.acceptProposal — atomic dual-reserve', () => {
 });
 
 describe('SwapProposalsService.expireStale', () => {
-  it('marks stale PENDING/COUNTERED proposals EXPIRED + notifies', async () => {
+  it('atomically flips stale OPEN proposals to EXPIRED (status-guarded) + notifies only rows it flipped', async () => {
     const { service, prisma, notifications } = makeService();
+    // One atomic, status-guarded updateMany (no read-then-id-only-write TOCTOU).
+    prisma.swapProposal.updateMany.mockResolvedValue({ count: 2 });
+    // Re-read of just-flipped rows drives the notifications.
     prisma.swapProposal.findMany.mockResolvedValue([{ id: 'A' }, { id: 'B' }]);
     prisma.swapProposal.findUnique.mockResolvedValue({
       id: 'A',
@@ -241,16 +244,21 @@ describe('SwapProposalsService.expireStale', () => {
     await service.expireStale();
     expect(prisma.swapProposal.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: { in: ['A', 'B'] } },
+        where: expect.objectContaining({
+          status: { in: [SwapProposalStatus.PENDING, SwapProposalStatus.COUNTERED] },
+          expiresAt: expect.objectContaining({ lt: expect.any(Date) }),
+        }),
         data: { status: SwapProposalStatus.EXPIRED },
       }),
     );
+    expect(notifications.swapDeclined).toHaveBeenCalledTimes(2);
   });
 
-  it('no-ops when nothing is stale', async () => {
-    const { service, prisma } = makeService();
-    prisma.swapProposal.findMany.mockResolvedValue([]);
+  it('no-ops (no notifications, no re-read) when nothing flipped', async () => {
+    const { service, prisma, notifications } = makeService();
+    prisma.swapProposal.updateMany.mockResolvedValue({ count: 0 });
     await service.expireStale();
-    expect(prisma.swapProposal.updateMany).not.toHaveBeenCalled();
+    expect(prisma.swapProposal.findMany).not.toHaveBeenCalled();
+    expect(notifications.swapDeclined).not.toHaveBeenCalled();
   });
 });
