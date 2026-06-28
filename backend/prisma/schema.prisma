@@ -1797,6 +1797,11 @@ model ManualPayment {
 
   matchedTransactionId String?
   matchedTransaction   Transaction? @relation(fields: [matchedTransactionId], references: [id])
+  // Phase 8b: when the reference resolved to a multi-item Order (not a single
+  // Transaction), the audit row points here instead. Exactly one of
+  // matchedTransactionId / matchedOrderId is set on a matched row.
+  matchedOrderId       String?
+  matchedOrder         Order?       @relation(fields: [matchedOrderId], references: [id])
 
   note      String?
   createdAt DateTime @default(now())
@@ -2840,15 +2845,27 @@ model Order {
   processingFee    Int
   buyerTotal       Int
 
+  // Manual-EFT lifecycle at the ORDER level (mirrors the per-Transaction
+  // fields). Child transactions of an order carry NO manualPayByAt, so the
+  // existing per-tx freeze sweep ignores them entirely; the order-level
+  // sweep below releases ALL lines together (all-or-nothing). manualPayByAt
+  // = single pay-by window; manualDetectedAt = provisional inContact hit
+  // (stops the sweep); manualCancelledAt = window lapsed / soft-cancelled.
+  manualPayByAt     DateTime?
+  manualDetectedAt  DateTime?
+  manualCancelledAt DateTime?
+
   paidAt    DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  transactions Transaction[]
-  lineItems    OrderLineItem[]
+  transactions   Transaction[]
+  lineItems      OrderLineItem[]
+  manualPayments ManualPayment[]
 
   @@index([buyerId, status])
   @@index([status, createdAt])
+  @@index([status, manualPayByAt])
 }
 
 model OrderLineItem {

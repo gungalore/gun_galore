@@ -14,6 +14,13 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { resolvePurchaseQuantity, reversalListingData } from './inventory';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { CreateOrderDto } from './dto/create-order.dto';
+import {
+  computeOrderTotals,
+  assertSingleSeller,
+  assertNoDuplicateListings,
+  OrderLineBreakdown,
+} from '../orders/order-math';
 import { ListingStatus, Province, ShippingMethod } from '@prisma/client';
 import { KycService } from '../kyc/kyc.service';
 import { ShippingService } from '../shipping/shipping.service';
@@ -516,6 +523,301 @@ export class TransactionsService {
       provider: 'stitch' as const,
       breakdown: { listingPrice, commissionZar, processingFee, buyerTotal, sellerPayout },
     };
+  }
+
+  // ==================================================================
+  // Phase 8b — multi-item single-seller cart checkout (manual EFT)
+  // ==================================================================
+  // Reserves + creates ONE Transaction per line via the shared core, groups
+  // them under a single Order with ONE EFT reference + total, and returns the
+  // same manual-EFT payload shape the single-item flow uses. All-or-nothing:
+  // any failed line unwinds every already-reserved line (restock + delete tx)
+  // so a cart can never partially reserve or partially charge. Firearms /
+  // auctions / take-a-shot are rejected (the shared core enforces BUY_NOW +
+  // the firearm attestation, which a cart never supplies).
+  async createOrderCheckout(
+    buyerClerkId: string,
+    dto: CreateOrderDto,
+    _frontendUrl: string,
+  ) {
+    // Cart is EFT-only for now; the gateway-neutral seam lands with the new
+    // paygate (Phase 8e). Refuse loudly rather than silently mis-charging.
+    if (PAYMENT_MODE !== 'manual') {
+      throw new BadRequestException(
+        'Cart checkout is currently available via EFT only.',
+      );
+    }
+    const lines = dto.lines ?? [];
+    if (lines.length === 0) throw new BadRequestException('Your cart is empty');
+    assertNoDuplicateListings(lines.map((l) => l.listingId));
+
+    const created: Array<{
+      tx: { id: string; buyerId: string };
+      listing: { id: string; sellerId: string; trackInventory: boolean; price: number | null };
+      quantity: number;
+      breakdown: OrderLineBreakdown;
+      commissionZar: number;
+      sellerPayout: number;
+    }> = [];
+
+    try {
+      for (const line of lines) {
+        const lineDto = {
+          listingId: line.listingId,
+          shippingMethod: line.shippingMethod,
+          pudoPickupLockerId: line.pudoPickupLockerId,
+          deliveryAddress: line.deliveryAddress,
+          quantity: line.quantity,
+        } as CreateTransactionDto;
+
+        const core = await this.reserveAndCreateLine(buyerClerkId, lineDto);
+        const unitPrice = core.listing.price ?? 0;
+        // Record the reservation BEFORE any further validation so the catch
+        // below unwinds it too.
+        created.push({
+          tx: core.tx,
+          listing: core.listing,
+          quantity: core.quantity,
+          commissionZar: core.commissionZar,
+          sellerPayout: core.sellerPayout,
+          breakdown: {
+            unitPrice,
+            quantity: core.quantity,
+            listingPrice: core.listingPrice,
+            shippingCost: core.shippingCost,
+            // BUYER-PAID fee only (0 when the seller absorbs it), so the Order
+            // snapshot identity items + shipping + processingFee == buyerTotal
+            // always holds. The seller-absorbed fee lives in sellerPayout.
+            processingFee: core.buyerTotal - core.listingPrice - core.shippingCost,
+            buyerTotal: core.buyerTotal,
+          },
+        });
+
+        // Belt-and-braces (the core already rejects non-BUY_NOW and, via the
+        // missing firearm attestation, firearms — so this is defence in depth
+        // with a clearer message).
+        if (core.listing.isFirearm || core.offerRecord) {
+          throw new BadRequestException(
+            'Firearms and offer items must be bought individually, not in a cart.',
+          );
+        }
+      }
+
+      const sellerId = assertSingleSeller(created.map((c) => c.listing.sellerId));
+      const totals = computeOrderTotals(created.map((c) => c.breakdown));
+      const orderReference =
+        await this.referenceNumbers.allocateOrderReference('BUY_NOW');
+      const manualPayByAt = new Date(Date.now() + MANUAL_PAY_WINDOW_MS);
+      const buyerId = created[0].tx.buyerId;
+
+      const order = await this.prisma.$transaction(async (txc) => {
+        const o = await txc.order.create({
+          data: {
+            buyerId,
+            status: 'AWAITING_PAYMENT',
+            paymentMethod: 'MANUAL_EFT',
+            orderReference,
+            itemsSubtotal: totals.itemsSubtotal,
+            shippingSubtotal: totals.shippingSubtotal,
+            processingFee: totals.processingFee,
+            buyerTotal: totals.buyerTotal,
+            manualPayByAt,
+            lineItems: {
+              create: created.map((c) => ({
+                transactionId: c.tx.id,
+                listingId: c.listing.id,
+                sellerId: c.listing.sellerId,
+                quantity: c.quantity,
+                unitPrice: c.breakdown.unitPrice,
+                lineSubtotal: c.breakdown.listingPrice,
+              })),
+            },
+          },
+        });
+        // Link every child transaction to the order (children carry NO
+        // per-tx orderReference / manualPayByAt, so the per-tx freeze sweep
+        // ignores them — the order-level sweep releases them together).
+        await txc.transaction.updateMany({
+          where: { id: { in: created.map((c) => c.tx.id) } },
+          data: { orderId: o.id },
+        });
+        return o;
+      });
+
+      this.logger.log(
+        `Order ${order.id} (${orderReference}) created — ${created.length} lines, seller ${sellerId}, total ${totals.buyerTotal}c`,
+      );
+
+      return {
+        orderId: order.id,
+        // The shared manual-EFT banking screen links on transactionId; the
+        // order-checkout UI maps this to /orders/[id].
+        transactionId: order.id,
+        manual: true as const,
+        orderReference,
+        amountCents: totals.buyerTotal,
+        payByAt: manualPayByAt.toISOString(),
+        bankDetails: GG_BANK_DETAILS,
+        itemCount: created.length,
+        breakdown: {
+          listingPrice: totals.itemsSubtotal,
+          shippingCost: totals.shippingSubtotal,
+          commissionZar: created.reduce((s, c) => s + c.commissionZar, 0),
+          processingFee: totals.processingFee,
+          buyerTotal: totals.buyerTotal,
+          sellerPayout: created.reduce((s, c) => s + c.sellerPayout, 0),
+        },
+      };
+    } catch (err) {
+      await this.unwindOrderLines(created);
+      throw err;
+    }
+  }
+
+  // Compensating rollback for createOrderCheckout: restore every reserved
+  // listing (tracked: give units back + re-activate; legacy: ACTIVE) and
+  // delete its transaction. ATOMIC — one $transaction so it can never leave a
+  // half-compensated state (some listings freed, some txs orphaned). If the
+  // whole compensation fails, the orphan-reclaim sweep (tasks.service) is the
+  // backstop: it reclaims HELD txs with orderId/orderReference/peachCheckoutId/
+  // manualPayByAt all null. Runs BEFORE any Order row exists, so no
+  // OrderLineItem references these txs (the delete is FK-safe).
+  private async unwindOrderLines(
+    created: Array<{
+      tx: { id: string };
+      listing: { id: string; trackInventory: boolean };
+      quantity: number;
+    }>,
+  ) {
+    if (created.length === 0) return;
+    try {
+      await this.prisma.$transaction([
+        ...created.map((c) =>
+          this.prisma.listing.update({
+            where: { id: c.listing.id },
+            data: c.listing.trackInventory
+              ? {
+                  status: ListingStatus.ACTIVE,
+                  quantityAvailable: { increment: c.quantity },
+                  quantityReserved: { decrement: c.quantity },
+                }
+              : { status: ListingStatus.ACTIVE },
+          }),
+        ),
+        ...created.map((c) =>
+          this.prisma.transaction.delete({ where: { id: c.tx.id } }),
+        ),
+      ]);
+    } catch (e) {
+      this.logger.error(
+        `unwindOrderLines: atomic compensation failed for ${created.length} lines (orphan-reclaim sweep will recover): ${(e as Error).message}`,
+      );
+    }
+  }
+
+  // Confirm a multi-item Order's EFT (called by the reconciler when the FNB
+  // statement matches Order.orderReference). Race-safe against the order
+  // freeze sweep via an atomic PRE-CLAIM (stamp manualDetectedAt so the sweep
+  // can no longer select/cancel this order before any child goes SOLD), then
+  // fans out the per-child markPaid (each re-binds its own amount + id, so the
+  // security checks hold and the per-child buyer notice is suppressed), then
+  // an atomic PAID-claim so the single consolidated buyer confirmation fires
+  // exactly once. Idempotent + resilient to a partial run (re-running heals
+  // because each child early-returns on its own paidAt; a partial failure
+  // raises an admin alert and never leaves the order swept).
+  async confirmManualOrder(orderId: string): Promise<void> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        transactions: { select: { id: true, buyerTotal: true } },
+        buyer: {
+          select: { email: true, firstName: true, lastName: true, phone: true },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.paidAt) {
+      this.logger.log(`confirmManualOrder: ${orderId} already paid — skipping`);
+      return;
+    }
+    // Defence-in-depth amount invariant: the order total MUST equal the sum of
+    // its children (the reconciler matched the lump EFT to order.buyerTotal).
+    const childSum = order.transactions.reduce((s, t) => s + t.buyerTotal, 0);
+    if (childSum !== order.buyerTotal) {
+      this.logger.error(
+        `confirmManualOrder ${orderId}: child sum ${childSum} != order total ${order.buyerTotal} — refusing`,
+      );
+      throw new BadRequestException('Order total does not match its line items');
+    }
+    // ATOMIC PRE-CLAIM — stamp manualDetectedAt. The order freeze sweep only
+    // selects orders with manualDetectedAt=null, so once this commits the
+    // sweep can never cancel/restock this order while we pay its children.
+    // count===0 ⇒ already paid or cancelled (e.g. swept first) ⇒ bail.
+    const preclaim = await this.prisma.order.updateMany({
+      where: {
+        id: orderId,
+        paidAt: null,
+        manualCancelledAt: null,
+        status: 'AWAITING_PAYMENT',
+      },
+      data: { manualDetectedAt: new Date() },
+    });
+    if (preclaim.count === 0) {
+      this.logger.warn(
+        `confirmManualOrder ${orderId}: not claimable (paid/cancelled) — skipping`,
+      );
+      return;
+    }
+    try {
+      for (const child of order.transactions) {
+        // Per-child: derives its own EFT-${childId} paymentId, binds
+        // amount = child.buyerTotal + merchantTransactionId = childId, and (via
+        // tx.orderId) suppresses the per-child buyer "order confirmed" notice.
+        await this.confirmManualPayment(child.id);
+      }
+    } catch (err) {
+      // Partial fan-out: some children are paid, some not. The order keeps
+      // manualDetectedAt set (so the sweep won't touch it) and stays
+      // AWAITING_PAYMENT; a re-uploaded statement re-runs and heals (paid
+      // children early-return). Surface it so an operator can investigate.
+      this.logger.error(
+        `confirmManualOrder ${orderId}: partial fan-out — ${(err as Error).message}`,
+      );
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'ORDER_PARTIAL_CONFIRM',
+            referenceId: orderId,
+            urgent: true,
+            context: `Order ${order.orderReference ?? orderId} EFT confirm failed mid-fan-out: ${(err as Error).message}. Some line items may be paid and some not — re-upload the statement to heal, or investigate.`,
+          },
+        })
+        .catch(() => undefined);
+      throw err;
+    }
+    // ATOMIC PAID-CLAIM — only the winner sends the ONE buyer confirmation.
+    const paidClaim = await this.prisma.order.updateMany({
+      where: { id: orderId, paidAt: null },
+      data: { status: 'PAID', paidAt: new Date() },
+    });
+    if (paidClaim.count !== 1) return; // a concurrent pass already rolled up
+    try {
+      await this.notifications.orderConfirmedBuyerMulti({
+        buyerEmail: order.buyer.email,
+        buyerName:
+          [order.buyer.firstName, order.buyer.lastName].filter(Boolean).join(' ') ||
+          'there',
+        buyerPhone: order.buyer.phone,
+        orderId,
+        orderReference: order.orderReference ?? orderId.slice(-8).toUpperCase(),
+        itemCount: order.transactions.length,
+        buyerTotal: order.buyerTotal,
+      });
+    } catch (e) {
+      this.logger.error(
+        `confirmManualOrder: buyer confirmation failed for ${orderId}: ${(e as Error).message}`,
+      );
+    }
   }
 
   // ------------------------------------------------------------------
@@ -2090,7 +2392,14 @@ export class TransactionsService {
         acceptActionUrl,
       };
       await Promise.all([
-        this.notifications.orderConfirmedBuyer(details),
+        // Buyer "order confirmed" — SKIPPED for multi-item order children
+        // (tx.orderId set). confirmManualOrder sends ONE consolidated buyer
+        // confirmation after every line of the cart is paid, so the buyer
+        // isn't emailed/SMSed N times for one order. Single-item sales
+        // (orderId null — every Phase 1–7 sale) keep the per-tx confirmation.
+        tx.orderId
+          ? Promise.resolve()
+          : this.notifications.orderConfirmedBuyer(details),
         this.notifications.newSaleSeller(details),
       ]);
 

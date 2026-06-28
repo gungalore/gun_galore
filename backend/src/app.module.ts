@@ -15,6 +15,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { ListingsModule } from './listings/listings.module';
 import { ShippingModule } from './shipping/shipping.module';
 import { PaymentsModule } from './payments/payments.module';
+import { OrdersModule } from './orders/orders.module';
 // MessagesModule removed — buyer/seller chat replaced by Q&A
 // (ListingQuestionsService in ListingsModule) + PRIVATE_ARRANGE
 // contact reveal. Prisma `Message` model retained dormantly to
@@ -71,6 +72,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     ListingsModule,
     ShippingModule,
     PaymentsModule,
+    OrdersModule,
     RatingsModule,
     AdminModule,
     OffersModule,

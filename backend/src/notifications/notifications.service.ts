@@ -545,6 +545,44 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Buyer: ONE consolidated confirmation for a multi-item cart Order
+  // (Phase 8b). The per-line "order confirmed" email/SMS is suppressed for
+  // order children, so this fires exactly once for the whole basket.
+  // ---------------------------------------------------------------
+  async orderConfirmedBuyerMulti(d: {
+    buyerEmail: string | null;
+    buyerName: string;
+    buyerPhone: string | null;
+    orderId: string;
+    orderReference: string;
+    itemCount: number;
+    buyerTotal: number;
+  }) {
+    const orderUrl = `${this.appUrl}/orders/${d.orderId}`;
+    const items = `${d.itemCount} item${d.itemCount === 1 ? '' : 's'}`;
+    const html = this.email({
+      status: { tone: 'success', label: 'Order confirmed' },
+      headline: 'Order confirmed',
+      body: `Hi ${b(d.buyerName)}, your order of ${b(items)} has been confirmed and the seller has been notified. You can track each item from your order page; we'll SMS you as items are dispatched.`,
+      rows: [
+        { label: 'Order reference', value: d.orderReference },
+        { label: 'Items', value: items },
+        { label: 'Total paid', value: formatRand(d.buyerTotal) },
+      ],
+      cta: { label: 'View order', url: orderUrl },
+      preheader: `Order confirmed — ${items}`,
+    });
+    if (d.buyerEmail) {
+      await this.send(d.buyerEmail, 'Order confirmed — ' + items, html);
+    }
+    await this.sendSms(
+      d.buyerPhone,
+      `Gun Galore: Order confirmed (${items}). Total paid ${formatRand(d.buyerTotal)}. We'll SMS again as items are dispatched.`,
+      `order-confirmed-multi-${d.orderId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
   // Seller: new sale received (payment HELD)
   // ---------------------------------------------------------------
   async newSaleSeller(d: SaleDetails) {

@@ -208,6 +208,144 @@ export class TasksService {
         }
       }
 
+      // (1b) Expire un-paid, un-detected multi-item ORDERS (Phase 8b) past
+      // their pay-by window. ALL-OR-NOTHING: release every line's listing and
+      // soft-cancel the whole order + all children in ONE transaction, so a
+      // cart can never be left half-released (some lines free, some frozen).
+      // Order children carry no manualPayByAt, so the per-tx sweep above never
+      // touches them — this is the only path that expires an order.
+      const expiredOrders = await this.prisma.order.findMany({
+        where: {
+          status: 'AWAITING_PAYMENT',
+          paidAt: null,
+          manualDetectedAt: null,
+          manualCancelledAt: null,
+          manualPayByAt: { not: null, lte: now },
+        },
+        select: {
+          id: true,
+          orderReference: true,
+          transactions: { select: { id: true } },
+          lineItems: {
+            select: {
+              listingId: true,
+              quantity: true,
+              listing: { select: { trackInventory: true } },
+            },
+          },
+        },
+        take: 50,
+      });
+      for (const order of expiredOrders) {
+        try {
+          await this.prisma.$transaction(async (txc) => {
+            // COMPARE-AND-SET the order cancel FIRST. confirmManualOrder
+            // stamps manualDetectedAt before paying any child, so if it has
+            // started (or finished) this claim matches 0 rows and we touch
+            // NOTHING — no racing restock of a SOLD listing, no reverting a
+            // PAID order.
+            const claim = await txc.order.updateMany({
+              where: {
+                id: order.id,
+                status: 'AWAITING_PAYMENT',
+                paidAt: null,
+                manualDetectedAt: null,
+                manualCancelledAt: null,
+              },
+              data: { manualCancelledAt: now, status: 'CANCELLED' },
+            });
+            if (claim.count === 0) return; // concurrently detected/paid
+            // We won the claim ⇒ no child can be paid ⇒ every listing is
+            // still reserved. Release each (legacy guarded on PAYMENT_PENDING,
+            // mirroring the per-tx sweep; tracked gives units back).
+            for (const li of order.lineItems) {
+              if (li.listing.trackInventory) {
+                await txc.listing.update({
+                  where: { id: li.listingId },
+                  data: {
+                    status: 'ACTIVE',
+                    quantityAvailable: { increment: li.quantity },
+                    quantityReserved: { decrement: li.quantity },
+                  },
+                });
+              } else {
+                await txc.listing.updateMany({
+                  where: { id: li.listingId, status: 'PAYMENT_PENDING' },
+                  data: { status: 'ACTIVE' },
+                });
+              }
+            }
+            await txc.transaction.updateMany({
+              where: { id: { in: order.transactions.map((t) => t.id) }, paidAt: null },
+              data: { manualCancelledAt: now },
+            });
+          });
+          this.logger.log(
+            `Manual EFT freeze swept ORDER ${order.orderReference ?? order.id} (${order.lineItems.length} lines) — cancelled if still unclaimed`,
+          );
+        } catch (err) {
+          this.logger.warn(
+            `order freeze-expire failed for ${order.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+
+      // (1c) Orphan reclaim (Phase 8b safety net). A cart checkout that died
+      // between reserving a line and creating its Order — or a single-item
+      // checkout that died between tx.create and the orderReference update —
+      // leaves a never-paid HELD tx with NO orderId, NO orderReference, NO
+      // gateway session and NO pay-by window: invisible to every other sweep,
+      // its reserved listing stranded. Reclaim them (release listing + delete
+      // tx). The filter is tight enough it can NEVER touch a live tx: a real
+      // single-item manual tx has orderReference + manualPayByAt; a gateway tx
+      // has peachCheckoutId; an order child has orderId; a paid/refunded tx
+      // has paidAt. The 15-min age floor protects an in-flight same-request tx.
+      const orphanCutoff = new Date(now.getTime() - 15 * 60 * 1000);
+      const orphans = await this.prisma.transaction.findMany({
+        where: {
+          paidAt: null,
+          orderId: null,
+          orderReference: null,
+          peachCheckoutId: null,
+          manualPayByAt: null,
+          createdAt: { lt: orphanCutoff },
+        },
+        select: {
+          id: true,
+          listingId: true,
+          quantity: true,
+          listing: { select: { trackInventory: true } },
+        },
+        take: 50,
+      });
+      for (const o of orphans) {
+        try {
+          await this.prisma.$transaction([
+            o.listing.trackInventory
+              ? this.prisma.listing.update({
+                  where: { id: o.listingId },
+                  data: {
+                    status: 'ACTIVE',
+                    quantityAvailable: { increment: o.quantity },
+                    quantityReserved: { decrement: o.quantity },
+                  },
+                })
+              : this.prisma.listing.updateMany({
+                  where: { id: o.listingId, status: 'PAYMENT_PENDING' },
+                  data: { status: 'ACTIVE' },
+                }),
+            this.prisma.transaction.delete({ where: { id: o.id } }),
+          ]);
+          this.logger.warn(
+            `Reclaimed orphan reserve-tx ${o.id} — listing ${o.listingId} released`,
+          );
+        } catch (err) {
+          this.logger.warn(
+            `orphan reclaim failed for ${o.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+
       // (2) Payment reminders across the 24h window: a nudge when ≤12h
       // remain and a final one when ≤1h remains. Idempotent via the warn
       // timestamps. (The first touchpoint is the checkout screen itself.)

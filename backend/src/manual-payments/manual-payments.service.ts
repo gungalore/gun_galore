@@ -66,9 +66,20 @@ export class ManualPaymentsService {
     reference: string | null,
     orderRef: string | null,
     amountCents: number,
-  ): Promise<{ status: MatchStatus; transactionId: string | null }> {
+  ): Promise<{
+    status: MatchStatus;
+    transactionId: string | null;
+    orderId: string | null;
+  }> {
     const ref = orderRef ?? reference;
-    if (!ref) return { status: 'UNMATCHED', transactionId: null };
+    if (!ref) return { status: 'UNMATCHED', transactionId: null, orderId: null };
+
+    // INVARIANT (why tx-first precedence is unambiguous): single-item tx refs
+    // and multi-item order refs are drawn from the SAME per-prefix atomic
+    // ReferenceCounter, so a given reference string is globally unique across
+    // BOTH the Transaction and Order tables — it can never match a tx AND an
+    // order. If that ever changes, add an explicit both-match → AMBIGUOUS guard.
+    // 1) Single-item checkout — reference lives on Transaction.orderReference.
     const tx = await this.prisma.transaction.findUnique({
       where: { orderReference: ref },
       select: {
@@ -78,17 +89,35 @@ export class ManualPaymentsService {
         manualCancelledAt: true,
       },
     });
-    if (!tx) return { status: 'UNMATCHED', transactionId: null };
-    if (tx.manualVerifiedAt) return { status: 'ALREADY', transactionId: tx.id };
-    // Order was soft-cancelled when its 1-hour window lapsed (inContact
-    // never fired) but the buyer evidently DID pay — the statement carries
-    // its reference. Don't auto-confirm (the item may have been re-sold);
-    // surface for admin refund / re-fulfil.
-    if (tx.manualCancelledAt) return { status: 'EXPIRED', transactionId: tx.id };
-    if (tx.buyerTotal !== amountCents) {
-      return { status: 'AMBIGUOUS', transactionId: tx.id };
+    if (tx) {
+      if (tx.manualVerifiedAt)
+        return { status: 'ALREADY', transactionId: tx.id, orderId: null };
+      // Order was soft-cancelled when its window lapsed (inContact never
+      // fired) but the buyer evidently DID pay — the statement carries its
+      // reference. Don't auto-confirm (the item may have been re-sold);
+      // surface for admin refund / re-fulfil.
+      if (tx.manualCancelledAt)
+        return { status: 'EXPIRED', transactionId: tx.id, orderId: null };
+      if (tx.buyerTotal !== amountCents)
+        return { status: 'AMBIGUOUS', transactionId: tx.id, orderId: null };
+      return { status: 'MATCHED', transactionId: tx.id, orderId: null };
     }
-    return { status: 'MATCHED', transactionId: tx.id };
+
+    // 2) Multi-item cart (Phase 8b) — reference lives on Order.orderReference.
+    // The lump EFT must equal the ORDER total (sum of child buyerTotals); the
+    // confirm then fans out to every child transaction.
+    const order = await this.prisma.order.findUnique({
+      where: { orderReference: ref },
+      select: { id: true, buyerTotal: true, paidAt: true, manualCancelledAt: true },
+    });
+    if (!order) return { status: 'UNMATCHED', transactionId: null, orderId: null };
+    if (order.paidAt)
+      return { status: 'ALREADY', transactionId: null, orderId: order.id };
+    if (order.manualCancelledAt)
+      return { status: 'EXPIRED', transactionId: null, orderId: order.id };
+    if (order.buyerTotal !== amountCents)
+      return { status: 'AMBIGUOUS', transactionId: null, orderId: order.id };
+    return { status: 'MATCHED', transactionId: null, orderId: order.id };
   }
 
   // ── 1. inContact email scan (provisional detection) ─────────────────
@@ -203,14 +232,24 @@ export class ManualPaymentsService {
               ? 'AMBIGUOUS'
               : 'UNMATCHED',
         matchedTransactionId: match.transactionId,
+        matchedOrderId: match.orderId,
         note: this.matchNote(match.status),
       },
     });
 
     if (match.status === 'MATCHED' && match.transactionId) {
-      // Provisional only — stop the freeze timer, do NOT confirm/notify.
+      // Single-item: provisional only — stop the freeze timer, no confirm.
       await this.prisma.transaction.updateMany({
         where: { id: match.transactionId, manualDetectedAt: null },
+        data: { manualDetectedAt: new Date() },
+      });
+      res.detected += 1;
+    } else if (match.status === 'MATCHED' && match.orderId) {
+      // Multi-item order (Phase 8b): stamp detect on the ORDER. Child txs
+      // carry no manualPayByAt, so only the order-level freeze sweep watches
+      // them — setting Order.manualDetectedAt stops that sweep for all lines.
+      await this.prisma.order.updateMany({
+        where: { id: match.orderId, manualDetectedAt: null },
         data: { manualDetectedAt: new Date() },
       });
       res.detected += 1;
@@ -304,13 +343,20 @@ export class ManualPaymentsService {
               ? 'AMBIGUOUS'
               : 'UNMATCHED',
         matchedTransactionId: match.transactionId,
+        matchedOrderId: match.orderId,
         note: this.matchNote(match.status),
       },
     });
 
     if (match.status === 'MATCHED' && match.transactionId) {
-      // AUTHORITATIVE confirm — runs the full paid transition.
+      // Single-item AUTHORITATIVE confirm — full paid transition.
       await this.transactions.confirmManualPayment(match.transactionId);
+      out.verified += 1;
+    } else if (match.status === 'MATCHED' && match.orderId) {
+      // Multi-item order (Phase 8b): fan out the confirm to every child tx
+      // (each re-binds its own amount + id; idempotent), roll the order up to
+      // PAID, and send ONE consolidated buyer confirmation.
+      await this.transactions.confirmManualOrder(match.orderId);
       out.verified += 1;
     } else if (match.status === 'AMBIGUOUS' || match.status === 'EXPIRED') {
       // EXPIRED = paid after the 1-hour window; needs admin refund/re-fulfil
