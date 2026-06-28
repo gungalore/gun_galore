@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SearchService, INDEXES } from '../search/search.service';
 import { PostalCodesService } from './postal-codes.service';
+import { CarrierContact, CarrierShipmentResult } from './carrier.types';
 
 export interface PudoLocker {
   lockerId: string;
@@ -270,42 +271,132 @@ export class PudoService {
     }
   }
 
-  async createShipment(data: {
-    fromLockerId: string;
+  // ──────────────────── Shipment booking (live, real money) ───────────
+  //
+  // Books a Locker-to-Locker shipment on Pudo/ShipLogic. This SPENDS the
+  // merchant wallet — only call it once per transaction, after payment.
+  //
+  // collection_address.type='locker' with NO terminal_id is the documented
+  // L2L pattern: the seller drops at ANY Pudo locker using the `pincode`
+  // we get back, and Pudo routes from there to the buyer's locker
+  // (`delivery_address.terminal_id`). `service_level_code` is echoed
+  // straight from the quote (e.g. "L2LXS - ECO") so we never re-quote.
+  //
+  // Endpoint, request body, and response fields verified against the Pudo
+  // Postman collection (POST /api/v1/shipments → { id, custom_tracking_
+  // reference, pincode, status }). NB: same host + /api/v1 prefix as the
+  // rates/tracking/lockers calls — the old stub's api.pudo.co.za/v2 was a
+  // guess and was wrong.
+  async createShipment(input: {
+    /** Pudo service_level_code from the quote, e.g. "L2LXS - ECO". */
+    serviceCode: string;
+    /** Buyer's destination locker terminal id. */
     toLockerId: string;
-    weightKg: number;
-    parcels: number;
-    reference: string;
-    senderName: string;
-    recipientName: string;
-    recipientPhone: string;
-  }): Promise<{ trackingCode: string }> {
-    if (!process.env.PUDO_API_KEY) throw new Error('PUDO_API_KEY not configured');
-    // TODO: verify exact endpoint + request shape from Pudo API docs
-    // POST https://api.pudo.co.za/v2/shipments (approximate)
-    const res = await fetch('https://api.pudo.co.za/v2/shipments', {
+    collectionContact: CarrierContact;
+    deliveryContact: CarrierContact;
+    specialInstructions?: string;
+  }): Promise<CarrierShipmentResult> {
+    const baseUrl = process.env.PUDO_BASE_URL ?? 'https://api-pudo.co.za';
+    const bearer = this.buildBearer();
+    if (!bearer) throw new Error('PUDO_API_KEY not configured');
+
+    const body = {
+      collection_address: { type: 'locker' },
+      special_instructions_collection: input.specialInstructions ?? 'None',
+      collection_contact: contactBody(input.collectionContact),
+      delivery_address: { terminal_id: input.toLockerId },
+      delivery_contact: contactBody(input.deliveryContact),
+      service_level_code: input.serviceCode,
+    };
+
+    const res = await fetch(`${baseUrl}/api/v1/shipments`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.PUDO_API_KEY}`,
+        Authorization: `Bearer ${bearer}`,
         'Content-Type': 'application/json',
+        Accept: 'application/json',
       },
-      body: JSON.stringify({
-        fromLockerCode: data.fromLockerId,
-        toLockerCode: data.toLockerId,
-        weight: data.weightKg,
-        pieces: data.parcels,
-        reference: data.reference,
-        senderName: data.senderName,
-        recipientName: data.recipientName,
-        recipientMobile: data.recipientPhone,
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Pudo shipment error ${res.status}: ${body}`);
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `Pudo shipment create ${res.status}: ${text.slice(0, 300)}`,
+      );
     }
-    const json = await res.json();
-    return { trackingCode: json.trackingCode ?? json.waybill };
+    const json = (await res.json()) as {
+      id?: number | string;
+      custom_tracking_reference?: string;
+      short_tracking_reference?: string;
+      tracking_reference?: string;
+      pincode?: string | number;
+      status?: string;
+    };
+    const trackingReference =
+      json.custom_tracking_reference ??
+      json.short_tracking_reference ??
+      json.tracking_reference ??
+      '';
+    if (!json.id || !trackingReference) {
+      throw new Error(
+        `Pudo shipment create: missing id/tracking in response: ${JSON.stringify(
+          json,
+        ).slice(0, 300)}`,
+      );
+    }
+    return {
+      carrier: 'PUDO',
+      shipmentId: String(json.id),
+      trackingReference,
+      pin: json.pincode != null ? String(json.pincode) : undefined,
+      status: json.status,
+    };
+  }
+
+  // Cancel a booked Pudo shipment (PUT /api/v1/shipments/{id}). Best-effort
+  // — used on the seller-reject path so a cancelled sale doesn't leave a
+  // live waybill. Returns true on success. The exact cancel body is
+  // finalised when this is wired into the reject flow (Phase 5).
+  async cancelShipment(shipmentId: string): Promise<boolean> {
+    const baseUrl = process.env.PUDO_BASE_URL ?? 'https://api-pudo.co.za';
+    const bearer = this.buildBearer();
+    if (!bearer) return false;
+    try {
+      const res = await fetch(
+        `${baseUrl}/api/v1/shipments/${encodeURIComponent(shipmentId)}`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${bearer}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({ status: 'cancelled' }),
+        },
+      );
+      if (!res.ok) {
+        this.logger.warn(`Pudo cancel ${res.status} for ${shipmentId}`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.warn(
+        `Pudo cancel failed for ${shipmentId}: ${(err as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  // Server-side ONLY — the waybill PDF URL carries the api_key as a query
+  // param, so this must never be handed to a seller/buyer directly. The
+  // label is proxied through our own auth-checked endpoint (Phase 3) which
+  // fetches this URL server-side and streams the PDF back.
+  waybillUrl(shipmentId: string): string {
+    const baseUrl = process.env.PUDO_BASE_URL ?? 'https://api-pudo.co.za';
+    const key = process.env.PUDO_API_KEY ?? '';
+    return `${baseUrl}/generate/waybill/${encodeURIComponent(
+      shipmentId,
+    )}?api_key=${encodeURIComponent(key)}`;
   }
 
   // Invalidate cache manually (useful after admin override)
@@ -698,6 +789,18 @@ function parseRandToCents(raw: string | number | undefined): number {
  * province code (WC / GP / etc). `entered_address` is freeform —
  * Pudo only really uses lat/lng for distance maths.
  */
+/**
+ * ShipLogic collection/delivery contact body. `mobile_number` is what the
+ * carrier SMSes the locker PIN / collection notice to.
+ */
+function contactBody(c: CarrierContact): Record<string, unknown> {
+  return {
+    name: c.name,
+    email: c.email ?? '',
+    mobile_number: c.mobile,
+  };
+}
+
 function residentialBody(addr: ResidentialAddress): Record<string, unknown> {
   return {
     type: 'residential',

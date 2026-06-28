@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { CarrierContact, CarrierShipmentResult } from './carrier.types';
 
 // TCG (The Courier Guy) door-to-door quote + shipment integration.
 // IMPORTANT: TCG and Pudo are SEPARATE businesses with SEPARATE wallets
@@ -186,9 +187,140 @@ export class TcgService {
       estimatedDays: parseDays(winner.service_level.description) ?? 4,
     };
   }
+
+  // ──────────────────── Shipment booking (live, real money) ───────────
+  //
+  // Books a door-to-door shipment on TCG/ShipLogic. SPENDS the merchant
+  // wallet — call once per transaction, after payment. The courier
+  // collects from the seller's pickup address (`from`) and delivers to the
+  // buyer (`to`). `service_level_code` is echoed from the quote.
+  //
+  // Request/response verified against the ShipLogic "Create a shipment
+  // D2D" example (POST /shipments → { id, *_tracking_reference, status }).
+  // No locker PIN — door-to-door has none.
+  async createShipment(input: {
+    serviceCode: string;
+    from: TcgResidentialAddress;
+    to: TcgResidentialAddress;
+    parcel: TcgParcel;
+    declaredValueCents: number;
+    collectionContact: CarrierContact;
+    deliveryContact: CarrierContact;
+    specialInstructions?: string;
+  }): Promise<CarrierShipmentResult> {
+    if (!this.isConfigured) throw new Error('TCG_API_KEY not configured');
+
+    const nowIso = new Date().toISOString();
+    const body = {
+      collection_min_date: nowIso,
+      collection_after: '08:00',
+      collection_before: '17:00',
+      collection_address: mapAddress(input.from),
+      special_instructions_collection: input.specialInstructions ?? 'None',
+      collection_contact: contactBody(input.collectionContact),
+      delivery_min_date: nowIso,
+      delivery_after: '08:00',
+      delivery_before: '17:00',
+      delivery_address: mapAddress(input.to),
+      delivery_contact: contactBody(input.deliveryContact),
+      parcels: [
+        {
+          submitted_length_cm: input.parcel.lengthCm,
+          submitted_width_cm: input.parcel.widthCm,
+          submitted_height_cm: input.parcel.heightCm,
+          submitted_weight_kg: input.parcel.weightKg,
+          parcel_description:
+            input.parcel.description ?? 'Gun Galore marketplace parcel',
+        },
+      ],
+      declared_value: Math.max(0, Math.round(input.declaredValueCents / 100)),
+      service_level_code: input.serviceCode,
+    };
+
+    const res = await fetch(`${this.baseUrl}/shipments`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`TCG shipment create ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const json = (await res.json()) as {
+      id?: number | string;
+      short_tracking_reference?: string;
+      custom_tracking_reference?: string;
+      tracking_reference?: string;
+      status?: string;
+    };
+    const trackingReference =
+      json.short_tracking_reference ??
+      json.custom_tracking_reference ??
+      json.tracking_reference ??
+      '';
+    if (!json.id || !trackingReference) {
+      throw new Error(
+        `TCG shipment create: missing id/tracking in response: ${JSON.stringify(
+          json,
+        ).slice(0, 300)}`,
+      );
+    }
+    return {
+      carrier: 'TCG',
+      shipmentId: String(json.id),
+      trackingReference,
+      status: json.status,
+    };
+  }
+
+  // Cancel a booked TCG shipment (PUT /shipments/{id}). Best-effort — used
+  // on the seller-reject path. Exact cancel body finalised when wired into
+  // the reject flow (Phase 5).
+  async cancelShipment(shipmentId: string): Promise<boolean> {
+    if (!this.isConfigured) return false;
+    try {
+      const res = await fetch(
+        `${this.baseUrl}/shipments/${encodeURIComponent(shipmentId)}`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({ status: 'cancelled' }),
+        },
+      );
+      if (!res.ok) {
+        this.logger.warn(`TCG cancel ${res.status} for ${shipmentId}`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.warn(
+        `TCG cancel failed for ${shipmentId}: ${(err as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  // Server-side ONLY — fetched by our auth-checked label proxy (Phase 3),
+  // never handed to the seller directly. (TCG label auth confirmed when the
+  // proxy is built.)
+  waybillUrl(shipmentId: string): string {
+    return `${this.baseUrl}/generate/waybill/${encodeURIComponent(shipmentId)}`;
+  }
 }
 
 // ────────────────────────── helpers ────────────────────────────────
+
+function contactBody(c: CarrierContact): Record<string, unknown> {
+  return { name: c.name, email: c.email ?? '', mobile_number: c.mobile };
+}
 
 function mapAddress(addr: TcgResidentialAddress): Record<string, unknown> {
   return {
