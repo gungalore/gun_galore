@@ -80,9 +80,15 @@ function Row({
 export function ManualEftInstructions({
   data,
   listingTitle,
+  viewHref,
+  viewLabel,
 }: {
   data: ManualEftData;
   listingTitle?: string;
+  // Override the "View my order" link target. Single-item checkout points at
+  // /transactions/:id (default); the multi-item cart points at /orders/:id.
+  viewHref?: string;
+  viewLabel?: string;
 }) {
   const [remaining, setRemaining] = useState<number>(() =>
     Math.max(0, new Date(data.payByAt).getTime() - Date.now()),

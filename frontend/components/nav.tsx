@@ -8,6 +8,7 @@ import { useState, useRef, useEffect } from 'react';
 import { ProfileCompletionRing } from '@/components/profile-completion-ring';
 import { LiveSearch } from '@/components/live-search';
 import { UrgentBell } from '@/components/urgent-bell';
+import { CartButton } from '@/components/cart-button';
 
 export function Nav() {
   const { isSignedIn, isLoaded, user } = useUser();
@@ -183,6 +184,10 @@ export function Nav() {
                   installed-PWA bottom tab bar has its own bell. Self-gates
                   to signed-in users. */}
               <UrgentBell />
+
+              {/* Cart (Phase 8b) — single-seller multi-item basket. Hidden
+                  when empty. Visible on desktop + mobile-web. */}
+              <CartButton />
 
               {/* Desktop sign-in / account chip. Mobile uses hamburger. */}
               <div className="hidden md:flex items-center gap-3">

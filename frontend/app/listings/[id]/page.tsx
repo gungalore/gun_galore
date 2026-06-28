@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { auth } from '@clerk/nextjs/server';
 import { apiFetch } from '@/lib/api';
 import { Listing } from '@/lib/types';
+import { AddToCartButton } from '@/components/add-to-cart-button';
 import {
   formatPrice,
   CONDITION_LABELS,
@@ -276,7 +277,7 @@ export default async function ListingDetailPage({
               <>
                 <Link
                   href={`/checkout/${listing.id}`}
-                  className="block w-full py-3 rounded-[6px] text-sm text-center"
+                  className="block w-full py-3 rounded-[6px] text-sm text-center mb-2"
                   style={{
                     background: 'var(--red)',
                     color: '#fff',
@@ -286,6 +287,23 @@ export default async function ListingDetailPage({
                 >
                   Buy Now — {formatPrice(listing.price!)}
                 </Link>
+                {/* Add to cart — non-firearm only (firearms need per-item
+                    dealer transfer + 18+ attestation a batched cart can't
+                    collect; they stay single-item Buy Now). */}
+                {!listing.isFirearm && (
+                  <AddToCartButton
+                    item={{
+                      listingId: listing.id,
+                      title: listing.title,
+                      price: listing.price ?? 0,
+                      imageUrl:
+                        listing.images?.find((i) => i.isPrimary)?.url ??
+                        listing.images?.[0]?.url,
+                      sellerId: listing.seller.clerkId,
+                      sellerUsername: listing.seller.username ?? 'Seller',
+                    }}
+                  />
+                )}
                 <div className="mb-5">
                   <HelpText>
                     Takes you to secure checkout. Your card is charged
