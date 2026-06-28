@@ -878,6 +878,15 @@ model Transaction {
   paidAt          DateTime?
   releasedAt      DateTime?
 
+  // Payout settlement (P7.1). The outbound EFT to the seller (RELEASED) or
+  // buyer (REFUNDED) is made via a daily FNB bulk payment. payoutBatchId
+  // links the row to the frozen batch it was downloaded in; paidOutAt is set
+  // when the operator confirms that batch was paid. A row is "due" only when
+  // both are null (so it appears in exactly one batch and never re-lists).
+  payoutBatchId String?
+  payoutBatch   PayoutBatch? @relation(fields: [payoutBatchId], references: [id], onDelete: SetNull)
+  paidOutAt     DateTime?
+
   // Shipping
   shippingMethod    ShippingMethod?
   shippingStatus    ShippingStatus?
@@ -1075,6 +1084,8 @@ model Transaction {
   @@index([sellerId])
   @@index([paymentStatus])
   @@index([manualPayByAt])
+  // Payout due-queue: RELEASED/REFUNDED rows not yet batched or paid out.
+  @@index([paymentStatus, paidOutAt, payoutBatchId])
 }
 
 // Append-only timeline of shipping + payment milestones per Transaction.
@@ -2888,4 +2899,43 @@ model OrderLineItem {
 
   @@index([orderId])
   @@index([listingId])
+}
+
+// ── Payout settlement (P7.1) ───────────────────────────────────────
+// A daily FNB bulk payment. "Freeze on download": creating a batch snapshots
+// exactly the payouts/refunds due at that moment (links those transactions +
+// stores the generated FNB CSV), so the operator pays in FNB and then marks
+// THAT batch paid — even if new payouts qualify in between, they're not in
+// this batch. Settling stamps each line's Transaction.paidOutAt + fires the
+// Zoho book entry; cancelling returns the lines to the due queue.
+enum PayoutBatchStatus {
+  PENDING // frozen + CSV generated; awaiting the operator's FNB payment
+  PAID // operator confirmed the FNB bulk payment was made
+  CANCELLED // abandoned; lines returned to the due queue
+}
+
+model PayoutBatch {
+  id     String            @id @default(cuid())
+  status PayoutBatchStatus @default(PENDING)
+
+  // Money snapshot (ZAR cents) at freeze time. grandTotal = what the FNB
+  // bulk payment should total (payouts to sellers + refunds to buyers).
+  payoutTotal Int
+  refundTotal Int
+  grandTotal  Int
+  itemCount   Int
+
+  // The exact FNB BInSol file the operator downloaded for this batch.
+  csv String @db.Text
+
+  createdById String? // admin (clerkId) who froze the batch
+  paidById    String? // admin (clerkId) who confirmed the FNB payment
+  paidAt      DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  transactions Transaction[]
+
+  @@index([status, createdAt])
 }

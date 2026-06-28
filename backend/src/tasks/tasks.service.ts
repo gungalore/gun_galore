@@ -62,6 +62,45 @@ export class TasksService {
     }
   }
 
+  // ─── Payout reminder — 09:00 SAST daily ──────────────────────────
+  // If any seller payouts / buyer refunds are owed (not yet batched or paid
+  // out), raise a once-a-day admin alert so the operator runs the FNB bulk
+  // payment. Never pays automatically — the operator downloads + authorises.
+  @Cron('0 0 9 * * *', { timeZone: 'Africa/Johannesburg' }) // 09:00 SAST
+  async payoutDueReminder() {
+    try {
+      const { payouts, refunds } = await this.manualPayments.getPayoutsDue();
+      const count = payouts.length + refunds.length;
+      if (count === 0) return;
+      const totalCents =
+        payouts.reduce((s, p) => s + p.sellerPayout, 0) +
+        refunds.reduce((s, r) => s + r.buyerTotal, 0);
+      const rand = `R${(totalCents / 100).toFixed(2)}`;
+      // One alert per day (date-stamped ref) — skip if already raised today.
+      const referenceId = `payouts-${new Date().toISOString().slice(0, 10)}`;
+      const existing = await this.prisma.adminAlert.findFirst({
+        where: { referenceId },
+        select: { id: true },
+      });
+      if (existing) return;
+      await this.prisma.adminAlert.create({
+        data: {
+          type: 'PAYOUTS_DUE',
+          referenceId,
+          urgent: false,
+          context: `${count} seller payout${count === 1 ? '' : 's'}/refund${count === 1 ? '' : 's'} totalling ${rand} are due. Open Admin → Manual payments to freeze + download the FNB batch, pay it, then mark the batch paid.`,
+        },
+      });
+      this.logger.log(`Payout reminder raised: ${count} due, ${rand}`);
+    } catch (err) {
+      this.logger.error(
+        `payoutDueReminder failed: ${(err as Error).message}`,
+      );
+    } finally {
+      await this.recordCronRun('payout-reminder');
+    }
+  }
+
   // ─── Firearm licence expiry — auto-delist + warnings ─────────────
   // Daily: any ACTIVE firearm listing whose licence is ≤30 days from
   // expiry (or already expired) is delisted (status EXPIRED) and the

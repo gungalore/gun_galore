@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,7 +18,8 @@ import {
   sastActionDate,
   type FnbRecipient,
 } from './fnb-bulk';
-import { GG_BANK_DETAILS } from '../payments/transactions.service';
+import { GG_BANK_DETAILS, PAYMENT_MODE } from '../payments/transactions.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 
 // Manual-EFT reconciliation. Two feeds match payments to orders:
 //   1. scanInbox()  — FNB inContact email alerts (fast, PROVISIONAL):
@@ -58,6 +64,7 @@ export class ManualPaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly transactions: TransactionsService,
+    private readonly zohoBooks: ZohoBooksService,
   ) {}
 
   private get imapConfigured(): boolean {
@@ -402,14 +409,17 @@ export class ManualPaymentsService {
   // that still need the money sent back. The admin downloads these as a
   // CSV, makes ONE FNB bulk payment, then marks the batch paid.
   //
-  // NOTE: this is read-only today. The "mark batch paid" settle + Zoho
-  // payout trigger is intentionally NOT wired yet — it lands with the
-  // real FNB bulk-payment template (operator delivering Monday) so the
-  // CSV columns + the settle step ship together against a confirmed
-  // format rather than a guessed one. See buildPayoutCsv() TODO.
+  // "Due" = owed but not yet batched or paid out: payoutBatchId null (not
+  // already frozen into a pending batch) AND paidOutAt null (not already
+  // settled). This is what the preview shows + what a new batch freezes.
   async getPayoutsDue() {
     const payouts = await this.prisma.transaction.findMany({
-      where: { paymentStatus: 'RELEASED', sellerPayout: { gt: 0 } },
+      where: {
+        paymentStatus: 'RELEASED',
+        sellerPayout: { gt: 0 },
+        paidOutAt: null,
+        payoutBatchId: null,
+      },
       orderBy: { releasedAt: 'asc' },
       select: {
         id: true,
@@ -430,8 +440,20 @@ export class ManualPaymentsService {
         },
       },
     });
-    const refunds = await this.prisma.transaction.findMany({
-      where: { paymentStatus: 'REFUNDED', buyerTotal: { gt: 0 } },
+    // Refunds are only owed by EFT in MANUAL mode. Every REFUNDED path first
+    // calls stitch.refundPayment() — a no-op mock in manual mode (so the FNB
+    // EFT is the real refund), but a genuine card reversal under a live
+    // gateway. So when PAYMENT_MODE=paygate the buyer has ALREADY been
+    // refunded on their card; including those rows here would pay them a
+    // SECOND time. Hard-gate on manual mode so a mode flip can never
+    // double-refund.
+    const refunds = PAYMENT_MODE !== 'manual' ? [] : await this.prisma.transaction.findMany({
+      where: {
+        paymentStatus: 'REFUNDED',
+        buyerTotal: { gt: 0 },
+        paidOutAt: null,
+        payoutBatchId: null,
+      },
       orderBy: { updatedAt: 'asc' },
       select: {
         id: true,
@@ -463,18 +485,17 @@ export class ManualPaymentsService {
   // number / holder / branch) are SKIPPED so the file never carries an
   // invalid line; the skipped count is logged + returned via buildPayoutFile.
   // The operator reviews + authorises in FNB before any money moves.
-  async buildPayoutCsv(): Promise<string> {
-    return (await this.buildPayoutFile()).csv;
-  }
-
-  async buildPayoutFile(): Promise<{
-    csv: string;
-    included: number;
-    skipped: number;
-    skippedRefs: string[];
-  }> {
+  // Map the currently-due payouts + refunds to FNB recipient rows. Rows
+  // missing essential bank details (holder/account/branch) are SKIPPED so the
+  // file never carries an invalid line. Returns the included tx ids (split by
+  // payout vs refund) + totals so a batch can freeze exactly this set.
+  private async collectDue() {
     const { payouts, refunds } = await this.getPayoutsDue();
     const recipients: FnbRecipient[] = [];
+    const payoutIds: string[] = [];
+    const refundIds: string[] = [];
+    let payoutTotalCents = 0;
+    let refundTotalCents = 0;
     const skippedRefs: string[] = [];
 
     const hasBank = (b: {
@@ -494,11 +515,13 @@ export class ManualPaymentsService {
         accountType: p.seller.bankAccountType,
         branchCode: p.seller.bankBranchCode!,
         amountCents: p.sellerPayout,
-        ownReference: p.orderReference ?? p.id, // GG statement: which sale
+        ownReference: p.orderReference ?? p.id,
         recipientReference: `Gun Galore ${p.orderReference ?? ''}`.trim(),
         email: p.seller.email,
         phone: p.seller.phone,
       });
+      payoutIds.push(p.id);
+      payoutTotalCents += p.sellerPayout;
     }
 
     for (const r of refunds) {
@@ -517,24 +540,204 @@ export class ManualPaymentsService {
         email: r.buyer.email,
         phone: r.buyer.phone,
       });
+      refundIds.push(r.id);
+      refundTotalCents += r.buyerTotal;
     }
 
     if (skippedRefs.length) {
       this.logger.warn(
-        `Payout file: ${skippedRefs.length} row(s) skipped for missing bank details — ${skippedRefs.join('; ')}`,
+        `Payout batch: ${skippedRefs.length} row(s) skipped for missing bank details — ${skippedRefs.join('; ')}`,
       );
     }
-
-    const csv = buildFnbBulkFile(recipients, {
-      sourceAccount: GG_BANK_DETAILS.accountNumber,
-      actionDate: sastActionDate(new Date()),
-      notify: true, // operator: notify sellers (EMAIL 1 + SMS 1 populated)
-    });
     return {
-      csv,
-      included: recipients.length,
-      skipped: skippedRefs.length,
+      recipients,
+      payoutIds,
+      refundIds,
+      payoutTotalCents,
+      refundTotalCents,
       skippedRefs,
     };
+  }
+
+  private buildCsv(recipients: FnbRecipient[]): string {
+    return buildFnbBulkFile(recipients, {
+      sourceAccount: GG_BANK_DETAILS.accountNumber,
+      actionDate: sastActionDate(new Date()),
+      notify: true, // operator chose to notify sellers (EMAIL 1 + SMS 1)
+    });
+  }
+
+  // Ad-hoc CSV of everything currently due (NOT frozen into a batch). Kept for
+  // a quick eyeball; the real flow is createPayoutBatch (freeze) → markPaid.
+  async buildPayoutCsv(): Promise<string> {
+    const d = await this.collectDue();
+    return this.buildCsv(d.recipients);
+  }
+
+  // ── Payout batches (P7.1 — freeze-on-download) ──────────────────────
+  // Freeze EXACTLY the payouts/refunds due now: snapshot the FNB CSV, link
+  // those transactions to a PENDING batch (so they leave the due queue and
+  // can't be double-batched), and return the file to download. The operator
+  // pays in FNB, then marks THIS batch paid.
+  async createPayoutBatch(adminClerkId: string | null) {
+    const d = await this.collectDue();
+    if (d.recipients.length === 0) {
+      throw new BadRequestException(
+        'No payouts or refunds are due right now (or all due rows are missing bank details).',
+      );
+    }
+    const csv = this.buildCsv(d.recipients);
+    const allIds = [...d.payoutIds, ...d.refundIds];
+
+    const batch = await this.prisma.$transaction(async (txc) => {
+      const b = await txc.payoutBatch.create({
+        data: {
+          status: 'PENDING',
+          payoutTotal: d.payoutTotalCents,
+          refundTotal: d.refundTotalCents,
+          grandTotal: d.payoutTotalCents + d.refundTotalCents,
+          itemCount: allIds.length,
+          csv,
+          createdById: adminClerkId,
+        },
+      });
+      // Link only rows STILL un-batched + un-paid. If a concurrent freeze
+      // grabbed any, the count won't match → abort (rolls back) so the CSV
+      // always matches the linked set; the operator simply retries.
+      const linked = await txc.transaction.updateMany({
+        where: { id: { in: allIds }, payoutBatchId: null, paidOutAt: null },
+        data: { payoutBatchId: b.id },
+      });
+      if (linked.count !== allIds.length) {
+        throw new BadRequestException(
+          'The payout set changed while preparing the batch — please try again.',
+        );
+      }
+      return b;
+    });
+
+    this.logger.log(
+      `Payout batch ${batch.id} frozen — ${allIds.length} lines, R${(batch.grandTotal / 100).toFixed(2)} (by ${adminClerkId ?? 'unknown'})`,
+    );
+    return {
+      batchId: batch.id,
+      csv,
+      included: allIds.length,
+      skipped: d.skippedRefs.length,
+      skippedRefs: d.skippedRefs,
+      grandTotal: batch.grandTotal,
+    };
+  }
+
+  async getPayoutBatch(id: string) {
+    return this.prisma.payoutBatch.findUnique({
+      where: { id },
+      include: {
+        transactions: {
+          select: {
+            id: true,
+            orderReference: true,
+            paymentStatus: true,
+            sellerPayout: true,
+            buyerTotal: true,
+            seller: { select: { username: true, bankAccountHolder: true } },
+            buyer: { select: { username: true, bankAccountHolder: true } },
+          },
+        },
+      },
+    });
+  }
+
+  async listPayoutBatches(limit = 30) {
+    return this.prisma.payoutBatch.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        status: true,
+        payoutTotal: true,
+        refundTotal: true,
+        grandTotal: true,
+        itemCount: true,
+        createdAt: true,
+        paidAt: true,
+        cancelledAt: true,
+      },
+    });
+  }
+
+  // Re-download a frozen batch's exact CSV (the snapshot stored at freeze).
+  async getPayoutBatchCsv(id: string): Promise<string> {
+    const b = await this.prisma.payoutBatch.findUnique({
+      where: { id },
+      select: { csv: true },
+    });
+    if (!b) throw new NotFoundException('Payout batch not found');
+    return b.csv;
+  }
+
+  // Settle a batch after the operator has made the FNB bulk payment. Atomic
+  // PENDING→PAID claim (idempotent), stamp paidOutAt on every line, and fire
+  // the Zoho book entry per seller payout (best-effort — Books being down
+  // must never block settlement).
+  async markPayoutBatchPaid(batchId: string, adminClerkId: string | null) {
+    // ATOMIC: the PENDING→PAID claim AND the per-line paidOutAt stamp commit
+    // together (or not at all). Without this, a crash between the two writes
+    // would leave a PAID batch whose lines are unstamped — and the claim guard
+    // makes that state unrecoverable through the UI. The findMany of which
+    // lines are payouts (for the Zoho loop) happens inside too; the Zoho calls
+    // themselves stay OUTSIDE the transaction (best-effort, after commit).
+    const now = new Date();
+    const payoutTxs = await this.prisma.$transaction(async (txc) => {
+      const claim = await txc.payoutBatch.updateMany({
+        where: { id: batchId, status: 'PENDING' },
+        data: { status: 'PAID', paidAt: now, paidById: adminClerkId },
+      });
+      if (claim.count === 0) {
+        throw new BadRequestException(
+          'This batch is not pending — it may already be paid or cancelled.',
+        );
+      }
+      await txc.transaction.updateMany({
+        where: { payoutBatchId: batchId, paidOutAt: null },
+        data: { paidOutAt: now },
+      });
+      // Which lines are seller payouts (refunds carry no commission invoice).
+      return txc.transaction.findMany({
+        where: { payoutBatchId: batchId, paymentStatus: 'RELEASED' },
+        select: { id: true },
+      });
+    });
+    for (const t of payoutTxs) {
+      await this.zohoBooks
+        .markCommissionInvoicePaid(t.id)
+        .catch((e) =>
+          this.logger.warn(
+            `Payout batch ${batchId}: Zoho markCommissionInvoicePaid failed for ${t.id}: ${(e as Error).message}`,
+          ),
+        );
+    }
+    this.logger.log(
+      `Payout batch ${batchId} marked PAID by ${adminClerkId ?? 'unknown'} — ${payoutTxs.length} payouts settled`,
+    );
+    return { batchId, settledPayouts: payoutTxs.length };
+  }
+
+  // Abandon a pending batch (operator didn't pay / made a mistake). Returns
+  // its lines to the due queue so they appear in the next batch.
+  async cancelPayoutBatch(batchId: string) {
+    const claim = await this.prisma.payoutBatch.updateMany({
+      where: { id: batchId, status: 'PENDING' },
+      data: { status: 'CANCELLED', cancelledAt: new Date() },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException('Only a pending batch can be cancelled.');
+    }
+    await this.prisma.transaction.updateMany({
+      where: { payoutBatchId: batchId, paidOutAt: null },
+      data: { payoutBatchId: null },
+    });
+    this.logger.log(`Payout batch ${batchId} cancelled — lines returned to queue`);
+    return { batchId, cancelled: true };
   }
 }

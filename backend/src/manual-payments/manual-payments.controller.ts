@@ -9,6 +9,7 @@ import {
   MaxFileSizeValidator,
   BadRequestException,
   Query,
+  Param,
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
@@ -69,24 +70,58 @@ export class ManualPaymentsController {
     return this.manual.scanInbox();
   }
 
-  // Payments the platform owes out today — seller payouts (RELEASED) +
-  // buyer refunds (REFUNDED). Read-only preview for the admin.
+  // Preview of what's due now — seller payouts (RELEASED) + buyer refunds
+  // (REFUNDED), excluding anything already frozen into a batch or paid out.
   @Get('payouts-due')
   payoutsDue() {
     return this.manual.getPayoutsDue();
   }
 
-  // Download the payout batch as CSV. PLACEHOLDER column layout — swap
-  // for FNB's real bulk-payment template before using it for a real
-  // payment (see service TODO).
-  @Get('payouts-due.csv')
-  async payoutsCsv(@Res() res: Response) {
-    const csv = await this.manual.buildPayoutCsv();
+  // ── Payout batches (freeze-on-download) ─────────────────────────────
+  // Freeze EXACTLY what's due now into a PENDING batch + generate the FNB
+  // file. Those rows leave the due queue; the operator pays in FNB then
+  // marks THIS batch paid.
+  @Post('payout-batches')
+  createPayoutBatch(@CurrentAdmin() admin: { sub: string }) {
+    return this.manual.createPayoutBatch(admin.sub);
+  }
+
+  // History of batches (pending + paid + cancelled).
+  @Get('payout-batches')
+  listPayoutBatches(@Query('limit') limit?: string) {
+    return this.manual.listPayoutBatches(limit ? Number(limit) : 30);
+  }
+
+  @Get('payout-batches/:id')
+  getPayoutBatch(@Param('id') id: string) {
+    return this.manual.getPayoutBatch(id);
+  }
+
+  // Re-download a frozen batch's exact FNB CSV.
+  @Get('payout-batches/:id.csv')
+  async payoutBatchCsv(@Param('id') id: string, @Res() res: Response) {
+    const csv = await this.manual.getPayoutBatchCsv(id);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader(
       'Content-Disposition',
-      'attachment; filename="gungalore-payouts-PLACEHOLDER.csv"',
+      `attachment; filename="gungalore-payout-batch-${id}.csv"`,
     );
     res.send(csv);
+  }
+
+  // Settle: the operator confirms they made the FNB bulk payment for this
+  // batch. Stamps each line paid + fires the Zoho book entries.
+  @Post('payout-batches/:id/mark-paid')
+  markPayoutBatchPaid(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+  ) {
+    return this.manual.markPayoutBatchPaid(id, admin.sub);
+  }
+
+  // Abandon a pending batch — returns its lines to the due queue.
+  @Post('payout-batches/:id/cancel')
+  cancelPayoutBatch(@Param('id') id: string) {
+    return this.manual.cancelPayoutBatch(id);
   }
 }
