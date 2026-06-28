@@ -13,6 +13,7 @@ import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { StitchService } from '../payments/stitch.service';
+import { TransactionsService } from '../payments/transactions.service';
 import { ListingReviewDto, ReviewAction } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { toCsv } from '../common/csv.util';
@@ -32,6 +33,10 @@ export class AdminService {
     // refundTransaction() calls it to actually move the money back to the
     // buyer before flipping the row to REFUNDED.
     private readonly stitch: StitchService,
+    // PaymentsModule also exports TransactionsService — used by
+    // refundTransaction() to cancel any platform-booked carrier shipment so a
+    // refunded sale doesn't leave a live (already-billed) waybill (P5.2).
+    private readonly transactions: TransactionsService,
   ) {}
 
   // ---------------------------------------------------------------
@@ -1212,6 +1217,11 @@ export class AdminService {
         },
         data: { resolved: true, resolvedAt: new Date() },
       });
+      // P5.2: a fully-refunded sale is dead — cancel any platform-booked
+      // carrier shipment so we don't leave a live, already-billed waybill.
+      // Best-effort + idempotent; only cancels while the parcel hasn't been
+      // collected yet, else it alerts an admin to handle manually.
+      void this.transactions.cancelBookedShipment(txId);
     }
 
     // Audit row — refunds change real money state; the operator

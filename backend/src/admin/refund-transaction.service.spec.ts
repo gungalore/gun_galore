@@ -39,6 +39,7 @@ function makeService(overrides: {
   const zohoBooks = { createCommissionCreditNote: jest.fn().mockResolvedValue(undefined) };
   const stitch = { refundPayment };
 
+  const transactions = { cancelBookedShipment: jest.fn().mockResolvedValue(undefined) };
   const service = new AdminService(
     prisma as never,
     notifications as never,
@@ -46,8 +47,9 @@ function makeService(overrides: {
     audit as never,
     zohoBooks as never,
     stitch as never,
+    transactions as never, // P5.2 — cancels booked shipment on full refund
   );
-  return { service, prisma, notifications, audit, zohoBooks, refundPayment };
+  return { service, prisma, notifications, audit, zohoBooks, refundPayment, transactions };
 }
 
 const baseTx = {

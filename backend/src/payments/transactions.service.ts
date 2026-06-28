@@ -1354,6 +1354,11 @@ export class TransactionsService {
       }),
     ]);
 
+    // P5.2: if the seller had already accepted (booking fires on accept),
+    // cancel any live carrier shipment so a rejected sale doesn't leave a
+    // billed waybill. No-op when nothing was booked.
+    void this.shipping.cancelForTransaction(transactionId);
+
     // Timeline + buyer notification + clear seller's accept-pending
     // inbox row. Fire-and-forget; UI feedback already returned to the
     // seller via the controller's success response.
@@ -1529,6 +1534,11 @@ export class TransactionsService {
       })
       .catch(() => undefined);
 
+    // P5.2: cancel any platform-booked carrier shipment (booking fires on
+    // seller-accept, which can precede an undispatched buyer cancellation) so
+    // the refunded order doesn't leave a live, billed waybill.
+    void this.shipping.cancelForTransaction(transactionId);
+
     void this.tracking.recordInternal(transactionId, 'BUYER_CANCELLED', {
       message: `Buyer cancelled: ${trimmedReason}`,
     });
@@ -1667,6 +1677,12 @@ export class TransactionsService {
     };
   }
 
+  // P5.2 passthrough so callers outside ShippingModule (e.g. AdminService's
+  // refundTransaction) can cancel a booked carrier shipment on sale reversal.
+  async cancelBookedShipment(transactionId: string): Promise<void> {
+    await this.shipping.cancelForTransaction(transactionId);
+  }
+
   async confirmDispatch(
     transactionId: string,
     sellerClerkId: string,
@@ -1779,7 +1795,7 @@ export class TransactionsService {
 
     const where = role === 'buyer' ? { buyerId: user.id } : { sellerId: user.id };
 
-    return this.prisma.transaction.findMany({
+    const rows = await this.prisma.transaction.findMany({
       where,
       include: {
         listing: { include: { images: { where: { isPrimary: true }, take: 1 } } },
@@ -1793,6 +1809,16 @@ export class TransactionsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    // The Pudo drop-off PIN is the SELLER's hand-over credential (P5.2) —
+    // never include it in a BUYER's order list. (findMany returns the full
+    // row, so strip it on the buyer view; the seller view keeps it.)
+    if (role === 'buyer') {
+      for (const r of rows) {
+        (r as unknown as { carrierDropoffPin: string | null }).carrierDropoffPin = null;
+      }
+    }
+    return rows;
   }
 
   async findById(transactionId: string, clerkId: string) {

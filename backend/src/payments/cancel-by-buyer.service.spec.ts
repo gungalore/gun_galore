@@ -38,6 +38,8 @@ function makeService(opts: {
   };
   const tracking = { recordInternal: jest.fn().mockResolvedValue(undefined) };
   const stitch = { refundPayment };
+  // P5.2: cancelByBuyer now cancels any booked shipment.
+  const shipping = { cancelForTransaction: jest.fn().mockResolvedValue(undefined) };
 
   // Positional constructor args: prisma, fees, notifications, stitch, kyc,
   // shipping, tracking, tokens, referenceNumbers, fraudRisk, cloudinary.
@@ -47,7 +49,7 @@ function makeService(opts: {
     notifications as never,
     stitch as never,
     {} as never,
-    {} as never,
+    shipping as never,
     tracking as never,
     {} as never,
     {} as never,

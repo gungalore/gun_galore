@@ -1315,6 +1315,46 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Seller: automatic shipment booking failed (P5.2)
+  // ---------------------------------------------------------------
+  // Sent when the platform couldn't auto-book the courier (carrier down,
+  // bad address, etc). The seller can still ship — they just arrange it
+  // manually and enter the tracking number on the order page.
+  async shipmentBookingFailed(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'shipment_booking_failed',
+      title: 'Action needed: arrange dispatch',
+      body: `We couldn't auto-book the courier for ${d.listingTitle}. Book it yourself and enter the tracking number.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'dispatch',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Please arrange dispatch yourself',
+      body: `Hi ${b(d.sellerName)}, we couldn't automatically book the courier for ${b(d.listingTitle)} this time. Please book the shipment with your courier as usual, then open your sale and enter the tracking number so the buyer can follow it.`,
+      cta: { label: 'Open sale & add tracking', url: txUrl },
+      preheader: `Arrange dispatch for ${d.listingTitle}`,
+    });
+    await this.send(d.sellerEmail, 'Action needed — arrange dispatch for ' + d.listingTitle, html);
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: We couldn't auto-book the courier for ${truncate(d.listingTitle, 30)}. Please arrange dispatch + add the tracking number: ${txUrl}`,
+      `booking-failed-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
   // Buyer: refund issued
   // ---------------------------------------------------------------
   async refundIssuedBuyer(d: {

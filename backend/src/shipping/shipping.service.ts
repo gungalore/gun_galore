@@ -296,7 +296,19 @@ export class ShippingService {
         return null;
       }
       if (!tx.shippingServiceCode) {
-        throw new Error('transaction has no shippingServiceCode (not quoted?)');
+        throw new Error(
+          `${tx.shippingMethod} order has no service code — the shipping quote may be stale`,
+        );
+      }
+      // The carrier SMSes the hand-over PIN (Pudo) / collection notice (TCG),
+      // so a real mobile for BOTH parties is required. Missing → fail-safe to
+      // the manual-dispatch fallback rather than book a contactless shipment
+      // the carrier can't coordinate.
+      if (!tx.seller.phone?.trim()) {
+        throw new Error('seller has no phone on file — cannot book a courier shipment');
+      }
+      if (!tx.buyer.phone?.trim()) {
+        throw new Error('buyer has no phone on file — cannot book a courier shipment');
       }
 
       // Contacts go to the CARRIER (collection/delivery coordination + the
@@ -308,7 +320,7 @@ export class ShippingService {
           tx.seller.username ||
           'Seller',
         email: tx.seller.email ?? undefined,
-        mobile: tx.seller.phone ?? '',
+        mobile: tx.seller.phone.trim(),
       };
       const deliveryContact: CarrierContact = {
         name:
@@ -316,7 +328,7 @@ export class ShippingService {
           tx.buyer.username ||
           'Buyer',
         email: tx.buyer.email ?? undefined,
-        mobile: tx.buyer.phone ?? '',
+        mobile: tx.buyer.phone.trim(),
       };
 
       let result: CarrierShipmentResult;
@@ -349,7 +361,16 @@ export class ShippingService {
           lat?: number;
           lng?: number;
         } | null;
-        if (!d?.streetAddress) throw new Error('no delivery address on transaction');
+        // deliveryAddress is stored JSON (untrusted) — validate every field
+        // the carrier needs before the wallet-billed call, and that the
+        // province maps to a name TCG accepts (an unmapped province would
+        // otherwise be sent as `undefined` and rejected after billing).
+        if (!d?.streetAddress || !d.suburb || !d.city || !d.postalCode || !d.province) {
+          throw new Error('delivery address is incomplete for courier booking');
+        }
+        if (!PROVINCE_LONG[d.province]) {
+          throw new Error(`invalid delivery province on transaction: ${d.province}`);
+        }
         result = await this.tcg.createShipment({
           serviceCode: tx.shippingServiceCode,
           from: {
@@ -415,11 +436,18 @@ export class ShippingService {
           trackingReference: result.trackingReference,
           dropoffPin: result.pin ?? null,
         })
-        .catch((e) =>
+        .catch((e) => {
           this.logger.warn(
             `shipmentBooked notify failed for ${transactionId}: ${(e as Error).message}`,
-          ),
-        );
+          );
+          // Booking is charged + persisted but the seller has no PIN/waybill
+          // in hand — surface to admins (same dedup'd queue) for manual
+          // follow-up. Do NOT roll back the booking (the carrier is committed).
+          void this.raiseBookingFailedAlert(
+            transactionId,
+            'Shipment booked but seller notification failed: ' + (e as Error).message,
+          );
+        });
       return result;
     } catch (err) {
       // Release the claim so an admin can retry + the seller keeps the
@@ -430,8 +458,98 @@ export class ShippingService {
         `bookForTransaction ${transactionId} failed: ${(err as Error).message}`,
       );
       await this.raiseBookingFailedAlert(transactionId, (err as Error).message);
+      // Tell the seller auto-booking failed so they know to arrange dispatch
+      // manually (the page already shows the manual form, but a ping helps).
+      void this.notifyBookingFailedSeller(transactionId).catch(() => undefined);
       return null;
     }
+  }
+
+  // Cancel a booked shipment when a sale is reversed before hand-over (admin
+  // refund / seller reject / buyer cancel). Best-effort, idempotent, never
+  // throws. Only cancels while the parcel hasn't entered the network yet —
+  // once COLLECTED+ it's too late, so we alert an admin to handle it manually.
+  async cancelForTransaction(transactionId: string): Promise<void> {
+    const tx = await this.prisma.transaction
+      .findUnique({
+        where: { id: transactionId },
+        select: {
+          shippingMethod: true,
+          carrierShipmentId: true,
+          shipmentBookedAt: true,
+          shippingStatus: true,
+        },
+      })
+      .catch(() => null);
+    if (!tx?.shipmentBookedAt || !tx.carrierShipmentId) return; // nothing booked
+
+    const moving =
+      tx.shippingStatus && tx.shippingStatus !== 'PENDING';
+    if (moving) {
+      await this.raiseBookingFailedAlert(
+        transactionId,
+        `Sale reversed but parcel already ${tx.shippingStatus} — cancel/recover with the carrier manually`,
+      );
+      return;
+    }
+
+    let ok = false;
+    try {
+      ok =
+        tx.shippingMethod === 'PUDO'
+          ? await this.pudo.cancelShipment(tx.carrierShipmentId)
+          : tx.shippingMethod === 'TCG'
+            ? await this.tcg.cancelShipment(tx.carrierShipmentId)
+            : false;
+    } catch {
+      ok = false;
+    }
+
+    if (ok) {
+      // Clear the booking marker so the seller UI stops showing the ship
+      // panel and the shipment can't be cancelled twice.
+      await this.prisma.transaction
+        .update({
+          where: { id: transactionId },
+          data: { shipmentBookedAt: null },
+        })
+        .catch(() => undefined);
+      this.logger.log(
+        `Shipment cancelled for ${transactionId} (${tx.shippingMethod} ${tx.carrierShipmentId})`,
+      );
+    } else {
+      // Keep the marker (so the orphan stays visible) + alert for manual cleanup.
+      await this.raiseBookingFailedAlert(
+        transactionId,
+        'Shipment cancel failed — cancel manually with the carrier to reclaim the wallet charge',
+      );
+    }
+  }
+
+  private async notifyBookingFailedSeller(transactionId: string): Promise<void> {
+    const tx = await this.prisma.transaction
+      .findUnique({
+        where: { id: transactionId },
+        select: {
+          listing: { select: { title: true } },
+          seller: {
+            select: { email: true, firstName: true, lastName: true, username: true, phone: true },
+          },
+        },
+      })
+      .catch(() => null);
+    if (!tx?.seller?.email) return;
+    const sellerName =
+      [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
+      tx.seller.username ||
+      'Seller';
+    await this.notifications.shipmentBookingFailed({
+      sellerEmail: tx.seller.email,
+      sellerName,
+      sellerPhone: tx.seller.phone,
+      listingTitle: tx.listing.title,
+      transactionId,
+    });
   }
 
   // Fetch a booked shipment's waybill/label PDF from the right carrier.

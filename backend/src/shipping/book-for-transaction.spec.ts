@@ -16,9 +16,12 @@ function makeService(over: { claimCount?: number; tx?: unknown } = {}) {
       update: jest.fn().mockResolvedValue({}),
     },
   };
-  const pudo = { createShipment: jest.fn() };
-  const tcg = { createShipment: jest.fn() };
-  const notifications = { shipmentBooked: jest.fn().mockResolvedValue(undefined) };
+  const pudo = { createShipment: jest.fn(), cancelShipment: jest.fn().mockResolvedValue(true) };
+  const tcg = { createShipment: jest.fn(), cancelShipment: jest.fn().mockResolvedValue(true) };
+  const notifications = {
+    shipmentBooked: jest.fn().mockResolvedValue(undefined),
+    shipmentBookingFailed: jest.fn().mockResolvedValue(undefined),
+  };
   const svc = new ShippingService(
     prisma as never,
     notifications as never,
@@ -103,6 +106,51 @@ describe('ShippingService.bookForTransaction', () => {
     expect(prisma.transaction.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { shipmentBookingStartedAt: null } }),
     );
+    expect(prisma.adminAlert.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: 'SHIPMENT_BOOKING_FAILED', referenceId: 'TX1' }),
+      }),
+    );
+  });
+});
+
+describe('ShippingService.cancelForTransaction (sale reversal)', () => {
+  it('cancels a booked, not-yet-collected PUDO shipment and clears the marker', async () => {
+    const { svc, prisma, pudo } = makeService({
+      tx: {
+        shippingMethod: 'PUDO',
+        carrierShipmentId: '297',
+        shipmentBookedAt: new Date('2026-01-01'),
+        shippingStatus: 'PENDING',
+      },
+    });
+    await svc.cancelForTransaction('TX1');
+    expect(pudo.cancelShipment).toHaveBeenCalledWith('297');
+    expect(prisma.transaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { shipmentBookedAt: null } }),
+    );
+  });
+
+  it('is a no-op when nothing was booked', async () => {
+    const { svc, pudo, tcg } = makeService({
+      tx: { shippingMethod: 'PUDO', carrierShipmentId: null, shipmentBookedAt: null, shippingStatus: null },
+    });
+    await svc.cancelForTransaction('TX1');
+    expect(pudo.cancelShipment).not.toHaveBeenCalled();
+    expect(tcg.cancelShipment).not.toHaveBeenCalled();
+  });
+
+  it('does NOT cancel once the parcel is moving — alerts an admin instead', async () => {
+    const { svc, prisma, pudo } = makeService({
+      tx: {
+        shippingMethod: 'PUDO',
+        carrierShipmentId: '297',
+        shipmentBookedAt: new Date('2026-01-01'),
+        shippingStatus: 'IN_TRANSIT',
+      },
+    });
+    await svc.cancelForTransaction('TX1');
+    expect(pudo.cancelShipment).not.toHaveBeenCalled();
     expect(prisma.adminAlert.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ type: 'SHIPMENT_BOOKING_FAILED', referenceId: 'TX1' }),

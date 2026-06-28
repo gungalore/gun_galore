@@ -15,6 +15,7 @@ function makeService(rows: Record<string, unknown>[]) {
     audit as never,
     {} as never, // zohoBooks
     {} as never, // stitch
+    {} as never, // transactions (P5.2) — unused by export
   );
   return { service, prisma, audit };
 }
