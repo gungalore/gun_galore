@@ -53,16 +53,19 @@ export const SWAP_FIREARM_FEE_CENTS = 10_000; // R100 — firearm dealer-transfe
 
 // What ONE party pays to fund their side of a swap. Each party funds the leg
 // they SEND: the live courier rate for their parcel (remitted to the carrier)
-// + the flat GG service fee + any cash top-up they owe + the manual EFT
-// handling fee on the lot. Both parties must fund for the swap to lock; if
-// only one funds, that party is fully reimbursed (operator decision).
+// + the flat GG service fee + any cash top-up they owe. The 1.5% manual EFT
+// handling is ABSORBED by GG out of the flat fee (operator decision
+// 2026-06-29) — it is NOT added to what the member pays, so partyTotal is a
+// clean courier + fee + cash figure. processingFee is retained only as GG's
+// internal absorbed-cost figure (accounting / Zoho). Both parties must fund
+// for the swap to lock; if only one funds, that party is fully reimbursed.
 export interface SwapLegFeeBreakdown {
   courierCost: number; // carrier rate for this party's outbound parcel (remitted)
   serviceFee: number; // flat GG fee — margin (R50 courier / R100 firearm)
   cashContribution: number; // cash top-up this party owes (0 unless cash payer)
   subtotal: number; // courier + serviceFee + cashContribution
-  processingFee: number; // EFT handling on the subtotal
-  partyTotal: number; // what this party pays in their single EFT
+  processingFee: number; // 1.5% EFT cost GG ABSORBS (not charged to the party)
+  partyTotal: number; // what this party actually pays = subtotal
 }
 
 export interface FeeBreakdown {
@@ -175,9 +178,10 @@ export class FeeCalculator {
    * - cashContributionCents: cash top-up this party owes (0 unless they are
    *   the agreed cash payer).
    * - isFirearmLeg: swaps the flat fee from courier (R50) to firearm (R100).
-   * - mode: 'manual' applies the flat 1.5% EFT handling on the subtotal.
+   * - mode: selects the rate for the absorbed-cost figure ('manual' = 1.5%).
    *
-   * Independent + additive — leaves breakdown()/order math untouched.
+   * partyTotal = courier + fee + cash (the 1.5% EFT cost is ABSORBED by GG,
+   * not added). Independent + additive — leaves breakdown()/order math alone.
    */
   breakdownSwapLeg(
     courierCostCents: number,
@@ -193,6 +197,8 @@ export class FeeCalculator {
       : SWAP_SHIPPING_FEE_CENTS;
     const cashContribution = Math.max(0, Math.round(cashContributionCents));
     const subtotal = courierCost + serviceFee + cashContribution;
+    // GG absorbs the EFT handling out of the flat fee — computed for internal
+    // accounting only, NOT added to what the party pays.
     const processingFee = this.calculateProcessingFee(subtotal, mode);
     return {
       courierCost,
@@ -200,7 +206,7 @@ export class FeeCalculator {
       cashContribution,
       subtotal,
       processingFee,
-      partyTotal: subtotal + processingFee,
+      partyTotal: subtotal,
     };
   }
 }
