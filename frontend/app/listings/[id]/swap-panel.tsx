@@ -410,6 +410,11 @@ function ViewerProposalView({
       <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
         {statusLabel[p.status] ?? p.status}
       </p>
+      {p.status === 'CONVERTED' && (
+        <a href="/my/swaps" className="inline-block text-xs mt-2" style={{ color: 'var(--red)' }}>
+          Go to My Swaps to add your address &amp; pay →
+        </a>
+      )}
       {p.ownerNote && p.status === 'COUNTERED' && (
         <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
           Owner: “{p.ownerNote}”
