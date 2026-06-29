@@ -3066,11 +3066,36 @@ model Swap {
   gatewayCheckoutId  String?
   gatewayPaymentId   String? @unique
 
-  // Manual-EFT funding lifecycle (mirrors Order.manual*).
+  // Manual-EFT funding lifecycle (mirrors Order.manual*). cashPayByAt is the
+  // shared funding deadline for BOTH parties; cashDetectedAt/cashVerifiedAt are
+  // legacy single-capture fields, superseded by the per-party blocks below and
+  // left unused (kept to avoid a destructive migration).
   cashPayByAt     DateTime?
   cashDetectedAt  DateTime?
   cashVerifiedAt  DateTime?
   cashCancelledAt DateTime?
+
+  // ── Two-sided funding (operator decision 2026-06-28) ─────────────────
+  // Each party funds the leg they SEND: their parcel's live courier rate +
+  // a flat R50 GG fee + any cash top-up they owe + 1.5% EFT handling. BOTH
+  // must fund (verified) for the swap to LOCK; if only one funds and the
+  // other lapses, the funded party is fully reimbursed. cashOrderReference /
+  // the single cash* fields above are superseded by these.
+  fundingSetUpAt DateTime? // set once both delivery addresses + methods captured + quoted
+
+  initiatorFundingRef    String?   @unique // SW-…-A EFT memo
+  initiatorFundingAmount Int       @default(0)
+  initiatorCourierCents  Int       @default(0) // initiator's outbound-leg courier rate (remitted)
+  initiatorDetectedAt    DateTime? // provisional inContact match
+  initiatorVerifiedAt    DateTime? // authoritative statement match → this side funded
+  initiatorRefundedAt    DateTime? // set if reimbursed on a one-sided funding failure
+
+  ownerFundingRef    String?   @unique // SW-…-B EFT memo
+  ownerFundingAmount Int       @default(0)
+  ownerCourierCents  Int       @default(0)
+  ownerDetectedAt    DateTime?
+  ownerVerifiedAt    DateTime?
+  ownerRefundedAt    DateTime?
 
   lockedAt        DateTime?
   completedAt     DateTime?

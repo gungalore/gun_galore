@@ -41,6 +41,30 @@ const MANUAL_RATE = 0.015;
 // keeps every existing caller unchanged); 'manual' = flat 1.5% EFT fee.
 export type PaymentMode = 'paygate' | 'manual';
 
+// ── Swop / Trade (SWOP) flat fees — ZAR cents ───────────────────────────
+// A swap has no sale price, so GG earns a FLAT service fee per shipment leg
+// (two legs per swap = earned twice). Operator decision 2026-06-28: R50/leg.
+// Rationale: GG pays the VerifyNow KYC fee (~R28) for each party acting as a
+// seller, so R50 covers that + margin. Each party pays their own leg's fee.
+export const SWAP_SHIPPING_FEE_CENTS = 5_000; // R50 — courier (non-firearm) leg
+// Firearm leg has no courier rate to mark up; flat handling fee covers the
+// SAPS-534 verification + dealer coordination. Used from S6.
+export const SWAP_FIREARM_FEE_CENTS = 10_000; // R100 — firearm dealer-transfer leg
+
+// What ONE party pays to fund their side of a swap. Each party funds the leg
+// they SEND: the live courier rate for their parcel (remitted to the carrier)
+// + the flat GG service fee + any cash top-up they owe + the manual EFT
+// handling fee on the lot. Both parties must fund for the swap to lock; if
+// only one funds, that party is fully reimbursed (operator decision).
+export interface SwapLegFeeBreakdown {
+  courierCost: number; // carrier rate for this party's outbound parcel (remitted)
+  serviceFee: number; // flat GG fee — margin (R50 courier / R100 firearm)
+  cashContribution: number; // cash top-up this party owes (0 unless cash payer)
+  subtotal: number; // courier + serviceFee + cashContribution
+  processingFee: number; // EFT handling on the subtotal
+  partyTotal: number; // what this party pays in their single EFT
+}
+
 export interface FeeBreakdown {
   listingPrice: number;   // ZAR cents
   shippingCost: number;   // ZAR cents — courier rate at checkout time
@@ -138,6 +162,45 @@ export class FeeCalculator {
       processingFee,
       buyerTotal,
       sellerPayout: Math.max(0, sellerPayout),
+    };
+  }
+
+  /**
+   * What ONE party pays to fund their side of a swap (SWOP). A swap has no
+   * sale price; GG earns a flat fee per leg and recovers the courier cost in
+   * the same EFT. Each party funds the leg they SEND.
+   *
+   * - courierCostCents: live carrier rate for this party's outbound parcel
+   *   (Pudo/TCG quote). Zero for a firearm leg (dealer transfer — no courier).
+   * - cashContributionCents: cash top-up this party owes (0 unless they are
+   *   the agreed cash payer).
+   * - isFirearmLeg: swaps the flat fee from courier (R50) to firearm (R100).
+   * - mode: 'manual' applies the flat 1.5% EFT handling on the subtotal.
+   *
+   * Independent + additive — leaves breakdown()/order math untouched.
+   */
+  breakdownSwapLeg(
+    courierCostCents: number,
+    cashContributionCents = 0,
+    isFirearmLeg = false,
+    mode: PaymentMode = 'manual',
+  ): SwapLegFeeBreakdown {
+    const courierCost = isFirearmLeg
+      ? 0
+      : Math.max(0, Math.round(courierCostCents));
+    const serviceFee = isFirearmLeg
+      ? SWAP_FIREARM_FEE_CENTS
+      : SWAP_SHIPPING_FEE_CENTS;
+    const cashContribution = Math.max(0, Math.round(cashContributionCents));
+    const subtotal = courierCost + serviceFee + cashContribution;
+    const processingFee = this.calculateProcessingFee(subtotal, mode);
+    return {
+      courierCost,
+      serviceFee,
+      cashContribution,
+      subtotal,
+      processingFee,
+      partyTotal: subtotal + processingFee,
     };
   }
 }
