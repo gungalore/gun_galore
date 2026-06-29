@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { OffersService } from '../offers/offers.service';
 import { SwapProposalsService } from '../swaps/swap-proposals.service';
+import { SwapFundingService } from '../swaps/swap-funding.service';
 import { AuctionsService } from '../auctions/auctions.service';
 import { RafflesService } from '../raffles/raffles.service';
 import { FeaturedService } from '../featured/featured.service';
@@ -30,6 +31,7 @@ export class TasksService {
   constructor(
     private readonly offersService: OffersService,
     private readonly swapProposals: SwapProposalsService,
+    private readonly swapFunding: SwapFundingService,
     private readonly auctionsService: AuctionsService,
     private readonly rafflesService: RafflesService,
     private readonly featured: FeaturedService,
@@ -654,6 +656,24 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('swap-proposal-expire');
+    }
+  }
+
+  // Run every 10 minutes — sweep swaps whose funding deadline lapsed without
+  // both sides paying: cancel, restock both listings, reimburse any side that
+  // did pay (synthetic refund → FNB batch).
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async sweepSwapFunding() {
+    this.logger.debug('Running swap funding sweep cron');
+    try {
+      await this.swapFunding.sweepExpiredFunding();
+    } catch (err) {
+      this.logger.error(
+        `sweepSwapFunding failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('swap-funding-sweep');
     }
   }
 

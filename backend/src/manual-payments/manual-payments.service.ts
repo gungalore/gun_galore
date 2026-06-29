@@ -20,6 +20,7 @@ import {
 } from './fnb-bulk';
 import { GG_BANK_DETAILS, PAYMENT_MODE } from '../payments/transactions.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
+import { SwapFundingService } from '../swaps/swap-funding.service';
 
 // Manual-EFT reconciliation. Two feeds match payments to orders:
 //   1. scanInbox()  — FNB inContact email alerts (fast, PROVISIONAL):
@@ -65,6 +66,7 @@ export class ManualPaymentsService {
     private readonly prisma: PrismaService,
     private readonly transactions: TransactionsService,
     private readonly zohoBooks: ZohoBooksService,
+    private readonly swaps: SwapFundingService,
   ) {}
 
   private get imapConfigured(): boolean {
@@ -83,6 +85,8 @@ export class ManualPaymentsService {
     status: MatchStatus;
     transactionId: string | null;
     orderId: string | null;
+    swapId?: string | null;
+    swapSide?: 'INITIATOR' | 'OWNER' | null;
   }> {
     const ref = orderRef ?? reference;
     if (!ref) return { status: 'UNMATCHED', transactionId: null, orderId: null };
@@ -123,14 +127,47 @@ export class ManualPaymentsService {
       where: { orderReference: ref },
       select: { id: true, buyerTotal: true, paidAt: true, manualCancelledAt: true },
     });
-    if (!order) return { status: 'UNMATCHED', transactionId: null, orderId: null };
-    if (order.paidAt)
-      return { status: 'ALREADY', transactionId: null, orderId: order.id };
-    if (order.manualCancelledAt)
-      return { status: 'EXPIRED', transactionId: null, orderId: order.id };
-    if (order.buyerTotal !== amountCents)
-      return { status: 'AMBIGUOUS', transactionId: null, orderId: order.id };
-    return { status: 'MATCHED', transactionId: null, orderId: order.id };
+    if (order) {
+      if (order.paidAt)
+        return { status: 'ALREADY', transactionId: null, orderId: order.id };
+      if (order.manualCancelledAt)
+        return { status: 'EXPIRED', transactionId: null, orderId: order.id };
+      if (order.buyerTotal !== amountCents)
+        return { status: 'AMBIGUOUS', transactionId: null, orderId: order.id };
+      return { status: 'MATCHED', transactionId: null, orderId: order.id };
+    }
+
+    // 3) SWOP two-sided funding — the ref lives on Swap.initiatorFundingRef OR
+    // Swap.ownerFundingRef (each party funds independently, same SW prefix
+    // pool so still globally unique). Match the side + its expected amount.
+    const swap = await this.prisma.swap.findFirst({
+      where: { OR: [{ initiatorFundingRef: ref }, { ownerFundingRef: ref }] },
+      select: {
+        id: true,
+        status: true,
+        initiatorFundingRef: true,
+        initiatorFundingAmount: true,
+        initiatorVerifiedAt: true,
+        ownerFundingAmount: true,
+        ownerVerifiedAt: true,
+      },
+    });
+    if (swap) {
+      const side: 'INITIATOR' | 'OWNER' =
+        swap.initiatorFundingRef === ref ? 'INITIATOR' : 'OWNER';
+      const amount =
+        side === 'INITIATOR' ? swap.initiatorFundingAmount : swap.ownerFundingAmount;
+      const verified =
+        side === 'INITIATOR' ? swap.initiatorVerifiedAt : swap.ownerVerifiedAt;
+      const base = { transactionId: null, orderId: null, swapId: swap.id, swapSide: side };
+      if (verified) return { status: 'ALREADY', ...base };
+      // Locked (both funded) / cancelled (funding lapsed) — paid too late.
+      if (swap.status !== 'AWAITING_FUNDING') return { status: 'EXPIRED', ...base };
+      if (amount !== amountCents) return { status: 'AMBIGUOUS', ...base };
+      return { status: 'MATCHED', ...base };
+    }
+
+    return { status: 'UNMATCHED', transactionId: null, orderId: null };
   }
 
   // ── 1. inContact email scan (provisional detection) ─────────────────
@@ -266,6 +303,10 @@ export class ManualPaymentsService {
         data: { manualDetectedAt: new Date() },
       });
       res.detected += 1;
+    } else if (match.status === 'MATCHED' && match.swapId && match.swapSide) {
+      // SWOP funding: provisional — stop the funding sweep for this side.
+      await this.swaps.markFundingDetected(match.swapId, match.swapSide);
+      res.detected += 1;
     } else {
       res.unmatched += 1;
     }
@@ -370,6 +411,10 @@ export class ManualPaymentsService {
       // (each re-binds its own amount + id; idempotent), roll the order up to
       // PAID, and send ONE consolidated buyer confirmation.
       await this.transactions.confirmManualOrder(match.orderId);
+      out.verified += 1;
+    } else if (match.status === 'MATCHED' && match.swapId && match.swapSide) {
+      // SWOP funding AUTHORITATIVE: this side is funded; both → LOCKED.
+      await this.swaps.confirmSwapFunding(match.swapId, match.swapSide);
       out.verified += 1;
     } else if (match.status === 'AMBIGUOUS' || match.status === 'EXPIRED') {
       // EXPIRED = paid after the 1-hour window; needs admin refund/re-fulfil

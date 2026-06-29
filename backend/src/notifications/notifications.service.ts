@@ -2984,6 +2984,99 @@ export class NotificationsService {
     await this.send(d.email, `Swap ${d.reason}: ` + d.wantedTitle, html);
   }
 
+  // Swap funding is set up — this party's EFT instructions (amount + ref).
+  async swapFundingReady(d: {
+    email: string;
+    name: string;
+    phone?: string | null;
+    amountCents: number;
+    reference: string;
+    swapId: string;
+  }) {
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'swap_funding_ready',
+      title: 'Fund your swap',
+      body: `Pay ${formatRand(d.amountCents)} (ref ${d.reference}) to lock your swap`,
+      url: '/my/swaps',
+      iconKey: 'offer',
+      linkedType: 'swap',
+      linkedId: d.swapId,
+      dismissible: false,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Fund your swap',
+      body: `Hi ${b(d.name)}, your swap is agreed and ready to fund. Pay ${b(formatRand(d.amountCents))} by EFT using the reference ${b(d.reference)} so we can book the couriers. Both parties must pay for the swap to go ahead — if the other side doesn't pay, you're refunded in full.`,
+      rows: [
+        { label: 'Amount', value: formatRand(d.amountCents) },
+        { label: 'Reference', value: d.reference },
+      ],
+      cta: { label: 'View payment details', url: `${this.appUrl}/my/swaps` },
+      preheader: `Pay ${formatRand(d.amountCents)} to lock your swap`,
+    });
+    await this.send(d.email, 'Fund your swap — ' + d.reference, html);
+    await this.sendSms(
+      d.phone,
+      `Gun Galore: Fund your swap — pay R${Math.round(d.amountCents / 100)} ref ${d.reference} by EFT. Details: ${this.appUrl}/my/swaps`,
+      `swap-fund-${d.swapId}-${d.reference}`,
+    );
+  }
+
+  // Both sides funded — the swap is locked; couriers being arranged.
+  async swapLocked(d: {
+    email: string;
+    name: string;
+    phone?: string | null;
+    swapId: string;
+  }) {
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'swap_locked',
+      title: 'Swap locked in',
+      body: `Both sides have paid — we're arranging the couriers`,
+      url: '/my/swaps',
+      iconKey: 'offer',
+      linkedType: 'swap',
+      linkedId: d.swapId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'success', label: 'Locked in' },
+      headline: 'Your swap is locked in',
+      body: `Hi ${b(d.name)}, both sides have funded the swap. We're arranging the couriers now — you'll get your parcel's collection details shortly.`,
+      preheader: 'Both sides funded — couriers being arranged',
+    });
+    await this.send(d.email, 'Swap locked in — couriers next', html);
+    await this.sendSms(
+      d.phone,
+      `Gun Galore: Your swap is funded by both sides and locked in. Courier details to follow.`,
+      `swap-locked-${d.swapId}`,
+    );
+  }
+
+  // Funding lapsed — the swap is cancelled; reimbursement note if they paid.
+  async swapFundingCancelled(d: { email: string; name: string; swapId: string }) {
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'swap_funding_cancelled',
+      title: 'Swap cancelled',
+      body: `The swap was cancelled — funding wasn't completed by both sides`,
+      url: '/my/swaps',
+      iconKey: 'offer',
+      linkedType: 'swap',
+      linkedId: d.swapId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Cancelled' },
+      headline: 'Your swap was cancelled',
+      body: `Hi ${b(d.name)}, the swap didn't go ahead because both sides didn't fund it in time. Both items are back on the marketplace. If you already paid your side, you'll be refunded in full to your registered bank account.`,
+      preheader: 'Swap cancelled — refund if you paid',
+    });
+    await this.send(d.email, 'Swap cancelled', html);
+  }
+
   // ---------------------------------------------------------------
   // Internal send — always fails open
   // ---------------------------------------------------------------
