@@ -31,9 +31,22 @@ export function InstallPrompt() {
   const [dismissed, setDismissed] = useState(true); // assume dismissed until effect checks
   const [helpOpen, setHelpOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Fallback nudge for phones where the one-tap install is never offered
+  // (non-Chrome browsers, bottom-tier Android Go devices, etc.). We arm it
+  // after a short delay so capable phones get the real "Install" button once
+  // Chrome fires its event — only phones that never fire it fall through to the
+  // "Add to home screen" shortcut hint.
+  const [isMobile, setIsMobile] = useState(false);
+  const [fallbackArmed, setFallbackArmed] = useState(false);
 
   useEffect(() => {
     setDismissed(isDismissedRecently());
+    const mobile = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(
+      navigator.userAgent,
+    );
+    setIsMobile(mobile);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (mobile) timer = setTimeout(() => setFallbackArmed(true), 5000);
     // The nav's "Install app" button (and any other surface) can ask us to
     // pop the instruction modal — e.g. iOS, or Android before Chrome has fired
     // the install event.
@@ -41,7 +54,10 @@ export function InstallPrompt() {
       setHelpOpen(true);
     }
     window.addEventListener('gg:show-install-help', onShowHelp);
-    return () => window.removeEventListener('gg:show-install-help', onShowHelp);
+    return () => {
+      window.removeEventListener('gg:show-install-help', onShowHelp);
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   async function install() {
@@ -61,9 +77,21 @@ export function InstallPrompt() {
     dismissFor(DISMISS_DAYS);
   }
 
+  // Once armed, if the one-tap install still isn't available and it's not iOS,
+  // show the "Add to home screen" shortcut nudge instead (low-end / non-Chrome).
+  const showFallbackHint =
+    fallbackArmed && isMobile && !canInstall && !isIosSafari && !isInstalled;
+
   // The floating CTA shows only when there's an actionable path and the user
   // hasn't dismissed it / already installed.
-  const showFloating = !isInstalled && !dismissed && (canInstall || isIosSafari);
+  const showFloating =
+    !isInstalled && !dismissed && (canInstall || isIosSafari || showFallbackHint);
+
+  // Copy adapts to the path: real install vs. shortcut fallback.
+  const title = canInstall ? 'Install Gun Galore' : 'Add to home screen';
+  const subtitle = canInstall
+    ? 'Faster repeat visits, home-screen icon, fullscreen launch.'
+    : 'Get a Gun Galore icon on your home screen.';
 
   if (!showFloating && !helpOpen) return null;
 
@@ -72,7 +100,7 @@ export function InstallPrompt() {
       {showFloating && (
         <div
           role="dialog"
-          aria-label="Install Gun Galore"
+          aria-label={title}
           style={{
             position: 'fixed',
             bottom: 16,
@@ -99,7 +127,7 @@ export function InstallPrompt() {
                 marginBottom: 2,
               }}
             >
-              Install Gun Galore
+              {title}
             </p>
             <p
               style={{
@@ -108,7 +136,7 @@ export function InstallPrompt() {
                 lineHeight: 1.4,
               }}
             >
-              Faster repeat visits, home-screen icon, fullscreen launch.
+              {subtitle}
             </p>
           </div>
           {canInstall ? (
@@ -146,7 +174,7 @@ export function InstallPrompt() {
                 whiteSpace: 'nowrap',
               }}
             >
-              How
+              {isIosSafari ? 'How' : 'Add'}
             </button>
           )}
           <button
@@ -265,7 +293,9 @@ function InstallHelpModal({
         ) : (
           <div>
             <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
-              Install the Gun Galore app
+              {canInstall
+                ? 'Install the Gun Galore app'
+                : 'Add Gun Galore to your home screen'}
             </p>
             {canInstall ? (
               <p
@@ -280,27 +310,41 @@ function InstallHelpModal({
                 screen.
               </p>
             ) : (
-              <ol
-                style={{
-                  fontSize: 12.5,
-                  color: 'var(--text-secondary)',
-                  lineHeight: 1.6,
-                  margin: 0,
-                  paddingLeft: 18,
-                }}
-              >
-                <li>
-                  Open your browser&rsquo;s menu — the <strong>⋮</strong> (or
-                  <strong> ⋯</strong>) icon, usually top-right.
-                </li>
-                <li>
-                  Tap <strong>Install app</strong> (or{' '}
-                  <strong>Add to Home screen</strong>).
-                </li>
-                <li>
-                  Confirm <strong>Install</strong> / <strong>Add</strong>.
-                </li>
-              </ol>
+              <>
+                <ol
+                  style={{
+                    fontSize: 12.5,
+                    color: 'var(--text-secondary)',
+                    lineHeight: 1.6,
+                    margin: 0,
+                    paddingLeft: 18,
+                  }}
+                >
+                  <li>
+                    Open your browser&rsquo;s menu — the <strong>⋮</strong> (or
+                    <strong> ⋯</strong>) icon, usually top-right.
+                  </li>
+                  <li>
+                    Tap <strong>Add to Home screen</strong> (or{' '}
+                    <strong>Install app</strong> if you see it).
+                  </li>
+                  <li>
+                    Confirm <strong>Add</strong>.
+                  </li>
+                </ol>
+                <p
+                  style={{
+                    fontSize: 11.5,
+                    color: 'var(--text-tertiary)',
+                    lineHeight: 1.5,
+                    margin: '8px 0 0',
+                  }}
+                >
+                  On some phones only &ldquo;Add to Home screen&rdquo; is
+                  available — that still puts a Gun Galore icon on your home
+                  screen; it just opens in your browser.
+                </p>
+              </>
             )}
           </div>
         )}
