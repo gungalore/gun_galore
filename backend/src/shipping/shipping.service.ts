@@ -755,18 +755,30 @@ export class ShippingService {
       // Status-guarded on IN_TRANSIT so it fires exactly once. (Cash release +
       // COMPLETED is S5.)
       if (newStatus === 'DELIVERED' && transaction.swapId) {
+        // Only the two REAL legs carry a swapRole (synthetic settlement/refund
+        // txs created later have swapRole null) — guard against them.
         const sibling = await tx.transaction.findFirst({
-          where: { swapId: transaction.swapId, id: { not: transactionId } },
+          where: {
+            swapId: transaction.swapId,
+            id: { not: transactionId },
+            swapRole: { not: null },
+          },
           select: { deliveredAt: true },
         });
         if (sibling?.deliveredAt) {
+          // S5: open a 48h verification window. A recipient can flag "not as
+          // described" before the auto-release cron settles the cash; after it
+          // elapses with no dispute the swap completes + cash releases.
           const rolled = await tx.swap.updateMany({
             where: { id: transaction.swapId, status: 'IN_TRANSIT' },
-            data: { status: 'AWAITING_VERIFICATION' },
+            data: {
+              status: 'AWAITING_VERIFICATION',
+              verificationDeadlineAt: new Date(now.getTime() + 48 * 3_600_000),
+            },
           });
           if (rolled.count > 0) {
             this.logger.log(
-              `Swap ${transaction.swapId} both legs delivered → AWAITING_VERIFICATION`,
+              `Swap ${transaction.swapId} both legs delivered → AWAITING_VERIFICATION (48h window)`,
             );
           }
         }

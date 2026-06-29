@@ -48,6 +48,8 @@ interface SwapRow {
   myReference: string | null;
   myFunded: boolean;
   counterpartyFunded: boolean;
+  verificationDeadlineAt: string | null;
+  disputeReason: string | null;
   give: Item | null;
   get: Item | null;
 }
@@ -191,11 +193,112 @@ function SwapCard({
           couriers; watch for your parcel&apos;s collection details.
         </Note>
       )}
-      {['IN_TRANSIT', 'AWAITING_VERIFICATION'].includes(swap.status) && (
-        <Note tone="info">Your swap is in progress — track both parcels here soon.</Note>
+      {swap.status === 'IN_TRANSIT' && (
+        <Note tone="info">
+          Both couriers are booked — your parcels are on the way. We&apos;ll
+          confirm here once both are delivered.
+        </Note>
+      )}
+      {swap.status === 'AWAITING_VERIFICATION' && (
+        <VerificationSection swap={swap} authedFetch={authedFetch} onChange={onChange} />
       )}
       {swap.status === 'DISPUTED' && (
-        <Note tone="warn">This swap is under review. Our team will be in touch.</Note>
+        <Note tone="warn">
+          This swap is under review{swap.disputeReason ? ` — reported: “${swap.disputeReason}”` : ''}.
+          Any held funds stay protected while our team looks into it.
+        </Note>
+      )}
+    </div>
+  );
+}
+
+// Both parcels delivered. A short window to flag a problem before the cash
+// auto-releases to the recipient and the swap closes.
+function VerificationSection({
+  swap,
+  authedFetch,
+  onChange,
+}: {
+  swap: SwapRow;
+  authedFetch: (path: string, opts?: RequestInit) => Promise<unknown>;
+  onChange: () => Promise<void>;
+}) {
+  const [show, setShow] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const deadline = swap.verificationDeadlineAt
+    ? new Date(swap.verificationDeadlineAt)
+    : null;
+
+  async function raise(e: FormEvent) {
+    e.preventDefault();
+    if (reason.trim().length < 10) {
+      setErr('Please describe the problem (at least 10 characters).');
+      return;
+    }
+    setBusy(true);
+    setErr('');
+    try {
+      await authedFetch(`/swaps/${swap.swapId}/dispute`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      await onChange();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Could not raise the issue');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Note tone="success">
+        Both items delivered ✓ Please check the item you received.
+        {deadline && (
+          <>
+            {' '}If everything&apos;s fine you don&apos;t need to do anything — the
+            swap completes automatically on{' '}
+            <strong>{deadline.toLocaleString('en-ZA')}</strong>.
+          </>
+        )}
+      </Note>
+      {!show ? (
+        <button
+          type="button"
+          onClick={() => setShow(true)}
+          className="text-xs self-start px-3 py-1.5 rounded-[6px]"
+          style={{ background: 'var(--bg-inset)', color: 'var(--text-secondary)', border: '0.5px solid var(--border)' }}
+        >
+          Something&apos;s wrong with what I received
+        </button>
+      ) : (
+        <form onSubmit={raise} className="flex flex-col gap-2">
+          <textarea
+            style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }}
+            placeholder="Tell us what's wrong with the item you received…"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+          {err && <p className="text-xs" style={{ color: 'var(--red)' }}>{err}</p>}
+          <div className="flex gap-2">
+            <button type="submit" disabled={busy}
+              className="py-2 px-3 rounded-[6px] text-sm font-medium"
+              style={{ background: busy ? 'var(--bg-inset)' : '#f59e0b', color: busy ? 'var(--text-tertiary)' : '#fff' }}>
+              {busy ? 'Submitting…' : 'Raise an issue'}
+            </button>
+            <button type="button" onClick={() => { setShow(false); setErr(''); }}
+              className="py-2 px-3 rounded-[6px] text-sm"
+              style={{ background: 'transparent', color: 'var(--text-tertiary)' }}>
+              Cancel
+            </button>
+          </div>
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            This pauses the swap and puts it in front of our team. Any held funds
+            stay protected while we review.
+          </p>
+        </form>
       )}
     </div>
   );

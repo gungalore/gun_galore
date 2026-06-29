@@ -694,6 +694,23 @@ export class TasksService {
     }
   }
 
+  // Run hourly — AWAITING_VERIFICATION swaps past their 48h window with no
+  // dispute → release held cash to the recipient + COMPLETED (S5).
+  @Cron(CronExpression.EVERY_HOUR)
+  async sweepSwapVerification() {
+    this.logger.debug('Running swap verification-window sweep');
+    try {
+      await this.swapFunding.sweepSwapVerification();
+    } catch (err) {
+      this.logger.error(
+        `sweepSwapVerification failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('swap-verification-sweep');
+    }
+  }
+
   // Run every minute — finalize auctions whose endTime has passed.
   @Cron(CronExpression.EVERY_MINUTE)
   async endAuctions() {

@@ -29,6 +29,11 @@ const FUNDING_WINDOW_HOURS = 72;
 // is flagged DISPUTED for admin review (a party didn't drop their parcel).
 const SHIP_SLA_DAYS = 7;
 
+// After both legs deliver, recipients get this long to flag "not as described"
+// before the cash auto-releases. Kept in sync with the deadline stamped by the
+// shipping rollup (shipping.service.applyShippingUpdate).
+const VERIFICATION_WINDOW_HOURS = 48;
+
 type Side = 'INITIATOR' | 'OWNER';
 
 /**
@@ -402,6 +407,8 @@ export class SwapFundingService {
       myReference: mine ? swap.initiatorFundingRef : swap.ownerFundingRef,
       myFunded: !!(mine ? swap.initiatorVerifiedAt : swap.ownerVerifiedAt),
       counterpartyFunded: !!(mine ? swap.ownerVerifiedAt : swap.initiatorVerifiedAt),
+      verificationDeadlineAt: swap.verificationDeadlineAt?.toISOString() ?? null,
+      disputeReason: swap.disputeReason ?? null,
     };
   }
 
@@ -457,6 +464,8 @@ export class SwapFundingService {
         myReference: mine ? s.initiatorFundingRef : s.ownerFundingRef,
         myFunded: !!(mine ? s.initiatorVerifiedAt : s.ownerVerifiedAt),
         counterpartyFunded: !!(mine ? s.ownerVerifiedAt : s.initiatorVerifiedAt),
+        verificationDeadlineAt: s.verificationDeadlineAt?.toISOString() ?? null,
+        disputeReason: s.disputeReason ?? null,
         give: give
           ? { title: give.title, imageUrl: give.images[0]?.url ?? null }
           : null,
@@ -685,6 +694,383 @@ export class SwapFundingService {
     }
   }
 
+  // ================================================================
+  // S5 — cash release + completion
+  // ================================================================
+
+  // Settle the swap EXACTLY ONCE. The atomic claim flips status → COMPLETED
+  // and stamps cashReleasedAt (the single "money has moved" guard) in one
+  // write, so whichever path arrives first (auto-release cron / admin
+  // force-complete) wins and the rest no-op. If there's a cash top-up it's
+  // paid to the cash RECIPIENT via a synthetic RELEASED payout tx (picked up
+  // by the FNB payout batch — paymentStatus RELEASED + sellerPayout>0); GG
+  // keeps the two flat fees already collected up front, never deducted from
+  // cash. Both parties get totalSales++. All in one transaction so a crash
+  // can never complete-without-paying or pay-twice.
+  private async releaseSwap(
+    swapId: string,
+    fromStatuses: SwapStatus[],
+  ): Promise<{ released: boolean; settlementTxId: string | null }> {
+    const now = new Date();
+    return this.prisma.$transaction(async (txc) => {
+      const claim = await txc.swap.updateMany({
+        where: {
+          id: swapId,
+          status: { in: fromStatuses },
+          cashReleasedAt: null,
+        },
+        data: {
+          status: SwapStatus.COMPLETED,
+          completedAt: now,
+          cashReleasedAt: now,
+        },
+      });
+      if (claim.count === 0) return { released: false, settlementTxId: null };
+
+      const swap = await txc.swap.findUnique({
+        where: { id: swapId },
+        select: {
+          initiatorId: true,
+          ownerId: true,
+          cashPayerId: true,
+          cashAmount: true,
+          initiatorFundingRef: true,
+          ownerFundingRef: true,
+          transactions: {
+            select: { id: true, sellerId: true, listingId: true, swapRole: true },
+          },
+        },
+      });
+      if (!swap) return { released: true, settlementTxId: null };
+
+      // Both parties complete a sale.
+      await txc.user.update({
+        where: { id: swap.initiatorId },
+        data: { totalSales: { increment: 1 } },
+      });
+      await txc.user.update({
+        where: { id: swap.ownerId },
+        data: { totalSales: { increment: 1 } },
+      });
+
+      let settlementTxId: string | null = null;
+      if (swap.cashAmount > 0 && swap.cashPayerId) {
+        const payeeId =
+          swap.cashPayerId === swap.initiatorId ? swap.ownerId : swap.initiatorId;
+        // The (required) listingId link — use a REAL leg the payee is part of.
+        const realLegs = swap.transactions.filter((t) => t.swapRole != null);
+        const payeeLeg =
+          realLegs.find((t) => t.sellerId === payeeId) ?? realLegs[0];
+        const payeeRef =
+          payeeId === swap.initiatorId
+            ? swap.initiatorFundingRef
+            : swap.ownerFundingRef;
+        const created = await txc.transaction.create({
+          data: {
+            swapId,
+            listingId: payeeLeg.listingId,
+            sellerId: payeeId, // cash recipient → FNB batch reads their bank
+            buyerId: swap.cashPayerId, // cash payer
+            orderReference: `${payeeRef ?? `SWAP-${swapId}`}-ST`,
+            listingPrice: 0,
+            commissionZar: 0,
+            processingFee: 0,
+            passFeeToBuyer: false,
+            buyerTotal: 0,
+            sellerPayout: swap.cashAmount, // the held cash → payee
+            paymentStatus: PaymentStatus.RELEASED,
+            releasedAt: now,
+          },
+        });
+        settlementTxId = created.id;
+        await txc.swap.update({
+          where: { id: swapId },
+          data: { settlementTxId },
+        });
+      }
+      this.logger.log(
+        `Swap ${swapId} → COMPLETED${settlementTxId ? ` (settlement tx ${settlementTxId} pays cash recipient)` : ' (no cash top-up)'}`,
+      );
+      return { released: true, settlementTxId };
+    });
+  }
+
+  // Cron — AWAITING_VERIFICATION swaps past the window with no dispute raised
+  // → release + COMPLETED. (DISPUTED swaps drop out of the filter and wait for
+  // an admin.)
+  async sweepSwapVerification() {
+    if (PAYMENT_MODE !== 'manual') return;
+    const now = new Date();
+    // Self-heal: a swap must never sit in AWAITING_VERIFICATION without a
+    // deadline (the rollup always stamps one + the S5 migration backfilled any
+    // pre-existing rows). If one ever does — a future regression — give it a
+    // fresh window so the cash can never strand, rather than releasing it
+    // immediately (which would skip the dispute window).
+    await this.prisma.swap.updateMany({
+      where: {
+        status: SwapStatus.AWAITING_VERIFICATION,
+        cashReleasedAt: null,
+        verificationDeadlineAt: null,
+      },
+      data: {
+        verificationDeadlineAt: new Date(
+          now.getTime() + VERIFICATION_WINDOW_HOURS * 3_600_000,
+        ),
+      },
+    });
+    const due = await this.prisma.swap.findMany({
+      where: {
+        status: SwapStatus.AWAITING_VERIFICATION,
+        cashReleasedAt: null,
+        verificationDeadlineAt: { not: null, lt: now },
+      },
+      select: { id: true },
+      take: 50,
+    });
+    for (const s of due) {
+      try {
+        const res = await this.releaseSwap(s.id, [
+          SwapStatus.AWAITING_VERIFICATION,
+        ]);
+        if (res.released) {
+          this.logger.log(
+            `Swap ${s.id} verification window elapsed → COMPLETED`,
+          );
+          void this.notifySwapCompleted(s.id);
+        }
+      } catch (err) {
+        this.logger.warn(
+          `swap verification sweep failed for ${s.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  // A participant flags a problem with the item they received. Allowed from
+  // IN_TRANSIT or AWAITING_VERIFICATION, only before the cash has moved
+  // (cashReleasedAt:null) — so a recipient can stop the auto-release. Goes to
+  // DISPUTED (admin-owned; funds stay held).
+  async raiseSwapDispute(clerkId: string, swapId: string, reason: string) {
+    const trimmed = (reason ?? '').trim();
+    if (trimmed.length < 10) {
+      throw new BadRequestException(
+        'Please describe the problem (at least 10 characters).',
+      );
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+    if (!user) throw new ForbiddenException();
+    const swap = await this.prisma.swap.findUnique({
+      where: { id: swapId },
+      select: { initiatorId: true, ownerId: true },
+    });
+    if (!swap) throw new NotFoundException('Swap not found');
+    if (user.id !== swap.initiatorId && user.id !== swap.ownerId) {
+      throw new ForbiddenException('Access denied');
+    }
+    const claim = await this.prisma.swap.updateMany({
+      where: {
+        id: swapId,
+        status: { in: [SwapStatus.IN_TRANSIT, SwapStatus.AWAITING_VERIFICATION] },
+        cashReleasedAt: null,
+      },
+      data: {
+        status: SwapStatus.DISPUTED,
+        disputedAt: new Date(),
+        disputeReason: trimmed.slice(0, 500),
+        disputeRaisedById: user.id,
+      },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException('This swap can no longer be disputed.');
+    }
+    await this.prisma.adminAlert
+      .create({
+        data: {
+          type: 'swap-dispute-raised',
+          referenceId: swapId,
+          context: `Swap ${swapId} disputed by user ${user.id}: ${trimmed.slice(0, 200)}`,
+          urgent: true,
+        },
+      })
+      .catch(() => undefined);
+    void this.notifySwapDisputed(swapId);
+    return { ok: true };
+  }
+
+  // ----------------------------------------------------------------
+  // Admin dispute resolution (admin-owned swaps).
+  // ----------------------------------------------------------------
+
+  // Resolve in favour of completing the swap: release the cash to the
+  // recipient + COMPLETED. Works from DISPUTED or AWAITING_VERIFICATION.
+  async adminForceComplete(swapId: string) {
+    const res = await this.releaseSwap(swapId, [
+      SwapStatus.DISPUTED,
+      SwapStatus.AWAITING_VERIFICATION,
+    ]);
+    if (!res.released) {
+      throw new BadRequestException(
+        'Swap is not in a completable state (already settled?).',
+      );
+    }
+    void this.notifySwapCompleted(swapId);
+    return { ok: true, settlementTxId: res.settlementTxId };
+  }
+
+  // Resolve by returning the cash to the payer (the swap went bad). The
+  // physical goods are already delivered, so this only reverses the money: a
+  // synthetic REFUNDED tx (→ FNB refund batch) returns the cash top-up to the
+  // payer. cashReleasedAt is stamped (same money-moved guard) so it can't also
+  // be force-completed. Status → CANCELLED.
+  async adminUnwind(swapId: string, reason: string) {
+    const trimmed = (reason ?? '').trim();
+    if (trimmed.length < 5) {
+      throw new BadRequestException('A reason is required to unwind a swap.');
+    }
+    const now = new Date();
+    const result = await this.prisma.$transaction(async (txc) => {
+      const claim = await txc.swap.updateMany({
+        where: {
+          id: swapId,
+          status: { in: [SwapStatus.DISPUTED, SwapStatus.AWAITING_VERIFICATION] },
+          cashReleasedAt: null,
+        },
+        data: {
+          status: SwapStatus.CANCELLED,
+          cancelledAt: now,
+          cancelledReason: `admin-unwind: ${trimmed}`.slice(0, 500),
+          cashReleasedAt: now,
+        },
+      });
+      if (claim.count === 0) return { unwound: false, refunded: 0 };
+
+      const swap = await txc.swap.findUnique({
+        where: { id: swapId },
+        select: {
+          initiatorId: true,
+          ownerId: true,
+          cashPayerId: true,
+          cashAmount: true,
+          initiatorFundingRef: true,
+          ownerFundingRef: true,
+          transactions: {
+            select: { sellerId: true, listingId: true, swapRole: true },
+          },
+        },
+      });
+      if (!swap) return { unwound: true, refunded: 0 };
+
+      if (swap.cashAmount > 0 && swap.cashPayerId) {
+        const payerId = swap.cashPayerId;
+        const counterpartyId =
+          payerId === swap.initiatorId ? swap.ownerId : swap.initiatorId;
+        const realLegs = swap.transactions.filter((t) => t.swapRole != null);
+        const payerLeg =
+          realLegs.find((t) => t.sellerId === payerId) ?? realLegs[0];
+        const payerRef =
+          payerId === swap.initiatorId
+            ? swap.initiatorFundingRef
+            : swap.ownerFundingRef;
+        await txc.transaction.create({
+          data: {
+            swapId,
+            listingId: payerLeg.listingId,
+            buyerId: payerId, // payer gets the cash back (FNB refund batch)
+            sellerId: counterpartyId,
+            orderReference: `${payerRef ?? `SWAP-${swapId}`}-UW`,
+            listingPrice: 0,
+            commissionZar: 0,
+            processingFee: 0,
+            passFeeToBuyer: false,
+            buyerTotal: swap.cashAmount,
+            sellerPayout: 0,
+            refundedAmount: swap.cashAmount,
+            paymentStatus: PaymentStatus.REFUNDED,
+            lastRefundAt: now,
+          },
+        });
+        return { unwound: true, refunded: swap.cashAmount };
+      }
+      return { unwound: true, refunded: 0 };
+    });
+    if (!result.unwound) {
+      throw new BadRequestException('Swap is not in an unwindable state.');
+    }
+    this.logger.log(
+      `Swap ${swapId} admin-unwound → CANCELLED${result.refunded > 0 ? ` (R${(result.refunded / 100).toFixed(2)} cash refunded to payer)` : ''}`,
+    );
+    void this.notifyFundingCancelled(swapId);
+    return { ok: true, refunded: result.refunded };
+  }
+
+  // ----------------------------------------------------------------
+  // Admin read views.
+  // ----------------------------------------------------------------
+  async adminListSwaps(status?: string) {
+    const where: Prisma.SwapWhereInput = {};
+    if (status && status !== 'ALL') where.status = status as SwapStatus;
+    const swaps = await this.prisma.swap.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      take: 200,
+      select: {
+        id: true,
+        status: true,
+        cashAmount: true,
+        cashPayerId: true,
+        disputedAt: true,
+        disputeReason: true,
+        createdAt: true,
+        updatedAt: true,
+        completedAt: true,
+        cancelledAt: true,
+        initiator: { select: { id: true, username: true } },
+        owner: { select: { id: true, username: true } },
+      },
+    });
+    return swaps;
+  }
+
+  async adminGetSwap(id: string) {
+    const swap = await this.prisma.swap.findUnique({
+      where: { id },
+      include: {
+        initiator: {
+          select: { id: true, username: true, email: true, phone: true },
+        },
+        owner: {
+          select: { id: true, username: true, email: true, phone: true },
+        },
+        transactions: {
+          select: {
+            id: true,
+            swapRole: true,
+            sellerId: true,
+            buyerId: true,
+            paymentStatus: true,
+            shippingStatus: true,
+            shippingMethod: true,
+            trackingReference: true,
+            carrierShipmentId: true,
+            shipmentBookedAt: true,
+            deliveredAt: true,
+            shippingCost: true,
+            buyerTotal: true,
+            sellerPayout: true,
+            refundedAmount: true,
+            orderReference: true,
+            listing: { select: { id: true, title: true } },
+          },
+        },
+      },
+    });
+    if (!swap) throw new NotFoundException('Swap not found');
+    return swap;
+  }
+
   // ----------------------------------------------------------------
   // Helpers
   // ----------------------------------------------------------------
@@ -777,6 +1163,52 @@ export class SwapFundingService {
       }
     } catch (err) {
       this.logger.error(`notifyFundingCancelled failed: ${(err as Error).message}`);
+    }
+  }
+
+  private async notifySwapCompleted(swapId: string) {
+    try {
+      const swap = await this.prisma.swap.findUnique({
+        where: { id: swapId },
+        include: { initiator: true, owner: true },
+      });
+      if (!swap) return;
+      const payeeId =
+        swap.cashAmount > 0 && swap.cashPayerId
+          ? swap.cashPayerId === swap.initiatorId
+            ? swap.ownerId
+            : swap.initiatorId
+          : null;
+      for (const u of [swap.initiator, swap.owner]) {
+        await this.notifications.swapCompleted({
+          email: u.email,
+          name: u.firstName ?? 'there',
+          phone: u.phone,
+          swapId,
+          cashPayoutCents: u.id === payeeId ? swap.cashAmount : 0,
+        });
+      }
+    } catch (err) {
+      this.logger.error(`notifySwapCompleted failed: ${(err as Error).message}`);
+    }
+  }
+
+  private async notifySwapDisputed(swapId: string) {
+    try {
+      const swap = await this.prisma.swap.findUnique({
+        where: { id: swapId },
+        include: { initiator: true, owner: true },
+      });
+      if (!swap) return;
+      for (const u of [swap.initiator, swap.owner]) {
+        await this.notifications.swapDisputed({
+          email: u.email,
+          name: u.firstName ?? 'there',
+          swapId,
+        });
+      }
+    } catch (err) {
+      this.logger.error(`notifySwapDisputed failed: ${(err as Error).message}`);
     }
   }
 }

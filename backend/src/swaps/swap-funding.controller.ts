@@ -49,4 +49,16 @@ export class SwapFundingController {
     await this.funding.ensureFundingSetUp(id);
     return this.funding.getFundingState(clerkId, id);
   }
+
+  // A participant flags a problem with the item they received (S5). Stops the
+  // auto-release; sends the swap to admin review. Held funds stay protected.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post(':id/dispute')
+  dispute(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.funding.raiseSwapDispute(clerkId, id, body?.reason ?? '');
+  }
 }

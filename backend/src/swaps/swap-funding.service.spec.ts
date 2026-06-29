@@ -6,11 +6,16 @@ import { SwapFundingService } from './swap-funding.service';
 import { FeeCalculator } from '../payments/fee.calculator';
 
 function make() {
-  // The inner interactive-transaction client used by the sweep.
+  // The inner interactive-transaction client used by the sweep + release.
   const txc = {
-    swap: { updateMany: jest.fn(), findUnique: jest.fn() },
+    swap: {
+      updateMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn().mockResolvedValue({}),
+    },
     listing: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
     transaction: { create: jest.fn().mockResolvedValue({ id: 'RTX' }) },
+    user: { update: jest.fn().mockResolvedValue({}) },
   };
   const prisma = {
     swap: {
@@ -21,6 +26,7 @@ function make() {
     listing: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
     transaction: { create: jest.fn().mockResolvedValue({ id: 'RTX' }) },
     user: { findUnique: jest.fn() },
+    adminAlert: { create: jest.fn().mockResolvedValue({}) },
     $transaction: jest.fn(async (fn: (c: typeof txc) => unknown) => fn(txc)),
   };
   const shipping = {
@@ -57,9 +63,10 @@ describe('SwapFundingService.confirmSwapFunding', () => {
       transactions: [], // onSwapLocked reads legs to book (none in this unit test)
     });
     await service.confirmSwapFunding('S1', 'OWNER');
-    expect(prisma.swap.updateMany).toHaveBeenCalledTimes(2);
     // The lock is a single conditional write requiring BOTH sides verified.
-    expect(prisma.swap.updateMany).toHaveBeenLastCalledWith(
+    // (Asserted by content, not call-count/last-call: the fire-and-forget
+    // onSwapLocked may also fire a later LOCKED→IN_TRANSIT write.)
+    expect(prisma.swap.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           id: 'S1',
@@ -182,5 +189,189 @@ describe('SwapFundingService.sweepExpiredFunding', () => {
     prisma.swap.findMany.mockResolvedValue([]); // relock + stale both empty
     await service.sweepExpiredFunding();
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('SwapFundingService — S5 release / dispute', () => {
+  const legs = [
+    { id: 'L1', sellerId: 'I', listingId: 'LA', swapRole: 'INITIATOR_GIVES' },
+    { id: 'L2', sellerId: 'O', listingId: 'LB', swapRole: 'OWNER_GIVES' },
+  ];
+
+  it('force-complete releases the FULL cash to the recipient + both totalSales++', async () => {
+    const { service, prisma, txc } = make();
+    txc.swap.updateMany.mockResolvedValueOnce({ count: 1 }); // claim wins
+    // initiator is the cash payer → owner is the payee.
+    txc.swap.findUnique.mockResolvedValue({
+      initiatorId: 'I',
+      ownerId: 'O',
+      cashPayerId: 'I',
+      cashAmount: 50_000,
+      initiatorFundingRef: 'SW1',
+      ownerFundingRef: 'SW2',
+      transactions: legs,
+    });
+    prisma.swap.findUnique.mockResolvedValue({
+      id: 'S1',
+      cashAmount: 50_000,
+      cashPayerId: 'I',
+      initiatorId: 'I',
+      ownerId: 'O',
+      initiator: { id: 'I', email: 'i@x.co', firstName: 'I', phone: '1' },
+      owner: { id: 'O', email: 'o@x.co', firstName: 'O', phone: '2' },
+    });
+
+    await service.adminForceComplete('S1');
+
+    // COMPLETED claim is exactly-once-guarded on cashReleasedAt:null.
+    expect(txc.swap.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'S1', cashReleasedAt: null }),
+        data: expect.objectContaining({ status: 'COMPLETED' }),
+      }),
+    );
+    // Both parties complete a sale.
+    expect(txc.user.update).toHaveBeenCalledTimes(2);
+    // Settlement pays the PAYEE (owner) the full cash via a RELEASED payout tx.
+    expect(txc.transaction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          swapId: 'S1',
+          sellerId: 'O',
+          buyerId: 'I',
+          sellerPayout: 50_000,
+          buyerTotal: 0,
+          paymentStatus: 'RELEASED',
+        }),
+      }),
+    );
+  });
+
+  it('force-complete is idempotent — claim lost → no settlement, no sales bump', async () => {
+    const { service, txc } = make();
+    txc.swap.updateMany.mockResolvedValueOnce({ count: 0 }); // already settled
+    await expect(service.adminForceComplete('S1')).rejects.toThrow();
+    expect(txc.transaction.create).not.toHaveBeenCalled();
+    expect(txc.user.update).not.toHaveBeenCalled();
+  });
+
+  it('completes a no-cash swap without any payout tx', async () => {
+    const { service, prisma, txc } = make();
+    txc.swap.updateMany.mockResolvedValueOnce({ count: 1 });
+    txc.swap.findUnique.mockResolvedValue({
+      initiatorId: 'I',
+      ownerId: 'O',
+      cashPayerId: null,
+      cashAmount: 0,
+      initiatorFundingRef: 'SW1',
+      ownerFundingRef: 'SW2',
+      transactions: legs,
+    });
+    prisma.swap.findUnique.mockResolvedValue({
+      id: 'S1',
+      cashAmount: 0,
+      cashPayerId: null,
+      initiatorId: 'I',
+      ownerId: 'O',
+      initiator: { id: 'I', email: 'i@x.co', firstName: 'I', phone: '1' },
+      owner: { id: 'O', email: 'o@x.co', firstName: 'O', phone: '2' },
+    });
+    await service.adminForceComplete('S1');
+    expect(txc.user.update).toHaveBeenCalledTimes(2);
+    expect(txc.transaction.create).not.toHaveBeenCalled();
+  });
+
+  it('unwind refunds the cash to the PAYER via a REFUNDED tx', async () => {
+    const { service, prisma, txc } = make();
+    txc.swap.updateMany.mockResolvedValueOnce({ count: 1 });
+    txc.swap.findUnique.mockResolvedValue({
+      initiatorId: 'I',
+      ownerId: 'O',
+      cashPayerId: 'I',
+      cashAmount: 50_000,
+      initiatorFundingRef: 'SW1',
+      ownerFundingRef: 'SW2',
+      transactions: legs,
+    });
+    prisma.swap.findUnique.mockResolvedValue({
+      id: 'S1',
+      initiator: { id: 'I', email: 'i@x.co', firstName: 'I' },
+      owner: { id: 'O', email: 'o@x.co', firstName: 'O' },
+    });
+    await service.adminUnwind('S1', 'item not as described');
+    expect(txc.swap.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'CANCELLED' }),
+      }),
+    );
+    expect(txc.transaction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          buyerId: 'I', // payer gets the refund
+          buyerTotal: 50_000,
+          refundedAmount: 50_000,
+          sellerPayout: 0,
+          paymentStatus: 'REFUNDED',
+        }),
+      }),
+    );
+  });
+
+  it('raiseSwapDispute → DISPUTED for a participant, guarded pre-release', async () => {
+    const { service, prisma } = make();
+    prisma.user.findUnique.mockResolvedValue({ id: 'I' });
+    prisma.swap.findUnique.mockResolvedValue({ initiatorId: 'I', ownerId: 'O' });
+    prisma.swap.updateMany.mockResolvedValue({ count: 1 });
+    await service.raiseSwapDispute('clerk', 'S1', 'the scope was cracked on arrival');
+    expect(prisma.swap.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'S1',
+          status: { in: ['IN_TRANSIT', 'AWAITING_VERIFICATION'] },
+          cashReleasedAt: null,
+        }),
+        data: expect.objectContaining({ status: 'DISPUTED' }),
+      }),
+    );
+  });
+
+  it('raiseSwapDispute rejects a non-participant', async () => {
+    const { service, prisma } = make();
+    prisma.user.findUnique.mockResolvedValue({ id: 'X' });
+    prisma.swap.findUnique.mockResolvedValue({ initiatorId: 'I', ownerId: 'O' });
+    await expect(
+      service.raiseSwapDispute('clerk', 'S1', 'a long enough reason here'),
+    ).rejects.toThrow();
+  });
+
+  it('auto-release sweep settles AWAITING_VERIFICATION swaps past the window', async () => {
+    const { service, prisma, txc } = make();
+    prisma.swap.findMany.mockResolvedValueOnce([{ id: 'S1' }]); // one due
+    txc.swap.updateMany.mockResolvedValueOnce({ count: 1 });
+    txc.swap.findUnique.mockResolvedValue({
+      initiatorId: 'I',
+      ownerId: 'O',
+      cashPayerId: 'O',
+      cashAmount: 30_000,
+      initiatorFundingRef: 'SW1',
+      ownerFundingRef: 'SW2',
+      transactions: legs,
+    });
+    prisma.swap.findUnique.mockResolvedValue({
+      id: 'S1',
+      cashAmount: 30_000,
+      cashPayerId: 'O',
+      initiatorId: 'I',
+      ownerId: 'O',
+      initiator: { id: 'I', email: 'i@x.co', firstName: 'I', phone: '1' },
+      owner: { id: 'O', email: 'o@x.co', firstName: 'O', phone: '2' },
+    });
+    await service.sweepSwapVerification();
+    // payer = owner → payee = initiator gets the cash.
+    expect(txc.transaction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ sellerId: 'I', sellerPayout: 30_000 }),
+      }),
+    );
   });
 });

@@ -379,6 +379,7 @@ export class AdminAnalyticsService {
           COUNT(*) FILTER (WHERE "paymentStatus" = 'REFUNDED')::float
             / NULLIF(COUNT(*) FILTER (WHERE "paymentStatus" IN ('REFUNDED', 'RELEASED')), 0) AS rate
         FROM "Transaction"
+        WHERE "swapId" IS NULL
       )
       SELECT
         u.id AS "sellerId",
@@ -391,6 +392,7 @@ export class AdminAnalyticsService {
       FROM "User" u
       JOIN "Transaction" t ON t."sellerId" = u.id
       WHERE t."paymentStatus" IN ('REFUNDED', 'RELEASED')
+        AND t."swapId" IS NULL
       GROUP BY u.id, u.username, u.email
       HAVING COUNT(t.*) >= 3
          AND (COUNT(t.*) FILTER (WHERE t."paymentStatus" = 'REFUNDED')::float
@@ -407,7 +409,8 @@ export class AdminAnalyticsService {
       `SELECT
          COUNT(*) FILTER (WHERE "paymentStatus" = 'REFUNDED')::float
            / NULLIF(COUNT(*) FILTER (WHERE "paymentStatus" IN ('REFUNDED', 'RELEASED')), 0) AS rate
-       FROM "Transaction"`,
+       FROM "Transaction"
+       WHERE "swapId" IS NULL`,
     );
     const baselineRate = Number(baseline[0]?.rate ?? 0);
 

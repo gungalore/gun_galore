@@ -3077,6 +3077,69 @@ export class NotificationsService {
     await this.send(d.email, 'Swap cancelled', html);
   }
 
+  // Swap complete — both items delivered, the swap is closed. If this party is
+  // the cash recipient, tell them their top-up payout is on its way.
+  async swapCompleted(d: {
+    email: string;
+    name: string;
+    phone?: string | null;
+    swapId: string;
+    cashPayoutCents: number;
+  }) {
+    const gotCash = d.cashPayoutCents > 0;
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'swap_completed',
+      title: 'Swap complete',
+      body: gotCash
+        ? `Your swap is done — your ${formatRand(d.cashPayoutCents)} top-up is on its way to your bank`
+        : `Your swap is done — both items delivered`,
+      url: '/my/swaps',
+      iconKey: 'offer',
+      linkedType: 'swap',
+      linkedId: d.swapId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'success', label: 'Complete' },
+      headline: 'Your swap is complete',
+      body: gotCash
+        ? `Hi ${b(d.name)}, both items have been delivered and the swap is closed. Your ${b(formatRand(d.cashPayoutCents))} cash top-up will be paid to your registered bank account in the next payout run.`
+        : `Hi ${b(d.name)}, both items have been delivered and the swap is closed. Thanks for trading on Gun Galore!`,
+      preheader: 'Swap complete',
+    });
+    await this.send(d.email, 'Swap complete', html);
+    if (gotCash) {
+      await this.sendSms(
+        d.phone,
+        `Gun Galore: Your swap is complete. Your ${formatRand(d.cashPayoutCents)} top-up will be paid to your bank in the next payout run.`,
+        `swap-completed-${d.swapId}`,
+      );
+    }
+  }
+
+  // A party flagged a problem after delivery — the swap is under admin review.
+  async swapDisputed(d: { email: string; name: string; swapId: string }) {
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'swap_disputed',
+      title: 'Swap under review',
+      body: `An issue was raised on your swap — our team will be in touch`,
+      url: '/my/swaps',
+      iconKey: 'offer',
+      linkedType: 'swap',
+      linkedId: d.swapId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Under review' },
+      headline: 'Your swap is under review',
+      body: `Hi ${b(d.name)}, an issue was raised on this swap so we've put it on hold. Any held funds stay protected while our team reviews it — we'll be in touch.`,
+      preheader: 'Swap on hold — under review',
+    });
+    await this.send(d.email, 'Swap under review', html);
+  }
+
   // ---------------------------------------------------------------
   // Internal send — always fails open
   // ---------------------------------------------------------------

@@ -80,6 +80,7 @@ export class SellerToolsService {
     const rows = await this.prisma.transaction.findMany({
       where: {
         sellerId,
+        swapId: null, // exclude synthetic SWOP settlement/refund txs (S5)
         OR: [
           { paymentStatus: 'RELEASED', releasedAt: { gte: from, lte: to } },
           { paymentStatus: 'REFUNDED', updatedAt: { gte: from, lte: to } },
@@ -194,7 +195,12 @@ export class SellerToolsService {
 
     const [agg, activeListings, soldListings, series] = await Promise.all([
       this.prisma.transaction.aggregate({
-        where: { sellerId, paymentStatus: 'RELEASED', releasedAt: { gte: from, lte: to } },
+        where: {
+          sellerId,
+          swapId: null, // exclude synthetic SWOP settlement txs (S5)
+          paymentStatus: 'RELEASED',
+          releasedAt: { gte: from, lte: to },
+        },
         _sum: { buyerTotal: true, sellerPayout: true },
         _count: true,
         _avg: { buyerTotal: true },
@@ -211,6 +217,7 @@ export class SellerToolsService {
                COUNT(*)                         AS count
         FROM "Transaction"
         WHERE "sellerId" = $1
+          AND "swapId" IS NULL
           AND "paymentStatus" = 'RELEASED'
           AND "releasedAt" >= $2
           AND "releasedAt" <= $3

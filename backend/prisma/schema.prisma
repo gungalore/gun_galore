@@ -3102,6 +3102,21 @@ model Swap {
   cancelledAt     DateTime?
   cancelledReason String?
 
+  // ── S5 settlement + verification window ──────────────────────────────
+  // Both legs delivered → AWAITING_VERIFICATION with verificationDeadlineAt
+  // set (a short hold so a recipient can flag "not as described" before any
+  // cash moves). cashReleasedAt is the SINGLE "money has moved" idempotency
+  // stamp — set on release OR refund, so settlement happens exactly once no
+  // matter which path (auto-release cron / admin force-complete / admin
+  // unwind) gets there first. settlementTxId links the synthetic RELEASED
+  // payout tx that pays the cash recipient through the existing FNB batch.
+  verificationDeadlineAt DateTime?
+  cashReleasedAt         DateTime?
+  settlementTxId         String?
+  disputedAt             DateTime?
+  disputeReason          String?
+  disputeRaisedById      String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

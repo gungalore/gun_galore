@@ -32,12 +32,14 @@ import {
   AdminSettingsController,
   AdminBroadcastController,
 } from './admin.controller';
+import { AdminSwapsController } from './admin-swaps.controller';
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
 import { SuperadminGuard } from './guards/superadmin.guard';
 import { KycModule } from '../kyc/kyc.module';
 import { ListingsModule } from '../listings/listings.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
+import { SwapsModule } from '../swaps/swaps.module';
 
 @Module({
   // KycModule for AdminKycController; ListingsModule so reviewListing
@@ -51,6 +53,7 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
     ListingsModule,
     PaymentsModule,
     ZohoBooksModule,
+    SwapsModule, // AdminSwapsController → SwapFundingService (force-complete / unwind)
   ],
   providers: [
     AdminAuthService,
@@ -87,6 +90,7 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
     AdminCategoriesController,
     AdminSettingsController,
     AdminBroadcastController,
+    AdminSwapsController,
   ],
   // Export AdminCreditsService so TasksModule's pollCreditBalances
   // cron can inject it without us having to declare the service in
