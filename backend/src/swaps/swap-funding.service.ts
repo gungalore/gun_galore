@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import {
+  Prisma,
   SwapStatus,
   SwapRole,
   ListingStatus,
@@ -15,7 +16,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { FeeCalculator } from '../payments/fee.calculator';
-import { PAYMENT_MODE } from '../payments/transactions.service';
+import { PAYMENT_MODE, GG_BANK_DETAILS } from '../payments/transactions.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SwapDeliveryDto } from './dto/swap-delivery.dto';
@@ -305,20 +306,46 @@ export class SwapFundingService {
             data: { ownerVerifiedAt: now, ownerDetectedAt: now },
           });
     if (claim.count === 0) return; // already verified / not awaiting
+    await this.tryLock(swapId);
+  }
 
-    const swap = await this.prisma.swap.findUnique({ where: { id: swapId } });
-    if (!swap) return;
-
-    if (swap.initiatorVerifiedAt && swap.ownerVerifiedAt) {
-      const lock = await this.prisma.swap.updateMany({
-        where: { id: swapId, status: SwapStatus.AWAITING_FUNDING },
-        data: { status: SwapStatus.LOCKED, lockedAt: now },
-      });
-      if (lock.count > 0) {
-        this.logger.log(`Swap ${swapId} fully funded → LOCKED`);
-        void this.notifyLocked(swapId);
-      }
+  // Atomic both-verified → LOCKED. The WHERE does the both-verified check as
+  // part of the write (no read-then-branch), so whichever side commits its
+  // verify second wins the lock exactly once; the status guard makes it
+  // idempotent. Replaces the prior findUnique-then-updateMany, which could
+  // (a) leave a fully-funded swap stuck AWAITING_FUNDING under two concurrent
+  // confirms each reading the other's column as still-null, or (b) wedge on a
+  // crash between the verify-write and the lock-write.
+  private async tryLock(swapId: string) {
+    const lock = await this.prisma.swap.updateMany({
+      where: {
+        id: swapId,
+        status: SwapStatus.AWAITING_FUNDING,
+        initiatorVerifiedAt: { not: null },
+        ownerVerifiedAt: { not: null },
+      },
+      data: { status: SwapStatus.LOCKED, lockedAt: new Date() },
+    });
+    if (lock.count > 0) {
+      this.logger.log(`Swap ${swapId} fully funded → LOCKED`);
+      void this.notifyLocked(swapId);
     }
+  }
+
+  // Self-heal: promote any swap that has both sides verified but is somehow
+  // still AWAITING_FUNDING (e.g. a crash between the verify-write and the
+  // lock-write) → LOCKED. Run from the funding sweep cron BEFORE the cancel
+  // pass, so a fully-funded swap is never eligible for cancellation.
+  private async relockFullyFunded() {
+    const ready = await this.prisma.swap.findMany({
+      where: {
+        status: SwapStatus.AWAITING_FUNDING,
+        initiatorVerifiedAt: { not: null },
+        ownerVerifiedAt: { not: null },
+      },
+      select: { id: true },
+    });
+    for (const s of ready) await this.tryLock(s.id);
   }
 
   // ----------------------------------------------------------------
@@ -349,7 +376,7 @@ export class SwapFundingService {
       where: { clerkId },
       select: { id: true },
     });
-    if (!user) return [];
+    if (!user) return { bankDetails: GG_BANK_DETAILS, swaps: [] };
     const swaps = await this.prisma.swap.findMany({
       where: {
         OR: [{ initiatorId: user.id }, { ownerId: user.id }],
@@ -379,7 +406,7 @@ export class SwapFundingService {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return swaps.map((s) => {
+    const mapped = swaps.map((s) => {
       const mine = s.initiatorId === user.id;
       const myGiveRole = mine ? SwapRole.INITIATOR_GIVES : SwapRole.OWNER_GIVES;
       const myGetRole = mine ? SwapRole.OWNER_GIVES : SwapRole.INITIATOR_GIVES;
@@ -403,6 +430,7 @@ export class SwapFundingService {
           : null,
       };
     });
+    return { bankDetails: GG_BANK_DETAILS, swaps: mapped };
   }
 
   // ----------------------------------------------------------------
@@ -411,56 +439,98 @@ export class SwapFundingService {
   // ----------------------------------------------------------------
   async sweepExpiredFunding() {
     if (PAYMENT_MODE !== 'manual') return;
+    // Self-heal first: promote any both-verified-but-not-locked swap to LOCKED
+    // (crash between the verify-write and the lock-write) so a fully funded
+    // swap is never in the cancel-eligible set below.
+    await this.relockFullyFunded();
+
     const now = new Date();
     const stale = await this.prisma.swap.findMany({
       where: {
         status: SwapStatus.AWAITING_FUNDING,
         fundingSetUpAt: { not: null },
         cashPayByAt: { not: null, lt: now },
-        // not yet fully funded (if both verified it would be LOCKED already)
-        OR: [{ initiatorVerifiedAt: null }, { ownerVerifiedAt: null }],
+        // A side is "unfunded" only if it is NEITHER verified NOR provisionally
+        // detected (inContact). Only sweep when at least one side is fully
+        // un-actioned — never cancel out from under a payment that's already
+        // detected but not yet statement-verified. (Mirrors the single-item
+        // freeze sweep, which gates on manualDetectedAt:null.)
+        OR: [
+          { AND: [{ initiatorVerifiedAt: null }, { initiatorDetectedAt: null }] },
+          { AND: [{ ownerVerifiedAt: null }, { ownerDetectedAt: null }] },
+        ],
       },
       include: {
-        transactions: { select: { id: true, listingId: true } },
+        transactions: { select: { swapRole: true, listingId: true } },
       },
       take: 50,
     });
 
     for (const swap of stale) {
       try {
-        // Atomic claim: AWAITING_FUNDING → CANCELLED. A late confirm that
-        // locked the swap in the gap makes this count=0 and we skip.
-        const claim = await this.prisma.swap.updateMany({
-          where: { id: swap.id, status: SwapStatus.AWAITING_FUNDING },
-          data: {
-            status: SwapStatus.CANCELLED,
-            cancelledAt: now,
-            cancelledReason: 'funding-not-completed',
-          },
+        // Cancel + restock + reimburse all commit together, so a mid-sweep
+        // crash can never leave a CANCELLED swap with the funded party
+        // un-refunded (CANCELLED is terminal + the sweep only re-examines
+        // AWAITING_FUNDING). Returns false if another path won the row first.
+        const cancelled = await this.prisma.$transaction(async (txc) => {
+          // Atomic claim — guarded on status AND not-both-verified, so a fully
+          // funded swap can never be cancelled even if it slipped the relock.
+          const claim = await txc.swap.updateMany({
+            where: {
+              id: swap.id,
+              status: SwapStatus.AWAITING_FUNDING,
+              OR: [{ initiatorVerifiedAt: null }, { ownerVerifiedAt: null }],
+            },
+            data: {
+              status: SwapStatus.CANCELLED,
+              cancelledAt: now,
+              cancelledReason: 'funding-not-completed',
+            },
+          });
+          if (claim.count === 0) return false;
+
+          await txc.listing.updateMany({
+            where: {
+              id: { in: swap.transactions.map((t) => t.listingId) },
+              status: ListingStatus.PAYMENT_PENDING,
+            },
+            data: { status: ListingStatus.ACTIVE },
+          });
+
+          // Re-read FRESH funding flags inside the tx — a one-sided verify can
+          // commit between the snapshot above and this claim; the snapshot
+          // would wrongly skip refunding the now-verified side.
+          const fresh = await txc.swap.findUnique({
+            where: { id: swap.id },
+            select: {
+              initiatorId: true,
+              ownerId: true,
+              initiatorVerifiedAt: true,
+              ownerVerifiedAt: true,
+              initiatorRefundedAt: true,
+              ownerRefundedAt: true,
+              initiatorFundingAmount: true,
+              ownerFundingAmount: true,
+              initiatorFundingRef: true,
+              ownerFundingRef: true,
+            },
+          });
+          if (!fresh) return true;
+          if (fresh.initiatorVerifiedAt && !fresh.initiatorRefundedAt) {
+            await this.refundSide(txc, swap.id, 'INITIATOR', fresh, swap.transactions);
+          }
+          if (fresh.ownerVerifiedAt && !fresh.ownerRefundedAt) {
+            await this.refundSide(txc, swap.id, 'OWNER', fresh, swap.transactions);
+          }
+          return true;
         });
-        if (claim.count === 0) continue;
 
-        // Release both reserved listings.
-        await this.prisma.listing.updateMany({
-          where: {
-            id: { in: swap.transactions.map((t) => t.listingId) },
-            status: ListingStatus.PAYMENT_PENDING,
-          },
-          data: { status: ListingStatus.ACTIVE },
-        });
-
-        // Reimburse whichever side funded (at most one — both → LOCKED).
-        if (swap.initiatorVerifiedAt && !swap.initiatorRefundedAt) {
-          await this.createFundingRefund(swap.id, 'INITIATOR');
+        if (cancelled) {
+          this.logger.log(
+            `Swap ${swap.id} funding lapsed → CANCELLED; listings released`,
+          );
+          void this.notifyFundingCancelled(swap.id);
         }
-        if (swap.ownerVerifiedAt && !swap.ownerRefundedAt) {
-          await this.createFundingRefund(swap.id, 'OWNER');
-        }
-
-        this.logger.log(
-          `Swap ${swap.id} funding lapsed → CANCELLED; listings released`,
-        );
-        void this.notifyFundingCancelled(swap.id);
       } catch (err) {
         this.logger.warn(
           `swap funding sweep failed for ${swap.id}: ${(err as Error).message}`,
@@ -469,40 +539,48 @@ export class SwapFundingService {
     }
   }
 
-  // Create a synthetic REFUNDED Transaction so the FNB refund batch pays the
-  // funded party back in full. swapId is set, so the orphan-reclaim sweep
-  // (which requires swapId:null) never touches it.
-  private async createFundingRefund(swapId: string, side: Side) {
-    const swap = await this.prisma.swap.findUnique({
-      where: { id: swapId },
-      include: { transactions: { select: { id: true, swapRole: true, listingId: true } } },
-    });
-    if (!swap) return;
-
+  // Reimburse one funded side IN FULL via a synthetic REFUNDED Transaction
+  // (swapId set, so the orphan-reclaim sweep's swapId:null guard never deletes
+  // it) — picked up by the FNB refund batch. Runs INSIDE the cancel
+  // transaction so the *RefundedAt stamp + the synthetic tx commit atomically
+  // with the cancel (no crash window strands the money).
+  private async refundSide(
+    txc: Prisma.TransactionClient,
+    swapId: string,
+    side: Side,
+    fresh: {
+      initiatorId: string;
+      ownerId: string;
+      initiatorFundingAmount: number;
+      ownerFundingAmount: number;
+      initiatorFundingRef: string | null;
+      ownerFundingRef: string | null;
+    },
+    legs: { swapRole: SwapRole | null; listingId: string }[],
+  ) {
     const mine = side === 'INITIATOR';
-    const amount = mine ? swap.initiatorFundingAmount : swap.ownerFundingAmount;
-    const ref = mine ? swap.initiatorFundingRef : swap.ownerFundingRef;
-    const refundedUserId = mine ? swap.initiatorId : swap.ownerId;
-    const counterpartyId = mine ? swap.ownerId : swap.initiatorId;
+    const amount = mine ? fresh.initiatorFundingAmount : fresh.ownerFundingAmount;
     if (amount <= 0) return;
-    // Use the leg this party SENT for the listing FK (bookkeeping only).
+    const ref = mine ? fresh.initiatorFundingRef : fresh.ownerFundingRef;
+    const refundedUserId = mine ? fresh.initiatorId : fresh.ownerId;
+    const counterpartyId = mine ? fresh.ownerId : fresh.initiatorId;
     const sentRole = mine ? SwapRole.INITIATOR_GIVES : SwapRole.OWNER_GIVES;
-    const sentLeg = swap.transactions.find((t) => t.swapRole === sentRole);
+    const sentLeg = legs.find((l) => l.swapRole === sentRole) ?? legs[0];
     if (!sentLeg) return;
 
-    // Idempotent guard — only create the refund once per side.
+    // Idempotent stamp — only create the refund once per side.
     const guard = mine
-      ? await this.prisma.swap.updateMany({
+      ? await txc.swap.updateMany({
           where: { id: swapId, initiatorRefundedAt: null },
           data: { initiatorRefundedAt: new Date() },
         })
-      : await this.prisma.swap.updateMany({
+      : await txc.swap.updateMany({
           where: { id: swapId, ownerRefundedAt: null },
           data: { ownerRefundedAt: new Date() },
         });
     if (guard.count === 0) return;
 
-    await this.prisma.transaction.create({
+    await txc.transaction.create({
       data: {
         swapId,
         listingId: sentLeg.listingId,
