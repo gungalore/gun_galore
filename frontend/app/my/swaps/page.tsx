@@ -52,6 +52,10 @@ interface SwapRow {
   disputeReason: string | null;
   give: Item | null;
   get: Item | null;
+  giveLegId: string | null;
+  giveIsFirearm: boolean;
+  giveDealerVerificationStatus: string | null;
+  getIsFirearm: boolean;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -195,8 +199,39 @@ function SwapCard({
       )}
       {swap.status === 'IN_TRANSIT' && (
         <Note tone="info">
-          Both couriers are booked — your parcels are on the way. We&apos;ll
-          confirm here once both are delivered.
+          {swap.giveIsFirearm || swap.getIsFirearm
+            ? 'In progress. Firearm legs transfer through a licensed dealer; courier legs are on the way.'
+            : 'Both couriers are booked — your parcels are on the way. We’ll confirm here once both are delivered.'}
+        </Note>
+      )}
+      {/* S6 — firearm the caller is SENDING: prompt the dealer drop + SAPS 534
+          upload (the same page normal firearm sellers use). */}
+      {['LOCKED', 'IN_TRANSIT'].includes(swap.status) &&
+        swap.giveIsFirearm &&
+        swap.giveLegId &&
+        swap.giveDealerVerificationStatus !== 'APPROVED' && (
+          <div className="mt-2">
+            <Note tone="warn">
+              Your <strong>{swap.give?.title}</strong> is a firearm — take it to a
+              licensed dealer to book it into stock, then upload the SAPS 534 +
+              stock-register photos so we can verify the transfer.
+            </Note>
+            <a
+              href={`/transactions/${swap.giveLegId}/dealer-verification`}
+              className="inline-block mt-2 py-2 px-3 rounded-[6px] text-sm font-medium"
+              style={{ background: 'var(--red)', color: '#fff' }}
+            >
+              {swap.giveDealerVerificationStatus
+                ? 'Continue dealer verification →'
+                : 'Upload dealer verification →'}
+            </a>
+          </div>
+        )}
+      {['LOCKED', 'IN_TRANSIT'].includes(swap.status) && swap.getIsFirearm && (
+        <Note tone="info">
+          The firearm you&apos;re receiving transfers via a licensed dealer.
+          We&apos;ll send you the dealer&apos;s collection details once the sender
+          has booked it into stock.
         </Note>
       )}
       {swap.status === 'AWAITING_VERIFICATION' && (

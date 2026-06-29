@@ -28,6 +28,7 @@ interface Offerable {
 interface MiniListing {
   id: string;
   title: string;
+  isFirearm?: boolean;
   images?: { url: string }[];
 }
 interface Proposal {
@@ -53,6 +54,43 @@ function rand(cents: number) {
   return `R${(cents / 100).toLocaleString('en-ZA')}`;
 }
 
+// S6 — 18+/competency affirmation, required whenever a party is about to
+// receive a firearm in a swap. The firearm transfers via a licensed dealer.
+function FirearmAttest({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div
+      className="text-xs p-2 rounded-[6px]"
+      style={{ background: 'var(--bg-card)', border: '0.5px solid #f59e0b', color: 'var(--text-secondary)', lineHeight: 1.5 }}
+    >
+      <p className="mb-1.5" style={{ color: '#f59e0b', fontWeight: 600 }}>
+        Firearm — dealer transfer
+      </p>
+      <p className="mb-2">
+        This firearm is transferred through a licensed dealer (SAPS 534). You
+        collect it from the dealer once it’s stocked in.
+      </p>
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          style={{ marginTop: 2 }}
+        />
+        <span>
+          I confirm I am over 18 and (where applicable) hold the relevant SAPS
+          competency / licence to acquire this firearm.
+        </span>
+      </label>
+    </div>
+  );
+}
+
 const card: React.CSSProperties = {
   background: 'var(--bg-inset)',
   border: '0.5px solid var(--border)',
@@ -72,10 +110,12 @@ export default function SwapPanel({
   listingId,
   sellerClerkId,
   isOwnListing,
+  isFirearm = false,
 }: {
   listingId: string;
   sellerClerkId: string;
   isOwnListing: boolean;
+  isFirearm?: boolean;
 }) {
   const { isLoaded, user } = useUser();
   const { getToken } = useAuth();
@@ -208,6 +248,7 @@ export default function SwapPanel({
       {data?.role === 'viewer' && data.proposals.length === 0 && (
         <ProposeForm
           listingId={listingId}
+          wantedIsFirearm={isFirearm}
           offerable={offerable}
           busy={busy}
           setBusy={setBusy}
@@ -273,6 +314,10 @@ function OwnerProposalCard({
   const [cash, setCash] = useState('');
   const [dir, setDir] = useState<SwapRole>('INITIATOR_GIVES');
   const [note, setNote] = useState('');
+  const [attested, setAttested] = useState(false);
+  // The owner RECEIVES the offered item — attest if it's a firearm.
+  const needsAttest = !!p.offeredListing.isFirearm;
+  const attestOk = !needsAttest || attested;
 
   return (
     <div style={{ ...card, padding: 12 }}>
@@ -291,14 +336,26 @@ function OwnerProposalCard({
         </p>
       )}
 
+      {p.status === 'PENDING' && needsAttest && !countering && (
+        <div className="mt-3">
+          <FirearmAttest checked={attested} onChange={setAttested} />
+        </div>
+      )}
+
       {p.status === 'PENDING' && !countering && (
         <div className="flex gap-2 mt-3">
           <button
             type="button"
-            disabled={busy}
-            onClick={() => act(`/swaps/proposals/${p.id}/accept`, undefined, 'Swap agreed!')}
+            disabled={busy || !attestOk}
+            onClick={() =>
+              act(
+                `/swaps/proposals/${p.id}/accept`,
+                needsAttest ? { firearmAttestation18Plus: attested } : undefined,
+                'Swap agreed!',
+              )
+            }
             className="flex-1 py-2 rounded-[6px] text-sm font-medium"
-            style={{ background: 'var(--red)', color: '#fff' }}
+            style={{ background: 'var(--red)', color: '#fff', opacity: attestOk ? 1 : 0.5 }}
           >
             Accept
           </button>
@@ -325,6 +382,9 @@ function OwnerProposalCard({
 
       {p.status === 'PENDING' && countering && (
         <div className="mt-3 flex flex-col gap-2">
+          {needsAttest && (
+            <FirearmAttest checked={attested} onChange={setAttested} />
+          )}
           <input
             type="number"
             min={0}
@@ -349,7 +409,7 @@ function OwnerProposalCard({
           <div className="flex gap-2">
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !attestOk}
               onClick={() =>
                 act(
                   `/swaps/proposals/${p.id}/counter`,
@@ -357,12 +417,13 @@ function OwnerProposalCard({
                     counterCashAmount: Math.round(parseFloat(cash || '0') * 100),
                     counterCashDirection: dir,
                     ownerNote: note || undefined,
+                    firearmAttestation18Plus: needsAttest ? attested : undefined,
                   },
                   'Counter sent.',
                 )
               }
               className="flex-1 py-2 rounded-[6px] text-sm font-medium"
-              style={{ background: 'var(--red)', color: '#fff' }}
+              style={{ background: 'var(--red)', color: '#fff', opacity: attestOk ? 1 : 0.5 }}
             >
               Send counter
             </button>
@@ -462,6 +523,7 @@ function ViewerProposalView({
 // ── Viewer: propose form ───────────────────────────────────────────────
 function ProposeForm({
   listingId,
+  wantedIsFirearm,
   offerable,
   busy,
   setBusy,
@@ -470,6 +532,7 @@ function ProposeForm({
   onDone,
 }: {
   listingId: string;
+  wantedIsFirearm: boolean;
   offerable: Offerable[] | null;
   busy: boolean;
   setBusy: (b: boolean) => void;
@@ -481,6 +544,7 @@ function ProposeForm({
   const [cash, setCash] = useState('');
   const [dir, setDir] = useState<SwapRole>('INITIATOR_GIVES');
   const [note, setNote] = useState('');
+  const [attested, setAttested] = useState(false);
 
   if (offerable === null) {
     return (
@@ -505,6 +569,10 @@ function ProposeForm({
       setError('Pick one of your items to offer.');
       return;
     }
+    if (wantedIsFirearm && !attested) {
+      setError('Please confirm the firearm declaration to continue.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -517,6 +585,7 @@ function ProposeForm({
           cashAmount: cashCents,
           cashDirection: cashCents > 0 ? dir : undefined,
           proposerNote: note || undefined,
+          firearmAttestation18Plus: wantedIsFirearm ? attested : undefined,
         }),
       });
       await onDone();
@@ -573,9 +642,13 @@ function ProposeForm({
         couriers and holds any cash until both parcels are delivered.
       </p>
 
+      {wantedIsFirearm && (
+        <FirearmAttest checked={attested} onChange={setAttested} />
+      )}
+
       <button
         type="submit"
-        disabled={busy}
+        disabled={busy || (wantedIsFirearm && !attested)}
         className="w-full py-3 rounded-[6px] text-sm font-medium mt-1"
         style={{ background: busy ? 'var(--bg-inset)' : 'var(--red)', color: busy ? 'var(--text-tertiary)' : '#fff' }}
       >

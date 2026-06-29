@@ -87,6 +87,14 @@ export class SwapFundingService {
       side === 'INITIATOR' ? SwapRole.OWNER_GIVES : SwapRole.INITIATOR_GIVES;
     const leg = swap.transactions.find((t) => t.swapRole === recipientRole);
     if (!leg) throw new NotFoundException('Swap leg missing');
+    // S6 — a firearm leg transfers via a licensed dealer (the SENDER stocks it
+    // in + uploads the SAPS 534; the recipient collects from that dealer), so
+    // there is no street-delivery address to capture.
+    if (leg.listing?.isFirearm) {
+      throw new BadRequestException(
+        'This is a firearm — it transfers via a licensed dealer, so no delivery address is needed. Just pay your share once funding is ready.',
+      );
+    }
 
     await this.prisma.transaction.update({
       where: { id: leg.id },
@@ -106,21 +114,45 @@ export class SwapFundingService {
       },
     });
 
-    // Both addresses in? Quote + set up funding.
-    const fresh = await this.prisma.swap.findUnique({
+    // All legs ready? (firearm legs need no address.) Quote + set up funding.
+    await this.maybeSetUpFunding(swapId);
+    return this.getFundingState(clerkId, swapId);
+  }
+
+  // Fire funding setup once EVERY leg is "address-ready": a courier leg needs
+  // its recipient's street address; a firearm leg needs nothing (dealer
+  // transfer). Called from each address submit AND from convertToSwap (so an
+  // all-firearm swap, which has no address step, still gets set up). No-ops
+  // until ready / if already set up — safe to call repeatedly.
+  async maybeSetUpFunding(swapId: string) {
+    if (PAYMENT_MODE !== 'manual') return;
+    const swap = await this.prisma.swap.findUnique({
       where: { id: swapId },
       select: {
-        transactions: { select: { swapRole: true, deliveryAddress: true } },
+        status: true,
+        fundingSetUpAt: true,
+        transactions: {
+          select: {
+            swapRole: true,
+            deliveryAddress: true,
+            listing: { select: { isFirearm: true } },
+          },
+        },
       },
     });
-    const bothIn =
-      !!fresh &&
-      fresh.transactions.length === 2 &&
-      fresh.transactions.every((t) => t.deliveryAddress != null);
-    if (bothIn) {
-      await this.ensureFundingSetUp(swapId);
+    if (
+      !swap ||
+      swap.status !== SwapStatus.AWAITING_FUNDING ||
+      swap.fundingSetUpAt
+    ) {
+      return;
     }
-    return this.getFundingState(clerkId, swapId);
+    const realLegs = swap.transactions.filter((t) => t.swapRole != null);
+    if (realLegs.length !== 2) return;
+    const allReady = realLegs.every((t) =>
+      t.listing?.isFirearm ? true : t.deliveryAddress != null,
+    );
+    if (allReady) await this.ensureFundingSetUp(swapId);
   }
 
   // ----------------------------------------------------------------
@@ -145,7 +177,13 @@ export class SwapFundingService {
         where: { id: swapId },
         include: {
           transactions: {
-            select: { id: true, swapRole: true, listingId: true, deliveryAddress: true },
+            select: {
+              id: true,
+              swapRole: true,
+              listingId: true,
+              deliveryAddress: true,
+              listing: { select: { isFirearm: true } },
+            },
           },
         },
       });
@@ -160,20 +198,29 @@ export class SwapFundingService {
       if (!initiatorGives || !ownerGives) {
         throw new BadRequestException('Swap legs incomplete');
       }
-      if (!initiatorGives.deliveryAddress || !ownerGives.deliveryAddress) {
+      const initiatorIsFirearm = !!initiatorGives.listing?.isFirearm;
+      const ownerIsFirearm = !!ownerGives.listing?.isFirearm;
+      // Courier legs need the recipient's street address; firearm legs go via a
+      // dealer (no address).
+      if (
+        (!initiatorIsFirearm && !initiatorGives.deliveryAddress) ||
+        (!ownerIsFirearm && !ownerGives.deliveryAddress)
+      ) {
         throw new BadRequestException('Both delivery addresses are required');
       }
 
-      // Each party funds the leg they SEND. The recipient's address (stored on
-      // that leg) is the quote destination.
-      const initiatorQuote = await this.quoteLeg(
-        initiatorGives.listingId,
-        initiatorGives.deliveryAddress,
-      );
-      const ownerQuote = await this.quoteLeg(
-        ownerGives.listingId,
-        ownerGives.deliveryAddress,
-      );
+      // Each party funds the leg they SEND. A courier leg is quoted to the
+      // recipient's address; a firearm leg has no carrier cost — its flat
+      // dealer-handling fee (R100) is applied via breakdownSwapLeg(isFirearm).
+      const initiatorQuote = initiatorIsFirearm
+        ? { priceCents: 0, serviceCode: null as string | null }
+        : await this.quoteLeg(
+            initiatorGives.listingId,
+            initiatorGives.deliveryAddress,
+          );
+      const ownerQuote = ownerIsFirearm
+        ? { priceCents: 0, serviceCode: null as string | null }
+        : await this.quoteLeg(ownerGives.listingId, ownerGives.deliveryAddress);
 
       const initiatorCash =
         swap.cashPayerId === swap.initiatorId ? swap.cashAmount : 0;
@@ -182,13 +229,13 @@ export class SwapFundingService {
       const initiatorBd = this.fees.breakdownSwapLeg(
         initiatorQuote.priceCents,
         initiatorCash,
-        false,
+        initiatorIsFirearm,
         'manual',
       );
       const ownerBd = this.fees.breakdownSwapLeg(
         ownerQuote.priceCents,
         ownerCash,
-        false,
+        ownerIsFirearm,
         'manual',
       );
 
@@ -208,7 +255,9 @@ export class SwapFundingService {
           data: {
             shippingCost: initiatorQuote.priceCents,
             shippingServiceCode: initiatorQuote.serviceCode,
-            shippingMethod: ShippingMethod.TCG,
+            shippingMethod: initiatorIsFirearm
+              ? ShippingMethod.DEALER_TRANSFER
+              : ShippingMethod.TCG,
           },
         }),
         this.prisma.transaction.update({
@@ -216,7 +265,9 @@ export class SwapFundingService {
           data: {
             shippingCost: ownerQuote.priceCents,
             shippingServiceCode: ownerQuote.serviceCode,
-            shippingMethod: ShippingMethod.TCG,
+            shippingMethod: ownerIsFirearm
+              ? ShippingMethod.DEALER_TRANSFER
+              : ShippingMethod.TCG,
           },
         }),
         this.prisma.swap.update({
@@ -435,11 +486,14 @@ export class SwapFundingService {
       include: {
         transactions: {
           select: {
+            id: true,
             swapRole: true,
+            dealerVerificationStatus: true,
             listing: {
               select: {
                 id: true,
                 title: true,
+                isFirearm: true,
                 images: { where: { isPrimary: true }, take: 1, select: { url: true } },
               },
             },
@@ -452,8 +506,10 @@ export class SwapFundingService {
       const mine = s.initiatorId === user.id;
       const myGiveRole = mine ? SwapRole.INITIATOR_GIVES : SwapRole.OWNER_GIVES;
       const myGetRole = mine ? SwapRole.OWNER_GIVES : SwapRole.INITIATOR_GIVES;
-      const give = s.transactions.find((t) => t.swapRole === myGiveRole)?.listing;
-      const get = s.transactions.find((t) => t.swapRole === myGetRole)?.listing;
+      const giveLeg = s.transactions.find((t) => t.swapRole === myGiveRole);
+      const getLeg = s.transactions.find((t) => t.swapRole === myGetRole);
+      const give = giveLeg?.listing;
+      const get = getLeg?.listing;
       return {
         swapId: s.id,
         status: s.status,
@@ -472,6 +528,14 @@ export class SwapFundingService {
         get: get
           ? { title: get.title, imageUrl: get.images[0]?.url ?? null }
           : null,
+        // S6 — firearm legs route through a dealer. For the leg the caller
+        // SENDS, surface the txId + dealer-verify status so /my/swaps can
+        // prompt them to stock it in + upload the SAPS 534. getIsFirearm tells
+        // the recipient their incoming item comes via a dealer.
+        giveLegId: giveLeg?.id ?? null,
+        giveIsFirearm: !!give?.isFirearm,
+        giveDealerVerificationStatus: giveLeg?.dealerVerificationStatus ?? null,
+        getIsFirearm: !!get?.isFirearm,
       };
     });
     return { bankDetails: GG_BANK_DETAILS, swaps: mapped };
@@ -648,9 +712,12 @@ export class SwapFundingService {
   }
 
   // ----------------------------------------------------------------
-  // Cron — a LOCKED+booked swap where one party never dropped their parcel
-  // (booked > SLA days ago, still not collected) → DISPUTED (admin-owned;
-  // cash stays held, NO auto-refund — mirrors the accept-timeout precedent).
+  // Cron — a LOCKED+booked swap where one party never moved their item
+  // (SLA days after lock) → DISPUTED (admin-owned; cash stays held, NO
+  // auto-refund — mirrors the accept-timeout precedent). Covers BOTH a courier
+  // leg never collected AND a firearm (DEALER_TRANSFER) leg the sender never
+  // stocked in at a dealer (deliveredAt still null — set only by the courier
+  // event or the dealer-verify APPROVED path).
   // ----------------------------------------------------------------
   async sweepStalledSwapShipping() {
     if (PAYMENT_MODE !== 'manual') return;
@@ -658,10 +725,22 @@ export class SwapFundingService {
     const stalled = await this.prisma.swap.findMany({
       where: {
         status: SwapStatus.IN_TRANSIT,
+        lockedAt: { not: null, lt: cutoff },
         transactions: {
           some: {
-            shipmentBookedAt: { not: null, lt: cutoff },
-            OR: [{ shippingStatus: null }, { shippingStatus: 'PENDING' }],
+            swapRole: { not: null },
+            OR: [
+              // courier leg booked but never collected
+              {
+                shipmentBookedAt: { not: null },
+                OR: [{ shippingStatus: null }, { shippingStatus: 'PENDING' }],
+              },
+              // firearm leg never dealer-verified (deliveredAt set on APPROVED)
+              {
+                shippingMethod: ShippingMethod.DEALER_TRANSFER,
+                deliveredAt: null,
+              },
+            ],
           },
         },
       },
@@ -1084,7 +1163,13 @@ export class SwapFundingService {
       where: { id: swapId },
       include: {
         transactions: {
-          select: { id: true, swapRole: true, listingId: true, deliveryAddress: true },
+          select: {
+            id: true,
+            swapRole: true,
+            listingId: true,
+            deliveryAddress: true,
+            listing: { select: { isFirearm: true } },
+          },
         },
       },
     });

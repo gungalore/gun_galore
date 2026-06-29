@@ -332,6 +332,7 @@ export default async function ListingDetailPage({
               listingId={listing.id}
               sellerClerkId={listing.seller.clerkId}
               isOwnListing={isOwnListing}
+              isFirearm={listing.isFirearm}
             />
           ) : listing.status !== 'ACTIVE' ? (
             <div

@@ -296,14 +296,24 @@ export class ActionTokensController {
 
   @Post(':token/accept-swap')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  acceptSwap(@Param('token') token: string, @Req() req: Request) {
+  acceptSwap(
+    @Param('token') token: string,
+    @Body() body: { firearmAttestation18Plus?: boolean },
+    @Req() req: Request,
+  ) {
     return this.tokens.runAction(
       token,
       'SWAP_PROPOSAL_DECISION',
       'swapProposal',
       async ({ targetId, authorisedUserId }) => {
         const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.swaps.acceptProposal(clerkId, targetId);
+        // The owner accepts via SMS — carries the firearm 18+ attestation when
+        // the offered item (which they receive) is a firearm.
+        return this.swaps.acceptProposal(
+          clerkId,
+          targetId,
+          body?.firearmAttestation18Plus,
+        );
       },
       reqIp(req),
       reqUa(req),
@@ -330,7 +340,13 @@ export class ActionTokensController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   counterSwap(
     @Param('token') token: string,
-    @Body() body: { cashAmount?: number; cashDirection?: string; note?: string },
+    @Body()
+    body: {
+      cashAmount?: number;
+      cashDirection?: string;
+      note?: string;
+      firearmAttestation18Plus?: boolean;
+    },
     @Req() req: Request,
   ) {
     const cash = Number(body?.cashAmount);
@@ -351,6 +367,7 @@ export class ActionTokensController {
           counterCashAmount: Math.round(cash),
           counterCashDirection: dir,
           ownerNote: body?.note?.toString().slice(0, 1000),
+          firearmAttestation18Plus: body?.firearmAttestation18Plus,
         });
       },
       reqIp(req),
@@ -504,6 +521,7 @@ export class ActionTokensController {
           select: {
             id: true,
             title: true,
+            isFirearm: true,
             images: { where: { isPrimary: true }, take: 1, select: { url: true } },
           },
         },
@@ -526,10 +544,12 @@ export class ActionTokensController {
         reference: proposal.listing.referenceNumber,
         primaryImageUrl: proposal.listing.images[0]?.url ?? null,
       },
-      // The listing the proposer OFFERS (their item).
+      // The listing the proposer OFFERS (their item). The OWNER receives it —
+      // isFirearm drives the SMS-page 18+ attestation requirement (S6).
       offered: {
         id: proposal.offeredListing.id,
         title: proposal.offeredListing.title,
+        isFirearm: proposal.offeredListing.isFirearm,
         primaryImageUrl: proposal.offeredListing.images[0]?.url ?? null,
       },
       proposal: {

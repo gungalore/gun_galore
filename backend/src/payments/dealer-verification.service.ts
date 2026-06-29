@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
+import { ShippingService } from '../shipping/shipping.service';
 
 /**
  * Dealer stock-in verification — when a firearm DEALER_TRANSFER
@@ -105,6 +106,9 @@ export class DealerVerificationService {
     // flagged via ZOHO_BOOKS_ENABLED — when off, the service is
     // injected but every method no-ops.
     private readonly zohoBooks: ZohoBooksService,
+    // S6 — a swap firearm leg drives its "delivery" (dealer stock-in) through
+    // the normal shipping-update path so the swap both-delivered rollup fires.
+    private readonly shipping: ShippingService,
   ) {
     const key = process.env.ANTHROPIC_API_KEY;
     this.client = key ? new Anthropic({ apiKey: key }) : null;
@@ -148,6 +152,7 @@ export class DealerVerificationService {
       include: {
         seller: { select: { clerkId: true } },
         listing: { select: { make: true, model: true, calibre: true, isFirearm: true } },
+        swap: { select: { status: true } },
       },
     });
     if (!tx) throw new BadRequestException('Transaction not found');
@@ -160,6 +165,20 @@ export class DealerVerificationService {
     if (tx.shippingMethod !== 'DEALER_TRANSFER') {
       throw new BadRequestException(
         'Dealer verification applies only to DEALER_TRANSFER shipping. Private arrangement uses a different flow.',
+      );
+    }
+    // SWOP S6 — a swap firearm leg may only be stocked-in once the swap has
+    // LOCKED (both parties funded). The dealer-verify APPROVED path sets the
+    // leg's deliveredAt, which drives the swap rollup; allowing it during
+    // AWAITING_FUNDING would let a swap progress before it's paid. (A normal
+    // sale's tx only exists post-capture, so it gets this for free.)
+    if (
+      tx.swapId &&
+      tx.swap?.status !== 'LOCKED' &&
+      tx.swap?.status !== 'IN_TRANSIT'
+    ) {
+      throw new BadRequestException(
+        'You can only book this firearm into a dealer once the swap is locked — both parties must have paid first.',
       );
     }
     // We no longer require a pre-selected Dealer record on the
@@ -373,6 +392,39 @@ export class DealerVerificationService {
       if (tx.paymentStatus !== 'HELD') {
         this.logger.log(
           `releaseAndNotifyOnApproval: tx ${transactionId} already in paymentStatus=${tx.paymentStatus}, skipping`,
+        );
+        return;
+      }
+
+      // S6 — a swap firearm leg carries ZERO money (settlement happens on the
+      // Swap parent in S5), so there is NO per-leg payout or totalSales bump.
+      // The dealer stock-in IS this leg's delivery: route it through the normal
+      // shipping path so the swap both-delivered rollup (→ AWAITING_VERIFICATION
+      // → cash release) fires uniformly for firearm + courier legs alike, and
+      // tell the recipient where to collect. Guard on deliveredAt so a second
+      // call (auto + admin override) is a no-op.
+      if (tx.swapId) {
+        if (tx.deliveredAt) return;
+        void this.shipping.applyShippingUpdate(transactionId, 'DELIVERED');
+        const buyerNameSwap =
+          [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') ||
+          'there';
+        const sellerNameSwap =
+          [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
+          'the sender';
+        await this.notifications.firearmStockedAtDealerBuyer({
+          buyerEmail: tx.buyer.email,
+          buyerName: buyerNameSwap,
+          buyerPhone: tx.buyer.phone,
+          listingTitle: tx.listing.title,
+          transactionId,
+          dealerName: tx.stockedAtDealerName ?? 'the dealer',
+          dealerAddress: tx.stockedAtDealerAddress ?? '',
+          dealerPhone: tx.stockedAtDealerPhone ?? '',
+          sellerName: sellerNameSwap,
+        });
+        this.logger.log(
+          `Dealer verification APPROVED for swap leg ${transactionId} — drove swap rollup (no per-leg payout)`,
         );
         return;
       }

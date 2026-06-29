@@ -2,6 +2,7 @@ import {
   IsString,
   IsInt,
   IsOptional,
+  IsBoolean,
   IsEnum,
   Min,
   MaxLength,
@@ -37,4 +38,10 @@ export class CreateSwapProposalDto {
   @IsString()
   @MaxLength(1000)
   proposerNote?: string;
+
+  // S6 — required true when the WANTED item is a firearm (the proposer will
+  // receive it). 18+/competency affirmation; server re-checks isFirearm.
+  @IsOptional()
+  @IsBoolean()
+  firearmAttestation18Plus?: boolean;
 }

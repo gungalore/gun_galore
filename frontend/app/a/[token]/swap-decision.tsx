@@ -32,6 +32,7 @@ export interface SwapDecisionPayload {
   offered: {
     id: string;
     title: string;
+    isFirearm?: boolean;
     primaryImageUrl: string | null;
   };
   proposal: {
@@ -73,6 +74,11 @@ export function SwapDecisionPage({
   const [view, setView] = useState<ViewState>({ kind: 'choice' });
   const [cash, setCash] = useState('');
   const [dir, setDir] = useState<SwapRole>('INITIATOR_GIVES');
+  const [attested, setAttested] = useState(false);
+  // S6 — the owner RECEIVES the offered item; if it's a firearm they must
+  // affirm 18+/competency before accept/counter (server re-checks).
+  const needsAttest = isOwner && !!payload.offered.isFirearm;
+  const attestOk = !needsAttest || attested;
 
   // Current cash on the table (original for the owner; counter for the proposer).
   const cashOnTable = isOwner
@@ -167,13 +173,23 @@ export function SwapDecisionPage({
         )}
       </Card>
 
+      {/* S6 — firearm 18+/competency attestation (owner receiving a firearm) */}
+      {needsAttest && view.kind !== 'countering' && (
+        <FirearmAttestCard checked={attested} onChange={setAttested} />
+      )}
+
       {/* Actions */}
       {view.kind !== 'countering' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <SwapButton
             variant="primary"
-            disabled={submitting}
-            onClick={() => callAction(isOwner ? 'accept-swap' : 'accept-swap-counter')}
+            disabled={submitting || !attestOk}
+            onClick={() =>
+              callAction(
+                isOwner ? 'accept-swap' : 'accept-swap-counter',
+                needsAttest ? { firearmAttestation18Plus: true } : undefined,
+              )
+            }
           >
             {submitting ? 'Working…' : 'Accept swap'}
           </SwapButton>
@@ -211,14 +227,20 @@ export function SwapDecisionPage({
             <option value="INITIATOR_GIVES">They pay me the cash</option>
             <option value="OWNER_GIVES">I pay them the cash</option>
           </select>
+          {needsAttest && (
+            <div style={{ marginTop: 12 }}>
+              <FirearmAttestCard checked={attested} onChange={setAttested} />
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <SwapButton
               variant="primary"
-              disabled={submitting}
+              disabled={submitting || !attestOk}
               onClick={() =>
                 callAction('counter-swap', {
                   cashAmount: Math.round(parseFloat(cash || '0') * 100),
                   cashDirection: dir,
+                  firearmAttestation18Plus: needsAttest ? true : undefined,
                 })
               }
             >
@@ -314,6 +336,45 @@ function SwapButton({
     >
       {children}
     </button>
+  );
+}
+
+function FirearmAttestCard({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div
+      style={{
+        background: 'var(--bg-card)',
+        border: '0.5px solid #f59e0b',
+        borderRadius: 12,
+        padding: 16,
+      }}
+    >
+      <p style={{ fontSize: 13, fontWeight: 600, color: '#f59e0b', marginBottom: 6 }}>
+        Firearm — dealer transfer
+      </p>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 10 }}>
+        This firearm transfers through a licensed dealer (SAPS 534). You collect
+        it from the dealer once it&apos;s stocked in.
+      </p>
+      <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }}
+        />
+        <span style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.45 }}>
+          I confirm I am over 18 and (where applicable) hold the relevant SAPS
+          competency / licence to acquire this firearm.
+        </span>
+      </label>
+    </div>
   );
 }
 

@@ -1,9 +1,14 @@
+// SwapProposalsService now imports SwapFundingService, which transitively
+// imports transactions.service → ESM-only meilisearch. Stub it (mirrors the
+// swap-funding spec).
+jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
+
 import { BadRequestException } from '@nestjs/common';
 import { SwapProposalsService } from './swap-proposals.service';
 import { SwapProposalStatus, SwapRole, ListingStatus, ListingType } from '@prisma/client';
 
 // Build a SwapProposalsService with the minimal mocks each path touches.
-// Ctor: (prisma, notifications, contactFilter, actionTokens, kyc).
+// Ctor: (prisma, notifications, contactFilter, actionTokens, kyc, swapFunding).
 function makeService(over: {
   reserveCount?: number;
   claimCount?: number;
@@ -77,6 +82,7 @@ function makeService(over: {
   const contactFilter = { check: jest.fn().mockResolvedValue({ allowed: true }) };
   const actionTokens = { mint: jest.fn().mockResolvedValue('tok') };
   const kyc = { triggerSellerVerification: jest.fn().mockResolvedValue(undefined) };
+  const swapFunding = { maybeSetUpFunding: jest.fn().mockResolvedValue(undefined) };
 
   const service = new SwapProposalsService(
     prisma as never,
@@ -84,6 +90,7 @@ function makeService(over: {
     contactFilter as never,
     actionTokens as never,
     kyc as never,
+    swapFunding as never,
   );
   return { service, prisma, notifications, kyc, txMock };
 }
@@ -93,6 +100,7 @@ const activeSwop = (over: Record<string, unknown> = {}) => ({
   status: ListingStatus.ACTIVE,
   listingType: ListingType.SWOP,
   isFirearm: false,
+  shippingMethods: [],
   sellerId: 'O',
   seller: { id: 'O' },
   ...over,
@@ -107,18 +115,43 @@ describe('SwapProposalsService.propose — guards', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('blocks firearm swaps (gated until a later phase)', async () => {
+  it('S6: rejects a firearm swap whose firearm side lacks DEALER_TRANSFER', async () => {
     const { service, prisma } = makeService();
     prisma.user.findUnique.mockResolvedValue({ id: 'P', isBanned: false });
     prisma.listing.findUnique
-      .mockResolvedValueOnce(activeSwop({ id: 'L_OWNER', isFirearm: true })) // wanted
-      .mockResolvedValueOnce(activeSwop({ id: 'L_PROP', sellerId: 'P' })); // offered
+      // wanted firearm WITHOUT dealer-transfer in shippingMethods
+      .mockResolvedValueOnce(
+        activeSwop({ id: 'L_OWNER', isFirearm: true, shippingMethods: [] }),
+      )
+      .mockResolvedValueOnce(activeSwop({ id: 'L_PROP', sellerId: 'P' }));
+    await expect(
+      service.propose('clerkP', {
+        listingId: 'L_OWNER',
+        offeredListingId: 'L_PROP',
+        firearmAttestation18Plus: true,
+      } as never),
+    ).rejects.toThrow(/licensed-dealer/i);
+  });
+
+  it('S6: rejects a firearm swap without the 18+ attestation', async () => {
+    const { service, prisma } = makeService();
+    prisma.user.findUnique.mockResolvedValue({ id: 'P', isBanned: false });
+    prisma.listing.findUnique
+      // wanted firearm WITH dealer-transfer, but no attestation supplied
+      .mockResolvedValueOnce(
+        activeSwop({
+          id: 'L_OWNER',
+          isFirearm: true,
+          shippingMethods: ['DEALER_TRANSFER'],
+        }),
+      )
+      .mockResolvedValueOnce(activeSwop({ id: 'L_PROP', sellerId: 'P' }));
     await expect(
       service.propose('clerkP', {
         listingId: 'L_OWNER',
         offeredListingId: 'L_PROP',
       } as never),
-    ).rejects.toThrow(/firearm/i);
+    ).rejects.toThrow(/18|competency/i);
   });
 
   it('rejects offering a listing you do not own', async () => {

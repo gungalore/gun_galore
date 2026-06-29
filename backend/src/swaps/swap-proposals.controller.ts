@@ -60,10 +60,15 @@ export class SwapProposalsController {
     return this.swaps.getById(clerkId, id);
   }
 
-  // Owner accepts the original proposal.
+  // Owner accepts the original proposal. (Body carries the 18+ attestation
+  // when the offered item — which the owner receives — is a firearm.)
   @Post(':id/accept')
-  accept(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.swaps.acceptProposal(clerkId, id);
+  accept(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body() body: { firearmAttestation18Plus?: boolean },
+  ) {
+    return this.swaps.acceptProposal(clerkId, id, body?.firearmAttestation18Plus);
   }
 
   // Owner rejects the original proposal.

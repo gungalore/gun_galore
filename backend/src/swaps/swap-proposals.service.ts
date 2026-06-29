@@ -18,6 +18,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { KycService } from '../kyc/kyc.service';
+import { SwapFundingService } from './swap-funding.service';
 import { CreateSwapProposalDto } from './dto/create-swap-proposal.dto';
 import { CounterSwapDto } from './dto/counter-swap.dto';
 
@@ -44,6 +45,7 @@ export class SwapProposalsService {
     private readonly contactFilter: ContactDetailFilterService,
     private readonly actionTokens: ActionTokensService,
     private readonly kyc: KycService,
+    private readonly swapFunding: SwapFundingService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -91,12 +93,31 @@ export class SwapProposalsService {
     if (offered.sellerId !== proposer.id) {
       throw new BadRequestException('You can only offer a listing you own');
     }
-    // S6 gate — firearm swap legs route through licensed-dealer transfer +
-    // per-leg dealer verification, which lands in a later phase. Until then,
-    // neither side of a swap may be a firearm.
-    if (wanted.isFirearm || offered.isFirearm) {
+    // S6 — firearm swap legs are allowed, but ONLY via a licensed-dealer
+    // transfer (no private-arrange in v1). Every firearm side must offer
+    // DEALER_TRANSFER (create-time already forces this, but re-assert here).
+    if (wanted.isFirearm && !wanted.shippingMethods.includes('DEALER_TRANSFER')) {
       throw new BadRequestException(
-        'Firearm swaps are not open yet — both items must be non-firearm for now.',
+        'That firearm can only be swapped via a licensed-dealer transfer.',
+      );
+    }
+    if (offered.isFirearm && !offered.shippingMethods.includes('DEALER_TRANSFER')) {
+      throw new BadRequestException(
+        'Your firearm can only be swapped via a licensed-dealer transfer.',
+      );
+    }
+    // The PROPOSER will RECEIVE the wanted item. If it's a firearm they must
+    // affirm 18+/competency now (mirrors the firearm-checkout gate). The OWNER
+    // affirms for the offered firearm when they accept/counter. Gate + log
+    // (durable evidence) — matches the existing firearm-attestation pattern.
+    if (wanted.isFirearm && dto.firearmAttestation18Plus !== true) {
+      throw new BadRequestException(
+        'You must confirm you are over 18 and (where applicable) hold the relevant SAPS competency to swap for a firearm.',
+      );
+    }
+    if (wanted.isFirearm) {
+      this.logger.log(
+        `FIREARM_ATTESTATION swap-propose accepted=true proposer=${proposer.id} wanted=${wanted.id}`,
       );
     }
 
@@ -179,6 +200,10 @@ export class SwapProposalsService {
     if (proposal.counterCashAmount !== null) {
       throw new BadRequestException('You can only counter once per proposal');
     }
+    // The owner commits to RECEIVING the offered item by countering — attest if
+    // it's a firearm (they'll still have to accept-counter, but they're the
+    // recipient and this is their commit point).
+    await this.requireOwnerFirearmAttestation(proposal, dto.firearmAttestation18Plus);
     if (dto.ownerNote) {
       const check = await this.contactFilter.check(
         dto.ownerNote,
@@ -207,11 +232,17 @@ export class SwapProposalsService {
   // ----------------------------------------------------------------
   // Owner accepts the ORIGINAL proposal → create the Swap
   // ----------------------------------------------------------------
-  async acceptProposal(ownerClerkId: string, proposalId: string) {
+  async acceptProposal(
+    ownerClerkId: string,
+    proposalId: string,
+    firearmAttestation18Plus?: boolean,
+  ) {
     const { proposal } = await this.loadForOwner(ownerClerkId, proposalId);
     if (proposal.status !== SwapProposalStatus.PENDING) {
       throw new BadRequestException('Proposal is not pending');
     }
+    // The owner RECEIVES the offered item on accept — attest if it's a firearm.
+    await this.requireOwnerFirearmAttestation(proposal, firearmAttestation18Plus);
     return this.convertToSwap(proposalId, SwapProposalStatus.PENDING, false);
   }
 
@@ -415,6 +446,11 @@ export class SwapProposalsService {
     // notify both that the swap is agreed.
     void this.afterSwapCreated(swapId, proposalId);
     void this.notifications.resolveByEntity('swapProposal', proposalId);
+    // S6: an all-firearm swap has no street-address step to kick funding setup,
+    // so nudge it here. maybeSetUpFunding only proceeds once every leg is
+    // address-ready (firearm legs need no address), so it no-ops for courier
+    // legs until the recipient submits their address.
+    void this.swapFunding.maybeSetUpFunding(swapId);
 
     return this.prisma.swap.findUnique({ where: { id: swapId } });
   }
@@ -542,8 +578,11 @@ export class SwapProposalsService {
     return { role: 'anon' as const, proposals: [] };
   }
 
-  // Listings the signed-in user can OFFER in a swap — their own ACTIVE,
-  // non-firearm SWOP listings (excludes the listing they're proposing on).
+  // Listings the signed-in user can OFFER in a swap — their own ACTIVE SWOP
+  // listings (excludes the listing they're proposing on). S6: firearm SWOP
+  // listings are now offerable (they're create-forced to include
+  // DEALER_TRANSFER; the propose gate re-asserts it). isFirearm is surfaced so
+  // the UI can flag the dealer-transfer + attestation requirement.
   async getMyOfferableListings(clerkId: string, excludeListingId?: string) {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) return [];
@@ -552,12 +591,12 @@ export class SwapProposalsService {
         sellerId: user.id,
         status: ListingStatus.ACTIVE,
         listingType: ListingType.SWOP,
-        isFirearm: false,
         ...(excludeListingId ? { id: { not: excludeListingId } } : {}),
       },
       select: {
         id: true,
         title: true,
+        isFirearm: true,
         images: { where: { isPrimary: true }, take: 1, select: { url: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -658,6 +697,29 @@ export class SwapProposalsService {
       throw new ForbiddenException('Access denied');
     }
     return { proposal };
+  }
+
+  // S6 — the owner RECEIVES the offered item; if it's a firearm they must
+  // affirm 18+/competency at their commit point (counter/accept). Gate + log,
+  // matching the firearm-checkout attestation pattern.
+  private async requireOwnerFirearmAttestation(
+    proposal: { offeredListingId: string; ownerId: string },
+    attestation: boolean | undefined,
+  ) {
+    const offered = await this.prisma.listing.findUnique({
+      where: { id: proposal.offeredListingId },
+      select: { isFirearm: true },
+    });
+    if (offered?.isFirearm && attestation !== true) {
+      throw new BadRequestException(
+        'You must confirm you are over 18 and (where applicable) hold the relevant SAPS competency to swap for a firearm.',
+      );
+    }
+    if (offered?.isFirearm) {
+      this.logger.log(
+        `FIREARM_ATTESTATION swap-accept accepted=true owner=${proposal.ownerId} offered=${proposal.offeredListingId}`,
+      );
+    }
   }
 
   // ----------------------------------------------------------------

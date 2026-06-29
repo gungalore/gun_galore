@@ -1,4 +1,12 @@
-import { IsString, IsInt, IsOptional, IsEnum, Min, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsInt,
+  IsOptional,
+  IsBoolean,
+  IsEnum,
+  Min,
+  MaxLength,
+} from 'class-validator';
 import { SwapRole } from '@prisma/client';
 
 export class CounterSwapDto {
@@ -17,4 +25,10 @@ export class CounterSwapDto {
   @IsString()
   @MaxLength(1000)
   ownerNote?: string;
+
+  // S6 — required true when the OFFERED item is a firearm (the owner will
+  // receive it). 18+/competency affirmation; server re-checks isFirearm.
+  @IsOptional()
+  @IsBoolean()
+  firearmAttestation18Plus?: boolean;
 }

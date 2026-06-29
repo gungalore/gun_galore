@@ -1915,6 +1915,15 @@ export class TransactionsService {
       include: { buyer: true, listing: { select: { isFirearm: true } } },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
+    // SWOP — a swap leg is a zero-money fulfilment record; it settles via the
+    // Swap parent's rollup (shipping → both-delivered → releaseSwap), NOT the
+    // per-leg confirm-delivery path (which would set RELEASED out-of-band,
+    // double-count totalSales, and fire a phantom payout notice).
+    if (tx.swapId) {
+      throw new BadRequestException(
+        'This is a swap — it is completed through the swap, not per-item confirm-delivery.',
+      );
+    }
     if (tx.buyer.clerkId !== buyerClerkId) throw new ForbiddenException('Only the buyer can confirm delivery');
     if (tx.paymentStatus !== 'HELD') throw new BadRequestException('Payment is not in HELD state');
     if (tx.confirmedDeliveryAt) throw new BadRequestException('Delivery already confirmed');
@@ -2012,6 +2021,13 @@ export class TransactionsService {
       include: { buyer: true, seller: true, listing: { select: { title: true } } },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
+    // SWOP — a swap leg is disputed at the Swap level (raiseSwapDispute, which
+    // atomically holds the whole swap + stops auto-release), not per-leg here.
+    if (tx.swapId) {
+      throw new BadRequestException(
+        'This is a swap — raise any issue from the swap, not the individual item.',
+      );
+    }
     if (tx.buyer.clerkId !== buyerClerkId) {
       throw new ForbiddenException('Only the buyer can raise a dispute');
     }
