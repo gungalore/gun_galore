@@ -5,9 +5,14 @@ import {
   Param,
   Body,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { SwapFundingService } from './swap-funding.service';
+import { SwapProofService } from './swap-proof.service';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SwapDeliveryDto } from './dto/swap-delivery.dto';
@@ -15,7 +20,10 @@ import { SwapDeliveryDto } from './dto/swap-delivery.dto';
 @Controller('swaps')
 @UseGuards(ClerkGuard)
 export class SwapFundingController {
-  constructor(private readonly funding: SwapFundingService) {}
+  constructor(
+    private readonly funding: SwapFundingService,
+    private readonly proof: SwapProofService,
+  ) {}
 
   // The caller's in-flight swaps (drives /my/swaps).
   @Get('mine')
@@ -60,5 +68,24 @@ export class SwapFundingController {
     @Body() body: { reason?: string },
   ) {
     return this.funding.raiseSwapDispute(clerkId, id, body?.reason ?? '');
+  }
+
+  // Proof-of-possession: the SENDER of a leg uploads one photo of the item next
+  // to the code slip. Claude vision verifies it; funding can't proceed until
+  // both legs are APPROVED. legId = the Transaction id of the leg they send.
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  @Post('legs/:legId/proof')
+  @UseInterceptors(
+    FileInterceptor('photo', { limits: { fileSize: 12 * 1024 * 1024 } }),
+  )
+  uploadProof(
+    @CurrentUser() clerkId: string,
+    @Param('legId') legId: string,
+    @UploadedFile() photo?: Express.Multer.File,
+  ) {
+    if (!photo) throw new BadRequestException('A photo is required');
+    const ok = /^image\/(jpeg|png|webp|heic|heif)$/.test(photo.mimetype);
+    if (!ok) throw new BadRequestException('Upload a JPEG, PNG, WebP or HEIC photo');
+    return this.proof.uploadAndScore(legId, clerkId, photo);
   }
 }

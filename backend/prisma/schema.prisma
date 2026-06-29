@@ -948,6 +948,19 @@ model Transaction {
   swap     Swap?     @relation("SwapLegs", fields: [swapId], references: [id])
   swapRole SwapRole?
 
+  // SWOP proof-of-possession (anti-phantom-item). On a swap leg the SENDER
+  // photographs the item they're shipping next to a slip bearing this
+  // GG-generated per-leg code; Claude vision confirms the code is legible +
+  // matches AND the item matches the listing. Funding can't be set up (so no
+  // EFT / no shipping) until BOTH legs are APPROVED. Code minted at swap
+  // creation so it can't be pre-staged; not unique (scoped to the leg).
+  swapProofCode       String?
+  swapProofPhotoUrl   String?
+  swapProofStatus     String? // null | PENDING_REVIEW | APPROVED | REJECTED
+  swapProofScore      Float?
+  swapProofFindings   Json?
+  swapProofVerifiedAt DateTime?
+
   // Firearm dealer transfer
   dealerId String?
   dealer   Dealer? @relation(fields: [dealerId], references: [id])

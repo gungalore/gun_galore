@@ -56,6 +56,8 @@ interface SwapRow {
   giveIsFirearm: boolean;
   giveDealerVerificationStatus: string | null;
   getIsFirearm: boolean;
+  giveProofCode: string | null;
+  giveProofStatus: string | null;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -188,7 +190,10 @@ function SwapCard({
         for <strong style={{ color: 'var(--text-primary)' }}>{swap.get?.title ?? '—'}</strong>.
       </p>
 
-      {swap.status === 'AWAITING_FUNDING' && (
+      {swap.status === 'AWAITING_FUNDING' && swap.giveProofStatus !== 'APPROVED' && (
+        <ProofSection swap={swap} onChange={onChange} />
+      )}
+      {swap.status === 'AWAITING_FUNDING' && swap.giveProofStatus === 'APPROVED' && (
         <FundingSection swap={swap} bank={bank} authedFetch={authedFetch} onChange={onChange} />
       )}
       {swap.status === 'LOCKED' && (
@@ -472,6 +477,86 @@ function EftBlock({ swap, bank }: { swap: SwapRow; bank: BankDetails | null }) {
         automatically and SMS you once it clears. Both sides must pay to lock the
         swap — if the other side doesn&apos;t, you&apos;re refunded in full. Your
         funds are held until both parcels are delivered.
+      </p>
+    </div>
+  );
+}
+
+// Proof-of-possession: show the per-leg code + let the sender upload a photo of
+// their item next to it. Gates funding — both sides must verify before paying.
+function ProofSection({
+  swap,
+  onChange,
+}: {
+  swap: SwapRow;
+  onChange: () => Promise<void>;
+}) {
+  const { getToken } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const status = swap.giveProofStatus;
+
+  async function upload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !swap.giveLegId) return;
+    setBusy(true);
+    setErr('');
+    try {
+      const token = await getToken();
+      const fd = new FormData();
+      fd.append('photo', file);
+      const res = await fetch(`${API_URL}/swaps/legs/${swap.giveLegId}/proof`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }, // no Content-Type — browser sets the multipart boundary
+        body: fd,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message ?? `Error ${res.status}`);
+      await onChange();
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Upload failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Note tone="warn">
+        Before you pay, verify your item. Write this code on a piece of paper and
+        photograph it next to your <strong>{swap.give?.title ?? 'item'}</strong>:
+      </Note>
+      <div
+        className="text-center py-2.5 rounded-[8px]"
+        style={{ background: 'var(--bg-inset)', border: '0.5px dashed var(--red)' }}
+      >
+        <span style={{ fontFamily: 'monospace', fontSize: 22, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--red)' }}>
+          {swap.giveProofCode ?? '—'}
+        </span>
+      </div>
+      {status === 'PENDING_REVIEW' && (
+        <Note tone="info">
+          Photo received — we&apos;re checking it. If it needs a human it&apos;ll
+          be reviewed shortly.
+        </Note>
+      )}
+      {status === 'REJECTED' && (
+        <Note tone="warn">
+          We couldn&apos;t verify that photo. Make sure the whole item and the
+          handwritten code are sharp and in frame, then try again.
+        </Note>
+      )}
+      <label
+        className="w-full py-2.5 rounded-[6px] text-sm font-medium text-center cursor-pointer"
+        style={{ background: busy ? 'var(--bg-inset)' : 'var(--red)', color: busy ? 'var(--text-tertiary)' : '#fff' }}
+      >
+        {busy ? 'Uploading…' : status === 'REJECTED' ? 'Upload a new photo' : 'Upload item photo'}
+        <input type="file" accept="image/*" capture="environment" hidden onChange={upload} disabled={busy} />
+      </label>
+      {err && <p className="text-xs" style={{ color: 'var(--red)' }}>{err}</p>}
+      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+        This proves your item is real and in your hands before anyone ships —
+        both sides must verify before the swap can be funded.
       </p>
     </div>
   );

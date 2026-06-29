@@ -24,6 +24,18 @@ import { CounterSwapDto } from './dto/counter-swap.dto';
 
 const PROPOSAL_TTL_HOURS = 48;
 const COUNTER_TTL_HOURS = 24;
+
+// Proof-of-possession code — 6 unambiguous chars (no 0/O/1/I/L) so it's easy to
+// handwrite + for Claude vision to read back. Scoped per leg (not global), so a
+// random code is fine. Prefixed "GG-" so the slip reads e.g. "GG-7K2P9X".
+function genProofCode(): string {
+  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 6; i++) {
+    s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return `GG-${s}`;
+}
 // Lazy getter — see OffersService for why this must NOT be a module-level
 // constant (ESM hoist vs dotenv ordering).
 const APP_URL = () => process.env.FRONTEND_URL ?? 'http://localhost:3000';
@@ -386,6 +398,9 @@ export class SwapProposalsService {
       // 5. Two zero-money Transaction legs (one per shipping direction).
       //    INITIATOR_GIVES = proposer's offered item → owner.
       //    OWNER_GIVES     = owner's listed item → proposer.
+      //    Each leg gets a proof-of-possession code (minted now so it can't be
+      //    pre-staged); the SENDER photographs their item next to it before the
+      //    swap can be funded.
       await tx.transaction.createMany({
         data: [
           {
@@ -400,6 +415,7 @@ export class SwapProposalsService {
             passFeeToBuyer: false,
             buyerTotal: 0,
             sellerPayout: 0,
+            swapProofCode: genProofCode(),
           },
           {
             swapId: swap.id,
@@ -413,6 +429,7 @@ export class SwapProposalsService {
             passFeeToBuyer: false,
             buyerTotal: 0,
             sellerPayout: 0,
+            swapProofCode: genProofCode(),
           },
         ],
       });

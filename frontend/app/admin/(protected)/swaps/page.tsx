@@ -37,6 +37,10 @@ interface Leg {
   deliveredAt: string | null;
   shippingCost: number;
   orderReference: string | null;
+  swapProofStatus: string | null;
+  swapProofPhotoUrl: string | null;
+  swapProofScore: number | null;
+  swapProofCode: string | null;
   listing: { id: string; title: string } | null;
 }
 interface SwapDetail extends SwapRow {
@@ -172,6 +176,32 @@ function SwapAdminCard({ row, onChange }: { row: SwapRow; onChange: () => void }
     }
   }
 
+  async function proofAct(legId: string, decision: 'APPROVE' | 'REJECT') {
+    setErr('');
+    const reason =
+      window.prompt(`Reason for ${decision === 'APPROVE' ? 'approving' : 'rejecting'} this item's proof:`) ?? '';
+    if (reason.trim().length < 5) return;
+    setBusy(`proof-${legId}`);
+    try {
+      const res = await adminFetch(`/admin/swaps/legs/${legId}/proof-override`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision, reason }),
+      });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        throw new Error(b.message ?? `Error ${res.status}`);
+      }
+      // Re-fetch the dossier so the leg's new proof status shows.
+      const fresh = await adminFetch(`/admin/swaps/${row.id}`);
+      if (fresh.ok) setDetail(await fresh.json());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Action failed');
+    } finally {
+      setBusy('');
+    }
+  }
+
   return (
     <div
       className="rounded-[8px] p-3"
@@ -207,15 +237,43 @@ function SwapAdminCard({ row, onChange }: { row: SwapRow; onChange: () => void }
       {open && detail && (
         <div className="mt-3 flex flex-col gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
           {detail.transactions.map((l) => (
-            <div key={l.id} className="flex flex-wrap gap-2"
+            <div key={l.id} className="flex flex-col gap-1"
               style={{ borderTop: '0.5px solid var(--border)', paddingTop: 6 }}>
-              <span style={{ color: 'var(--text-primary)' }}>
-                {l.swapRole === 'INITIATOR_GIVES' ? `${detail.initiator.username} →` : l.swapRole === 'OWNER_GIVES' ? `${detail.owner.username} →` : '⊕'} {l.listing?.title ?? '—'}
-              </span>
-              <span>ship: {l.shippingStatus ?? 'PENDING'}</span>
-              {l.trackingReference && <span>track: {l.trackingReference}</span>}
-              <span>delivered: {l.deliveredAt ? '✓' : '—'}</span>
-              {l.orderReference && <span style={{ color: 'var(--text-tertiary)' }}>{l.orderReference}</span>}
+              <div className="flex flex-wrap gap-2">
+                <span style={{ color: 'var(--text-primary)' }}>
+                  {l.swapRole === 'INITIATOR_GIVES' ? `${detail.initiator.username} →` : l.swapRole === 'OWNER_GIVES' ? `${detail.owner.username} →` : '⊕'} {l.listing?.title ?? '—'}
+                </span>
+                <span>ship: {l.shippingStatus ?? 'PENDING'}</span>
+                {l.trackingReference && <span>track: {l.trackingReference}</span>}
+                <span>delivered: {l.deliveredAt ? '✓' : '—'}</span>
+                {l.orderReference && <span style={{ color: 'var(--text-tertiary)' }}>{l.orderReference}</span>}
+              </div>
+              {/* Proof-of-possession */}
+              {l.swapProofStatus && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span style={{ color: l.swapProofStatus === 'APPROVED' ? '#16a34a' : l.swapProofStatus === 'REJECTED' ? 'var(--red)' : '#f59e0b' }}>
+                    proof: {l.swapProofStatus}{typeof l.swapProofScore === 'number' ? ` (${l.swapProofScore})` : ''}
+                  </span>
+                  {l.swapProofCode && <span style={{ color: 'var(--text-tertiary)' }}>code {l.swapProofCode}</span>}
+                  {l.swapProofPhotoUrl && (
+                    <a href={l.swapProofPhotoUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--red)' }}>
+                      view photo
+                    </a>
+                  )}
+                  {l.swapProofStatus !== 'APPROVED' && (
+                    <button onClick={() => proofAct(l.id, 'APPROVE')} disabled={!!busy}
+                      className="px-2 py-0.5 rounded-[4px]" style={{ background: '#16a34a', color: '#fff' }}>
+                      approve
+                    </button>
+                  )}
+                  {l.swapProofStatus !== 'REJECTED' && (
+                    <button onClick={() => proofAct(l.id, 'REJECT')} disabled={!!busy}
+                      className="px-2 py-0.5 rounded-[4px]" style={{ background: 'var(--bg-inset)', color: 'var(--red)', border: '0.5px solid var(--red)' }}>
+                      reject
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           {detail.settlementTxId && (

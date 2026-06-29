@@ -12,6 +12,7 @@ import {
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
 import { SwapFundingService } from '../swaps/swap-funding.service';
+import { SwapProofService } from '../swaps/swap-proof.service';
 
 // Admin-owned swap resolution (S5). Disputed / stalled swaps land here; the
 // admin can force-complete (release the held cash to the recipient) or unwind
@@ -21,7 +22,10 @@ import { SwapFundingService } from '../swaps/swap-funding.service';
 @Controller('admin/swaps')
 @UseGuards(AdminJwtGuard)
 export class AdminSwapsController {
-  constructor(private readonly swaps: SwapFundingService) {}
+  constructor(
+    private readonly swaps: SwapFundingService,
+    private readonly proof: SwapProofService,
+  ) {}
 
   @Get()
   list(@Query('status') status?: string) {
@@ -52,5 +56,18 @@ export class AdminSwapsController {
     const reason = (body?.reason ?? '').trim();
     if (!reason) throw new BadRequestException('A reason is required.');
     return this.swaps.adminUnwind(id, reason);
+  }
+
+  // Override a swap leg's proof-of-possession verdict (approve a borderline
+  // photo or reject a bad one). legId = the leg's Transaction id.
+  @Post('legs/:legId/proof-override')
+  @HttpCode(200)
+  proofOverride(
+    @Param('legId') legId: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { decision?: string; reason?: string },
+  ) {
+    const decision = body?.decision === 'APPROVE' ? 'APPROVE' : 'REJECT';
+    return this.proof.adminOverride(legId, decision, body?.reason ?? '');
   }
 }

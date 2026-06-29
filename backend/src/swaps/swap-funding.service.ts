@@ -135,6 +135,7 @@ export class SwapFundingService {
           select: {
             swapRole: true,
             deliveryAddress: true,
+            swapProofStatus: true,
             listing: { select: { isFirearm: true } },
           },
         },
@@ -149,8 +150,14 @@ export class SwapFundingService {
     }
     const realLegs = swap.transactions.filter((t) => t.swapRole != null);
     if (realLegs.length !== 2) return;
-    const allReady = realLegs.every((t) =>
-      t.listing?.isFirearm ? true : t.deliveryAddress != null,
+    // Each leg must be (a) proof-of-possession APPROVED — the item was shown to
+    // exist with our per-leg code — AND (b) address-ready (courier legs need
+    // the recipient's address; firearm legs go via a dealer, no address). Only
+    // then do we set up funding, so nobody pays or ships for a phantom item.
+    const allReady = realLegs.every(
+      (t) =>
+        t.swapProofStatus === 'APPROVED' &&
+        (t.listing?.isFirearm ? true : t.deliveryAddress != null),
     );
     if (allReady) await this.ensureFundingSetUp(swapId);
   }
@@ -161,6 +168,24 @@ export class SwapFundingService {
   // the claim back if a live carrier quote fails so it can be retried.
   // ----------------------------------------------------------------
   async ensureFundingSetUp(swapId: string) {
+    // Proof-of-possession gate — enforced HERE (the single chokepoint every
+    // path reaches, including the /funding/retry endpoint that calls this
+    // directly) so funding can never be set up — and nothing paid or shipped —
+    // until BOTH items are photo-verified with their GG code. Checked before
+    // the claim so a fail leaves no half-set-up state + gives a clear message.
+    const proofLegs = await this.prisma.transaction.findMany({
+      where: { swapId, swapRole: { not: null } },
+      select: { swapProofStatus: true },
+    });
+    if (
+      proofLegs.length < 2 ||
+      !proofLegs.every((l) => l.swapProofStatus === 'APPROVED')
+    ) {
+      throw new BadRequestException(
+        'Both items must be photo-verified before funding can be set up.',
+      );
+    }
+
     const claimedAt = new Date();
     const claim = await this.prisma.swap.updateMany({
       where: {
@@ -489,6 +514,8 @@ export class SwapFundingService {
             id: true,
             swapRole: true,
             dealerVerificationStatus: true,
+            swapProofCode: true,
+            swapProofStatus: true,
             listing: {
               select: {
                 id: true,
@@ -536,6 +563,10 @@ export class SwapFundingService {
         giveIsFirearm: !!give?.isFirearm,
         giveDealerVerificationStatus: giveLeg?.dealerVerificationStatus ?? null,
         getIsFirearm: !!get?.isFirearm,
+        // Proof-of-possession for the leg the caller SENDS (drives the
+        // "verify your item" step on /my/swaps).
+        giveProofCode: giveLeg?.swapProofCode ?? null,
+        giveProofStatus: giveLeg?.swapProofStatus ?? null,
       };
     });
     return { bankDetails: GG_BANK_DETAILS, swaps: mapped };
@@ -1141,6 +1172,10 @@ export class SwapFundingService {
             sellerPayout: true,
             refundedAmount: true,
             orderReference: true,
+            swapProofStatus: true,
+            swapProofPhotoUrl: true,
+            swapProofScore: true,
+            swapProofCode: true,
             listing: { select: { id: true, title: true } },
           },
         },

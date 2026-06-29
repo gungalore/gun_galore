@@ -24,7 +24,15 @@ function make() {
       findMany: jest.fn().mockResolvedValue([]),
     },
     listing: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
-    transaction: { create: jest.fn().mockResolvedValue({ id: 'RTX' }) },
+    transaction: {
+      create: jest.fn().mockResolvedValue({ id: 'RTX' }),
+      findMany: jest
+        .fn()
+        .mockResolvedValue([
+          { swapProofStatus: 'APPROVED' },
+          { swapProofStatus: 'APPROVED' },
+        ]),
+    },
     user: { findUnique: jest.fn() },
     adminAlert: { create: jest.fn().mockResolvedValue({}) },
     $transaction: jest.fn(async (fn: (c: typeof txc) => unknown) => fn(txc)),
@@ -189,6 +197,32 @@ describe('SwapFundingService.sweepExpiredFunding', () => {
     prisma.swap.findMany.mockResolvedValue([]); // relock + stale both empty
     await service.sweepExpiredFunding();
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('SwapFundingService.ensureFundingSetUp — proof-of-possession gate', () => {
+  it('refuses to set up funding until BOTH legs are proof-APPROVED (chokepoint — covers /funding/retry)', async () => {
+    const { service, prisma } = make();
+    prisma.transaction.findMany.mockResolvedValueOnce([
+      { swapProofStatus: 'APPROVED' },
+      { swapProofStatus: 'PENDING_REVIEW' },
+    ]);
+    await expect(service.ensureFundingSetUp('S1')).rejects.toThrow(/photo-verified/i);
+    // Threw BEFORE claiming fundingSetUpAt — no half-set-up state.
+    expect(prisma.swap.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('proceeds past the proof gate once both legs are APPROVED', async () => {
+    const { service, prisma } = make();
+    prisma.transaction.findMany.mockResolvedValueOnce([
+      { swapProofStatus: 'APPROVED' },
+      { swapProofStatus: 'APPROVED' },
+    ]);
+    // claim wins → it gets past the gate and into the claim (then no-op paths
+    // are fine for this test; we only assert the gate didn't block).
+    prisma.swap.updateMany.mockResolvedValueOnce({ count: 0 }); // already-set-up short-circuit
+    await service.ensureFundingSetUp('S1');
+    expect(prisma.swap.updateMany).toHaveBeenCalled();
   });
 });
 

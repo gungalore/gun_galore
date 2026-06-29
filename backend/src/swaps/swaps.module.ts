@@ -3,6 +3,7 @@ import { SwapProposalsService } from './swap-proposals.service';
 import { SwapProposalsController } from './swap-proposals.controller';
 import { SwapFundingService } from './swap-funding.service';
 import { SwapFundingController } from './swap-funding.controller';
+import { SwapProofService } from './swap-proof.service';
 import { KycModule } from '../kyc/kyc.module';
 import { ShippingModule } from '../shipping/shipping.module';
 import { PaymentsModule } from '../payments/payments.module';
@@ -14,7 +15,7 @@ import { PaymentsModule } from '../payments/payments.module';
 @Module({
   imports: [KycModule, ShippingModule, PaymentsModule],
   controllers: [SwapProposalsController, SwapFundingController],
-  providers: [SwapProposalsService, SwapFundingService],
-  exports: [SwapProposalsService, SwapFundingService],
+  providers: [SwapProposalsService, SwapFundingService, SwapProofService],
+  exports: [SwapProposalsService, SwapFundingService, SwapProofService],
 })
 export class SwapsModule {}
