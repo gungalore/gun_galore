@@ -2,269 +2,239 @@
 
 import { useEffect, useState } from 'react';
 import { InstallAnimation } from './install-animation';
+import { useInstallPrompt } from '@/lib/use-install-prompt';
 
-// Floating "Install Gun Galore" button. Listens for the browser's
-// beforeinstallprompt event (Chrome / Edge / Samsung / Opera on
-// Android + desktop) and surfaces a styled CTA the user can click to
-// trigger the native install dialog.
+// Floating "Install Gun Galore" CTA + the shared install-help modal.
 //
-// Three reasons we DON'T auto-fire the prompt:
-//   1. Browser engagement heuristics will skip it if the user just
-//      landed; we'd be calling .prompt() and getting a NotAllowedError.
+// Install state (native event capture, installed-detection, iOS) lives in
+// useInstallPrompt() so the nav drawer's manual "Install app" button shares it.
+// This component owns the proactive floating nudge and the instruction modal.
+//
+// We DON'T auto-fire the native prompt:
+//   1. Chrome's engagement heuristic will reject .prompt() right after landing.
 //   2. A surprise modal interrupts whatever the user came to do.
-//   3. Once dismissed, the event won't fire again in the same session.
+//   3. The event is single-use; once consumed it won't re-fire this session.
 //
-// Dismissal logic: clicking the X (or denying in the native dialog)
-// hides the button for 14 days via localStorage. Re-appears after
-// that window if the user is still uninstalled.
+// The instruction modal is also opened on demand from the nav via the
+// `gg:show-install-help` window event — for when Chrome hasn't fired
+// beforeinstallprompt yet (the only install path then is the browser's own
+// ⋮ menu, which we can only explain, not trigger) or on iOS Safari.
 //
-// iOS Safari does NOT fire beforeinstallprompt — it has no
-// programmatic install API. For iOS we show a one-off instruction
-// hint: "Tap Share, then Add to Home Screen." Only shown if the
-// device is iOS Safari and not already in standalone mode.
+// Dismissing the floating CTA hides it for 14 days (localStorage).
 
 const DISMISSED_KEY = 'gg-install-prompt-dismissed-until';
 const DISMISS_DAYS = 14;
 
-// Match the BeforeInstallPromptEvent surface we actually use.
-// TypeScript's lib.dom doesn't ship a type for this yet (still a
-// W3C draft), so we narrow our own.
-interface BeforeInstallPromptEvent extends Event {
-  readonly platforms: readonly string[];
-  prompt(): Promise<void>;
-  readonly userChoice: Promise<{
-    outcome: 'accepted' | 'dismissed';
-    platform: string;
-  }>;
-}
-
 export function InstallPrompt() {
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isIosSafari, setIsIosSafari] = useState(false);
-  const [iosHintOpen, setIosHintOpen] = useState(false);
+  const { canInstall, isInstalled, isIosSafari, promptInstall } =
+    useInstallPrompt();
+  const [dismissed, setDismissed] = useState(true); // assume dismissed until effect checks
+  const [helpOpen, setHelpOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    // Skip everything if dismissal is still active.
-    if (isDismissedRecently()) return;
-
-    // Skip if already installed (running in standalone mode).
-    if (typeof window !== 'undefined') {
-      const isStandalone =
-        window.matchMedia?.('(display-mode: standalone)').matches ||
-        // Safari-specific signal.
-        (window.navigator as { standalone?: boolean }).standalone === true;
-      if (isStandalone) return;
+    setDismissed(isDismissedRecently());
+    // The nav's "Install app" button (and any other surface) can ask us to
+    // pop the instruction modal — e.g. iOS, or Android before Chrome has fired
+    // the install event.
+    function onShowHelp() {
+      setHelpOpen(true);
     }
-
-    // Android / desktop install path.
-    function onBeforeInstall(e: Event) {
-      // Block Chrome's default mini-infobar — we render our own UI.
-      e.preventDefault();
-      setDeferred(e as BeforeInstallPromptEvent);
-    }
-    window.addEventListener('beforeinstallprompt', onBeforeInstall);
-
-    // iOS Safari detection (no beforeinstallprompt support).
-    const ua = window.navigator.userAgent;
-    const isIos = /iPad|iPhone|iPod/.test(ua) && !('MSStream' in window);
-    const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
-    if (isIos && isSafari) setIsIosSafari(true);
-
-    // Clear the dismissed flag if the user installs through any path —
-    // appinstalled fires once installation completes.
-    function onInstalled() {
-      setDeferred(null);
-      setIsIosSafari(false);
-      try {
-        localStorage.removeItem(DISMISSED_KEY);
-      } catch {
-        // localStorage may be blocked in private modes — ignore.
-      }
-    }
-    window.addEventListener('appinstalled', onInstalled);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
-      window.removeEventListener('appinstalled', onInstalled);
-    };
+    window.addEventListener('gg:show-install-help', onShowHelp);
+    return () => window.removeEventListener('gg:show-install-help', onShowHelp);
   }, []);
 
   async function install() {
-    if (!deferred) return;
     setBusy(true);
     try {
-      await deferred.prompt();
-      const { outcome } = await deferred.userChoice;
-      if (outcome === 'dismissed') {
-        dismissFor(DISMISS_DAYS);
-      }
+      const outcome = await promptInstall();
+      if (outcome === 'dismissed') dismissFor(DISMISS_DAYS);
+      // If the native event wasn't ready, fall back to the steps modal.
+      if (outcome === 'unavailable') setHelpOpen(true);
     } finally {
-      // Prompt can only fire once per event — clear either way.
-      setDeferred(null);
       setBusy(false);
     }
   }
 
   function dismissFloating() {
-    setDeferred(null);
-    setIsIosSafari(false);
-    setIosHintOpen(false);
+    setDismissed(true);
     dismissFor(DISMISS_DAYS);
   }
 
-  // Nothing to show: not installable in this browser yet, or user
-  // already dismissed.
-  if (!deferred && !isIosSafari) return null;
+  // The floating CTA shows only when there's an actionable path and the user
+  // hasn't dismissed it / already installed.
+  const showFloating = !isInstalled && !dismissed && (canInstall || isIosSafari);
+
+  if (!showFloating && !helpOpen) return null;
 
   return (
     <>
-      <div
-        role="dialog"
-        aria-label="Install Gun Galore"
-        style={{
-          position: 'fixed',
-          bottom: 16,
-          right: 16,
-          zIndex: 60,
-          maxWidth: 320,
-          padding: '12px 14px',
-          borderRadius: 8,
-          background: 'var(--bg-card)',
-          border: '0.5px solid var(--border)',
-          boxShadow:
-            '0 10px 32px rgba(0,0,0,0.45), 0 0 12px rgba(200,16,46,0.22)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p
-            style={{
-              fontSize: 13,
-              color: 'var(--text-primary)',
-              fontWeight: 500,
-              marginBottom: 2,
-            }}
-          >
-            Install Gun Galore
-          </p>
-          <p
-            style={{
-              fontSize: 11,
-              color: 'var(--text-tertiary)',
-              lineHeight: 1.4,
-            }}
-          >
-            Faster repeat visits, home-screen icon, fullscreen launch.
-          </p>
-        </div>
-        {deferred ? (
-          <button
-            type="button"
-            onClick={install}
-            disabled={busy}
-            style={{
-              background: 'var(--red)',
-              color: '#fff',
-              border: 'none',
-              padding: '8px 14px',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: busy ? 'wait' : 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {busy ? 'Opening…' : 'Install'}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setIosHintOpen(true)}
-            style={{
-              background: 'var(--red)',
-              color: '#fff',
-              border: 'none',
-              padding: '8px 14px',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            How
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={dismissFloating}
-          aria-label="Dismiss"
-          style={{
-            background: 'transparent',
-            color: 'var(--text-tertiary)',
-            border: 'none',
-            padding: 4,
-            fontSize: 16,
-            lineHeight: 1,
-            cursor: 'pointer',
-          }}
-        >
-          ×
-        </button>
-      </div>
-
-      {/* iOS instruction modal — Safari can't trigger install
-          programmatically, so the user has to do it themselves. The
-          animated walkthrough (4-scene loop showing the exact taps in
-          Safari) is the centrepiece; the written steps underneath are
-          a fallback for users with reduced-motion or who want to skim
-          while the animation cycles. */}
-      {iosHintOpen && (
+      {showFloating && (
         <div
           role="dialog"
-          aria-modal="true"
-          aria-label="How to install Gun Galore on iPhone"
-          onClick={() => setIosHintOpen(false)}
+          aria-label="Install Gun Galore"
           style={{
             position: 'fixed',
-            inset: 0,
-            zIndex: 61,
-            background: 'rgba(0,0,0,0.78)',
+            bottom: 16,
+            right: 16,
+            zIndex: 60,
+            maxWidth: 320,
+            padding: '12px 14px',
+            borderRadius: 8,
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            boxShadow:
+              '0 10px 32px rgba(0,0,0,0.45), 0 0 12px rgba(200,16,46,0.22)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            padding: 12,
-            overflowY: 'auto',
-            // Respect iOS notch / home-indicator.
-            paddingTop: 'max(12px, env(safe-area-inset-top))',
-            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+            gap: 10,
           }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p
+              style={{
+                fontSize: 13,
+                color: 'var(--text-primary)',
+                fontWeight: 500,
+                marginBottom: 2,
+              }}
+            >
+              Install Gun Galore
+            </p>
+            <p
+              style={{
+                fontSize: 11,
+                color: 'var(--text-tertiary)',
+                lineHeight: 1.4,
+              }}
+            >
+              Faster repeat visits, home-screen icon, fullscreen launch.
+            </p>
+          </div>
+          {canInstall ? (
+            <button
+              type="button"
+              onClick={install}
+              disabled={busy}
+              style={{
+                background: 'var(--red)',
+                color: '#fff',
+                border: 'none',
+                padding: '8px 14px',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: busy ? 'wait' : 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {busy ? 'Opening…' : 'Install'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              style={{
+                background: 'var(--red)',
+                color: '#fff',
+                border: 'none',
+                padding: '8px 14px',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              How
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={dismissFloating}
+            aria-label="Dismiss"
             style={{
-              maxWidth: 420,
-              width: '100%',
-              padding: 16,
-              borderRadius: 14,
-              background: 'var(--bg-card)',
-              border: '0.5px solid var(--border)',
-              color: 'var(--text-primary)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 14,
-              // Cap modal at viewport height so the animation always fits
-              // even on shorter phones (e.g. iPhone SE).
-              maxHeight: 'calc(100dvh - 24px)',
+              background: 'transparent',
+              color: 'var(--text-tertiary)',
+              border: 'none',
+              padding: 4,
+              fontSize: 16,
+              lineHeight: 1,
+              cursor: 'pointer',
             }}
           >
-            {/* Animated walkthrough — sized to dominate the modal while
-                leaving room for the headline + Got-it button on phones
-                as short as 568px (iPhone SE). 9:16 aspect ratio matches
-                the design stage exactly. */}
+            ×
+          </button>
+        </div>
+      )}
+
+      {helpOpen && (
+        <InstallHelpModal
+          isIos={isIosSafari}
+          canInstall={canInstall}
+          onInstall={async () => {
+            const outcome = await promptInstall();
+            if (outcome !== 'unavailable') setHelpOpen(false);
+          }}
+          onClose={() => setHelpOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// Instruction modal. On iOS shows the animated Safari Share → Add walkthrough;
+// elsewhere shows the Android/desktop "browser menu → Install app" steps. If a
+// native prompt is available it offers the one-tap Install button too.
+function InstallHelpModal({
+  isIos,
+  canInstall,
+  onInstall,
+  onClose,
+}: {
+  isIos: boolean;
+  canInstall: boolean;
+  onInstall: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="How to install Gun Galore"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 61,
+        background: 'rgba(0,0,0,0.78)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 12,
+        overflowY: 'auto',
+        paddingTop: 'max(12px, env(safe-area-inset-top))',
+        paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 420,
+          width: '100%',
+          padding: 16,
+          borderRadius: 14,
+          background: 'var(--bg-card)',
+          border: '0.5px solid var(--border)',
+          color: 'var(--text-primary)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+          maxHeight: 'calc(100dvh - 24px)',
+        }}
+      >
+        {isIos ? (
+          <>
             <div
               style={{
                 width: '100%',
@@ -275,16 +245,8 @@ export function InstallPrompt() {
             >
               <InstallAnimation />
             </div>
-
             <div>
-              <p
-                style={{
-                  fontSize: 15,
-                  fontWeight: 600,
-                  marginBottom: 4,
-                  color: 'var(--text-primary)',
-                }}
-              >
+              <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
                 Add Gun Galore to your home screen
               </p>
               <p
@@ -295,31 +257,92 @@ export function InstallPrompt() {
                   margin: 0,
                 }}
               >
-                In Safari: ⋯ More → Share → Add to Home Screen → Add.
+                In Safari: tap <strong>Share</strong> (the box with an arrow) →
+                <strong> Add to Home Screen</strong> → <strong>Add</strong>.
               </p>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setIosHintOpen(false)}
-              style={{
-                width: '100%',
-                background: 'var(--red)',
-                color: '#fff',
-                border: 'none',
-                padding: '11px 14px',
-                borderRadius: 8,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Got it
-            </button>
+          </>
+        ) : (
+          <div>
+            <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
+              Install the Gun Galore app
+            </p>
+            {canInstall ? (
+              <p
+                style={{
+                  fontSize: 12.5,
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.5,
+                  margin: '0 0 4px',
+                }}
+              >
+                Tap <strong>Install</strong> below to add Gun Galore to your home
+                screen.
+              </p>
+            ) : (
+              <ol
+                style={{
+                  fontSize: 12.5,
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.6,
+                  margin: 0,
+                  paddingLeft: 18,
+                }}
+              >
+                <li>
+                  Open your browser&rsquo;s menu — the <strong>⋮</strong> (or
+                  <strong> ⋯</strong>) icon, usually top-right.
+                </li>
+                <li>
+                  Tap <strong>Install app</strong> (or{' '}
+                  <strong>Add to Home screen</strong>).
+                </li>
+                <li>
+                  Confirm <strong>Install</strong> / <strong>Add</strong>.
+                </li>
+              </ol>
+            )}
           </div>
-        </div>
-      )}
-    </>
+        )}
+
+        {!isIos && canInstall && (
+          <button
+            type="button"
+            onClick={onInstall}
+            style={{
+              width: '100%',
+              background: 'var(--red)',
+              color: '#fff',
+              border: 'none',
+              padding: '11px 14px',
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Install
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            width: '100%',
+            background: !isIos && canInstall ? 'transparent' : 'var(--red)',
+            color: !isIos && canInstall ? 'var(--text-secondary)' : '#fff',
+            border: !isIos && canInstall ? '0.5px solid var(--border)' : 'none',
+            padding: '11px 14px',
+            borderRadius: 8,
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          {!isIos && canInstall ? 'Not now' : 'Got it'}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -330,8 +353,7 @@ function dismissFor(days: number) {
     const until = Date.now() + days * 24 * 60 * 60 * 1000;
     localStorage.setItem(DISMISSED_KEY, String(until));
   } catch {
-    // localStorage blocked in private mode — accept that the prompt
-    // may re-show this session. Not the end of the world.
+    // localStorage blocked in private mode — accept the prompt may re-show.
   }
 }
 

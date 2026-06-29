@@ -9,6 +9,7 @@ import { ProfileCompletionRing } from '@/components/profile-completion-ring';
 import { LiveSearch } from '@/components/live-search';
 import { UrgentBell } from '@/components/urgent-bell';
 import { CartButton } from '@/components/cart-button';
+import { useInstallPrompt } from '@/lib/use-install-prompt';
 
 export function Nav() {
   const { isSignedIn, isLoaded, user } = useUser();
@@ -18,6 +19,28 @@ export function Nav() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { canInstall, isInstalled, isStandalone, promptInstall } =
+    useInstallPrompt();
+
+  // Only worth offering in browser-mobile mode when not already installed.
+  // (The drawer is md:hidden + the nav itself is hidden in standalone, so this
+  // never shows to installed-app users.)
+  const showInstall = !isInstalled && !isStandalone;
+
+  async function handleInstall() {
+    setMobileOpen(false);
+    // Fire the native dialog if Chrome captured the event; otherwise pop our
+    // instruction modal (the only install path then is the browser's ⋮ menu,
+    // which we can explain but not trigger).
+    if (canInstall) {
+      const outcome = await promptInstall();
+      if (outcome === 'unavailable') {
+        window.dispatchEvent(new Event('gg:show-install-help'));
+      }
+    } else {
+      window.dispatchEvent(new Event('gg:show-install-help'));
+    }
+  }
 
   // Pick the best name to display. Order of preference:
   //   1. Clerk username (the one we'll start asking for on signup)
@@ -449,6 +472,60 @@ export function Nav() {
                 ))}
               </nav>
             </div>
+
+            {/* Get the app — manual install entry. Chrome no longer auto-
+                prompts; this gives mobile-web users a reliable, on-demand way
+                to install. Fires the native dialog when Chrome has the event
+                ready, else shows the browser-menu steps. Hidden once installed
+                / in the standalone app. */}
+            {showInstall && (
+              <div
+                className="px-4 py-4"
+                style={{ borderTop: '0.5px solid var(--border)' }}
+              >
+                <p
+                  className="text-xs uppercase mb-2"
+                  style={{ color: 'var(--text-tertiary)', letterSpacing: '0.08em' }}
+                >
+                  Get the app
+                </p>
+                <button
+                  type="button"
+                  onClick={handleInstall}
+                  className="w-full px-3 py-3 rounded-[6px] text-base flex items-center gap-2"
+                  style={{
+                    color: '#fff',
+                    background: 'var(--red)',
+                    border: 'none',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Install Gun Galore
+                </button>
+                <p
+                  className="text-xs mt-2"
+                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
+                >
+                  Home-screen icon, faster launches, works offline.
+                </p>
+              </div>
+            )}
 
             {/* Assistant section — Ask GG. Separate from Shop because
                 it's a paid AI feature, not a shopping surface. On the

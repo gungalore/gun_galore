@@ -50,6 +50,15 @@ const STANDALONE_DETECT_SCRIPT = `(function(){var BROWSER='width=device-width, i
 // has a chance to fail. A React useEffect would run too late.
 const CHUNK_HEAL_SCRIPT = `(function(){try{var KEY='gg-chunk-reload-at';var seen=window.sessionStorage&&window.sessionStorage.getItem(KEY);var now=Date.now();if(seen&&(now-parseInt(seen,10))<10000){return;}function looksLikeChunkErr(e){var msg=(e&&(e.message||e.reason&&(e.reason.message||e.reason)+''))||'';return /Loading chunk [\\d_]+ failed|ChunkLoadError|Failed to fetch dynamically imported module|Importing a module script failed/i.test(msg);}function reload(){try{window.sessionStorage.setItem(KEY,String(Date.now()));}catch(_){}window.location.reload();}window.addEventListener('error',function(e){if(looksLikeChunkErr(e)){reload();}},true);window.addEventListener('unhandledrejection',function(e){if(looksLikeChunkErr(e)){reload();}});}catch(_){}})();`;
 
+// PWA-install event capture. Chrome can fire `beforeinstallprompt` BEFORE
+// React hydrates — a useEffect listener would mount too late and miss it, so
+// the install button would never appear. This inline script registers the
+// listener at first paint, stashes the (preventDefault'd) event on
+// window.__ggInstallEvent, and dispatches `gg:install-available` so the React
+// install UI (lib/use-install-prompt.ts) can pick it up whenever it mounts.
+// appinstalled clears the stash + flags installed. See useInstallPrompt().
+const INSTALL_CAPTURE_SCRIPT = `(function(){try{window.__ggInstallEvent=window.__ggInstallEvent||null;window.__ggInstalled=window.__ggInstalled||false;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__ggInstallEvent=e;try{window.dispatchEvent(new Event('gg:install-available'));}catch(_){}});window.addEventListener('appinstalled',function(){window.__ggInstallEvent=null;window.__ggInstalled=true;try{window.dispatchEvent(new Event('gg:installed'));}catch(_){}});}catch(_){}})();`;
+
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ??
   'https://gungalore.co.za';
@@ -178,6 +187,11 @@ export default function RootLayout({
               reload loops if the cause is something else. */}
           <script
             dangerouslySetInnerHTML={{ __html: CHUNK_HEAL_SCRIPT }}
+          />
+          {/* Capture beforeinstallprompt at first paint so the install UI
+              never misses it to a hydration race. See useInstallPrompt(). */}
+          <script
+            dangerouslySetInnerHTML={{ __html: INSTALL_CAPTURE_SCRIPT }}
           />
           {/* Preload the homepage hero image so it kicks off in
               parallel with the JS bundle. Lighthouse mobile flagged
