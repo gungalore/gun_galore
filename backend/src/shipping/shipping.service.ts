@@ -642,6 +642,7 @@ export class ShippingService {
           shippingStatus: true,
           dispatchedAt: true,
           deliveredAt: true,
+          swapId: true, // SWOP S4 — drives the both-legs-delivered rollup
           listing: { select: { title: true } },
           buyer: { select: { email: true, firstName: true } },
           seller: {
@@ -745,6 +746,29 @@ export class ShippingService {
             listingTitle: title,
             transactionId,
           });
+        }
+      }
+
+      // SWOP S4 rollup — when a swap leg is delivered, flip the parent Swap to
+      // AWAITING_VERIFICATION once BOTH legs are delivered. The current leg's
+      // deliveredAt was just stamped in this tx, so we only check the sibling.
+      // Status-guarded on IN_TRANSIT so it fires exactly once. (Cash release +
+      // COMPLETED is S5.)
+      if (newStatus === 'DELIVERED' && transaction.swapId) {
+        const sibling = await tx.transaction.findFirst({
+          where: { swapId: transaction.swapId, id: { not: transactionId } },
+          select: { deliveredAt: true },
+        });
+        if (sibling?.deliveredAt) {
+          const rolled = await tx.swap.updateMany({
+            where: { id: transaction.swapId, status: 'IN_TRANSIT' },
+            data: { status: 'AWAITING_VERIFICATION' },
+          });
+          if (rolled.count > 0) {
+            this.logger.log(
+              `Swap ${transaction.swapId} both legs delivered → AWAITING_VERIFICATION`,
+            );
+          }
         }
       }
 

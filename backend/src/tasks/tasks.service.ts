@@ -677,6 +677,23 @@ export class TasksService {
     }
   }
 
+  // Run hourly — flag LOCKED+booked swaps where a party never dropped their
+  // parcel (booked but uncollected past the SLA) → DISPUTED for admin review.
+  @Cron(CronExpression.EVERY_HOUR)
+  async sweepStalledSwapShipping() {
+    this.logger.debug('Running swap shipping SLA sweep');
+    try {
+      await this.swapFunding.sweepStalledSwapShipping();
+    } catch (err) {
+      this.logger.error(
+        `sweepStalledSwapShipping failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('swap-shipping-sla');
+    }
+  }
+
   // Run every minute — finalize auctions whose endTime has passed.
   @Cron(CronExpression.EVERY_MINUTE)
   async endAuctions() {

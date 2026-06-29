@@ -25,6 +25,10 @@ import { SwapDeliveryDto } from './dto/swap-delivery.dto';
 // an EFT each, so a few days is reasonable (vs the 1h single-buyer freeze).
 const FUNDING_WINDOW_HOURS = 72;
 
+// A booked swap leg that's still uncollected after this many days → the swap
+// is flagged DISPUTED for admin review (a party didn't drop their parcel).
+const SHIP_SLA_DAYS = 7;
+
 type Side = 'INITIATOR' | 'OWNER';
 
 /**
@@ -328,7 +332,38 @@ export class SwapFundingService {
     });
     if (lock.count > 0) {
       this.logger.log(`Swap ${swapId} fully funded → LOCKED`);
-      void this.notifyLocked(swapId);
+      void this.onSwapLocked(swapId);
+    }
+  }
+
+  // On LOCK (S4): notify both parties, book BOTH legs via the live
+  // platform-arranged courier path (bookForTransaction — fail-safe +
+  // idempotent + courier-only; each SENDER gets their own waybill/PIN via the
+  // shipmentBooked SMS/email it fires), then flip LOCKED → IN_TRANSIT. Booking
+  // failures raise their own admin alert and never wedge the swap.
+  private async onSwapLocked(swapId: string) {
+    void this.notifyLocked(swapId);
+    try {
+      const swap = await this.prisma.swap.findUnique({
+        where: { id: swapId },
+        select: { transactions: { select: { id: true } } },
+      });
+      if (!swap) return;
+      for (const leg of swap.transactions) {
+        void this.shipping
+          .bookForTransaction(leg.id)
+          .catch((e) =>
+            this.logger.warn(
+              `swap leg booking failed ${leg.id}: ${(e as Error).message}`,
+            ),
+          );
+      }
+      await this.prisma.swap.updateMany({
+        where: { id: swapId, status: SwapStatus.LOCKED },
+        data: { status: SwapStatus.IN_TRANSIT },
+      });
+    } catch (err) {
+      this.logger.error(`onSwapLocked failed for ${swapId}: ${(err as Error).message}`);
     }
   }
 
@@ -601,6 +636,53 @@ export class SwapFundingService {
     this.logger.log(
       `Swap ${swapId} ${side} reimbursed ${amount}c (synthetic refund tx)`,
     );
+  }
+
+  // ----------------------------------------------------------------
+  // Cron — a LOCKED+booked swap where one party never dropped their parcel
+  // (booked > SLA days ago, still not collected) → DISPUTED (admin-owned;
+  // cash stays held, NO auto-refund — mirrors the accept-timeout precedent).
+  // ----------------------------------------------------------------
+  async sweepStalledSwapShipping() {
+    if (PAYMENT_MODE !== 'manual') return;
+    const cutoff = new Date(Date.now() - SHIP_SLA_DAYS * 86_400_000);
+    const stalled = await this.prisma.swap.findMany({
+      where: {
+        status: SwapStatus.IN_TRANSIT,
+        transactions: {
+          some: {
+            shipmentBookedAt: { not: null, lt: cutoff },
+            OR: [{ shippingStatus: null }, { shippingStatus: 'PENDING' }],
+          },
+        },
+      },
+      select: { id: true },
+      take: 50,
+    });
+    for (const s of stalled) {
+      try {
+        const claim = await this.prisma.swap.updateMany({
+          where: { id: s.id, status: SwapStatus.IN_TRANSIT },
+          data: { status: SwapStatus.DISPUTED },
+        });
+        if (claim.count === 0) continue;
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'swap-shipping-stalled',
+              referenceId: s.id,
+              context: `Swap ${s.id}: a leg was booked but not collected after ${SHIP_SLA_DAYS} days — funds held, needs admin review.`,
+              urgent: true,
+            },
+          })
+          .catch(() => undefined);
+        this.logger.warn(`Swap ${s.id} shipping stalled → DISPUTED (admin-owned)`);
+      } catch (err) {
+        this.logger.warn(
+          `swap shipping SLA sweep failed for ${s.id}: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   // ----------------------------------------------------------------

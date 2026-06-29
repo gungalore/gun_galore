@@ -23,7 +23,10 @@ function make() {
     user: { findUnique: jest.fn() },
     $transaction: jest.fn(async (fn: (c: typeof txc) => unknown) => fn(txc)),
   };
-  const shipping = { quoteForListing: jest.fn() };
+  const shipping = {
+    quoteForListing: jest.fn(),
+    bookForTransaction: jest.fn().mockResolvedValue(null), // onSwapLocked (S4)
+  };
   const fees = new FeeCalculator();
   const referenceNumbers = { allocateOrderReference: jest.fn() };
   const notifications = {
@@ -51,6 +54,7 @@ describe('SwapFundingService.confirmSwapFunding', () => {
       id: 'S1',
       initiator: { email: 'i@x.co', firstName: 'I', phone: '1' },
       owner: { email: 'o@x.co', firstName: 'O', phone: '2' },
+      transactions: [], // onSwapLocked reads legs to book (none in this unit test)
     });
     await service.confirmSwapFunding('S1', 'OWNER');
     expect(prisma.swap.updateMany).toHaveBeenCalledTimes(2);
