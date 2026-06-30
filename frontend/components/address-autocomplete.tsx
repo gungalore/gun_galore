@@ -58,9 +58,21 @@ interface GPlacesLib {
     options?: object,
   ) => GAutocomplete;
 }
+interface GGeocoderResult {
+  formatted_address?: string;
+  place_id?: string;
+  address_components?: AddressComponent[];
+  geometry?: GGeometry;
+}
+interface GGeocoder {
+  geocode: (request: {
+    location: { lat: number; lng: number };
+  }) => Promise<{ results: GGeocoderResult[] }>;
+}
 interface GMapsLib {
   places?: GPlacesLib;
   event?: GMapsEvent;
+  Geocoder?: new () => GGeocoder;
 }
 interface GWindow {
   google?: { maps?: GMapsLib };
@@ -166,6 +178,29 @@ function removeStalePacContainers() {
   document.querySelectorAll('.pac-container').forEach((el) => el.remove());
 }
 
+// Parse Google address_components (same shape from Places AND the Geocoder)
+// into our flat ParsedAddressComponents. Shared by autocomplete-pick and
+// reverse-geocode-from-GPS so both fill the form identically.
+function parseAddressComponents(
+  comps: AddressComponent[],
+  geometry?: GGeometry,
+  fallbackLat?: number,
+  fallbackLng?: number,
+): ParsedAddressComponents {
+  const get = (type: string) =>
+    comps.find((c) => c.types.includes(type))?.long_name ?? '';
+  return {
+    street: [get('street_number'), get('route')].filter(Boolean).join(' '),
+    suburb:
+      get('sublocality_level_1') || get('sublocality') || get('neighborhood'),
+    city: get('locality') || get('administrative_area_level_2'),
+    province: get('administrative_area_level_1'),
+    postalCode: get('postal_code'),
+    lat: geometry?.location?.lat() ?? fallbackLat,
+    lng: geometry?.location?.lng() ?? fallbackLng,
+  };
+}
+
 export function AddressAutocomplete({
   value,
   onChange,
@@ -178,6 +213,8 @@ export function AddressAutocomplete({
   const onComponentsRef = useRef(onComponents);
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [authFailed, setAuthFailed] = useState(mapsAuthFailed);
+  const [locating, setLocating] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
 
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
   useEffect(() => { onComponentsRef.current = onComponents; }, [onComponents]);
@@ -257,23 +294,9 @@ export function AddressAutocomplete({
             onChangeRef.current(place.formatted_address, place.place_id);
 
             if (onComponentsRef.current && place.address_components) {
-              const comps = place.address_components;
-              const get = (type: string) =>
-                comps.find((c) => c.types.includes(type))?.long_name ?? '';
-              onComponentsRef.current({
-                street: [get('street_number'), get('route')]
-                  .filter(Boolean)
-                  .join(' '),
-                suburb:
-                  get('sublocality_level_1') ||
-                  get('sublocality') ||
-                  get('neighborhood'),
-                city: get('locality') || get('administrative_area_level_2'),
-                province: get('administrative_area_level_1'),
-                postalCode: get('postal_code'),
-                lat: place.geometry?.location?.lat(),
-                lng: place.geometry?.location?.lng(),
-              });
+              onComponentsRef.current(
+                parseAddressComponents(place.address_components, place.geometry),
+              );
             }
           }
         } catch {
@@ -313,6 +336,64 @@ export function AddressAutocomplete({
     return () => observer.disconnect();
   }, []);
 
+  // "Use my current location" — ask the browser for a GPS fix, then reverse-
+  // geocode it to a street address via the already-loaded Google Geocoder and
+  // fill the same fields an autocomplete pick would. Works in any HTTPS context
+  // incl. the installed PWA. Every failure path degrades to a typed-address
+  // hint (incl. a Geocoder REQUEST_DENIED when the Geocoding API isn't enabled).
+  async function useMyLocation() {
+    setGeoError(null);
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setGeoError('Location isn’t available on this device — please type your address.');
+      return;
+    }
+    if (authFailed) {
+      setGeoError('Address lookup is unavailable — please type your address.');
+      return;
+    }
+    setLocating(true);
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10_000,
+          maximumAge: 0,
+        });
+      });
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const Geocoder = (window as GWindow).google?.maps?.Geocoder;
+      if (!Geocoder) {
+        setGeoError('Address lookup isn’t ready yet — please type your address.');
+        return;
+      }
+      const { results } = await new Geocoder().geocode({ location: { lat, lng } });
+      const best = results?.[0];
+      if (!best?.formatted_address) {
+        setGeoError('Couldn’t find an address for your location — please type it in.');
+        return;
+      }
+      if (inputRef.current) inputRef.current.value = best.formatted_address;
+      onChangeRef.current(best.formatted_address, best.place_id);
+      if (onComponentsRef.current && best.address_components) {
+        onComponentsRef.current(
+          parseAddressComponents(best.address_components, best.geometry, lat, lng),
+        );
+      }
+    } catch (err) {
+      const code = (err as GeolocationPositionError | undefined)?.code;
+      if (code === 1) {
+        setGeoError('Location permission denied — allow location access or type your address.');
+      } else if (code === 3) {
+        setGeoError('Location timed out — try again or type your address.');
+      } else {
+        setGeoError('Couldn’t get your location — please type your address.');
+      }
+    } finally {
+      setLocating(false);
+    }
+  }
+
   const noKey =
     !process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
     process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY === 'placeholder';
@@ -330,6 +411,7 @@ export function AddressAutocomplete({
           defaultValue={value}
           onChange={(e) => {
             onChange(e.target.value);
+            if (geoError) setGeoError(null);
           }}
           onBlur={() => {
             // Give Google's place_changed click a tick to fire, then sweep.
@@ -368,6 +450,48 @@ export function AddressAutocomplete({
           <path d="M10.5 10.5l3 3" strokeLinecap="round" />
         </svg>
       </div>
+      {!noKey && !authFailed && scriptLoaded && (
+        <button
+          type="button"
+          onClick={useMyLocation}
+          disabled={locating}
+          className="mt-1.5"
+          aria-label="Use my current location to fill in the address"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            fontSize: 12,
+            fontWeight: 500,
+            color: 'var(--red)',
+            cursor: locating ? 'wait' : 'pointer',
+          }}
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M12 21s-6-5.5-6-10a6 6 0 1 1 12 0c0 4.5-6 10-6 10Z" />
+            <circle cx="12" cy="11" r="2.5" />
+          </svg>
+          {locating ? 'Locating…' : 'Use my current location'}
+        </button>
+      )}
+      {geoError && (
+        <p className="mt-1" style={{ fontSize: 11, color: '#f59e0b' }}>
+          {geoError}
+        </p>
+      )}
       {(authFailed || noKey || !scriptLoaded) && (
         <p
           className="mt-1.5"
