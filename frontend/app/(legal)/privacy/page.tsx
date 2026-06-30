@@ -92,7 +92,7 @@ export default function PrivacyPage() {
 
       <h3>3.2 KYC and identity verification (Sellers only)</h3>
       <ul>
-        <li>South African ID number (stored encrypted at rest with AES-GCM, then purged in favour of a salted SHA-256 hash once KYC passes)</li>
+        <li>South African ID number (stored encrypted at rest with AES-GCM; we also derive a salted SHA-256 hash for duplicate-registration checks. As a firearms marketplace we retain the encrypted ID — see &ldquo;How long we keep your information&rdquo; below — because it must be reproduced on the SAP 534 firearm-transfer form if one of your firearms later sells)</li>
         <li>VerifyNow Home Affairs lookup result (full name, date of birth, status)</li>
         <li>Selfie image captured during face-match verification (image not retained by GunGalore — only the match score)</li>
         <li>Number of face-match attempts and outcome</li>
@@ -227,6 +227,7 @@ export default function PrivacyPage() {
         <li><strong>Transaction records:</strong> 5 years from completion, in line with FICA record-keeping requirements.</li>
         <li><strong>Listings, ratings and Q&amp;A:</strong> for the lifetime of your account (kept for public-history integrity); permanently de-identified within 90 days of account deletion.</li>
         <li><strong>KYC ID hash:</strong> retained while your account is active, plus 12 months after deletion to prevent duplicate registration.</li>
+        <li><strong>Encrypted SA ID number:</strong> retained (AES-GCM encrypted at rest) while your account is active, under our firearms-transfer compliance obligations, so we can complete a SAP 534 form if one of your firearms sells; kept for the period required by law after any such transfer, and otherwise deleted on account closure.</li>
         <li><strong>KYC selfie:</strong> not retained by GunGalore; only the match score is kept.</li>
         <li><strong>Email and SMS logs:</strong> 90 days.</li>
         <li><strong>Banking details:</strong> retained while your account is active; deleted on account closure unless there is an unresolved transaction or legal-hold reason to retain.</li>

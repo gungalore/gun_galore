@@ -421,9 +421,9 @@ export function ProfileCompletionModal({
           }}
         >
           We need these once. They power your payouts when a buyer purchases
-          your listing. Your SA ID will be encrypted at rest — we use it
-          only for the Home Affairs check when your first sale lands, then
-          we purge it.
+          your listing. Your SA ID is stored encrypted and used only for the
+          Home Affairs identity check and any firearm-transfer paperwork the
+          law requires — kept securely under our Privacy Policy.
         </p>
 
         {/* Live-identity heads-up. The SA ID + selfie face-match (VerifyNow vs

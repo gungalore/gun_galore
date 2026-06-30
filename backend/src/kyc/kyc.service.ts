@@ -156,9 +156,11 @@ export class KycService {
   // When the seller filled the post-publish profile modal, their SA
   // ID was AES-encrypted onto User.idNumberEncrypted. At KYC time
   // we decrypt it, run Home Affairs lookup (if not done) + the
-  // facematch in one shot, and PURGE the encrypted blob on success
-  // so the raw ID doesn't sit on disk indefinitely. The seller only
-  // has to take the selfie — no re-typing the 13-digit number.
+  // facematch in one shot. The encrypted blob is RETAINED after
+  // success (see Step 3 below) — as a firearms marketplace we must
+  // reproduce the seller's ID on the SAP 534 form if a firearm later
+  // sells, and the raw ID is only available here at submission time.
+  // The seller only has to take the selfie — no re-typing the ID.
   async completeKycWithSelfie(clerkId: string, selfieBase64: string) {
     const user = await this.prisma.user.findUnique({
       where: { clerkId },
