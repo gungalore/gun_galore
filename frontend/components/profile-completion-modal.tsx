@@ -414,7 +414,7 @@ export function ProfileCompletionModal({
         </h1>
         <p
           style={{
-            margin: '8px 0 24px',
+            margin: '8px 0 14px',
             fontSize: 13,
             lineHeight: 1.55,
             color: 'var(--text-secondary)',
@@ -425,6 +425,55 @@ export function ProfileCompletionModal({
           only for the Home Affairs check when your first sale lands, then
           we purge it.
         </p>
+
+        {/* Live-identity heads-up. The SA ID + selfie face-match (VerifyNow vs
+            Home Affairs) is triggered at the FIRST SALE — not here — to conserve
+            verification credits. This callout just warns the seller it's coming
+            and is mandatory, so it's never a surprise at sale time. */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+            alignItems: 'flex-start',
+            background: 'rgba(200,16,46,0.08)',
+            border: '0.5px solid rgba(200,16,46,0.35)',
+            borderRadius: 8,
+            padding: '11px 13px',
+            margin: '0 0 24px',
+          }}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--red)"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ flexShrink: 0, marginTop: 1 }}
+            aria-hidden
+          >
+            <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3Z" />
+            <path d="M9.5 12l1.8 1.8L15 10" />
+          </svg>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <strong style={{ color: 'var(--text-primary)' }}>
+              Heads up — a live identity check is required to sell.
+            </strong>{' '}
+            When your first sale lands you’ll verify your SA ID against Home
+            Affairs and take a quick selfie. It’s mandatory to receive payment
+            (and for any firearm transfer). Fill these details in now — the live
+            check runs at your first sale.
+          </p>
+        </div>
 
         {/* Identity */}
         <Section title="Identity">
