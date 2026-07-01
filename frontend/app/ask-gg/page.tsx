@@ -655,8 +655,10 @@ export default function AskGgPage() {
             {ag.messages.length === 0 && !ag.historyLoading && (
               <EmptyState
                 quota={ag.quota}
-                onOpenLoadLab={() => setMode('loadlab')}
-                onStartChat={startChat}
+                onPickPrompt={(text) => {
+                  setComposerValue(text);
+                  startChat();
+                }}
               />
             )}
             {ag.messages.map((m) => (
@@ -1889,21 +1891,22 @@ function AskGgDisclaimer({
 
 function EmptyState({
   quota,
-  onOpenLoadLab,
-  onStartChat,
+  onPickPrompt,
 }: {
   quota: AskGgQuota | null;
-  onOpenLoadLab: () => void;
-  onStartChat: () => void;
+  onPickPrompt: (text: string) => void;
 }) {
   const isFreeWithRemaining = quota?.tier === 'FREE' && quota.remaining > 0;
-  const USES = [
-    ['Identify it', 'Snap a photo of a part, firearm or headstamp and ask what it is.'],
-    ['Ammo & optics', 'Calibre, bullet and powder questions, zeroing, scope and gear comparisons.'],
-    ['Hunting & field', 'Species, shot placement, ranging and ethical-range guidance.'],
-    ['Reloading data', 'Look up published manual loads by cartridge, bullet and powder.'],
-    ['Sell smarter', 'Turn a few photos into a ready-to-post listing description.'],
-    ['SA firearms law', 'Plain-language overview of licensing, transport and transfers.'],
+  const [hovered, setHovered] = useState<number | null>(null);
+  // Each tile is a one-tap starter: title, what it's for, and the
+  // question it drops into the composer (ready to edit or send).
+  const USES: { title: string; desc: string; prompt: string }[] = [
+    { title: 'Identify it', desc: 'Snap a photo of a part, firearm or headstamp and ask what it is.', prompt: "Help me identify a firearm part or headstamp — I'll attach a photo." },
+    { title: 'Ammo & optics', desc: 'Calibre, bullet and powder questions, zeroing, scope and gear comparisons.', prompt: 'What scope and zero distance suit a .308 hunting rifle?' },
+    { title: 'Hunting & field', desc: 'Species, shot placement, ranging and ethical-range guidance.', prompt: "What's the ethical maximum range for kudu with a .30-06?" },
+    { title: 'Reloading data', desc: 'Look up published manual loads by cartridge, bullet and powder.', prompt: 'Show me published loads for 6.5 Creedmoor with 140gr bullets.' },
+    { title: 'Sell smarter', desc: 'Turn a few photos into a ready-to-post listing description.', prompt: 'Help me write a listing description for a rifle I want to sell.' },
+    { title: 'SA firearms law', desc: 'Plain-language overview of licensing, transport and transfers.', prompt: 'Explain SA firearm licence types and the transfer process.' },
   ];
   return (
     <div style={{ padding: '12px 0 8px', color: 'var(--text-secondary)' }}>
@@ -1926,89 +1929,91 @@ function EmptyState({
         </p>
       </div>
 
+      <p
+        style={{
+          textAlign: 'center',
+          margin: '18px 0 0',
+          fontSize: 11,
+          color: 'var(--text-tertiary)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+        }}
+      >
+        Tap a topic to start — or just type below
+      </p>
+
       <div
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
           gap: 10,
-          margin: '20px auto 0',
+          margin: '10px auto 0',
           maxWidth: 700,
         }}
       >
-        {USES.map(([title, desc]) => (
-          <div
-            key={title}
-            style={{
-              background: 'var(--bg-inset)',
-              border: '0.5px solid var(--border)',
-              borderRadius: 10,
-              padding: '11px 13px',
-            }}
-          >
-            <div
+        {USES.map((u, i) => {
+          const hot = hovered === i;
+          return (
+            <button
+              key={u.title}
+              type="button"
+              onClick={() => onPickPrompt(u.prompt)}
+              onMouseEnter={() => setHovered(i)}
+              onMouseLeave={() => setHovered((h) => (h === i ? null : h))}
               style={{
-                fontSize: 12.5,
-                fontWeight: 700,
-                color: 'var(--text-primary)',
+                textAlign: 'left',
+                background: hot ? 'var(--bg-card)' : 'var(--bg-inset)',
+                border: `0.5px solid ${hot ? 'var(--red)' : 'var(--border)'}`,
+                borderRadius: 10,
+                padding: '11px 13px',
+                cursor: 'pointer',
+                transition:
+                  'background 120ms, border-color 120ms, transform 120ms',
+                transform: hot ? 'translateY(-1px)' : 'none',
               }}
             >
-              {title}
-            </div>
-            <div
-              style={{
-                fontSize: 11.5,
-                lineHeight: 1.45,
-                color: 'var(--text-tertiary)',
-                marginTop: 2,
-              }}
-            >
-              {desc}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          gap: 10,
-          justifyContent: 'center',
-          flexWrap: 'wrap',
-          marginTop: 22,
-        }}
-      >
-        <button
-          type="button"
-          onClick={onOpenLoadLab}
-          style={{
-            padding: '11px 22px',
-            borderRadius: 10,
-            border: 'none',
-            background: 'var(--red)',
-            color: '#fff',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          Open Load Lab
-        </button>
-        <button
-          type="button"
-          onClick={onStartChat}
-          style={{
-            padding: '11px 22px',
-            borderRadius: 10,
-            background: 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
-            color: 'var(--text-primary)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          AI assistance
-        </button>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  {u.title}
+                </span>
+                <span
+                  aria-hidden
+                  style={{
+                    fontSize: 13,
+                    color: hot ? 'var(--red)' : 'var(--text-tertiary)',
+                    transition: 'color 120ms, transform 120ms',
+                    transform: hot ? 'translateX(2px)' : 'none',
+                  }}
+                >
+                  →
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  lineHeight: 1.45,
+                  color: 'var(--text-tertiary)',
+                  marginTop: 2,
+                }}
+              >
+                {u.desc}
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {isFreeWithRemaining && quota && (
