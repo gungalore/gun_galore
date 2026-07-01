@@ -80,6 +80,18 @@ export function PowderBurnChart() {
   const [hits, setHits] = useState<CartridgeHit[]>([]);
   const [selected, setSelected] = useState<{ name: string; keys: Set<string> } | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Maker filter — null = all makers shown. Click a maker to isolate it;
+  // click more to add; a maker's own chip removes it; Select/Deselect-all.
+  const [activeMakers, setActiveMakers] = useState<Set<string> | null>(null);
+  const toggleMaker = useCallback((m: string) => {
+    setActiveMakers((cur) => {
+      if (cur === null) return new Set([m]);
+      const next = new Set(cur);
+      if (next.has(m)) { next.delete(m); return next.size ? next : null; }
+      next.add(m);
+      return next;
+    });
+  }, []);
 
   const authFetch = useCallback(
     async (path: string) => {
@@ -199,21 +211,41 @@ export function PowderBurnChart() {
         )}
       </div>
 
-      {/* Maker legend */}
-      <div className="flex flex-wrap gap-x-3 gap-y-1 mb-3">
-        {chart.makers.map((m) => (
-          <span key={m} className="inline-flex items-center gap-1.5" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-            <span style={{ width: 11, height: 11, borderRadius: 3, background: makerColor(m), flexShrink: 0 }} />
-            {m}
-          </span>
-        ))}
+      {/* Maker filter — click a maker to isolate it, click more to add */}
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 mb-3">
+        {chart.makers.map((m) => {
+          const on = activeMakers === null || activeMakers.has(m);
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => toggleMaker(m)}
+              aria-pressed={on}
+              className="inline-flex items-center gap-1.5"
+              style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: on ? 'var(--text-secondary)' : 'var(--text-tertiary)', opacity: on ? 1 : 0.5 }}
+            >
+              <span style={{ width: 11, height: 11, borderRadius: 3, background: on ? makerColor(m) : 'transparent', border: `1.5px solid ${makerColor(m)}`, flexShrink: 0 }} />
+              {m}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setActiveMakers(activeMakers === null ? new Set() : null)}
+          className="text-xs"
+          style={{ marginLeft: 4, padding: '2px 9px', borderRadius: 999, border: '0.5px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-secondary)', cursor: 'pointer' }}
+        >
+          {activeMakers === null ? 'Deselect all' : 'Select all'}
+        </button>
       </div>
 
       {/* Numbered list, flowed into newspaper columns */}
       <div style={{ columnWidth: 220, columnGap: 16 }}>
         {ranked.map((p, i) => {
-          const isHi = highlightKeys ? p.keys.some((k) => highlightKeys.has(k)) : false;
-          const dim = !!highlightKeys && !isHi;
+          const mActive = activeMakers === null || activeMakers.has(p.maker);
+          const isMatch = highlightKeys ? p.keys.some((k) => highlightKeys.has(k)) : false;
+          const isHi = mActive && isMatch;
+          const dim = !mActive || (!!highlightKeys && !isMatch);
           const c = makerColor(p.maker);
           return (
             <div

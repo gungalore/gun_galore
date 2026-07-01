@@ -185,6 +185,13 @@ interface ConversationResponse {
   messages: ConversationMessageRow[];
 }
 
+/** One row in the last-10 history picker. */
+export interface AskGgHistoryItem {
+  id: string;
+  title: string | null;
+  updatedAt: string;
+}
+
 export interface UseAskGg {
   /** Current conversation's messages (oldest → newest). */
   messages: AskGgUiMessage[];
@@ -240,6 +247,11 @@ export interface UseAskGg {
   /** Wipe local conversation state and start a fresh thread. Does
    *  NOT clear quota / tierGated / coolOff (those are server-truth). */
   reset: () => void;
+  /** The user's last 10 conversations (most recent first) for the
+   *  history picker. Refreshed on mount and after each send. */
+  history: AskGgHistoryItem[];
+  /** Re-fetch the history list from the server. */
+  refreshHistory: () => Promise<void>;
 }
 
 interface QuotaResponseBody {
@@ -273,8 +285,11 @@ export function useAskGg(): UseAskGg {
     useState<AskGgFairUseCoolOff | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
-  // Guards the once-per-mount auto-restore of the last conversation.
+  // Last-10 conversations for the history picker.
+  const [history, setHistory] = useState<AskGgHistoryItem[]>([]);
+  // Guards the once-per-mount setup (fresh thread + history fetch).
   const hydratedRef = useRef(false);
+  const prevSendingRef = useRef(false);
 
   /** Fetch + apply the latest quota snapshot. Quietly fails if the
    *  user is signed-out, the token is unavailable, or the backend
@@ -363,6 +378,24 @@ export function useAskGg(): UseAskGg {
     [getToken, isSignedIn],
   );
 
+  /** Re-fetch the last-10 conversation list for the history picker. */
+  const refreshHistory = useCallback(async () => {
+    if (!isSignedIn) return;
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const r = await fetch(`${API_URL}/ask-gg/conversations`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (!r.ok) return;
+      const rows = (await r.json()) as AskGgHistoryItem[];
+      setHistory(Array.isArray(rows) ? rows.slice(0, 10) : []);
+    } catch {
+      // history is a nicety — never surface an error for it
+    }
+  }, [getToken, isSignedIn]);
+
   // Persist the active conversation id so a refresh / return can
   // rehydrate the thread. Only writes non-null ids; reset() clears it.
   useEffect(() => {
@@ -374,30 +407,21 @@ export function useAskGg(): UseAskGg {
     }
   }, [conversationId]);
 
-  // On mount (signed-in), restore the last active conversation ONCE so
-  // the thread + citation chips survive a page reload. If it can't be
-  // loaded (deleted / not owned), drop the stale id.
+  // On mount (signed-in): open a FRESH thread every time — we intentionally
+  // do NOT auto-restore the last conversation. The last 10 conversations are
+  // reachable via the history picker instead. Just prime the history list.
   useEffect(() => {
     if (!isLoaded || !isSignedIn || hydratedRef.current) return;
     hydratedRef.current = true;
-    if (typeof window === 'undefined') return;
-    let last: string | null = null;
-    try {
-      last = window.localStorage.getItem(LAST_CONVERSATION_KEY);
-    } catch {
-      last = null;
-    }
-    if (!last) return;
-    void loadConversation(last).then((ok) => {
-      if (!ok && typeof window !== 'undefined') {
-        try {
-          window.localStorage.removeItem(LAST_CONVERSATION_KEY);
-        } catch {
-          // ignore
-        }
-      }
-    });
-  }, [isLoaded, isSignedIn, loadConversation]);
+    void refreshHistory();
+  }, [isLoaded, isSignedIn, refreshHistory]);
+
+  // Refresh the history list each time a send completes (a new conversation
+  // may have been created, or an existing one bumped to the top).
+  useEffect(() => {
+    if (prevSendingRef.current && !sending) void refreshHistory();
+    prevSendingRef.current = sending;
+  }, [sending, refreshHistory]);
 
   const send = useCallback(
     async (
@@ -757,5 +781,7 @@ export function useAskGg(): UseAskGg {
     markKbHelpful,
     markResolved,
     reset,
+    history,
+    refreshHistory,
   };
 }

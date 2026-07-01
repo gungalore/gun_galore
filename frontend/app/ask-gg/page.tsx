@@ -156,6 +156,40 @@ function IconClock() {
   );
 }
 
+function IconPlus() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function IconHistory() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 3v5h5" />
+      <path d="M3.05 13a9 9 0 1 0 2.6-6.4L3 8" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+/** Compact relative time for the history picker (e.g. "5m ago", "2d ago"). */
+function relTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+  const s = Math.max(0, (Date.now() - then) / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 export default function AskGgPage() {
   const { isSignedIn, isLoaded } = useUser();
   const ag = useAskGg();
@@ -213,6 +247,27 @@ export default function AskGgPage() {
   function startChat() {
     composerRef.current?.focus();
     composerRef.current?.scrollIntoView({ block: 'center' });
+  }
+
+  // Last-10 chat history picker (opens from the header). Opening a fresh
+  // Ask GG always starts a new thread; past chats are reachable here.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  function newChat() {
+    ag.reset();
+    setComposerValue('');
+    setPendingFiles([]);
+    setPhotoError(null);
+    setKbHits([]);
+    setKbDismissed(false);
+    setResolvedThisTurn(false);
+    setHistoryOpen(false);
+    setMode('chat');
+    composerRef.current?.focus();
+  }
+  async function openConversation(id: string) {
+    setHistoryOpen(false);
+    setMode('chat');
+    await ag.loadConversation(id);
   }
 
   // Auto-scroll to bottom on new messages.
@@ -424,6 +479,124 @@ export default function AskGgPage() {
         >
           {/* Mode is switched via the prominent segmented toggle below
               the header (see ModeToggle), not a button up here. */}
+          {isSignedIn && mode === 'chat' && (
+            <>
+              <button
+                type="button"
+                onClick={newChat}
+                title="Start a new chat"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '5px 10px',
+                  borderRadius: 999,
+                  background: 'var(--bg-inset)',
+                  border: '0.5px solid var(--border)',
+                  color: 'var(--text-secondary)',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                }}
+              >
+                <IconPlus /> New chat
+              </button>
+              <div style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!historyOpen) void ag.refreshHistory();
+                    setHistoryOpen((o) => !o);
+                  }}
+                  aria-haspopup="menu"
+                  aria-expanded={historyOpen}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '5px 10px',
+                    borderRadius: 999,
+                    background: 'var(--bg-inset)',
+                    border: '0.5px solid var(--border)',
+                    color: 'var(--text-secondary)',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <IconHistory /> History
+                </button>
+                {historyOpen && (
+                  <>
+                    <div
+                      onClick={() => setHistoryOpen(false)}
+                      style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                    />
+                    <div
+                      role="menu"
+                      style={{
+                        position: 'absolute',
+                        right: 0,
+                        top: 'calc(100% + 6px)',
+                        zIndex: 50,
+                        width: 280,
+                        maxHeight: 340,
+                        overflowY: 'auto',
+                        background: 'var(--bg-card)',
+                        border: '0.5px solid var(--border)',
+                        borderRadius: 12,
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                        padding: 6,
+                      }}
+                    >
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '6px 8px 4px' }}>
+                        Last {Math.min(ag.history.length || 10, 10)} chats
+                      </div>
+                      {ag.history.length === 0 ? (
+                        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '8px 8px 10px' }}>
+                          No past chats yet.
+                        </div>
+                      ) : (
+                        ag.history.map((h) => (
+                          <button
+                            key={h.id}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => openConversation(h.id)}
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              textAlign: 'left',
+                              padding: '8px',
+                              borderRadius: 8,
+                              border: 'none',
+                              background:
+                                h.id === ag.conversationId ? 'var(--bg-inset)' : 'transparent',
+                              color: 'var(--text-primary)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <span
+                              style={{
+                                display: 'block',
+                                fontSize: 13,
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              }}
+                            >
+                              {h.title || 'Untitled chat'}
+                            </span>
+                            <span style={{ display: 'block', fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                              {relTime(h.updatedAt)}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
           <span
             style={{
               display: 'inline-flex',
