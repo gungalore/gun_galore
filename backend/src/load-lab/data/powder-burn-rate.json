@@ -13,6 +13,7 @@
     "Winchester",
     "Alliant",
     "Ramshot",
+    "Lovex",
     "Somchem"
   ],
   "powders": [
@@ -1445,12 +1446,23 @@
       "yNorm": 0.8549
     },
     {
+      "id": "p218",
+      "maker": "Lovex",
+      "name": "D032-03 (Clean Shot)",
+      "key": "d03203cleanshot",
+      "yNorm": 0.0864,
+      "approx": true,
+      "anchors": [
+        "Titegroup"
+      ],
+      "confidence": "high"
+    },
+    {
       "id": "p204",
       "maker": "Somchem",
       "name": "S121",
       "key": "s121",
       "yNorm": 0.0971,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "Bullseye",
@@ -1465,7 +1477,6 @@
       "name": "MS200",
       "key": "ms200",
       "yNorm": 0.1096,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "Red Dot",
@@ -1475,12 +1486,37 @@
       "confidence": "medium"
     },
     {
+      "id": "p219",
+      "maker": "Lovex",
+      "name": "D036-07 (Ultimate Pistol)",
+      "key": "d03607ultimatepistol",
+      "yNorm": 0.187,
+      "approx": true,
+      "anchors": [
+        "CFE Pistol",
+        "HS-6"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p220",
+      "maker": "Lovex",
+      "name": "D036-03 (Auto Pistol)",
+      "key": "d03603autopistol",
+      "yNorm": 0.2011,
+      "approx": true,
+      "anchors": [
+        "HS-6",
+        "Longshot"
+      ],
+      "confidence": "high"
+    },
+    {
       "id": "p206",
       "maker": "Somchem",
       "name": "MP200",
       "key": "mp200",
       "yNorm": 0.2233,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "Unique",
@@ -1494,7 +1530,6 @@
       "name": "S221",
       "key": "s221",
       "yNorm": 0.2308,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "HS-6",
@@ -1503,12 +1538,24 @@
       "confidence": "medium"
     },
     {
+      "id": "p221",
+      "maker": "Lovex",
+      "name": "D037-01 (Major Pistol)",
+      "key": "d03701majorpistol",
+      "yNorm": 0.3025,
+      "approx": true,
+      "anchors": [
+        "2400",
+        "Blue Dot"
+      ],
+      "confidence": "high"
+    },
+    {
       "id": "p208",
       "maker": "Somchem",
       "name": "S265",
       "key": "s265",
       "yNorm": 0.3332,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "H110",
@@ -1518,12 +1565,50 @@
       "confidence": "high"
     },
     {
+      "id": "p222",
+      "maker": "Lovex",
+      "name": "D037-02 (Heavy Pistol)",
+      "key": "d03702heavypistol",
+      "yNorm": 0.3415,
+      "approx": true,
+      "anchors": [
+        "H110",
+        "Li’l Gun"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p223",
+      "maker": "Lovex",
+      "name": "D063-02 (Blackout)",
+      "key": "d06302blackout",
+      "yNorm": 0.3427,
+      "approx": true,
+      "anchors": [
+        "IMR4227",
+        "H4198"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p224",
+      "maker": "Lovex",
+      "name": "D060-01 (Buffalo Rifle)",
+      "key": "d06001buffalorifle",
+      "yNorm": 0.3427,
+      "approx": true,
+      "anchors": [
+        "IMR4227",
+        "H4198"
+      ],
+      "confidence": "medium"
+    },
+    {
       "id": "p209",
       "maker": "Somchem",
       "name": "S321",
       "key": "s321",
       "yNorm": 0.4661,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "Benchmark",
@@ -1533,12 +1618,37 @@
       "confidence": "high"
     },
     {
+      "id": "p225",
+      "maker": "Lovex",
+      "name": "D073-01 (Tactical Rifle)",
+      "key": "d07301tacticalrifle",
+      "yNorm": 0.4851,
+      "approx": true,
+      "anchors": [
+        "H335",
+        "BL(C)-2"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p226",
+      "maker": "Lovex",
+      "name": "D073-04 (AR Plus)",
+      "key": "d07304arplus",
+      "yNorm": 0.4851,
+      "approx": true,
+      "anchors": [
+        "H335",
+        "BL(C)-2"
+      ],
+      "confidence": "medium"
+    },
+    {
       "id": "p210",
       "maker": "Somchem",
       "name": "S335",
       "key": "s335",
       "yNorm": 0.5055,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "IMR3031",
@@ -1553,7 +1663,6 @@
       "name": "S341",
       "key": "s341",
       "yNorm": 0.5424,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "H4895",
@@ -1563,12 +1672,25 @@
       "confidence": "high"
     },
     {
+      "id": "p227",
+      "maker": "Lovex",
+      "name": "D073-06 (Match Rifle)",
+      "key": "d07306matchrifle",
+      "yNorm": 0.5431,
+      "approx": true,
+      "anchors": [
+        "CFE 223",
+        "IMR4064",
+        "Reloder 15"
+      ],
+      "confidence": "high"
+    },
+    {
       "id": "p212",
       "maker": "Somchem",
       "name": "S355",
       "key": "s355",
       "yNorm": 0.5716,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "Varget",
@@ -1578,12 +1700,65 @@
       "confidence": "high"
     },
     {
+      "id": "p228",
+      "maker": "Lovex",
+      "name": "S062 (Precision Rifle)",
+      "key": "s062precisionrifle",
+      "yNorm": 0.5716,
+      "approx": true,
+      "anchors": [
+        "Varget",
+        "Reloder 15",
+        "IMR4064"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p216",
+      "maker": "Winchester",
+      "name": "StaBALL Match",
+      "key": "staballmatch",
+      "yNorm": 0.5909,
+      "approx": true,
+      "anchors": [
+        "Varget",
+        "Reloder 15",
+        "N140"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p229",
+      "maker": "Lovex",
+      "name": "S065 (Long Rifle)",
+      "key": "s065longrifle",
+      "yNorm": 0.6426,
+      "approx": true,
+      "anchors": [
+        "N540",
+        "Reloder 17"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "p230",
+      "maker": "Lovex",
+      "name": "S070 (SW4350)",
+      "key": "s070sw4350",
+      "yNorm": 0.6708,
+      "approx": true,
+      "anchors": [
+        "H4350",
+        "IMR4350"
+      ],
+      "confidence": "high"
+    },
+    {
       "id": "p214",
       "maker": "Somchem",
       "name": "S365",
       "key": "s365",
       "yNorm": 0.6755,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "H4350",
@@ -1598,7 +1773,6 @@
       "name": "S361",
       "key": "s361",
       "yNorm": 0.6947,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "Reloder 17",
@@ -1613,12 +1787,38 @@
       "name": "S385",
       "key": "s385",
       "yNorm": 0.7746,
-      "somchem": true,
       "approx": true,
       "anchors": [
         "H4831SC",
         "Reloder 22",
         "MRP"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p231",
+      "maker": "Lovex",
+      "name": "S071 (Ultimate Rifle)",
+      "key": "s071ultimaterifle",
+      "yNorm": 0.8194,
+      "approx": true,
+      "anchors": [
+        "Reloder 22",
+        "H1000"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "p217",
+      "maker": "Winchester",
+      "name": "StaBALL HD",
+      "key": "staballhd",
+      "yNorm": 0.8314,
+      "approx": true,
+      "anchors": [
+        "H1000",
+        "Retumbo",
+        "Reloder 22"
       ],
       "confidence": "high"
     }

@@ -1,0 +1,298 @@
+{
+  "source": "GG research (burn-rate placement for powders not on the Vihtavuori chart)",
+  "placements": [
+    {
+      "maker": "Somchem",
+      "name": "S121",
+      "anchors": [
+        "Bullseye",
+        "Titegroup",
+        "N320"
+      ],
+      "confidence": "medium",
+      "rationale": "Extremely fast spherical shot/handgun powder sitting at the fastest end of the pistol band near Bullseye/W231/HP-38-class charts split on exact rank."
+    },
+    {
+      "maker": "Somchem",
+      "name": "MS200",
+      "anchors": [
+        "Red Dot",
+        "N320",
+        "Bullseye"
+      ],
+      "confidence": "medium",
+      "rationale": "Extremely fast flake shotshell/fast-pistol powder placed beside Red Dot/American Select, essentially co-located with S121 at the very fast end."
+    },
+    {
+      "maker": "Somchem",
+      "name": "MP200",
+      "anchors": [
+        "Unique",
+        "Blue Dot"
+      ],
+      "confidence": "medium",
+      "rationale": "Fast flake pistol/shotshell powder one step slower than S121/MS200, sitting in the Unique/Blue Dot/Herco band."
+    },
+    {
+      "maker": "Somchem",
+      "name": "S221",
+      "anchors": [
+        "HS-6",
+        "Blue Dot"
+      ],
+      "confidence": "medium",
+      "rationale": "Medium spherical revolver/pistol powder in the HS-6/Longshot/Blue Dot band, slower than the fast pistol powders and faster than magnum-revolver powders."
+    },
+    {
+      "maker": "Somchem",
+      "name": "S265",
+      "anchors": [
+        "H110",
+        "Lil Gun",
+        "2400"
+      ],
+      "confidence": "high",
+      "rationale": "Magnum-revolver powder squarely in the standard H110/W296/2400 magnum-handgun class, the slowest of the handgun powders."
+    },
+    {
+      "maker": "Somchem",
+      "name": "S321",
+      "anchors": [
+        "Benchmark",
+        "H335",
+        "BLC-2"
+      ],
+      "confidence": "high",
+      "rationale": "Fast rifle ball powder mapped to AA2230/Benchmark/H335/BLC-2 class per Somchem's own table; the stray S321-equals-H4198 claim is too fast and is a known chart error."
+    },
+    {
+      "maker": "Somchem",
+      "name": "S335",
+      "anchors": [
+        "IMR3031",
+        "N133",
+        "RL15"
+      ],
+      "confidence": "high",
+      "rationale": "Medium extruded rifle powder equal to IMR3031/AA2460/N133 per Hunting Africa table; sits just faster than Varget and is NOT the Varget powder (common S335/S355 confusion)."
+    },
+    {
+      "maker": "Somchem",
+      "name": "S341",
+      "anchors": [
+        "H4895",
+        "Varget",
+        "IMR4064"
+      ],
+      "confidence": "high",
+      "rationale": "Medium ball rifle powder in the IMR4895/BLC-2/Varget band; slower than S335 per Somchem's fast-to-slow order, the .308/.30-06 workhorse grade."
+    },
+    {
+      "maker": "Somchem",
+      "name": "S355",
+      "anchors": [
+        "Varget",
+        "RL15",
+        "IMR4064"
+      ],
+      "confidence": "high",
+      "rationale": "The classic community Varget/RL15 equivalent (AR2208), one notch slower than S335; H4350 is a touch too slow for it."
+    },
+    {
+      "maker": "Somchem",
+      "name": "S361",
+      "anchors": [
+        "RL17",
+        "IMR4350",
+        "N160"
+      ],
+      "confidence": "medium",
+      "rationale": "Slow rifle ball powder triangulated between S355 and S365, on the fast edge of the H4350 band (spherical sibling of S365, just faster)."
+    },
+    {
+      "maker": "Somchem",
+      "name": "S365",
+      "anchors": [
+        "H4350",
+        "IMR4350",
+        "RL19"
+      ],
+      "confidence": "high",
+      "rationale": "Flagship slow extruded rifle powder equal to IMR4350/H4350/AR2209 per Somchem and Hunting Africa; NOT H4831/RL22 which is S385 territory."
+    },
+    {
+      "maker": "Somchem",
+      "name": "S385",
+      "anchors": [
+        "H4831SC",
+        "RL22",
+        "MRP"
+      ],
+      "confidence": "high",
+      "rationale": "Slowest Somchem powder, equal to IMR4831/H4831/RL22/Norma MRP by burn rate; used in place of H1000/Retumbo locally though technically a hair faster than those."
+    },
+    {
+      "maker": "Winchester",
+      "name": "StaBALL Match",
+      "anchors": [
+        "Varget",
+        "RL15",
+        "N140"
+      ],
+      "confidence": "high",
+      "rationale": "Medium match-rifle ball powder; used for .223/.22-250/6mm/.308 in our data — Varget/RL15 class."
+    },
+    {
+      "maker": "Winchester",
+      "name": "StaBALL HD",
+      "anchors": [
+        "H1000",
+        "Retumbo",
+        "RL22"
+      ],
+      "confidence": "high",
+      "rationale": "Slow high-density magnum ball powder; used for 6.5 PRC/7mm PRC/7mm Rem Mag/Nosler magnums in our data — H1000/Retumbo class."
+    },
+    {
+      "maker": "Lovex",
+      "name": "D032-03 (Clean Shot)",
+      "anchors": [
+        "Titegroup"
+      ],
+      "confidence": "high",
+      "rationale": "Manufacturer explicitly names W231/HP-38, Titegroup, and Accurate No.2. Titegroup is the spine node at this fast-pistol speed; fastest of the line."
+    },
+    {
+      "maker": "Lovex",
+      "name": "D036-07 (Ultimate Pistol)",
+      "anchors": [
+        "CFE Pistol",
+        "HS-6"
+      ],
+      "confidence": "high",
+      "rationale": "Manufacturer: comparable to CFE Pistol / AutoComp, faster than AA No.5, slower than AA No.2. Sits between Unique and HS-6; CFE Pistol is the tightest spine anchor."
+    },
+    {
+      "maker": "Lovex",
+      "name": "D036-03 (Auto Pistol)",
+      "anchors": [
+        "HS-6",
+        "Longshot"
+      ],
+      "confidence": "high",
+      "rationale": "Manufacturer names HS-6, Longshot, Accurate No.5. Mid-pistol slot; HS-6 is the closest single spine anchor, Longshot marginally slower."
+    },
+    {
+      "maker": "Lovex",
+      "name": "D037-01 (Major Pistol)",
+      "anchors": [
+        "2400",
+        "Blue Dot"
+      ],
+      "confidence": "high",
+      "rationale": "Manufacturer: similar to AA No.7, 2400 and Blue Dot. Magnum-pistol range straddling the 2400/Blue Dot node."
+    },
+    {
+      "maker": "Lovex",
+      "name": "D037-02 (Heavy Pistol)",
+      "anchors": [
+        "H110",
+        "Lil Gun"
+      ],
+      "confidence": "high",
+      "rationale": "Manufacturer: same application as 2400, H110, W296; ≈ AA No.9. Slowest pistol powder, anchors at the H110/W296 magnum-pistol node."
+    },
+    {
+      "maker": "Lovex",
+      "name": "D063-02 (Blackout)",
+      "anchors": [
+        "IMR4227",
+        "H4198"
+      ],
+      "confidence": "high",
+      "rationale": "Manufacturer states ≈ Accurate 1680, which sits a step slower than H110/Lil'Gun near IMR4227/H4198 on the spine. NOT the H110/Lil'Gun node despite 300 BLK use-case overlap. Straddles slow-pistol / fast-rifle boundary."
+    },
+    {
+      "maker": "Lovex",
+      "name": "D060-01 (Buffalo Rifle)",
+      "anchors": [
+        "IMR4227",
+        "H4198"
+      ],
+      "confidence": "medium",
+      "rationale": "SW groups it with Accurate 5744 / IMR 4227 for reduced/cast-bullet & straight-wall rifle. Fastest true rifle powder; anchors near IMR4227/H4198. (Some lineup sources list code as S040; retailer/guide data points to the A5744/IMR4227 speed node either way.)"
+    },
+    {
+      "maker": "Lovex",
+      "name": "D073-01 (Tactical Rifle)",
+      "anchors": [
+        "H335",
+        "BLC-2"
+      ],
+      "confidence": "high",
+      "rationale": "Manufacturer: superior alternative to H335 and BLC(2). Ball powder in the H335/TAC/CFE223 neighborhood; fast rifle."
+    },
+    {
+      "maker": "Lovex",
+      "name": "D073-04 (AR Plus)",
+      "anchors": [
+        "H335",
+        "BLC-2"
+      ],
+      "confidence": "medium",
+      "rationale": "Lovex/distributor data: ≈ Accurate 2230, just faster than Tactical Rifle in the H335/BLC-2 cluster. No manufacturer-page equivalent, hence medium confidence."
+    },
+    {
+      "maker": "Lovex",
+      "name": "D073-06 (Match Rifle)",
+      "anchors": [
+        "CFE 223",
+        "IMR4064",
+        "RL15"
+      ],
+      "confidence": "high",
+      "rationale": "Manufacturer names Accurate 2520; retailers add CFE223, IMR 4064, RL15. Ball powder one notch faster than Varget — a hair faster than the true Varget analog (Precision Rifle)."
+    },
+    {
+      "maker": "Lovex",
+      "name": "S062 (Precision Rifle)",
+      "anchors": [
+        "Varget",
+        "RL15",
+        "IMR4064"
+      ],
+      "confidence": "high",
+      "rationale": "Manufacturer: burn rate and temp sensitivity very similar to Varget — the strongest 1:1 claim in the lineup, and an extruded powder like Varget. This is the true Varget node."
+    },
+    {
+      "maker": "Lovex",
+      "name": "S065 (Long Rifle)",
+      "anchors": [
+        "N540",
+        "RL17"
+      ],
+      "confidence": "medium",
+      "rationale": "Sources disagree: retailers market it for the H4350 use-case (6.5 CM/.30-06) but SW's own guide and burn-rate charts place S065 between H380 and H414/W760 — i.e. faster than H4350. Best burn-rate anchor is the H414/W760/N550 region (spine: N540/RL17), NOT IMR4350/H4350. Treat H4350 as an application match only."
+    },
+    {
+      "maker": "Lovex",
+      "name": "S070 (SW4350)",
+      "anchors": [
+        "H4350",
+        "IMR4350"
+      ],
+      "confidence": "high",
+      "rationale": "Named directly for and marketed as an H4350/IMR 4350 equivalent; medium-magnum use (.30-06, 6.5 CM, .300 Win Mag). Anchors squarely at the H4350/IMR4350 node."
+    },
+    {
+      "maker": "Lovex",
+      "name": "S071 (Ultimate Rifle)",
+      "anchors": [
+        "RL22",
+        "H1000"
+      ],
+      "confidence": "medium",
+      "rationale": "Overbore/magnum powder (≈ Accurate 3100 / IMR 7828). Slowest of the line; anchors in the RL22 / IMR7828 / H1000 slow-magnum region."
+    }
+  ]
+}

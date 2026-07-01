@@ -321,7 +321,7 @@ export function PowderBurnChart() {
                   fontSize: 11,
                   fontWeight: 600,
                   letterSpacing: 0.2,
-                  color: m === 'Somchem' ? '#22c55e' : 'var(--text-secondary)',
+                  color: 'var(--text-secondary)',
                   textAlign: 'center',
                 }}
               >
@@ -336,7 +336,6 @@ export function PowderBurnChart() {
             const isHi = highlightKeys ? highlightKeys.has(p.key) : false;
             const dim = !!highlightKeys && !isHi;
             const interactive = p.hasLoads;
-            const isSom = !!p.somchem;
             return (
               <div
                 key={p.id}
@@ -367,27 +366,21 @@ export function PowderBurnChart() {
                   opacity: dim ? 0.25 : p.hasLoads ? 1 : 0.5,
                   transition: 'opacity 120ms, box-shadow 120ms',
                   background: isHi
-                    ? 'rgba(200,16,46,0.16)'
-                    : isSom
-                      ? 'rgba(34,197,94,0.12)'
-                      : p.hasLoads
-                        ? 'var(--bg-card)'
-                        : 'transparent',
+                    ? 'rgba(34,197,94,0.18)'
+                    : p.hasLoads
+                      ? 'var(--bg-card)'
+                      : 'transparent',
                   border: isHi
-                    ? '1px solid var(--red)'
-                    : isSom
-                      ? '0.5px solid rgba(34,197,94,0.5)'
-                      : p.hasLoads
-                        ? '0.5px solid var(--border)'
-                        : '0.5px dashed var(--border-divider, var(--border))',
+                    ? '1px solid #22c55e'
+                    : p.hasLoads
+                      ? '0.5px solid var(--border)'
+                      : '0.5px dashed var(--border-divider, var(--border))',
                   color: isHi
-                    ? 'var(--red)'
-                    : isSom
-                      ? '#16a34a'
-                      : p.hasLoads
-                        ? 'var(--text-primary)'
-                        : 'var(--text-tertiary)',
-                  fontWeight: isHi || isSom ? 600 : 400,
+                    ? '#16a34a'
+                    : p.hasLoads
+                      ? 'var(--text-primary)'
+                      : 'var(--text-tertiary)',
+                  fontWeight: isHi ? 600 : 400,
                 }}
               >
                 {p.name}
@@ -399,8 +392,9 @@ export function PowderBurnChart() {
       </div>
 
       <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
-        {chart.note} Somchem placements (≈) are approximate, anchored to equivalent powders.
-        Solid chips have published loads in our library; hover to see them.
+        {chart.note} Placements marked ≈ are approximate, anchored to equivalent powders.
+        Solid chips have published loads in our library — hover to see them; search a
+        cartridge to highlight the powders it uses.
       </p>
 
       {/* Cursor-pinned, scrollable cartridge list */}

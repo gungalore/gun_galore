@@ -118,33 +118,38 @@ async function extractPowders(pdfPath) {
   return powders;
 }
 
-function mergeSomchem(powders, placementsPath) {
+// Merge researched placements for powders NOT on the source chart (Somchem,
+// Lovex) or missing from a maker's column (new Winchester StaBALL powders).
+// Each entry: { maker?, name (or legacy `somchem`), anchors[], confidence? }.
+// Position = mean yNorm of the anchor powders that resolve on the chart.
+function mergeAdditional(powders, placementsPath) {
   const raw = JSON.parse(fs.readFileSync(placementsPath, 'utf8'));
   const placements = raw.placements ?? raw;
   const byKey = new Map(powders.map((p) => [p.key, p]));
   let idc = powders.length;
   const added = [];
   for (const pl of placements) {
+    const maker = pl.maker ?? 'Somchem';
+    const name = pl.name ?? pl.somchem;
     const anchors = (pl.anchors || []).map((a) => byKey.get(powderKey(a))).filter(Boolean);
-    if (anchors.length === 0) {
-      console.warn(`  ! Somchem ${pl.somchem}: no anchor matched (${(pl.anchors || []).join(', ')}) — skipped`);
+    if (!name || anchors.length === 0) {
+      console.warn(`  ! ${maker} ${name ?? '(unnamed)'}: no anchor matched (${(pl.anchors || []).join(', ')}) — skipped`);
       continue;
     }
     const yNorm = +(anchors.reduce((s, a) => s + a.yNorm, 0) / anchors.length).toFixed(4);
     added.push({
       id: `p${idc++}`,
-      maker: 'Somchem',
-      name: pl.somchem,
-      key: powderKey(pl.somchem),
+      maker,
+      name,
+      key: powderKey(name),
       yNorm,
-      somchem: true,
       approx: true,
       anchors: anchors.map((a) => a.name),
       confidence: pl.confidence ?? null,
     });
   }
   added.sort((a, b) => a.yNorm - b.yNorm);
-  console.log(`  merged ${added.length}/${placements.length} Somchem powders`);
+  console.log(`  merged ${added.length}/${placements.length} additional powders`);
   return added;
 }
 
@@ -157,8 +162,9 @@ async function main() {
   const powders = await extractPowders(pdfPath);
   const makers = [...MAKERS];
   if (placementsPath && fs.existsSync(placementsPath)) {
-    const som = mergeSomchem(powders, placementsPath);
-    if (som.length) { powders.push(...som); makers.push('Somchem'); }
+    const extra = mergeAdditional(powders, placementsPath);
+    for (const p of extra) if (!makers.includes(p.maker)) makers.push(p.maker);
+    powders.push(...extra);
   }
   const out = {
     source: 'Vihtavuori Burning Rate Chart',
