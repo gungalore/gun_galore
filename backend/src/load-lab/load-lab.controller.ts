@@ -56,7 +56,23 @@ export class LoadLabController {
           'The Load Lab is a Gun Galore PRO feature. Upgrade to run load predictions.',
       };
     }
-    return this.loadLab.compute(body);
+    const result = this.loadLab.compute(body);
+    // SAFETY cross-check — compare the entered charge against our PUBLISHED
+    // manual-max data (authoritative), independent of the engine's pressure
+    // estimate. Attached so the panel can render a hard over-max warning. Never
+    // blocks the calculation itself.
+    const bullet = this.components.getBullet(body.bulletId);
+    const bulletWeightGr = bullet?.gmass ?? 0;
+    const maxChargeCheck =
+      bulletWeightGr > 0
+        ? await this.recommended.maxChargeCheck(
+            body.cartridge,
+            bulletWeightGr,
+            body.powderName,
+            body.chargeGr,
+          )
+        : null;
+    return { ...result, maxChargeCheck };
   }
 
   /**

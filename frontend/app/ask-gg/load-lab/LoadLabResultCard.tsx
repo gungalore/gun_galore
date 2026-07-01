@@ -14,7 +14,11 @@
 //   warnings list  (when present)
 //   plain-language summary line (always)
 
-import type { LoadLabMode, LoadLabResult } from '@/lib/load-lab-types';
+import type {
+  LoadLabMode,
+  LoadLabResult,
+  MaxChargeCheck,
+} from '@/lib/load-lab-types';
 import {
   fmtBar,
   fmtFps,
@@ -47,6 +51,149 @@ function energyNear300(result: LoadLabResult): {
   return { rangeM: best.rangeM, energyJ: best.energyJoules };
 }
 
+/**
+ * Independent published-max cross-check banner. Sits ABOVE everything else so
+ * an over-max charge is the first thing the user sees — louder than the
+ * engine's own estimate. A can't-verify result (no manual match) is shown in
+ * amber and NEVER as an all-clear. A within-max result is a quiet green line.
+ */
+function MaxChargeBanner({ check }: { check: MaxChargeCheck }) {
+  if (check.status === 'OVER_MAX') {
+    const source = check.matchedPowder
+      ? `${check.matchedPowder}${check.manual ? ` · ${check.manual}` : ''}${
+          check.pageNumber ? ` p.${check.pageNumber}` : ''
+        }`
+      : null;
+    return (
+      <div
+        role="alert"
+        style={{
+          background: 'rgba(200,16,46,0.12)',
+          border: '1.5px solid var(--red)',
+          borderRadius: 10,
+          padding: '14px 16px',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 6,
+          }}
+        >
+          <span aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>
+            ⛔
+          </span>
+          <span
+            style={{
+              color: 'var(--red)',
+              fontWeight: 700,
+              fontSize: 13,
+              letterSpacing: 0.3,
+              textTransform: 'uppercase',
+            }}
+          >
+            Over published maximum — do not load
+          </span>
+        </div>
+        <p
+          style={{
+            color: 'var(--text-primary)',
+            fontSize: 13.5,
+            lineHeight: 1.55,
+            margin: 0,
+          }}
+        >
+          {check.message}
+        </p>
+        {source && (
+          <p
+            style={{
+              color: 'var(--text-tertiary)',
+              fontSize: 11.5,
+              margin: '6px 0 0',
+            }}
+          >
+            Cross-checked against {source}
+            {check.manualCount > 1
+              ? ` (+${check.manualCount - 1} more manual${
+                  check.manualCount - 1 === 1 ? '' : 's'
+                })`
+              : ''}
+            .
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (check.status === 'NO_POWDER_MATCH' || check.status === 'NOT_INDEXED') {
+    return (
+      <div
+        style={{
+          background: 'rgba(245,158,11,0.08)',
+          border: '0.5px solid var(--warning)',
+          borderRadius: 8,
+          padding: '11px 14px',
+        }}
+      >
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}
+        >
+          <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>
+            ⚠️
+          </span>
+          <span
+            style={{ color: 'var(--warning)', fontWeight: 600, fontSize: 12.5 }}
+          >
+            Couldn&apos;t cross-check against a manual
+          </span>
+        </div>
+        <p
+          style={{
+            color: 'var(--text-secondary)',
+            fontSize: 12.5,
+            lineHeight: 1.5,
+            margin: 0,
+          }}
+        >
+          {check.message}
+        </p>
+      </div>
+    );
+  }
+
+  // WITHIN — quiet confirmation.
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        background: 'rgba(34,197,94,0.07)',
+        border: '0.5px solid rgba(34,197,94,0.4)',
+        borderRadius: 8,
+        padding: '9px 13px',
+      }}
+    >
+      <span aria-hidden style={{ fontSize: 13, lineHeight: 1 }}>
+        ✓
+      </span>
+      <p
+        style={{
+          color: 'var(--text-secondary)',
+          fontSize: 12.5,
+          lineHeight: 1.45,
+          margin: 0,
+        }}
+      >
+        {check.message}
+      </p>
+    </div>
+  );
+}
+
 export function LoadLabResultCard({
   result,
   mode,
@@ -70,6 +217,11 @@ export function LoadLabResultCard({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Published-max cross-check — independent of the engine estimate, shown
+          first so an over-max charge is impossible to miss. */}
+      {result.maxChargeCheck && (
+        <MaxChargeBanner check={result.maxChargeCheck} />
+      )}
       <SafetyOverlay safety={safety} />
 
       {/* Metric tiles */}

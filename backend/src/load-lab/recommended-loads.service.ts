@@ -130,6 +130,28 @@ export interface RecommendedLoadsResult {
   sources: string[];
 }
 
+/**
+ * Result of cross-checking a Load Lab charge against the PUBLISHED manual max.
+ *   OVER_MAX        — charge exceeds the published maximum (danger; block).
+ *   WITHIN          — charge is at/under the published maximum (still work up).
+ *   NO_POWDER_MATCH — cartridge is indexed but this powder isn't → can't verify.
+ *   NOT_INDEXED     — no published loads for this cartridge yet → can't verify.
+ */
+export interface MaxChargeCheck {
+  status: 'OVER_MAX' | 'WITHIN' | 'NO_POWDER_MATCH' | 'NOT_INDEXED';
+  chargeGr: number;
+  publishedMaxGr: number | null;
+  overByGr: number | null;
+  overByPct: number | null;
+  bulletWeightGr: number;
+  toleranceGr: number;
+  matchedPowder: string | null;
+  manual: string | null;
+  pageNumber: number | null;
+  manualCount: number;
+  message: string;
+}
+
 @Injectable()
 export class RecommendedLoadsService {
   constructor(
@@ -306,6 +328,84 @@ export class RecommendedLoadsService {
       notIndexed: false,
       powders,
       sources: [...sources].sort(),
+    };
+  }
+
+  /**
+   * SAFETY cross-check — does a Load Lab charge exceed the PUBLISHED maximum for
+   * this cartridge + powder + bullet weight? Reuses recommend()'s authoritative
+   * ManualLoad matching (never the engine's estimate). Because matching is
+   * name-based, a miss returns NO_POWDER_MATCH / NOT_INDEXED ("can't verify")
+   * rather than a false all-clear — we never imply a load is safe on absence of
+   * a reference.
+   */
+  async maxChargeCheck(
+    cartridge: string,
+    bulletWeightGr: number,
+    powderName: string,
+    chargeGr: number,
+    toleranceGr = 5,
+  ): Promise<MaxChargeCheck> {
+    const rec = await this.recommend(cartridge, bulletWeightGr, toleranceGr);
+    const base = {
+      chargeGr: round2(chargeGr),
+      bulletWeightGr,
+      toleranceGr: rec.toleranceGr,
+      publishedMaxGr: null as number | null,
+      overByGr: null as number | null,
+      overByPct: null as number | null,
+      matchedPowder: null as string | null,
+      manual: null as string | null,
+      pageNumber: null as number | null,
+      manualCount: 0,
+    };
+
+    if (rec.notIndexed) {
+      return {
+        ...base,
+        status: 'NOT_INDEXED',
+        message: `No published reference loads for ${cartridge} in our manual library yet — this charge can't be cross-checked. Verify against a printed reloading manual before loading.`,
+      };
+    }
+
+    const pk = powderKey(powderName);
+    const match = rec.powders.find((p) => powderKey(p.powderName) === pk);
+    if (!match) {
+      return {
+        ...base,
+        status: 'NO_POWDER_MATCH',
+        message: `No published data for ${powderName} in ${cartridge} at ~${bulletWeightGr}gr in our library — this charge can't be cross-checked against a manual. Verify against published data for this exact powder before loading.`,
+      };
+    }
+
+    const publishedMaxGr = match.maxGr;
+    const matchedPowder = `${match.powderMaker || ''} ${match.powderName}`.trim();
+    if (chargeGr > publishedMaxGr) {
+      const overByGr = round2(chargeGr - publishedMaxGr);
+      const overByPct = round1(((chargeGr - publishedMaxGr) / publishedMaxGr) * 100);
+      return {
+        ...base,
+        status: 'OVER_MAX',
+        publishedMaxGr,
+        overByGr,
+        overByPct,
+        matchedPowder,
+        manual: match.manual,
+        pageNumber: match.pageNumber,
+        manualCount: match.manualCount,
+        message: `${round2(chargeGr)}gr EXCEEDS the published maximum of ${publishedMaxGr}gr for ${matchedPowder} (${match.manual}) by ${overByGr}gr (+${overByPct}%). Do NOT load this charge — it may be dangerously over-pressure. Follow published data and work up.`,
+      };
+    }
+
+    return {
+      ...base,
+      status: 'WITHIN',
+      publishedMaxGr,
+      matchedPowder,
+      manual: match.manual,
+      pageNumber: match.pageNumber,
+      manualCount: match.manualCount,
+      message: `Within the published maximum of ${publishedMaxGr}gr for ${matchedPowder} (${match.manual}). Always start low and work up.`,
     };
   }
 }

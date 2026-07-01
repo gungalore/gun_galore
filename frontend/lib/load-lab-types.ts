@@ -81,6 +81,31 @@ export interface LoadLabUpgradeRequired {
   reason: string;
 }
 
+/**
+ * Independent SAFETY cross-check of the entered charge against our PUBLISHED
+ * manual-max data (the ManualLoad / Recommended-Loads table) — computed
+ * server-side, separate from the engine's own pressure estimate.
+ *   OVER_MAX        — charge exceeds the published maximum → hard red warning.
+ *   WITHIN          — at/under the published maximum → quiet confirmation.
+ *   NO_POWDER_MATCH — cartridge indexed but this powder isn't → can't verify.
+ *   NOT_INDEXED     — no published loads for this cartridge → can't verify.
+ * A miss NEVER reads as an all-clear — it says "can't cross-check this".
+ */
+export interface MaxChargeCheck {
+  status: 'OVER_MAX' | 'WITHIN' | 'NO_POWDER_MATCH' | 'NOT_INDEXED';
+  chargeGr: number;
+  publishedMaxGr: number | null;
+  overByGr: number | null;
+  overByPct: number | null;
+  bulletWeightGr: number;
+  toleranceGr: number;
+  matchedPowder: string | null;
+  manual: string | null;
+  pageNumber: number | null;
+  manualCount: number;
+  message: string;
+}
+
 export interface LoadLabResult {
   inputs: {
     cartridge: string;
@@ -152,6 +177,9 @@ export interface LoadLabResult {
     nearMax: boolean;
   };
   warnings: string[];
+  /** Independent published-max cross-check. Null when we couldn't resolve a
+   *  bullet weight to key the lookup (rare). Absent from older cached calls. */
+  maxChargeCheck?: MaxChargeCheck | null;
 }
 
 /** The discriminated union the compute call resolves to. Narrow on the
