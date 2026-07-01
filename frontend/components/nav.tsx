@@ -10,6 +10,7 @@ import { LiveSearch } from '@/components/live-search';
 import { UrgentBell } from '@/components/urgent-bell';
 import { CartButton } from '@/components/cart-button';
 import { useInstallPrompt } from '@/lib/use-install-prompt';
+import { AccountMenuList, LogoutIcon } from '@/lib/account-menu';
 
 export function Nav() {
   const { isSignedIn, isLoaded, user } = useUser();
@@ -94,23 +95,9 @@ export function Nav() {
     { href: '/competitions', label: 'Competitions' },
   ];
 
-  // Account menu items — shared between desktop dropdown and mobile drawer.
-  // Wishlist sits at the top with the primary "View profile" link so the
-  // desktop nav has parity with the installed-PWA bottom bar (where
-  // Wishlist is one of the five primary tabs).
-  const ACCOUNT_LINKS = [
-    { href: '/profile', label: 'View profile', primary: true },
-    { href: '/wishlist', label: 'Wishlist' },
-    { href: '/my/listings', label: 'My Listings' },
-    { href: '/my/orders', label: 'My Orders' },
-    { href: '/my/sales', label: 'My Sales' },
-    { href: '/my/offers', label: 'My Offers' },
-    { href: '/my/bids', label: 'My Bids' },
-    { href: '/my/tickets', label: 'My Tickets' },
-    { href: '/dashboard/raffle-wins', label: 'My Wins' },
-    { href: '/offers/received', label: 'Received Offers' },
-    { href: '/dashboard', label: 'Dashboard' },
-  ];
+  // Account menu items now live in lib/account-menu.tsx (ACCOUNT_GROUPS) so the
+  // desktop dropdown, mobile drawer, and installed-PWA More sheet all render
+  // the same grouped list and can't drift apart. Rendered via <AccountMenuList/>.
 
   return (
     <>
@@ -248,62 +235,69 @@ export function Nav() {
                       </button>
                       {menuOpen && (
                         <div
-                          className="absolute right-0 mt-1 w-48 rounded-[8px] py-1 z-50"
+                          className="absolute right-0 mt-1 w-64 rounded-[8px] z-50 overflow-hidden"
                           style={{
                             background: 'var(--bg-card)',
                             border: '0.5px solid var(--border)',
                             boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+                            maxHeight: '76vh',
+                            overflowY: 'auto',
                           }}
                         >
-                          {ACCOUNT_LINKS.map(({ href, label, primary }) => {
-                            const isActive = (() => {
-                              if (!pathname) return false;
-                              if (href === '/profile')
-                                return pathname === '/profile';
-                              return (
-                                pathname === href ||
-                                pathname.startsWith(href + '/')
-                              );
-                            })();
-                            return (
-                              <Link
-                                key={href}
-                                href={href}
-                                onClick={() => setMenuOpen(false)}
-                                className="block px-3 py-2 text-sm transition-colors"
-                                style={{
-                                  color: isActive
-                                    ? '#fff'
-                                    : primary
-                                      ? 'var(--text-primary)'
-                                      : 'var(--text-secondary)',
-                                  background: isActive
-                                    ? 'rgba(200,16,46,0.14)'
-                                    : 'transparent',
-                                  borderLeft: isActive
-                                    ? '2px solid var(--red)'
-                                    : '2px solid transparent',
-                                  paddingLeft: isActive ? 10 : 12,
-                                  textDecoration: 'none',
-                                  fontWeight: isActive || primary ? 500 : 400,
-                                  borderBottom: primary
-                                    ? '0.5px solid var(--border)'
-                                    : undefined,
-                                  marginBottom: primary ? 4 : undefined,
-                                  paddingBottom: primary ? 10 : undefined,
-                                }}
-                              >
-                                {label}
-                              </Link>
-                            );
-                          })}
-                          <div
+                          <Link
+                            href="/profile"
+                            onClick={() => setMenuOpen(false)}
                             style={{
-                              borderTop: '0.5px solid var(--border)',
-                              marginTop: 4,
-                              paddingTop: 4,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              padding: '12px 14px',
+                              borderBottom: '0.5px solid var(--border)',
+                              textDecoration: 'none',
                             }}
                           >
+                            <div
+                              style={{
+                                width: 34,
+                                height: 34,
+                                borderRadius: '50%',
+                                background: 'var(--red)',
+                                color: '#fff',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 500,
+                                fontSize: 14,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {(displayName || 'G').charAt(0).toUpperCase()}
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <p
+                                style={{
+                                  margin: 0,
+                                  fontSize: 13,
+                                  fontWeight: 500,
+                                  color: 'var(--text-primary)',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {displayName || 'Your account'}
+                              </p>
+                              <p style={{ margin: 0, fontSize: 11, color: 'var(--text-tertiary)' }}>
+                                View profile
+                              </p>
+                            </div>
+                          </Link>
+                          <AccountMenuList
+                            pathname={pathname}
+                            onNavigate={() => setMenuOpen(false)}
+                            compact
+                          />
+                          <div style={{ borderTop: '0.5px solid var(--border)' }}>
                             <button
                               type="button"
                               onClick={async () => {
@@ -311,14 +305,23 @@ export function Nav() {
                                 await signOut();
                                 router.push('/');
                               }}
-                              className="block w-full text-left px-3 py-2 text-sm transition-colors"
                               style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 12,
+                                width: '100%',
+                                textAlign: 'left',
+                                padding: '10px 12px',
                                 color: 'var(--red)',
                                 background: 'transparent',
                                 border: 'none',
                                 cursor: 'pointer',
+                                fontSize: 13,
                               }}
                             >
+                              <span style={{ display: 'inline-flex' }}>
+                                <LogoutIcon />
+                              </span>
                               Sign out
                             </button>
                           </div>
@@ -583,44 +586,52 @@ export function Nav() {
               className="px-4 py-4"
               style={{ borderTop: '0.5px solid var(--border)' }}
             >
-              <p
-                className="text-xs uppercase mb-2"
-                style={{ color: 'var(--text-tertiary)', letterSpacing: '0.08em' }}
-              >
-                Account
-              </p>
               {isSignedIn ? (
                 <>
-                  {displayName && (
-                    <p
-                      className="px-3 pb-2 text-sm"
-                      style={{ color: 'var(--text-tertiary)' }}
+                  <Link
+                    href="/profile"
+                    onClick={() => setMobileOpen(false)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      padding: '2px 4px 14px',
+                      textDecoration: 'none',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        background: 'var(--red)',
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 500,
+                        fontSize: 16,
+                        flexShrink: 0,
+                      }}
                     >
-                      Signed in as <span style={{ color: 'var(--text-primary)' }}>{displayName}</span>
-                    </p>
-                  )}
-                  <nav className="flex flex-col gap-1">
-                    {ACCOUNT_LINKS.map(({ href, label, primary }) => (
-                      <Link
-                        key={href}
-                        href={href}
-                        className="px-3 py-3 rounded-[6px] text-base"
-                        style={{
-                          color: primary
-                            ? 'var(--text-primary)'
-                            : 'var(--text-secondary)',
-                          textDecoration: 'none',
-                          fontWeight: primary ? 500 : 400,
-                          borderBottom: primary
-                            ? '0.5px solid var(--border)'
-                            : undefined,
-                          marginBottom: primary ? 6 : undefined,
-                          paddingBottom: primary ? 12 : undefined,
-                        }}
-                      >
-                        {label}
-                      </Link>
-                    ))}
+                      {(displayName || 'G').charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <p style={{ margin: 0, fontSize: 15, fontWeight: 500, color: 'var(--text-primary)' }}>
+                        {displayName || 'Your account'}
+                      </p>
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-tertiary)' }}>
+                        View profile
+                      </p>
+                    </div>
+                  </Link>
+                  {/* Negative margins pull the grouped list to the drawer edges
+                      (the container has px-4); rows carry their own 16px pad. */}
+                  <div style={{ marginLeft: -16, marginRight: -16 }}>
+                    <AccountMenuList
+                      pathname={pathname}
+                      onNavigate={() => setMobileOpen(false)}
+                    />
                     <button
                       type="button"
                       onClick={async () => {
@@ -628,18 +639,27 @@ export function Nav() {
                         await signOut();
                         router.push('/');
                       }}
-                      className="px-3 py-3 rounded-[6px] text-base text-left mt-2"
                       style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '13px 16px',
                         color: 'var(--red)',
                         background: 'transparent',
                         border: 'none',
-                        cursor: 'pointer',
                         borderTop: '0.5px solid var(--border)',
+                        cursor: 'pointer',
+                        fontSize: 15,
                       }}
                     >
+                      <span style={{ display: 'inline-flex' }}>
+                        <LogoutIcon />
+                      </span>
                       Sign out
                     </button>
-                  </nav>
+                  </div>
                 </>
               ) : (
                 <SignInButton mode="modal">

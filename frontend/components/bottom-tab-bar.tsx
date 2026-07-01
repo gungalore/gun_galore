@@ -48,6 +48,7 @@ import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
 import { useStandalone } from '@/lib/use-standalone';
 import { useScrollDirection } from '@/lib/use-scroll-direction';
 import { PushToggleRow } from '@/components/push-opt-in-banner';
+import { AccountMenuList } from '@/lib/account-menu';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -879,20 +880,10 @@ function MoreSheet({
     { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
     { href: '/competitions', label: 'Competitions' },
   ];
-  const accountLinks = isSignedIn
-    ? [
-        { href: '/dashboard', label: 'Dashboard' },
-        { href: '/profile', label: 'View profile' },
-        { href: '/my/listings', label: 'My listings' },
-        { href: '/my/orders', label: 'My orders' },
-        { href: '/my/sales', label: 'My sales' },
-        { href: '/my/offers', label: 'My offers' },
-        { href: '/my/bids', label: 'My bids' },
-        { href: '/my/tickets', label: 'My tickets' },
-        { href: '/dashboard/raffle-wins', label: 'My raffle wins' },
-        { href: '/offers/received', label: 'Received offers' },
-      ]
-    : [];
+  // Account destinations now come from the shared ACCOUNT_GROUPS (rendered via
+  // <AccountMenuList/>) so this sheet stays in lockstep with the desktop
+  // dropdown + mobile drawer.
+  const pathname = usePathname();
   const legalLinks = [
     { href: '/terms', label: 'Terms of service' },
     { href: '/privacy', label: 'Privacy policy' },
@@ -1065,39 +1056,47 @@ function MoreSheet({
         )}
 
         {isSignedIn && (
-          <Section title="My account">
-            {accountLinks.map((l) => (
-              <SheetLink
-                key={l.href}
-                href={l.href}
-                label={l.label}
-                onNavigate={onClose}
-              />
-            ))}
-            {/* Push toggle — self-hides when push isn't supported /
-                backend isn't configured / iOS-in-browser. */}
-            <PushToggleRow />
-            <li>
-              <button
-                type="button"
-                onClick={onSignOut}
-                className="app-chrome"
-                style={{
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '14px 20px',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--red)',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                Sign out
-              </button>
-            </li>
-          </Section>
+          <div style={{ marginTop: 8 }}>
+            {/* Grouped account list (Buying / Selling / Competitions / Account)
+                from the shared source of truth — same on every surface. */}
+            <AccountMenuList
+              pathname={pathname}
+              onNavigate={onClose}
+              showChevron
+            />
+            <ul
+              style={{
+                listStyle: 'none',
+                margin: 0,
+                padding: 0,
+                borderTop: '0.5px solid var(--border-divider)',
+              }}
+            >
+              {/* Push toggle — self-hides when push isn't supported /
+                  backend isn't configured / iOS-in-browser. */}
+              <PushToggleRow />
+              <li>
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  className="app-chrome"
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '14px 20px',
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--red)',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Sign out
+                </button>
+              </li>
+            </ul>
+          </div>
         )}
 
         <Section title="Shop">
