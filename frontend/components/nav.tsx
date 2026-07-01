@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { SignInButton, UserButton, useUser, useClerk } from '@clerk/nextjs';
+import { SignInButton, useUser, useClerk } from '@clerk/nextjs';
 import { useRouter, usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import { ProfileCompletionRing } from '@/components/profile-completion-ring';
@@ -205,33 +205,80 @@ export function Nav() {
                 {isSignedIn ? (
                   <>
                     <ProfileCompletionRing />
-                    {displayName && (
-                      <Link
-                        href="/profile"
-                        className="hidden sm:inline text-sm transition-colors"
-                        style={{
-                          color: 'var(--text-secondary)',
-                          textDecoration: 'none',
-                          maxWidth: 160,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                        title={displayName}
-                      >
-                        {displayName}
-                      </Link>
-                    )}
                     <div className="relative" ref={menuRef}>
+                      {/* One consolidated account tile: avatar + name +
+                          chevron. Replaces the old separate name link,
+                          "Account ▾" button, and Clerk UserButton. */}
                       <button
                         onClick={() => setMenuOpen((o) => !o)}
-                        className="text-sm px-2.5 py-1.5 rounded-[6px]"
+                        aria-label="Account menu"
+                        aria-expanded={menuOpen}
                         style={{
-                          color: 'var(--text-secondary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '3px 8px 3px 3px',
+                          borderRadius: 999,
                           border: '0.5px solid var(--border)',
+                          background: 'var(--bg-card)',
+                          cursor: 'pointer',
                         }}
                       >
-                        Account ▾
+                        <span
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: '50%',
+                            overflow: 'hidden',
+                            flexShrink: 0,
+                            background: 'var(--red)',
+                            color: '#fff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 13,
+                            fontWeight: 500,
+                          }}
+                        >
+                          {user?.imageUrl ? (
+                            <Image
+                              src={user.imageUrl}
+                              alt=""
+                              width={28}
+                              height={28}
+                              style={{ objectFit: 'cover' }}
+                            />
+                          ) : (
+                            (displayName || 'G').charAt(0).toUpperCase()
+                          )}
+                        </span>
+                        <span
+                          className="hidden sm:inline"
+                          style={{
+                            maxWidth: 120,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontSize: 14,
+                            color: 'var(--text-secondary)',
+                          }}
+                        >
+                          {displayName}
+                        </span>
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="var(--text-tertiary)"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden
+                          style={{ marginRight: 2 }}
+                        >
+                          <path d="M6 9l6 6 6-6" />
+                        </svg>
                       </button>
                       {menuOpen && (
                         <div
@@ -328,7 +375,6 @@ export function Nav() {
                         </div>
                       )}
                     </div>
-                    <UserButton />
                   </>
                 ) : (
                   <SignInButton mode="modal">
