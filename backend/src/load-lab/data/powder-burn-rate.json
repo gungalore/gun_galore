@@ -31,7 +31,7 @@
     {
       "id": "p1",
       "maker": "Accurate",
-      "name": "Solo 1000 (approx.)",
+      "name": "Solo 1000",
       "keys": [
         "solo1000"
       ],
@@ -98,7 +98,7 @@
     {
       "id": "p7",
       "maker": "Hodgdon",
-      "name": "Titegroup (approx.)",
+      "name": "Titegroup",
       "keys": [
         "titegroup"
       ],
@@ -175,7 +175,7 @@
     {
       "id": "p14",
       "maker": "Hodgdon",
-      "name": "Universal (approx.)",
+      "name": "Universal",
       "keys": [
         "universal"
       ],

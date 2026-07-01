@@ -195,7 +195,7 @@ function main() {
   for (const d of db) {
     let maker, name, ba, approx = false;
     const g = resolveGrt(d.name, index);
-    if (g) { maker = g.maker; name = g.pname; ba = g.Ba; }
+    if (g) { maker = g.maker; name = g.pname.replace(/\s*\(approx\.?\)\s*$/i, '').trim(); ba = g.Ba; }
     else {
       const r = RESIDUAL[d.key];
       const bas = r ? r.anchors.map(anchorBa).filter((v) => v != null) : [];
