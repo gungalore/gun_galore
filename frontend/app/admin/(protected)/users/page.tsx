@@ -14,6 +14,7 @@ interface User {
   lastName: string | null;
   sellerTier: string;
   kycStatus: string;
+  subscriptionTier: string;
   isBanned: boolean;
   totalSales: number;
   trustScore: number;

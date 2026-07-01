@@ -229,6 +229,7 @@ export class AdminService {
           lastName: true,
           sellerTier: true,
           kycStatus: true,
+          subscriptionTier: true,
           isBanned: true,
           totalSales: true,
           trustScore: true,
@@ -274,6 +275,17 @@ export class AdminService {
         action: 'USER_KYC_OVERRIDE',
         oldValue: user.kycStatus,
         newValue: dto.kycStatus,
+      });
+    }
+    if (
+      dto.subscriptionTier !== undefined &&
+      dto.subscriptionTier !== user.subscriptionTier
+    ) {
+      data.subscriptionTier = dto.subscriptionTier;
+      actions.push({
+        action: 'USER_SUBSCRIPTION_CHANGE',
+        oldValue: user.subscriptionTier,
+        newValue: dto.subscriptionTier,
       });
     }
     if (dto.isBanned !== undefined && dto.isBanned !== user.isBanned) {

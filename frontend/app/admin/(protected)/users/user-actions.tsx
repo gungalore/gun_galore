@@ -6,6 +6,7 @@ import { adminFetch } from '@/lib/admin-auth';
 
 const TIERS = ['NEW', 'ESTABLISHED', 'TRUSTED', 'TOP_SELLER', 'DEALER'];
 const KYC_STATUSES = ['PENDING', 'SUBMITTED', 'VERIFIED', 'REJECTED'];
+const SUBSCRIPTION_TIERS = ['FREE', 'MEMBER', 'PRO'];
 
 // Destructive admin actions on a user now require:
 //   1. A typed reason (audit log — backend enforces ≥3 chars).
@@ -21,12 +22,14 @@ export default function UserActions({
   isBanned,
   sellerTier,
   kycStatus,
+  subscriptionTier,
 }: {
   userId: string;
   username: string | null;
   isBanned: boolean;
   sellerTier: string;
   kycStatus: string;
+  subscriptionTier: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -36,6 +39,7 @@ export default function UserActions({
     | { kind: 'unban' }
     | { kind: 'tier'; value: string }
     | { kind: 'kyc'; value: string }
+    | { kind: 'subscription'; value: string }
   >(null);
 
   function askConfirm(c: NonNullable<typeof confirm>) {
@@ -111,6 +115,30 @@ export default function UserActions({
               ))}
             </select>
           </div>
+          <div>
+            <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
+              GG+ / Pro
+            </p>
+            <select
+              defaultValue={subscriptionTier}
+              onChange={(e) =>
+                e.target.value !== subscriptionTier &&
+                askConfirm({ kind: 'subscription', value: e.target.value })
+              }
+              className="w-full px-2 py-1 rounded text-xs outline-none"
+              style={{
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              {SUBSCRIPTION_TIERS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="flex gap-1">
             <button
               onClick={() =>
@@ -167,7 +195,11 @@ function ConfirmModal({
   onClose,
   onDone,
 }: {
-  confirm: { kind: 'ban' | 'unban' } | { kind: 'tier'; value: string } | { kind: 'kyc'; value: string };
+  confirm:
+    | { kind: 'ban' | 'unban' }
+    | { kind: 'tier'; value: string }
+    | { kind: 'kyc'; value: string }
+    | { kind: 'subscription'; value: string };
   userId: string;
   username: string | null;
   onClose: () => void;
@@ -196,6 +228,8 @@ function ConfirmModal({
         return `Change tier to ${confirm.value}?`;
       case 'kyc':
         return `Override KYC status to ${confirm.value}?`;
+      case 'subscription':
+        return `Set GG+ subscription to ${confirm.value}?`;
     }
   })();
 
@@ -209,6 +243,8 @@ function ConfirmModal({
         return 'Tier changes affect commission discount and the badge shown on listings. DEALER is sticky and bypasses the auto-tier algorithm.';
       case 'kyc':
         return 'KYC overrides bypass VerifyNow + Home Affairs. Use only when you have independent verification of identity (manual document review).';
+      case 'subscription':
+        return 'Manually sets the GG+ subscription tier without going through paid checkout — a comp / support grant. PRO unlocks Ask GG Pro features, Load Lab, and the ballistics calculator. Reversible; recorded in the audit log.';
     }
   })();
 
@@ -221,6 +257,7 @@ function ConfirmModal({
       if (confirm.kind === 'unban') body.isBanned = false;
       if (confirm.kind === 'tier') body.sellerTier = confirm.value;
       if (confirm.kind === 'kyc') body.kycStatus = confirm.value;
+      if (confirm.kind === 'subscription') body.subscriptionTier = confirm.value;
 
       const res = await adminFetch(`/admin/users/${userId}`, {
         method: 'PATCH',

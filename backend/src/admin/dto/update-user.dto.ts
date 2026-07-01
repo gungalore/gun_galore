@@ -1,5 +1,5 @@
 import { IsEnum, IsOptional, IsBoolean, IsString, MinLength } from 'class-validator';
-import { SellerTier, KycStatus } from '@prisma/client';
+import { SellerTier, KycStatus, SubscriptionTier } from '@prisma/client';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -9,6 +9,13 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEnum(KycStatus)
   kycStatus?: KycStatus;
+
+  // GG+ / Pro subscription tier — an admin manual grant (comp accounts,
+  // support goodwill) that bypasses the paid checkout, mirroring the KYC
+  // override. FREE | MEMBER | PRO.
+  @IsOptional()
+  @IsEnum(SubscriptionTier)
+  subscriptionTier?: SubscriptionTier;
 
   @IsOptional()
   @IsBoolean()

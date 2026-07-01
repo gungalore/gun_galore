@@ -23,6 +23,7 @@ interface User {
   lastName: string | null;
   sellerTier: string;
   kycStatus: string;
+  subscriptionTier: string;
   isBanned: boolean;
   totalSales: number;
   trustScore: number;
@@ -196,6 +197,7 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
                       isBanned={u.isBanned}
                       sellerTier={u.sellerTier}
                       kycStatus={u.kycStatus}
+                      subscriptionTier={u.subscriptionTier}
                     />
                   </td>
                 </tr>

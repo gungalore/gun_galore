@@ -29,6 +29,7 @@ interface Dossier {
     addrPostalCode: string | null;
     addrProvince: string | null;
     sellerTier: string;
+    subscriptionTier: string;
     trustScore: number;
     averageRating: number | null;
     kycStatus: string;
@@ -279,6 +280,7 @@ export default function UserDossierPage() {
             isBanned={u.isBanned}
             sellerTier={u.sellerTier}
             kycStatus={u.kycStatus}
+            subscriptionTier={u.subscriptionTier}
           />
         </div>
       </div>
