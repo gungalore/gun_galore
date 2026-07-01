@@ -216,4 +216,63 @@ export class BurnChartService {
       .slice(0, limit)
       .map(([key, name]) => ({ cartridgeKey: key, name }));
   }
+
+  /**
+   * Everything the Ask GG chat needs about a single powder from the burn-rate
+   * chart: where it sits fast→slow, its cross-maker EQUIVALENTS (similar burn
+   * rate — NOT interchangeable loads), its faster/slower neighbours, and the
+   * cartridges it's published for. Same data the Load Lab powder chart shows.
+   */
+  async powderInfo(powderName: string) {
+    const chart = this.loadChart();
+    const sorted = [...chart.powders].sort((a, b) => a.yNorm - b.yNorm);
+    const q = powderKey(powderName);
+    const nrm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const lc = nrm(powderName);
+    let cell =
+      sorted.find((p) => p.keys.includes(q)) ??
+      sorted.find((p) => nrm(`${p.maker} ${p.name}`).includes(lc) || nrm(p.name) === lc) ??
+      (lc.length >= 3 ? sorted.find((p) => nrm(p.name).includes(lc)) : undefined);
+    if (!cell) {
+      return { found: false, query: powderName, note: 'Not found in our powder library / burn-rate chart.' };
+    }
+    const idx = sorted.indexOf(cell);
+    const y = cell.yNorm;
+    const dist = (p: ChartPowder) => Math.abs(p.yNorm - y);
+    const equivalents = sorted
+      .filter((p) => p !== cell && dist(p) <= 0.035)
+      .sort((a, b) => dist(a) - dist(b))
+      .slice(0, 10)
+      .map((p) => ({ maker: p.maker, name: p.name }));
+    const faster = sorted.slice(Math.max(0, idx - 4), idx).reverse().map((p) => ({ maker: p.maker, name: p.name }));
+    const slower = sorted.slice(idx + 1, idx + 5).map((p) => ({ maker: p.maker, name: p.name }));
+    const cartridges = await this.getPowderCartridges(cell.keys, 12);
+    return {
+      found: true,
+      maker: cell.maker,
+      name: cell.name,
+      rankFromFastest: idx + 1,
+      totalPowders: sorted.length,
+      burnClass: burnBand(y),
+      approximatePlacement: !!cell.approx,
+      equivalents,
+      faster,
+      slower,
+      cartridges,
+      note:
+        'Burn-rate position + cross-maker equivalents from the Gun Galore powder chart (GRT burn-rate data). Equivalents share a similar burn rate but are NOT interchangeable loads — always use published data for the specific powder and start low / work up.',
+    };
+  }
+}
+
+/** Coarse burn-rate band label from the normalised position (0 fast → 1 slow). */
+function burnBand(y: number): string {
+  if (y < 0.1) return 'very fast (pistol / shotshell)';
+  if (y < 0.22) return 'fast (pistol / small rifle)';
+  if (y < 0.38) return 'fast rifle';
+  if (y < 0.55) return 'medium-fast rifle';
+  if (y < 0.68) return 'medium rifle (Varget / H4350 zone)';
+  if (y < 0.82) return 'medium-slow rifle';
+  if (y < 0.92) return 'slow rifle (magnum)';
+  return 'very slow (overbore magnum)';
 }

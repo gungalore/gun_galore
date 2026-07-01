@@ -17,6 +17,7 @@ import {
 import { LoadLabService, type LoadLabInput } from '../load-lab/load-lab.service';
 import { ComponentDataService } from '../load-lab/component-data.service';
 import { RecommendedLoadsService } from '../load-lab/recommended-loads.service';
+import { BurnChartService } from '../load-lab/burn-chart.service';
 
 // ─── Model strategy ─────────────────────────────────────────────────
 // Two-tier: Sonnet by default, Opus on user-triggered escalation.
@@ -222,6 +223,21 @@ const TOOLS: Tool[] = [
       required: ['cartridge', 'bulletWeightGr'],
     },
   },
+  {
+    name: 'lookupPowderInfo',
+    description:
+      'Look up a single POWDER on Gun Galore’s burn-rate chart — the SAME data the Load Lab powder chart shows. Returns where the powder sits fastest→slowest (rank + burn-class band), its cross-maker EQUIVALENTS (powders at a similar burn rate), the powders just faster and just slower, and the cartridges it is published for. Use this for burn-rate / substitution questions: "how fast is H4350?", "is Varget faster or slower than RL15?", "what can I use instead of H4350 / what’s a local (Somchem/ADI) equivalent?", "what cartridges can I use <powder> in?". IMPORTANT SAFETY: equivalents share a similar burn rate but are NOT interchangeable loads — never tell the user to reuse a charge with a different powder; for an actual charge, ALWAYS use lookupPublishedLoads for that specific powder + cartridge and keep the start-low / work-up framing.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        powder: {
+          type: 'string',
+          description: 'Powder name, e.g. "H4350", "Varget", "N140", "S365", "AR2208".',
+        },
+      },
+      required: ['powder'],
+    },
+  },
 ];
 
 // ─── Web search (forum / real-world experience) ─────────────────────
@@ -399,6 +415,12 @@ For ANY question asking for drop, holdover, dial-up, windage, retained velocity,
 
 **If \`calculateBallistics\` returns an upgrade-required notice** (the user is on the FREE tier), DON'T retry — answer the user honestly: "The ballistic calculator is a GG+ Member/Pro feature. I can give you the general approach — for the actual numbers you'll need a quick subscription, or a tool like Strelok+ or JBM Ballistics."
 
+## POWDER BURN RATE + EQUIVALENTS (lookupPowderInfo)
+
+For any question about a powder's BURN RATE, where it ranks, or SUBSTITUTES — "how fast is H4350?", "is Varget faster than RL15?", "what can I use instead of H4350?", "closest Somchem / ADI powder to H4350?", "what cartridges is <powder> used in?" — call \`lookupPowderInfo({ powder })\`. It returns, from the SAME data the Load Lab powder chart shows: the powder's fast→slow rank + burn-class band, its cross-maker equivalents (similar burn rate), the powders just faster and just slower, and the cartridges it's published for. Answer from this — don't guess burn order from memory. When the user wants a LOCAL substitute, surface the Somchem / ADI entries from the equivalents list.
+
+**SAFETY — say this every time you give an equivalent:** powders at a similar burn rate are NOT interchangeable — you cannot reuse a charge with a different powder. If the user then wants to actually load the substitute, call \`lookupPublishedLoads\` for THAT powder + their cartridge/bullet and give its own published start→max, start-low / work-up. Never carry a charge weight across from one powder to another.
+
 ## LOAD LAB — INTERNAL-BALLISTICS PREDICTION (computeLoadData)
 
 For load-development questions — "what velocity / pressure will I get from N gr of <powder> behind a <bullet> in my <cartridge>?", "how does charge change pressure?", "is this load hot?" — call \`computeLoadData\`. It returns predicted muzzle velocity, peak chamber pressure, % burnt, barrel time, a charge ladder, the downrange table, and a \`safety\` block (\`pressureCeilingBar\`, \`pctOfCeiling\` = RAW estimate, \`pMaxConservativeBar\` / \`pctOfCeilingConservative\` = the conservative figure with a ~+30% safety pad, \`estimateUncertaintyPct\`, \`overPressure\`, \`nearMax\`).
@@ -542,6 +564,7 @@ export class AskGgClaudeService {
     private readonly loadLab: LoadLabService,
     private readonly components: ComponentDataService,
     private readonly recommendedLoads: RecommendedLoadsService,
+    private readonly burnChart: BurnChartService,
   ) {
     this.client = process.env.ANTHROPIC_API_KEY
       ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -1213,6 +1236,38 @@ export class AskGgClaudeService {
               content: `Published-load lookup failed: ${
                 err instanceof Error ? err.message : String(err)
               }`,
+              is_error: true,
+            },
+          ];
+        }
+      }
+
+      if (block.name === 'lookupPowderInfo') {
+        // Burn-rate chart data (position, cross-maker equivalents, cartridges) —
+        // the SAME data the Load Lab powder chart shows. All tiers (reference
+        // data). Equivalents are burn-rate neighbours, NOT load substitutes.
+        const input = block.input as { powder?: string };
+        if (!input.powder) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: 'Error: powder is required (the powder name to look up).',
+              is_error: true,
+            },
+          ];
+        }
+        try {
+          const info = await this.burnChart.powderInfo(input.powder);
+          return [
+            { type: 'tool_result', tool_use_id: toolUseId, content: JSON.stringify(info) },
+          ];
+        } catch (err) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: `Powder-info lookup failed: ${err instanceof Error ? err.message : String(err)}`,
               is_error: true,
             },
           ];
