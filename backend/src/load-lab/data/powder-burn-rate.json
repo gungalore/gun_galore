@@ -1,0 +1,1626 @@
+{
+  "source": "Vihtavuori Burning Rate Chart",
+  "note": "Current canister powders in order of approximate burning rate.",
+  "makers": [
+    "Vihtavuori",
+    "Norma",
+    "RWS",
+    "Vectan",
+    "Reload Swiss",
+    "IMR",
+    "Hodgdon",
+    "Accurate",
+    "Winchester",
+    "Alliant",
+    "Ramshot",
+    "Somchem"
+  ],
+  "powders": [
+    {
+      "id": "p0",
+      "maker": "Vihtavuori",
+      "name": "N310",
+      "key": "n310",
+      "yNorm": 0.0606
+    },
+    {
+      "id": "p1",
+      "maker": "Vihtavuori",
+      "name": "N320",
+      "key": "n320",
+      "yNorm": 0.1174
+    },
+    {
+      "id": "p2",
+      "maker": "Vihtavuori",
+      "name": "N330",
+      "key": "n330",
+      "yNorm": 0.1743
+    },
+    {
+      "id": "p3",
+      "maker": "Vihtavuori",
+      "name": "N340",
+      "key": "n340",
+      "yNorm": 0.2028
+    },
+    {
+      "id": "p4",
+      "maker": "Vihtavuori",
+      "name": "3N37",
+      "key": "3n37",
+      "yNorm": 0.2312
+    },
+    {
+      "id": "p5",
+      "maker": "Vihtavuori",
+      "name": "N350",
+      "key": "n350",
+      "yNorm": 0.2597
+    },
+    {
+      "id": "p6",
+      "maker": "Vihtavuori",
+      "name": "3N38",
+      "key": "3n38",
+      "yNorm": 0.288
+    },
+    {
+      "id": "p7",
+      "maker": "Vihtavuori",
+      "name": "N110",
+      "key": "n110",
+      "yNorm": 0.3451
+    },
+    {
+      "id": "p8",
+      "maker": "Vihtavuori",
+      "name": "N120",
+      "key": "n120",
+      "yNorm": 0.4019
+    },
+    {
+      "id": "p9",
+      "maker": "Vihtavuori",
+      "name": "N130",
+      "key": "n130",
+      "yNorm": 0.4588
+    },
+    {
+      "id": "p10",
+      "maker": "Vihtavuori",
+      "name": "N133",
+      "key": "n133",
+      "yNorm": 0.4871
+    },
+    {
+      "id": "p11",
+      "maker": "Vihtavuori",
+      "name": "N135",
+      "key": "n135",
+      "yNorm": 0.5442
+    },
+    {
+      "id": "p12",
+      "maker": "Vihtavuori",
+      "name": "N140",
+      "key": "n140",
+      "yNorm": 0.6011
+    },
+    {
+      "id": "p13",
+      "maker": "Vihtavuori",
+      "name": "N540",
+      "key": "n540",
+      "yNorm": 0.6294
+    },
+    {
+      "id": "p14",
+      "maker": "Vihtavuori",
+      "name": "N150",
+      "key": "n150",
+      "yNorm": 0.6579
+    },
+    {
+      "id": "p15",
+      "maker": "Vihtavuori",
+      "name": "N550",
+      "key": "n550",
+      "yNorm": 0.6864
+    },
+    {
+      "id": "p16",
+      "maker": "Vihtavuori",
+      "name": "N555",
+      "key": "n555",
+      "yNorm": 0.7148
+    },
+    {
+      "id": "p17",
+      "maker": "Vihtavuori",
+      "name": "N160",
+      "key": "n160",
+      "yNorm": 0.7433
+    },
+    {
+      "id": "p18",
+      "maker": "Vihtavuori",
+      "name": "N560",
+      "key": "n560",
+      "yNorm": 0.7717
+    },
+    {
+      "id": "p19",
+      "maker": "Vihtavuori",
+      "name": "N165",
+      "key": "n165",
+      "yNorm": 0.8002
+    },
+    {
+      "id": "p20",
+      "maker": "Vihtavuori",
+      "name": "N170",
+      "key": "n170",
+      "yNorm": 0.857
+    },
+    {
+      "id": "p21",
+      "maker": "Vihtavuori",
+      "name": "N565",
+      "key": "n565",
+      "yNorm": 0.8856
+    },
+    {
+      "id": "p22",
+      "maker": "Vihtavuori",
+      "name": "N568",
+      "key": "n568",
+      "yNorm": 0.9139
+    },
+    {
+      "id": "p23",
+      "maker": "Vihtavuori",
+      "name": "N570",
+      "key": "n570",
+      "yNorm": 0.9424
+    },
+    {
+      "id": "p24",
+      "maker": "Vihtavuori",
+      "name": "24N41",
+      "key": "24n41",
+      "yNorm": 0.971
+    },
+    {
+      "id": "p25",
+      "maker": "Vihtavuori",
+      "name": "20N29",
+      "key": "20n29",
+      "yNorm": 0.9993
+    },
+    {
+      "id": "p26",
+      "maker": "Norma",
+      "name": "200",
+      "key": "200",
+      "yNorm": 0.3731
+    },
+    {
+      "id": "p27",
+      "maker": "Norma",
+      "name": "201",
+      "key": "201",
+      "yNorm": 0.4577
+    },
+    {
+      "id": "p28",
+      "maker": "Norma",
+      "name": "202",
+      "key": "202",
+      "yNorm": 0.4864
+    },
+    {
+      "id": "p29",
+      "maker": "Norma",
+      "name": "203B",
+      "key": "203b",
+      "yNorm": 0.6
+    },
+    {
+      "id": "p30",
+      "maker": "Norma",
+      "name": "URP",
+      "key": "urp",
+      "yNorm": 0.6567
+    },
+    {
+      "id": "p31",
+      "maker": "Norma",
+      "name": "204",
+      "key": "204",
+      "yNorm": 0.7134
+    },
+    {
+      "id": "p32",
+      "maker": "Norma",
+      "name": "MRP",
+      "key": "mrp",
+      "yNorm": 0.7701
+    },
+    {
+      "id": "p33",
+      "maker": "Norma",
+      "name": "217",
+      "key": "217",
+      "yNorm": 0.8268
+    },
+    {
+      "id": "p34",
+      "maker": "RWS",
+      "name": "P805",
+      "key": "p805",
+      "yNorm": 0.059
+    },
+    {
+      "id": "p35",
+      "maker": "RWS",
+      "name": "P801",
+      "key": "p801",
+      "yNorm": 0.0875
+    },
+    {
+      "id": "p36",
+      "maker": "RWS",
+      "name": "P804",
+      "key": "p804",
+      "yNorm": 0.1306
+    },
+    {
+      "id": "p37",
+      "maker": "RWS",
+      "name": "P803",
+      "key": "p803",
+      "yNorm": 0.1597
+    },
+    {
+      "id": "p38",
+      "maker": "RWS",
+      "name": "P806",
+      "key": "p806",
+      "yNorm": 0.3167
+    },
+    {
+      "id": "p39",
+      "maker": "RWS",
+      "name": "R910",
+      "key": "r910",
+      "yNorm": 0.3451
+    },
+    {
+      "id": "p40",
+      "maker": "RWS",
+      "name": "R901",
+      "key": "r901",
+      "yNorm": 0.3731
+    },
+    {
+      "id": "p41",
+      "maker": "RWS",
+      "name": "R902",
+      "key": "r902",
+      "yNorm": 0.4294
+    },
+    {
+      "id": "p42",
+      "maker": "RWS",
+      "name": "R903",
+      "key": "r903",
+      "yNorm": 0.5146
+    },
+    {
+      "id": "p43",
+      "maker": "RWS",
+      "name": "R907",
+      "key": "r907",
+      "yNorm": 0.6
+    },
+    {
+      "id": "p44",
+      "maker": "RWS",
+      "name": "R904",
+      "key": "r904",
+      "yNorm": 0.6567
+    },
+    {
+      "id": "p45",
+      "maker": "RWS",
+      "name": "R905",
+      "key": "r905",
+      "yNorm": 0.7701
+    },
+    {
+      "id": "p46",
+      "maker": "Vectan",
+      "name": "Ba10",
+      "key": "ba10",
+      "yNorm": 0.059
+    },
+    {
+      "id": "p47",
+      "maker": "Vectan",
+      "name": "Ba9-1/2",
+      "key": "ba912",
+      "yNorm": 0.1176
+    },
+    {
+      "id": "p48",
+      "maker": "Vectan",
+      "name": "AS",
+      "key": "as",
+      "yNorm": 0.1452
+    },
+    {
+      "id": "p49",
+      "maker": "Vectan",
+      "name": "A1",
+      "key": "a1",
+      "yNorm": 0.1452
+    },
+    {
+      "id": "p50",
+      "maker": "Vectan",
+      "name": "Ba9",
+      "key": "ba9",
+      "yNorm": 0.1731
+    },
+    {
+      "id": "p51",
+      "maker": "Vectan",
+      "name": "SPB",
+      "key": "spb",
+      "yNorm": 0.2009
+    },
+    {
+      "id": "p52",
+      "maker": "Vectan",
+      "name": "A0",
+      "key": "a0",
+      "yNorm": 0.2292
+    },
+    {
+      "id": "p53",
+      "maker": "Vectan",
+      "name": "SP2 Practical",
+      "key": "sp2practical",
+      "yNorm": 0.2884
+    },
+    {
+      "id": "p54",
+      "maker": "Vectan",
+      "name": "SP3",
+      "key": "sp3",
+      "yNorm": 0.3167
+    },
+    {
+      "id": "p55",
+      "maker": "Vectan",
+      "name": "SP10",
+      "key": "sp10",
+      "yNorm": 0.4577
+    },
+    {
+      "id": "p56",
+      "maker": "Vectan",
+      "name": "Tubal3000",
+      "key": "tubal3000",
+      "yNorm": 0.4864
+    },
+    {
+      "id": "p57",
+      "maker": "Vectan",
+      "name": "SP9",
+      "key": "sp9",
+      "yNorm": 0.5146
+    },
+    {
+      "id": "p58",
+      "maker": "Vectan",
+      "name": "SP7",
+      "key": "sp7",
+      "yNorm": 0.5717
+    },
+    {
+      "id": "p59",
+      "maker": "Vectan",
+      "name": "Tubal5000",
+      "key": "tubal5000",
+      "yNorm": 0.6567
+    },
+    {
+      "id": "p60",
+      "maker": "Vectan",
+      "name": "SP11",
+      "key": "sp11",
+      "yNorm": 0.7134
+    },
+    {
+      "id": "p61",
+      "maker": "Vectan",
+      "name": "Tubal7000",
+      "key": "tubal7000",
+      "yNorm": 0.7417
+    },
+    {
+      "id": "p62",
+      "maker": "Vectan",
+      "name": "Tubal8000",
+      "key": "tubal8000",
+      "yNorm": 0.7986
+    },
+    {
+      "id": "p63",
+      "maker": "Vectan",
+      "name": "SP13",
+      "key": "sp13",
+      "yNorm": 0.884
+    },
+    {
+      "id": "p64",
+      "maker": "Reload Swiss",
+      "name": "RS12",
+      "key": "rs12",
+      "yNorm": 0.1176
+    },
+    {
+      "id": "p65",
+      "maker": "Reload Swiss",
+      "name": "RS20",
+      "key": "rs20",
+      "yNorm": 0.2009
+    },
+    {
+      "id": "p66",
+      "maker": "Reload Swiss",
+      "name": "RS24",
+      "key": "rs24",
+      "yNorm": 0.2884
+    },
+    {
+      "id": "p67",
+      "maker": "Reload Swiss",
+      "name": "RS30",
+      "key": "rs30",
+      "yNorm": 0.3438
+    },
+    {
+      "id": "p68",
+      "maker": "Reload Swiss",
+      "name": "RS36",
+      "key": "rs36",
+      "yNorm": 0.4009
+    },
+    {
+      "id": "p69",
+      "maker": "Reload Swiss",
+      "name": "RS40",
+      "key": "rs40",
+      "yNorm": 0.5146
+    },
+    {
+      "id": "p70",
+      "maker": "Reload Swiss",
+      "name": "RS50",
+      "key": "rs50",
+      "yNorm": 0.6
+    },
+    {
+      "id": "p71",
+      "maker": "Reload Swiss",
+      "name": "RS52",
+      "key": "rs52",
+      "yNorm": 0.628
+    },
+    {
+      "id": "p72",
+      "maker": "Reload Swiss",
+      "name": "RS60",
+      "key": "rs60",
+      "yNorm": 0.6849
+    },
+    {
+      "id": "p73",
+      "maker": "Reload Swiss",
+      "name": "RS62",
+      "key": "rs62",
+      "yNorm": 0.7134
+    },
+    {
+      "id": "p74",
+      "maker": "Reload Swiss",
+      "name": "RS70",
+      "key": "rs70",
+      "yNorm": 0.7986
+    },
+    {
+      "id": "p75",
+      "maker": "Reload Swiss",
+      "name": "RS76",
+      "key": "rs76",
+      "yNorm": 0.884
+    },
+    {
+      "id": "p76",
+      "maker": "Reload Swiss",
+      "name": "RS80",
+      "key": "rs80",
+      "yNorm": 0.9407
+    },
+    {
+      "id": "p77",
+      "maker": "IMR",
+      "name": "Trail Boss",
+      "key": "trailboss",
+      "yNorm": 0.0864
+    },
+    {
+      "id": "p78",
+      "maker": "IMR",
+      "name": "Target",
+      "key": "target",
+      "yNorm": 0.0864
+    },
+    {
+      "id": "p79",
+      "maker": "IMR",
+      "name": "Hi-Skor 700x",
+      "key": "hiskor700x",
+      "yNorm": 0.1176
+    },
+    {
+      "id": "p80",
+      "maker": "IMR",
+      "name": "Hi-Skor 800x",
+      "key": "hiskor800x",
+      "yNorm": 0.2597
+    },
+    {
+      "id": "p81",
+      "maker": "IMR",
+      "name": "IMR4227",
+      "key": "imr4227",
+      "yNorm": 0.3438
+    },
+    {
+      "id": "p82",
+      "maker": "IMR",
+      "name": "IMR4198",
+      "key": "imr4198",
+      "yNorm": 0.4009
+    },
+    {
+      "id": "p83",
+      "maker": "IMR",
+      "name": "IMR3031",
+      "key": "imr3031",
+      "yNorm": 0.4294
+    },
+    {
+      "id": "p84",
+      "maker": "IMR",
+      "name": "8208XBR",
+      "key": "8208xbr",
+      "yNorm": 0.4864
+    },
+    {
+      "id": "p85",
+      "maker": "IMR",
+      "name": "IMR4895",
+      "key": "imr4895",
+      "yNorm": 0.5136
+    },
+    {
+      "id": "p86",
+      "maker": "IMR",
+      "name": "IMR4166",
+      "key": "imr4166",
+      "yNorm": 0.5136
+    },
+    {
+      "id": "p87",
+      "maker": "IMR",
+      "name": "IMR4064",
+      "key": "imr4064",
+      "yNorm": 0.543
+    },
+    {
+      "id": "p88",
+      "maker": "IMR",
+      "name": "IMR4350",
+      "key": "imr4350",
+      "yNorm": 0.6849
+    },
+    {
+      "id": "p89",
+      "maker": "IMR",
+      "name": "IMR4451",
+      "key": "imr4451",
+      "yNorm": 0.7134
+    },
+    {
+      "id": "p90",
+      "maker": "IMR",
+      "name": "IMR4831",
+      "key": "imr4831",
+      "yNorm": 0.7417
+    },
+    {
+      "id": "p91",
+      "maker": "IMR",
+      "name": "IMR4955",
+      "key": "imr4955",
+      "yNorm": 0.7701
+    },
+    {
+      "id": "p92",
+      "maker": "IMR",
+      "name": "IMR4828SSC",
+      "key": "imr4828ssc",
+      "yNorm": 0.7986
+    },
+    {
+      "id": "p93",
+      "maker": "IMR",
+      "name": "IMR4828",
+      "key": "imr4828",
+      "yNorm": 0.8255
+    },
+    {
+      "id": "p94",
+      "maker": "IMR",
+      "name": "IMR7977",
+      "key": "imr7977",
+      "yNorm": 0.8255
+    },
+    {
+      "id": "p95",
+      "maker": "IMR",
+      "name": "IMR8133",
+      "key": "imr8133",
+      "yNorm": 0.8555
+    },
+    {
+      "id": "p96",
+      "maker": "Hodgdon",
+      "name": "Titewad",
+      "key": "titewad",
+      "yNorm": 0.0005
+    },
+    {
+      "id": "p97",
+      "maker": "Hodgdon",
+      "name": "Trail Boss",
+      "key": "trailboss",
+      "yNorm": 0.0296
+    },
+    {
+      "id": "p98",
+      "maker": "Hodgdon",
+      "name": "HP38",
+      "key": "hp38",
+      "yNorm": 0.059
+    },
+    {
+      "id": "p99",
+      "maker": "Hodgdon",
+      "name": "Titegroup",
+      "key": "titegroup",
+      "yNorm": 0.0864
+    },
+    {
+      "id": "p100",
+      "maker": "Hodgdon",
+      "name": "Clays",
+      "key": "clays",
+      "yNorm": 0.0864
+    },
+    {
+      "id": "p101",
+      "maker": "Hodgdon",
+      "name": "Clays International",
+      "key": "claysinternational",
+      "yNorm": 0.144
+    },
+    {
+      "id": "p102",
+      "maker": "Hodgdon",
+      "name": "Universal",
+      "key": "universal",
+      "yNorm": 0.144
+    },
+    {
+      "id": "p103",
+      "maker": "Hodgdon",
+      "name": "HS-6",
+      "key": "hs6",
+      "yNorm": 0.1731
+    },
+    {
+      "id": "p104",
+      "maker": "Hodgdon",
+      "name": "CFE Pistol",
+      "key": "cfepistol",
+      "yNorm": 0.2009
+    },
+    {
+      "id": "p105",
+      "maker": "Hodgdon",
+      "name": "Longshot",
+      "key": "longshot",
+      "yNorm": 0.2292
+    },
+    {
+      "id": "p106",
+      "maker": "Hodgdon",
+      "name": "HS-7",
+      "key": "hs7",
+      "yNorm": 0.315
+    },
+    {
+      "id": "p107",
+      "maker": "Hodgdon",
+      "name": "H110",
+      "key": "h110",
+      "yNorm": 0.3415
+    },
+    {
+      "id": "p108",
+      "maker": "Hodgdon",
+      "name": "H4198",
+      "key": "h4198",
+      "yNorm": 0.3415
+    },
+    {
+      "id": "p109",
+      "maker": "Hodgdon",
+      "name": "Li’l Gun",
+      "key": "lilgun",
+      "yNorm": 0.3415
+    },
+    {
+      "id": "p110",
+      "maker": "Hodgdon",
+      "name": "CFE BLK",
+      "key": "cfeblk",
+      "yNorm": 0.3415
+    },
+    {
+      "id": "p111",
+      "maker": "Hodgdon",
+      "name": "H4227",
+      "key": "h4227",
+      "yNorm": 0.3757
+    },
+    {
+      "id": "p112",
+      "maker": "Hodgdon",
+      "name": "Benchmark",
+      "key": "benchmark",
+      "yNorm": 0.4282
+    },
+    {
+      "id": "p113",
+      "maker": "Hodgdon",
+      "name": "H322",
+      "key": "h322",
+      "yNorm": 0.4282
+    },
+    {
+      "id": "p114",
+      "maker": "Hodgdon",
+      "name": "BL(C)-2",
+      "key": "blc2",
+      "yNorm": 0.4577
+    },
+    {
+      "id": "p115",
+      "maker": "Hodgdon",
+      "name": "CFE 223",
+      "key": "cfe223",
+      "yNorm": 0.4864
+    },
+    {
+      "id": "p116",
+      "maker": "Hodgdon",
+      "name": "H335",
+      "key": "h335",
+      "yNorm": 0.5125
+    },
+    {
+      "id": "p117",
+      "maker": "Hodgdon",
+      "name": "Leverevolution",
+      "key": "leverevolution",
+      "yNorm": 0.5125
+    },
+    {
+      "id": "p118",
+      "maker": "Hodgdon",
+      "name": "H4895",
+      "key": "h4895",
+      "yNorm": 0.5125
+    },
+    {
+      "id": "p119",
+      "maker": "Hodgdon",
+      "name": "Varget",
+      "key": "varget",
+      "yNorm": 0.5717
+    },
+    {
+      "id": "p120",
+      "maker": "Hodgdon",
+      "name": "H380",
+      "key": "h380",
+      "yNorm": 0.6
+    },
+    {
+      "id": "p121",
+      "maker": "Hodgdon",
+      "name": "H414",
+      "key": "h414",
+      "yNorm": 0.628
+    },
+    {
+      "id": "p122",
+      "maker": "Hodgdon",
+      "name": "H4350",
+      "key": "h4350",
+      "yNorm": 0.6567
+    },
+    {
+      "id": "p123",
+      "maker": "Hodgdon",
+      "name": "Hybrid 100V",
+      "key": "hybrid100v",
+      "yNorm": 0.6849
+    },
+    {
+      "id": "p124",
+      "maker": "Hodgdon",
+      "name": "H450",
+      "key": "h450",
+      "yNorm": 0.7134
+    },
+    {
+      "id": "p125",
+      "maker": "Hodgdon",
+      "name": "H4831SC",
+      "key": "h4831sc",
+      "yNorm": 0.7417
+    },
+    {
+      "id": "p126",
+      "maker": "Hodgdon",
+      "name": "Superformance",
+      "key": "superformance",
+      "yNorm": 0.7681
+    },
+    {
+      "id": "p127",
+      "maker": "Hodgdon",
+      "name": "H1000",
+      "key": "h1000",
+      "yNorm": 0.8268
+    },
+    {
+      "id": "p128",
+      "maker": "Hodgdon",
+      "name": "Retumbo",
+      "key": "retumbo",
+      "yNorm": 0.8555
+    },
+    {
+      "id": "p129",
+      "maker": "Hodgdon",
+      "name": "H870",
+      "key": "h870",
+      "yNorm": 0.884
+    },
+    {
+      "id": "p130",
+      "maker": "Hodgdon",
+      "name": "50BMG",
+      "key": "50bmg",
+      "yNorm": 0.9407
+    },
+    {
+      "id": "p131",
+      "maker": "Hodgdon",
+      "name": "US869",
+      "key": "us869",
+      "yNorm": 0.969
+    },
+    {
+      "id": "p132",
+      "maker": "Accurate",
+      "name": "Nitro-100NF",
+      "key": "nitro100nf",
+      "yNorm": 0.0296
+    },
+    {
+      "id": "p133",
+      "maker": "Accurate",
+      "name": "No. 2",
+      "key": "no2",
+      "yNorm": 0.1171
+    },
+    {
+      "id": "p134",
+      "maker": "Accurate",
+      "name": "No. 5",
+      "key": "no5",
+      "yNorm": 0.1452
+    },
+    {
+      "id": "p135",
+      "maker": "Accurate",
+      "name": "No. 7",
+      "key": "no7",
+      "yNorm": 0.3139
+    },
+    {
+      "id": "p136",
+      "maker": "Accurate",
+      "name": "No. 9",
+      "key": "no9",
+      "yNorm": 0.3139
+    },
+    {
+      "id": "p137",
+      "maker": "Accurate",
+      "name": "4100",
+      "key": "4100",
+      "yNorm": 0.3139
+    },
+    {
+      "id": "p138",
+      "maker": "Accurate",
+      "name": "5744",
+      "key": "5744",
+      "yNorm": 0.3996
+    },
+    {
+      "id": "p139",
+      "maker": "Accurate",
+      "name": "1680",
+      "key": "1680",
+      "yNorm": 0.3996
+    },
+    {
+      "id": "p140",
+      "maker": "Accurate",
+      "name": "2015",
+      "key": "2015",
+      "yNorm": 0.3996
+    },
+    {
+      "id": "p141",
+      "maker": "Accurate",
+      "name": "2460",
+      "key": "2460",
+      "yNorm": 0.4577
+    },
+    {
+      "id": "p142",
+      "maker": "Accurate",
+      "name": "2495",
+      "key": "2495",
+      "yNorm": 0.5132
+    },
+    {
+      "id": "p143",
+      "maker": "Accurate",
+      "name": "2520",
+      "key": "2520",
+      "yNorm": 0.5132
+    },
+    {
+      "id": "p144",
+      "maker": "Accurate",
+      "name": "4064",
+      "key": "4064",
+      "yNorm": 0.5132
+    },
+    {
+      "id": "p145",
+      "maker": "Accurate",
+      "name": "2700",
+      "key": "2700",
+      "yNorm": 0.6
+    },
+    {
+      "id": "p146",
+      "maker": "Accurate",
+      "name": "4350",
+      "key": "4350",
+      "yNorm": 0.6567
+    },
+    {
+      "id": "p147",
+      "maker": "Accurate",
+      "name": "MagPro",
+      "key": "magpro",
+      "yNorm": 0.7986
+    },
+    {
+      "id": "p148",
+      "maker": "Winchester",
+      "name": "WST",
+      "key": "wst",
+      "yNorm": 0.0296
+    },
+    {
+      "id": "p149",
+      "maker": "Winchester",
+      "name": "Super Handicap 231",
+      "key": "superhandicap231",
+      "yNorm": 0.0864
+    },
+    {
+      "id": "p150",
+      "maker": "Winchester",
+      "name": "Win Clean 244",
+      "key": "winclean244",
+      "yNorm": 0.1431
+    },
+    {
+      "id": "p151",
+      "maker": "Winchester",
+      "name": "WSF",
+      "key": "wsf",
+      "yNorm": 0.1431
+    },
+    {
+      "id": "p152",
+      "maker": "Winchester",
+      "name": "Auto Comp",
+      "key": "autocomp",
+      "yNorm": 0.1431
+    },
+    {
+      "id": "p153",
+      "maker": "Winchester",
+      "name": "Super Field",
+      "key": "superfield",
+      "yNorm": 0.1773
+    },
+    {
+      "id": "p154",
+      "maker": "Winchester",
+      "name": "572",
+      "key": "572",
+      "yNorm": 0.2884
+    },
+    {
+      "id": "p155",
+      "maker": "Winchester",
+      "name": "296",
+      "key": "296",
+      "yNorm": 0.3437
+    },
+    {
+      "id": "p156",
+      "maker": "Winchester",
+      "name": "748",
+      "key": "748",
+      "yNorm": 0.4577
+    },
+    {
+      "id": "p157",
+      "maker": "Winchester",
+      "name": "760",
+      "key": "760",
+      "yNorm": 0.628
+    },
+    {
+      "id": "p158",
+      "maker": "Winchester",
+      "name": "StaBALL 6.5",
+      "key": "staball65",
+      "yNorm": 0.6849
+    },
+    {
+      "id": "p159",
+      "maker": "Alliant",
+      "name": "E3",
+      "key": "e3",
+      "yNorm": 0.0296
+    },
+    {
+      "id": "p160",
+      "maker": "Alliant",
+      "name": "Bullseye",
+      "key": "bullseye",
+      "yNorm": 0.0875
+    },
+    {
+      "id": "p161",
+      "maker": "Alliant",
+      "name": "Red Dot",
+      "key": "reddot",
+      "yNorm": 0.1239
+    },
+    {
+      "id": "p162",
+      "maker": "Alliant",
+      "name": "PP 1200-R",
+      "key": "pp1200r",
+      "yNorm": 0.1239
+    },
+    {
+      "id": "p163",
+      "maker": "Alliant",
+      "name": "American Select",
+      "key": "americanselect",
+      "yNorm": 0.1239
+    },
+    {
+      "id": "p164",
+      "maker": "Alliant",
+      "name": "Promo",
+      "key": "promo",
+      "yNorm": 0.1581
+    },
+    {
+      "id": "p165",
+      "maker": "Alliant",
+      "name": "Green Dot",
+      "key": "greendot",
+      "yNorm": 0.1581
+    },
+    {
+      "id": "p166",
+      "maker": "Alliant",
+      "name": "Unique",
+      "key": "unique",
+      "yNorm": 0.1581
+    },
+    {
+      "id": "p167",
+      "maker": "Alliant",
+      "name": "Power",
+      "key": "power",
+      "yNorm": 0.1581
+    },
+    {
+      "id": "p168",
+      "maker": "Alliant",
+      "name": "Pistol",
+      "key": "pistol",
+      "yNorm": 0.1924
+    },
+    {
+      "id": "p169",
+      "maker": "Alliant",
+      "name": "Herco",
+      "key": "herco",
+      "yNorm": 0.1924
+    },
+    {
+      "id": "p170",
+      "maker": "Alliant",
+      "name": "Blue Dot",
+      "key": "bluedot",
+      "yNorm": 0.2884
+    },
+    {
+      "id": "p171",
+      "maker": "Alliant",
+      "name": "Steel",
+      "key": "steel",
+      "yNorm": 0.3167
+    },
+    {
+      "id": "p172",
+      "maker": "Alliant",
+      "name": "2400",
+      "key": "2400",
+      "yNorm": 0.3167
+    },
+    {
+      "id": "p173",
+      "maker": "Alliant",
+      "name": "PP 300-MP",
+      "key": "pp300mp",
+      "yNorm": 0.3437
+    },
+    {
+      "id": "p174",
+      "maker": "Alliant",
+      "name": "410",
+      "key": "410",
+      "yNorm": 0.3725
+    },
+    {
+      "id": "p175",
+      "maker": "Alliant",
+      "name": "Reloder 7",
+      "key": "rl7",
+      "yNorm": 0.4018
+    },
+    {
+      "id": "p176",
+      "maker": "Alliant",
+      "name": "Reloder 11",
+      "key": "rl11",
+      "yNorm": 0.4294
+    },
+    {
+      "id": "p177",
+      "maker": "Alliant",
+      "name": "Reloder 10X",
+      "key": "rl10x",
+      "yNorm": 0.4577
+    },
+    {
+      "id": "p178",
+      "maker": "Alliant",
+      "name": "PP 2000-MR",
+      "key": "pp2000mr",
+      "yNorm": 0.4864
+    },
+    {
+      "id": "p179",
+      "maker": "Alliant",
+      "name": "PP Varmint",
+      "key": "ppvarmint",
+      "yNorm": 0.534
+    },
+    {
+      "id": "p180",
+      "maker": "Alliant",
+      "name": "Reloder 12",
+      "key": "rl12",
+      "yNorm": 0.534
+    },
+    {
+      "id": "p181",
+      "maker": "Alliant",
+      "name": "AR-Comp",
+      "key": "arcomp",
+      "yNorm": 0.534
+    },
+    {
+      "id": "p182",
+      "maker": "Alliant",
+      "name": "Reloder 15",
+      "key": "rl15",
+      "yNorm": 0.6
+    },
+    {
+      "id": "p183",
+      "maker": "Alliant",
+      "name": "PP 4000-MR",
+      "key": "pp4000mr",
+      "yNorm": 0.628
+    },
+    {
+      "id": "p184",
+      "maker": "Alliant",
+      "name": "Reloder 16",
+      "key": "rl16",
+      "yNorm": 0.6558
+    },
+    {
+      "id": "p185",
+      "maker": "Alliant",
+      "name": "Reloder 17",
+      "key": "rl17",
+      "yNorm": 0.6558
+    },
+    {
+      "id": "p186",
+      "maker": "Alliant",
+      "name": "Reloder 19",
+      "key": "rl19",
+      "yNorm": 0.6849
+    },
+    {
+      "id": "p187",
+      "maker": "Alliant",
+      "name": "Reloder 22",
+      "key": "rl22",
+      "yNorm": 0.812
+    },
+    {
+      "id": "p188",
+      "maker": "Alliant",
+      "name": "Reloder 23",
+      "key": "rl23",
+      "yNorm": 0.812
+    },
+    {
+      "id": "p189",
+      "maker": "Alliant",
+      "name": "Reloder 25",
+      "key": "rl25",
+      "yNorm": 0.812
+    },
+    {
+      "id": "p190",
+      "maker": "Alliant",
+      "name": "Reloder 26",
+      "key": "rl26",
+      "yNorm": 0.8461
+    },
+    {
+      "id": "p191",
+      "maker": "Alliant",
+      "name": "Reloder 33",
+      "key": "rl33",
+      "yNorm": 0.9354
+    },
+    {
+      "id": "p192",
+      "maker": "Alliant",
+      "name": "Reloder 50",
+      "key": "rl50",
+      "yNorm": 0.9629
+    },
+    {
+      "id": "p193",
+      "maker": "Ramshot",
+      "name": "Competition",
+      "key": "competition",
+      "yNorm": 0.0875
+    },
+    {
+      "id": "p194",
+      "maker": "Ramshot",
+      "name": "Zip",
+      "key": "zip",
+      "yNorm": 0.1452
+    },
+    {
+      "id": "p195",
+      "maker": "Ramshot",
+      "name": "Silhouette",
+      "key": "silhouette",
+      "yNorm": 0.2009
+    },
+    {
+      "id": "p196",
+      "maker": "Ramshot",
+      "name": "True Blue",
+      "key": "trueblue",
+      "yNorm": 0.2597
+    },
+    {
+      "id": "p197",
+      "maker": "Ramshot",
+      "name": "Enforcer",
+      "key": "enforcer",
+      "yNorm": 0.3167
+    },
+    {
+      "id": "p198",
+      "maker": "Ramshot",
+      "name": "X-Terminator",
+      "key": "xterminator",
+      "yNorm": 0.4864
+    },
+    {
+      "id": "p199",
+      "maker": "Ramshot",
+      "name": "TAC",
+      "key": "tac",
+      "yNorm": 0.5146
+    },
+    {
+      "id": "p200",
+      "maker": "Ramshot",
+      "name": "Big Game",
+      "key": "biggame",
+      "yNorm": 0.6
+    },
+    {
+      "id": "p201",
+      "maker": "Ramshot",
+      "name": "Hunter",
+      "key": "hunter",
+      "yNorm": 0.7134
+    },
+    {
+      "id": "p202",
+      "maker": "Ramshot",
+      "name": "Magnum",
+      "key": "magnum",
+      "yNorm": 0.8268
+    },
+    {
+      "id": "p203",
+      "maker": "Ramshot",
+      "name": "LRT",
+      "key": "lrt",
+      "yNorm": 0.8549
+    },
+    {
+      "id": "p204",
+      "maker": "Somchem",
+      "name": "S121",
+      "key": "s121",
+      "yNorm": 0.0971,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "Bullseye",
+        "Titegroup",
+        "N320"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "p205",
+      "maker": "Somchem",
+      "name": "MS200",
+      "key": "ms200",
+      "yNorm": 0.1096,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "Red Dot",
+        "N320",
+        "Bullseye"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "p206",
+      "maker": "Somchem",
+      "name": "MP200",
+      "key": "mp200",
+      "yNorm": 0.2233,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "Unique",
+        "Blue Dot"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "p207",
+      "maker": "Somchem",
+      "name": "S221",
+      "key": "s221",
+      "yNorm": 0.2308,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "HS-6",
+        "Blue Dot"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "p208",
+      "maker": "Somchem",
+      "name": "S265",
+      "key": "s265",
+      "yNorm": 0.3332,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "H110",
+        "Li’l Gun",
+        "2400"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p209",
+      "maker": "Somchem",
+      "name": "S321",
+      "key": "s321",
+      "yNorm": 0.4661,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "Benchmark",
+        "H335",
+        "BL(C)-2"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p210",
+      "maker": "Somchem",
+      "name": "S335",
+      "key": "s335",
+      "yNorm": 0.5055,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "IMR3031",
+        "N133",
+        "Reloder 15"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p211",
+      "maker": "Somchem",
+      "name": "S341",
+      "key": "s341",
+      "yNorm": 0.5424,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "H4895",
+        "Varget",
+        "IMR4064"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p212",
+      "maker": "Somchem",
+      "name": "S355",
+      "key": "s355",
+      "yNorm": 0.5716,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "Varget",
+        "Reloder 15",
+        "IMR4064"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p214",
+      "maker": "Somchem",
+      "name": "S365",
+      "key": "s365",
+      "yNorm": 0.6755,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "H4350",
+        "IMR4350",
+        "Reloder 19"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "p213",
+      "maker": "Somchem",
+      "name": "S361",
+      "key": "s361",
+      "yNorm": 0.6947,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "Reloder 17",
+        "IMR4350",
+        "N160"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "p215",
+      "maker": "Somchem",
+      "name": "S385",
+      "key": "s385",
+      "yNorm": 0.7746,
+      "somchem": true,
+      "approx": true,
+      "anchors": [
+        "H4831SC",
+        "Reloder 22",
+        "MRP"
+      ],
+      "confidence": "high"
+    }
+  ]
+}

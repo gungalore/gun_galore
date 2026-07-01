@@ -5,6 +5,7 @@ import { Meilisearch, Index, SearchParams, SearchResponse, RecordAny } from 'mei
 export const INDEXES = {
   LISTINGS: 'listings',
   PUDO_LOCKERS: 'pudo_lockers',
+  CARTRIDGES: 'cartridges',
 } as const;
 
 @Injectable()
@@ -75,6 +76,14 @@ export class SearchService implements OnModuleInit {
       'postalCode',
       'lockerId',
     ]);
+
+    // Cartridge index — powers the Load Lab burn-chart typeahead. Populated
+    // from the distinct ManualLoad cartridges by BurnChartService on first use.
+    await this.client
+      .createIndex(INDEXES.CARTRIDGES, { primaryKey: 'id' })
+      .catch(() => null);
+    const cartridgesIndex = this.client.index(INDEXES.CARTRIDGES);
+    await cartridgesIndex.updateSearchableAttributes(['name']);
   }
 
   private index(name: string): Index | null {

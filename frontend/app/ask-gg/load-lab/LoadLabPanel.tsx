@@ -25,6 +25,7 @@ import { NumberStepper } from '@/components/number-stepper';
 import { ComponentPicker } from './ComponentPicker';
 import { LoadLabResultCard } from './LoadLabResultCard';
 import { RecommendedLoadsPanel } from './RecommendedLoadsPanel';
+import { PowderBurnChart } from './PowderBurnChart';
 
 const fieldLabelStyle: React.CSSProperties = {
   fontSize: 10,
@@ -58,6 +59,11 @@ export function LoadLabPanel() {
 
   const [result, setResult] = useState<LoadLabResult | null>(null);
   const [upgrade, setUpgrade] = useState<LoadLabUpgradeRequired | null>(null);
+
+  // Which Load Lab surface is showing. The powder burn-rate chart leads (it's
+  // reference material every reloader can browse); the Calculator is the
+  // PRO-gated engine + recommended loads.
+  const [subView, setSubView] = useState<'chart' | 'calculator'>('chart');
 
   // Recommended (published) loads for the chosen cartridge + bullet weight.
   const [recLoads, setRecLoads] = useState<RecommendedLoadsResponse | null>(null);
@@ -183,15 +189,31 @@ export function LoadLabPanel() {
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 12,
-        alignItems: 'flex-start',
-        marginBottom: 12,
-      }}
-    >
+    <div style={{ marginBottom: 12 }}>
+      {/* Chart | Calculator — the chart leads so reloaders see it first. */}
+      <SubViewToggle value={subView} onChange={setSubView} />
+
+      {subView === 'chart' ? (
+        <section
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            borderRadius: 8,
+            padding: 16,
+          }}
+          aria-label="Powder burn-rate chart"
+        >
+          <PowderBurnChart />
+        </section>
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 12,
+            alignItems: 'flex-start',
+          }}
+        >
     <section
       style={{
         background: 'var(--bg-card)',
@@ -462,6 +484,63 @@ export function LoadLabPanel() {
           onPickPowder={pickRecommendedPowder}
         />
       </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Chart | Calculator segmented toggle at the top of the Load Lab. */
+function SubViewToggle({
+  value,
+  onChange,
+}: {
+  value: 'chart' | 'calculator';
+  onChange: (v: 'chart' | 'calculator') => void;
+}) {
+  const opts: { v: 'chart' | 'calculator'; label: string }[] = [
+    { v: 'chart', label: 'Powder chart' },
+    { v: 'calculator', label: 'Calculator' },
+  ];
+  return (
+    <div
+      role="tablist"
+      aria-label="Load Lab view"
+      style={{
+        display: 'inline-flex',
+        background: 'var(--bg-inset)',
+        border: '0.5px solid var(--border)',
+        borderRadius: 999,
+        padding: 3,
+        gap: 3,
+        marginBottom: 12,
+      }}
+    >
+      {opts.map((o) => {
+        const active = value === o.v;
+        return (
+          <button
+            key={o.v}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(o.v)}
+            style={{
+              padding: '6px 16px',
+              borderRadius: 999,
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: active ? 600 : 500,
+              background: active ? 'var(--red)' : 'transparent',
+              color: active ? '#fff' : 'var(--text-secondary)',
+              transition: 'background 120ms',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ComponentDataService } from './component-data.service';
 import { LoadLabService, LoadLabInput } from './load-lab.service';
 import { RecommendedLoadsService } from './recommended-loads.service';
+import { BurnChartService } from './burn-chart.service';
 
 /**
  * Load Lab HTTP surface. The interactive panel calls /compute directly (no
@@ -25,8 +26,40 @@ export class LoadLabController {
     private readonly loadLab: LoadLabService,
     private readonly components: ComponentDataService,
     private readonly recommended: RecommendedLoadsService,
+    private readonly burnChart: BurnChartService,
     private readonly prisma: PrismaService,
   ) {}
+
+  /**
+   * Powder burn-rate chart (cross-manufacturer ranking, fast → slow) with each
+   * powder tagged for whether we hold published loads. Reference data — served
+   * to any signed-in reloader (not PRO-gated like the engine). Powers the
+   * "Powder Chart" surface on the Load Lab page.
+   */
+  @Get('burn-chart')
+  async burnChartData() {
+    return this.burnChart.getChart();
+  }
+
+  /** Top cartridges that use a powder, with the published bullet-weight range. */
+  @Get('powder-cartridges')
+  async powderCartridges(@Query('key') key: string) {
+    if (!key) return { key: '', cartridges: [] };
+    return { key, cartridges: await this.burnChart.getPowderCartridges(key) };
+  }
+
+  /** Which powders we hold published loads for, for a cartridge (highlighting). */
+  @Get('cartridge-powders')
+  async cartridgePowders(@Query('cartridge') cartridge: string) {
+    if (!cartridge) return { cartridgeKey: '', cartridge: '', powderKeys: [] };
+    return this.burnChart.getCartridgePowders(cartridge);
+  }
+
+  /** Cartridge typeahead for the chart search bar (Meilisearch-backed). */
+  @Get('cartridge-search')
+  async cartridgeSearch(@Query('q') q: string) {
+    return { hits: await this.burnChart.searchCartridges(q ?? '') };
+  }
 
   @Get('search')
   async search(
