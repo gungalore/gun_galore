@@ -22,12 +22,13 @@ interface ChartPowder {
   id: string;
   maker: string;
   name: string;
-  key: string;
+  // One powder can appear under several powderKeys across manuals (e.g.
+  // "2700" / "A-2700" / "Accurate 2700"); we carry them all so the hover unions
+  // every load and the highlight matches any of them.
+  keys: string[];
   yNorm: number;
-  somchem?: boolean;
+  loadCount?: number;
   approx?: boolean;
-  anchors?: string[];
-  confidence?: string | null;
 }
 interface BurnChart {
   source: string;
@@ -152,19 +153,34 @@ export class BurnChartService {
     await this.ensureIndex();
     const idx = this.index!;
     const powders = chart.powders.map((p) => {
-      const byCart = idx.get(p.key);
-      const loadCount = byCart ? [...byCart.values()].reduce((s, a) => s + a.count, 0) : 0;
-      return { ...p, hasLoads: !!byCart && byCart.size > 0, cartridgeCount: byCart?.size ?? 0, loadCount };
+      const distinctCarts = new Set<string>();
+      for (const k of p.keys) {
+        const byCart = idx.get(k);
+        if (byCart) for (const ck of byCart.keys()) distinctCarts.add(ck);
+      }
+      return { ...p, hasLoads: distinctCarts.size > 0, cartridgeCount: distinctCarts.size };
     });
     return { source: chart.source, note: chart.note, makers: chart.makers, powders };
   }
 
-  /** Top N cartridges that use a powder, with the published bullet-weight range. */
-  async getPowderCartridges(key: string, limit = 15): Promise<PowderCartridge[]> {
+  /**
+   * Top N cartridges that use a powder, with the published bullet-weight range.
+   * Accepts one or more powderKeys (a chart cell can carry several manual name
+   * variants) and unions their loads per cartridge.
+   */
+  async getPowderCartridges(keys: string[], limit = 15): Promise<PowderCartridge[]> {
     await this.ensureIndex();
-    const byCart = this.index!.get(powderKey(key));
-    if (!byCart) return [];
-    return [...byCart.values()]
+    const merged = new Map<string, CartridgeAgg>();
+    for (const key of keys) {
+      const byCart = this.index!.get(powderKey(key));
+      if (!byCart) continue;
+      for (const [ck, a] of byCart) {
+        const m = merged.get(ck);
+        if (!m) merged.set(ck, { ...a });
+        else { m.count += a.count; m.minW = Math.min(m.minW, a.minW); m.maxW = Math.max(m.maxW, a.maxW); }
+      }
+    }
+    return [...merged.values()]
       .sort((a, b) => b.count - a.count || a.cartridge.localeCompare(b.cartridge))
       .slice(0, limit)
       .map((a) => ({

@@ -41,11 +41,14 @@ export class LoadLabController {
     return this.burnChart.getChart();
   }
 
-  /** Top cartridges that use a powder, with the published bullet-weight range. */
+  /** Top cartridges that use a powder, with the published bullet-weight range.
+   *  `keys` is comma-separated (a chart cell can hold several manual name
+   *  variants of one powder); `key` kept for single-key back-compat. */
   @Get('powder-cartridges')
-  async powderCartridges(@Query('key') key: string) {
-    if (!key) return { key: '', cartridges: [] };
-    return { key, cartridges: await this.burnChart.getPowderCartridges(key) };
+  async powderCartridges(@Query('keys') keys?: string, @Query('key') key?: string) {
+    const list = (keys ?? key ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (!list.length) return { keys: [], cartridges: [] };
+    return { keys: list, cartridges: await this.burnChart.getPowderCartridges(list) };
   }
 
   /** Which powders we hold published loads for, for a cartridge (highlighting). */
