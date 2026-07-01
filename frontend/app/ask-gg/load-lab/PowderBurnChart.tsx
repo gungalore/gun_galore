@@ -43,18 +43,18 @@ interface CartridgeHit {
 
 // One colour per maker (green is reserved for the cartridge-match highlight).
 const MAKER_COLOR: Record<string, string> = {
-  Hodgdon: '#3b82f6',
-  IMR: '#f59e0b',
-  Winchester: '#ef4444',
-  Vihtavuori: '#06b6d4',
-  Alliant: '#a855f7',
-  Accurate: '#14b8a6',
-  Ramshot: '#fb923c',
-  ADI: '#ec4899',
-  Somchem: '#6366f1',
-  Norma: '#0284c7',
-  'Shooters World': '#b45309',
-  Vectan: '#94a3b8',
+  Hodgdon: '#3b82f6', // blue (matches the classic chart)
+  IMR: '#f59e0b', // amber
+  Winchester: '#ef4444', // red
+  Accurate: '#14b8a6', // teal
+  Vihtavuori: '#8b5cf6', // violet
+  Alliant: '#ec4899', // pink
+  Ramshot: '#f97316', // orange
+  ADI: '#06b6d4', // cyan
+  Somchem: '#6366f1', // indigo
+  Norma: '#eab308', // gold
+  'Shooters World': '#a16207', // brown
+  Vectan: '#64748b', // slate
 };
 const makerColor = (m: string) => MAKER_COLOR[m] ?? '#94a3b8';
 function hexA(hex: string, a: number) {
