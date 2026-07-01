@@ -4,6 +4,7 @@ import { ListingCard } from '@/components/listing-card';
 import { PageReveal } from '@/components/page-reveal';
 import { UserBadgesWithTooltip } from '@/components/user-badges';
 import { ReportButton } from '@/components/report-button';
+import { ClickableAvatar } from '@/components/avatar-lightbox';
 import { auth } from '@clerk/nextjs/server';
 import type { BrowseResponse, PublicSellerProfile } from '@/lib/types';
 
@@ -75,7 +76,14 @@ export default async function SellerProfilePage({
         style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
       >
         <div className="flex items-start justify-between">
-          <div>
+          <div className="flex items-start gap-4">
+            {/* Seller avatar — click to enlarge (site-wide lightbox). */}
+            <ClickableAvatar
+              src={profile.avatarUrl}
+              name={profile.username}
+              size={64}
+            />
+            <div>
             {/* Username + Phase E1 badges (GG+ pill + verified-expert
                 + tooltip with admin-supplied rationale). Username
                 only — platform policy forbids real names on public
@@ -109,6 +117,7 @@ export default async function SellerProfilePage({
                 month: 'short',
               })}
             </p>
+            </div>
           </div>
           {!isOwnProfile && (
             <ReportButton kind="seller" targetId={clerkId} label="⚑ Report" />

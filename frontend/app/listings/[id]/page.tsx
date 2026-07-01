@@ -23,6 +23,7 @@ import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
 import { HelpTip } from '@/components/help-tip';
+import { ClickableAvatar } from '@/components/avatar-lightbox';
 import { HelpText } from '@/components/help-text';
 import { WishlistButton } from '@/components/wishlist-button';
 import { UserBadges } from '@/components/user-badges';
@@ -566,9 +567,17 @@ export default async function ListingDetailPage({
               (cancel), which would create an invalid nested-<a> tree
               and bubble clicks to the wrong target. We render the card
               as a Link and the controls as a sibling. */}
+          <div className="flex items-center gap-3">
+          {/* Seller avatar — click to enlarge (site-wide lightbox). Sits
+              OUTSIDE the seller Link so its button click doesn't navigate. */}
+          <ClickableAvatar
+            src={listing.seller.avatarUrl}
+            name={listing.seller.username}
+            size={44}
+          />
           <Link
             href={`/sellers/${listing.seller.clerkId}`}
-            className="block rounded-[6px] p-3 text-sm"
+            className="block flex-1 min-w-0 rounded-[6px] p-3 text-sm"
             style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', textDecoration: 'none' }}
           >
             <div className="flex items-center justify-between">
@@ -615,6 +624,7 @@ export default async function ListingDetailPage({
               </span>
             </div>
           </Link>
+          </div>
 
           {/* Seller controls live OUTSIDE the seller Link — these are
               only rendered for the listing's owner anyway (the component

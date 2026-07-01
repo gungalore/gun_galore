@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { ClerkProvider } from '@clerk/nextjs';
 import { PublicNav, PublicFooter } from '@/components/public-chrome';
 import { InstallPrompt } from '@/components/install-prompt';
+import { AvatarLightbox } from '@/components/avatar-lightbox';
 import { SwKillSwitch } from '@/components/sw-killswitch';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { MobileSearchBar } from '@/components/mobile-search-bar';
@@ -286,6 +287,8 @@ export default function RootLayout({
               dismissal stored in localStorage. Already standalone-
               aware so it hides itself once the app is installed. */}
           <InstallPrompt />
+          {/* Site-wide click-to-enlarge for user profile photos. */}
+          <AvatarLightbox />
           {/* First-launch push opt-in card — only shows in installed
               PWA mode, only when push isn't already enabled, only
               outside the 30-day snooze window. Self-hides under any
