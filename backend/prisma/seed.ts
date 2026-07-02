@@ -380,6 +380,7 @@ interface AttrDef {
   unit?: string;
   options?: string[];
   filterable?: boolean; // default true
+  required?: boolean; // default false
 }
 
 const categoryAttributes: Record<string, AttrDef[]> = {
@@ -396,7 +397,10 @@ const categoryAttributes: Record<string, AttrDef[]> = {
   'overlanding--dual-battery-and-solar': [
     { key: 'battery_capacity_ah', label: 'Battery capacity', type: 'NUMBER', unit: 'Ah' },
     { key: 'battery_chemistry', label: 'Battery chemistry', type: 'SELECT', options: ['LiFePO4', 'AGM', 'Gel', 'Lead-acid'] },
-    { key: 'battery_wh', label: 'Battery energy', type: 'NUMBER', unit: 'Wh' },
+    // REQUIRED — the dangerous-goods gate (P4.3b) forces a >100 Wh battery
+    // collection-only; requiring the value stops a DG battery being listed with
+    // the Wh blank + couriered. Non-battery items in this mixed category enter 0.
+    { key: 'battery_wh', label: 'Battery energy (Wh — enter 0 if not a battery)', type: 'NUMBER', unit: 'Wh', required: true },
   ],
   'fishing--rods': [
     { key: 'rod_class', label: 'Rod class', type: 'SELECT', options: ['Ultra-light', 'Light', 'Medium', 'Medium-heavy', 'Heavy'] },
@@ -510,7 +514,7 @@ async function main() {
         type: attr.type,
         unit: attr.unit ?? null,
         options: attr.options ?? [],
-        required: false,
+        required: attr.required ?? false,
         filterable: attr.filterable ?? true,
         sortOrder: i + 1,
         isActive: true,

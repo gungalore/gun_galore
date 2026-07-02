@@ -646,6 +646,37 @@ export default function NewListingPage() {
   // roadworthy). Drives the required checkbox in the Delivery step.
   const requiresPapers = selectedCategory?.requiresPapers ?? false;
 
+  // P4.3b — dangerous-goods gate (transparency mirror). A LOOSE lithium
+  // battery rated above 100 Wh (UN3480) can't be couriered, so the backend
+  // FORCES such a listing to collection-only. We recompute the same flag
+  // here purely so the sell form isn't silent about it — the seller sees why
+  // the courier options disappear as they type the value. The threshold
+  // constant mirrors DG_LITHIUM_WH_THRESHOLD in backend
+  // src/listings/listings.service.ts — keep the two in sync.
+  const DG_LITHIUM_WH_THRESHOLD = 100;
+  // True only when the current category actually defines a `battery_wh`
+  // NUMBER attribute AND the seller's entered value coerces to a finite
+  // number strictly greater than the threshold. A blank / non-numeric value,
+  // or a category with no battery_wh def, keeps this false — so categories
+  // without the attribute behave byte-identically to before. Recomputes
+  // reactively as attrDefs (category change) or attrValues (typing) change.
+  const dgLithiumRestricted = useMemo(() => {
+    const hasBatteryWhDef = attrDefs.some((d) => d.key === 'battery_wh');
+    if (!hasBatteryWhDef) return false;
+    const raw = attrValues['battery_wh'];
+    if (typeof raw !== 'string') return false;
+    const trimmed = raw.trim();
+    if (!trimmed) return false;
+    const n = Number(trimmed);
+    return Number.isFinite(n) && n > DG_LITHIUM_WH_THRESHOLD;
+  }, [attrDefs, attrValues]);
+
+  // Every shipping / selling-mode gate below keys on this rather than
+  // collectionOnly, so a DG-restricted battery is treated exactly like a
+  // genuinely collection-only category (trailers). The papers attestation
+  // stays on requiresPapers — batteries don't need registration papers.
+  const effectiveCollectionOnly = collectionOnly || dgLithiumRestricted;
+
   // Fetch the per-category attribute definitions whenever the selected
   // category changes. Race-guarded: a fast-clicking seller can fire several
   // category switches before earlier responses land, so we tag each fetch
@@ -817,38 +848,42 @@ export default function NewListingPage() {
   // COLLECTION. Mirror the firearm reset: when the seller switches into
   // a collection-only category, force shippingMethods to ['COLLECTION']
   // (the courier picker + parcel inputs are hidden in the delivery step).
-  const lastCollectionOnly = useRef(collectionOnly);
+  // Keys on effectiveCollectionOnly (collectionOnly || dgLithiumRestricted)
+  // so a DG battery whose battery_wh crosses 100 Wh forces COLLECTION the
+  // same way a trailer does.
+  const lastCollectionOnly = useRef(effectiveCollectionOnly);
   useEffect(() => {
-    if (lastCollectionOnly.current !== collectionOnly) {
-      lastCollectionOnly.current = collectionOnly;
-      if (collectionOnly) setShippingMethods(['COLLECTION']);
+    if (lastCollectionOnly.current !== effectiveCollectionOnly) {
+      lastCollectionOnly.current = effectiveCollectionOnly;
+      if (effectiveCollectionOnly) setShippingMethods(['COLLECTION']);
     }
-  }, [collectionOnly]);
+  }, [effectiveCollectionOnly]);
   // Defensive: keep COLLECTION locked in for a collection-only listing
   // even if a stale pick sneaks through a hot-reload / state race.
   useEffect(() => {
     if (
-      collectionOnly &&
+      effectiveCollectionOnly &&
       (shippingMethods.length !== 1 || shippingMethods[0] !== 'COLLECTION')
     ) {
       setShippingMethods(['COLLECTION']);
     }
-  }, [collectionOnly, shippingMethods]);
+  }, [effectiveCollectionOnly, shippingMethods]);
   // Collection-only items settle through the standard checkout, which only
   // handles Buy Now / Auction — Take-a-Shot's offer-checkout and Swop have no
   // collection path (the backend rejects them). If the seller switches into a
-  // collection-only category with a Take-a-Shot / Swop pick still selected,
-  // snap the mode back to Buy Now so they never hit an opaque publish error.
+  // collection-only category (or trips the DG battery gate) with a
+  // Take-a-Shot / Swop pick still selected, snap the mode back to Buy Now so
+  // they never hit an opaque publish error.
   useEffect(() => {
     if (
-      collectionOnly &&
+      effectiveCollectionOnly &&
       form.listingType !== 'BUY_NOW' &&
       form.listingType !== 'AUCTION'
     ) {
       set('listingType', 'BUY_NOW');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collectionOnly, form.listingType]);
+  }, [effectiveCollectionOnly, form.listingType]);
 
   // ─────────────────── Step completion (drives the accordion) ───────────
   // Each step's `isComplete` is a pure function of the form state.
@@ -902,7 +937,7 @@ export default function NewListingPage() {
     // also skip it — there's no courier, so no parcel to quote.
     const parcelFilled =
       isFirearm ||
-      collectionOnly ||
+      effectiveCollectionOnly ||
       (parsedParcel.weightKg != null &&
         parsedParcel.lengthCm != null &&
         parsedParcel.widthCm != null &&
@@ -921,7 +956,7 @@ export default function NewListingPage() {
     shippingMethods,
     parsedParcel,
     isFirearm,
-    collectionOnly,
+    effectiveCollectionOnly,
     requiresPapers,
     papersAttested,
     missingRequiredAttrs,
@@ -2000,7 +2035,7 @@ export default function NewListingPage() {
                     offered; Take-a-Shot + Swop have no collection path. */}
                 {SELL_MODES.filter(
                   (m) =>
-                    !collectionOnly ||
+                    !effectiveCollectionOnly ||
                     m.value === 'BUY_NOW' ||
                     m.value === 'AUCTION',
                 ).map((m) => {
@@ -2408,9 +2443,9 @@ export default function NewListingPage() {
           {/* Step 4 — Delivery & address */}
           <StepAccordion
             number={4}
-            title={collectionOnly ? 'Collection & address' : 'Delivery & address'}
+            title={effectiveCollectionOnly ? 'Collection & address' : 'Delivery & address'}
             description={
-              collectionOnly
+              effectiveCollectionOnly
                 ? 'Buyers collect this item in person from you — no courier. Add your pickup address so buyers know where they’re collecting from.'
                 : isFirearm
                 ? 'Firearms must move through a SAPS-licensed dealer. Pick one or both arrangement options below, then add your pickup address.'
@@ -2421,7 +2456,7 @@ export default function NewListingPage() {
             onToggle={() => toggleStep(4)}
             summary={
               stepComplete.step4
-                ? collectionOnly
+                ? effectiveCollectionOnly
                   ? `Collection only · ${pickupAddress.city || 'pickup set'}`
                   : `${shippingMethods.length} method${shippingMethods.length === 1 ? '' : 's'} · ${pickupAddress.city || 'pickup set'}`
                 : undefined
@@ -2434,7 +2469,7 @@ export default function NewListingPage() {
                 Hidden for firearms because DEALER_TRANSFER and
                 PRIVATE_ARRANGE don't use the courier API. Also hidden for
                 collection-only listings — there's no courier to quote. */}
-            {!isFirearm && !collectionOnly && (
+            {!isFirearm && !effectiveCollectionOnly && (
               <Field
                 label="Parcel weight & size"
                 required
@@ -2494,8 +2529,13 @@ export default function NewListingPage() {
                 picker. There's nothing for the seller to choose: the item
                 is collected in person from them, so we just explain the
                 flow and force shippingMethods = ['COLLECTION'] (see the
-                effect above). */}
-            {collectionOnly && (
+                effect above). Two reasons land here: a genuinely
+                collection-only category (trailers), or the P4.3b DG battery
+                gate (battery_wh > 100 Wh). When it's the DG gate on a
+                category that ISN'T itself collection-only, swap in the
+                dangerous-goods explanation so the seller understands why the
+                courier options vanished as they typed the value. */}
+            {effectiveCollectionOnly && (
               <div
                 className="rounded-[6px] p-4 text-sm space-y-2 mb-4"
                 style={{
@@ -2516,10 +2556,9 @@ export default function NewListingPage() {
                   Collection only
                 </p>
                 <p style={{ color: 'var(--text-secondary)' }}>
-                  Buyers collect this item in person — no courier.
-                  You&apos;ll coordinate a pickup time with the buyer after
-                  they pay. Their payment is held until they confirm
-                  collection.
+                  {dgLithiumRestricted && !collectionOnly
+                    ? 'Batteries rated over 100 Wh can’t be couriered (dangerous-goods rules), so this listing is collection-only — the buyer collects in person and their payment is held until they confirm collection.'
+                    : 'Buyers collect this item in person — no courier. You’ll coordinate a pickup time with the buyer after they pay. Their payment is held until they confirm collection.'}
                 </p>
               </div>
             )}
@@ -2575,7 +2614,7 @@ export default function NewListingPage() {
               </div>
             )}
 
-            {!collectionOnly && (
+            {!effectiveCollectionOnly && (
             <Field
               label="Delivery options"
               required

@@ -42,6 +42,14 @@ const PRICELESS_LISTING_TYPES = new Set<ListingType>([
 // so an unsanitized key can never be interpolated into a filter string.
 const ATTR_KEY_RE = /^[a-z][a-z0-9_]{0,48}$/;
 
+// P4.3b — dangerous-goods gate. A LOOSE lithium battery rated above this
+// energy (Watt-hours, UN3480) can't be carried by our couriers (Pudo / TCG),
+// so a listing whose `battery_wh` attribute exceeds it is forced COLLECTION-
+// only (buyer collects in person) rather than entering the courier path. 100 Wh
+// is the standard loose-lithium threshold; keep conservative. (Closes the P3.3
+// lithium hole via a real attribute value instead of honour-system copy.)
+const DG_LITHIUM_WH_THRESHOLD = 100;
+
 // Shape returned by previewDraft() — the frontend uses this to render the
 // soft-block preview screen. canPublish gates the "Confirm publish" button;
 // hardBlocked overrides everything when the seller is on attempt 2+ with
@@ -317,29 +325,64 @@ export class ListingsService {
     // must never carry it in its offered methods — it would be a dead option
     // no buyer can select and no courier/dealer path honours. (The firearm
     // gate above only checks DEALER_TRANSFER presence, not stray members.)
-    if (!category.collectionOnly && dto.shippingMethods?.includes('COLLECTION')) {
+    // P4.2/4.3b — validate the attribute VALUES EARLY (the DG gate below needs
+    // the cleaned battery_wh). Unknown keys dropped; required-empty / bad-type
+    // / bad-option throws. Only the CLEANED object is ever persisted.
+    const attributeDefs = await this.categories.getEffectiveAttributes(
+      category.id,
+    );
+    const { cleaned: cleanedAttributes, error: attributeError } =
+      validateAndCleanAttributes(attributeDefs, dto.attributes);
+    if (attributeError) {
+      throw new BadRequestException(attributeError);
+    }
+    const attributesForDb: Prisma.InputJsonValue | typeof Prisma.JsonNull =
+      Object.keys(cleanedAttributes).length > 0
+        ? (cleanedAttributes as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
+
+    // P4.3b — dangerous-goods: a loose lithium battery over the courier limit
+    // (UN3480) can't be couriered, so force this listing collection-only even
+    // though its category isn't collection-flagged. effectiveCollectionOnly
+    // drives every collection gate + the snapshot + the shipping force below.
+    // Coerce, don't duck-type: validateAndCleanAttributes yields a number for a
+    // NUMBER attr, but if battery_wh were ever redefined as SELECT/TEXT the
+    // cleaned value would be a string — coercing keeps the DG gate fail-safe
+    // (a stringy "200" still trips it) instead of silently no-opping.
+    const batteryWh = Number(cleanedAttributes.battery_wh ?? NaN);
+    const dgLithiumRestricted =
+      Number.isFinite(batteryWh) && batteryWh > DG_LITHIUM_WH_THRESHOLD;
+    const effectiveCollectionOnly =
+      category.collectionOnly || dgLithiumRestricted;
+
+    // COLLECTION is reserved for collection-only items (category-flagged OR
+    // DG-forced). A normal listing must never carry it — a dead option no buyer
+    // can select. (The firearm gate above only checks DEALER_TRANSFER presence.)
+    if (!effectiveCollectionOnly && dto.shippingMethods?.includes('COLLECTION')) {
       throw new BadRequestException(
-        'In-person collection is only available for collection-only categories.',
+        'In-person collection is only available for collection-only items.',
       );
     }
-    if (category.collectionOnly && category.isFirearm) {
-      // Defensive: a category is never both. Refuse rather than guess which
-      // routing wins.
+    if (effectiveCollectionOnly && category.isFirearm) {
+      // Defensive: a category is never both firearm + collection-only (and a
+      // firearm category has no battery_wh attribute, so DG can't fire here).
       throw new BadRequestException(
         'A category cannot be both firearm and collection-only.',
       );
     }
-    // Collection-only items are limited to Buy Now / Auction — both settle
-    // through the standard checkout, which handles COLLECTION + the papers
-    // gate. The Take-a-Shot offer-checkout and the Swop module don't carry a
-    // collection path, so a collection listing there would dead-end at pay.
+    // Collection-only items settle through the standard checkout (COLLECTION +
+    // papers gate). Take-a-Shot's offer-checkout and Swop carry no collection
+    // path, so restrict collection-only items — category-flagged OR DG-forced —
+    // to Buy Now / Auction.
     if (
-      category.collectionOnly &&
+      effectiveCollectionOnly &&
       dto.listingType !== 'BUY_NOW' &&
       dto.listingType !== 'AUCTION'
     ) {
       throw new BadRequestException(
-        'Collection-only items (e.g. trailers and caravans) can be listed as Buy Now or Auction — not Take-a-Shot or Swop.',
+        dgLithiumRestricted
+          ? 'Large lithium batteries ship collection-only, so they can be listed as Buy Now or Auction — not Take-a-Shot or Swop.'
+          : 'Collection-only items (e.g. trailers and caravans) can be listed as Buy Now or Auction — not Take-a-Shot or Swop.',
       );
     }
     // Papers attestation — NaTIS-registered goods (trailers / caravans). The
@@ -522,23 +565,9 @@ export class ListingsService {
       ? Math.min(requestedStock, 9999)
       : 1;
 
-    // P4.2 — validate the seller-supplied attribute VALUES against the
-    // category's EFFECTIVE attribute definitions (own + inherited). Unknown
-    // keys are dropped; required-but-empty / bad-type / bad-option throws.
-    // We only ever persist the CLEANED object, never the raw dto.attributes.
-    const attributeDefs = await this.categories.getEffectiveAttributes(
-      category.id,
-    );
-    const { cleaned: cleanedAttributes, error: attributeError } =
-      validateAndCleanAttributes(attributeDefs, dto.attributes);
-    if (attributeError) {
-      throw new BadRequestException(attributeError);
-    }
-    const attributesForDb: Prisma.InputJsonValue | typeof Prisma.JsonNull =
-      Object.keys(cleanedAttributes).length > 0
-        ? (cleanedAttributes as Prisma.InputJsonValue)
-        : Prisma.JsonNull;
-
+    // (attributes were validated + the DG collection-only flag computed above,
+    // before the collection gates — see cleanedAttributes / attributesForDb /
+    // effectiveCollectionOnly.)
     const listing = await this.prisma.listing.create({
       data: {
         referenceNumber,
@@ -556,7 +585,7 @@ export class ListingsService {
         // (like isFirearm) so downstream shipping / checkout logic never has
         // to re-join the category. papersAttestedAt is the seller's create-
         // time attestation (null for non-papers categories).
-        collectionOnly: category.collectionOnly,
+        collectionOnly: effectiveCollectionOnly,
         requiresPapers: category.requiresPapers,
         papersAttestedAt,
         trackInventory,
@@ -581,7 +610,7 @@ export class ListingsService {
         endTime,
         // Delivery + pickup address. Collection-only categories are forced
         // to the single COLLECTION method regardless of what the client sent.
-        shippingMethods: category.collectionOnly
+        shippingMethods: effectiveCollectionOnly
           ? [ShippingMethod.COLLECTION]
           : (dto.shippingMethods ?? []),
         // Phase M dealer-lock — optional planned-dealer hint shown
@@ -1220,11 +1249,23 @@ export class ListingsService {
         'Collection-only listings can only be collected in person — courier delivery is not available.',
       );
     }
+    // P4.3b — a legitimate edit can cross the DG threshold AND send COLLECTION
+    // (the client anticipating the collection switch). A raw pre-check of the
+    // incoming battery_wh lets the symmetric guard below allow that tighten-to-
+    // collection edit; the full validation + DG override further down re-checks
+    // and forces collection either way, so relaxing the guard here is safe.
+    const editRawWh = Number(
+      (dto.attributes as Record<string, unknown> | undefined)?.battery_wh ??
+        NaN,
+    );
+    const editWillBeDg =
+      Number.isFinite(editRawWh) && editRawWh > DG_LITHIUM_WH_THRESHOLD;
     // Symmetric guard — a non-collection listing must never carry COLLECTION
     // in its offered methods (keeps a firearm's [DEALER_TRANSFER, …] array
     // clean; the firearm lock above only checks DEALER_TRANSFER presence).
     if (
       !listing.collectionOnly &&
+      !editWillBeDg &&
       dto.shippingMethods !== undefined &&
       dto.shippingMethods.includes(ShippingMethod.COLLECTION)
     ) {
@@ -1328,6 +1369,10 @@ export class ListingsService {
       | Prisma.InputJsonValue
       | typeof Prisma.JsonNull
       | undefined;
+    // P4.3b — if an edit pushes battery_wh over the DG limit, tighten the
+    // listing to collection-only (tighten only; never auto-loosen — dropping
+    // back below the limit stays collection-only until a manual change).
+    let dgTighten = false;
     if (dto.attributes !== undefined) {
       const attributeDefs = await this.categories.getEffectiveAttributes(
         listing.categoryId,
@@ -1343,6 +1388,17 @@ export class ListingsService {
         Object.keys(cleaned).length > 0
           ? (cleaned as Prisma.InputJsonValue)
           : Prisma.JsonNull;
+      const wh = Number(cleaned.battery_wh ?? NaN);
+      dgTighten = Number.isFinite(wh) && wh > DG_LITHIUM_WH_THRESHOLD;
+      if (
+        dgTighten &&
+        listing.listingType !== 'BUY_NOW' &&
+        listing.listingType !== 'AUCTION'
+      ) {
+        throw new BadRequestException(
+          'Large lithium batteries ship collection-only, which this listing type does not support. Cancel and relist it as Buy Now or Auction.',
+        );
+      }
     }
 
     const updated = await this.prisma.listing.update({
@@ -1354,6 +1410,12 @@ export class ListingsService {
           : {}),
         ...(attributesUpdate !== undefined
           ? { attributes: attributesUpdate }
+          : {}),
+        ...(dgTighten
+          ? {
+              collectionOnly: true,
+              shippingMethods: [ShippingMethod.COLLECTION],
+            }
           : {}),
       },
       include: { images: true, category: true },
