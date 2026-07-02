@@ -383,6 +383,16 @@ interface AttrDef {
   required?: boolean; // default false
 }
 
+// P4.4 — vehicle fitment, shared across the vehicle-mounted-gear categories.
+// vehicle_model is free text (searched + cross-sell signal), so filterable:false.
+const FITMENT: AttrDef[] = [
+  { key: 'vehicle_make', label: 'Vehicle make', type: 'SELECT', options: ['Toyota', 'Ford', 'Isuzu', 'Nissan', 'Volkswagen', 'Mitsubishi', 'Land Rover', 'Jeep', 'Mahindra', 'Suzuki', 'Other'] },
+  { key: 'vehicle_model', label: 'Vehicle model', type: 'TEXT', filterable: false },
+  { key: 'vehicle_year_from', label: 'Fits from year', type: 'NUMBER' },
+  { key: 'vehicle_year_to', label: 'Fits to year', type: 'NUMBER' },
+  { key: 'cab_type', label: 'Cab / body', type: 'SELECT', options: ['Single Cab', 'Double Cab', 'Extra Cab', 'SUV / Wagon', 'Not vehicle-specific'] },
+];
+
 const categoryAttributes: Record<string, AttrDef[]> = {
   'overlanding--fridges-and-freezers': [
     { key: 'capacity_litres', label: 'Capacity', type: 'NUMBER', unit: 'L' },
@@ -428,6 +438,17 @@ const categoryAttributes: Record<string, AttrDef[]> = {
     { key: 'sleeps', label: 'Sleeps', type: 'NUMBER' },
     { key: 'season_rating', label: 'Season rating', type: 'SELECT', options: ['3-season', '4-season'] },
     { key: 'tent_type', label: 'Tent type', type: 'SELECT', options: ['Dome', 'Tunnel', 'Geodesic', 'A-frame'] },
+  ],
+  // P4.4 — vehicle fitment on the vehicle-mounted-gear categories.
+  'overlanding--roof-racks-and-load-bars': FITMENT,
+  'overlanding--drawer-and-storage-systems': FITMENT,
+  'overlanding--bull-bars-sliders-and-protection': FITMENT,
+  'overlanding--awnings-and-shade': FITMENT,
+  // P4.4 — footwear size override: define `size` with UK shoe sizes on the
+  // Boots leaf so the resolver's nearest-wins dedup overrides the Clothing
+  // root's apparel `size` (XS…3XL) for boots only.
+  'outdoor-clothing-footwear--hiking-and-hunting-boots': [
+    { key: 'size', label: 'Size (UK)', type: 'SELECT', options: ['UK 3', 'UK 4', 'UK 5', 'UK 6', 'UK 7', 'UK 8', 'UK 9', 'UK 10', 'UK 11', 'UK 12', 'UK 13'] },
   ],
 };
 

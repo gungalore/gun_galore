@@ -768,15 +768,28 @@ export class ListingsService {
     let fromCategoryId = dto.fromCategoryId;
     let calibre: string | null = null;
     let make: string | null = null;
+    // P4.4 — vehicle-fitment cross-sell keying. When the source item carries a
+    // fitment (a Hilux roof rack), we key complements on the vehicle so a rack
+    // surfaces Hilux-compatible awnings / drawers rather than generic ones.
+    // vehicle_model is the most specific signal, vehicle_make the fallback.
+    let vehicleModel: string | null = null;
+    let vehicleMake: string | null = null;
     if (dto.listingId) {
       const l = await this.prisma.listing.findUnique({
         where: { id: dto.listingId },
-        select: { categoryId: true, calibre: true, make: true },
+        select: { categoryId: true, calibre: true, make: true, attributes: true },
       });
       if (l) {
         fromCategoryId = l.categoryId;
         calibre = l.calibre;
         make = l.make;
+        const attrs = (l.attributes ?? null) as Record<string, unknown> | null;
+        if (attrs && typeof attrs === 'object') {
+          if (typeof attrs.vehicle_model === 'string' && attrs.vehicle_model.trim())
+            vehicleModel = attrs.vehicle_model.trim();
+          if (typeof attrs.vehicle_make === 'string' && attrs.vehicle_make.trim())
+            vehicleMake = attrs.vehicle_make.trim();
+        }
       }
       exclude.add(dto.listingId);
     }
@@ -804,7 +817,11 @@ export class ListingsService {
         if (!calibre) continue;
         signal = calibre;
       } else {
-        signal = make ?? calibre ?? (dto.q || undefined);
+        // P4.4 — fitment first (vehicle model > make), then the old brand /
+        // calibre / query soft signal. Keys vehicle-gear complements to the
+        // buyer's rig; harmless for non-fitment items (both stay null).
+        signal =
+          vehicleModel ?? vehicleMake ?? make ?? calibre ?? (dto.q || undefined);
       }
       const res = await this.browse({
         categoryId: rel.toCategoryId,
