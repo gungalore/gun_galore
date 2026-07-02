@@ -209,6 +209,20 @@ export default async function ListingDetailPage({
             >
               {CONDITION_LABELS[listing.condition]}
             </span>
+            {/* Collection-only badge — trailers / caravans are collected
+                in person, no courier. Sits alongside category/condition. */}
+            {listing.collectionOnly && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-[3px]"
+                style={{
+                  background: 'rgba(245,158,11,0.10)',
+                  color: '#f59e0b',
+                  border: '0.5px solid rgba(245,158,11,0.45)',
+                }}
+              >
+                Collection only
+              </span>
+            )}
             <span style={{ display: 'inline-flex', alignItems: 'center' }}>
               <span
                 className="text-xs px-2 py-0.5 rounded-[3px]"
@@ -454,7 +468,24 @@ export default async function ListingDetailPage({
               >
                 Shipping & payment
               </p>
-              {listing.isFirearm ? (
+              {listing.collectionOnly ? (
+                <>
+                  <p className="mb-1.5">
+                    <strong style={{ color: 'var(--text-primary)' }}>
+                      Collection only
+                    </strong>{' '}
+                    — collect in person from the seller. Payment held until
+                    you confirm collection. After you pay, we share contact
+                    details so you can arrange a pickup time.
+                  </p>
+                  {listing.requiresPapers && (
+                    <p>
+                      The seller will hand over the registration and
+                      roadworthy papers at collection.
+                    </p>
+                  )}
+                </>
+              ) : listing.isFirearm ? (
                 <>
                   <p className="mb-1.5">
                     <strong style={{ color: 'var(--text-primary)' }}>

@@ -30,6 +30,14 @@ export interface Category {
   name: string;
   slug: string;
   isFirearm: boolean;
+  // Collection-only categories (e.g. trailers / caravans) — items are
+  // collected in person from the seller, never couriered. Forces
+  // shippingMethods = ['COLLECTION'] on the listing.
+  collectionOnly?: boolean;
+  // Requires a papers attestation at listing + checkout (e.g. trailers /
+  // caravans need NaTIS registration + roadworthy handed over at
+  // collection). Checkbox-only — no documents are collected.
+  requiresPapers?: boolean;
   // Subset of isFirearm — categories that MUST ship via licensed-dealer
   // transfer (Firearms + Barrels under Gun Smithing).
   requiresLicence: boolean;
@@ -195,6 +203,14 @@ export interface Listing {
   condition: Condition;
   province: Province;
   isFirearm: boolean;
+  // Collection-only — this item is collected in person from the seller
+  // (no courier). Mirrors the category flag; forces shippingMethods to
+  // ['COLLECTION']. Payment is held until the buyer confirms collection.
+  collectionOnly?: boolean;
+  // Requires a papers attestation (trailers / caravans). Seller attests
+  // they hold valid registration + roadworthy at listing time; the buyer
+  // acknowledges at checkout. Checkbox-only — no documents are collected.
+  requiresPapers?: boolean;
   // Inventory / quantity (Phase 8a). trackInventory=false for single items.
   trackInventory?: boolean;
   quantityAvailable?: number;
@@ -253,7 +269,8 @@ export type ShippingMethod =
   | 'PUDO'              // Pudo locker-to-locker (non-firearm)
   | 'TCG'               // The Courier Guy door-to-door (non-firearm)
   | 'DEALER_TRANSFER'   // Routed through a SAPS-licensed dealer (firearm)
-  | 'PRIVATE_ARRANGE';  // Buyer + seller arrange in-person transfer at a dealer
+  | 'PRIVATE_ARRANGE'   // Buyer + seller arrange in-person transfer at a dealer
+  | 'COLLECTION';       // In-person collection from the seller — no courier
 export type ShippingStatus = 'PENDING' | 'COLLECTED' | 'IN_TRANSIT' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'DELIVERY_FAILED' | 'RETURNED';
 
 export interface Transaction {
@@ -422,6 +439,11 @@ export interface Offer {
     // must go DEALER_TRANSFER; the form hides courier options for it.
     isFirearm?: boolean;
     shippingMethods?: ShippingMethod[];
+    // Collection-only listing — collected in person, no courier. When
+    // set the form forces shippingMethods = ['COLLECTION'].
+    collectionOnly?: boolean;
+    // Requires a papers attestation at checkout (trailers / caravans).
+    requiresPapers?: boolean;
     // Public-facing offer surfaces — username only per platform policy.
     // Backend offers.service.ts selects username + clerkId only.
     seller: { username: string | null; clerkId: string };

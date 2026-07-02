@@ -122,6 +122,15 @@ export class CreateListingDto {
   // listings. Shown to buyers on the listing detail page.
   @IsOptional() @IsString() @MaxLength(200) plannedDealerLocation?: string;
 
+  // P3 — papers attestation for NaTIS-registered goods (trailers / off-road
+  // caravans). Must be explicitly true when the category has requiresPapers;
+  // ListingsService.create re-checks the category flag server-side and
+  // refuses without it. Boolean only — we never collect or store the actual
+  // registration documents (POPIA). NOT a Listing column — update() strips it.
+  @IsOptional()
+  @IsBoolean()
+  collectionPapersAttested?: boolean;
+
   @IsOptional() @IsString() @MaxLength(120) pickupBuilding?: string;
   @IsOptional() @IsString() @MaxLength(200) pickupStreet?: string;
   @IsOptional() @IsString() @MaxLength(200) pickupAddress2?: string;

@@ -88,6 +88,13 @@ export default async function TransactionPage({
   // .maybeImmediatePayout). The buttons below are courier-flow only.
   const isPrivateArrange = tx.shippingMethod === 'PRIVATE_ARRANGE';
 
+  // COLLECTION — buyer collects in person from the seller. No dispatch
+  // step, no courier, no tracking/waybill. Once paid we reveal contact
+  // details so both sides coordinate pickup; funds are held until the
+  // buyer confirms collection (same confirm-delivery endpoint, relabelled
+  // "Confirm collection").
+  const isCollection = tx.shippingMethod === 'COLLECTION';
+
   // TOK-7 Phase 2 — accept gates dispatch. Seller must tap "Accept this
   // sale" before they can mark dispatched. The accept panel shows from
   // paidAt until accepted/rejected; the dispatch panel only shows once
@@ -98,6 +105,7 @@ export default async function TransactionPage({
   const canAccept = isSeller && isPaidAwaitingAccept && !isPrivateArrange;
   const canDispatch =
     !isPrivateArrange &&
+    !isCollection && // collection has no dispatch step
     isSeller &&
     !!tx.acceptedAt && // hard gate — must accept first
     !isRejected &&
@@ -115,9 +123,21 @@ export default async function TransactionPage({
   const canConfirmDelivery =
     !isPrivateArrange &&
     !isFirearmDealerTransfer &&
+    !isCollection && // collection uses its own confirm-collection block below
     isBuyer &&
     tx.paymentStatus === 'HELD' &&
     !!tx.dispatchedAt &&
+    !tx.confirmedDeliveryAt;
+
+  // Collection confirm — the buyer confirms they've collected in person.
+  // No dispatch gate (there's no courier); available once the seller has
+  // accepted and the payment is still held. Hits the same confirm-delivery
+  // endpoint as the courier flow, just relabelled.
+  const canConfirmCollection =
+    isCollection &&
+    isBuyer &&
+    tx.paymentStatus === 'HELD' &&
+    !!tx.acceptedAt &&
     !tx.confirmedDeliveryAt;
 
   // Phase 4 P4.2 — buyer can self-cancel a paid courier order that hasn't
@@ -269,13 +289,107 @@ export default async function TransactionPage({
             </div>
           )}
 
-          {/* Shipping */}
+          {/* COLLECTION contact-reveal + arrange-collection guidance. The
+              API returns the other party's phone/email on a paid
+              collection order (blanked otherwise), so both sides can
+              coordinate a pickup time. Unlike PRIVATE_ARRANGE, payment is
+              still HELD here — funds release only when the buyer confirms
+              collection. Shown once the order is paid. */}
+          {isCollection && !!tx.paidAt && (
+            <div
+              className="rounded-[8px] p-4 text-sm space-y-2"
+              style={{
+                background: 'var(--bg-card)',
+                border: '0.5px solid var(--border)',
+              }}
+            >
+              <p
+                className="text-xs uppercase"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  letterSpacing: '0.05em',
+                  fontWeight: 600,
+                }}
+              >
+                Arrange collection
+              </p>
+              <p style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                {isBuyer
+                  ? "This item is collected in person from the seller. Contact the seller to arrange a pickup time. Your payment is held until you confirm you've collected it."
+                  : "This item is collected in person. Contact the buyer to arrange a pickup time. The payment is held until the buyer confirms collection, then released to you."}
+              </p>
+              {(() => {
+                const them = isBuyer ? tx.seller : tx.buyer;
+                const fullName =
+                  [them.firstName, them.lastName].filter(Boolean).join(' ') ||
+                  (isBuyer ? 'Seller' : 'Buyer');
+                const hasContact = !!(them.phone || them.email);
+                return (
+                  <div
+                    className="rounded-[6px] p-3"
+                    style={{
+                      background: 'var(--bg-inset)',
+                      border: '0.5px solid var(--border)',
+                    }}
+                  >
+                    <p
+                      className="text-xs uppercase mb-1"
+                      style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}
+                    >
+                      Contact the {isBuyer ? 'seller' : 'buyer'} to arrange collection
+                    </p>
+                    <p style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                      {fullName}
+                    </p>
+                    {them.phone && (
+                      <a
+                        href={`tel:${them.phone}`}
+                        className="block mt-1"
+                        style={{
+                          color: 'var(--text-secondary)',
+                          fontFamily: 'ui-monospace, monospace',
+                          textDecoration: 'underline',
+                        }}
+                      >
+                        {them.phone}
+                      </a>
+                    )}
+                    {them.email && (
+                      <a
+                        href={`mailto:${them.email}`}
+                        style={{
+                          color: 'var(--text-secondary)',
+                          fontFamily: 'ui-monospace, monospace',
+                          fontSize: 13,
+                          textDecoration: 'underline',
+                        }}
+                      >
+                        {them.email}
+                      </a>
+                    )}
+                    {!hasContact && (
+                      <p
+                        className="text-xs mt-1"
+                        style={{ color: 'var(--text-tertiary)' }}
+                      >
+                        Contact details will appear here shortly.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Shipping (or Collection) — for a collection order there's no
+              courier, so the tracking/waybill/POD/timeline sub-blocks
+              below stay hidden; only the method row surfaces. */}
           <div
             className="rounded-[8px] p-4 text-sm"
             style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
           >
             <p className="text-xs uppercase mb-3" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
-              Shipping
+              {isCollection ? 'Collection' : 'Shipping'}
             </p>
             <div className="space-y-2">
               <div className="flex justify-between">
@@ -287,6 +401,10 @@ export default async function TransactionPage({
                     ? 'Door Delivery (TCG)'
                     : tx.shippingMethod === 'DEALER_TRANSFER'
                     ? 'Dealer Transfer'
+                    : tx.shippingMethod === 'COLLECTION'
+                    ? 'Collection in person'
+                    : tx.shippingMethod === 'PRIVATE_ARRANGE'
+                    ? 'Private arrangement'
                     : '—'}
                 </span>
               </div>
@@ -394,22 +512,25 @@ export default async function TransactionPage({
             )}
 
             {/* Tracking timeline — append-only event log fed by both
-                internal milestones AND the 10-min Pudo polling cron. */}
-            <div
-              className="mt-4 pt-4"
-              style={{ borderTop: '0.5px solid var(--border-divider)' }}
-            >
-              <p
-                className="text-xs uppercase mb-3"
-                style={{
-                  color: 'var(--text-tertiary)',
-                  letterSpacing: '0.05em',
-                }}
+                internal milestones AND the 10-min Pudo polling cron.
+                Hidden for collection — there's no courier to track. */}
+            {!isCollection && (
+              <div
+                className="mt-4 pt-4"
+                style={{ borderTop: '0.5px solid var(--border-divider)' }}
               >
-                Tracking
-              </p>
-              <TrackingTimeline transactionId={tx.id} />
-            </div>
+                <p
+                  className="text-xs uppercase mb-3"
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  Tracking
+                </p>
+                <TrackingTimeline transactionId={tx.id} />
+              </div>
+            )}
           </div>
 
           {/* Buyer: confirm delivery OR raise a dispute. Both surface
@@ -431,6 +552,28 @@ export default async function TransactionPage({
                   Confirming delivery releases payment to the seller and is final. If there's an issue, raise a dispute instead — payment stays held while we review.
                 </p>
                 <ConfirmDeliveryButton transactionId={tx.id} />
+              </div>
+              <RaiseDisputeButton transactionId={tx.id} />
+            </div>
+          )}
+
+          {/* Buyer: confirm collection (COLLECTION only). Same
+              confirm-delivery endpoint as the courier flow, relabelled
+              for in-person pickup. Releases payment to the seller and is
+              final; the dispute path stays available as the escape hatch. */}
+          {canConfirmCollection && (
+            <div
+              className="rounded-[8px] p-4 space-y-3"
+              style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+            >
+              <div>
+                <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                  Have you collected the item?
+                </p>
+                <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                  Confirming collection releases payment to the seller and is final. If there&apos;s an issue, raise a dispute instead — payment stays held while we review.
+                </p>
+                <ConfirmDeliveryButton transactionId={tx.id} variant="collection" />
               </div>
               <RaiseDisputeButton transactionId={tx.id} />
             </div>

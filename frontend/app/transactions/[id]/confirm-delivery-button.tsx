@@ -22,7 +22,18 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 // pressured into ticking the checkboxes anyway). Now the escape
 // hatch hands them straight to the dispute reason picker.
 
-export function ConfirmDeliveryButton({ transactionId }: { transactionId: string }) {
+export function ConfirmDeliveryButton({
+  transactionId,
+  // Collection listings reuse this exact flow + endpoint but relabel the
+  // copy for in-person pickup ("Confirm collection" rather than
+  // "Confirm delivery"). Everything else — the irreversible-release
+  // inspection checklist + dispute escape hatch — is identical.
+  variant = 'delivery',
+}: {
+  transactionId: string;
+  variant?: 'delivery' | 'collection';
+}) {
+  const isCollection = variant === 'collection';
   const { getToken } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -69,7 +80,7 @@ export function ConfirmDeliveryButton({ transactionId }: { transactionId: string
           fontWeight: 500,
         }}
       >
-        I have received the item
+        {isCollection ? 'I have collected the item' : 'I have received the item'}
       </button>
 
       {open && (
@@ -101,7 +112,7 @@ export function ConfirmDeliveryButton({ transactionId }: { transactionId: string
               className="text-base mb-1"
               style={{ color: 'var(--text-primary)', fontWeight: 500 }}
             >
-              Confirm delivery
+              {isCollection ? 'Confirm collection' : 'Confirm delivery'}
             </p>
             <p
               className="text-sm mb-4"

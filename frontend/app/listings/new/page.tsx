@@ -268,6 +268,12 @@ export default function NewListingPage() {
   // to dealer-stock this firearm. Only collected + sent when isFirearm.
   // Buyers near that dealer see it on listing detail.
   const [plannedDealerLocation, setPlannedDealerLocation] = useState('');
+  // Collection-only papers attestation — required for requiresPapers
+  // categories (trailers / caravans). Seller confirms they hold valid
+  // registration + roadworthy papers and will hand them over at
+  // collection. Checkbox-only (POPIA — no documents collected); sent as
+  // collectionPapersAttested and gated into the publish flow below.
+  const [papersAttested, setPapersAttested] = useState(false);
   // Firearm compliance capture — serial number + two photos (the serial
   // stamping and the seller's licence). Only collected + sent when
   // isFirearm. The backend runs Claude vision on these and BLOCKs the
@@ -515,6 +521,14 @@ export default function NewListingPage() {
 
   const selectedCategory = categories.find((c) => c.id === form.categoryId);
   const isFirearm = selectedCategory?.isFirearm ?? false;
+  // Collection-only (trailers / caravans) — the item is collected in
+  // person from the seller, so we hide the courier picker + parcel
+  // inputs and force shippingMethods to ['COLLECTION'] (see the effect
+  // mirroring the firearm one below).
+  const collectionOnly = selectedCategory?.collectionOnly ?? false;
+  // Requires a papers attestation before publish (NaTIS registration +
+  // roadworthy). Drives the required checkbox in the Delivery step.
+  const requiresPapers = selectedCategory?.requiresPapers ?? false;
 
   // Parsed parcel as numbers — null if not yet entered. Used by oversize
   // check + by buildListingPayload. Empty / NaN values stay null so the
@@ -595,6 +609,43 @@ export default function NewListingPage() {
     }
   }, [isFirearm, shippingMethods]);
 
+  // Collection-only categories have exactly one shipping method —
+  // COLLECTION. Mirror the firearm reset: when the seller switches into
+  // a collection-only category, force shippingMethods to ['COLLECTION']
+  // (the courier picker + parcel inputs are hidden in the delivery step).
+  const lastCollectionOnly = useRef(collectionOnly);
+  useEffect(() => {
+    if (lastCollectionOnly.current !== collectionOnly) {
+      lastCollectionOnly.current = collectionOnly;
+      if (collectionOnly) setShippingMethods(['COLLECTION']);
+    }
+  }, [collectionOnly]);
+  // Defensive: keep COLLECTION locked in for a collection-only listing
+  // even if a stale pick sneaks through a hot-reload / state race.
+  useEffect(() => {
+    if (
+      collectionOnly &&
+      (shippingMethods.length !== 1 || shippingMethods[0] !== 'COLLECTION')
+    ) {
+      setShippingMethods(['COLLECTION']);
+    }
+  }, [collectionOnly, shippingMethods]);
+  // Collection-only items settle through the standard checkout, which only
+  // handles Buy Now / Auction — Take-a-Shot's offer-checkout and Swop have no
+  // collection path (the backend rejects them). If the seller switches into a
+  // collection-only category with a Take-a-Shot / Swop pick still selected,
+  // snap the mode back to Buy Now so they never hit an opaque publish error.
+  useEffect(() => {
+    if (
+      collectionOnly &&
+      form.listingType !== 'BUY_NOW' &&
+      form.listingType !== 'AUCTION'
+    ) {
+      set('listingType', 'BUY_NOW');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collectionOnly, form.listingType]);
+
   // ─────────────────── Step completion (drives the accordion) ───────────
   // Each step's `isComplete` is a pure function of the form state.
   // Four steps total: photos → basics → selling → delivery+address.
@@ -640,18 +691,33 @@ export default function NewListingPage() {
       pickupAddress.province.length > 0;
     // Parcel weight + dims required for non-firearm so the courier API
     // has something to quote against. Firearms skip this — DEALER_TRANSFER
-    // and PRIVATE_ARRANGE don't use Pudo/TCG.
+    // and PRIVATE_ARRANGE don't use Pudo/TCG. Collection-only listings
+    // also skip it — there's no courier, so no parcel to quote.
     const parcelFilled =
       isFirearm ||
+      collectionOnly ||
       (parsedParcel.weightKg != null &&
         parsedParcel.lengthCm != null &&
         parsedParcel.widthCm != null &&
         parsedParcel.heightCm != null);
+    // Collection papers attestation — required checkbox for requiresPapers
+    // categories (trailers / caravans). Publish is blocked until ticked.
+    const papersOk = !requiresPapers || papersAttested;
     const step4 =
-      shippingMethods.length > 0 && addressFilled && parcelFilled;
+      shippingMethods.length > 0 && addressFilled && parcelFilled && papersOk;
 
     return { step1, step2, step3, step4 };
-  }, [form, images, pickupAddress, shippingMethods, parsedParcel, isFirearm]);
+  }, [
+    form,
+    images,
+    pickupAddress,
+    shippingMethods,
+    parsedParcel,
+    isFirearm,
+    collectionOnly,
+    requiresPapers,
+    papersAttested,
+  ]);
 
   // Which step is "up next" — the first incomplete one. Drives the red
   // "Up next" pill, NOT auto-expansion. Completing fields just unlocks
@@ -841,6 +907,12 @@ export default function NewListingPage() {
       ...(isFirearm && plannedDealerLocation.trim()
         ? { plannedDealerLocation: plannedDealerLocation.trim() }
         : {}),
+      // Collection papers attestation — only meaningful for requiresPapers
+      // categories (trailers / caravans). The seller confirms they hold
+      // valid registration + roadworthy papers to hand over at collection.
+      ...(requiresPapers
+        ? { collectionPapersAttested: papersAttested }
+        : {}),
       pickupBuilding: pickupAddress.building.trim() || undefined,
       pickupStreet: pickupAddress.street.trim() || undefined,
       pickupAddress2: pickupAddress.address2.trim() || undefined,
@@ -1023,6 +1095,16 @@ export default function NewListingPage() {
     if (isFirearm && (!serialNumber.trim() || !serialPhoto || !licencePhoto)) {
       setPublishError(
         'Firearm listings need the serial number, a photo of the serial, and a photo of your licence. Add the missing items in the Delivery & address step.',
+      );
+      return;
+    }
+    // Collection papers guard — requiresPapers categories (trailers /
+    // caravans) can't publish until the seller attests they hold valid
+    // registration + roadworthy papers. Mirrors the firearm guard: abort
+    // before touching the API so the seller gets an instant message.
+    if (requiresPapers && !papersAttested) {
+      setPublishError(
+        'Tick the registration & roadworthy papers confirmation in the Delivery & collection step before publishing.',
       );
       return;
     }
@@ -1647,7 +1729,15 @@ export default function NewListingPage() {
                   what it's best for, visible BEFORE the seller picks, so they
                   know where to list and why. Selecting one sets listingType. */}
               <div className="flex flex-col gap-2">
-                {SELL_MODES.map((m) => {
+                {/* Collection-only categories (trailers / caravans) settle
+                    through the standard checkout — only Buy Now + Auction are
+                    offered; Take-a-Shot + Swop have no collection path. */}
+                {SELL_MODES.filter(
+                  (m) =>
+                    !collectionOnly ||
+                    m.value === 'BUY_NOW' ||
+                    m.value === 'AUCTION',
+                ).map((m) => {
                   const selected = form.listingType === m.value;
                   return (
                     <button
@@ -2052,9 +2142,11 @@ export default function NewListingPage() {
           {/* Step 4 — Delivery & address */}
           <StepAccordion
             number={4}
-            title="Delivery & address"
+            title={collectionOnly ? 'Collection & address' : 'Delivery & address'}
             description={
-              isFirearm
+              collectionOnly
+                ? 'Buyers collect this item in person from you — no courier. Add your pickup address so buyers know where they’re collecting from.'
+                : isFirearm
                 ? 'Firearms must move through a SAPS-licensed dealer. Pick one or both arrangement options below, then add your pickup address.'
                 : 'Pick which couriers you offer, then add the pickup address. We use it to suggest your nearest Pudo locker.'
             }
@@ -2063,7 +2155,9 @@ export default function NewListingPage() {
             onToggle={() => toggleStep(4)}
             summary={
               stepComplete.step4
-                ? `${shippingMethods.length} method${shippingMethods.length === 1 ? '' : 's'} · ${pickupAddress.city || 'pickup set'}`
+                ? collectionOnly
+                  ? `Collection only · ${pickupAddress.city || 'pickup set'}`
+                  : `${shippingMethods.length} method${shippingMethods.length === 1 ? '' : 's'} · ${pickupAddress.city || 'pickup set'}`
                 : undefined
             }
             onContinue={() => advanceFromStep(4)}
@@ -2072,8 +2166,9 @@ export default function NewListingPage() {
             {/* Parcel info — captured first so the delivery picker below
                 can disable PUDO if the parcel overshoots locker limits.
                 Hidden for firearms because DEALER_TRANSFER and
-                PRIVATE_ARRANGE don't use the courier API. */}
-            {!isFirearm && (
+                PRIVATE_ARRANGE don't use the courier API. Also hidden for
+                collection-only listings — there's no courier to quote. */}
+            {!isFirearm && !collectionOnly && (
               <Field
                 label="Parcel weight & size"
                 required
@@ -2129,6 +2224,92 @@ export default function NewListingPage() {
               </Field>
             )}
 
+            {/* Collection-only info panel — replaces the whole courier
+                picker. There's nothing for the seller to choose: the item
+                is collected in person from them, so we just explain the
+                flow and force shippingMethods = ['COLLECTION'] (see the
+                effect above). */}
+            {collectionOnly && (
+              <div
+                className="rounded-[6px] p-4 text-sm space-y-2 mb-4"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '0.5px solid var(--border)',
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.55,
+                }}
+              >
+                <p
+                  className="text-xs uppercase"
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    letterSpacing: '0.05em',
+                    fontWeight: 600,
+                  }}
+                >
+                  Collection only
+                </p>
+                <p style={{ color: 'var(--text-secondary)' }}>
+                  Buyers collect this item in person — no courier.
+                  You&apos;ll coordinate a pickup time with the buyer after
+                  they pay. Their payment is held until they confirm
+                  collection.
+                </p>
+              </div>
+            )}
+
+            {/* Collection papers attestation — required checkbox for
+                requiresPapers categories (trailers / caravans). Checkbox
+                only (POPIA — never upload or display actual documents).
+                Publish is gated on this being ticked (see stepComplete +
+                handlePublish). */}
+            {requiresPapers && (
+              <div
+                className="rounded-[6px] p-4 text-sm space-y-3 mb-4"
+                style={{
+                  background: 'rgba(200,16,46,0.06)',
+                  border: '0.5px solid var(--red)',
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.55,
+                }}
+              >
+                <p
+                  className="text-xs uppercase"
+                  style={{
+                    color: 'var(--red)',
+                    letterSpacing: '0.05em',
+                    fontWeight: 600,
+                  }}
+                >
+                  Registration & roadworthy papers — required confirmation
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={papersAttested}
+                    onChange={(e) => setPapersAttested(e.target.checked)}
+                    style={{ marginTop: 3, accentColor: 'var(--red)' }}
+                  />
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    I confirm I hold valid registration and roadworthy
+                    papers for this item and will hand them to the buyer at
+                    collection.
+                  </span>
+                </label>
+                <p
+                  className="text-xs"
+                  style={{
+                    color: papersAttested ? '#00a03c' : 'var(--text-tertiary)',
+                  }}
+                >
+                  {papersAttested
+                    ? '✓ Confirmed. You can publish once the rest of this step is complete.'
+                    : 'Tick the box to publish this listing.'}
+                </p>
+              </div>
+            )}
+
+            {!collectionOnly && (
             <Field
               label="Delivery options"
               required
@@ -2256,6 +2437,7 @@ export default function NewListingPage() {
                 </div>
               )}
             </Field>
+            )}
 
             {/* Firearm compliance — serial number + serial photo +
                 licence photo. Required for all firearm listings. The

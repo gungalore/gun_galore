@@ -12,7 +12,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { BrowseListingsDto } from './dto/browse-listings.dto';
-import { Listing, ListingStatus, ListingType } from '@prisma/client';
+import { Listing, ListingStatus, ListingType, ShippingMethod } from '@prisma/client';
 import {
   ListingModerationService,
   ListingModerationResult,
@@ -296,6 +296,56 @@ export class ListingsService {
       );
     }
 
+    // ---- Collection-only + papers attestation (P3) -----------------------
+    // Collection-only categories (trailers, off-road caravans, oversized /
+    // dangerous goods no courier will carry). The seller's UI hides courier
+    // options; this forces COLLECTION server-side so a crafted payload can't
+    // attach PUDO/TCG to a collection-only listing (which would then try to
+    // quote / book a courier that can't carry it). Mirrors the firearm
+    // DEALER_TRANSFER lock.
+    // COLLECTION is reserved for collection-only categories. A normal listing
+    // must never carry it in its offered methods — it would be a dead option
+    // no buyer can select and no courier/dealer path honours. (The firearm
+    // gate above only checks DEALER_TRANSFER presence, not stray members.)
+    if (!category.collectionOnly && dto.shippingMethods?.includes('COLLECTION')) {
+      throw new BadRequestException(
+        'In-person collection is only available for collection-only categories.',
+      );
+    }
+    if (category.collectionOnly && category.isFirearm) {
+      // Defensive: a category is never both. Refuse rather than guess which
+      // routing wins.
+      throw new BadRequestException(
+        'A category cannot be both firearm and collection-only.',
+      );
+    }
+    // Collection-only items are limited to Buy Now / Auction — both settle
+    // through the standard checkout, which handles COLLECTION + the papers
+    // gate. The Take-a-Shot offer-checkout and the Swop module don't carry a
+    // collection path, so a collection listing there would dead-end at pay.
+    if (
+      category.collectionOnly &&
+      dto.listingType !== 'BUY_NOW' &&
+      dto.listingType !== 'AUCTION'
+    ) {
+      throw new BadRequestException(
+        'Collection-only items (e.g. trailers and caravans) can be listed as Buy Now or Auction — not Take-a-Shot or Swop.',
+      );
+    }
+    // Papers attestation — NaTIS-registered goods (trailers / caravans). The
+    // seller affirms they hold valid registration / roadworthy papers and
+    // will hand them over at collection. Boolean only — we never collect or
+    // store the documents themselves (POPIA).
+    let papersAttestedAt: Date | null = null;
+    if (category.requiresPapers) {
+      if (dto.collectionPapersAttested !== true) {
+        throw new BadRequestException(
+          'You must confirm you hold valid registration / roadworthy papers and will hand them to the buyer at collection.',
+        );
+      }
+      papersAttestedAt = new Date();
+    }
+
     // ---- Firearm/barrel licence + serial verification (SAP 534 flow) ----
     // For licence-controlled categories the seller must supply a typed
     // serial + a serial photo + a licence photo (uploaded to Cloudinary
@@ -475,6 +525,13 @@ export class ListingsService {
         condition: dto.condition,
         province: dto.province,
         isFirearm: category.isFirearm,
+        // P3 — snapshot the collection-only + papers flags from the category
+        // (like isFirearm) so downstream shipping / checkout logic never has
+        // to re-join the category. papersAttestedAt is the seller's create-
+        // time attestation (null for non-papers categories).
+        collectionOnly: category.collectionOnly,
+        requiresPapers: category.requiresPapers,
+        papersAttestedAt,
         trackInventory,
         quantityAvailable,
         make: dto.make,
@@ -493,8 +550,11 @@ export class ListingsService {
         isFeatured: dto.isFeatured ?? false,
         startTime,
         endTime,
-        // Delivery + pickup address
-        shippingMethods: dto.shippingMethods ?? [],
+        // Delivery + pickup address. Collection-only categories are forced
+        // to the single COLLECTION method regardless of what the client sent.
+        shippingMethods: category.collectionOnly
+          ? [ShippingMethod.COLLECTION]
+          : (dto.shippingMethods ?? []),
         // Phase M dealer-lock — optional planned-dealer hint shown
         // to buyers near that dealer. Trimmed to spec-allowed 200
         // chars at the DTO layer; we also defensively null out
@@ -1029,6 +1089,32 @@ export class ListingsService {
       );
     }
 
+    // P3 collection-lock — a collection-only listing must keep COLLECTION as
+    // its sole shipping method. The edit form hides shipping for these, but a
+    // crafted PATCH mustn't switch a trailer onto a courier method.
+    if (
+      listing.collectionOnly &&
+      dto.shippingMethods !== undefined &&
+      (dto.shippingMethods.length !== 1 ||
+        dto.shippingMethods[0] !== ShippingMethod.COLLECTION)
+    ) {
+      throw new BadRequestException(
+        'Collection-only listings can only be collected in person — courier delivery is not available.',
+      );
+    }
+    // Symmetric guard — a non-collection listing must never carry COLLECTION
+    // in its offered methods (keeps a firearm's [DEALER_TRANSFER, …] array
+    // clean; the firearm lock above only checks DEALER_TRANSFER presence).
+    if (
+      !listing.collectionOnly &&
+      dto.shippingMethods !== undefined &&
+      dto.shippingMethods.includes(ShippingMethod.COLLECTION)
+    ) {
+      throw new BadRequestException(
+        'In-person collection is only available for collection-only listings.',
+      );
+    }
+
     // FCA gate (P0.1a) — a category change must never alter the firearm
     // status of a listing. isFirearm is snapshotted at create() after the
     // full serial/licence verification; re-filing a firearm under
@@ -1038,7 +1124,12 @@ export class ListingsService {
     if (dto.categoryId !== undefined && dto.categoryId !== listing.categoryId) {
       const newCategory = await this.prisma.category.findUnique({
         where: { id: dto.categoryId },
-        select: { isFirearm: true, isActive: true, availableSecondhand: true },
+        select: {
+          isFirearm: true,
+          isActive: true,
+          availableSecondhand: true,
+          collectionOnly: true,
+        },
       });
       if (!newCategory || !newCategory.isActive) {
         throw new BadRequestException('Invalid category');
@@ -1053,6 +1144,14 @@ export class ListingsService {
           listing.isFirearm
             ? 'A firearm listing cannot be moved to a non-firearm category. Cancel it and create a new listing instead.'
             : 'A listing cannot be moved into a licence-controlled firearm category. Create a new listing so the serial and licence can be verified.',
+        );
+      }
+      // P3 — same reasoning for collection-only: the COLLECTION shipping
+      // method + papers attestation are snapshotted at create. Moving across
+      // the collection/courier boundary would strand a stale snapshot.
+      if (newCategory.collectionOnly !== listing.collectionOnly) {
+        throw new BadRequestException(
+          'This listing cannot be moved between collection-only and courier categories. Cancel it and create a new listing instead.',
         );
       }
     }
@@ -1090,10 +1189,15 @@ export class ListingsService {
         : (dto.plannedDealerLocation ?? '').trim().length > 0
           ? dto.plannedDealerLocation!.trim()
           : null;
+    // collectionPapersAttested is a create-time seller attestation, not a
+    // Listing column — drop it before the spread so PartialType(update)'s
+    // ...dto never tries to persist an unknown field (Prisma would reject it).
+    const listingUpdate = { ...dto };
+    delete listingUpdate.collectionPapersAttested;
     const updated = await this.prisma.listing.update({
       where: { id },
       data: {
-        ...dto,
+        ...listingUpdate,
         ...(normalisedPlanned !== undefined
           ? { plannedDealerLocation: normalisedPlanned }
           : {}),

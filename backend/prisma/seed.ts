@@ -34,6 +34,11 @@ interface ParentCat {
   requiresLicence?: boolean;
   availableSecondhand?: boolean;
   availableNewStore?: boolean;
+  // Collection-only (trailers / oversized / dangerous goods) → forces
+  // COLLECTION shipping + funds-held-until-collected. requiresPapers →
+  // NaTIS registration / roadworthy attestation (boolean only, no docs).
+  collectionOnly?: boolean;
+  requiresPapers?: boolean;
   isActive?: boolean;
   sortOrder: number;
 }
@@ -59,6 +64,11 @@ const categories: ParentCat[] = [
   { name: 'Self Defence', slug: 'self-defence', sortOrder: 12, availableNewStore: true },
   { name: 'Paintball', slug: 'paintball', sortOrder: 13, availableNewStore: true },
   { name: 'Reloading Equipment', slug: 'reloading-equipment', sortOrder: 14, availableNewStore: true },
+  // ─── Outdoor expansion (P3) — full outdoor marketplace tree ───────────
+  { name: 'Overlanding & 4x4', slug: 'overlanding', sortOrder: 15, availableNewStore: true },
+  { name: 'Hunting', slug: 'hunting', sortOrder: 16, availableNewStore: true },
+  { name: 'Outdoor Clothing & Footwear', slug: 'outdoor-clothing-footwear', sortOrder: 17, availableNewStore: true },
+  { name: 'Archery & Bowhunting', slug: 'archery-bowhunting', sortOrder: 18, availableNewStore: true },
 ];
 
 // Sub-categories keyed by parent slug. Each child inherits the parent's
@@ -67,6 +77,8 @@ const categories: ParentCat[] = [
 interface SubCat {
   name: string;
   licenced?: boolean; // Override — flips both isFirearm + requiresLicence to true
+  collectionOnly?: boolean; // Override — in-person collection only (no courier)
+  requiresPapers?: boolean; // Override — NaTIS registration / roadworthy attestation
 }
 
 const subCategories: Record<string, SubCat[]> = {
@@ -108,7 +120,10 @@ const subCategories: Record<string, SubCat[]> = {
     { name: 'Rifle Tools' },
     { name: 'Silencers' },
     { name: 'Triggers' },
-    { name: "Men's Hunting Pants & Shorts" },
+    // "Men's Hunting Pants & Shorts" was misfiled here (P3 fix) — its home
+    // is now Outdoor Clothing & Footwear → Trousers & Shorts. Removed from
+    // this list so the seed's deactivate-all-then-reactivate pass retires
+    // the stray row (0 listings) instead of resurrecting it.
     { name: 'AR Accessories' },
     { name: 'AR Magazines' },
     { name: 'Pistol Magazines' },
@@ -130,6 +145,9 @@ const subCategories: Record<string, SubCat[]> = {
     { name: 'Rangefinding Rifle Scopes' },
     { name: 'Previously Owned Optics' },
     { name: 'Optical Accessories' },
+    { name: 'GPS & Comms' },
+    { name: 'Thermal Imaging' },
+    { name: 'Drones' },
   ],
   'reloading-components': [
     { name: 'Rifle Bullets' },
@@ -175,6 +193,8 @@ const subCategories: Record<string, SubCat[]> = {
     { name: 'Fishing Accessories' },
     { name: 'Fishing By Technique' },
     { name: 'Fishing Headwear' },
+    { name: 'Fish Finders & Electronics' },
+    { name: 'Kayaks & Craft' },
   ],
   'camping-outdoor': [
     { name: 'Lights' },
@@ -183,6 +203,59 @@ const subCategories: Record<string, SubCat[]> = {
     { name: 'Camping Furniture' },
     { name: 'Kids Camping' },
     { name: 'Outdoor Gear' },
+    { name: 'Tents' },
+    { name: 'Stoves & Cooking' },
+    { name: 'Coolers & Iceboxes' },
+    { name: 'Water Filtration & Storage' },
+    { name: 'Backpacks & Hiking Packs' },
+    { name: 'Navigation & GPS' },
+    { name: 'Hydration' },
+  ],
+  overlanding: [
+    { name: 'Rooftop Tents' },
+    { name: 'Awnings & Shade' },
+    { name: 'Fridges & Freezers' },
+    { name: 'Dual-Battery & Solar' },
+    { name: 'Recovery Gear' },
+    { name: 'Drawer & Storage Systems' },
+    { name: 'Roof Racks & Load Bars' },
+    { name: 'Bull Bars, Sliders & Protection' },
+    { name: 'Water Storage & Systems' },
+    { name: 'Vehicle Lighting' },
+    { name: 'Air Compressors & Tyre Gear' },
+    // Trailers + off-road caravans can't courier — in-person collection
+    // only + NaTIS registration/roadworthy attestation at handover.
+    { name: 'Trailers & Off-Road Caravans', collectionOnly: true, requiresPapers: true },
+    { name: 'Overlanding Accessories' },
+  ],
+  hunting: [
+    { name: 'Game Calls & Decoys' },
+    { name: 'Blinds & Hides' },
+    { name: 'Hunting Packs & Bags' },
+    { name: 'Field Dressing & Butchery' },
+    { name: 'Scent Control & Attractants' },
+    { name: 'Shooting Sticks & Bipods' },
+    { name: 'Hunting Accessories' },
+  ],
+  'outdoor-clothing-footwear': [
+    { name: 'Jackets & Shells' },
+    { name: 'Trousers & Shorts' },
+    { name: 'Base Layers & Thermals' },
+    { name: 'Hiking & Hunting Boots' },
+    { name: 'Hats, Caps & Beanies' },
+    { name: 'Gloves' },
+    { name: 'Socks' },
+    { name: 'Gaiters & Accessories' },
+  ],
+  'archery-bowhunting': [
+    { name: 'Compound Bows' },
+    { name: 'Recurve & Traditional Bows' },
+    { name: 'Crossbows' },
+    { name: 'Arrows & Bolts' },
+    { name: 'Broadheads & Points' },
+    { name: 'Releases & Sights' },
+    { name: 'Targets' },
+    { name: 'Archery Accessories' },
   ],
   knives: [
     { name: 'Custom Knives' },
@@ -304,6 +377,8 @@ async function main() {
       requiresLicence: cat.requiresLicence ?? false,
       availableSecondhand: cat.availableSecondhand ?? true,
       availableNewStore: cat.availableNewStore ?? false,
+      collectionOnly: cat.collectionOnly ?? false,
+      requiresPapers: cat.requiresPapers ?? false,
       sortOrder: cat.sortOrder,
       isActive: cat.isActive ?? true,
       parentId: null,
@@ -339,6 +414,8 @@ async function main() {
         requiresLicence,
         availableSecondhand: parent.availableSecondhand,
         availableNewStore: parent.availableNewStore,
+        collectionOnly: child.collectionOnly ?? false,
+        requiresPapers: child.requiresPapers ?? false,
         sortOrder: i + 1,
         isActive: true,
       };

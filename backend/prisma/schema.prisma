@@ -99,6 +99,7 @@ enum ShippingMethod {
   TCG // The Courier Guy door-to-door (non-firearm)
   DEALER_TRANSFER // Routed through a SAPS-licensed dealer (firearm — buyer picks dealer at checkout)
   PRIVATE_ARRANGE // Buyer + seller arrange in-person legal transfer (firearm — pair go to a dealer themselves)
+  COLLECTION // Buyer collects in person from the seller — no courier, no rate. Forced for collectionOnly categories (trailers, oversized/dangerous goods). Funds stay HELD until the buyer confirms collection (payment protection); contact details are revealed post-payment so they can coordinate the meet.
 }
 
 enum ShippingStatus {
@@ -543,6 +544,17 @@ model Category {
   // categories (e.g. Ammo). Generic gate governing every category incl.
   // future ones, so the cross-sell engine needs no per-category code.
   crossSellEligible   Boolean    @default(true)
+  // Collection-only categories (trailers, off-road caravans, oversized /
+  // dangerous goods that no courier will carry). Listings inherit this at
+  // create time → their only shipping method is COLLECTION, no courier
+  // rate is quoted, and funds stay HELD until the buyer confirms
+  // collection. Mirrors how isFirearm drives DEALER_TRANSFER.
+  collectionOnly      Boolean    @default(false)
+  // Registered-goods categories (trailers, off-road caravans) where the
+  // seller must attest they hold valid NaTIS registration / roadworthy
+  // papers and will hand them over at collection. POPIA note: we NEVER
+  // collect or display the actual documents — only a boolean attestation.
+  requiresPapers      Boolean    @default(false)
   isActive            Boolean    @default(true)
   sortOrder           Int        @default(0)
   createdAt           DateTime   @default(now())
@@ -618,6 +630,18 @@ model Listing {
   province    Province
 
   isFirearm Boolean @default(false)
+  // Snapshotted from Category.collectionOnly at create time (like
+  // isFirearm). When true the only shipping method is COLLECTION — no
+  // courier rate is quoted and the buyer collects in person.
+  collectionOnly Boolean @default(false)
+  // Snapshotted from Category.requiresPapers at create time. When true
+  // the seller attested (at listing) + the buyer acknowledges (at
+  // checkout) that valid NaTIS registration / roadworthy papers change
+  // hands at collection. Boolean attestation only — no documents stored.
+  requiresPapers Boolean @default(false)
+  // Set when a requiresPapers seller ticks the papers attestation at
+  // listing creation. Durable evidence they affirmed holding the papers.
+  papersAttestedAt DateTime?
   make      String?
   model     String?
   calibre   String?
@@ -1023,6 +1047,13 @@ model Transaction {
   // (defence in depth against a buyer hitting the API without going
   // through the consent screen).
   privateArrangeAcceptedAt DateTime?
+
+  // Set when a buyer ticks the collection papers acknowledgement at
+  // checkout on a requiresPapers (trailer / caravan) listing — durable
+  // evidence they affirmed they'll collect in person and receive the
+  // registration / roadworthy papers at handover. Boolean gate, like the
+  // firearm 18+ attestation, but persisted since we add the column here.
+  collectionPapersAckAt DateTime?
 
   // ─── Dealer-stock-in verification (firearm DEALER_TRANSFER only) ──
   // When the firearm is delivered to the chosen SAPS-licensed dealer,

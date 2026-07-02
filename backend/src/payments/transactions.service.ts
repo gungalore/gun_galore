@@ -200,6 +200,7 @@ export class TransactionsService {
     // the seller's offered methods (a subset of the legal options).
     this.validateShipping(
       listing.isFirearm,
+      listing.collectionOnly,
       listing.shippingMethods,
       dto.shippingMethod,
     );
@@ -212,6 +213,16 @@ export class TransactionsService {
     if (listing.isFirearm && dto.firearmAttestation18Plus !== true) {
       throw new BadRequestException(
         'You must confirm you are over 18 and (where applicable) hold the relevant SAPS competency before buying a firearm.',
+      );
+    }
+
+    // P3 — collection papers acknowledgement (trailers / off-road caravans).
+    // Mirror the firearm attestation: the flag must be explicitly true when
+    // the listing requires papers. The frontend gate is UX; this is the
+    // authoritative check. Persisted as collectionPapersAckAt below.
+    if (listing.requiresPapers && dto.collectionPapersAccepted !== true) {
+      throw new BadRequestException(
+        'You must confirm you will collect this item in person and receive the registration / roadworthy papers from the seller at handover.',
       );
     }
 
@@ -394,6 +405,12 @@ export class TransactionsService {
         // this column is set before releasing funds — defence in depth.
         privateArrangeAcceptedAt:
           dto.shippingMethod === 'PRIVATE_ARRANGE' && dto.privateArrangeConsent
+            ? new Date()
+            : null,
+        // P3 — durable evidence the buyer acknowledged in-person collection +
+        // papers handover for a trailer/caravan. Gate above enforces it.
+        collectionPapersAckAt:
+          listing.requiresPapers && dto.collectionPapersAccepted
             ? new Date()
             : null,
       },
@@ -1977,7 +1994,18 @@ export class TransactionsService {
       tx.shippingMethod === 'PRIVATE_ARRANGE' &&
       !!tx.privateArrangeAcceptedAt &&
       tx.paymentStatus === 'RELEASED';
-    if (!isPaidPrivateArrange) {
+    // P3 — collection orders reveal contact once paid (HELD or RELEASED) so
+    // the buyer + seller can coordinate the in-person pickup. Payment is
+    // still HELD until the buyer confirms collection, so this is a
+    // coordination reveal, not the PRIVATE_ARRANGE payment-protection waiver.
+    const isPaidCollection =
+      tx.shippingMethod === 'COLLECTION' &&
+      // paymentStatus defaults to HELD at row creation, so HELD alone is NOT
+      // proof of payment — an unpaid, freshly-reserved order is already HELD.
+      // Require paidAt so contact details never reveal before real payment.
+      !!tx.paidAt &&
+      (tx.paymentStatus === 'HELD' || tx.paymentStatus === 'RELEASED');
+    if (!isPaidPrivateArrange && !isPaidCollection) {
       // POPIA + platform policy: the COUNTERPARTY's identity is private
       // until a paid PRIVATE_ARRANGE reveal. Blank the other party's
       // real name, email and phone from the response — @username (a
@@ -2141,13 +2169,27 @@ export class TransactionsService {
     if (tx.buyer.clerkId !== buyerClerkId) {
       throw new ForbiddenException('Only the buyer can raise a dispute');
     }
+    // A dispute presupposes a paid order. paymentStatus defaults to HELD at
+    // creation, so HELD is not proof of payment (a collection order bypasses
+    // the dispatch gate below, which for courier orders incidentally blocked
+    // unpaid disputes). Require paidAt so an unpaid checkout can't be disputed.
+    if (!tx.paidAt) {
+      throw new BadRequestException(
+        'This order has not been paid yet, so there is nothing to dispute.',
+      );
+    }
     if (tx.paymentStatus !== 'HELD') {
       throw new BadRequestException(
         'Disputes can only be raised while the payment is held. This transaction is already ' +
           tx.paymentStatus.toLowerCase().replace(/_/g, ' ') + '.',
       );
     }
-    if (!tx.dispatchedAt) {
+    // Collection orders have no dispatch step — the buyer collects in person.
+    // Allow disputes on those any time funds are HELD (seller no-show, or the
+    // item isn't as described at handover). Courier orders keep the
+    // dispatch-first rule: there's nothing to dispute before the parcel moves,
+    // and the 48h dispatch SLA auto-refunds a seller who never ships.
+    if (!tx.dispatchedAt && tx.shippingMethod !== 'COLLECTION') {
       throw new BadRequestException(
         'Disputes can only be raised after the seller has dispatched. ' +
           'If the seller has not dispatched within 48 hours of payment, the system will automatically refund you.',
@@ -2773,9 +2815,28 @@ export class TransactionsService {
 
   private validateShipping(
     isFirearm: boolean,
+    collectionOnly: boolean,
     sellerOffered: ShippingMethod[],
     chosen: ShippingMethod,
   ) {
+    // 0. Collection-only listings (trailers / off-road caravans / oversized
+    //    goods no courier will carry). The ONLY legal method is in-person
+    //    COLLECTION — and conversely COLLECTION is never valid for a
+    //    courier/firearm listing (it would bypass a real shipment + skip the
+    //    courier rate). This is the collection analogue of the firearm gate.
+    if (collectionOnly) {
+      if (chosen !== 'COLLECTION') {
+        throw new BadRequestException(
+          'This item is collection-only — it must be collected in person.',
+        );
+      }
+      return;
+    }
+    if (chosen === 'COLLECTION') {
+      throw new BadRequestException(
+        'In-person collection is only available for collection-only listings.',
+      );
+    }
     // 1. Legal class — firearms can only use dealer transfer OR a private
     //    arrangement (which still requires both parties to visit a dealer
     //    in person, just without a pre-picked one). Non-firearms can't

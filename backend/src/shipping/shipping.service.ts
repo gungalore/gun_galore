@@ -131,6 +131,11 @@ export class ShippingService {
         'Firearm transfers are handled by SAPS-licensed dealers; no courier rate applies.',
       );
     }
+    if (listing.collectionOnly) {
+      throw new BadRequestException(
+        'This item is collection-only and cannot be couriered — arrange in-person collection with the seller.',
+      );
+    }
     if (
       !listing.weightGrams ||
       !listing.lengthCm ||

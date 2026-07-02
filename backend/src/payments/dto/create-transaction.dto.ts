@@ -122,6 +122,15 @@ export class CreateTransactionDto {
   @IsBoolean()
   firearmAttestation18Plus?: boolean;
 
+  // P3 — collection papers acknowledgement for trailer / caravan checkouts.
+  // Must be explicitly `true` when the listing has requiresPapers. The
+  // service re-checks `listing.requiresPapers` server-side and refuses the
+  // transaction without it (defence in depth). Persisted as
+  // `collectionPapersAckAt` on the Transaction for dispute/audit evidence.
+  @IsOptional()
+  @IsBoolean()
+  collectionPapersAccepted?: boolean;
+
   // Units to buy (Phase 8a). Only honoured for inventory-tracked BUY_NOW
   // listings; ignored (resolved to 1) for every other listing. Defaults
   // to 1 when omitted.

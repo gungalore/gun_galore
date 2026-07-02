@@ -134,6 +134,16 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     };
   }
 
+  // Collection-only listing (trailers / caravans) — collected in person
+  // from the seller, no courier. When true we hide all courier shipping
+  // UI, skip the shipping quote, and submit shippingMethod = 'COLLECTION'.
+  // There's no shipping cost (R0). Falls back to the shippingMethods array
+  // for older payloads that don't carry the collectionOnly flag.
+  const isCollection =
+    listing.collectionOnly ??
+    listing.shippingMethods?.includes('COLLECTION') ??
+    false;
+
   // Allowed methods = intersection of (legal for this listing class) and
   // (what the seller offered in the Sell form). Legacy listings with an
   // empty shippingMethods array fall back to the full legal set so old
@@ -147,7 +157,9 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       : legalForClass;
 
   const [method, setMethod] = useState<ShippingMethod>(
-    allowedMethods[0] ?? (listing.isFirearm ? 'DEALER_TRANSFER' : 'PUDO'),
+    isCollection
+      ? 'COLLECTION'
+      : allowedMethods[0] ?? (listing.isFirearm ? 'DEALER_TRANSFER' : 'PUDO'),
   );
   const [selectedLocker, setSelectedLocker] = useState<PudoLocker | null>(null);
   // Dealer-transfer self-arrange consent — the buyer must tick a box
@@ -207,6 +219,12 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // `true` flag, so this gate is mirrored on Pay/isReady. Non-firearm
   // checkouts ignore this state.
   const [firearmAttestation, setFirearmAttestation] = useState(false);
+
+  // Collection-only papers acknowledgement — required for requiresPapers
+  // listings (trailers / caravans). The backend refuses the transaction
+  // without collectionPapersAccepted === true, so this gate is mirrored
+  // on Pay/isReady. Ignored for listings that don't require papers.
+  const [collectionPapersAck, setCollectionPapersAck] = useState(false);
 
   // "Ship to a different address" toggle. Off by default — the
   // delivering-to chip / saved-address LockerPicker uses the profile
@@ -440,7 +458,21 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     const attestation = listing.isFirearm
       ? { firearmAttestation18Plus: firearmAttestation }
       : {};
-    const base = { listingId: listing.id, shippingMethod: method, ...attestation };
+    // Collection papers acknowledgement — only meaningful (and only
+    // accepted by the backend) for requiresPapers listings. Harmless to
+    // omit otherwise.
+    const papers = listing.requiresPapers
+      ? { collectionPapersAccepted: collectionPapersAck }
+      : {};
+    const base = {
+      listingId: listing.id,
+      shippingMethod: method,
+      ...attestation,
+      ...papers,
+    };
+    // Collection — no locker, no address, no quote. Just the base payload
+    // with shippingMethod = 'COLLECTION' (+ the papers ack when required).
+    if (method === 'COLLECTION') return base;
     if (method === 'PUDO') return { ...base, pudoPickupLockerId: selectedLocker?.lockerId };
     if (method === 'TCG') {
       // Effective address: captureAddr when toggle is on OR there's
@@ -498,6 +530,13 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     if (meLoaded && me && !me.phone) return false;
     // M33 — firearm buyers must affirm 18+/competency.
     if (listing.isFirearm && !firearmAttestation) return false;
+    // Collection papers — buyers of requiresPapers listings must
+    // acknowledge the in-person collection + papers handover.
+    if (listing.requiresPapers && !collectionPapersAck) return false;
+
+    // Collection — no locker, no address, no quote. Once the phone +
+    // papers gates above pass, the buyer can pay.
+    if (method === 'COLLECTION') return true;
 
     // PUDO + TCG also need a successful quote — the buyer can't pay
     // until we know what the shipping line costs. DEALER_TRANSFER and
@@ -723,7 +762,53 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           seller only offered one option there's nothing to choose and
           we still render the pill so the buyer can see what they're
           getting. */}
-      {allowedMethods.length > 0 && (
+      {/* Collection-only panel — replaces every courier shipping surface
+          (method selector, locker picker, delivery address, quote line).
+          The item is collected in person from the seller, so there's
+          nothing to choose. Once paid, we share contact details so both
+          parties can coordinate a pickup time; payment is held until the
+          buyer confirms collection. */}
+      {isCollection && (
+        <div
+          className="rounded-[6px] p-4 text-sm space-y-2"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            color: 'var(--text-primary)',
+            lineHeight: 1.55,
+          }}
+        >
+          <p
+            className="text-xs uppercase"
+            style={{
+              color: 'var(--text-tertiary)',
+              letterSpacing: '0.05em',
+              fontWeight: 600,
+            }}
+          >
+            Collection only
+          </p>
+          <p style={{ color: 'var(--text-secondary)' }}>
+            You&apos;ll collect this item in person from the seller. After
+            you pay, we&apos;ll share contact details so you can arrange a
+            pickup time. Your payment is held until you confirm you&apos;ve
+            collected it.
+          </p>
+        </div>
+      )}
+
+      {/* Collection papers acknowledgement — required for requiresPapers
+          listings (trailers / caravans). Mirrors FirearmAttestation: the
+          backend refuses the transaction without collectionPapersAccepted
+          === true, so Pay is gated on it via isReady(). */}
+      {listing.requiresPapers && (
+        <CollectionPapersAck
+          accepted={collectionPapersAck}
+          onChange={setCollectionPapersAck}
+        />
+      )}
+
+      {!isCollection && allowedMethods.length > 0 && (
         <div>
           <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
             {listing.isFirearm ? 'Transfer method' : 'Delivery method'}
@@ -1913,6 +1998,69 @@ function FirearmAttestation({
       >
         {accepted
           ? '✓ Confirmation recorded. You can proceed to payment below.'
+          : 'Tick the box to enable payment.'}
+      </p>
+    </div>
+  );
+}
+
+// Collection papers acknowledgement — single-checkbox gate for
+// requiresPapers listings (trailers / caravans). The backend HARD-
+// refuses the transaction without `collectionPapersAccepted: true`, so
+// this is both a buyer acknowledgement and a server-enforced gate. No
+// documents are collected or displayed (POPIA) — the seller attests to
+// holding the papers at listing time; the buyer acknowledges they'll
+// receive them at handover.
+function CollectionPapersAck({
+  accepted,
+  onChange,
+}: {
+  accepted: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div
+      className="rounded-[6px] p-4 text-sm space-y-3"
+      style={{
+        background: 'rgba(200,16,46,0.06)',
+        border: '0.5px solid var(--red)',
+        color: 'var(--text-primary)',
+        lineHeight: 1.55,
+      }}
+    >
+      <p
+        className="text-xs uppercase"
+        style={{
+          color: 'var(--red)',
+          letterSpacing: '0.05em',
+          fontWeight: 600,
+        }}
+      >
+        Collection & papers — required confirmation
+      </p>
+
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={accepted}
+          onChange={(e) => onChange(e.target.checked)}
+          style={{ marginTop: 3, accentColor: 'var(--red)' }}
+        />
+        <span style={{ color: 'var(--text-secondary)' }}>
+          I understand I must collect this item in person and will receive
+          the registration and roadworthy papers from the seller at
+          handover.
+        </span>
+      </label>
+
+      <p
+        className="text-xs"
+        style={{
+          color: accepted ? '#00a03c' : 'var(--text-tertiary)',
+        }}
+      >
+        {accepted
+          ? '✓ Acknowledged. You can proceed to payment below.'
           : 'Tick the box to enable payment.'}
       </p>
     </div>
