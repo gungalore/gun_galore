@@ -875,6 +875,10 @@ export class SwapFundingService {
           payeeId === swap.initiatorId
             ? swap.initiatorFundingRef
             : swap.ownerFundingRef;
+        // P0.5 — commission on the cash component (bands on the excess
+        // above the R1,000 allowance), retained by GG out of the payout —
+        // closes the "cheap item + big cash top-up" commission dodge.
+        const cashCommission = this.fees.swapCashCommission(swap.cashAmount);
         const created = await txc.transaction.create({
           data: {
             swapId,
@@ -883,11 +887,12 @@ export class SwapFundingService {
             buyerId: swap.cashPayerId, // cash payer
             orderReference: `${payeeRef ?? `SWAP-${swapId}`}-ST`,
             listingPrice: 0,
-            commissionZar: 0,
+            commissionZar: cashCommission,
             processingFee: 0,
             passFeeToBuyer: false,
             buyerTotal: 0,
-            sellerPayout: swap.cashAmount, // the held cash → payee
+            // held cash → payee, net of the cash commission
+            sellerPayout: Math.max(0, swap.cashAmount - cashCommission),
             paymentStatus: PaymentStatus.RELEASED,
             releasedAt: now,
           },
@@ -1299,13 +1304,19 @@ export class SwapFundingService {
             ? swap.ownerId
             : swap.initiatorId
           : null;
+      // P0.5 — the payee is told the NET figure (cash minus the cash
+      // commission), matching what the settlement tx actually pays out.
+      const netCashPayout = Math.max(
+        0,
+        swap.cashAmount - this.fees.swapCashCommission(swap.cashAmount),
+      );
       for (const u of [swap.initiator, swap.owner]) {
         await this.notifications.swapCompleted({
           email: u.email,
           name: u.firstName ?? 'there',
           phone: u.phone,
           swapId,
-          cashPayoutCents: u.id === payeeId ? swap.cashAmount : 0,
+          cashPayoutCents: u.id === payeeId ? netCashPayout : 0,
         });
       }
     } catch (err) {

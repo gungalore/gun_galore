@@ -38,6 +38,10 @@ interface Proposal {
   cashDirection: SwapRole | null;
   counterCashAmount: number | null;
   counterCashDirection: SwapRole | null;
+  // P0.5 — commission retained from the cash top-up at settlement (bands
+  // on the excess above R1,000) + the net figure the recipient is paid.
+  cashCommissionCents?: number;
+  cashNetToRecipientCents?: number;
   proposerNote: string | null;
   ownerNote: string | null;
   listing: MiniListing;
@@ -296,9 +300,17 @@ function cashSummary(p: Proposal): string {
   const amt = useCounter ? p.counterCashAmount ?? 0 : p.cashAmount;
   const dir = useCounter ? p.counterCashDirection : p.cashDirection;
   if (!amt) return 'No cash top-up';
-  return dir === 'INITIATOR_GIVES'
-    ? `They add ${rand(amt)} cash`
-    : `You add ${rand(amt)} cash`;
+  const base =
+    dir === 'INITIATOR_GIVES'
+      ? `They add ${rand(amt)} cash`
+      : `You add ${rand(amt)} cash`;
+  // P0.5 — cash over R1,000 carries standard platform commission,
+  // deducted from the cash the receiver is paid at settlement.
+  const fee = p.cashCommissionCents ?? 0;
+  if (fee > 0 && p.cashNetToRecipientCents !== undefined) {
+    return `${base} · receiver is paid ${rand(p.cashNetToRecipientCents)} after the ${rand(fee)} platform commission`;
+  }
+  return base;
 }
 
 function OwnerProposalCard({
@@ -627,6 +639,12 @@ function ProposeForm({
           <option value="INITIATOR_GIVES">I add the cash (I pay the owner)</option>
           <option value="OWNER_GIVES">Owner adds the cash (they pay me)</option>
         </select>
+      )}
+      {parseFloat(cash || '0') > 1000 && (
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          Cash top-ups over R1,000 carry standard platform commission on the
+          amount above R1,000, deducted from the cash the receiver is paid.
+        </p>
       )}
 
       <input

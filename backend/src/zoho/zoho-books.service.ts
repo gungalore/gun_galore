@@ -455,20 +455,51 @@ export class ZohoBooksService {
         code?: number;
         message?: string;
       };
+
+      // P0.7 — the payment-processing fee GG retains (1.5% EFT handling
+      // today; card rate under a gateway) is real revenue but was never
+      // documented in Books. When the SELLER absorbs it (passFeeToBuyer
+      // false — the default), it is deducted from their payout exactly
+      // like the commission, so it belongs on this same invoice as a
+      // second line. When the BUYER paid it on top, invoicing the seller
+      // would misstate who bore it — excluded here; the accountant picks
+      // those up from the reconciliation. Posts to a dedicated
+      // "Processing Fee Revenue" account when one exists, else falls
+      // back to Commission Revenue.
+      const lineItems: Array<{
+        name: string;
+        description: string;
+        rate: number;
+        quantity: number;
+        account_id: string;
+      }> = [
+        {
+          name: 'Platform Fee',
+          description: `${orderRef} — ${tx.listing.title}`,
+          rate: commissionRand,
+          quantity: 1,
+          account_id: commissionAccountId,
+        },
+      ];
+      if (!tx.passFeeToBuyer && tx.processingFee > 0) {
+        const processingAccountId =
+          (await this.getAccountIdByName('Processing Fee Revenue')) ??
+          commissionAccountId;
+        lineItems.push({
+          name: 'Payment Processing Fee',
+          description: `${orderRef} — payment handling`,
+          rate: tx.processingFee / 100,
+          quantity: 1,
+          account_id: processingAccountId,
+        });
+      }
+
       const payload = {
         customer_id: contactId,
         reference_number: reference,
         date: today,
         due_date: today,
-        line_items: [
-          {
-            name: 'Platform Fee',
-            description: `${orderRef} — ${tx.listing.title}`,
-            rate: commissionRand,
-            quantity: 1,
-            account_id: commissionAccountId,
-          },
-        ],
+        line_items: lineItems,
         notes: `${reference}.\nGun Galore transaction reference: ${orderRef}`,
         // Skip tax — we're pre-VAT. When VAT-registered this flips
         // to is_inclusive_tax: false + tax_id on each line.
@@ -545,7 +576,13 @@ export class ZohoBooksService {
         );
       }
 
-      const commissionRand = tx.commissionZar / 100;
+      // P0.7 — the invoice now carries commission + the seller-absorbed
+      // processing fee as two lines; the payment must settle the SAME
+      // total or the invoice sits partially paid forever.
+      const invoiceTotalRand =
+        (tx.commissionZar +
+          (!tx.passFeeToBuyer && tx.processingFee > 0 ? tx.processingFee : 0)) /
+        100;
       const today = new Date().toISOString().slice(0, 10);
       const orderRef = tx.id.slice(-8).toUpperCase();
 
@@ -557,7 +594,7 @@ export class ZohoBooksService {
       const payload = {
         customer_id: sellerContactId,
         payment_mode: 'Other',
-        amount: commissionRand,
+        amount: invoiceTotalRand,
         date: today,
         reference_number: `Settled from buyer funds — ${orderRef}`,
         // The deposit_to_account is where the money "came from" —
@@ -570,7 +607,7 @@ export class ZohoBooksService {
         invoices: [
           {
             invoice_id: tx.zohoCommissionInvoiceId,
-            amount_applied: commissionRand,
+            amount_applied: invoiceTotalRand,
           },
         ],
         description:
@@ -600,7 +637,7 @@ export class ZohoBooksService {
         },
       });
       this.logger.log(
-        `Marked commission invoice paid for tx ${transactionId} (R${commissionRand.toFixed(2)})`,
+        `Marked commission invoice paid for tx ${transactionId} (R${invoiceTotalRand.toFixed(2)})`,
       );
     } catch (err) {
       await this.markFailed(transactionId, err as Error);

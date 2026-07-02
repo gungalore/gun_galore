@@ -5,6 +5,7 @@ jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
 import { BadRequestException } from '@nestjs/common';
 import { SwapProposalsService } from './swap-proposals.service';
+import { FeeCalculator } from '../payments/fee.calculator';
 import { SwapProposalStatus, SwapRole, ListingStatus, ListingType } from '@prisma/client';
 
 // Build a SwapProposalsService with the minimal mocks each path touches.
@@ -91,6 +92,7 @@ function makeService(over: {
     actionTokens as never,
     kyc as never,
     swapFunding as never,
+    new FeeCalculator(),
   );
   return { service, prisma, notifications, kyc, txMock };
 }

@@ -50,6 +50,7 @@ function makeService(over: {
     referenceNumbers as never,
     {} as never,
     {} as never,
+    { createCommissionInvoice: jest.fn().mockResolvedValue(undefined) } as never, // zohoBooks (P0.6)
   );
   return { service, prisma, notifications, referenceNumbers, txcMock };
 }

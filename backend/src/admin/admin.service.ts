@@ -13,7 +13,7 @@ import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { StitchService } from '../payments/stitch.service';
-import { TransactionsService } from '../payments/transactions.service';
+import { TransactionsService, PAYMENT_MODE } from '../payments/transactions.service';
 import { ListingReviewDto, ReviewAction } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { toCsv } from '../common/csv.util';
@@ -1089,7 +1089,7 @@ export class AdminService {
       );
     }
 
-    return this.prisma.$transaction([
+    const result = await this.prisma.$transaction([
       this.prisma.transaction.update({
         where: { id: txId },
         data: {
@@ -1104,6 +1104,11 @@ export class AdminService {
         data: { totalSales: { increment: 1 } },
       }),
     ]);
+    // P0.6 — commission invoicing was only ever hooked to the FIREARM
+    // dealer-verification path, so ordinary sales never reached Books.
+    // Idempotent + never throws; fire-and-forget at every release point.
+    void this.zohoBooks.createCommissionInvoice(txId);
+    return result;
   }
 
   // Refund a buyer. `amountZarCents` issues a PARTIAL refund of that many
@@ -1159,22 +1164,74 @@ export class AdminService {
     // (a constant) plus the increment means the second sees count===0 and
     // aborts before moving money. Only flip to REFUNDED when this refund
     // settles the whole balance; a partial leaves paymentStatus untouched.
-    const claim = await this.prisma.transaction.updateMany({
-      where: {
-        id: txId,
-        paymentStatus: { in: ['HELD', 'DISPUTED'] },
-        refundedAmount: { lte: tx.buyerTotal - amount },
-      },
-      data: {
-        refundedAmount: { increment: amount },
-        lastRefundAt: new Date(),
-        adminNote: note ?? null,
-        adminReviewedById: adminId,
-        adminReviewedAt: new Date(),
-        ...(willBeFullyRefunded ? { paymentStatus: 'REFUNDED' as const } : {}),
-      },
-    });
-    if (claim.count === 0) {
+    //
+    // P0.3 — MANUAL rail: the gateway refund is a mock, so the money only
+    // ever moves via the FNB refund batch — which previously picked up
+    // NOTHING for partials (status stays HELD/DISPUTED) and buyerTotal for
+    // fulls. Now EVERY refund operation mints a SYNTHETIC child transaction
+    // (REFUNDED, buyerTotal = this slice, sellerPayout 0, refundOfId =
+    // parent) in the SAME atomic claim, and the refund queue pays the
+    // children — each slice settles exactly once through the existing
+    // batch machinery. Card mode keeps the real gateway reversal instead.
+    let claimCount = 0;
+    if (PAYMENT_MODE === 'manual') {
+      claimCount = await this.prisma.$transaction(async (txc) => {
+        const claim = await txc.transaction.updateMany({
+          where: {
+            id: txId,
+            paymentStatus: { in: ['HELD', 'DISPUTED'] },
+            refundedAmount: { lte: tx.buyerTotal - amount },
+          },
+          data: {
+            refundedAmount: { increment: amount },
+            lastRefundAt: new Date(),
+            adminNote: note ?? null,
+            adminReviewedById: adminId,
+            adminReviewedAt: new Date(),
+            ...(willBeFullyRefunded ? { paymentStatus: 'REFUNDED' as const } : {}),
+          },
+        });
+        if (claim.count === 0) return 0;
+        await txc.transaction.create({
+          data: {
+            refundOfId: txId,
+            listingId: tx.listingId,
+            buyerId: tx.buyerId,
+            sellerId: tx.sellerId,
+            quantity: 1,
+            listingPrice: 0,
+            commissionZar: 0,
+            processingFee: 0,
+            shippingCost: 0,
+            passFeeToBuyer: false,
+            buyerTotal: amount, // the slice the FNB batch pays the buyer
+            sellerPayout: 0,
+            refundedAmount: amount,
+            paymentStatus: 'REFUNDED',
+            orderReference: `${tx.orderReference ?? tx.id}-R${tx.refundedAmount + amount}`,
+          },
+        });
+        return claim.count;
+      });
+    } else {
+      const claim = await this.prisma.transaction.updateMany({
+        where: {
+          id: txId,
+          paymentStatus: { in: ['HELD', 'DISPUTED'] },
+          refundedAmount: { lte: tx.buyerTotal - amount },
+        },
+        data: {
+          refundedAmount: { increment: amount },
+          lastRefundAt: new Date(),
+          adminNote: note ?? null,
+          adminReviewedById: adminId,
+          adminReviewedAt: new Date(),
+          ...(willBeFullyRefunded ? { paymentStatus: 'REFUNDED' as const } : {}),
+        },
+      });
+      claimCount = claim.count;
+    }
+    if (claimCount === 0) {
       throw new BadRequestException(
         'Refund could not be reserved — the order state or refunded balance changed. Reload and try again.',
       );
@@ -1184,9 +1241,14 @@ export class AdminService {
     // peachPaymentId holds the Stitch payment id (column reused during the
     // Peach→Stitch transition). On failure roll back the reservation (and
     // the status flip, if any) so the row returns to its refundable state.
-    const refund = tx.peachPaymentId
-      ? await this.stitch.refundPayment(tx.peachPaymentId, amount)
-      : { success: false, resultCode: 'NO_PAYMENT_ID' };
+    // Manual mode skips the gateway entirely — the FNB batch on the child
+    // row IS the refund; there is nothing to reverse at a gateway.
+    const refund =
+      PAYMENT_MODE === 'manual'
+        ? { success: true as const, resultCode: 'MANUAL_EFT_BATCH' }
+        : tx.peachPaymentId
+          ? await this.stitch.refundPayment(tx.peachPaymentId, amount)
+          : { success: false, resultCode: 'NO_PAYMENT_ID' };
 
     if (!refund.success) {
       await this.prisma.transaction
@@ -1258,6 +1320,17 @@ export class AdminService {
       buyerTotal: amount, // the amount refunded in THIS operation
       transactionId: txId,
       note,
+      // P0.4 — manual rail pays refunds by EFT; if the buyer has no
+      // banking on file the batch would silently skip the row, so the
+      // notification becomes an action-required "add your bank details".
+      manualEft: PAYMENT_MODE === 'manual',
+      needsBankDetails:
+        PAYMENT_MODE === 'manual' &&
+        !(
+          tx.buyer.bankAccountHolder &&
+          tx.buyer.bankAccountNumber &&
+          tx.buyer.bankBranchCode
+        ),
     });
     if (willBeFullyRefunded) {
       // Inbox: a fully-refunded order is terminal — clear unresolved
@@ -1330,6 +1403,9 @@ export class AdminService {
       },
       data: { resolved: true, resolvedAt: now },
     });
+
+    // P0.6 — commission invoice at every release point (idempotent).
+    void this.zohoBooks.createCommissionInvoice(txId);
 
     await this.audit.record({
       adminUserId: adminId,

@@ -464,12 +464,17 @@ export class ManualPaymentsService {
         sellerPayout: { gt: 0 },
         paidOutAt: null,
         payoutBatchId: null,
+        // P0.3 — synthetic refund children are never seller payouts.
+        refundOfId: null,
       },
       orderBy: { releasedAt: 'asc' },
       select: {
         id: true,
         orderReference: true,
         sellerPayout: true,
+        // P0.3 — a partially-refunded sale that later releases must pay the
+        // seller LESS the refunded slice, or GG pays out more than it holds.
+        refundedAmount: true,
         releasedAt: true,
         seller: {
           select: {
@@ -485,19 +490,27 @@ export class ManualPaymentsService {
         },
       },
     });
-    // Refunds are only owed by EFT in MANUAL mode. Every REFUNDED path first
-    // calls stitch.refundPayment() — a no-op mock in manual mode (so the FNB
-    // EFT is the real refund), but a genuine card reversal under a live
-    // gateway. So when PAYMENT_MODE=paygate the buyer has ALREADY been
-    // refunded on their card; including those rows here would pay them a
-    // SECOND time. Hard-gate on manual mode so a mode flip can never
-    // double-refund.
+    // Refunds are only owed by EFT in MANUAL mode. Under a live card
+    // gateway the reversal happens on the card, so paying these rows would
+    // refund a SECOND time — hard-gate on manual mode.
+    //
+    // P0.3 — two row shapes are due:
+    //  (a) synthetic refund CHILDREN (refundOfId set) — one per admin
+    //      refund operation, buyerTotal = that slice. This is the only
+    //      path new refunds take.
+    //  (b) LEGACY fully-refunded parents from before the children existed
+    //      (refundOfId null AND no children) — still pay buyerTotal once.
+    // A parent WITH children never qualifies: its money moves via (a).
     const refunds = PAYMENT_MODE !== 'manual' ? [] : await this.prisma.transaction.findMany({
       where: {
         paymentStatus: 'REFUNDED',
         buyerTotal: { gt: 0 },
         paidOutAt: null,
         payoutBatchId: null,
+        OR: [
+          { refundOfId: { not: null } },
+          { refundOfId: null, refundChildren: { none: {} } },
+        ],
       },
       orderBy: { updatedAt: 'asc' },
       select: {
@@ -554,19 +567,30 @@ export class ManualPaymentsService {
         skippedRefs.push(`PAYOUT ${p.orderReference ?? p.id}`);
         continue;
       }
+      // P0.3 — the seller bears any partial refund the admin issued while
+      // the funds were held: payout = sellerPayout − refundedAmount. A row
+      // that nets to ≤0 is settled with no EFT (stamp via markPaid as part
+      // of the batch would be wrong — just exclude it and log).
+      const payoutAmount = Math.max(0, p.sellerPayout - (p.refundedAmount ?? 0));
+      if (payoutAmount <= 0) {
+        skippedRefs.push(
+          `PAYOUT ${p.orderReference ?? p.id} (fully consumed by ${p.refundedAmount}c refund)`,
+        );
+        continue;
+      }
       recipients.push({
         name: p.seller.bankAccountHolder!,
         account: p.seller.bankAccountNumber!,
         accountType: p.seller.bankAccountType,
         branchCode: p.seller.bankBranchCode!,
-        amountCents: p.sellerPayout,
+        amountCents: payoutAmount,
         ownReference: p.orderReference ?? p.id,
         recipientReference: `Gun Galore ${p.orderReference ?? ''}`.trim(),
         email: p.seller.email,
         phone: p.seller.phone,
       });
       payoutIds.push(p.id);
-      payoutTotalCents += p.sellerPayout;
+      payoutTotalCents += payoutAmount;
     }
 
     for (const r of refunds) {

@@ -867,6 +867,17 @@ model Transaction {
   refundedAmount Int       @default(0)
   lastRefundAt   DateTime?
 
+  // P0.3 — on the MANUAL rail every admin refund operation (partial or
+  // final) mints a SYNTHETIC child transaction (paymentStatus REFUNDED,
+  // buyerTotal = that slice, sellerPayout 0) so each slice flows through
+  // the FNB refund batch with its own payoutBatchId/paidOutAt lifecycle.
+  // refundOfId links the child to the original sale; a parent that has
+  // children never enters the refund queue itself (the children carry the
+  // money). Card-gateway mode reverses on the card instead — no children.
+  refundOfId     String?
+  refundOf       Transaction?  @relation("RefundChildren", fields: [refundOfId], references: [id])
+  refundChildren Transaction[] @relation("RefundChildren")
+
   // Buyer-initiated cancellation (Phase 4 P4.2). Set when the buyer
   // cancels a paid-but-undispatched courier order; the cancel path
   // full-refunds + reactivates the listing. Distinct from rejectedAt
@@ -1130,6 +1141,8 @@ model Transaction {
   @@index([manualPayByAt])
   // Payout due-queue: RELEASED/REFUNDED rows not yet batched or paid out.
   @@index([paymentStatus, paidOutAt, payoutBatchId])
+  // P0.3 — refund children lookup (parent → its synthetic refund slices).
+  @@index([refundOfId])
 }
 
 // Append-only timeline of shipping + payment milestones per Transaction.

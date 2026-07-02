@@ -158,6 +158,14 @@ export class ListingsService {
     if (!category || !category.isActive) {
       throw new BadRequestException('Invalid category');
     }
+    // P0.1c — availableSecondhand was only ever a UI filter; enforce it
+    // server-side so a crafted payload can't list into a new-store-only
+    // (or otherwise closed) category.
+    if (!category.availableSecondhand) {
+      throw new BadRequestException(
+        'This category is not available for marketplace listings.',
+      );
+    }
 
     if (!PRICELESS_LISTING_TYPES.has(dto.listingType) && !dto.price) {
       throw new BadRequestException('Price is required for BUY_NOW and AUCTION listings');
@@ -254,6 +262,14 @@ export class ListingsService {
     });
     if (!category || !category.isActive) {
       throw new BadRequestException('Invalid category');
+    }
+    // P0.1c — availableSecondhand was only ever a UI filter; enforce it
+    // server-side so a crafted payload can't list into a new-store-only
+    // (or otherwise closed) category.
+    if (!category.availableSecondhand) {
+      throw new BadRequestException(
+        'This category is not available for marketplace listings.',
+      );
     }
 
     if (!PRICELESS_LISTING_TYPES.has(dto.listingType) && !dto.price) {
@@ -1011,6 +1027,34 @@ export class ListingsService {
       throw new BadRequestException(
         'Firearm listings must include "Dealer-stocked transfer" as a shipping option.',
       );
+    }
+
+    // FCA gate (P0.1a) — a category change must never alter the firearm
+    // status of a listing. isFirearm is snapshotted at create() after the
+    // full serial/licence verification; re-filing a firearm under
+    // "Camping" would bypass dealer transfer + SAP-534, and re-filing a
+    // non-firearm as a firearm would skip the licence checks entirely.
+    // Either direction ⇒ the seller must create a new listing.
+    if (dto.categoryId !== undefined && dto.categoryId !== listing.categoryId) {
+      const newCategory = await this.prisma.category.findUnique({
+        where: { id: dto.categoryId },
+        select: { isFirearm: true, isActive: true, availableSecondhand: true },
+      });
+      if (!newCategory || !newCategory.isActive) {
+        throw new BadRequestException('Invalid category');
+      }
+      if (!newCategory.availableSecondhand) {
+        throw new BadRequestException(
+          'This category is not available for marketplace listings.',
+        );
+      }
+      if (newCategory.isFirearm !== listing.isFirearm) {
+        throw new BadRequestException(
+          listing.isFirearm
+            ? 'A firearm listing cannot be moved to a non-firearm category. Cancel it and create a new listing instead.'
+            : 'A listing cannot be moved into a licence-controlled firearm category. Create a new listing so the serial and licence can be verified.',
+        );
+      }
     }
 
     // Normalise the optional planned-dealer hint: trim, null out

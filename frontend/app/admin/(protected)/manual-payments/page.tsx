@@ -158,8 +158,10 @@ export default function ManualPaymentsAdminPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
       await downloadBatchCsv(data.batchId);
+      // P0.4 — name the exact rows that were skipped so the operator can
+      // chase the missing bank details instead of them vanishing silently.
       const skipNote = data.skipped
-        ? ` ${data.skipped} row(s) skipped for missing bank details.`
+        ? ` ⚠ ${data.skipped} row(s) skipped (missing bank details): ${(data.skippedRefs ?? []).join(', ')} — these stay due and will re-appear in the next batch once details are added.`
         : '';
       setPayoutMsg(
         `Batch frozen: ${data.included} recipient(s), ${rand(data.grandTotal)} total — CSV downloaded. Pay it in FNB, then mark it paid below.${skipNote}`,

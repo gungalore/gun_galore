@@ -1367,44 +1367,69 @@ export class NotificationsService {
     buyerTotal: number;
     transactionId: string;
     note?: string | null;
+    // P0.4 — manual rail: the refund is paid by EFT in the next payout
+    // run, and if the buyer has never given banking details we must ASK
+    // for them or the batch silently skips the row forever.
+    manualEft?: boolean;
+    needsBankDetails?: boolean;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    // In-app inbox: informational — the refund is already issued, the
-    // buyer just needs to know. Dismissible.
+    const bankUrl = `${this.appUrl}/profile/edit`;
+    // In-app inbox. When bank details are missing this is ACTION-REQUIRED,
+    // not informational — the refund cannot be paid until they add them.
     await this.persistByEmail(d.buyerEmail, {
       category: 'BUYER',
       type: 'refund_issued',
-      title: 'Refund issued',
-      body: `${formatRand(d.buyerTotal)} refunded for ${d.listingTitle}. Allow 5–10 business days.`,
-      url: `/transactions/${d.transactionId}`,
+      title: d.needsBankDetails ? 'Refund approved — add your bank details' : 'Refund issued',
+      body: d.needsBankDetails
+        ? `${formatRand(d.buyerTotal)} refund approved for ${d.listingTitle}. Add your banking details so we can pay it by EFT.`
+        : `${formatRand(d.buyerTotal)} refunded for ${d.listingTitle}. Allow ${d.manualEft ? '1–3' : '5–10'} business days.`,
+      url: d.needsBankDetails ? '/profile/edit' : `/transactions/${d.transactionId}`,
       iconKey: 'transaction',
       linkedType: 'transaction',
       linkedId: d.transactionId,
-      dismissible: true,
+      dismissible: !d.needsBankDetails,
     });
-    const body =
-      `Hi ${b(d.buyerName)}, a refund of ${b(formatRand(d.buyerTotal))} for ${b(d.listingTitle)} has been issued. Please allow 5–10 business days for it to appear on your statement.` +
-      (d.note ? `<br><br>Note from admin: ${b(d.note)}` : '');
+    const body = d.needsBankDetails
+      ? `Hi ${b(d.buyerName)}, a refund of ${b(formatRand(d.buyerTotal))} for ${b(d.listingTitle)} has been approved. We pay refunds by EFT into your bank account, and we don't have your banking details yet — please add them under Profile → Edit so the refund can be paid in the next payout run.` +
+        (d.note ? `<br><br>Note from admin: ${b(d.note)}` : '')
+      : `Hi ${b(d.buyerName)}, a refund of ${b(formatRand(d.buyerTotal))} for ${b(d.listingTitle)} has been issued. Please allow ${d.manualEft ? '1–3' : '5–10'} business days for it to appear on your statement.` +
+        (d.note ? `<br><br>Note from admin: ${b(d.note)}` : '');
     const html = this.email({
-      status: { tone: 'success', label: 'Refunded' },
-      headline: 'Refund issued',
+      status: d.needsBankDetails
+        ? { tone: 'pending', label: 'Action needed' }
+        : { tone: 'success', label: 'Refunded' },
+      headline: d.needsBankDetails ? 'Refund approved — we need your bank details' : 'Refund issued',
       body,
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
         { label: 'Amount', value: formatRand(d.buyerTotal) },
-        { label: 'Refund destination', value: 'Original payment card' },
+        {
+          label: 'Refund destination',
+          value: d.manualEft ? 'Your bank account (EFT)' : 'Original payment card',
+        },
       ],
-      cta: { label: 'View order', url: txUrl },
-      preheader: `Refund of ${formatRand(d.buyerTotal)} issued`,
+      cta: d.needsBankDetails
+        ? { label: 'Add banking details', url: bankUrl }
+        : { label: 'View order', url: txUrl },
+      preheader: d.needsBankDetails
+        ? `Add bank details to receive your ${formatRand(d.buyerTotal)} refund`
+        : `Refund of ${formatRand(d.buyerTotal)} issued`,
     });
-    await this.send(d.buyerEmail, 'Refund issued — ' + d.listingTitle, html);
+    await this.send(
+      d.buyerEmail,
+      (d.needsBankDetails ? 'Action needed: refund — ' : 'Refund issued — ') + d.listingTitle,
+      html,
+    );
     // Refunds are financial events — per CLAUDE.md every notifiable
     // event fires BOTH SMS + email. Skips silently if buyerPhone is
     // null (legacy buyer rows from before the phone-capture flow).
     if (d.buyerPhone) {
       await this.sendSms(
         d.buyerPhone,
-        `Gun Galore: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow 5-10 business days.`,
+        d.needsBankDetails
+          ? `Gun Galore: R${(d.buyerTotal / 100).toFixed(0)} refund approved for ${truncate(d.listingTitle, 30)}. Add your bank details on your profile so we can pay it: ${this.appUrl}/profile/edit`
+          : `Gun Galore: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow ${d.manualEft ? '1-3' : '5-10'} business days.`,
         `refund-${d.transactionId}`,
       );
     }
@@ -1974,7 +1999,7 @@ export class NotificationsService {
   async auctionEndedForSeller(
     sellerEmail: string,
     listingTitle: string,
-    outcome: 'WON' | 'NO_RESERVE' | 'NO_BIDS',
+    outcome: 'WON' | 'NO_RESERVE' | 'NO_BIDS' | 'WINNER_UNPAID',
     amount: number,
     // Optional listingId so we can deep-link the inbox row to the
     // listing and resolveByEntity('listing', listingId) when the next
@@ -1995,13 +2020,17 @@ export class NotificationsService {
           ? 'Auction sold'
           : outcome === 'NO_RESERVE'
             ? 'Reserve not met'
-            : 'Auction ended — no bids',
+            : outcome === 'WINNER_UNPAID'
+              ? 'Winner didn’t pay'
+              : 'Auction ended — no bids',
       body:
         outcome === 'WON'
           ? `${listingTitle} sold for ${formatRand(amount)}. Buyer has 24h to pay.`
           : outcome === 'NO_RESERVE'
             ? `Highest bid ${formatRand(amount)} on ${listingTitle} didn't meet your reserve.`
-            : `${listingTitle} ended with no bids. Relist to try again.`,
+            : outcome === 'WINNER_UNPAID'
+              ? `The winning bidder didn't pay for ${listingTitle} within 24 hours. You can relist it.`
+              : `${listingTitle} ended with no bids. Relist to try again.`,
       url: listingId ? `/listings/${listingId}` : '/dashboard',
       iconKey: 'sold',
       linkedType: listingId ? 'listing' : undefined,
@@ -2039,6 +2068,16 @@ export class NotificationsService {
           body: `${b(listingTitle)} ended with no bids. You can relist with a lower starting price.`,
           cta: { label: 'View dashboard', url: ctaUrl },
           preheader: `${listingTitle} closed with no bids`,
+        });
+        break;
+      case 'WINNER_UNPAID':
+        subject = 'Winner didn’t pay — ' + listingTitle;
+        html = this.email({
+          status: { tone: 'error', label: 'Winner didn’t pay' },
+          headline: 'The winning bidder didn’t pay',
+          body: `The winner of ${b(listingTitle)} (winning bid ${b(formatRand(amount))}) did not complete payment within 24 hours, so the sale was cancelled. You can relist the item from your dashboard.`,
+          cta: { label: 'View dashboard', url: ctaUrl },
+          preheader: `Winning bidder missed the 24h payment window`,
         });
         break;
     }

@@ -70,13 +70,26 @@ export class AdminCategoriesService {
       suffix += 1;
     }
 
+    // P0.1b (FCA) — a subcategory INHERITS the parent's compliance flags
+    // unless the admin explicitly sets them. Previously isFirearm /
+    // requiresLicence defaulted to false, so a child added under
+    // "Firearms" silently skipped licence verification + dealer transfer.
+    let parent: { isFirearm: boolean; requiresLicence: boolean } | null = null;
+    if (dto.parentId) {
+      parent = await this.prisma.category.findUnique({
+        where: { id: dto.parentId },
+        select: { isFirearm: true, requiresLicence: true },
+      });
+      if (!parent) throw new BadRequestException('Parent category not found');
+    }
+
     const created = await this.prisma.category.create({
       data: {
         name,
         slug,
         parentId: dto.parentId ?? null,
-        isFirearm: dto.isFirearm ?? false,
-        requiresLicence: dto.requiresLicence ?? false,
+        isFirearm: dto.isFirearm ?? parent?.isFirearm ?? false,
+        requiresLicence: dto.requiresLicence ?? parent?.requiresLicence ?? false,
         availableSecondhand: dto.availableSecondhand ?? true,
         availableNewStore: dto.availableNewStore ?? false,
         crossSellEligible: dto.crossSellEligible ?? true,
@@ -104,6 +117,16 @@ export class AdminCategoriesService {
     }
     const before = await this.prisma.category.findUnique({ where: { id } });
     if (!before) throw new NotFoundException('Category not found');
+
+    // P0.1b (FCA) — flipping the firearm flag changes the gating of every
+    // FUTURE listing in this category (existing listings keep their
+    // create-time snapshot). Surface the blast radius in the audit trail.
+    let activeListingsAtFlip: number | null = null;
+    if (dto.isFirearm !== undefined && dto.isFirearm !== before.isFirearm) {
+      activeListingsAtFlip = await this.prisma.listing.count({
+        where: { categoryId: id, status: 'ACTIVE' },
+      });
+    }
 
     // Renaming = also re-slug (with collision suffix) so the public
     // URL stays in sync. We keep old slug data only if name unchanged.
@@ -145,8 +168,21 @@ export class AdminCategoriesService {
           : 'CATEGORY_UPDATE',
       resourceType: 'Category',
       resourceId: id,
-      oldValue: { name: before.name, isActive: before.isActive, crossSellEligible: before.crossSellEligible },
-      newValue: { name: updated.name, isActive: updated.isActive, crossSellEligible: updated.crossSellEligible },
+      oldValue: {
+        name: before.name,
+        isActive: before.isActive,
+        crossSellEligible: before.crossSellEligible,
+        isFirearm: before.isFirearm,
+      },
+      newValue: {
+        name: updated.name,
+        isActive: updated.isActive,
+        crossSellEligible: updated.crossSellEligible,
+        isFirearm: updated.isFirearm,
+        ...(activeListingsAtFlip !== null
+          ? { activeListingsAtFirearmFlip: activeListingsAtFlip }
+          : {}),
+      },
       reason: trimmedReason,
     });
     return updated;

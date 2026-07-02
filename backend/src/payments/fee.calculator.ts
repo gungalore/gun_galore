@@ -51,6 +51,16 @@ export const SWAP_SHIPPING_FEE_CENTS = 5_000; // R50 — courier (non-firearm) l
 // SAPS-534 verification + dealer coordination. Used from S6.
 export const SWAP_FIREARM_FEE_CENTS = 10_000; // R100 — firearm dealer-transfer leg
 
+// P0.5 — commission on the swap CASH component. cashAmount had no ceiling
+// and no fee beyond the flat legs, so any ordinary sale could be structured
+// as "cheap item + big cash top-up" and dodge the commission engine while
+// still consuming GG's payment risk. A cash top-up above the free allowance
+// is economically a sale: the standard bands apply to the EXCESS (no cliff
+// at the threshold), deducted from the cash the recipient is paid at
+// settlement — exactly how a seller pays commission out of proceeds.
+// Genuine balancing top-ups (≤ R1,000) stay free.
+export const SWAP_CASH_COMMISSION_FREE_CENTS = 100_000; // R1,000 allowance
+
 // What ONE party pays to fund their side of a swap. Each party funds the leg
 // they SEND: the live courier rate for their parcel (remitted to the carrier)
 // + the flat GG service fee + any cash top-up they owe. The 1.5% manual EFT
@@ -183,6 +193,20 @@ export class FeeCalculator {
    * partyTotal = courier + fee + cash (the 1.5% EFT cost is ABSORBED by GG,
    * not added). Independent + additive — leaves breakdown()/order math alone.
    */
+  /**
+   * P0.5 — platform commission retained from a swap's cash top-up at
+   * settlement. Standard bands on the excess above the free allowance;
+   * zero for genuine balancing amounts (≤ R1,000). No Top Seller
+   * discount — a swap has no "seller". Deducted from the cash paid to
+   * the recipient, never charged on top of what the payer funds.
+   */
+  swapCashCommission(cashAmountCents: number): number {
+    const excess =
+      Math.max(0, Math.round(cashAmountCents)) - SWAP_CASH_COMMISSION_FREE_CENTS;
+    if (excess <= 0) return 0;
+    return this.calculateCommission(excess, false);
+  }
+
   breakdownSwapLeg(
     courierCostCents: number,
     cashContributionCents = 0,

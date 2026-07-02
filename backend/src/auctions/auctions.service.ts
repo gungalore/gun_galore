@@ -776,6 +776,50 @@ export class AuctionsService {
     });
   }
 
+  // P0.2 — sweep won auctions whose winner never STARTED checkout inside
+  // the 24h pay window. finalizeAuction leaves the listing PAYMENT_PENDING
+  // with expiresAt = pay-by time; starting checkout CAS-nulls expiresAt
+  // (see TransactionsService.reserveAndCreateLine), after which the manual
+  // freeze sweep owns the lifecycle via the transaction's own window. So a
+  // row still carrying a LAPSED expiresAt here means no checkout ever
+  // began → flip to EXPIRED (terminal; seller can relist) + tell the
+  // seller. The status+expiresAt guard makes this race-safe against a
+  // winner claiming checkout concurrently.
+  async sweepUnpaidWins(): Promise<{ expired: number }> {
+    const now = new Date();
+    const stale = await this.prisma.listing.findMany({
+      where: {
+        listingType: 'AUCTION',
+        status: 'PAYMENT_PENDING',
+        endedAt: { not: null },
+        expiresAt: { not: null, lt: now },
+      },
+      select: { id: true, sellerId: true, currentBid: true },
+      take: 50,
+    });
+    let expired = 0;
+    for (const l of stale) {
+      const claim = await this.prisma.listing.updateMany({
+        where: {
+          id: l.id,
+          status: 'PAYMENT_PENDING',
+          expiresAt: { not: null, lt: now },
+        },
+        data: { status: 'EXPIRED' },
+      });
+      if (claim.count === 0) continue; // winner claimed checkout in the gap
+      expired += 1;
+      this.logger.log(`Auction ${l.id}: winner never paid within 24h → EXPIRED`);
+      void this.notifyAuctionEndedSeller(
+        l.sellerId,
+        l.id,
+        'WINNER_UNPAID',
+        l.currentBid ?? 0,
+      );
+    }
+    return { expired };
+  }
+
   // --- Notification fan-out (thin wrappers; safe to fail silently) ------
 
   private async notifyBidPlaced(sellerId: string, listingId: string, amount: number) {
@@ -868,7 +912,7 @@ export class AuctionsService {
   private async notifyAuctionEndedSeller(
     sellerId: string,
     listingId: string,
-    outcome: 'WON' | 'NO_RESERVE' | 'NO_BIDS',
+    outcome: 'WON' | 'NO_RESERVE' | 'NO_BIDS' | 'WINNER_UNPAID',
     amount: number,
   ) {
     try {

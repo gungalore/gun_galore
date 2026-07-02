@@ -11,6 +11,7 @@ import { StitchService, StitchPaymentResult } from './stitch.service';
 import { FraudRiskService } from './fraud-risk.service';
 import { estimateDeliveryDate } from '../shipping/delivery-estimate';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { resolvePurchaseQuantity, reversalListingData } from './inventory';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -98,6 +99,10 @@ export class TransactionsService {
     private readonly fraudRisk: FraudRiskService,
     // CloudinaryModule is @Global — used by uploadPodProof (Phase 5 P5.3).
     private readonly cloudinary: CloudinaryService,
+    // ZohoModule is @Global. P0.6 — commission invoicing fires at the
+    // buyer-confirm release point (was firearm-dealer-verify only, so
+    // ordinary sales never reached Books).
+    private readonly zohoBooks: ZohoBooksService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -131,6 +136,9 @@ export class TransactionsService {
 
     // ---- Offer-based checkout (TAKE_A_SHOT) ----
     let offerRecord: { id: string; offerAmount: number; counterAmount: number | null; buyerId: string; status: string; listingId: string } | null = null;
+    // P0.2 — auction-winner checkout takes a different validation +
+    // reservation path (the listing is ALREADY reserved for the winner).
+    let auctionWin = false;
     if (dto.offerId) {
       const rawOffer = await this.prisma.offer.findUnique({ where: { id: dto.offerId } });
       if (!rawOffer) throw new NotFoundException('Offer not found');
@@ -153,6 +161,31 @@ export class TransactionsService {
       }
       if (listing.listingType !== 'TAKE_A_SHOT') throw new BadRequestException('Offer checkout requires a TAKE_A_SHOT listing');
       offerRecord = rawOffer;
+    } else if (listing.listingType === 'AUCTION') {
+      // ---- Auction-winner checkout (P0.2) ----
+      // finalizeAuction already flipped the listing ACTIVE→PAYMENT_PENDING
+      // for the winner and stamped expiresAt as the 24h pay window, so the
+      // ordinary ACTIVE-gate + reserve flip below would dead-end every won
+      // auction. Winner-only, post-end, inside the window:
+      if (listing.status !== ListingStatus.PAYMENT_PENDING || !listing.endedAt) {
+        throw new BadRequestException(
+          'This auction is not awaiting payment — it may still be running, or it has already been settled.',
+        );
+      }
+      if (listing.currentBidderId !== buyer.id) {
+        throw new ForbiddenException(
+          'Only the winning bidder can pay for this auction.',
+        );
+      }
+      if (listing.expiresAt && listing.expiresAt < new Date()) {
+        throw new BadRequestException(
+          'The 24-hour payment window for this auction has lapsed.',
+        );
+      }
+      if (!listing.currentBid || listing.currentBid <= 0) {
+        throw new BadRequestException('Winning bid amount is missing.');
+      }
+      auctionWin = true;
     } else {
       if (listing.status !== 'ACTIVE') {
         throw new BadRequestException('Listing is no longer available');
@@ -188,10 +221,13 @@ export class TransactionsService {
       if (!dealer || !dealer.isActive) throw new NotFoundException('Dealer not found or inactive');
     }
 
-    // The settled price: for offers use counter (if accepted) or original offer, else listing price
+    // The settled price: offers use counter (if accepted) or original offer;
+    // auction winners pay the winning bid; else the listed price.
     const agreedPrice = offerRecord
       ? (offerRecord.counterAmount ?? offerRecord.offerAmount)
-      : (listing.price ?? 0);
+      : auctionWin
+        ? (listing.currentBid ?? 0)
+        : (listing.price ?? 0);
     if (!agreedPrice) throw new BadRequestException('Could not determine listing price');
 
     const isTopSeller = listing.seller.sellerTier === 'TOP_SELLER';
@@ -202,7 +238,8 @@ export class TransactionsService {
     // inventory-tracked BUY_NOW listing can resolve quantity > 1. Offers
     // are always single-item.
     const qres = resolvePurchaseQuantity({
-      requested: offerRecord ? 1 : (dto as { quantity?: number }).quantity,
+      // Offers and auction wins are always single-item.
+      requested: offerRecord || auctionWin ? 1 : (dto as { quantity?: number }).quantity,
       trackInventory: listing.trackInventory,
       quantityAvailable: listing.quantityAvailable,
       quantityReserved: listing.quantityReserved,
@@ -278,7 +315,23 @@ export class TransactionsService {
     // through these guarded ops, so the single-column guard is a correct
     // compare-and-set (no oversell). Legacy listings keep the exact
     // boolean ACTIVE→PAYMENT_PENDING flip.
-    const reserve = listing.trackInventory
+    // P0.2 — auction claim: the listing is ALREADY PAYMENT_PENDING for this
+    // winner, so the ACTIVE→PAYMENT_PENDING flip can't be the guard. Instead
+    // we CAS the pay-window column: expiresAt (stamped by finalizeAuction) is
+    // NULLED exactly once here. A second checkout attempt (double-click /
+    // re-opened SMS link) matches 0 rows. Once a transaction exists, its own
+    // manualPayByAt window + the freeze sweep own the lifecycle; the
+    // unpaid-winner sweep (expiresAt < now, no claim) can no longer fire.
+    const reserve = auctionWin
+      ? await this.prisma.listing.updateMany({
+          where: {
+            id: listing.id,
+            status: ListingStatus.PAYMENT_PENDING,
+            expiresAt: { not: null },
+          },
+          data: { expiresAt: null },
+        })
+      : listing.trackInventory
       ? await this.prisma.listing.updateMany({
           where: {
             id: listing.id,
@@ -296,7 +349,9 @@ export class TransactionsService {
         });
     if (reserve.count === 0) {
       throw new BadRequestException(
-        'This item is no longer available — another buyer is completing checkout, or it has already sold.',
+        auctionWin
+          ? 'You already have a payment in progress for this auction — check My Purchases to finish paying.'
+          : 'This item is no longer available — another buyer is completing checkout, or it has already sold.',
       );
     }
     // Tracked listing fully reserved → hide from browse (PAYMENT_PENDING)
@@ -311,8 +366,10 @@ export class TransactionsService {
         .catch(() => undefined);
     }
 
-    // Create the transaction record first to get an ID
-    const tx = await this.prisma.transaction.create({
+    // Create the transaction record first to get an ID. If this throws on
+    // the auction path, restore the pay-window column we CAS-claimed above
+    // so the winner can retry (and the unpaid-winner sweep still applies).
+    const createTx = () => this.prisma.transaction.create({
       data: {
         listingId: listing.id,
         buyerId: buyer.id,
@@ -340,6 +397,17 @@ export class TransactionsService {
             ? new Date()
             : null,
       },
+    });
+    const tx = await createTx().catch(async (err) => {
+      if (auctionWin && listing.expiresAt) {
+        await this.prisma.listing
+          .updateMany({
+            where: { id: listing.id, status: ListingStatus.PAYMENT_PENDING },
+            data: { expiresAt: listing.expiresAt },
+          })
+          .catch(() => undefined);
+      }
+      throw err;
     });
 
     // M33 — durable evidence of the firearm-attestation flag. Logged
@@ -1975,6 +2043,11 @@ export class TransactionsService {
     });
 
     this.logger.log(`Transaction ${transactionId} delivery confirmed — payment released`);
+    // P0.6 — commission invoice into Books at release. Previously only the
+    // FIREARM dealer-verification hook invoiced, so the commission on every
+    // ordinary courier sale never reached the books and the payout batch's
+    // markCommissionInvoicePaid no-oped. Idempotent + never throws.
+    void this.zohoBooks.createCommissionInvoice(transactionId);
     // Two INTERNAL timeline rows back-to-back: the buyer's explicit
     // confirmation and the resulting payout. The polling cron's PUDO
     // events may also land a COLLECTED_BY_BUYER row but we mark this

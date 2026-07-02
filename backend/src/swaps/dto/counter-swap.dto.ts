@@ -5,15 +5,19 @@ import {
   IsBoolean,
   IsEnum,
   Min,
+  Max,
   MaxLength,
 } from 'class-validator';
 import { SwapRole } from '@prisma/client';
+import { SWAP_CASH_MAX_CENTS } from './create-swap-proposal.dto';
 
 export class CounterSwapDto {
   // Owner's single counter on the CASH only (the items stay the same).
-  // 0 = "remove the cash, straight item-for-item".
+  // 0 = "remove the cash, straight item-for-item". Same P0.5 ceiling +
+  // cash-commission rules as the original proposal.
   @IsInt()
   @Min(0)
+  @Max(SWAP_CASH_MAX_CENTS)
   counterCashAmount: number;
 
   // Who pays the countered cash. INITIATOR_GIVES = proposer pays owner;

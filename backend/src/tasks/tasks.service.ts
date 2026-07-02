@@ -220,7 +220,12 @@ export class TasksService {
           manualCancelledAt: null,
           manualPayByAt: { not: null, lte: now },
         },
-        select: { id: true, listingId: true, orderReference: true },
+        select: {
+          id: true,
+          listingId: true,
+          orderReference: true,
+          listing: { select: { listingType: true } },
+        },
         take: 100,
       });
       for (const tx of expired) {
@@ -231,10 +236,16 @@ export class TasksService {
           // still carries orderReference — the reconciler can then find
           // this row and surface it as "paid after expiry" for a refund /
           // re-fulfil decision instead of the payment being orphaned.
+          // P0.2 — an ENDED AUCTION must release to EXPIRED, not ACTIVE:
+          // finalizeAuction already ran (endedAt set), so an ACTIVE ended
+          // auction would be a zombie on browse that can never re-finalize.
           await this.prisma.$transaction([
             this.prisma.listing.updateMany({
               where: { id: tx.listingId, status: 'PAYMENT_PENDING' },
-              data: { status: 'ACTIVE' },
+              data: {
+                status:
+                  tx.listing?.listingType === 'AUCTION' ? 'EXPIRED' : 'ACTIVE',
+              },
             }),
             this.prisma.transaction.update({
               where: { id: tx.id },
@@ -711,13 +722,19 @@ export class TasksService {
     }
   }
 
-  // Run every minute — finalize auctions whose endTime has passed.
+  // Run every minute — finalize auctions whose endTime has passed, and
+  // expire won auctions whose winner never started checkout inside the
+  // 24h pay window (P0.2).
   @Cron(CronExpression.EVERY_MINUTE)
   async endAuctions() {
     try {
       const result = await this.auctionsService.endStale();
       if (result.processed > 0) {
         this.logger.log(`Finalised ${result.processed} auction(s)`);
+      }
+      const unpaid = await this.auctionsService.sweepUnpaidWins();
+      if (unpaid.expired > 0) {
+        this.logger.log(`Expired ${unpaid.expired} unpaid auction win(s)`);
       }
     } catch (err) {
       this.logger.error(

@@ -18,6 +18,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { KycService } from '../kyc/kyc.service';
+import { FeeCalculator } from '../payments/fee.calculator';
 import { SwapFundingService } from './swap-funding.service';
 import { CreateSwapProposalDto } from './dto/create-swap-proposal.dto';
 import { CounterSwapDto } from './dto/counter-swap.dto';
@@ -58,7 +59,32 @@ export class SwapProposalsService {
     private readonly actionTokens: ActionTokensService,
     private readonly kyc: KycService,
     private readonly swapFunding: SwapFundingService,
+    private readonly fees: FeeCalculator,
   ) {}
+
+  // P0.5 — surface the cash-commission the recipient will pay at
+  // settlement (bands on the excess above the R1,000 allowance) so both
+  // parties see the NET cash figure while negotiating, not just at
+  // release. Appended to every proposal object the API returns.
+  private withCashCommission<
+    T extends {
+      status: SwapProposalStatus;
+      cashAmount: number;
+      counterCashAmount: number | null;
+    },
+  >(proposal: T): T & { cashCommissionCents: number; cashNetToRecipientCents: number } {
+    const effectiveCash =
+      proposal.status === SwapProposalStatus.COUNTERED &&
+      proposal.counterCashAmount !== null
+        ? proposal.counterCashAmount
+        : proposal.cashAmount;
+    const cashCommissionCents = this.fees.swapCashCommission(effectiveCash);
+    return {
+      ...proposal,
+      cashCommissionCents,
+      cashNetToRecipientCents: Math.max(0, effectiveCash - cashCommissionCents),
+    };
+  }
 
   // ----------------------------------------------------------------
   // Propose a swap (proposer offers ONE of their SWOP listings ± cash)
@@ -540,11 +566,12 @@ export class SwapProposalsService {
       where: { clerkId: proposerClerkId },
     });
     if (!user) return [];
-    return this.prisma.swapProposal.findMany({
+    const rows = await this.prisma.swapProposal.findMany({
       where: { proposerId: user.id },
       include: this.listingPreviewInclude(),
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map((p) => this.withCashCommission(p));
   }
 
   async getReceived(ownerClerkId: string) {
@@ -552,11 +579,12 @@ export class SwapProposalsService {
       where: { clerkId: ownerClerkId },
     });
     if (!user) return [];
-    return this.prisma.swapProposal.findMany({
+    const rows = await this.prisma.swapProposal.findMany({
       where: { ownerId: user.id },
       include: this.listingPreviewInclude(),
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map((p) => this.withCashCommission(p));
   }
 
   // Proposals attached to a single listing — drives the SwapPanel on the
@@ -580,7 +608,10 @@ export class SwapProposalsService {
         include: this.listingPreviewInclude(),
         orderBy: { createdAt: 'desc' },
       });
-      return { role: 'owner' as const, proposals };
+      return {
+        role: 'owner' as const,
+        proposals: proposals.map((p) => this.withCashCommission(p)),
+      };
     }
 
     if (user) {
@@ -589,7 +620,10 @@ export class SwapProposalsService {
         include: this.listingPreviewInclude(),
         orderBy: { createdAt: 'desc' },
       });
-      return { role: 'viewer' as const, proposals: mine ? [mine] : [] };
+      return {
+        role: 'viewer' as const,
+        proposals: mine ? [this.withCashCommission(mine)] : [],
+      };
     }
 
     return { role: 'anon' as const, proposals: [] };
@@ -631,7 +665,7 @@ export class SwapProposalsService {
     if (proposal.proposerId !== user.id && proposal.ownerId !== user.id) {
       throw new ForbiddenException('Access denied');
     }
-    return proposal;
+    return this.withCashCommission(proposal);
   }
 
   // ----------------------------------------------------------------

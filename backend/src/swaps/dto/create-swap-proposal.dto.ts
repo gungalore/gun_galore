@@ -5,10 +5,17 @@ import {
   IsBoolean,
   IsEnum,
   Min,
+  Max,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
 import { SwapRole } from '@prisma/client';
+
+// P0.5 — sanity ceiling on the cash top-up (R500,000). The cash component
+// above R1,000 now carries standard commission (see fee.calculator
+// swapCashCommission), so the old commission-dodge is closed; this cap just
+// bounds GG's held-funds exposure on a single swap.
+export const SWAP_CASH_MAX_CENTS = 50_000_000;
 
 export class CreateSwapProposalDto {
   // The SWOP listing the proposer wants (the owner's item).
@@ -21,10 +28,12 @@ export class CreateSwapProposalDto {
   @IsString()
   offeredListingId: string;
 
-  // Optional cash top-up (ZAR cents). 0 = pure item-for-item.
+  // Optional cash top-up (ZAR cents). 0 = pure item-for-item. Above
+  // R1,000 the excess carries standard commission at settlement.
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(SWAP_CASH_MAX_CENTS)
   cashAmount?: number;
 
   // Who pays the cash top-up. Required only when cashAmount > 0.

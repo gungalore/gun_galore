@@ -5,22 +5,31 @@ jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 import { BadRequestException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 
-// Focused money-path tests for AdminService.refundTransaction — the
-// partial-refund accounting + atomic over-refund guard. We construct the
-// service with hand-mocked deps (no Nest DI) and assert on the exact
-// gateway amount, the refundedAmount increment, and when the order flips
-// to REFUNDED / fires the Zoho credit note.
+// Focused money-path tests for AdminService.refundTransaction on the
+// MANUAL rail (PAYMENT_MODE defaults to 'manual' in tests, same as prod
+// today): the partial-refund accounting, the atomic over-refund guard, and
+// the P0.3 synthetic refund CHILD transaction each operation must mint so
+// the FNB refund batch actually pays the money out. No gateway is called
+// in manual mode — the batch on the child row IS the refund.
 
 function makeService(overrides: {
   tx: Record<string, unknown> | null;
   claimCount?: number;
-  refundSuccess?: boolean;
 }) {
   const refundPayment = jest
     .fn()
-    .mockResolvedValue({ success: overrides.refundSuccess ?? true, resultCode: 'OK' });
+    .mockResolvedValue({ success: true, resultCode: 'OK' });
 
+  // Interactive-transaction mock: refundTransaction's manual branch runs
+  // claim + child-create inside prisma.$transaction(async (txc) => ...).
+  const txc = {
+    transaction: {
+      updateMany: jest.fn().mockResolvedValue({ count: overrides.claimCount ?? 1 }),
+      create: jest.fn().mockResolvedValue({ id: 'CHILD1' }),
+    },
+  };
   const prisma = {
+    $transaction: jest.fn(async (fn: (t: typeof txc) => Promise<unknown>) => fn(txc)),
     transaction: {
       findUnique: jest.fn().mockResolvedValue(overrides.tx),
       updateMany: jest.fn().mockResolvedValue({ count: overrides.claimCount ?? 1 }),
@@ -36,7 +45,10 @@ function makeService(overrides: {
     resolveByEntity: jest.fn().mockResolvedValue(undefined),
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
-  const zohoBooks = { createCommissionCreditNote: jest.fn().mockResolvedValue(undefined) };
+  const zohoBooks = {
+    createCommissionCreditNote: jest.fn().mockResolvedValue(undefined),
+    createCommissionInvoice: jest.fn().mockResolvedValue(undefined),
+  };
   const stitch = { refundPayment };
 
   const transactions = { cancelBookedShipment: jest.fn().mockResolvedValue(undefined) };
@@ -49,117 +61,154 @@ function makeService(overrides: {
     stitch as never,
     transactions as never, // P5.2 — cancels booked shipment on full refund
   );
-  return { service, prisma, notifications, audit, zohoBooks, refundPayment, transactions };
+  return { service, prisma, txc, notifications, audit, zohoBooks, refundPayment, transactions };
 }
 
 const baseTx = {
   id: 'TX1',
+  listingId: 'L1',
+  buyerId: 'B1',
+  sellerId: 'S1',
+  orderReference: 'GG-BN-0001',
   paymentStatus: 'HELD',
   buyerTotal: 100_000, // R1 000
   refundedAmount: 0,
   peachPaymentId: 'pay_123',
   listing: { title: 'Scope' },
-  buyer: { email: 'b@x.co', firstName: 'Bo', lastName: 'B', phone: null },
+  buyer: {
+    email: 'b@x.co',
+    firstName: 'Bo',
+    lastName: 'B',
+    phone: null,
+    bankAccountHolder: 'Bo B',
+    bankAccountNumber: '123456',
+    bankBranchCode: '250655',
+  },
 };
 
-describe('AdminService.refundTransaction', () => {
-  it('partial refund: refunds the typed amount, keeps the order open, no credit note', async () => {
-    const { service, prisma, zohoBooks, notifications, refundPayment } = makeService({
+describe('AdminService.refundTransaction (manual rail)', () => {
+  it('partial refund: claims the amount, mints a REFUNDED child for the slice, keeps the order open, no gateway', async () => {
+    const { service, txc, zohoBooks, notifications, refundPayment } = makeService({
       tx: { ...baseTx },
     });
     await service.refundTransaction('TX1', 'admin1', 'partial damage', 30_000);
 
-    // Gateway charged exactly the partial amount
-    expect(refundPayment).toHaveBeenCalledWith('pay_123', 30_000);
+    // Manual mode never touches the card gateway.
+    expect(refundPayment).not.toHaveBeenCalled();
     // Atomic claim increments refundedAmount and does NOT flip to REFUNDED
-    const claim = prisma.transaction.updateMany.mock.calls[0][0];
+    const claim = txc.transaction.updateMany.mock.calls[0][0];
     expect(claim.data.refundedAmount).toEqual({ increment: 30_000 });
     expect(claim.data.paymentStatus).toBeUndefined();
     expect(claim.where.refundedAmount).toEqual({ lte: 70_000 });
+    // P0.3 — a synthetic child carries the money through the FNB batch.
+    expect(txc.transaction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          refundOfId: 'TX1',
+          paymentStatus: 'REFUNDED',
+          buyerTotal: 30_000,
+          sellerPayout: 0,
+        }),
+      }),
+    );
     // Partial → no terminal side-effects
     expect(zohoBooks.createCommissionCreditNote).not.toHaveBeenCalled();
     expect(notifications.resolveByEntity).not.toHaveBeenCalled();
     // Buyer is told the partial amount, not buyerTotal
     expect(notifications.refundIssuedBuyer).toHaveBeenCalledWith(
-      expect.objectContaining({ buyerTotal: 30_000 }),
+      expect.objectContaining({ buyerTotal: 30_000, manualEft: true, needsBankDetails: false }),
     );
   });
 
-  it('full refund (no amount): refunds remaining balance, flips REFUNDED, fires credit note', async () => {
-    const { service, prisma, zohoBooks, notifications, refundPayment } = makeService({
+  it('full refund (no amount): claims the remaining balance, flips REFUNDED, mints the child, fires credit note', async () => {
+    const { service, txc, zohoBooks, notifications, refundPayment } = makeService({
       tx: { ...baseTx },
     });
     await service.refundTransaction('TX1', 'admin1', 'full refund');
 
-    expect(refundPayment).toHaveBeenCalledWith('pay_123', 100_000);
-    const claim = prisma.transaction.updateMany.mock.calls[0][0];
+    expect(refundPayment).not.toHaveBeenCalled();
+    const claim = txc.transaction.updateMany.mock.calls[0][0];
     expect(claim.data.paymentStatus).toBe('REFUNDED');
+    expect(txc.transaction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ refundOfId: 'TX1', buyerTotal: 100_000 }),
+      }),
+    );
     expect(zohoBooks.createCommissionCreditNote).toHaveBeenCalledWith('TX1', 'full refund');
     expect(notifications.resolveByEntity).toHaveBeenCalled();
   });
 
   it('partial that completes the balance flips REFUNDED + credit note', async () => {
-    const { service, prisma, zohoBooks } = makeService({
+    const { service, txc, zohoBooks } = makeService({
       tx: { ...baseTx, refundedAmount: 70_000 },
     });
     await service.refundTransaction('TX1', 'admin1', 'final 300', 30_000);
-    const claim = prisma.transaction.updateMany.mock.calls[0][0];
+    const claim = txc.transaction.updateMany.mock.calls[0][0];
     expect(claim.data.paymentStatus).toBe('REFUNDED');
     expect(zohoBooks.createCommissionCreditNote).toHaveBeenCalled();
   });
 
+  it('flags the buyer for bank-detail capture when none are on file', async () => {
+    const { service, notifications } = makeService({
+      tx: {
+        ...baseTx,
+        buyer: { ...baseTx.buyer, bankAccountHolder: null, bankAccountNumber: null, bankBranchCode: null },
+      },
+    });
+    await service.refundTransaction('TX1', 'admin1', 'no bank on file', 30_000);
+    expect(notifications.refundIssuedBuyer).toHaveBeenCalledWith(
+      expect.objectContaining({ needsBankDetails: true }),
+    );
+  });
+
   it('rejects an over-refund beyond the remaining balance', async () => {
-    const { service, refundPayment } = makeService({
+    const { service, txc } = makeService({
       tx: { ...baseTx, refundedAmount: 80_000 },
     });
     await expect(
       service.refundTransaction('TX1', 'admin1', 'too much', 30_000),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(refundPayment).not.toHaveBeenCalled();
+    expect(txc.transaction.create).not.toHaveBeenCalled();
   });
 
-  it('rejects below the R1 gateway minimum', async () => {
-    const { service, refundPayment } = makeService({ tx: { ...baseTx } });
+  it('rejects below the R1 minimum', async () => {
+    const { service, txc } = makeService({ tx: { ...baseTx } });
     await expect(
       service.refundTransaction('TX1', 'admin1', 'tiny', 50),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(refundPayment).not.toHaveBeenCalled();
+    expect(txc.transaction.create).not.toHaveBeenCalled();
   });
 
   it('rejects when already fully refunded', async () => {
-    const { service, refundPayment } = makeService({
+    const { service, txc } = makeService({
       tx: { ...baseTx, refundedAmount: 100_000 },
     });
     await expect(
       service.refundTransaction('TX1', 'admin1', 'again'),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(refundPayment).not.toHaveBeenCalled();
+    expect(txc.transaction.create).not.toHaveBeenCalled();
   });
 
-  it('rejects a non-refundable status without touching the gateway', async () => {
-    const { service, refundPayment } = makeService({
+  it('rejects a non-refundable status without any claim', async () => {
+    const { service, txc } = makeService({
       tx: { ...baseTx, paymentStatus: 'RELEASED' },
     });
     await expect(
       service.refundTransaction('TX1', 'admin1', 'nope'),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(refundPayment).not.toHaveBeenCalled();
+    expect(txc.transaction.create).not.toHaveBeenCalled();
   });
 
-  it('rolls back the reservation when the gateway fails', async () => {
-    const { service, prisma } = makeService({
+  it('rejects (and mints nothing) when the atomic claim loses the race', async () => {
+    const { service, txc, notifications } = makeService({
       tx: { ...baseTx },
-      refundSuccess: false,
+      claimCount: 0,
     });
     await expect(
-      service.refundTransaction('TX1', 'admin1', 'gw down', 30_000),
+      service.refundTransaction('TX1', 'admin1', 'raced', 30_000),
     ).rejects.toBeInstanceOf(BadRequestException);
-    // Reservation decremented back, urgent alert raised
-    expect(prisma.transaction.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ refundedAmount: { decrement: 30_000 } }),
-      }),
-    );
-    expect(prisma.adminAlert.create).toHaveBeenCalled();
+    // Claim lost → no child, no buyer notification.
+    expect(txc.transaction.create).not.toHaveBeenCalled();
+    expect(notifications.refundIssuedBuyer).not.toHaveBeenCalled();
   });
 });

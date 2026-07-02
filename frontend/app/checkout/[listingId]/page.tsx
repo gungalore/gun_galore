@@ -30,8 +30,17 @@ export default async function CheckoutPage({
   );
 
   if (!listing) return notFound();
-  if (listing.status !== 'ACTIVE') return notFound();
-  if (listing.listingType !== 'BUY_NOW') return notFound();
+  // P0.2 — auction winners land here from the "you won" SMS/token link.
+  // finalizeAuction has already flipped the listing to PAYMENT_PENDING, so
+  // the ACTIVE/BUY_NOW gate would 404 every won auction. The backend
+  // enforces winner-only + the 24h window at POST time; here we render the
+  // checkout with the WINNING BID as the price.
+  const isAuctionWin =
+    listing.listingType === 'AUCTION' && listing.status === 'PAYMENT_PENDING';
+  if (!isAuctionWin) {
+    if (listing.status !== 'ACTIVE') return notFound();
+    if (listing.listingType !== 'BUY_NOW') return notFound();
+  }
 
   // Self-buy guard. Backend rejects with 400 anyway, but landing
   // here at all is confusing — kick them back to the listing detail
@@ -40,6 +49,12 @@ export default async function CheckoutPage({
   if (userId && userId === listing.seller.clerkId) {
     redirect(`/listings/${listing.id}`);
   }
+
+  // For an auction win the settled price is the winning bid — override the
+  // (starting-bid) price so the summary + form show what the winner pays.
+  const effectiveListing = isAuctionWin
+    ? { ...listing, price: listing.currentBid ?? listing.price }
+    : listing;
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
@@ -77,8 +92,16 @@ export default async function CheckoutPage({
                 {CONDITION_LABELS[listing.condition]} · {listing.category.name}
               </p>
               <p className="text-lg font-medium" style={{ color: 'var(--red)' }}>
-                {listing.price ? formatPrice(listing.price) : 'Make an offer'}
+                {effectiveListing.price
+                  ? formatPrice(effectiveListing.price)
+                  : 'Make an offer'}
               </p>
+              {isAuctionWin && (
+                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  🏆 You won this auction — complete payment within 24 hours of
+                  the auction ending or the sale is cancelled.
+                </p>
+              )}
             </div>
           </div>
 
@@ -126,7 +149,7 @@ export default async function CheckoutPage({
           <h1 className="text-base font-medium mb-5" style={{ color: 'var(--text-primary)' }}>
             Checkout
           </h1>
-          <CheckoutForm listing={listing} />
+          <CheckoutForm listing={effectiveListing} />
         </div>
       </div>
     </main>
