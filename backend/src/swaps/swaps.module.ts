@@ -7,13 +7,16 @@ import { SwapProofService } from './swap-proof.service';
 import { KycModule } from '../kyc/kyc.module';
 import { ShippingModule } from '../shipping/shipping.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { ZohoBooksModule } from '../zoho/zoho-books.module';
 
 // Swop / Trade. NotificationsService, ContactDetailFilterService,
 // ActionTokensService, ReferenceNumberService + PrismaService are @Global.
 // KycModule → KYC-trigger both parties; ShippingModule → quoteForListing for
 // each funding leg; PaymentsModule → FeeCalculator.breakdownSwapLeg.
+// ZohoBooksModule (NOT @Global — the AdminJwtGuard lesson applies to
+// providers too) → swap cash-commission invoice at settlement.
 @Module({
-  imports: [KycModule, ShippingModule, PaymentsModule],
+  imports: [KycModule, ShippingModule, PaymentsModule, ZohoBooksModule],
   controllers: [SwapProposalsController, SwapFundingController],
   providers: [SwapProposalsService, SwapFundingService, SwapProofService],
   exports: [SwapProposalsService, SwapFundingService, SwapProofService],
