@@ -25,6 +25,7 @@ import { ReferenceNumberService } from '../common/reference-number.service';
 import { FirearmLicenceService } from './firearm-licence.service';
 import { inventoryEligible } from '../payments/inventory';
 import { CategoriesService } from '../categories/categories.service';
+import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { validateAndCleanAttributes } from './attribute-validation';
 import { Prisma } from '@prisma/client';
 
@@ -91,6 +92,7 @@ export class ListingsService {
     private readonly referenceNumbers: ReferenceNumberService,
     private readonly firearmLicence: FirearmLicenceService,
     private readonly categories: CategoriesService,
+    private readonly wishlistAlerts: WishlistAlertsService,
   ) {}
 
   // Pre-upload the firearm serial + licence proof photos to Cloudinary
@@ -1552,6 +1554,40 @@ export class ListingsService {
       await this.indexListing(updated);
     }
 
+    // P5.2 — price-drop alert to wishlisters. Fire only on a genuine DECREASE of
+    // an ACTIVE listing, throttled to once per 12h per listing so repeated small
+    // edits can't spam every watcher. Both old (`listing.price`) and new
+    // (`updated.price`) are in scope with zero extra fetches. Fire-and-forget so
+    // a notification hiccup never breaks the seller's edit.
+    const PRICE_DROP_THROTTLE_MS = 12 * 60 * 60 * 1000;
+    const throttleOk =
+      !listing.priceDropNotifiedAt ||
+      Date.now() - listing.priceDropNotifiedAt.getTime() > PRICE_DROP_THROTTLE_MS;
+    if (
+      updated.status === ListingStatus.ACTIVE &&
+      dto.price !== undefined &&
+      listing.price != null &&
+      updated.price != null &&
+      updated.price < listing.price &&
+      throttleOk
+    ) {
+      void this.wishlistAlerts
+        .notifyPriceDrop(
+          {
+            id: updated.id,
+            title: updated.title,
+            price: updated.price,
+            sellerId: updated.sellerId,
+          },
+          listing.price,
+        )
+        .catch((e) =>
+          this.logger.error(
+            `price-drop notify failed for ${id}: ${(e as Error).message}`,
+          ),
+        );
+    }
+
     return updated;
   }
 
@@ -1634,6 +1670,10 @@ export class ListingsService {
       include: {
         images: { where: { isPrimary: true }, take: 1 },
         category: { select: { id: true, name: true, slug: true } },
+        // P5.2 — how many buyers have wishlisted this listing, so /my/listings
+        // can nudge the seller ("N saved — consider a price drop"). Cheap
+        // indexed aggregate, same one the buyer-facing SocialProofPill uses.
+        _count: { select: { wishlistedBy: true } },
       },
       orderBy: { createdAt: 'desc' },
     });

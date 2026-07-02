@@ -10,12 +10,14 @@ import { TransactionsController, PaymentsWebhookController } from './transaction
 import { KycModule } from '../kyc/kyc.module';
 import { ShippingModule } from '../shipping/shipping.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
+import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module';
 
 @Module({
   imports: [
     KycModule, // TransactionsService → KycService.triggerSellerVerification
     ShippingModule, // TransactionsService → ShippingService.quoteForListing
     ZohoBooksModule, // DealerVerificationService → ZohoBooksService (commission invoice on APPROVED)
+    WishlistAlertsModule, // P5.2 — TransactionsService → WishlistAlertsService (item-sold fan-out)
     // CloudinaryModule is @Global() — DealerVerificationService can inject
     // CloudinaryService without it being imported here explicitly.
   ],

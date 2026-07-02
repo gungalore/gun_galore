@@ -109,6 +109,17 @@ function Icon({ kind }: { kind: string | null }) {
           />
         </svg>
       );
+    case 'price':
+      return (
+        <svg {...props}>
+          <path
+            d="M12 5v14M12 19l-5-5M12 19l5-5"
+            {...stroke}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        </svg>
+      );
     default:
       return (
         <svg {...props}>

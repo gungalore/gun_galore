@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FeeCalculator } from './fee.calculator';
 import { StitchService, StitchPaymentResult } from './stitch.service';
 import { FraudRiskService } from './fraud-risk.service';
+import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { estimateDeliveryDate } from '../shipping/delivery-estimate';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
@@ -103,6 +104,8 @@ export class TransactionsService {
     // buyer-confirm release point (was firearm-dealer-verify only, so
     // ordinary sales never reached Books).
     private readonly zohoBooks: ZohoBooksService,
+    // P5.2 — wishlist "your saved item sold" fan-out.
+    private readonly wishlistAlerts: WishlistAlertsService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -2425,6 +2428,19 @@ export class TransactionsService {
 
     // Fire-and-forget notifications
     void this.sendSaleNotifications(txId);
+
+    // P5.2 — alert everyone who wishlisted this item that it sold (with a link
+    // to similar listings). Fire-and-forget; the method re-reads the listing and
+    // no-ops unless it's genuinely SOLD (a multi-buy sale that didn't exhaust
+    // stock leaves the listing ACTIVE and must NOT alert), and excludes the
+    // seller + this buyer.
+    void this.wishlistAlerts
+      .notifyItemSold(listing.id, txId)
+      .catch((e) =>
+        this.logger.warn(
+          `wishlist item-sold alert failed for ${listing.id}: ${(e as Error).message}`,
+        ),
+      );
 
     // Fire-and-forget fraud-risk scoring — log-only, post-capture, never
     // blocks payment (its own try/catch swallows everything).

@@ -18,6 +18,8 @@ interface MyListing {
   createdAt: string;
   category: { name: string };
   images: { url: string }[];
+  // P5.2 — how many buyers have wishlisted this listing (seller nudge).
+  _count?: { wishlistedBy?: number };
 }
 
 export default async function MyListingsPage() {
@@ -93,6 +95,7 @@ export default async function MyListingsPage() {
           {listings.map((l) => {
             const status = resolveStatus(LISTING_STATUS, l.status);
             const color = toneColor(status.tone);
+            const saved = l._count?.wishlistedBy ?? 0;
             return (
               <div
                 key={l.id}
@@ -136,6 +139,26 @@ export default async function MyListingsPage() {
                   <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                     {l.category.name} · {new Date(l.createdAt).toLocaleDateString('en-ZA')}
                   </p>
+                  {/* P5.2 — saved-count nudge. Once a few buyers have saved an
+                      ACTIVE listing without buying, prompt the seller to drop
+                      the price, deep-linking to the edit form. */}
+                  {saved > 0 && (
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                      <span aria-hidden>❤ </span>
+                      {saved} {saved === 1 ? 'buyer has' : 'buyers have'} saved this
+                      {l.status === 'ACTIVE' && saved >= 3 && (
+                        <>
+                          {' — '}
+                          <Link
+                            href={`/listings/${l.id}/edit`}
+                            style={{ color: 'var(--red)', fontWeight: 500 }}
+                          >
+                            consider a price drop
+                          </Link>
+                        </>
+                      )}
+                    </p>
+                  )}
                   <div className="flex items-center justify-between mt-2 gap-2">
                     <span
                       className="text-sm font-medium"

@@ -832,6 +832,11 @@ model Listing {
   // edits/reversals) so an item already surfaced isn't re-alerted.
   listedAt DateTime?
 
+  // P5.2 — last time we fired a "price dropped" alert to this listing's
+  // wishlisters. Throttles repeated small price edits to at most one alert per
+  // window so a seller nudging the price down can't spam every watcher's inbox.
+  priceDropNotifiedAt DateTime?
+
   images         ListingImage[]
   transactions   Transaction[]
   orderLineItems OrderLineItem[]
