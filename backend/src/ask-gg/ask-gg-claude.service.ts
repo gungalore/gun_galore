@@ -272,8 +272,9 @@ const TOOLS: Tool[] = [
         },
         condition: {
           type: 'string',
-          enum: ['LIKE_NEW', 'USED', 'WORN', 'N_A'],
-          description: 'Optional condition filter.',
+          enum: ['NEW', 'LIKE_NEW', 'GOOD', 'FAIR', 'POOR'],
+          description:
+            'Optional condition filter. Must be exactly one of NEW, LIKE_NEW, GOOD, FAIR, POOR.',
         },
         limit: {
           type: 'integer',
@@ -623,6 +624,20 @@ export interface AskGgListingCard {
 // sane even if the model fans out several searches.
 const MAX_LISTING_CARDS = 12;
 
+// Review fix (latency): a hard ceiling on how many marketplace tool calls
+// (searchMarketplace + getComplements) one answer may execute. The system
+// prompt asks for 1–2; this ENFORCES it so an over-eager model can't fan
+// out a dozen Meili+Prisma browses inside one synchronous request.
+const MAX_MARKETPLACE_TOOL_CALLS = 4;
+
+// Review fix (injection): the marketplace tools call ListingsService.browse
+// DIRECTLY, bypassing the controller's ValidationPipe — so LLM-supplied
+// categorySlug / condition must be validated here before they reach the
+// (partly unescaped) Meilisearch filter builder. Condition must be a real
+// Prisma Condition enum value; the slug must look like a slug.
+const VALID_CONDITIONS = new Set(['NEW', 'LIKE_NEW', 'GOOD', 'FAIR', 'POOR']);
+const CATEGORY_SLUG_RE = /^[a-z0-9-]{1,64}$/;
+
 // The trimmed view of a card the MODEL sees in the tool_result (so it can
 // describe the stock in prose). Prices as whole rand for readability; no
 // image URL / ids the model doesn't need. The full card (with image) goes
@@ -766,6 +781,9 @@ export class AskGgClaudeService {
     // getComplements this request. Deduped by id, capped, rendered as
     // tappable cards under the answer.
     const listingCards: AskGgListingCard[] = [];
+    // Review fix — per-answer budget so an over-eager model can't fan out
+    // many marketplace browses (latency). Shared across the whole loop.
+    const budget = { marketplace: 0 };
 
     // Anthropic prompt caching — mark the (large, stable) system
     // prompt + tool defs as cacheable so subsequent turns within the
@@ -928,6 +946,7 @@ export class AskGgClaudeService {
             block,
             citations,
             listingCards,
+            budget,
             opts.subscriptionTier ?? 'FREE',
           );
           for (const h of handled) {
@@ -1021,6 +1040,7 @@ export class AskGgClaudeService {
     block: ToolUseBlock,
     citations: AskGgCompleteResult['citations'],
     listingCards: AskGgListingCard[],
+    budget: { marketplace: number },
     subscriptionTier: 'FREE' | 'MEMBER' | 'PRO',
   ): Promise<ContentBlockParam[]> {
     const toolUseId = block.id;
@@ -1427,11 +1447,36 @@ export class AskGgClaudeService {
             },
           ];
         }
+        if (++budget.marketplace > MAX_MARKETPLACE_TOOL_CALLS) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: JSON.stringify({
+                count: 0,
+                note: `Marketplace-search limit for this answer reached (${MAX_MARKETPLACE_TOOL_CALLS}). Answer with what you already have; suggest the user browse the marketplace directly for more.`,
+              }),
+            },
+          ];
+        }
         try {
           const limit = Math.min(Math.max(1, Math.floor(input.limit ?? 6)), 10);
+          // Review fix (injection): browse() is called directly, bypassing
+          // the controller's ValidationPipe — so validate the LLM-supplied
+          // categorySlug + condition here before they reach the (partly
+          // unescaped) Meili filter builder. Drop anything that doesn't
+          // look right rather than passing it through.
+          const cleanSlug =
+            input.categorySlug && CATEGORY_SLUG_RE.test(input.categorySlug.trim())
+              ? input.categorySlug.trim()
+              : undefined;
+          const cleanCondition =
+            input.condition && VALID_CONDITIONS.has(input.condition)
+              ? input.condition
+              : undefined;
           const res = (await this.listings.browse({
             q: input.query.trim(),
-            categorySlug: input.categorySlug?.trim() || undefined,
+            categorySlug: cleanSlug,
             minPrice:
               typeof input.minPriceCents === 'number'
                 ? Math.max(0, Math.floor(input.minPriceCents))
@@ -1440,7 +1485,7 @@ export class AskGgClaudeService {
               typeof input.maxPriceCents === 'number'
                 ? Math.max(0, Math.floor(input.maxPriceCents))
                 : undefined,
-            condition: input.condition as never,
+            condition: cleanCondition as never,
             page: 1,
             limit,
             sort: 'newest',
@@ -1483,6 +1528,18 @@ export class AskGgClaudeService {
               content:
                 'Error: listingId is required (from a prior searchMarketplace result).',
               is_error: true,
+            },
+          ];
+        }
+        if (++budget.marketplace > MAX_MARKETPLACE_TOOL_CALLS) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: JSON.stringify({
+                count: 0,
+                note: `Marketplace-search limit for this answer reached (${MAX_MARKETPLACE_TOOL_CALLS}). Answer with what you already have.`,
+              }),
             },
           ];
         }

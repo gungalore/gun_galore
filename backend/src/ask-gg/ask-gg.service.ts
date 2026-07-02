@@ -369,6 +369,9 @@ export class AskGgService {
             imageUrls: true,
             model: true,
             citations: true,
+            // P2.2 review fix — without this, the shoppable cards vanish
+            // on conversation reload even though they're persisted.
+            listingCards: true,
             createdAt: true,
           },
         },
