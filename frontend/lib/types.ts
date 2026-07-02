@@ -50,6 +50,20 @@ export interface Category {
   sortOrder: number;
 }
 
+// Returned by GET /categories/with-counts — the active taxonomy plus a
+// rolled-up active-listing count per category (a parent's count already
+// includes its children). Only the fields the discovery surfaces need are
+// typed here; the endpoint is a lean projection, not the full Category row.
+export interface CategoryWithCount {
+  id: string;
+  name: string;
+  slug: string;
+  parentId: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  count: number;
+}
+
 export interface ListingSeller {
   id: string;
   clerkId: string;

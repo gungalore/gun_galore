@@ -13,6 +13,68 @@ export class CategoriesService {
     });
   }
 
+  /**
+   * Every ACTIVE category with a ROLLED-UP active-listing count: a parent's
+   * count = its own direct listings + all its children's. Listings are filed
+   * on leaf categories, so a parent's direct count is normally 0 and its real
+   * total comes entirely from its children.
+   *
+   * Efficient: one groupBy over Listing.categoryId (ACTIVE only) + the existing
+   * category list, then a single roll-up pass — no N+1. Powers homepage tiles
+   * and facet counts.
+   */
+  async withCounts(): Promise<
+    Array<
+      Pick<Category, 'id' | 'name' | 'slug' | 'parentId' | 'isActive' | 'sortOrder'> & {
+        count: number;
+      }
+    >
+  > {
+    const [categories, grouped] = await Promise.all([
+      this.prisma.category.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      }),
+      this.prisma.listing.groupBy({
+        by: ['categoryId'],
+        where: { status: 'ACTIVE' },
+        _count: { _all: true },
+      }),
+    ]);
+
+    // Direct (leaf) active-listing count per categoryId.
+    const directCount = new Map<string, number>();
+    for (const g of grouped) {
+      directCount.set(g.categoryId, g._count._all);
+    }
+
+    // Roll up: each category's total = its own direct count + the sum of its
+    // children's direct counts. The tree is 2-level (root + children), so a
+    // single pass adding each child's direct count to its parent suffices.
+    const rolledUp = new Map<string, number>();
+    for (const c of categories) {
+      rolledUp.set(c.id, directCount.get(c.id) ?? 0);
+    }
+    for (const c of categories) {
+      if (c.parentId && rolledUp.has(c.parentId)) {
+        rolledUp.set(
+          c.parentId,
+          (rolledUp.get(c.parentId) ?? 0) + (directCount.get(c.id) ?? 0),
+        );
+      }
+    }
+
+    return categories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      slug: c.slug,
+      parentId: c.parentId,
+      isActive: c.isActive,
+      sortOrder: c.sortOrder,
+      count: rolledUp.get(c.id) ?? 0,
+    }));
+  }
+
   async findById(id: string): Promise<Category | null> {
     return this.prisma.category.findUnique({ where: { id } });
   }

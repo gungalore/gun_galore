@@ -21,6 +21,7 @@ import { SuperadminGuard } from './guards/superadmin.guard';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminService } from './admin.service';
+import { ListingsService } from '../listings/listings.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { ListingReviewDto } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -129,7 +130,21 @@ export class AdminStatsController {
 @Controller('admin/listings')
 @UseGuards(AdminJwtGuard)
 export class AdminListingsController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly listingsService: ListingsService,
+  ) {}
+
+  // One-time / maintenance reindex of every ACTIVE listing into
+  // Meilisearch. Needed after the parentId/parentSlug rollup fields
+  // were added to the search doc — existing docs predate them, so
+  // parent-category browse misses them until re-indexed. Returns the
+  // count re-indexed.
+  @Post('reindex')
+  @HttpCode(200)
+  reindexAll() {
+    return this.listingsService.reindexAllActiveListings();
+  }
 
   @Get()
   getListings(

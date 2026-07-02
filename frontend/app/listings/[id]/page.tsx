@@ -189,16 +189,22 @@ export default async function ListingDetailPage({
 
           {/* Badges */}
           <div className="flex flex-wrap gap-1.5 mb-3">
-            <span
-              className="text-xs px-2 py-0.5 rounded-[3px]"
+            {/* Category chip — links to the category landing page so the
+                crawler (and the reader) can reach /category/[slug]. Kept
+                visually identical to the other chips; just wrapped in a
+                next/link. */}
+            <Link
+              href={`/category/${listing.category.slug}`}
+              className="text-xs px-2 py-0.5 rounded-[3px] transition-colors"
               style={{
                 background: 'var(--bg-inset)',
                 color: 'var(--text-tertiary)',
                 border: '0.5px solid var(--border)',
+                textDecoration: 'none',
               }}
             >
               {listing.category.name}
-            </span>
+            </Link>
             <span
               className="text-xs px-2 py-0.5 rounded-[3px]"
               style={{

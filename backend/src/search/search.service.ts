@@ -43,6 +43,10 @@ export class SearchService implements OnModuleInit {
     await listingsIndex.updateFilterableAttributes([
       'categoryId',
       'categorySlug',
+      // Parent-category rollup: parent browse pages filter on these so a
+      // parent id/slug matches its children's leaf listings.
+      'parentId',
+      'parentSlug',
       'status',
       'listingType',
       'condition',

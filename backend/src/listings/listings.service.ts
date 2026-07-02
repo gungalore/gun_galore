@@ -872,8 +872,17 @@ export class ListingsService {
     } = dto;
 
     const filterParts: string[] = ['status = "ACTIVE"'];
-    if (categoryId) filterParts.push(`categoryId = "${categoryId}"`);
-    if (categorySlug) filterParts.push(`categorySlug = "${categorySlug}"`);
+    // Parent-category rollup (mirrors browseViaPrisma): a parent id/slug
+    // must match its own leaf listings OR any child's, via the indexed
+    // parentId/parentSlug. Wrapped in parens so the outer AND-join stays
+    // correct. Leaf categories have no children indexed under them, so
+    // this behaves identically to an exact match for leaves.
+    if (categoryId)
+      filterParts.push(`(categoryId = "${categoryId}" OR parentId = "${categoryId}")`);
+    if (categorySlug)
+      filterParts.push(
+        `(categorySlug = "${categorySlug}" OR parentSlug = "${categorySlug}")`,
+      );
     if (listingType) filterParts.push(`listingType = "${listingType}"`);
     if (condition) filterParts.push(`condition = "${condition}"`);
     if (province) filterParts.push(`province = "${province}"`);
@@ -960,8 +969,17 @@ export class ListingsService {
     } = dto;
 
     const where: Record<string, unknown> = { status: 'ACTIVE' };
-    if (categoryId) where.categoryId = categoryId;
-    if (categorySlug) where.category = { slug: categorySlug };
+    // Parent-category rollup: listings are filed on LEAF categories, so a
+    // parent browse (self OR child-of) must match the category itself AND
+    // any category whose parentId is this one. Leaf categories have no
+    // children, so `parentId: X` matches nothing → identical to an exact
+    // match for leaves.
+    if (categoryId)
+      where.category = { OR: [{ id: categoryId }, { parentId: categoryId }] };
+    if (categorySlug)
+      where.category = {
+        OR: [{ slug: categorySlug }, { parent: { slug: categorySlug } }],
+      };
     if (listingType) where.listingType = listingType;
     if (condition) where.condition = condition;
     if (province) where.province = province;
@@ -1436,6 +1454,23 @@ export class ListingsService {
     }
   }
 
+  // One-time / admin-triggered full reindex of every ACTIVE listing.
+  // Needed after the parentId/parentSlug fields were added to the Meili
+  // doc — existing docs predate those attributes, so parent-category
+  // browse would miss them until each is re-indexed. Small catalogue, so
+  // a simple loop is fine; indexing is off the hot path. Idempotent —
+  // re-running just overwrites each doc with the same shape.
+  async reindexAllActiveListings(): Promise<{ reindexed: number }> {
+    const rows = await this.prisma.listing.findMany({
+      where: { status: 'ACTIVE' },
+      include: { category: true },
+    });
+    for (const row of rows) {
+      await this.indexListing(row);
+    }
+    return { reindexed: rows.length };
+  }
+
   // Public helper so the admin module can yank a listing out of
   // Meilisearch without us re-exporting SearchService.
   async removeFromIndex(listingId: string): Promise<void> {
@@ -1448,8 +1483,25 @@ export class ListingsService {
     }
   }
 
-  private async indexListing(listing: Listing & { category: { slug: string; name: string } | null }) {
+  private async indexListing(
+    listing: Listing & {
+      category: { slug: string; name: string; parentId: string | null } | null;
+    },
+  ) {
     try {
+      // Parent-category rollup: index the parent's id + slug so a parent
+      // browse can filter down to this leaf listing. Both null for
+      // root-category listings (no parent). Off the hot path (indexing
+      // only), so the extra lookup per doc is fine.
+      const parentId = listing.category?.parentId ?? null;
+      let parentSlug: string | null = null;
+      if (parentId) {
+        const parent = await this.prisma.category.findUnique({
+          where: { id: parentId },
+          select: { slug: true },
+        });
+        parentSlug = parent?.slug ?? null;
+      }
       await this.search.addDocuments(INDEXES.LISTINGS, [
         {
           id: listing.id,
@@ -1461,6 +1513,8 @@ export class ListingsService {
           categoryId: listing.categoryId,
           categorySlug: listing.category?.slug,
           categoryName: listing.category?.name,
+          parentId,
+          parentSlug,
           status: listing.status,
           listingType: listing.listingType,
           condition: listing.condition,

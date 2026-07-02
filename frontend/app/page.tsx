@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
-import { BrowseResponse, Category } from '@/lib/types';
+import { BrowseResponse, Category, CategoryWithCount } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { FilterBar } from '@/components/filter-bar';
 import { Hero } from '@/components/hero';
@@ -124,7 +125,8 @@ export default async function HomePage({
   // with the FEATURED grid. On every other surface we keep the
   // standard browse. Both queries fire in parallel so the slower
   // doesn't block the other.
-  const [browse, categories, featuredListings, brands] = await Promise.all([
+  const [browse, categories, featuredListings, brands, categoryTiles] =
+    await Promise.all([
     apiFetch<BrowseResponse>(`/listings?${qs}`, { cache: 'no-store' }).catch(
       () => ({ listings: [], total: 0, page: 1, limit: 24 }),
     ),
@@ -150,7 +152,27 @@ export default async function HomePage({
     apiFetch<string[]>('/listings/brands', {
       next: { revalidate: 3600 },
     } as RequestInit).catch(() => [] as string[]),
+    // Category taxonomy with rolled-up active-listing counts — powers the
+    // "Shop by category" tile strip on the landing page. Only fetched on the
+    // bare landing page (where the strip renders); other surfaces skip it.
+    // Progressive enhancement: on failure the strip renders nothing rather
+    // than breaking the homepage.
+    showHero
+      ? apiFetch<CategoryWithCount[]>('/categories/with-counts', {
+          next: { revalidate: 600 },
+        } as RequestInit).catch(() => [] as CategoryWithCount[])
+      : Promise.resolve([] as CategoryWithCount[]),
   ]);
+
+  // Root categories only (parentId === null, active), sorted by the operator's
+  // sortOrder. Includes the new outdoor roots (Overlanding & 4×4, Hunting,
+  // Outdoor Clothing & Footwear, Archery & Bowhunting) automatically — they
+  // come straight from the endpoint. Capped at 12 tiles to keep the strip
+  // tasteful; the "Browse all" link opens the full catalogue.
+  const rootCategoryTiles = categoryTiles
+    .filter((c) => c.parentId === null && c.isActive)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .slice(0, 12);
 
   const currentPage = browse.page;
 
@@ -213,6 +235,69 @@ export default async function HomePage({
 
       {showHero && <Hero />}
       {showHero && <SignedInWelcome />}
+
+      {/* ─── Shop by category ─── Real, rolled-up root categories from
+          /categories/with-counts (parentId === null, active, sortOrder).
+          Each tile deep-links to /category/[slug]. Progressive enhancement:
+          if the endpoint failed the array is empty and this whole block is
+          skipped — the homepage never shows an error for it. */}
+      {showHero && rootCategoryTiles.length > 0 && (
+        <section className="max-w-[1280px] mx-auto px-4 pt-10">
+          <div className="flex items-end justify-between mb-4 gap-4 flex-wrap">
+            <h2
+              className="text-xl sm:text-2xl"
+              style={{
+                color: 'var(--text-primary)',
+                fontWeight: 500,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              Shop by category
+            </h2>
+            {/* No dedicated category index exists — send "browse all" to the
+                All-listings surface (sort=newest routes to ALL_LISTINGS). */}
+            <Link
+              href="/?sort=newest"
+              className="text-sm"
+              style={{ color: 'var(--red)', fontWeight: 500, textDecoration: 'none' }}
+            >
+              Browse all listings →
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {rootCategoryTiles.map((c) => (
+              <Link
+                key={c.id}
+                href={`/category/${c.slug}`}
+                className="block rounded-[8px] p-4 transition-colors"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '0.5px solid var(--border)',
+                  textDecoration: 'none',
+                }}
+              >
+                <p
+                  className="text-sm leading-snug"
+                  style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+                >
+                  {c.name}
+                </p>
+                {/* Hide the count entirely when 0 — a "0 items" tile reads
+                    worse than no number at all. */}
+                {c.count > 0 && (
+                  <p
+                    className="text-xs mt-1"
+                    style={{ color: 'var(--text-tertiary)' }}
+                  >
+                    {c.count.toLocaleString('en-ZA')} item
+                    {c.count !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ─── Bare landing page: featured-only grid, no rail, no filter ───
           When the user lands on "/" with no filters, the main grid
