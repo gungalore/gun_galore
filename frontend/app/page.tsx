@@ -3,6 +3,7 @@ import { apiFetch } from '@/lib/api';
 import { BrowseResponse, Category, CategoryWithCount } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { FilterBar } from '@/components/filter-bar';
+import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
@@ -530,6 +531,10 @@ export default async function HomePage({
             brands={brands}
             facets={facetData.facets}
           />
+          {/* P5.1 — save the active filters to get alerted on new matches. */}
+          <div className="mt-2">
+            <SaveSearchButton params={params} />
+          </div>
         </div>
 
         {browse.listings.length === 0 ? (

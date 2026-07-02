@@ -98,6 +98,17 @@ function Icon({ kind }: { kind: string | null }) {
           />
         </svg>
       );
+    case 'search':
+      return (
+        <svg {...props}>
+          <circle cx="11" cy="11" r="6" {...stroke} fill="none" />
+          <path
+            d="M20 20l-4-4"
+            {...stroke}
+            strokeLinecap="round"
+          />
+        </svg>
+      );
     default:
       return (
         <svg {...props}>

@@ -414,6 +414,11 @@ model User {
   // opt-in); wishlist is the general "save for later" pattern.
   wishlistEntries WatchedListing[]
 
+  // ── Saved-search back-relation (P5.1 retention) ──────────────────
+  // Persisted browse filters that alert the user when a NEW matching
+  // ACTIVE listing is published. See SavedSearch.
+  savedSearches SavedSearch[]
+
   // ── Push notification back-relation ──────────────────────────────
   // Browser/PWA push subscription endpoints. One row per device a user
   // has opted in on (iPhone PWA + Android Chrome = two rows). Fired
@@ -818,6 +823,15 @@ model Listing {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
+  // P5.1 — when this listing FIRST became discoverable (entered ACTIVE),
+  // stamped once at create (if published straight to ACTIVE) or on the admin
+  // approval that lifts it out of PENDING_REVIEW. The saved-search matcher keys
+  // "new since I last looked" on this, NOT createdAt — a listing created 10:00
+  // but human-approved 14:00 must alert as new at 14:00, not be silently missed
+  // because the cursor already passed its createdAt. Set-once (never bumped on
+  // edits/reversals) so an item already surfaced isn't re-alerted.
+  listedAt DateTime?
+
   images         ListingImage[]
   transactions   Transaction[]
   orderLineItems OrderLineItem[]
@@ -843,6 +857,9 @@ model Listing {
   @@index([categoryId])
   @@index([sellerId])
   @@index([endTime])
+  // P5.1 saved-search matcher hot path: ACTIVE listings newly listed since a
+  // cursor (WHERE status='ACTIVE' AND listedAt > cursor).
+  @@index([status, listedAt])
 }
 
 model ListingImage {
@@ -1567,6 +1584,59 @@ model WatchedListing {
   @@unique([userId, listingId])
   @@index([userId, createdAt(sort: Desc)])
   @@index([listingId])
+}
+
+// P5.1 — Saved search. A user persists their current browse filters and
+// gets an in-app + push alert when a NEW ACTIVE listing matching them is
+// published. THE retention mechanism for a thin-supply marketplace: it
+// converts a failed "no Hilux canopy today" search into a return visit
+// when one lists.
+//
+// Filter fields mirror the browse contract (BrowseListingsDto / the
+// browseViaPrisma where-builder) so the matcher cron rehydrates the exact
+// same query. Enum-ish fields (listingType/condition/province) are stored
+// as validated strings — the matcher passes them straight into the same
+// Prisma where the browse uses. `attrs` (per-category attribute filters)
+// is captured for round-tripping the search URL but is NOT applied by the
+// matcher (Meili-only in browse — documented limitation; a saved search
+// with attrs simply over-matches on that dimension).
+//
+// `fingerprint` is a canonical hash of the filter set → the @@unique lets
+// "Save this search" be idempotent (re-saving the same filters updates the
+// row instead of duplicating). `notifyEnabled` is the per-search POPIA
+// pause/opt-out. `lastNotifiedAt` is the notify cursor: the matcher only
+// considers listings created after it (first run falls back to createdAt
+// so a brand-new search never blasts the entire back-catalogue).
+model SavedSearch {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Optional friendly name; the UI falls back to a generated label.
+  label String?
+
+  // ── Captured browse filters (mirror BrowseListingsDto) ──
+  q            String? // free-text term (matcher approximates via title/description contains)
+  categoryId   String?
+  categorySlug String?
+  listingType  String? // BUY_NOW | AUCTION | TAKE_A_SHOT | SWOP
+  condition    String?
+  province     String?
+  make         String? // matched EXACTLY against Listing.make
+  minPrice     Int? // ZAR cents
+  maxPrice     Int? // ZAR cents
+  sort         String?
+  attrs        String? // URL-encoded JSON; round-trips the URL, NOT applied by the matcher
+
+  fingerprint   String // canonical hash of the filter set (idempotent save)
+  notifyEnabled Boolean   @default(true)
+  lastNotifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, fingerprint])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([notifyEnabled])
 }
 
 // Browser / installed-PWA push subscription. Created when the user

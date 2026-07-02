@@ -14,6 +14,7 @@ import { PushModule } from '../push/push.module';
 import { ManualPaymentsModule } from '../manual-payments/manual-payments.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
+import { SavedSearchesModule } from '../saved-searches/saved-searches.module';
 
 @Module({
   // AdminModule is imported so we can inject AdminCreditsService into
@@ -37,6 +38,7 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
     ManualPaymentsModule,
     SubscriptionsModule,
     ZohoBooksModule,
+    SavedSearchesModule,
   ],
   providers: [TasksService],
 })

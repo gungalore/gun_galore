@@ -56,6 +56,12 @@ const HeartIcon: IconC = () => (
     <path d="M12 21C7 17 4 13.5 4 10a4 4 0 0 1 8-1 4 4 0 0 1 8 1c0 3.5-3 7-8 11z" />
   </Svg>
 );
+const SearchAlertIcon: IconC = () => (
+  <Svg>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M21 21l-4.35-4.35" />
+  </Svg>
+);
 const StoreIcon: IconC = () => (
   <Svg>
     <path d="M4 10v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-9" />
@@ -136,6 +142,7 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
       { href: '/my/offers', label: 'Offers made', Icon: TagIcon },
       { href: '/my/bids', label: 'Bids', Icon: GavelIcon },
       { href: '/wishlist', label: 'Wishlist', Icon: HeartIcon },
+      { href: '/saved-searches', label: 'Saved searches', Icon: SearchAlertIcon },
     ],
   },
   {

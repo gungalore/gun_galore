@@ -581,6 +581,10 @@ export class ListingsService {
         price: dto.price,
         listingType: dto.listingType,
         status,
+        // P5.1 — stamp discoverability time when publishing straight to ACTIVE;
+        // a PENDING_REVIEW listing gets its listedAt on admin approval instead.
+        // The saved-search matcher keys "new" on this, not createdAt.
+        listedAt: status === ListingStatus.ACTIVE ? new Date() : null,
         condition: dto.condition,
         province: dto.province,
         isFirearm: category.isFirearm,

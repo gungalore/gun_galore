@@ -88,7 +88,16 @@ export class AdminService {
         adminReviewedById: adminId,
         adminReviewedAt: new Date(),
         adminOverrideReason: dto.reason ?? null,
-        ...(newStatus === 'ACTIVE' ? { expiresAt: new Date(Date.now() + 60 * 24 * 3600_000) } : {}),
+        // P5.1 — approval is this listing's first entry into ACTIVE (guarded to
+        // PENDING_REVIEW above, so listedAt is null); stamp discoverability time
+        // now so the saved-search matcher alerts on it as a NEW listing rather
+        // than silently skipping it (its createdAt is already behind the cursor).
+        ...(newStatus === 'ACTIVE'
+          ? {
+              expiresAt: new Date(Date.now() + 60 * 24 * 3600_000),
+              listedAt: listing.listedAt ?? new Date(),
+            }
+          : {}),
       },
       include: { seller: { select: { email: true, firstName: true, lastName: true } } },
     });

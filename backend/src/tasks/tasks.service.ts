@@ -21,6 +21,7 @@ import { PushService } from '../push/push.service';
 import { ManualPaymentsService } from '../manual-payments/manual-payments.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
+import { SavedSearchesService } from '../saved-searches/saved-searches.service';
 
 // Threshold-alert dedup window. Once we've fired an alert at any
 // severity for a given service, we won't fire ANOTHER alert at the
@@ -52,6 +53,7 @@ export class TasksService {
     private readonly manualPayments: ManualPaymentsService,
     private readonly subscriptions: SubscriptionsService,
     private readonly zohoBooks: ZohoBooksService,
+    private readonly savedSearches: SavedSearchesService,
   ) {}
 
   // ─── Manual EFT — inContact inbox scan ───────────────────────────
@@ -816,6 +818,30 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('swap-verification-sweep');
+    }
+  }
+
+  // P5.1 — Saved-search alerts. Every 10 min: for each enabled SavedSearch,
+  // find ACTIVE listings published since its notify cursor and alert the
+  // owner (in-app + push), then advance the cursor. Thin delegator; the
+  // per-search try/catch + batch caps live in the service. Heartbeat in
+  // finally so /admin/health shows it firing even on a bad tick.
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async savedSearchMatchSweep() {
+    try {
+      const res = await this.savedSearches.matchAndNotify();
+      if (res.notified > 0) {
+        this.logger.log(
+          `Saved-search alerts: notified ${res.notified} of ${res.scanned} searches`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `savedSearchMatchSweep failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('saved-search-match');
     }
   }
 
