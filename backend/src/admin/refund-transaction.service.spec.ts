@@ -21,10 +21,14 @@ function makeService(overrides: {
     .mockResolvedValue({ success: true, resultCode: 'OK' });
 
   // Interactive-transaction mock: refundTransaction's manual branch runs
-  // claim + child-create inside prisma.$transaction(async (txc) => ...).
+  // claim (+ optional terminal flip) + child-create inside
+  // prisma.$transaction(async (txc) => ...). findUnique → null makes the
+  // service fall back to preRead.refundedAmount + amount for the live
+  // cumulative, which is exact for these single-operation tests.
   const txc = {
     transaction: {
       updateMany: jest.fn().mockResolvedValue({ count: overrides.claimCount ?? 1 }),
+      findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'CHILD1' }),
     },
   };
@@ -127,8 +131,10 @@ describe('AdminService.refundTransaction (manual rail)', () => {
     await service.refundTransaction('TX1', 'admin1', 'full refund');
 
     expect(refundPayment).not.toHaveBeenCalled();
-    const claim = txc.transaction.updateMany.mock.calls[0][0];
-    expect(claim.data.paymentStatus).toBe('REFUNDED');
+    // Claim (call 0) never carries the flip; the terminal REFUNDED flip is
+    // a SECOND guarded update driven by the post-claim live cumulative.
+    const flip = txc.transaction.updateMany.mock.calls[1][0];
+    expect(flip.data.paymentStatus).toBe('REFUNDED');
     expect(txc.transaction.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ refundOfId: 'TX1', buyerTotal: 100_000 }),
@@ -143,8 +149,8 @@ describe('AdminService.refundTransaction (manual rail)', () => {
       tx: { ...baseTx, refundedAmount: 70_000 },
     });
     await service.refundTransaction('TX1', 'admin1', 'final 300', 30_000);
-    const claim = txc.transaction.updateMany.mock.calls[0][0];
-    expect(claim.data.paymentStatus).toBe('REFUNDED');
+    const flip = txc.transaction.updateMany.mock.calls[1][0];
+    expect(flip.data.paymentStatus).toBe('REFUNDED');
     expect(zohoBooks.createCommissionCreditNote).toHaveBeenCalled();
   });
 

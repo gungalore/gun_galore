@@ -54,6 +54,7 @@ function make() {
     fees as never,
     referenceNumbers as never,
     notifications as never,
+    { createCommissionInvoice: jest.fn().mockResolvedValue(undefined) } as never, // zohoBooks (P0.5 review fix)
   );
   return { service, prisma, txc, notifications };
 }

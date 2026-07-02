@@ -157,14 +157,19 @@ export default function ManualPaymentsAdminPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
-      await downloadBatchCsv(data.batchId);
+      if (data.batchId) await downloadBatchCsv(data.batchId);
       // P0.4 — name the exact rows that were skipped so the operator can
       // chase the missing bank details instead of them vanishing silently.
       const skipNote = data.skipped
         ? ` ⚠ ${data.skipped} row(s) skipped (missing bank details): ${(data.skippedRefs ?? []).join(', ')} — these stay due and will re-appear in the next batch once details are added.`
         : '';
+      const settledNote = data.settledWithoutEft
+        ? ` ${data.settledWithoutEft} zero-net row(s) settled without EFT (fully consumed by refunds).`
+        : '';
       setPayoutMsg(
-        `Batch frozen: ${data.included} recipient(s), ${rand(data.grandTotal)} total — CSV downloaded. Pay it in FNB, then mark it paid below.${skipNote}`,
+        data.batchId
+          ? `Batch frozen: ${data.included} recipient(s), ${rand(data.grandTotal)} total — CSV downloaded. Pay it in FNB, then mark it paid below.${settledNote}${skipNote}`
+          : `No EFT was due.${settledNote}${skipNote}`,
       );
       await loadPayouts();
     } catch (err) {

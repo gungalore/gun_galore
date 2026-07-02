@@ -1057,6 +1057,31 @@ export class ListingsService {
       }
     }
 
+    // FCA gate (review finding) — UpdateListingDto is PartialType(Create),
+    // so the ...dto spread would happily overwrite the VERIFIED firearm
+    // serial + serial/licence photos (create() runs Claude licence
+    // verification; update() runs none — a seller could swap in an
+    // unlicensed firearm's serial under firearm A's verified verdict).
+    // The selling format is equally immutable (auction/offer state
+    // machines key off it). Allow only resubmitting the identical value.
+    if (
+      dto.listingType !== undefined &&
+      dto.listingType !== listing.listingType
+    ) {
+      throw new BadRequestException(
+        'The selling format cannot be changed after listing — cancel and create a new listing.',
+      );
+    }
+    if (
+      (dto.serialNumber !== undefined && dto.serialNumber !== listing.serialNumber) ||
+      (dto.serialPhotoUrl !== undefined && dto.serialPhotoUrl !== listing.serialPhotoUrl) ||
+      (dto.licencePhotoUrl !== undefined && dto.licencePhotoUrl !== listing.licencePhotoUrl)
+    ) {
+      throw new BadRequestException(
+        'The serial number and licence documents are verified when a listing is created and cannot be changed. Cancel this listing and create a new one to list a different firearm.',
+      );
+    }
+
     // Normalise the optional planned-dealer hint: trim, null out
     // whitespace-only inputs (matches create()).
     const normalisedPlanned =

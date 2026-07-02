@@ -591,6 +591,9 @@ export class AdminAnalyticsService {
       this.prisma.transaction.count({
         where: {
           paymentStatus: 'REFUNDED',
+          // exclude synthetic refund-slice children (P0.3) — a full refund
+          // would otherwise count parent + child as two refunds.
+          refundOfId: null,
           updatedAt: { gte: from, lt: to },
         },
       }),
@@ -603,7 +606,7 @@ export class AdminAnalyticsService {
     ]);
 
     const total = await this.prisma.transaction.count({
-      where: { createdAt: { gte: from, lt: to } },
+      where: { createdAt: { gte: from, lt: to }, refundOfId: null },
     });
 
     return {

@@ -256,10 +256,21 @@ function CategoryFormModal({
   onClose: () => void;
   onDone: () => void;
 }) {
+  // FCA (review fix) — in CREATE mode the compliance flags default to the
+  // PARENT's values. This form always submits explicit booleans, so the
+  // backend's absent-field inheritance never fires through this UI; without
+  // this, adding a child under "Firearms" silently created a NON-firearm
+  // category (no licence verification, no dealer transfer) unless the
+  // admin remembered to flick the toggle.
+  const parentCat =
+    mode === 'create' && parentId
+      ? allCategories.find((c) => c.id === parentId)
+      : undefined;
   const [form, setForm] = useState({
     name: category?.name ?? '',
-    isFirearm: category?.isFirearm ?? false,
-    requiresLicence: category?.requiresLicence ?? false,
+    isFirearm: category?.isFirearm ?? parentCat?.isFirearm ?? false,
+    requiresLicence:
+      category?.requiresLicence ?? parentCat?.requiresLicence ?? false,
     availableSecondhand: category?.availableSecondhand ?? true,
     availableNewStore: category?.availableNewStore ?? false,
     crossSellEligible: category?.crossSellEligible ?? true,

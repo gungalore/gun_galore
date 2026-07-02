@@ -820,6 +820,25 @@ export class AuctionsService {
     return { expired };
   }
 
+  // P0.2 review fix — Path B unpaid winner: the winner STARTED checkout
+  // (expiresAt CAS-claimed, so sweepUnpaidWins can never fire) but never
+  // paid the EFT, and the manual freeze sweep expired the listing. Give
+  // the seller the same WINNER_UNPAID story Path A already tells, instead
+  // of the sale silently evaporating. Called by the freeze sweep.
+  async notifyWinnerUnpaid(listingId: string) {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+      select: { sellerId: true, currentBid: true },
+    });
+    if (!listing) return;
+    void this.notifyAuctionEndedSeller(
+      listing.sellerId,
+      listingId,
+      'WINNER_UNPAID',
+      listing.currentBid ?? 0,
+    );
+  }
+
   // --- Notification fan-out (thin wrappers; safe to fail silently) ------
 
   private async notifyBidPlaced(sellerId: string, listingId: string, amount: number) {

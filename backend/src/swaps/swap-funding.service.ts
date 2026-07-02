@@ -19,6 +19,7 @@ import { FeeCalculator } from '../payments/fee.calculator';
 import { PAYMENT_MODE, GG_BANK_DETAILS } from '../payments/transactions.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { SwapDeliveryDto } from './dto/swap-delivery.dto';
 
 // How long both parties have to fund after setup. Two people must coordinate
@@ -56,6 +57,11 @@ export class SwapFundingService {
     private readonly fees: FeeCalculator,
     private readonly referenceNumbers: ReferenceNumberService,
     private readonly notifications: NotificationsService,
+    // ZohoModule is @Global. P0.5 review fix — the swap cash commission is
+    // retained on the settlement tx at release; without an invoice hook it
+    // would be invisible in Books (the exact leak class P0.6 closed for
+    // ordinary sales).
+    private readonly zohoBooks: ZohoBooksService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -822,7 +828,7 @@ export class SwapFundingService {
     fromStatuses: SwapStatus[],
   ): Promise<{ released: boolean; settlementTxId: string | null }> {
     const now = new Date();
-    return this.prisma.$transaction(async (txc) => {
+    const result = await this.prisma.$transaction(async (txc) => {
       const claim = await txc.swap.updateMany({
         where: {
           id: swapId,
@@ -908,6 +914,13 @@ export class SwapFundingService {
       );
       return { released: true, settlementTxId };
     });
+    // P0.5 review fix — the settlement tx carries commissionZar (the swap
+    // cash commission GG retains); invoice it into Books like every other
+    // release point. Idempotent, never throws, no-ops at commission 0.
+    if (result.settlementTxId) {
+      void this.zohoBooks.createCommissionInvoice(result.settlementTxId);
+    }
+    return result;
   }
 
   // Cron — AWAITING_VERIFICATION swaps past the window with no dispute raised

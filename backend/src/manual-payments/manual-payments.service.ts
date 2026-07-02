@@ -472,9 +472,11 @@ export class ManualPaymentsService {
         id: true,
         orderReference: true,
         sellerPayout: true,
-        // P0.3 — a partially-refunded sale that later releases must pay the
-        // seller LESS the refunded slice, or GG pays out more than it holds.
         refundedAmount: true,
+        // P0.3 review fix — the seller is docked only for refund slices the
+        // buyer is ACTUALLY being paid (i.e. minted children), never for
+        // legacy pre-deploy refundedAmount that no money ever moved for.
+        refundChildren: { select: { buyerTotal: true } },
         releasedAt: true,
         seller: {
           select: {
@@ -494,29 +496,30 @@ export class ManualPaymentsService {
     // gateway the reversal happens on the card, so paying these rows would
     // refund a SECOND time — hard-gate on manual mode.
     //
-    // P0.3 — two row shapes are due:
+    // P0.3 (redesigned after adversarial review) — two row shapes are due:
     //  (a) synthetic refund CHILDREN (refundOfId set) — one per admin
-    //      refund operation, buyerTotal = that slice. This is the only
-    //      path new refunds take.
-    //  (b) LEGACY fully-refunded parents from before the children existed
-    //      (refundOfId null AND no children) — still pay buyerTotal once.
-    // A parent WITH children never qualifies: its money moves via (a).
+    //      refund operation, buyerTotal = that slice.
+    //  (b) REFUNDED PARENTS, paid their RESIDUAL: buyerTotal − Σ(children).
+    //      This covers every path that flips a parent to REFUNDED without
+    //      minting a child (seller reject, buyer cancel, dispatch-SLA cron,
+    //      legacy pre-deploy rows): whatever the children don't carry, the
+    //      parent row does — total paid is always exactly buyerTotal.
+    //      A parent fully covered by children nets to ≤0 and is dropped in
+    //      collectDue. Exactly-once per row via payoutBatchId/paidOutAt.
     const refunds = PAYMENT_MODE !== 'manual' ? [] : await this.prisma.transaction.findMany({
       where: {
         paymentStatus: 'REFUNDED',
         buyerTotal: { gt: 0 },
         paidOutAt: null,
         payoutBatchId: null,
-        OR: [
-          { refundOfId: { not: null } },
-          { refundOfId: null, refundChildren: { none: {} } },
-        ],
       },
       orderBy: { updatedAt: 'asc' },
       select: {
         id: true,
+        refundOfId: true,
         orderReference: true,
         buyerTotal: true,
+        refundChildren: { select: { buyerTotal: true } },
         updatedAt: true,
         buyer: {
           select: {
@@ -552,6 +555,10 @@ export class ManualPaymentsService {
     const recipients: FnbRecipient[] = [];
     const payoutIds: string[] = [];
     const refundIds: string[] = [];
+    // Rows that net to R0 (fully consumed by refund slices) — they owe no
+    // EFT but MUST be settled (stamped) by the batch or they zombie in the
+    // due queue forever (adversarial-review finding).
+    const zeroNetIds: string[] = [];
     let payoutTotalCents = 0;
     let refundTotalCents = 0;
     const skippedRefs: string[] = [];
@@ -562,20 +569,29 @@ export class ManualPaymentsService {
       bankBranchCode: string | null;
     }) => !!(b.bankAccountHolder && b.bankAccountNumber && b.bankBranchCode);
 
+    const childrenSum = (c?: { buyerTotal: number }[] | null) =>
+      (c ?? []).reduce((s, x) => s + x.buyerTotal, 0);
+
     for (const p of payouts) {
-      if (!hasBank(p.seller)) {
-        skippedRefs.push(`PAYOUT ${p.orderReference ?? p.id}`);
+      // P0.3 (review fix) — dock the seller ONLY for refund slices that are
+      // actually being paid to the buyer (minted children). Legacy
+      // pre-deploy refundedAmount without children never moved money, so
+      // docking it would short the seller while the buyer still gets
+      // nothing (GG silently retaining the difference).
+      const covered = childrenSum(p.refundChildren);
+      const payoutAmount = Math.max(0, p.sellerPayout - covered);
+      if (payoutAmount <= 0) {
+        // Fully consumed by refunds — settle with zero EFT via the batch
+        // (createPayoutBatch stamps these paidOutAt) so the row leaves the
+        // due queue and its Zoho invoice can be marked paid.
+        zeroNetIds.push(p.id);
+        skippedRefs.push(
+          `PAYOUT ${p.orderReference ?? p.id} (R0 — fully consumed by ${covered}c in refunds; settled without EFT)`,
+        );
         continue;
       }
-      // P0.3 — the seller bears any partial refund the admin issued while
-      // the funds were held: payout = sellerPayout − refundedAmount. A row
-      // that nets to ≤0 is settled with no EFT (stamp via markPaid as part
-      // of the batch would be wrong — just exclude it and log).
-      const payoutAmount = Math.max(0, p.sellerPayout - (p.refundedAmount ?? 0));
-      if (payoutAmount <= 0) {
-        skippedRefs.push(
-          `PAYOUT ${p.orderReference ?? p.id} (fully consumed by ${p.refundedAmount}c refund)`,
-        );
+      if (!hasBank(p.seller)) {
+        skippedRefs.push(`PAYOUT ${p.orderReference ?? p.id}`);
         continue;
       }
       recipients.push({
@@ -594,6 +610,19 @@ export class ManualPaymentsService {
     }
 
     for (const r of refunds) {
+      // P0.3 (review fix) — children pay their own slice; a REFUNDED
+      // parent pays the RESIDUAL its children don't carry. Total across
+      // parent + children is always exactly buyerTotal, whichever path
+      // flipped the parent (admin, seller reject, buyer cancel, SLA cron,
+      // legacy rows). A parent fully covered by children owes nothing —
+      // settle it with zero EFT so it leaves the queue.
+      const amount = r.refundOfId
+        ? r.buyerTotal // child — its own slice
+        : Math.max(0, r.buyerTotal - childrenSum(r.refundChildren));
+      if (amount <= 0) {
+        zeroNetIds.push(r.id);
+        continue;
+      }
       if (!hasBank(r.buyer)) {
         skippedRefs.push(`REFUND ${r.orderReference ?? r.id}`);
         continue;
@@ -603,25 +632,26 @@ export class ManualPaymentsService {
         account: r.buyer.bankAccountNumber!,
         accountType: r.buyer.bankAccountType,
         branchCode: r.buyer.bankBranchCode!,
-        amountCents: r.buyerTotal,
+        amountCents: amount,
         ownReference: `Refund ${r.orderReference ?? r.id}`,
         recipientReference: `Gun Galore refund`,
         email: r.buyer.email,
         phone: r.buyer.phone,
       });
       refundIds.push(r.id);
-      refundTotalCents += r.buyerTotal;
+      refundTotalCents += amount;
     }
 
     if (skippedRefs.length) {
       this.logger.warn(
-        `Payout batch: ${skippedRefs.length} row(s) skipped for missing bank details — ${skippedRefs.join('; ')}`,
+        `Payout batch: ${skippedRefs.length} row(s) skipped — ${skippedRefs.join('; ')}`,
       );
     }
     return {
       recipients,
       payoutIds,
       refundIds,
+      zeroNetIds,
       payoutTotalCents,
       refundTotalCents,
       skippedRefs,
@@ -650,7 +680,38 @@ export class ManualPaymentsService {
   // pays in FNB, then marks THIS batch paid.
   async createPayoutBatch(adminClerkId: string | null) {
     const d = await this.collectDue();
+
+    // Settle zero-net rows (fully consumed by refund slices) OUTSIDE the
+    // batch: they owe no EFT, but must be stamped paidOutAt or they sit in
+    // the due queue forever. Their Zoho commission invoice (if any) is
+    // marked paid via the normal drain — the commission WAS retained.
+    if (d.zeroNetIds.length) {
+      await this.prisma.transaction.updateMany({
+        where: { id: { in: d.zeroNetIds }, payoutBatchId: null, paidOutAt: null },
+        data: { paidOutAt: new Date() },
+      });
+      this.logger.log(
+        `Settled ${d.zeroNetIds.length} zero-net row(s) without EFT: ${d.zeroNetIds.join(', ')}`,
+      );
+      for (const id of d.zeroNetIds) {
+        void this.zohoBooks.markCommissionInvoicePaid(id);
+      }
+    }
+
     if (d.recipients.length === 0) {
+      if (d.zeroNetIds.length) {
+        // Nothing to pay by EFT, but we did settle rows — report that
+        // instead of an error so the queue visibly drains.
+        return {
+          batchId: null,
+          csv: null,
+          included: 0,
+          skipped: d.skippedRefs.length,
+          skippedRefs: d.skippedRefs,
+          grandTotal: 0,
+          settledWithoutEft: d.zeroNetIds.length,
+        };
+      }
       throw new BadRequestException(
         'No payouts or refunds are due right now (or all due rows are missing bank details).',
       );
@@ -695,6 +756,7 @@ export class ManualPaymentsService {
       skipped: d.skippedRefs.length,
       skippedRefs: d.skippedRefs,
       grandTotal: batch.grandTotal,
+      settledWithoutEft: d.zeroNetIds.length,
     };
   }
 

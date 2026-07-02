@@ -11,6 +11,7 @@ import { TransactionsService } from '../payments/transactions.service';
 function makeService(over: {
   $transaction?: jest.Mock;
   orderFindUnique?: jest.Mock;
+  firearmIds?: string[];
 } = {}) {
   const txcMock = {
     order: { create: jest.fn().mockResolvedValue({ id: 'O1' }) },
@@ -20,7 +21,20 @@ function makeService(over: {
     $transaction:
       over.$transaction ??
       jest.fn(async (fn: (txc: typeof txcMock) => unknown) => fn(txcMock)),
-    listing: { update: jest.fn().mockResolvedValue({}) },
+    listing: {
+      update: jest.fn().mockResolvedValue({}),
+      // P0.2 review fix — createOrderCheckout pre-validates line TYPES
+      // before any reservation. Default: plain BUY_NOW non-firearms.
+      findMany: jest.fn().mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
+        Promise.resolve(
+          where.id.in.map((id: string) => ({
+            id,
+            listingType: 'BUY_NOW',
+            isFirearm: over.firearmIds?.includes(id) ?? false,
+          })),
+        ),
+      ),
+    },
     transaction: {
       delete: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -151,16 +165,16 @@ describe('TransactionsService.createOrderCheckout', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('rejects a firearm line and unwinds', async () => {
-    const { service, prisma } = makeService();
-    jest
-      .spyOn(service as never, 'reserveAndCreateLine')
-      .mockResolvedValueOnce(core({ n: 1, isFirearm: true }) as never);
+  it('rejects a firearm line BEFORE reserving anything (P0.2 pre-validation)', async () => {
+    const { service, prisma } = makeService({ firearmIds: ['L1'] });
+    const spy = jest.spyOn(service as never, 'reserveAndCreateLine');
     await expect(
       service.createOrderCheckout('clerk_B', { lines: [lineDto('L1')] }, 'https://x'),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.listing.update).toHaveBeenCalledTimes(1);
-    expect(prisma.transaction.delete).toHaveBeenCalledTimes(1);
+    // Pre-check fires before ANY reservation → nothing to unwind.
+    expect(spy).not.toHaveBeenCalled();
+    expect(prisma.listing.update).not.toHaveBeenCalled();
+    expect(prisma.transaction.delete).not.toHaveBeenCalled();
   });
 });
 

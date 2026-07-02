@@ -176,14 +176,19 @@ export class DispatchSlaService {
         // a tracked listing restocks the units (legacy → plain ACTIVE).
         const fresh = await this.prisma.transaction.findUnique({
           where: { id: tx.id },
-          select: { quantity: true, listing: { select: { trackInventory: true } } },
+          select: {
+            quantity: true,
+            listing: { select: { trackInventory: true, listingType: true } },
+          },
         });
         await this.prisma.$transaction([
           this.prisma.listing.update({
             where: { id: tx.listingId },
+            // Ended auctions land EXPIRED, never back to ACTIVE (zombie fix).
             data: reversalListingData(
               fresh?.listing?.trackInventory ?? false,
               fresh?.quantity ?? 1,
+              fresh?.listing?.listingType,
             ),
           }),
           this.prisma.user.update({

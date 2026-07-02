@@ -576,13 +576,37 @@ export class ZohoBooksService {
         );
       }
 
-      // P0.7 — the invoice now carries commission + the seller-absorbed
-      // processing fee as two lines; the payment must settle the SAME
-      // total or the invoice sits partially paid forever.
-      const invoiceTotalRand =
-        (tx.commissionZar +
-          (!tx.passFeeToBuyer && tx.processingFee > 0 ? tx.processingFee : 0)) /
-        100;
+      // P0.7 (review fix) — settle what the INVOICE actually says, not a
+      // recomputation from tx fields. Legacy pre-deploy invoices carry a
+      // single commission-only line; recomputing commission+fee here would
+      // over-apply, Zoho would reject the payment, and every retry would
+      // fail identically (permanent FAILED loop). Reading the live balance
+      // is correct for both cohorts and for any future line changes.
+      type GetInvoiceResp = {
+        invoice?: { balance?: number; total?: number; status?: string };
+      };
+      const inv = await this.request<GetInvoiceResp>(
+        'GET',
+        `/invoices/${tx.zohoCommissionInvoiceId}`,
+      );
+      const invoiceTotalRand = inv.invoice?.balance ?? 0;
+      if (invoiceTotalRand <= 0) {
+        // Nothing outstanding (already settled in Books, e.g. by hand).
+        // Stamp a sentinel so the idempotency guard stops re-running this.
+        await this.prisma.transaction.update({
+          where: { id: transactionId },
+          data: {
+            zohoCommissionPaymentId: 'SETTLED_EXTERNALLY',
+            zohoSyncStatus: 'OK',
+            zohoSyncError: null,
+            zohoSyncLastAttemptAt: new Date(),
+          },
+        });
+        this.logger.log(
+          `Commission invoice for tx ${transactionId} already has zero balance — stamped settled`,
+        );
+        return;
+      }
       const today = new Date().toISOString().slice(0, 10);
       const orderRef = tx.id.slice(-8).toUpperCase();
 

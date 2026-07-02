@@ -305,7 +305,9 @@ export class AdminCommandCenterService {
         },
       }),
       this.prisma.transaction.findMany({
-        where: { paymentStatus: 'REFUNDED', updatedAt: { gte: since } },
+        // refundOfId: null — synthetic refund-slice children (P0.3) would
+        // duplicate every refund in the activity feed.
+        where: { paymentStatus: 'REFUNDED', refundOfId: null, updatedAt: { gte: since } },
         orderBy: { updatedAt: 'desc' },
         take: 30,
         select: {

@@ -81,6 +81,7 @@ export class SellerToolsService {
       where: {
         sellerId,
         swapId: null, // exclude synthetic SWOP settlement/refund txs (S5)
+        refundOfId: null, // exclude synthetic refund-slice children (P0.3)
         OR: [
           { paymentStatus: 'RELEASED', releasedAt: { gte: from, lte: to } },
           { paymentStatus: 'REFUNDED', updatedAt: { gte: from, lte: to } },

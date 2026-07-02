@@ -963,8 +963,15 @@ export class AdminService {
       throw new BadRequestException('Export range is limited to 180 days');
     }
 
-    const where: { createdAt: { gte: Date; lte: Date }; paymentStatus?: never } = {
+    const where: {
+      createdAt: { gte: Date; lte: Date };
+      refundOfId: null;
+      paymentStatus?: never;
+    } = {
       createdAt: { gte: from, lte: to },
+      // Synthetic refund-slice children (P0.3) would double refund totals
+      // in the accounting export — the parent row carries refundedAmount.
+      refundOfId: null,
     };
     if (opts.status) {
       (where as { paymentStatus?: string }).paymentStatus = opts.status;
@@ -1174,8 +1181,15 @@ export class AdminService {
     // children — each slice settles exactly once through the existing
     // batch machinery. Card mode keeps the real gateway reversal instead.
     let claimCount = 0;
+    // Terminal flag used by everything AFTER the claim. On the manual rail
+    // it is recomputed from the POST-claim row inside the interactive
+    // transaction — two concurrent partials that together exhaust
+    // buyerTotal would otherwise BOTH see a stale pre-read flag and leave
+    // the parent stuck HELD at fully-refunded (review finding). The live
+    // cumulative also makes the child orderReference unique per slice.
+    let fullyRefunded = willBeFullyRefunded;
     if (PAYMENT_MODE === 'manual') {
-      claimCount = await this.prisma.$transaction(async (txc) => {
+      const res = await this.prisma.$transaction(async (txc) => {
         const claim = await txc.transaction.updateMany({
           where: {
             id: txId,
@@ -1188,10 +1202,23 @@ export class AdminService {
             adminNote: note ?? null,
             adminReviewedById: adminId,
             adminReviewedAt: new Date(),
-            ...(willBeFullyRefunded ? { paymentStatus: 'REFUNDED' as const } : {}),
           },
         });
-        if (claim.count === 0) return 0;
+        if (claim.count === 0) return { count: 0, full: false };
+        // Row lock from the claim serialises concurrent refunds; this read
+        // sees THIS operation's cumulative total.
+        const live = await txc.transaction.findUnique({
+          where: { id: txId },
+          select: { refundedAmount: true },
+        });
+        const cumulative = live?.refundedAmount ?? tx.refundedAmount + amount;
+        const full = cumulative >= tx.buyerTotal;
+        if (full) {
+          await txc.transaction.updateMany({
+            where: { id: txId, paymentStatus: { in: ['HELD', 'DISPUTED'] } },
+            data: { paymentStatus: 'REFUNDED' },
+          });
+        }
         await txc.transaction.create({
           data: {
             refundOfId: txId,
@@ -1208,11 +1235,13 @@ export class AdminService {
             sellerPayout: 0,
             refundedAmount: amount,
             paymentStatus: 'REFUNDED',
-            orderReference: `${tx.orderReference ?? tx.id}-R${tx.refundedAmount + amount}`,
+            orderReference: `${tx.orderReference ?? tx.id}-R${cumulative}`,
           },
         });
-        return claim.count;
+        return { count: claim.count, full };
       });
+      claimCount = res.count;
+      fullyRefunded = res.full;
     } else {
       const claim = await this.prisma.transaction.updateMany({
         where: {
@@ -1282,7 +1311,7 @@ export class AdminService {
 
     // Only a FULL/final refund clears the dispute alert + inbox, since a
     // partial leaves the order live.
-    if (willBeFullyRefunded) {
+    if (fullyRefunded) {
       void this.prisma.adminAlert.updateMany({
         where: {
           type: 'BUYER_DISPUTE_RAISED',
@@ -1303,11 +1332,11 @@ export class AdminService {
     if (note && note.trim()) {
       await this.audit.record({
         adminUserId: adminId,
-        action: willBeFullyRefunded ? 'TRANSACTION_REFUND' : 'TRANSACTION_REFUND_PARTIAL',
+        action: fullyRefunded ? 'TRANSACTION_REFUND' : 'TRANSACTION_REFUND_PARTIAL',
         resourceType: 'Transaction',
         resourceId: txId,
         oldValue: `${tx.paymentStatus} (refunded ${tx.refundedAmount}c)`,
-        newValue: `${willBeFullyRefunded ? 'REFUNDED' : tx.paymentStatus} (refunded ${tx.refundedAmount + amount}c of ${tx.buyerTotal}c)`,
+        newValue: `${fullyRefunded ? 'REFUNDED' : tx.paymentStatus} (refunded ${tx.refundedAmount + amount}c of ${tx.buyerTotal}c)`,
         reason: note.trim(),
       });
     }
@@ -1332,7 +1361,7 @@ export class AdminService {
           tx.buyer.bankBranchCode
         ),
     });
-    if (willBeFullyRefunded) {
+    if (fullyRefunded) {
       // Inbox: a fully-refunded order is terminal — clear unresolved
       // notifications tied to it (auction_won, offer_accepted, new_sale,
       // order_dispatched all become moot).

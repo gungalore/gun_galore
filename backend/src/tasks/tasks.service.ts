@@ -255,6 +255,12 @@ export class TasksService {
           this.logger.log(
             `Manual EFT freeze expired for order ${tx.orderReference ?? tx.id} — listing ${tx.listingId} released, order soft-cancelled`,
           );
+          // P0.2 review fix — an expired AUCTION win here means the winner
+          // STARTED checkout but never paid; tell the seller (the other
+          // unpaid-winner path notifies via sweepUnpaidWins).
+          if (tx.listing?.listingType === 'AUCTION') {
+            void this.auctionsService.notifyWinnerUnpaid(tx.listingId);
+          }
         } catch (err) {
           this.logger.warn(
             `freeze-expire failed for ${tx.id}: ${(err as Error).message}`,
@@ -377,7 +383,7 @@ export class TasksService {
           id: true,
           listingId: true,
           quantity: true,
-          listing: { select: { trackInventory: true } },
+          listing: { select: { trackInventory: true, listingType: true } },
         },
         take: 50,
       });
@@ -395,7 +401,12 @@ export class TasksService {
                 })
               : this.prisma.listing.updateMany({
                   where: { id: o.listingId, status: 'PAYMENT_PENDING' },
-                  data: { status: 'ACTIVE' },
+                  // P0.2 — an orphaned ENDED-auction reserve releases to
+                  // EXPIRED, never back to ACTIVE (unbuyable-zombie fix).
+                  data: {
+                    status:
+                      o.listing.listingType === 'AUCTION' ? 'EXPIRED' : 'ACTIVE',
+                  },
                 }),
             this.prisma.transaction.delete({ where: { id: o.id } }),
           ]);

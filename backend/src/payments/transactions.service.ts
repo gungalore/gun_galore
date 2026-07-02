@@ -618,6 +618,24 @@ export class TransactionsService {
     if (lines.length === 0) throw new BadRequestException('Your cart is empty');
     assertNoDuplicateListings(lines.map((l) => l.listingId));
 
+    // P0.2 (review fix) — pre-validate line TYPES before ANY reservation.
+    // The shared core no longer rejects all non-BUY_NOW (it gained the
+    // auction-winner branch), and the in-loop belt-and-braces fires only
+    // AFTER a line has reserved — for a won auction that reservation is the
+    // expiresAt CAS claim, and unwinding it strands the auction. Cheap
+    // read-only check up front keeps auctions out of carts entirely.
+    const lineListings = await this.prisma.listing.findMany({
+      where: { id: { in: lines.map((l) => l.listingId) } },
+      select: { id: true, listingType: true, isFirearm: true },
+    });
+    if (
+      lineListings.some((l) => l.listingType !== 'BUY_NOW' || l.isFirearm)
+    ) {
+      throw new BadRequestException(
+        'Firearms, auctions, swaps and offer items must be bought individually, not in a cart.',
+      );
+    }
+
     const created: Array<{
       tx: { id: string; buyerId: string };
       listing: { id: string; sellerId: string; trackInventory: boolean; price: number | null };
@@ -660,12 +678,15 @@ export class TransactionsService {
           },
         });
 
-        // Belt-and-braces (the core already rejects non-BUY_NOW and, via the
-        // missing firearm attestation, firearms — so this is defence in depth
-        // with a clearer message).
-        if (core.listing.isFirearm || core.offerRecord) {
+        // Belt-and-braces. NOTE: since P0.2 the core no longer rejects ALL
+        // non-BUY_NOW — it added an AUCTION-winner branch — so the cart must
+        // exclude auctions EXPLICITLY: a won auction consumed as a cart line
+        // would CAS its pay-window claim, and any later line failing would
+        // unwind it into the un-transactable ended-ACTIVE zombie state
+        // (adversarial-review finding). Auctions pay via single checkout only.
+        if (core.listing.listingType !== 'BUY_NOW' || core.listing.isFirearm || core.offerRecord) {
           throw new BadRequestException(
-            'Firearms and offer items must be bought individually, not in a cart.',
+            'Firearms, auctions and offer items must be bought individually, not in a cart.',
           );
         }
       }
@@ -1404,7 +1425,7 @@ export class TransactionsService {
     // restock a tracked listing (legacy → plain ACTIVE reactivation).
     const rejLi = await this.prisma.listing.findUnique({
       where: { id: tx.listingId },
-      select: { trackInventory: true },
+      select: { trackInventory: true, listingType: true },
     });
     await this.prisma.$transaction([
       this.prisma.transaction.update({
@@ -1418,7 +1439,12 @@ export class TransactionsService {
       }),
       this.prisma.listing.update({
         where: { id: tx.listingId },
-        data: reversalListingData(rejLi?.trackInventory ?? false, tx.quantity ?? 1),
+        // Ended auctions land EXPIRED, never back to ACTIVE (zombie fix).
+        data: reversalListingData(
+          rejLi?.trackInventory ?? false,
+          tx.quantity ?? 1,
+          rejLi?.listingType,
+        ),
       }),
     ]);
 
@@ -1593,12 +1619,17 @@ export class TransactionsService {
     // Phase 8a: restock a tracked listing (legacy → plain reactivation).
     const canLi = await this.prisma.listing.findUnique({
       where: { id: tx.listingId },
-      select: { trackInventory: true },
+      select: { trackInventory: true, listingType: true },
     });
     await this.prisma.listing
       .update({
         where: { id: tx.listingId },
-        data: reversalListingData(canLi?.trackInventory ?? false, tx.quantity ?? 1),
+        // Ended auctions land EXPIRED, never back to ACTIVE (zombie fix).
+        data: reversalListingData(
+          canLi?.trackInventory ?? false,
+          tx.quantity ?? 1,
+          canLi?.listingType,
+        ),
       })
       .catch(() => undefined);
 
@@ -1861,7 +1892,13 @@ export class TransactionsService {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const where = role === 'buyer' ? { buyerId: user.id } : { sellerId: user.id };
+    // refundOfId: null — synthetic refund-slice children are settlement
+    // plumbing (FNB batch rows), not orders; showing them would add a
+    // phantom "purchase"/"sale" per refund slice (review finding).
+    const where =
+      role === 'buyer'
+        ? { buyerId: user.id, refundOfId: null }
+        : { sellerId: user.id, refundOfId: null };
 
     const rows = await this.prisma.transaction.findMany({
       where,

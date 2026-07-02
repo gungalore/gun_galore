@@ -58,10 +58,20 @@ export function resolvePurchaseQuantity(opts: {
 // (paid) sale is reversed — admin refund, buyer cancel, seller reject,
 // auto-refund. Legacy listings pass through the plain reactivation the
 // callers already do (this returns just status/soldAt for them).
+//
+// P0.2 (review fix) — an ENDED AUCTION must never be resurrected to
+// ACTIVE: finalizeAuction has already run (endedAt set) so it can never
+// re-finalize, bidding is closed (endTime past), and the winner-checkout
+// branch requires PAYMENT_PENDING — an ACTIVE ended auction is a
+// permanently unbuyable zombie on browse. Reversals of a paid auction
+// sale land the listing in EXPIRED instead (terminal; seller relists).
+// Callers pass the listing's type so this stays the single chokepoint.
 export function reversalListingData(
   trackInventory: boolean,
   quantity: number,
-): { status: 'ACTIVE'; soldAt: null; quantityAvailable?: { increment: number } } {
+  listingType?: ListingTypeLike | string | null,
+): { status: 'ACTIVE' | 'EXPIRED'; soldAt: null; quantityAvailable?: { increment: number } } {
+  if (listingType === 'AUCTION') return { status: 'EXPIRED', soldAt: null };
   if (!trackInventory) return { status: 'ACTIVE', soldAt: null };
   return {
     status: 'ACTIVE',
