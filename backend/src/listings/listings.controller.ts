@@ -15,6 +15,7 @@ import {
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
+  NotFoundException,
 } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
@@ -87,6 +88,35 @@ export class ListingsController {
   @SkipThrottle()
   facets(@Query() dto: BrowseListingsDto) {
     return this.listingsService.facets(dto);
+  }
+
+  // P5.6 — sold-price comps for a category ("similar items recently sold for
+  // R900–R1,400"). POPIA-safe aggregate (price + coarse month only), gated to
+  // a minimum sale count. MUST stay above @Get(':id'). Public read → SkipThrottle.
+  @Get('sold-comps')
+  @SkipThrottle()
+  soldComps(@Query() dto: { categorySlug?: string; categoryId?: string }) {
+    return this.listingsService.soldComps(dto);
+  }
+
+  // P5.7 — folded, gated brand list for the /brands index + XML sitemap.
+  // MUST stay above @Get(':id'). Public read → SkipThrottle.
+  @Get('brand-index')
+  @SkipThrottle()
+  brandIndex() {
+    return this.listingsService.listBrandsWithCounts();
+  }
+
+  // P5.7 — resolve a brand slug to its display label + count (or 404 when the
+  // brand is too thin to have a page). The /brand/[slug] page uses this for the
+  // header + 404 decision, then browses with ?brandSlug for the grid. Two path
+  // segments so it can't shadow @Get(':id'), but kept here for clarity.
+  @Get('brand/:slug')
+  @SkipThrottle()
+  async brandBySlug(@Param('slug') slug: string) {
+    const b = await this.listingsService.resolveBrandSlug(slug);
+    if (!b) throw new NotFoundException('Brand not found');
+    return { slug: b.slug, label: b.label, count: b.count };
   }
 
   // --- Protected ---

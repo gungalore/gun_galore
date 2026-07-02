@@ -132,6 +132,15 @@ export class CreateListingDto {
   @IsBoolean()
   collectionPapersAttested?: boolean;
 
+  // P5.4 — seller's OPTIONAL "tested & working" claim for electronics/appliance
+  // categories (Category.showTestedWorkingAttestation). The seller's own
+  // statement, never a GG certification (CPA s41). ListingsService.create
+  // re-checks the category flag + stamps testedWorkingAttestedAt. Boolean only.
+  // NOT a Listing column — update() strips it.
+  @IsOptional()
+  @IsBoolean()
+  testedWorkingAttested?: boolean;
+
   @IsOptional() @IsString() @MaxLength(120) pickupBuilding?: string;
   @IsOptional() @IsString() @MaxLength(200) pickupStreet?: string;
   @IsOptional() @IsString() @MaxLength(200) pickupAddress2?: string;

@@ -560,6 +560,12 @@ model Category {
   // papers and will hand them over at collection. POPIA note: we NEVER
   // collect or display the actual documents — only a boolean attestation.
   requiresPapers      Boolean    @default(false)
+  // P5.4 — electronics/appliance categories (camp fridges, GPS, trail cams,
+  // fish finders, e-bikes, drones) that show the OPTIONAL "tested & working"
+  // seller-attestation checkbox on the sell form. Data-driven so the operator
+  // can toggle categories without a code change. Mirrors collectionOnly /
+  // requiresPapers gating.
+  showTestedWorkingAttestation Boolean @default(false)
   isActive            Boolean    @default(true)
   sortOrder           Int        @default(0)
   createdAt           DateTime   @default(now())
@@ -688,6 +694,12 @@ model Listing {
   // Set when a requiresPapers seller ticks the papers attestation at
   // listing creation. Durable evidence they affirmed holding the papers.
   papersAttestedAt DateTime?
+  // P5.4 — set when the seller ticks the OPTIONAL "tested & working" claim
+  // (categories flagged Category.showTestedWorkingAttestation, e.g. camp
+  // fridges / GPS / trail cams). The SELLER'S own attestation, never a GG
+  // certification (CPA s41). Snapshotted into the dispute record if the buyer
+  // later disputes.
+  testedWorkingAttestedAt DateTime?
   make      String?
   model     String?
   calibre   String?
@@ -1078,6 +1090,14 @@ model Transaction {
   // guard so the cron doesn't spam them every 10 min after the
   // window passes.
   dispatchNudgedAt DateTime?
+
+  // P5.3 — set once when the stuck-funds cron alerts the admin that this
+  // courier order was delivered (carrier DELIVERED) but the buyer never
+  // confirmed receipt and funds are still HELD. IS NULL filter in the cron
+  // makes the admin alert fire exactly once per stuck tx. Operator decision:
+  // NO auto-release — the admin reviews + manually releases via the dossier.
+  // Mirrors licenceExpiryWarnedAt / dispatchNudgedAt.
+  adminAlertedForStuckFundsAt DateTime?
 
   // ── Seller accept flow (TOK-7) ───────────────────────────────────
   // Two-step seller workflow: after the buyer pays, the seller has 48h

@@ -1005,6 +1005,29 @@ export class TasksService {
     await this.recordCronRun('dispatch-sla');
   }
 
+  // P5.3 — stuck HELD funds: courier orders delivered >72h ago that the buyer
+  // never confirmed. Raises a one-shot admin alert (NO auto-release — operator
+  // decision); the admin reviews + manually releases from the dossier. Hourly,
+  // heartbeat in finally.
+  @Cron(CronExpression.EVERY_HOUR)
+  async stuckHeldFundsSweep() {
+    try {
+      const res = await this.dispatchSla.alertStuckHeldFunds();
+      if (res.alerted > 0) {
+        this.logger.log(
+          `Stuck-held-funds: alerted admin on ${res.alerted} of ${res.scanned} order(s)`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `stuckHeldFundsSweep failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('stuck-held-funds');
+    }
+  }
+
   // ─── Accept-deadline escalation (TOK-7 Phase 2) ─────────────────
   // Every 10 minutes find transactions where the 48h accept window has
   // expired and the seller hasn't accepted or rejected. Flips

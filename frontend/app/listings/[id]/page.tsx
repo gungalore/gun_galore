@@ -261,6 +261,22 @@ export default async function ListingDetailPage({
                 Collection only
               </span>
             )}
+            {/* P5.4 — the SELLER'S own "tested & working" claim, never a Gun
+                Galore certification (CPA s41). Wording leads with "Seller
+                attests:" and the tooltip makes the source explicit. */}
+            {listing.testedWorkingAttestedAt && (
+              <span
+                title="This is the seller's own statement, not a Gun Galore test or guarantee."
+                className="text-xs px-2 py-0.5 rounded-[3px]"
+                style={{
+                  background: 'rgba(0,160,60,0.10)',
+                  color: '#00a03c',
+                  border: '0.5px solid rgba(0,160,60,0.45)',
+                }}
+              >
+                Seller attests: tested &amp; working
+              </span>
+            )}
             <span style={{ display: 'inline-flex', alignItems: 'center' }}>
               <span
                 className="text-xs px-2 py-0.5 rounded-[3px]"

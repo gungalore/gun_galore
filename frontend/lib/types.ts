@@ -58,6 +58,9 @@ export interface Category {
   // caravans need NaTIS registration + roadworthy handed over at
   // collection). Checkbox-only — no documents are collected.
   requiresPapers?: boolean;
+  // P5.4 — electronics/appliance categories that show the optional
+  // "tested & working" seller-attestation checkbox on the sell form.
+  showTestedWorkingAttestation?: boolean;
   // Subset of isFirearm — categories that MUST ship via licensed-dealer
   // transfer (Firearms + Barrels under Gun Smithing).
   requiresLicence: boolean;
@@ -245,6 +248,10 @@ export interface Listing {
   // they hold valid registration + roadworthy at listing time; the buyer
   // acknowledges at checkout. Checkbox-only — no documents are collected.
   requiresPapers?: boolean;
+  // P5.4 — set (ISO string) when the seller made the optional "tested &
+  // working" claim at listing. The SELLER'S own statement (CPA s41), shown as
+  // a "Seller attests: tested & working" badge on the detail page.
+  testedWorkingAttestedAt?: string | null;
   // Inventory / quantity (Phase 8a). trackInventory=false for single items.
   trackInventory?: boolean;
   quantityAvailable?: number;
@@ -302,6 +309,26 @@ export interface BrowseResponse {
   total: number;
   page: number;
   limit: number;
+}
+
+// P5.6 — sold-price comps for a category. Only `count` is guaranteed; the
+// price fields are present only when count >= the server's min-comps gate
+// (below that the range is withheld for POPIA + statistical honesty). All
+// amounts are ZAR cents, per-unit. Aggregates only — the API never returns
+// individual sale rows (that would enable competitor re-identification).
+export interface SoldComps {
+  count: number;
+  low?: number;
+  high?: number;
+  median?: number;
+}
+
+// P5.7 — a brand that clears the min-listings gate and gets its own landing
+// page. `slug` powers /brand/[slug]; `label` is the display casing.
+export interface BrandSummary {
+  slug: string;
+  label: string;
+  count: number;
 }
 
 export type PaymentStatus = 'HELD' | 'PENDING_ADMIN_VERIFICATION' | 'RELEASED' | 'DISPUTED' | 'REFUNDED';

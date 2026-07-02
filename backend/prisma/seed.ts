@@ -39,6 +39,7 @@ interface ParentCat {
   // NaTIS registration / roadworthy attestation (boolean only, no docs).
   collectionOnly?: boolean;
   requiresPapers?: boolean;
+  showTestedWorkingAttestation?: boolean; // P5.4 (parents rarely set it)
   isActive?: boolean;
   sortOrder: number;
 }
@@ -79,6 +80,7 @@ interface SubCat {
   licenced?: boolean; // Override — flips both isFirearm + requiresLicence to true
   collectionOnly?: boolean; // Override — in-person collection only (no courier)
   requiresPapers?: boolean; // Override — NaTIS registration / roadworthy attestation
+  showTestedWorkingAttestation?: boolean; // P5.4 — offer the "tested & working" seller claim
 }
 
 const subCategories: Record<string, SubCat[]> = {
@@ -470,6 +472,7 @@ async function main() {
       availableNewStore: cat.availableNewStore ?? false,
       collectionOnly: cat.collectionOnly ?? false,
       requiresPapers: cat.requiresPapers ?? false,
+      showTestedWorkingAttestation: cat.showTestedWorkingAttestation ?? false,
       sortOrder: cat.sortOrder,
       isActive: cat.isActive ?? true,
       parentId: null,
@@ -507,6 +510,8 @@ async function main() {
         availableNewStore: parent.availableNewStore,
         collectionOnly: child.collectionOnly ?? false,
         requiresPapers: child.requiresPapers ?? false,
+        showTestedWorkingAttestation:
+          child.showTestedWorkingAttestation ?? false,
         sortOrder: i + 1,
         isActive: true,
       };
@@ -518,6 +523,32 @@ async function main() {
     }
     console.log(`  ✓ ${parent.name}: ${children.length} sub-categories`);
   }
+
+  // P5.4 — flag powered-electronics / appliance leaves so the sell form offers
+  // the optional "tested & working" seller-attestation checkbox. Kept in EXACT
+  // lockstep with migration 20260702220000_p5_3_p5_4 (same slug list). Runs
+  // AFTER the sub-category loop (which defaults the flag to false).
+  console.log('Flagging tested-&-working categories…');
+  await prisma.category.updateMany({
+    where: {
+      slug: {
+        in: [
+          'overlanding--fridges-and-freezers',
+          'overlanding--dual-battery-and-solar',
+          'overlanding--vehicle-lighting',
+          'camping-outdoor--lights',
+          'camping-outdoor--navigation-and-gps',
+          'fishing--fish-finders-and-electronics',
+          'optics--drones',
+          'optics--gps-and-comms',
+          'optics--thermal-imaging',
+          'optics--trail-cameras',
+          'shooting-accessories--weapons-mounted-lights',
+        ],
+      },
+    },
+    data: { showTestedWorkingAttestation: true },
+  });
 
   // ─── P4 — per-category attribute definitions ───────────────────────────
   // Upsert each flagship attribute on its category by the (categoryId, key)

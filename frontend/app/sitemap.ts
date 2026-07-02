@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { apiFetch } from '@/lib/api';
-import type { Category } from '@/lib/types';
+import type { Category, BrandSummary } from '@/lib/types';
 
 // Emits a real sitemap: the static top-of-funnel + legal routes PLUS every
 // ACTIVE listing and every category landing page, so Google can crawl the
@@ -22,6 +22,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: '/competitions', priority: 0.8, changeFrequency: 'weekly' },
     { url: '/faq', priority: 0.5, changeFrequency: 'monthly' },
     { url: '/wishlist', priority: 0.4, changeFrequency: 'weekly' },
+    { url: '/brands', priority: 0.5, changeFrequency: 'weekly' },
   ];
 
   const legal = [
@@ -37,13 +38,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Dynamic entries — fetched from the API; fall back to the static set if
   // the backend is unreachable at build/revalidate time.
-  const [listings, categories] = await Promise.all([
+  const [listings, categories, brands] = await Promise.all([
     apiFetch<{ id: string; updatedAt: string }[]>('/listings/sitemap', {
       next: { revalidate: 3600 },
     } as RequestInit).catch(() => [] as { id: string; updatedAt: string }[]),
     apiFetch<Category[]>('/categories', {
       next: { revalidate: 3600 },
     } as RequestInit).catch(() => [] as Category[]),
+    // P5.7 — only brands that clear the min-listings gate get a page + entry.
+    apiFetch<BrandSummary[]>('/listings/brand-index', {
+      next: { revalidate: 3600 },
+    } as RequestInit).catch(() => [] as BrandSummary[]),
   ]);
 
   const staticEntries: MetadataRoute.Sitemap = [...top, ...legal].map(
@@ -69,5 +74,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  return [...staticEntries, ...categoryEntries, ...listingEntries];
+  const brandEntries: MetadataRoute.Sitemap = brands.map((b) => ({
+    url: `${SITE_URL}/brand/${b.slug}`,
+    lastModified: now,
+    changeFrequency: 'daily' as const,
+    priority: 0.6,
+  }));
+
+  return [
+    ...staticEntries,
+    ...categoryEntries,
+    ...listingEntries,
+    ...brandEntries,
+  ];
 }

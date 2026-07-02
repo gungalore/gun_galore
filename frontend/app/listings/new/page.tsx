@@ -382,6 +382,8 @@ export default function NewListingPage() {
   // collection. Checkbox-only (POPIA — no documents collected); sent as
   // collectionPapersAttested and gated into the publish flow below.
   const [papersAttested, setPapersAttested] = useState(false);
+  // P5.4 — optional "tested & working" seller claim (electronics/appliances).
+  const [testedWorkingAttested, setTestedWorkingAttested] = useState(false);
   // Firearm compliance capture — serial number + two photos (the serial
   // stamping and the seller's licence). Only collected + sent when
   // isFirearm. The backend runs Claude vision on these and BLOCKs the
@@ -666,6 +668,8 @@ export default function NewListingPage() {
   // Requires a papers attestation before publish (NaTIS registration +
   // roadworthy). Drives the required checkbox in the Delivery step.
   const requiresPapers = selectedCategory?.requiresPapers ?? false;
+  const showTestedWorking =
+    selectedCategory?.showTestedWorkingAttestation ?? false;
 
   // P4.3b — dangerous-goods gate (transparency mirror). A LOOSE lithium
   // battery rated above the courier limit (UN3480) can't be couriered, so the
@@ -1177,6 +1181,8 @@ export default function NewListingPage() {
       ...(requiresPapers
         ? { collectionPapersAttested: papersAttested }
         : {}),
+      // P5.4 — optional "tested & working" claim, only for flagged categories.
+      ...(showTestedWorking ? { testedWorkingAttested } : {}),
       pickupBuilding: pickupAddress.building.trim() || undefined,
       pickupStreet: pickupAddress.street.trim() || undefined,
       pickupAddress2: pickupAddress.address2.trim() || undefined,
@@ -2632,6 +2638,47 @@ export default function NewListingPage() {
                     ? '✓ Confirmed. You can publish once the rest of this step is complete.'
                     : 'Tick the box to publish this listing.'}
                 </p>
+              </div>
+            )}
+
+            {/* P5.4 — OPTIONAL "tested & working" seller attestation for
+                electronics/appliances. Never gates publish. Worded as the
+                SELLER'S own claim, explicitly NOT a Gun Galore test (CPA s41). */}
+            {showTestedWorking && (
+              <div
+                className="rounded-[6px] p-4 text-sm space-y-2 mb-4"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '0.5px solid var(--border)',
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.55,
+                }}
+              >
+                <p
+                  className="text-xs uppercase"
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    letterSpacing: '0.05em',
+                    fontWeight: 600,
+                  }}
+                >
+                  Tested &amp; working (optional)
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={testedWorkingAttested}
+                    onChange={(e) => setTestedWorkingAttested(e.target.checked)}
+                    style={{ marginTop: 3, accentColor: 'var(--red)' }}
+                  />
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    I powered this item on and it was working when I tested it
+                    within the last 7 days. This is my own statement — not a Gun
+                    Galore test or guarantee. It shows as a &ldquo;Seller
+                    attests: tested &amp; working&rdquo; badge and is recorded if
+                    a dispute is later raised.
+                  </span>
+                </label>
               </div>
             )}
 

@@ -33,6 +33,14 @@ export class BrowseListingsDto {
   @IsString()
   make?: string;
 
+  // P5.7 — brand-landing-page filter. A slugified make ("front-runner"). The
+  // service folds every casing variant that slugifies to this value into one
+  // `make IN (...)` filter, so the brand page and its sitemap/gate all agree
+  // on the same listing set. Prisma path only (brand pages never combine q).
+  @IsOptional()
+  @IsString()
+  brandSlug?: string;
+
   // Filter to a single seller's listings (public — used by the
   // seller-profile page to show "this seller's active listings").
   // We accept Clerk's ID here because that's what the public URLs

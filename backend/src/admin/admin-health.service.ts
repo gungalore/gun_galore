@@ -273,6 +273,7 @@ export class AdminHealthService {
       { key: 'pending-tickets-sweep', label: 'Pending raffle tickets sweep', schedule: 'every 5 min', expectedIntervalSec: 300 },
       { key: 'push-prune', label: 'Push subscription cleanup', schedule: 'every 1 week', expectedIntervalSec: 604800 },
       { key: 'saved-search-match', label: 'Saved-search alert matcher', schedule: 'every 10 min', expectedIntervalSec: 600 },
+      { key: 'stuck-held-funds', label: 'Stuck-held-funds admin alert', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
     ];
 
     const rows = await this.prisma.setting.findMany({

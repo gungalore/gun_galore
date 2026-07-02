@@ -1068,8 +1068,35 @@ export class AdminService {
       },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
-    if (tx.paymentStatus !== 'PENDING_ADMIN_VERIFICATION')
-      throw new BadRequestException('Transaction is not pending admin verification');
+    // Releasable states: PENDING_ADMIN_VERIFICATION (the manual-EFT review gate)
+    // OR plain HELD (P5.3 — the admin manually releasing a delivered order the
+    // buyer never confirmed). A DISPUTED/REFUNDED/RELEASED tx is not releasable
+    // here. The atomic CAS below is the real guard against a race with the
+    // buyer's own confirmDelivery on a HELD tx.
+    if (
+      tx.paymentStatus !== 'PENDING_ADMIN_VERIFICATION' &&
+      tx.paymentStatus !== 'HELD'
+    )
+      throw new BadRequestException(
+        `Transaction is not releasable (current: ${tx.paymentStatus}).`,
+      );
+
+    // CRITICAL money gate — HELD is the DEFAULT status at creation
+    // (schema: paymentStatus @default(HELD), paidAt null), so a courier order
+    // sits HELD-with-paidAt-null for the whole 24h EFT window BEFORE any money
+    // arrives. Releasing such a row would queue a real seller payout in the
+    // next FNB batch for funds Gun Galore never received. paidAt is the single
+    // proof-of-payment marker on BOTH rails (markPaid sets it for the card
+    // gateway; confirmManualPayment→markPaid sets it on the manual EFT rail),
+    // so refuse to release anything the buyer hasn't actually funded. Mirrors
+    // the identical `if (!tx.paidAt) throw` guard on raiseDispute/confirmDelivery.
+    if (!tx.paidAt) {
+      throw new BadRequestException(
+        'Cannot release payout — this order has not been paid yet ' +
+          '(no funds received). Releasing it would pay the seller for money ' +
+          'the buyer never sent. Wait for payment to be confirmed first.',
+      );
+    }
 
     // Hard gate — we will not move money to a seller who hasn't
     // (a) completed their profile (banking + ID on file), or
@@ -1105,26 +1132,44 @@ export class AdminService {
       );
     }
 
-    const result = await this.prisma.$transaction([
-      this.prisma.transaction.update({
-        where: { id: txId },
+    // Atomic CAS release: only flip if the row is STILL in a releasable state.
+    // Closes the race where the admin releases a HELD tx at the same moment the
+    // buyer taps confirm-receipt (which also flips HELD→RELEASED) — without
+    // this, both would increment totalSales + fire a commission invoice.
+    const released = await this.prisma.$transaction(async (txc) => {
+      const claim = await txc.transaction.updateMany({
+        where: {
+          id: txId,
+          paymentStatus: { in: ['PENDING_ADMIN_VERIFICATION', 'HELD'] },
+          // Belt-and-braces: keep the paid-only guard inside the atomic CAS so
+          // an unpaid HELD row can never be flipped to RELEASED even if the
+          // pre-check above is ever bypassed.
+          paidAt: { not: null },
+        },
         data: {
           paymentStatus: 'RELEASED',
           releasedAt: new Date(),
           adminReviewedById: adminId,
           adminReviewedAt: new Date(),
         },
-      }),
-      this.prisma.user.update({
+      });
+      if (claim.count === 0) return false; // already released / state changed
+      await txc.user.update({
         where: { id: tx.sellerId },
         data: { totalSales: { increment: 1 } },
-      }),
-    ]);
+      });
+      return true;
+    });
+    if (!released) {
+      throw new BadRequestException(
+        'Transaction is no longer releasable — it was released or its state changed.',
+      );
+    }
     // P0.6 — commission invoicing was only ever hooked to the FIREARM
     // dealer-verification path, so ordinary sales never reached Books.
     // Idempotent + never throws; fire-and-forget at every release point.
     void this.zohoBooks.createCommissionInvoice(txId);
-    return result;
+    return { id: txId, paymentStatus: 'RELEASED' };
   }
 
   // Refund a buyer. `amountZarCents` issues a PARTIAL refund of that many

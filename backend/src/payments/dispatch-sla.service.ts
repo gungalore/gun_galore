@@ -247,4 +247,86 @@ export class DispatchSlaService {
     }
     return { scanned: stale.length, refunded };
   }
+
+  // ------------------------------------------------------------------
+  // P5.3 — stuck HELD funds alert (operator decision: NO auto-release).
+  // A courier order the carrier marked DELIVERED > STUCK_AFTER_HOURS ago,
+  // but the buyer never tapped "confirm receipt", so funds sit HELD. Raise
+  // a one-shot AdminAlert (deep-linked to the transaction dossier) so the
+  // admin can review + MANUALLY release. Idempotent via
+  // adminAlertedForStuckFundsAt. Excludes swap legs + firearm dealer-transfer
+  // that isn't APPROVED (unreleaseable anyway). Money never moves here.
+  // ------------------------------------------------------------------
+  async alertStuckHeldFunds(): Promise<{ scanned: number; alerted: number }> {
+    const STUCK_AFTER_HOURS = 72;
+    const cutoff = new Date(Date.now() - STUCK_AFTER_HOURS * 60 * 60 * 1000);
+
+    const stuck = await this.prisma.transaction.findMany({
+      where: {
+        paymentStatus: 'HELD',
+        paidAt: { not: null },
+        confirmedDeliveryAt: null,
+        deliveredAt: { not: null, lte: cutoff },
+        adminAlertedForStuckFundsAt: null,
+        swapId: null,
+        shippingMethod: { in: ['PUDO', 'TCG'] },
+      },
+      select: {
+        id: true,
+        orderReference: true,
+        buyerTotal: true,
+        sellerPayout: true,
+        deliveredAt: true,
+        listing: { select: { title: true } },
+        buyer: { select: { username: true } },
+        seller: { select: { username: true } },
+      },
+      take: 200,
+    });
+
+    let alerted = 0;
+    for (const tx of stuck) {
+      try {
+        const hrs = tx.deliveredAt
+          ? Math.floor((Date.now() - tx.deliveredAt.getTime()) / 3_600_000)
+          : STUCK_AFTER_HOURS;
+        const rand = (c: number) => 'R' + (c / 100).toFixed(2);
+        // Create the alert AND stamp the idempotency guard in ONE atomic
+        // transaction: both commit or neither. Stamping first (separately)
+        // risked a lost alert forever — if adminAlert.create then failed, the
+        // guard was already written so the next hourly run would skip this row
+        // and the only proactive stuck-funds signal would be gone. Doing both
+        // together means a create failure rolls back the stamp → the next run
+        // simply retries, with no duplicate alert on success.
+        await this.prisma.$transaction([
+          this.prisma.adminAlert.create({
+            data: {
+              type: 'STUCK_HELD_FUNDS_BUYER_UNCONFIRMED',
+              referenceId: tx.id,
+              urgent: false,
+              context:
+                `Order ${tx.orderReference ?? tx.id} (${tx.listing?.title ?? 'listing'}) ` +
+                `was delivered ${hrs}h ago but buyer @${tx.buyer?.username ?? '—'} never ` +
+                `confirmed receipt. ${rand(tx.buyerTotal)} still HELD; seller ` +
+                `@${tx.seller?.username ?? '—'} owed ${rand(tx.sellerPayout)}. ` +
+                `Review + release manually from the transaction dossier.`,
+            },
+          }),
+          this.prisma.transaction.update({
+            where: { id: tx.id },
+            data: { adminAlertedForStuckFundsAt: new Date() },
+          }),
+        ]);
+        alerted++;
+      } catch (err) {
+        this.logger.warn(
+          `stuck-funds alert failed for ${tx.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (alerted > 0) {
+      this.logger.log(`Stuck-held-funds: alerted admin on ${alerted} order(s)`);
+    }
+    return { scanned: stuck.length, alerted };
+  }
 }

@@ -43,6 +43,27 @@ const PRICELESS_LISTING_TYPES = new Set<ListingType>([
 // so an unsanitized key can never be interpolated into a filter string.
 const ATTR_KEY_RE = /^[a-z][a-z0-9_]{0,48}$/;
 
+// P5.6 — a category's sold-price comps only render once this many settled
+// sales exist, so a thin catalog can't reverse a range back to one seller's
+// take (POPIA) and the number is statistically meaningful.
+const SOLD_COMPS_MIN_COUNT = 5;
+
+// P5.7 — a brand only earns its own `/brand/[slug]` landing page (and sitemap
+// entry) once it has at least this many ACTIVE listings; below it the page is
+// too thin to be worth indexing.
+const BRAND_MIN_LISTINGS = 3;
+
+// Brand-slug normaliser — mirrors the category slugify (admin-categories) so
+// brand URLs read the same way. Folds casing/whitespace so "Front Runner",
+// "front runner" and "FRONT RUNNER" all resolve to one brand page.
+function brandSlugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
 // P4.3b — dangerous-goods gate. A LOOSE lithium battery rated above the
 // energy limit (Watt-hours, UN3480) can't be carried by our couriers (Pudo /
 // TCG), so a listing whose `battery_wh` attribute exceeds it is forced
@@ -404,6 +425,15 @@ export class ListingsService {
       papersAttestedAt = new Date();
     }
 
+    // P5.4 — OPTIONAL "tested & working" attestation for electronics/appliance
+    // categories. Unlike papers (mandatory), this is the seller's own optional
+    // claim — never throw when it's unticked. Re-checks the category flag so a
+    // seller can't stamp it on a category that doesn't offer it.
+    const testedWorkingAttestedAt =
+      category.showTestedWorkingAttestation && dto.testedWorkingAttested === true
+        ? new Date()
+        : null;
+
     // ---- Firearm/barrel licence + serial verification (SAP 534 flow) ----
     // For licence-controlled categories the seller must supply a typed
     // serial + a serial photo + a licence photo (uploaded to Cloudinary
@@ -597,6 +627,7 @@ export class ListingsService {
         collectionOnly: effectiveCollectionOnly,
         requiresPapers: category.requiresPapers,
         papersAttestedAt,
+        testedWorkingAttestedAt,
         trackInventory,
         quantityAvailable,
         // P4.2 — cleaned per-listing attribute values (or JsonNull when none).
@@ -680,6 +711,15 @@ export class ListingsService {
     // in practice, so this is the cleaner path.
     if (sellerClerkId) return this.browseViaPrisma(dto);
 
+    // P5.7 — brand-scoped browses always go via Prisma. The brand fold
+    // (slug → all stored make casings → `make IN (...)`) lives ONLY in
+    // browseViaPrisma; buildActiveListingFilter on the Meili path has no
+    // brandSlug handling, so routing a brandSlug+q request to Meili would
+    // silently drop the brand constraint and return every brand's q-matches.
+    // Force Prisma so the brand filter is always honoured (q is ignored on
+    // this path, which is the safe degradation — brand-scoped, not global).
+    if (dto.brandSlug) return this.browseViaPrisma(dto);
+
     // P4.3a — per-category attribute filters (JSON-encoded in dto.attrs).
     // Parsed defensively; a malformed blob is silently ignored. Attribute
     // filtering is implemented ONLY on the Meili path — the Prisma fallback
@@ -730,6 +770,142 @@ export class ListingsService {
     return rows
       .map((r) => r.make)
       .filter((m): m is string => !!m && m.trim().length > 0);
+  }
+
+  /**
+   * P5.7 — brand landing pages. Distinct makes across ACTIVE listings, folded
+   * by slug (every casing/whitespace variant that slugifies to the same value
+   * counts as ONE brand) and gated to >= BRAND_MIN_LISTINGS so we never mint a
+   * thin, low-value SEO page. `label` is the most-listed casing. Powers both
+   * the brand index/sitemap and the per-brand `/brand/[slug]` gate — all three
+   * read the same folded counts so they can never disagree.
+   */
+  async listBrandsWithCounts(
+    minCount = BRAND_MIN_LISTINGS,
+  ): Promise<{ slug: string; label: string; count: number }[]> {
+    const rows = await this.prisma.listing.groupBy({
+      by: ['make'],
+      where: { status: 'ACTIVE', make: { not: null } },
+      _count: { make: true },
+    });
+    const folded = new Map<
+      string,
+      { slug: string; label: string; count: number; best: number }
+    >();
+    for (const r of rows) {
+      const raw = r.make?.trim();
+      if (!raw) continue;
+      const slug = brandSlugify(raw);
+      if (!slug) continue;
+      const c = r._count.make;
+      const cur = folded.get(slug);
+      if (cur) {
+        cur.count += c;
+        if (c > cur.best) {
+          cur.best = c;
+          cur.label = raw;
+        }
+      } else {
+        folded.set(slug, { slug, label: raw, count: c, best: c });
+      }
+    }
+    return [...folded.values()]
+      .filter((b) => b.count >= minCount)
+      .sort((a, b) => b.count - a.count)
+      .map(({ slug, label, count }) => ({ slug, label, count }));
+  }
+
+  /**
+   * P5.7 — resolve a brand slug to the exact stored `make` strings behind it
+   * (all casing variants) plus the display label + folded count. Returns null
+   * when the slug doesn't clear BRAND_MIN_LISTINGS so the page can 404 rather
+   * than render an empty/thin brand. `makes` are the RAW stored values (not
+   * trimmed) so a `make IN (...)` filter matches the rows exactly.
+   */
+  async resolveBrandSlug(
+    slug: string,
+    minCount = BRAND_MIN_LISTINGS,
+  ): Promise<{
+    slug: string;
+    label: string;
+    count: number;
+    makes: string[];
+  } | null> {
+    const target = brandSlugify(slug);
+    if (!target) return null;
+    const rows = await this.prisma.listing.groupBy({
+      by: ['make'],
+      where: { status: 'ACTIVE', make: { not: null } },
+      _count: { make: true },
+    });
+    let count = 0;
+    let label = '';
+    let best = -1;
+    const makes: string[] = [];
+    for (const r of rows) {
+      if (r.make == null) continue;
+      const trimmed = r.make.trim();
+      if (!trimmed || brandSlugify(trimmed) !== target) continue;
+      makes.push(r.make);
+      const c = r._count.make;
+      count += c;
+      if (c > best) {
+        best = c;
+        label = trimmed;
+      }
+    }
+    if (makes.length === 0 || count < minCount) return null;
+    return { slug: target, label, count, makes };
+  }
+
+  /**
+   * P5.6 — sold-price comps for a category. Aggregates the snapshotted sale
+   * price of settled sales (paymentStatus HELD or RELEASED = money captured;
+   * refund children excluded) whose listing sits in the category (leaf OR
+   * parent rollup) and is now SOLD. Gated to SOLD_COMPS_MIN_COUNT so a couple
+   * of sales can't be reverse-engineered into a single seller's take. POPIA:
+   * returns ONLY price + coarse month — never buyer, seller or listing IDs.
+   */
+  async soldComps(dto: { categorySlug?: string; categoryId?: string }) {
+    const categoryFilter = dto.categorySlug
+      ? { OR: [{ slug: dto.categorySlug }, { parent: { slug: dto.categorySlug } }] }
+      : dto.categoryId
+        ? { OR: [{ id: dto.categoryId }, { parentId: dto.categoryId }] }
+        : null;
+    if (!categoryFilter) return { count: 0 };
+
+    const rows = await this.prisma.transaction.findMany({
+      where: {
+        paymentStatus: { in: ['HELD', 'RELEASED'] },
+        refundOfId: null,
+        listing: { status: 'SOLD', category: categoryFilter },
+      },
+      select: { listingPrice: true, quantity: true },
+      orderBy: { paidAt: 'desc' },
+      take: 500,
+    });
+
+    const count = rows.length;
+    if (count < SOLD_COMPS_MIN_COUNT) return { count };
+
+    // POPIA: we return ONLY aggregate statistics (min / max / median), never
+    // any individual sale row. Exposing a list of exact per-sale prices +
+    // months would let a seller who made one of the sales read back every
+    // OTHER seller's exact realised price — re-identification of a competitor's
+    // take in a thin niche category — which the min-count gate alone does not
+    // prevent. Aggregates over >= SOLD_COMPS_MIN_COUNT sales dilute any one row.
+    //
+    // listingPrice is the LINE TOTAL (unit × qty); divide back to a per-unit
+    // price so a 3-pack sale doesn't skew the range against single items.
+    const prices = rows
+      .map((r) => Math.round(r.listingPrice / Math.max(1, r.quantity)))
+      .sort((a, b) => a - b);
+    return {
+      count,
+      low: prices[0],
+      high: prices[prices.length - 1],
+      median: prices[Math.floor(prices.length / 2)],
+    };
   }
 
   /**
@@ -1223,9 +1399,18 @@ export class ListingsService {
       minPrice,
       maxPrice,
       sellerClerkId,
+      brandSlug,
     } = dto;
 
     const where: Record<string, unknown> = { status: 'ACTIVE' };
+    // P5.7 — brand landing page. Fold the slug back to its stored `make`
+    // variants and filter to all of them. An unknown/too-thin slug resolves
+    // to null → match nothing (the page 404s before it ever calls browse, but
+    // this keeps the endpoint honest if hit directly).
+    if (brandSlug) {
+      const resolved = await this.resolveBrandSlug(brandSlug);
+      where.make = resolved ? { in: resolved.makes } : { in: [] };
+    }
     // Parent-category rollup: listings are filed on LEAF categories, so a
     // parent browse (self OR child-of) must match the category itself AND
     // any category whose parentId is this one. Leaf categories have no
@@ -1240,7 +1425,11 @@ export class ListingsService {
     if (listingType) where.listingType = listingType;
     if (condition) where.condition = condition;
     if (province) where.province = province;
-    if (make) where.make = make;
+    // P5.7 — don't let an exact `make` param stomp the brandSlug fold's
+    // `make IN (...)` clause set above (a request carrying BOTH would otherwise
+    // silently drop every casing variant except the exact match). brandSlug is
+    // the broader, canonical filter, so it wins.
+    if (make && !brandSlug) where.make = make;
     if (minPrice !== undefined || maxPrice !== undefined) {
       const priceFilter: Record<string, number> = {};
       if (minPrice !== undefined) priceFilter.gte = minPrice;
@@ -1409,6 +1598,12 @@ export class ListingsService {
     // "Camping" would bypass dealer transfer + SAP-534, and re-filing a
     // non-firearm as a firearm would skip the licence checks entirely.
     // Either direction ⇒ the seller must create a new listing.
+    // P5.4 — set true when a category change moves the listing into a category
+    // that does NOT offer the tested-&-working attestation, so we clear any
+    // stale stamp (otherwise the seller's "tested & working" badge would keep
+    // showing on a listing the operator never enabled the claim for — a CPA
+    // s41 gate bypass). Recomputed below inside the category-change block.
+    let clearTestedWorkingStamp = false;
     if (dto.categoryId !== undefined && dto.categoryId !== listing.categoryId) {
       const newCategory = await this.prisma.category.findUnique({
         where: { id: dto.categoryId },
@@ -1417,6 +1612,7 @@ export class ListingsService {
           isActive: true,
           availableSecondhand: true,
           collectionOnly: true,
+          showTestedWorkingAttestation: true,
         },
       });
       if (!newCategory || !newCategory.isActive) {
@@ -1441,6 +1637,12 @@ export class ListingsService {
         throw new BadRequestException(
           'This listing cannot be moved between collection-only and courier categories. Cancel it and create a new listing instead.',
         );
+      }
+      // P5.4 — if the destination category doesn't offer the tested-&-working
+      // attestation, drop any stamp carried over from the source category so
+      // the badge can't appear where the operator didn't enable it.
+      if (!newCategory.showTestedWorkingAttestation) {
+        clearTestedWorkingStamp = true;
       }
     }
 
@@ -1485,10 +1687,12 @@ export class ListingsService {
     const {
       collectionPapersAttested: _omitPapers,
       attributes: _omitAttributes,
+      testedWorkingAttested: _omitTested,
       ...listingUpdate
     } = dto;
     void _omitPapers;
     void _omitAttributes;
+    void _omitTested;
 
     // P4.2 — validate attributes against the EXISTING listing's category (a
     // category change can't cross the firearm/collection boundary, so the def
@@ -1546,6 +1750,7 @@ export class ListingsService {
               shippingMethods: [ShippingMethod.COLLECTION],
             }
           : {}),
+        ...(clearTestedWorkingStamp ? { testedWorkingAttestedAt: null } : {}),
       },
       include: { images: true, category: true },
     });

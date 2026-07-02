@@ -2,9 +2,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
-import { BrowseResponse, Category } from '@/lib/types';
+import { BrowseResponse, Category, SoldComps } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { Pagination } from '@/components/pagination';
+import { SoldCompsStrip } from '@/components/sold-comps';
 
 interface CategoryTree {
   category: Category;
@@ -62,6 +63,13 @@ export default async function CategoryPage({
   const browse = await apiFetch<BrowseResponse>(`/listings?${qs}`, {
     cache: 'no-store',
   }).catch(() => ({ listings: [], total: 0, page, limit: PAGE_SIZE }));
+
+  // P5.6 — sold-price comps for this category (aggregate, POPIA-safe). Cached
+  // briefly; renders nothing below the server's min-comps gate.
+  const comps = await apiFetch<SoldComps>(
+    `/listings/sold-comps?categorySlug=${encodeURIComponent(slug)}`,
+    { next: { revalidate: 3600 } } as RequestInit,
+  ).catch(() => null);
 
   const totalPages = Math.max(1, Math.ceil(browse.total / PAGE_SIZE));
   const pageHref = (p: number) => `/category/${slug}?page=${p}`;
@@ -126,6 +134,9 @@ export default async function CategoryPage({
           ))}
         </div>
       )}
+
+      {/* P5.6 — sold-price comps (aggregate, POPIA-safe) */}
+      <SoldCompsStrip comps={comps} scopeName={category.name} />
 
       {/* Listings */}
       {browse.listings.length === 0 ? (

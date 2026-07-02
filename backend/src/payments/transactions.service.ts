@@ -2159,7 +2159,11 @@ export class TransactionsService {
   ) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
-      include: { buyer: true, seller: true, listing: { select: { title: true } } },
+      include: {
+        buyer: true,
+        seller: true,
+        listing: { select: { title: true, testedWorkingAttestedAt: true } },
+      },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
     // SWOP — a swap leg is disputed at the Swap level (raiseSwapDispute, which
@@ -2214,7 +2218,14 @@ export class TransactionsService {
     // Combine reason + details into a single adminNote — operator sees
     // both on the admin dossier. The reason enum stays machine-readable
     // for future filtering.
-    const note = `[BUYER DISPUTE: ${reason}] ${trimmedDetails}`;
+    // P5.4 — snapshot the seller's "tested & working" claim into the dispute
+    // record so the admin resolving a not-working/DAMAGED dispute sees the
+    // exact CPA-relevant fact ("seller attested it worked; buyer says it
+    // doesn't"). It's the seller's own claim, never a GG certification.
+    const attestationLine = tx.listing.testedWorkingAttestedAt
+      ? `\n[SELLER ATTESTATION — "tested & working" claimed at listing on ${tx.listing.testedWorkingAttestedAt.toISOString()}]`
+      : '';
+    const note = `[BUYER DISPUTE: ${reason}] ${trimmedDetails}${attestationLine}`;
 
     await this.prisma.transaction.update({
       where: { id: transactionId },
