@@ -4,6 +4,7 @@ import {
   Get,
   Patch,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -48,6 +49,11 @@ import {
   CreateCategoryDto,
   UpdateCategoryDto,
 } from './admin-categories.service';
+import { AdminCategoryAttributesService } from './admin-category-attributes.service';
+import {
+  CreateCategoryAttributeDto,
+  UpdateCategoryAttributeDto,
+} from './dto/category-attribute.dto';
 import { AdminSettingsService } from './admin-settings.service';
 import {
   AdminBroadcastService,
@@ -808,6 +814,49 @@ export class AdminCategoriesController {
   ) {
     const { reason, ...dto } = body;
     return this.categories.update(admin.sub, id, dto, reason ?? '');
+  }
+}
+
+// ---------------------------------------------------------------
+// Category attributes CRUD (P4) — the per-category attribute DEFINITIONS
+// (fridge litres, rod class, size…) that drive the sell form + browse
+// facets. Nested under a category (3-segment path) so it never collides
+// with the 2-segment @Patch(':id') on AdminCategoriesController above.
+// Delete is a hard delete; PATCH isActive=false is the soft alternative.
+// ---------------------------------------------------------------
+@Controller('admin/categories/:categoryId/attributes')
+@UseGuards(AdminJwtGuard)
+export class AdminCategoryAttributesController {
+  constructor(private readonly attributes: AdminCategoryAttributesService) {}
+
+  @Get()
+  list(@Param('categoryId') categoryId: string) {
+    return this.attributes.list(categoryId);
+  }
+
+  @Post()
+  @HttpCode(201)
+  create(
+    @Param('categoryId') categoryId: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() dto: CreateCategoryAttributeDto,
+  ) {
+    return this.attributes.create(admin.sub, categoryId, dto);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() dto: UpdateCategoryAttributeDto,
+  ) {
+    return this.attributes.update(admin.sub, id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(200)
+  remove(@Param('id') id: string, @CurrentAdmin() admin: { sub: string }) {
+    return this.attributes.remove(admin.sub, id);
   }
 }
 

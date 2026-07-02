@@ -22,6 +22,17 @@ export class CategoriesController {
     return this.categoriesService.withCounts();
   }
 
+  // P4 — the EFFECTIVE attribute list for a category (its own + inherited
+  // ancestor attributes, deduped by key, leaf-first). Powers the sell form,
+  // which fetches this per selected category. Two-segment path so it is
+  // matched before (and never captured by) the single-segment :slug route.
+  // Public read → SkipThrottle (the sell form + SSR fan these from one IP).
+  @Get(':id/attributes')
+  @SkipThrottle()
+  attributes(@Param('id') id: string) {
+    return this.categoriesService.getEffectiveAttributes(id);
+  }
+
   // Public category landing page data: the category + parent (breadcrumb) +
   // active children (drill-down). Public read → SkipThrottle (SSR fans these
   // out from one IP, same as browse).

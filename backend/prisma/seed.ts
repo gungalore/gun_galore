@@ -361,6 +361,72 @@ const dealers = [
   },
 ];
 
+// ─── P4 — PER-CATEGORY ATTRIBUTE DEFINITIONS ────────────────────────────
+// Keyed by category slug → flagship attribute set. Kept IDENTICAL to the
+// 20260702170000_p4_attributes migration (this is the canonical source;
+// the migration is its hand-applied twin). A listing inherits its (leaf)
+// category's attributes PLUS all ancestor categories' attributes, deduped
+// by key with the nearest category winning — resolved at read time by
+// CategoriesService.getEffectiveAttributes, not stored per-child. So the
+// Outdoor Clothing & Footwear set lives on the ROOT only.
+//
+// Rules baked into every row below: required = false; filterable = true
+// EXCEPT gear_ratio (free-text, not a facet); sortOrder = array order.
+type AttrType = 'NUMBER' | 'SELECT' | 'TEXT' | 'BOOLEAN';
+interface AttrDef {
+  key: string;
+  label: string;
+  type: AttrType;
+  unit?: string;
+  options?: string[];
+  filterable?: boolean; // default true
+}
+
+const categoryAttributes: Record<string, AttrDef[]> = {
+  'overlanding--fridges-and-freezers': [
+    { key: 'capacity_litres', label: 'Capacity', type: 'NUMBER', unit: 'L' },
+    { key: 'fridge_type', label: 'Fridge type', type: 'SELECT', options: ['Compressor', 'Absorption', 'Thermoelectric'] },
+    { key: 'power_supply', label: 'Power supply', type: 'SELECT', options: ['12V', '240V', 'Dual 12V/240V'] },
+  ],
+  'overlanding--rooftop-tents': [
+    { key: 'sleeps', label: 'Sleeps', type: 'NUMBER' },
+    { key: 'shell_type', label: 'Shell type', type: 'SELECT', options: ['Soft-shell', 'Hard-shell', 'Wedge'] },
+    { key: 'mattress_width_cm', label: 'Mattress width', type: 'NUMBER', unit: 'cm' },
+  ],
+  'overlanding--dual-battery-and-solar': [
+    { key: 'battery_capacity_ah', label: 'Battery capacity', type: 'NUMBER', unit: 'Ah' },
+    { key: 'battery_chemistry', label: 'Battery chemistry', type: 'SELECT', options: ['LiFePO4', 'AGM', 'Gel', 'Lead-acid'] },
+    { key: 'battery_wh', label: 'Battery energy', type: 'NUMBER', unit: 'Wh' },
+  ],
+  'fishing--rods': [
+    { key: 'rod_class', label: 'Rod class', type: 'SELECT', options: ['Ultra-light', 'Light', 'Medium', 'Medium-heavy', 'Heavy'] },
+    { key: 'rod_length_ft', label: 'Rod length', type: 'NUMBER', unit: 'ft' },
+    { key: 'rod_pieces', label: 'Pieces', type: 'NUMBER' },
+  ],
+  'fishing--reels': [
+    { key: 'reel_type', label: 'Reel type', type: 'SELECT', options: ['Spinning', 'Baitcaster', 'Fly', 'Conventional'] },
+    { key: 'reel_size', label: 'Reel size', type: 'SELECT', options: ['1000', '2500', '3000', '4000', '5000', '6000', '8000', '10000'] },
+    { key: 'gear_ratio', label: 'Gear ratio', type: 'TEXT', filterable: false },
+  ],
+  // ROOT — inherited by every clothing/footwear child via the resolver.
+  'outdoor-clothing-footwear': [
+    { key: 'gender', label: 'Gender', type: 'SELECT', options: ['Men', 'Women', 'Unisex', 'Kids'] },
+    { key: 'size', label: 'Size', type: 'SELECT', options: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'] },
+    { key: 'new_with_tags', label: 'New with tags', type: 'BOOLEAN' },
+  ],
+  'archery-bowhunting--compound-bows': [
+    { key: 'draw_weight_lbs', label: 'Draw weight', type: 'NUMBER', unit: 'lbs' },
+    { key: 'draw_length_in', label: 'Draw length', type: 'NUMBER', unit: 'in' },
+    { key: 'axle_to_axle_in', label: 'Axle-to-axle', type: 'NUMBER', unit: 'in' },
+    { key: 'hand', label: 'Hand', type: 'SELECT', options: ['Right', 'Left'] },
+  ],
+  'camping-outdoor--tents': [
+    { key: 'sleeps', label: 'Sleeps', type: 'NUMBER' },
+    { key: 'season_rating', label: 'Season rating', type: 'SELECT', options: ['3-season', '4-season'] },
+    { key: 'tent_type', label: 'Tent type', type: 'SELECT', options: ['Dome', 'Tunnel', 'Geodesic', 'A-frame'] },
+  ],
+};
+
 async function main() {
   // Deactivate every existing category first. Anything still in our seed
   // gets reactivated below; anything obsolete stays inactive (so old
@@ -426,6 +492,36 @@ async function main() {
       });
     }
     console.log(`  ✓ ${parent.name}: ${children.length} sub-categories`);
+  }
+
+  // ─── P4 — per-category attribute definitions ───────────────────────────
+  // Upsert each flagship attribute on its category by the (categoryId, key)
+  // unique. Produces the identical rows to the 20260702170000 migration.
+  console.log('Seeding category attributes…');
+  for (const [slug, attrs] of Object.entries(categoryAttributes)) {
+    const category = await prisma.category.findUnique({ where: { slug } });
+    if (!category) {
+      console.warn(`  ! missing category for attributes: ${slug}`);
+      continue;
+    }
+    for (const [i, attr] of attrs.entries()) {
+      const data = {
+        label: attr.label,
+        type: attr.type,
+        unit: attr.unit ?? null,
+        options: attr.options ?? [],
+        required: false,
+        filterable: attr.filterable ?? true,
+        sortOrder: i + 1,
+        isActive: true,
+      };
+      await prisma.categoryAttribute.upsert({
+        where: { categoryId_key: { categoryId: category.id, key: attr.key } },
+        create: { categoryId: category.id, key: attr.key, ...data },
+        update: data,
+      });
+    }
+    console.log(`  ✓ ${category.name}: ${attrs.length} attributes`);
   }
 
   console.log('Seeding dealers…');

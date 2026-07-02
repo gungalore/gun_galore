@@ -564,6 +564,47 @@ model Category {
   // Cross-sell complementary relationships (directional). Admin-managed.
   crossSellFrom CategoryRelation[] @relation("CrossSellFrom")
   crossSellTo   CategoryRelation[] @relation("CrossSellTo")
+
+  // P4 — per-category attribute DEFINITIONS (fridge litres, rod class, size…).
+  // A listing inherits its category's attributes + all ancestor categories'.
+  attributes CategoryAttribute[]
+}
+
+// P4 — per-category attribute system. CategoryAttribute rows DEFINE what
+// structured, filterable specs a category carries (e.g. "fridge_litres",
+// "rod_class"); a Listing stores its VALUES in the Listing.attributes JSONB
+// blob keyed by CategoryAttribute.key. JSONB-over-EAV per the audit: values
+// are read/written as one document, and Meilisearch gets a flat `attr_<key>`
+// field per filterable attribute (filterableAttributes derived from these
+// rows at boot + reindex when keys change). A listing's EFFECTIVE attributes =
+// its (leaf) category's rows + all ancestor categories' rows, deduped by key
+// (nearest ancestor wins).
+enum AttributeType {
+  NUMBER // numeric (litres, Ah, lbs, mm) — range-filterable
+  SELECT // one of a fixed option set (chemistry, size, discipline)
+  TEXT // free text (rarely filterable)
+  BOOLEAN // yes/no (new-with-tags, waterproof)
+}
+
+model CategoryAttribute {
+  id         String   @id @default(cuid())
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  // Machine key, snake_case, stable — used as the Listing.attributes JSON key
+  // AND the Meili facet field `attr_<key>`. Unique per category.
+  key        String
+  label      String // human label shown in the sell form + filters
+  type       AttributeType
+  unit       String? // "L", "Ah", "cm", "lbs" — display only
+  options    String[] @default([]) // for SELECT — allowed values, in order
+  required   Boolean  @default(false) // seller must supply at listing time
+  filterable Boolean  @default(true) // exposed as a Meili facet + browse filter
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@unique([categoryId, key])
+  @@index([categoryId, isActive, sortOrder])
 }
 
 // Directional category complement for marketplace cross-sell. One row =
@@ -645,6 +686,13 @@ model Listing {
   make      String?
   model     String?
   calibre   String?
+
+  // P4 — structured per-category attribute VALUES, keyed by
+  // CategoryAttribute.key (e.g. { "fridge_litres": 40, "battery_chemistry":
+  // "LiFePO4", "new_with_tags": true }). JSONB; validated at create/update
+  // against the category's EFFECTIVE attribute definitions (leaf + ancestors).
+  // Mirrored into Meili as flat `attr_<key>` fields for faceting.
+  attributes Json?
 
   // ----- Firearm/barrel licence + serial capture (SAP 534 workflow) -----
   // Only populated for isFirearm / licence-controlled listings. Collected

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Category } from '@prisma/client';
+import { Category, CategoryAttribute } from '@prisma/client';
 
 @Injectable()
 export class CategoriesService {
@@ -105,5 +105,71 @@ export class CategoriesService {
       }),
     ]);
     return { category, parent, children };
+  }
+
+  /**
+   * P4 — the EFFECTIVE attribute set for a category: its own ACTIVE
+   * attributes PLUS every ANCESTOR category's ACTIVE attributes, deduped by
+   * `key` with the NEAREST category winning (a leaf's own attr overrides an
+   * inherited one of the same key).
+   *
+   * Walks up parentId in a loop so it handles arbitrary tree depth (today's
+   * tree is 2-level: leaf + its root, but the loop is depth-agnostic). A
+   * visited-set guards against a malformed cycle. Result is sorted by
+   * (ancestor-distance ASC, sortOrder ASC) so the leaf's own attributes
+   * surface first, then each inherited level in turn.
+   *
+   * Returns [] for an unknown categoryId (no throw — the sell form treats
+   * "no attributes" and "unknown category" identically).
+   */
+  async getEffectiveAttributes(categoryId: string): Promise<CategoryAttribute[]> {
+    // Walk the ancestor chain, recording each category's distance from the
+    // requested leaf (0 = the leaf itself). Bounded loop + visited-set so a
+    // bad parentId cycle can't spin forever.
+    const distanceById = new Map<string, number>();
+    let currentId: string | null = categoryId;
+    let distance = 0;
+    while (currentId && !distanceById.has(currentId)) {
+      const node: { id: string; parentId: string | null } | null =
+        await this.prisma.category.findUnique({
+          where: { id: currentId },
+          select: { id: true, parentId: true },
+        });
+      if (!node) break;
+      distanceById.set(node.id, distance);
+      currentId = node.parentId;
+      distance += 1;
+    }
+
+    if (distanceById.size === 0) return [];
+
+    const attributes = await this.prisma.categoryAttribute.findMany({
+      where: {
+        categoryId: { in: Array.from(distanceById.keys()) },
+        isActive: true,
+      },
+      orderBy: [{ sortOrder: 'asc' }],
+    });
+
+    // Dedupe by key — nearest category (smallest distance) wins.
+    const byKey = new Map<string, CategoryAttribute>();
+    for (const attr of attributes) {
+      const existing = byKey.get(attr.key);
+      if (
+        !existing ||
+        (distanceById.get(attr.categoryId) ?? Infinity) <
+          (distanceById.get(existing.categoryId) ?? Infinity)
+      ) {
+        byKey.set(attr.key, attr);
+      }
+    }
+
+    // Sort: leaf-first (ancestor distance), then the category's own sortOrder.
+    return Array.from(byKey.values()).sort((a, b) => {
+      const da = distanceById.get(a.categoryId) ?? Infinity;
+      const db = distanceById.get(b.categoryId) ?? Infinity;
+      if (da !== db) return da - db;
+      return a.sortOrder - b.sortOrder;
+    });
   }
 }

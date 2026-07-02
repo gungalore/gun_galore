@@ -10,6 +10,7 @@ import { AdminHealthService } from './admin-health.service';
 import { AdminCreditsService } from './admin-credits.service';
 import { AdminDealersService } from './admin-dealers.service';
 import { AdminCategoriesService } from './admin-categories.service';
+import { AdminCategoryAttributesService } from './admin-category-attributes.service';
 import { AdminSettingsService } from './admin-settings.service';
 import { AdminBroadcastService } from './admin-broadcast.service';
 import {
@@ -29,6 +30,7 @@ import {
   AdminCreditsController,
   AdminDealersController,
   AdminCategoriesController,
+  AdminCategoryAttributesController,
   AdminSettingsController,
   AdminBroadcastController,
 } from './admin.controller';
@@ -66,6 +68,7 @@ import { SwapsModule } from '../swaps/swaps.module';
     AdminCreditsService,
     AdminDealersService,
     AdminCategoriesService,
+    AdminCategoryAttributesService,
     AdminSettingsService,
     AdminBroadcastService,
     AdminJwtGuard,
@@ -88,6 +91,7 @@ import { SwapsModule } from '../swaps/swaps.module';
     AdminCreditsController,
     AdminDealersController,
     AdminCategoriesController,
+    AdminCategoryAttributesController,
     AdminSettingsController,
     AdminBroadcastController,
     AdminSwapsController,
