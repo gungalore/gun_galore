@@ -7,6 +7,7 @@ import {
   IsIn,
   IsArray,
   IsNumber,
+  IsObject,
   ArrayMinSize,
   ArrayMaxSize,
   Min,
@@ -153,6 +154,15 @@ export class CreateListingDto {
   // Inventory / stock (Phase 8a). Only honoured for BUY_NOW non-firearm
   // listings; >1 opts the listing into multi-unit inventory tracking.
   @IsOptional() @IsInt() @Min(1) quantityAvailable?: number;
+
+  // P4.2 — per-listing attribute VALUES: a free-form { attributeKey: value }
+  // object validated in ListingsService against the category's effective
+  // CategoryAttribute definitions (class-validator can't know the category's
+  // schema, so per-key type/required/option checks live in the service).
+  // Only the CLEANED result is ever persisted to Listing.attributes.
+  @IsOptional()
+  @IsObject()
+  attributes?: Record<string, unknown>;
 
   // Number of photos the frontend is about to upload AFTER the create
   // call returns. We use this to fail-fast at create-time when the

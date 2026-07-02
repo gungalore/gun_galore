@@ -3,7 +3,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
-import { Listing } from '@/lib/types';
+import { Listing, CategoryAttributeDef } from '@/lib/types';
 import { CONDITION_LABELS, PROVINCE_LABELS } from '@/lib/utils';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -73,6 +73,15 @@ export default function EditListingPage() {
   // gives the user a chance to back out before clicking Save.
   const [removedImageIds, setRemovedImageIds] = useState<Set<string>>(new Set());
 
+  // Per-category attributes (P4.2). The edit page keeps the listing's
+  // category fixed (there's no category picker), so we fetch the defs once
+  // for listing.category.id and pre-fill the values from listing.attributes.
+  // Values held as string (NUMBER/SELECT/TEXT) or boolean (BOOLEAN).
+  const [attrDefs, setAttrDefs] = useState<CategoryAttributeDef[]>([]);
+  const [attrValues, setAttrValues] = useState<
+    Record<string, string | boolean>
+  >({});
+
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn) { router.push('/sign-in'); return; }
@@ -91,6 +100,38 @@ export default function EditListingPage() {
         if (!res.ok) { router.push('/my/listings'); return; }
         const l: Listing = await res.json();
         setListing(l);
+        // Fetch the per-category attribute defs and pre-fill from the
+        // listing's existing attributes (P4.2). Category is fixed on edit,
+        // so this runs once. Non-fatal on failure — the rest of the form
+        // still works.
+        try {
+          const attrRes = await fetch(
+            `${API_URL}/categories/${l.category.id}/attributes`,
+            { cache: 'no-store' },
+          );
+          if (attrRes.ok) {
+            const defsRaw: unknown = await attrRes.json();
+            if (Array.isArray(defsRaw)) {
+              const defs = (defsRaw as CategoryAttributeDef[]).filter(
+                (d) => d.isActive,
+              );
+              setAttrDefs(defs);
+              const existing = l.attributes ?? {};
+              const prefilled: Record<string, string | boolean> = {};
+              for (const def of defs) {
+                const raw = existing[def.key];
+                if (def.type === 'BOOLEAN') {
+                  prefilled[def.key] = raw === true;
+                } else if (raw !== undefined && raw !== null) {
+                  prefilled[def.key] = String(raw);
+                }
+              }
+              setAttrValues(prefilled);
+            }
+          }
+        } catch {
+          // Non-fatal — skip the specifications section.
+        }
         if (lockRes.ok) {
           setEditLock(
             (await lockRes.json()) as {
@@ -160,6 +201,42 @@ export default function EditListingPage() {
         body.autoAcceptThreshold = Math.round(
           parseFloat(form.autoAcceptThreshold) * 100,
         );
+      }
+
+      // Per-category attributes (P4.2) — coerce inputs to the payload shape
+      // and gate on required attrs before sending. Only attach `attributes`
+      // when the category actually has defs, so categories without any are
+      // unaffected.
+      if (attrDefs.length > 0) {
+        const collected: Record<string, string | number | boolean> = {};
+        const missing: string[] = [];
+        for (const def of attrDefs) {
+          const raw = attrValues[def.key];
+          if (def.type === 'BOOLEAN') {
+            const on = raw === true;
+            collected[def.key] = on;
+            if (def.required && !on) missing.push(def.label);
+            continue;
+          }
+          const trimmed = typeof raw === 'string' ? raw.trim() : '';
+          if (!trimmed) {
+            if (def.required) missing.push(def.label);
+            continue;
+          }
+          if (def.type === 'NUMBER') {
+            const n = Number(trimmed);
+            if (Number.isFinite(n)) collected[def.key] = n;
+            else if (def.required) missing.push(def.label);
+            continue;
+          }
+          collected[def.key] = trimmed;
+        }
+        if (missing.length > 0) {
+          throw new Error(
+            `Fill in the required specification${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}.`,
+          );
+        }
+        body.attributes = collected;
       }
 
       const res = await fetch(`${API_URL}/listings/${id}`, {
@@ -489,6 +566,78 @@ export default function EditListingPage() {
               </p>
             )}
           </Field>
+        )}
+
+        {/* Specifications (P4.2) — per-category attributes, pre-filled from
+            the listing. Only shown when the category has attribute defs. */}
+        {attrDefs.length > 0 && (
+          <div
+            className="rounded-[6px] p-3 space-y-3"
+            style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+          >
+            <p className="text-xs uppercase" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
+              Specifications
+            </p>
+            {attrDefs.map((def) =>
+              def.type === 'BOOLEAN' ? (
+                <label
+                  key={def.id}
+                  className="flex items-center gap-2 cursor-pointer text-sm"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={attrValues[def.key] === true}
+                    onChange={(e) =>
+                      setAttrValues((prev) => ({ ...prev, [def.key]: e.target.checked }))
+                    }
+                    style={{ accentColor: 'var(--red)' }}
+                  />
+                  <span>
+                    {def.label}
+                    {def.required && <span style={{ color: 'var(--red)', marginLeft: 4 }}>*</span>}
+                  </span>
+                </label>
+              ) : (
+                <Field
+                  key={def.id}
+                  label={`${def.label}${def.required ? ' *' : ''}${def.unit ? ` (${def.unit})` : ''}`}
+                >
+                  {def.type === 'SELECT' ? (
+                    <select
+                      value={typeof attrValues[def.key] === 'string' ? (attrValues[def.key] as string) : ''}
+                      onChange={(e) =>
+                        setAttrValues((prev) => ({ ...prev, [def.key]: e.target.value }))
+                      }
+                      style={inputStyle}
+                    >
+                      <option value="">Select…</option>
+                      {def.options.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      inputMode={def.type === 'NUMBER' ? 'decimal' : undefined}
+                      maxLength={def.type === 'TEXT' ? 200 : undefined}
+                      value={typeof attrValues[def.key] === 'string' ? (attrValues[def.key] as string) : ''}
+                      onChange={(e) => {
+                        const v =
+                          def.type === 'NUMBER'
+                            ? e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
+                            : e.target.value;
+                        setAttrValues((prev) => ({ ...prev, [def.key]: v }));
+                      }}
+                      style={inputStyle}
+                    />
+                  )}
+                </Field>
+              ),
+            )}
+          </div>
         )}
 
         <Field label="Add more photos (optional)">

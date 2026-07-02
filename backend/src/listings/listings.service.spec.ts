@@ -38,6 +38,7 @@ describe('ListingsService — browse filters & brand facet', () => {
       {} as never, // settings
       {} as never, // referenceNumbers
       {} as never, // firearmLicence
+      {} as never, // categories
     );
   });
 

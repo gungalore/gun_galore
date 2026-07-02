@@ -24,6 +24,9 @@ import { SettingsService, FLAGS } from '../settings/settings.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { FirearmLicenceService } from './firearm-licence.service';
 import { inventoryEligible } from '../payments/inventory';
+import { CategoriesService } from '../categories/categories.service';
+import { validateAndCleanAttributes } from './attribute-validation';
+import { Prisma } from '@prisma/client';
 
 // Listing types that carry NO listed sale price — buyers name a price
 // (TAKE_A_SHOT) or trade an item (SWOP). The price guards below treat both
@@ -71,6 +74,7 @@ export class ListingsService {
     private readonly settings: SettingsService,
     private readonly referenceNumbers: ReferenceNumberService,
     private readonly firearmLicence: FirearmLicenceService,
+    private readonly categories: CategoriesService,
   ) {}
 
   // Pre-upload the firearm serial + licence proof photos to Cloudinary
@@ -512,6 +516,23 @@ export class ListingsService {
       ? Math.min(requestedStock, 9999)
       : 1;
 
+    // P4.2 — validate the seller-supplied attribute VALUES against the
+    // category's EFFECTIVE attribute definitions (own + inherited). Unknown
+    // keys are dropped; required-but-empty / bad-type / bad-option throws.
+    // We only ever persist the CLEANED object, never the raw dto.attributes.
+    const attributeDefs = await this.categories.getEffectiveAttributes(
+      category.id,
+    );
+    const { cleaned: cleanedAttributes, error: attributeError } =
+      validateAndCleanAttributes(attributeDefs, dto.attributes);
+    if (attributeError) {
+      throw new BadRequestException(attributeError);
+    }
+    const attributesForDb: Prisma.InputJsonValue | typeof Prisma.JsonNull =
+      Object.keys(cleanedAttributes).length > 0
+        ? (cleanedAttributes as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
+
     const listing = await this.prisma.listing.create({
       data: {
         referenceNumber,
@@ -534,6 +555,8 @@ export class ListingsService {
         papersAttestedAt,
         trackInventory,
         quantityAvailable,
+        // P4.2 — cleaned per-listing attribute values (or JsonNull when none).
+        attributes: attributesForDb,
         make: dto.make,
         model: dto.model,
         calibre: dto.calibre,
@@ -1207,17 +1230,53 @@ export class ListingsService {
         : (dto.plannedDealerLocation ?? '').trim().length > 0
           ? dto.plannedDealerLocation!.trim()
           : null;
-    // collectionPapersAttested is a create-time seller attestation, not a
-    // Listing column — drop it before the spread so PartialType(update)'s
-    // ...dto never tries to persist an unknown field (Prisma would reject it).
-    const listingUpdate = { ...dto };
-    delete listingUpdate.collectionPapersAttested;
+    // Strip fields from the ...dto spread at the TYPE level — a runtime `delete`
+    // wouldn't change the type, so the spread would clash with Prisma's input:
+    //   - collectionPapersAttested: a create-time attestation, not a Listing column.
+    //   - attributes: a real Json column, but validated + set separately below
+    //     (the raw, unvalidated client object must never reach Prisma).
+    const {
+      collectionPapersAttested: _omitPapers,
+      attributes: _omitAttributes,
+      ...listingUpdate
+    } = dto;
+    void _omitPapers;
+    void _omitAttributes;
+
+    // P4.2 — validate attributes against the EXISTING listing's category (a
+    // category change can't cross the firearm/collection boundary, so the def
+    // set is stable). Only set the cleaned object when the client supplied one;
+    // an undefined dto.attributes leaves the column untouched.
+    let attributesUpdate:
+      | Prisma.InputJsonValue
+      | typeof Prisma.JsonNull
+      | undefined;
+    if (dto.attributes !== undefined) {
+      const attributeDefs = await this.categories.getEffectiveAttributes(
+        listing.categoryId,
+      );
+      const { cleaned, error } = validateAndCleanAttributes(
+        attributeDefs,
+        dto.attributes,
+      );
+      if (error) {
+        throw new BadRequestException(error);
+      }
+      attributesUpdate =
+        Object.keys(cleaned).length > 0
+          ? (cleaned as Prisma.InputJsonValue)
+          : Prisma.JsonNull;
+    }
+
     const updated = await this.prisma.listing.update({
       where: { id },
       data: {
         ...listingUpdate,
         ...(normalisedPlanned !== undefined
           ? { plannedDealerLocation: normalisedPlanned }
+          : {}),
+        ...(attributesUpdate !== undefined
+          ? { attributes: attributesUpdate }
           : {}),
       },
       include: { images: true, category: true },

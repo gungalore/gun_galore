@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
-import { Category, Me } from '@/lib/types';
+import { Category, CategoryAttributeDef, Me } from '@/lib/types';
 import { CONDITION_LABELS } from '@/lib/utils';
 import { CategoryPicker } from '@/components/category-picker';
 import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
@@ -227,6 +227,109 @@ function SmallNumberField({
   );
 }
 
+// ─────────────────── Per-category attribute field (P4.2) ────────────
+// Renders one input per CategoryAttributeDef in the "About this item"
+// step's Specifications sub-section. Value is held as a string (NUMBER /
+// SELECT / TEXT) or boolean (BOOLEAN) in the parent's attrValues map;
+// coercion to the payload shape happens in collectedAttributes.
+function AttributeField({
+  def,
+  value,
+  onChange,
+}: {
+  def: CategoryAttributeDef;
+  value: string | boolean | undefined;
+  onChange: (next: string | boolean) => void;
+}) {
+  // BOOLEAN → a checkbox whose label is the attribute label. Matches the
+  // "Offer Buy Now" checkbox styling used elsewhere in this form.
+  if (def.type === 'BOOLEAN') {
+    return (
+      <label
+        className="flex items-start gap-2 cursor-pointer"
+        style={{ color: 'var(--text-secondary)' }}
+      >
+        <input
+          type="checkbox"
+          checked={value === true}
+          onChange={(e) => onChange(e.target.checked)}
+          style={{ accentColor: 'var(--red)', marginTop: 3 }}
+        />
+        <span className="text-sm" style={{ display: 'inline-flex', alignItems: 'center' }}>
+          {def.label}
+          {def.required && (
+            <span style={{ color: 'var(--red)', marginLeft: 4 }}>*</span>
+          )}
+        </span>
+      </label>
+    );
+  }
+
+  const strValue = typeof value === 'string' ? value : '';
+
+  return (
+    <Field
+      label={def.label}
+      required={def.required}
+      hint={def.unit ? `In ${def.unit}.` : undefined}
+    >
+      {def.type === 'SELECT' ? (
+        <select
+          value={strValue}
+          onChange={(e) => onChange(e.target.value)}
+          style={inputStyle}
+        >
+          <option value="">Select…</option>
+          {def.options.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      ) : def.type === 'NUMBER' ? (
+        <div style={{ position: 'relative' }}>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={strValue}
+            onChange={(e) =>
+              onChange(
+                e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1'),
+              )
+            }
+            style={{ ...inputStyle, paddingRight: def.unit ? 48 : 12 }}
+            placeholder="0"
+          />
+          {def.unit && (
+            <span
+              style={{
+                position: 'absolute',
+                right: 12,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--text-tertiary)',
+                fontSize: 13,
+                pointerEvents: 'none',
+              }}
+            >
+              {def.unit}
+            </span>
+          )}
+        </div>
+      ) : (
+        // TEXT
+        <input
+          type="text"
+          maxLength={200}
+          value={strValue}
+          onChange={(e) => onChange(e.target.value)}
+          style={inputStyle}
+        />
+      )}
+    </Field>
+  );
+}
+
 // ─────────────────────────── Page ───────────────────────────────────
 
 export default function NewListingPage() {
@@ -310,6 +413,19 @@ export default function NewListingPage() {
   // listings — a value > 1 opts the listing into inventory tracking so it
   // stays live until every unit sells. Empty / 1 = a single item (default).
   const [stock, setStock] = useState('');
+
+  // Per-category attributes (P4.2). `attrDefs` are the definitions for the
+  // currently-selected category (its own + inherited), fetched from
+  // GET /categories/:id/attributes whenever the category changes. `attrValues`
+  // holds the seller's raw string/boolean input keyed by def.key — coerced to
+  // numbers / booleans at submit time. Both reset on a category switch (a new
+  // category has a different attribute set). Categories with no defs render
+  // nothing and send no `attributes`, so firearm / other categories are
+  // completely unaffected.
+  const [attrDefs, setAttrDefs] = useState<CategoryAttributeDef[]>([]);
+  const [attrValues, setAttrValues] = useState<Record<string, string | boolean>>(
+    {},
+  );
 
   const [form, setForm] = useState({
     title: '',
@@ -530,6 +646,94 @@ export default function NewListingPage() {
   // roadworthy). Drives the required checkbox in the Delivery step.
   const requiresPapers = selectedCategory?.requiresPapers ?? false;
 
+  // Fetch the per-category attribute definitions whenever the selected
+  // category changes. Race-guarded: a fast-clicking seller can fire several
+  // category switches before earlier responses land, so we tag each fetch
+  // with the category id it was for and only apply the response if it still
+  // matches the current selection (and the effect hasn't been cleaned up).
+  // On every category change we clear the collected values — a new category
+  // has a different attribute set, so keeping old values would leak stale
+  // keys (the backend drops unknown keys anyway, but no point sending them).
+  useEffect(() => {
+    const categoryId = form.categoryId;
+    // No category picked yet — clear any prior defs/values.
+    if (!categoryId) {
+      setAttrDefs([]);
+      setAttrValues({});
+      return;
+    }
+    let cancelled = false;
+    // Clear stale values immediately so the previous category's inputs don't
+    // flash while the new defs load.
+    setAttrValues({});
+    setAttrDefs([]);
+    (async () => {
+      try {
+        const res = await fetch(
+          `${API_URL}/categories/${categoryId}/attributes`,
+          { cache: 'no-store' },
+        );
+        if (!res.ok) return;
+        const data: unknown = await res.json();
+        // Ignore a stale response — the seller switched category again
+        // before this one landed.
+        if (cancelled) return;
+        if (Array.isArray(data)) {
+          setAttrDefs(
+            (data as CategoryAttributeDef[]).filter((d) => d.isActive),
+          );
+        }
+      } catch {
+        // Non-fatal — leave the section empty. Required-attribute gating
+        // only applies to defs we actually loaded.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [form.categoryId]);
+
+  // Coerce the raw attribute inputs into the payload the backend expects:
+  //   NUMBER  → number (blank / non-numeric omitted)
+  //   SELECT  → the chosen option string (blank omitted)
+  //   TEXT    → trimmed string (blank omitted)
+  //   BOOLEAN → true / false (always sent so the seller can record "No")
+  // Only keys with a non-empty value survive, so empty categories send {}.
+  const collectedAttributes = useMemo(() => {
+    const out: Record<string, string | number | boolean> = {};
+    for (const def of attrDefs) {
+      const raw = attrValues[def.key];
+      if (def.type === 'BOOLEAN') {
+        out[def.key] = raw === true;
+        continue;
+      }
+      if (typeof raw !== 'string') continue;
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      if (def.type === 'NUMBER') {
+        const n = Number(trimmed);
+        if (Number.isFinite(n)) out[def.key] = n;
+        continue;
+      }
+      // SELECT + TEXT — send the string as-is.
+      out[def.key] = trimmed;
+    }
+    return out;
+  }, [attrDefs, attrValues]);
+
+  // Required-attribute gate. A required NUMBER/SELECT/TEXT must have a
+  // non-empty value; a required BOOLEAN is satisfied by an explicit tick
+  // (unticked = "No" is not a positive confirmation, so we require it on).
+  const missingRequiredAttrs = useMemo(() => {
+    return attrDefs
+      .filter((def) => def.required)
+      .filter((def) => {
+        if (def.type === 'BOOLEAN') return attrValues[def.key] !== true;
+        return !(def.key in collectedAttributes);
+      })
+      .map((def) => def.label);
+  }, [attrDefs, attrValues, collectedAttributes]);
+
   // Parsed parcel as numbers — null if not yet entered. Used by oversize
   // check + by buildListingPayload. Empty / NaN values stay null so the
   // step-3 completion gate refuses to advance.
@@ -662,7 +866,10 @@ export default function NewListingPage() {
       form.title.trim().length >= 5 &&
       !!form.categoryId &&
       !!form.condition &&
-      form.description.trim().length >= 10;
+      form.description.trim().length >= 10 &&
+      // Required per-category attributes (P4.2) live in this step's
+      // Specifications sub-section — block Continue until they're filled.
+      missingRequiredAttrs.length === 0;
 
     const hasPrice = parseFloat(form.price || '0') > 0;
     const hasReserve = parseFloat(form.reservePrice || '0') > 0;
@@ -717,6 +924,7 @@ export default function NewListingPage() {
     collectionOnly,
     requiresPapers,
     papersAttested,
+    missingRequiredAttrs,
   ]);
 
   // Which step is "up next" — the first incomplete one. Drives the red
@@ -944,6 +1152,13 @@ export default function NewListingPage() {
       ...(form.listingType === 'BUY_NOW' && !isFirearm && Math.floor(Number(stock)) > 1
         ? { quantityAvailable: Math.floor(Number(stock)) }
         : {}),
+      // Per-category attributes (P4.2) — only sent when the seller filled
+      // in at least one. Empty / no-attribute categories omit the key
+      // entirely so firearm / other categories are unaffected. The backend
+      // validates against the category definitions and drops unknown keys.
+      ...(Object.keys(collectedAttributes).length > 0
+        ? { attributes: collectedAttributes }
+        : {}),
     };
     if (!isPriceless) {
       body.price = Math.round(parseFloat(form.price) * 100);
@@ -1105,6 +1320,17 @@ export default function NewListingPage() {
     if (requiresPapers && !papersAttested) {
       setPublishError(
         'Tick the registration & roadworthy papers confirmation in the Delivery & collection step before publishing.',
+      );
+      return;
+    }
+    // Required per-category attributes (P4.2) guard — mirror the firearm /
+    // papers guards: abort before the API call so the seller gets an instant,
+    // clear message naming the missing fields rather than a server-side 400.
+    // The missing fields live in the Specifications sub-section of the
+    // "About this item" step.
+    if (missingRequiredAttrs.length > 0) {
+      setPublishError(
+        `Fill in the required specification${missingRequiredAttrs.length === 1 ? '' : 's'} in the "About this item" step: ${missingRequiredAttrs.join(', ')}.`,
       );
       return;
     }
@@ -1679,6 +1905,46 @@ export default function NewListingPage() {
                 </div>
               )}
             </Field>
+
+            {/* Specifications (P4.2) — dynamic per-category attribute
+                fields. Only rendered when the selected category has ≥1
+                attribute definition; firearm / other categories with none
+                render nothing here and send no `attributes`. Required
+                attributes carry the same * indicator and gate Continue /
+                Publish (see stepComplete.step2 + the handlePublish guard). */}
+            {attrDefs.length > 0 && (
+              <div className="pt-1">
+                <p
+                  className="text-xs uppercase mb-1"
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    letterSpacing: '0.05em',
+                    fontWeight: 500,
+                  }}
+                >
+                  Specifications
+                </p>
+                <p
+                  className="text-xs mb-3"
+                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+                >
+                  Structured details for this category. Buyers filter and
+                  compare on these.
+                </p>
+                <div className="space-y-4">
+                  {attrDefs.map((def) => (
+                    <AttributeField
+                      key={def.id}
+                      def={def}
+                      value={attrValues[def.key]}
+                      onChange={(next) =>
+                        setAttrValues((prev) => ({ ...prev, [def.key]: next }))
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </StepAccordion>
 
           {/* Step 3 — Listing type + pricing */}

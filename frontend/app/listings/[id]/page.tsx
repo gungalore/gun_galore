@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@clerk/nextjs/server';
 import { apiFetch } from '@/lib/api';
-import { Listing } from '@/lib/types';
+import { Listing, CategoryAttributeDef } from '@/lib/types';
 import { AddToCartButton } from '@/components/add-to-cart-button';
 import {
   formatPrice,
@@ -123,6 +123,38 @@ export default async function ListingDetailPage({
   // step in the seller's intended sequence (the API doesn't
   // guarantee order; sort here once).
   const allImages = [...listing.images].sort((a, b) => a.order - b.order);
+
+  // Specifications (P4.2) — the listing carries structured per-category
+  // attributes keyed by attribute-def key. To render human labels + units
+  // we fetch the category's attribute definitions and JOIN: for each def
+  // that has a value on the listing, build one { label, value } row in the
+  // definition's order. Progressive enhancement — if the fetch fails, or
+  // no attribute has a value, we render nothing.
+  const listingAttrs = listing.attributes ?? null;
+  const specRows: { label: string; display: string }[] = [];
+  if (listingAttrs && Object.keys(listingAttrs).length > 0) {
+    const attrDefs = await apiFetch<CategoryAttributeDef[]>(
+      `/categories/${listing.category.id}/attributes`,
+      { cache: 'no-store' },
+    ).catch(() => [] as CategoryAttributeDef[]);
+    for (const def of attrDefs) {
+      const raw = listingAttrs[def.key];
+      // Skip attributes the seller didn't fill (absent, null, or empty).
+      if (raw === undefined || raw === null || raw === '') continue;
+      let display: string;
+      if (def.type === 'BOOLEAN') {
+        display = raw ? 'Yes' : 'No';
+      } else if (def.type === 'NUMBER') {
+        const n = typeof raw === 'number' ? raw : Number(raw);
+        if (!Number.isFinite(n)) continue;
+        display = def.unit ? `${n} ${def.unit}` : `${n}`;
+      } else {
+        // SELECT / TEXT — render the string as-is.
+        display = String(raw);
+      }
+      specRows.push({ label: def.label, display });
+    }
+  }
 
   return (
     <main
@@ -439,6 +471,48 @@ export default async function ListingDetailPage({
               {listing.description}
             </p>
           </div>
+
+          {/* Specifications (P4.2) — structured per-category attributes,
+              joined to their definitions for human labels + units. Only
+              rendered when at least one attribute has a value; the rows are
+              already ordered by the definition order (leaf-first). */}
+          {specRows.length > 0 && (
+            <div
+              className="rounded-[6px] p-3 mb-4 text-sm"
+              style={{
+                background: 'var(--bg-card)',
+                border: '0.5px solid var(--border)',
+              }}
+            >
+              <p
+                className="text-xs uppercase mb-2"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                Specifications
+              </p>
+              <dl className="grid grid-cols-1 gap-y-1.5">
+                {specRows.map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-baseline justify-between gap-4"
+                  >
+                    <dt style={{ color: 'var(--text-tertiary)' }}>
+                      {row.label}
+                    </dt>
+                    <dd
+                      className="text-right"
+                      style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+                    >
+                      {row.display}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
 
           {/* Shipping + payment protection explainer — kept compact so
               it doesn't dominate the buy panel area, but visible

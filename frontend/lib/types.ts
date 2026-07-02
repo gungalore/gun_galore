@@ -25,6 +25,26 @@ export interface ListingImage {
   isPrimary: boolean;
 }
 
+// Per-category attribute definition (P4.1/P4.2). Returned by
+// GET /categories/:id/attributes — the category's own attributes plus
+// any inherited from its ancestors, already sorted leaf-first then by
+// sortOrder. Drives the dynamic "Specifications" fields on the Sell
+// form and the spec table on listing detail.
+export interface CategoryAttributeDef {
+  id: string;
+  categoryId: string;
+  // The key values are stored under on Listing.attributes.
+  key: string;
+  label: string;
+  type: 'NUMBER' | 'SELECT' | 'TEXT' | 'BOOLEAN';
+  unit: string | null;
+  options: string[];
+  required: boolean;
+  filterable: boolean;
+  sortOrder: number;
+  isActive: boolean;
+}
+
 export interface Category {
   id: string;
   name: string;
@@ -231,6 +251,12 @@ export interface Listing {
   make: string | null;
   model: string | null;
   calibre: string | null;
+  // Per-category structured attributes (P4.2) — keyed by
+  // CategoryAttributeDef.key. Values are number | string | boolean.
+  // Null / absent when the category has no attributes or none were
+  // filled. Join against GET /categories/:id/attributes for labels +
+  // units to render the specifications table.
+  attributes?: Record<string, unknown> | null;
   passFeeToBuyer: boolean;
   autoAcceptThreshold: number | null;
   // Claude moderation fields
