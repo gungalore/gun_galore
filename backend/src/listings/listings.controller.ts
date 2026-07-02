@@ -70,6 +70,25 @@ export class ListingsController {
     return this.listingsService.sitemapEntries();
   }
 
+  // Public marketplace config the sell form needs to mirror server-side
+  // gates without hardcoding constants (e.g. the DG lithium-Wh limit, which
+  // is admin-tunable). MUST stay above @Get(':id'). Public read → SkipThrottle.
+  @Get('config')
+  @SkipThrottle()
+  publicConfig() {
+    return this.listingsService.getPublicConfig();
+  }
+
+  // Facet counts for the storefront FilterBar ("Toyota (12)"). Takes the same
+  // browse query params and returns Meili's facetDistribution. MUST stay above
+  // @Get(':id') so 'facets' isn't captured as an id. Public read (SSR fans
+  // these out from one IP) → SkipThrottle like browse.
+  @Get('facets')
+  @SkipThrottle()
+  facets(@Query() dto: BrowseListingsDto) {
+    return this.listingsService.facets(dto);
+  }
+
   // --- Protected ---
   // IMPORTANT: this route MUST appear before @Get(':id') below. Nest
   // matches routes in declaration order — if @Get(':id') comes first,

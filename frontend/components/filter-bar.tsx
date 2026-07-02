@@ -95,12 +95,33 @@ export function FilterBar({
   categories,
   currentParams,
   brands = [],
+  facets = {},
 }: {
   categories: Category[];
   currentParams: FilterParams;
   brands?: string[];
+  // Facet counts from GET /listings/facets, keyed field → value → count
+  // (e.g. { make: { Toyota: 12 }, attr_cab_type: { 'Double Cab': 5 } }).
+  // AND-consistent with the current filter set. Empty when a category isn't
+  // scoped or Meili is down → options render without counts (graceful).
+  facets?: Record<string, Record<string, number>>;
 }) {
   const router = useRouter();
+
+  // Format a facet count as a " (n)" suffix for an option label. Returns ''
+  // when the facet field/value has no count. We SUPPRESS counts on the facet
+  // the user is actively filtering, because Meili's distribution collapses that
+  // facet to just the selected value — showing "(0)" on every other option
+  // would be misleading. `activeField` is the field currently constrained.
+  const facetCount = (
+    field: string,
+    value: string,
+    activeField: string | undefined,
+  ): string => {
+    if (activeField && field === activeField) return '';
+    const n = facets[field]?.[value];
+    return typeof n === 'number' ? ` (${n})` : '';
+  };
 
   // Price is held locally (in Rands) so typing doesn't fire a navigation per
   // keystroke; we apply on blur / Enter. Seed from the URL's cents value.
@@ -303,6 +324,7 @@ export function FilterBar({
           {brands.map((b) => (
             <option key={b} value={b}>
               {b}
+              {facetCount('make', b, currentParams.make ? 'make' : undefined)}
             </option>
           ))}
         </select>
@@ -318,6 +340,11 @@ export function FilterBar({
         {Object.entries(PROVINCE_LABELS).map(([k, v]) => (
           <option key={k} value={k}>
             {v}
+            {facetCount(
+              'province',
+              k,
+              currentParams.province ? 'province' : undefined,
+            )}
           </option>
         ))}
       </select>
@@ -332,6 +359,11 @@ export function FilterBar({
         {Object.entries(CONDITION_LABELS).map(([k, v]) => (
           <option key={k} value={k}>
             {v}
+            {facetCount(
+              'condition',
+              k,
+              currentParams.condition ? 'condition' : undefined,
+            )}
           </option>
         ))}
       </select>
@@ -342,11 +374,28 @@ export function FilterBar({
         onChange={(e) => push({ listingType: e.target.value || undefined })}
         style={selectStyle}
       >
-        <option value="">All types</option>
-        <option value="BUY_NOW">Marketplace</option>
-        <option value="AUCTION">Auction</option>
-        <option value="TAKE_A_SHOT">Take a Shot</option>
-        <option value="SWOP">Swop / Trade</option>
+        {(() => {
+          // Suppress listingType counts when a surface (listingType) is already
+          // selected — the distribution collapses to that one type otherwise.
+          const af = currentParams.listingType ? 'listingType' : undefined;
+          return (
+            <>
+              <option value="">All types</option>
+              <option value="BUY_NOW">
+                Marketplace{facetCount('listingType', 'BUY_NOW', af)}
+              </option>
+              <option value="AUCTION">
+                Auction{facetCount('listingType', 'AUCTION', af)}
+              </option>
+              <option value="TAKE_A_SHOT">
+                Take a Shot{facetCount('listingType', 'TAKE_A_SHOT', af)}
+              </option>
+              <option value="SWOP">
+                Swop / Trade{facetCount('listingType', 'SWOP', af)}
+              </option>
+            </>
+          );
+        })()}
       </select>
 
       {/* Price range (Rands). Applies on blur or Enter so we don't navigate
@@ -431,6 +480,13 @@ export function FilterBar({
                   {def.options.map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
+                      {facetCount(
+                        `attr_${def.key}`,
+                        opt,
+                        typeof current === 'string'
+                          ? `attr_${def.key}`
+                          : undefined,
+                      )}
                     </option>
                   ))}
                 </select>

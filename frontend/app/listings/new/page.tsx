@@ -337,6 +337,11 @@ export default function NewListingPage() {
   const router = useRouter();
 
   const [categories, setCategories] = useState<Category[]>([]);
+  // DG lithium-Wh courier limit, mirrored from the server so this form's
+  // "becomes collection-only" notice matches the server's actual gate even
+  // after an admin retunes it. Defaults to 100 (the standard UN3480 limit)
+  // until the config fetch resolves; a failed fetch just leaves 100.
+  const [dgWhThreshold, setDgWhThreshold] = useState(100);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<File[]>([]);
@@ -553,6 +558,22 @@ export default function NewListingPage() {
       .catch(() => {});
   }, []);
 
+  // Mirror the admin-tunable DG lithium-Wh limit so the sell-form notice can't
+  // drift from the server gate. One-shot on mount; fail-open leaves the 100 Wh
+  // default (which also matches the server's fail-open default).
+  useEffect(() => {
+    fetch(`${API_URL}/listings/config`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: unknown) => {
+        const n = (data as { dgLithiumWhThreshold?: number } | null)
+          ?.dgLithiumWhThreshold;
+        if (typeof n === 'number' && Number.isFinite(n) && n > 0) {
+          setDgWhThreshold(n);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       router.push('/sign-in');
@@ -647,19 +668,19 @@ export default function NewListingPage() {
   const requiresPapers = selectedCategory?.requiresPapers ?? false;
 
   // P4.3b — dangerous-goods gate (transparency mirror). A LOOSE lithium
-  // battery rated above 100 Wh (UN3480) can't be couriered, so the backend
-  // FORCES such a listing to collection-only. We recompute the same flag
-  // here purely so the sell form isn't silent about it — the seller sees why
-  // the courier options disappear as they type the value. The threshold
-  // constant mirrors DG_LITHIUM_WH_THRESHOLD in backend
-  // src/listings/listings.service.ts — keep the two in sync.
-  const DG_LITHIUM_WH_THRESHOLD = 100;
+  // battery rated above the courier limit (UN3480) can't be couriered, so the
+  // backend FORCES such a listing to collection-only. We recompute the same
+  // flag here purely so the sell form isn't silent about it — the seller sees
+  // why the courier options disappear as they type the value. The threshold
+  // is fetched from GET /listings/config (dgWhThreshold state) so it tracks
+  // the admin-tunable server limit instead of a drifting hardcoded 100.
   // True only when the current category actually defines a `battery_wh`
   // NUMBER attribute AND the seller's entered value coerces to a finite
   // number strictly greater than the threshold. A blank / non-numeric value,
   // or a category with no battery_wh def, keeps this false — so categories
   // without the attribute behave byte-identically to before. Recomputes
-  // reactively as attrDefs (category change) or attrValues (typing) change.
+  // reactively as attrDefs (category change), attrValues (typing), or the
+  // fetched threshold change.
   const dgLithiumRestricted = useMemo(() => {
     const hasBatteryWhDef = attrDefs.some((d) => d.key === 'battery_wh');
     if (!hasBatteryWhDef) return false;
@@ -668,8 +689,8 @@ export default function NewListingPage() {
     const trimmed = raw.trim();
     if (!trimmed) return false;
     const n = Number(trimmed);
-    return Number.isFinite(n) && n > DG_LITHIUM_WH_THRESHOLD;
-  }, [attrDefs, attrValues]);
+    return Number.isFinite(n) && n > dgWhThreshold;
+  }, [attrDefs, attrValues, dgWhThreshold]);
 
   // Every shipping / selling-mode gate below keys on this rather than
   // collectionOnly, so a DG-restricted battery is treated exactly like a
@@ -2557,7 +2578,7 @@ export default function NewListingPage() {
                 </p>
                 <p style={{ color: 'var(--text-secondary)' }}>
                   {dgLithiumRestricted && !collectionOnly
-                    ? 'Batteries rated over 100 Wh can’t be couriered (dangerous-goods rules), so this listing is collection-only — the buyer collects in person and their payment is held until they confirm collection.'
+                    ? `Batteries rated over ${dgWhThreshold} Wh can’t be couriered (dangerous-goods rules), so this listing is collection-only — the buyer collects in person and their payment is held until they confirm collection.`
                     : 'Buyers collect this item in person — no courier. You’ll coordinate a pickup time with the buyer after they pay. Their payment is held until they confirm collection.'}
                 </p>
               </div>

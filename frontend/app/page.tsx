@@ -135,7 +135,7 @@ export default async function HomePage({
   // with the FEATURED grid. On every other surface we keep the
   // standard browse. Both queries fire in parallel so the slower
   // doesn't block the other.
-  const [browse, categories, featuredListings, brands, categoryTiles] =
+  const [browse, categories, featuredListings, brands, categoryTiles, facetData] =
     await Promise.all([
     apiFetch<BrowseResponse>(`/listings?${qs}`, { cache: 'no-store' }).catch(
       () => ({ listings: [], total: 0, page: 1, limit: 24 }),
@@ -172,6 +172,18 @@ export default async function HomePage({
           next: { revalidate: 600 },
         } as RequestInit).catch(() => [] as CategoryWithCount[])
       : Promise.resolve([] as CategoryWithCount[]),
+    // P4-polish — FilterBar facet counts ("Toyota (12)"). Only meaningful when
+    // a category is scoped (the surface that renders attr facets); the backend
+    // returns {} otherwise, so skip the call entirely on non-category surfaces.
+    // On failure the FilterBar just renders options without counts.
+    params.categoryId
+      ? apiFetch<{ facets: Record<string, Record<string, number>> }>(
+          `/listings/facets?${qs}`,
+          { cache: 'no-store' },
+        ).catch(() => ({ facets: {} }))
+      : Promise.resolve({
+          facets: {} as Record<string, Record<string, number>>,
+        }),
   ]);
 
   // Root categories only (parentId === null, active), sorted by the operator's
@@ -516,6 +528,7 @@ export default async function HomePage({
             categories={categories}
             currentParams={params}
             brands={brands}
+            facets={facetData.facets}
           />
         </div>
 

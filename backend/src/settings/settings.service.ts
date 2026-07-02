@@ -81,6 +81,18 @@ export const FLAGS = {
       return Number.isFinite(n) && n > 0 ? n : 14900;
     },
   } as FlagDefinition<number>,
+  // Dangerous-goods gate — a loose lithium battery (the `battery_wh` attribute)
+  // above this watt-hour value is forced collection-only, never couriered
+  // (carriers won't carry >100 Wh loose cells, UN3480). Admin-tunable without a
+  // deploy; fails open to 100 Wh so the gate can never silently widen.
+  dgLithiumWhThreshold: {
+    key: 'dg_lithium_wh_threshold',
+    default: 100,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n > 0 ? n : 100;
+    },
+  } as FlagDefinition<number>,
 } as const;
 
 @Injectable()

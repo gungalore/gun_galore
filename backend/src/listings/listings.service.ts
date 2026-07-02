@@ -42,13 +42,15 @@ const PRICELESS_LISTING_TYPES = new Set<ListingType>([
 // so an unsanitized key can never be interpolated into a filter string.
 const ATTR_KEY_RE = /^[a-z][a-z0-9_]{0,48}$/;
 
-// P4.3b — dangerous-goods gate. A LOOSE lithium battery rated above this
-// energy (Watt-hours, UN3480) can't be carried by our couriers (Pudo / TCG),
-// so a listing whose `battery_wh` attribute exceeds it is forced COLLECTION-
-// only (buyer collects in person) rather than entering the courier path. 100 Wh
-// is the standard loose-lithium threshold; keep conservative. (Closes the P3.3
-// lithium hole via a real attribute value instead of honour-system copy.)
-const DG_LITHIUM_WH_THRESHOLD = 100;
+// P4.3b — dangerous-goods gate. A LOOSE lithium battery rated above the
+// energy limit (Watt-hours, UN3480) can't be carried by our couriers (Pudo /
+// TCG), so a listing whose `battery_wh` attribute exceeds it is forced
+// COLLECTION-only (buyer collects in person) rather than entering the courier
+// path. The limit is admin-tunable (FLAGS.dgLithiumWhThreshold, default 100 Wh
+// — the standard loose-lithium threshold) so it can track carrier policy
+// changes without a deploy; it fails open to 100 so the gate can never silently
+// widen. (Closes the P3.3 lithium hole via a real attribute value instead of
+// honour-system copy.)
 
 // Shape returned by previewDraft() — the frontend uses this to render the
 // soft-block preview screen. canPublish gates the "Confirm publish" button;
@@ -349,9 +351,10 @@ export class ListingsService {
     // NUMBER attr, but if battery_wh were ever redefined as SELECT/TEXT the
     // cleaned value would be a string — coercing keeps the DG gate fail-safe
     // (a stringy "200" still trips it) instead of silently no-opping.
+    const dgWhThreshold = await this.settings.get(FLAGS.dgLithiumWhThreshold);
     const batteryWh = Number(cleanedAttributes.battery_wh ?? NaN);
     const dgLithiumRestricted =
-      Number.isFinite(batteryWh) && batteryWh > DG_LITHIUM_WH_THRESHOLD;
+      Number.isFinite(batteryWh) && batteryWh > dgWhThreshold;
     const effectiveCollectionOnly =
       category.collectionOnly || dgLithiumRestricted;
 
@@ -724,6 +727,21 @@ export class ListingsService {
   }
 
   /**
+   * Non-sensitive marketplace config the sell form needs so it can mirror a
+   * server-side gate in the UI without hardcoding a constant that would drift
+   * when an admin retunes it. Currently just the DG lithium-Wh courier limit
+   * (FLAGS.dgLithiumWhThreshold) — the sell form recomputes its "this becomes
+   * collection-only" notice against this value instead of a literal 100, so the
+   * notice and the server's actual force-collection decision never disagree.
+   */
+  async getPublicConfig(): Promise<{ dgLithiumWhThreshold: number }> {
+    const dgLithiumWhThreshold = await this.settings.get(
+      FLAGS.dgLithiumWhThreshold,
+    );
+    return { dgLithiumWhThreshold };
+  }
+
+  /**
    * Lightweight feed for the XML sitemap — every ACTIVE listing's id +
    * last-modified, newest first, capped so the sitemap stays bounded.
    */
@@ -958,15 +976,19 @@ export class ListingsService {
     };
   }
 
-  private async browseViaSearch(
+  /**
+   * Build the Meilisearch filter-clause array shared by browseViaSearch and
+   * the facets endpoint, so a facet count is always computed over EXACTLY the
+   * same result set the browse would return (AND-consistent). Meilisearch has
+   * no parameterized filters, so every user-supplied value is escaped/validated
+   * before it reaches the filter string — see the per-branch notes. Returns the
+   * AND-joinable parts; the caller joins with ' AND '.
+   */
+  private buildActiveListingFilter(
     dto: BrowseListingsDto,
     parsedAttrs: Record<string, unknown> = {},
-  ) {
+  ): string[] {
     const {
-      q = '',
-      page = 1,
-      limit = 20,
-      sort = 'newest',
       categoryId,
       categorySlug,
       listingType,
@@ -1038,6 +1060,89 @@ export class ListingsService {
         }
       }
     }
+
+    return filterParts;
+  }
+
+  /**
+   * P4-polish — facet counts for the FilterBar ("Toyota (12)"). Runs a
+   * zero-hit Meilisearch query over the SAME filter the browse would apply
+   * (buildActiveListingFilter) and returns Meili's facetDistribution keyed by
+   * field → value → count. Only meaningful when a category is in scope (the
+   * only surface that renders facets) and Meili is connected; otherwise returns
+   * an empty map so the client simply renders options without counts (graceful
+   * degradation, same as when Meili is down for browse).
+   *
+   * Counts are AND-consistent: they reflect ALL currently-applied filters, so
+   * the count next to a value = exactly what the browse would return if that
+   * value were (the only) selection within the current filter set. The client
+   * suppresses counts on the facet the user is actively filtering (that facet
+   * collapses to the chosen value), so no misleading zeros are shown.
+   */
+  async facets(dto: BrowseListingsDto): Promise<{
+    facets: Record<string, Record<string, number>>;
+  }> {
+    const { categoryId, categorySlug } = dto;
+    if ((!categoryId && !categorySlug) || !this.search.isConnected) {
+      return { facets: {} };
+    }
+
+    const parsedAttrs = this.parseAttrFilters(dto.attrs);
+    const filterParts = this.buildActiveListingFilter(dto, parsedAttrs);
+
+    // Static enum facets the FilterBar renders (make/condition/province/type).
+    const facetFields = ['make', 'condition', 'province', 'listingType'];
+
+    // Plus the scoped category's filterable SELECT/BOOLEAN attrs — the exact
+    // keys the FilterBar shows as attr filters. NUMBER attrs are range inputs
+    // (no per-value buckets), so they're excluded. Resolve the category id from
+    // the slug when only a slug is given (category pages route by slug).
+    let resolvedCategoryId = categoryId;
+    if (!resolvedCategoryId && categorySlug) {
+      const cat = await this.prisma.category.findUnique({
+        where: { slug: categorySlug },
+        select: { id: true },
+      });
+      resolvedCategoryId = cat?.id;
+    }
+    if (resolvedCategoryId) {
+      try {
+        const defs =
+          await this.categories.getEffectiveAttributes(resolvedCategoryId);
+        for (const def of defs) {
+          if (
+            def.filterable &&
+            (def.type === 'SELECT' || def.type === 'BOOLEAN')
+          ) {
+            facetFields.push(`attr_${def.key}`);
+          }
+        }
+      } catch {
+        // attr facets are best-effort; static facets still return
+      }
+    }
+
+    const result = await this.search.search(INDEXES.LISTINGS, dto.q ?? '', {
+      filter: filterParts.join(' AND '),
+      limit: 0,
+      facets: facetFields,
+    });
+
+    return {
+      facets: (result.facetDistribution ?? {}) as Record<
+        string,
+        Record<string, number>
+      >,
+    };
+  }
+
+  private async browseViaSearch(
+    dto: BrowseListingsDto,
+    parsedAttrs: Record<string, unknown> = {},
+  ) {
+    const { q = '', page = 1, limit = 20, sort = 'newest' } = dto;
+
+    const filterParts = this.buildActiveListingFilter(dto, parsedAttrs);
 
     const sortBy =
       sort === 'price_asc'
@@ -1271,12 +1376,13 @@ export class ListingsService {
     // incoming battery_wh lets the symmetric guard below allow that tighten-to-
     // collection edit; the full validation + DG override further down re-checks
     // and forces collection either way, so relaxing the guard here is safe.
+    const dgWhThreshold = await this.settings.get(FLAGS.dgLithiumWhThreshold);
     const editRawWh = Number(
       (dto.attributes as Record<string, unknown> | undefined)?.battery_wh ??
         NaN,
     );
     const editWillBeDg =
-      Number.isFinite(editRawWh) && editRawWh > DG_LITHIUM_WH_THRESHOLD;
+      Number.isFinite(editRawWh) && editRawWh > dgWhThreshold;
     // Symmetric guard — a non-collection listing must never carry COLLECTION
     // in its offered methods (keeps a firearm's [DEALER_TRANSFER, …] array
     // clean; the firearm lock above only checks DEALER_TRANSFER presence).
@@ -1406,7 +1512,7 @@ export class ListingsService {
           ? (cleaned as Prisma.InputJsonValue)
           : Prisma.JsonNull;
       const wh = Number(cleaned.battery_wh ?? NaN);
-      dgTighten = Number.isFinite(wh) && wh > DG_LITHIUM_WH_THRESHOLD;
+      dgTighten = Number.isFinite(wh) && wh > dgWhThreshold;
       if (
         dgTighten &&
         listing.listingType !== 'BUY_NOW' &&

@@ -86,6 +86,16 @@ const FLAGS: SettingFlag[] = [
     type: 'number',
     default: '5',
   },
+
+  // ─── Shipping ─────────────────────────────────────────────────
+  {
+    key: 'dg_lithium_wh_threshold',
+    label: 'Lithium battery courier limit (Wh)',
+    hint: 'A loose lithium battery (the battery_wh listing attribute) above this energy is forced collection-only — couriers won\'t carry >100 Wh loose cells (UN3480). Lower this if a carrier tightens its limit. Default 100.',
+    group: 'Shipping',
+    type: 'number',
+    default: '100',
+  },
 ];
 
 @Injectable()
