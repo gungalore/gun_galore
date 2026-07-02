@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { Meilisearch, Index, SearchParams, SearchResponse, RecordAny } from 'meilisearch';
+import { PrismaService } from '../prisma/prisma.service';
 
 // Index names used across the platform
 export const INDEXES = {
@@ -8,10 +9,31 @@ export const INDEXES = {
   CARTRIDGES: 'cartridges',
 } as const;
 
+// P4.3a — static (non-attribute) filterable facets on the LISTINGS index.
+// The full filterable set = these + a `attr_<key>` field per filterable,
+// active CategoryAttribute (derived from the DB at boot / on refresh).
+const STATIC_LISTING_FILTERABLE_ATTRIBUTES = [
+  'categoryId',
+  'categorySlug',
+  // Parent-category rollup: parent browse pages filter on these so a
+  // parent id/slug matches its children's leaf listings.
+  'parentId',
+  'parentSlug',
+  'status',
+  'listingType',
+  'condition',
+  'province',
+  'sellerId',
+  'priceRange',
+  'make',
+];
+
 @Injectable()
 export class SearchService implements OnModuleInit {
   private readonly logger = new Logger(SearchService.name);
   private client: Meilisearch | null = null;
+
+  constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
     const host = process.env.MEILISEARCH_HOST;
@@ -40,20 +62,13 @@ export class SearchService implements OnModuleInit {
     // listings index
     await this.client.createIndex(INDEXES.LISTINGS, { primaryKey: 'id' }).catch(() => null);
     const listingsIndex = this.client.index(INDEXES.LISTINGS);
+    // P4.3a — static facets + a `attr_<key>` facet per filterable, active
+    // CategoryAttribute so the browse FilterBar can facet/filter on
+    // per-category attribute values.
+    const attrKeys = await this.filterableAttrFacets();
     await listingsIndex.updateFilterableAttributes([
-      'categoryId',
-      'categorySlug',
-      // Parent-category rollup: parent browse pages filter on these so a
-      // parent id/slug matches its children's leaf listings.
-      'parentId',
-      'parentSlug',
-      'status',
-      'listingType',
-      'condition',
-      'province',
-      'sellerId',
-      'priceRange',
-      'make',
+      ...STATIC_LISTING_FILTERABLE_ATTRIBUTES,
+      ...attrKeys,
     ]);
     await listingsIndex.updateSortableAttributes(['price', 'createdAt']);
     await listingsIndex.updateSearchableAttributes([
@@ -132,6 +147,46 @@ export class SearchService implements OnModuleInit {
     const idx = this.index(indexName);
     if (!idx) return { hits: [], query, processingTimeMs: 0, limit: 20, offset: 0, estimatedTotalHits: 0 } as SearchResponse<T>;
     return idx.search<T>(query, options);
+  }
+
+  /**
+   * P4.3a — the current set of `attr_<key>` facet fields, derived from the
+   * DISTINCT keys of every filterable, active CategoryAttribute. Keys are
+   * snake_case in the DB (guarded on write), so mapping to `attr_<key>` is
+   * safe. Returns an empty list if the DB read fails so a hiccup never
+   * blocks index bootstrap.
+   */
+  private async filterableAttrFacets(): Promise<string[]> {
+    try {
+      const rows = await this.prisma.categoryAttribute.findMany({
+        where: { filterable: true, isActive: true },
+        select: { key: true },
+        distinct: ['key'],
+      });
+      return rows.map((r) => `attr_${r.key}`);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to derive filterable attr facets: ${(err as Error).message}`,
+      );
+      return [];
+    }
+  }
+
+  /**
+   * P4.3a — re-derive the full filterable set (static facets + current
+   * `attr_<key>` facets) and push it to the LISTINGS index. Called
+   * fire-and-forget by the admin CategoryAttribute CRUD when a filterable
+   * attribute is added/changed/removed, so newly-filterable keys become
+   * facetable without a redeploy. No-op when Meilisearch is disconnected.
+   */
+  async refreshListingFilterableAttributes(): Promise<void> {
+    const idx = this.index(INDEXES.LISTINGS);
+    if (!idx) return;
+    const attrKeys = await this.filterableAttrFacets();
+    await idx.updateFilterableAttributes([
+      ...STATIC_LISTING_FILTERABLE_ATTRIBUTES,
+      ...attrKeys,
+    ]);
   }
 
   get isConnected(): boolean {

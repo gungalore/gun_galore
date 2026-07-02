@@ -1,10 +1,13 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminAuditService } from './admin-audit.service';
+import { SearchService } from '../search/search.service';
+import { ListingsService } from '../listings/listings.service';
 import {
   CreateCategoryAttributeDto,
   UpdateCategoryAttributeDto,
@@ -23,10 +26,33 @@ import { AttributeType } from '@prisma/client';
  */
 @Injectable()
 export class AdminCategoryAttributesService {
+  private readonly logger = new Logger(AdminCategoryAttributesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AdminAuditService,
+    private readonly search: SearchService,
+    private readonly listings: ListingsService,
   ) {}
+
+  /**
+   * P4.3a — after a filterable attribute definition changes, refresh the
+   * Meili filterable facet set AND reindex active listings so existing docs
+   * pick up (or drop) the `attr_<key>` field. Fire-and-forget + fail-safe:
+   * never blocks or fails the CRUD response. Skipped when the change can't
+   * affect faceting (the attribute was never and is not now filterable).
+   */
+  private syncSearchFacets(wasRelevant: boolean) {
+    if (!wasRelevant) return;
+    this.search
+      .refreshListingFilterableAttributes()
+      .then(() => this.listings.reindexAllActiveListings())
+      .catch((err) =>
+        this.logger.warn(
+          `Search facet sync failed: ${(err as Error).message}`,
+        ),
+      );
+  }
 
   // Every attribute defined ON a single category (both active + inactive so
   // the admin UI can toggle them). Does NOT resolve inheritance — that is
@@ -95,6 +121,9 @@ export class AdminCategoryAttributesService {
       newValue: { categoryId, key: created.key, type: created.type },
       reason: `Added attribute ${created.key} to ${category.name}`,
     });
+
+    // Refresh Meili facets only if this attribute is actually facetable.
+    this.syncSearchFacets(created.filterable && created.isActive);
     return created;
   }
 
@@ -149,6 +178,13 @@ export class AdminCategoryAttributesService {
       },
       reason: `Updated attribute ${updated.key}`,
     });
+
+    // Refresh Meili facets if this attribute was facetable before OR is now —
+    // either transition (toggling filterable/isActive, or another category
+    // still using the same key) can change the derived facet set.
+    const wasFacetable = before.filterable && before.isActive;
+    const isFacetable = updated.filterable && updated.isActive;
+    this.syncSearchFacets(wasFacetable || isFacetable);
     return updated;
   }
 
@@ -166,6 +202,9 @@ export class AdminCategoryAttributesService {
       oldValue: { categoryId: before.categoryId, key: before.key, type: before.type },
       reason: `Deleted attribute ${before.key}`,
     });
+
+    // Refresh Meili facets only if the deleted attribute was facetable.
+    this.syncSearchFacets(before.filterable && before.isActive);
     return { deleted: true, id };
   }
 }

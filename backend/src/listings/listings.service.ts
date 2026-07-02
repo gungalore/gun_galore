@@ -36,6 +36,12 @@ const PRICELESS_LISTING_TYPES = new Set<ListingType>([
   ListingType.SWOP,
 ]);
 
+// P4.3a — attribute keys are snake_case and stable (matches the DB check
+// on CategoryAttribute.key). Used both when flattening values into the
+// Meili doc (`attr_<key>`) and when sanitizing client-supplied attr filters
+// so an unsanitized key can never be interpolated into a filter string.
+const ATTR_KEY_RE = /^[a-z][a-z0-9_]{0,48}$/;
+
 // Shape returned by previewDraft() — the frontend uses this to render the
 // soft-block preview screen. canPublish gates the "Confirm publish" button;
 // hardBlocked overrides everything when the seller is on attempt 2+ with
@@ -636,10 +642,38 @@ export class ListingsService {
     // in practice, so this is the cleaner path.
     if (sellerClerkId) return this.browseViaPrisma(dto);
 
-    if (q && this.search.isConnected) {
-      return this.browseViaSearch(dto);
+    // P4.3a — per-category attribute filters (JSON-encoded in dto.attrs).
+    // Parsed defensively; a malformed blob is silently ignored. Attribute
+    // filtering is implemented ONLY on the Meili path — the Prisma fallback
+    // does not apply attr filters (documented degradation when Meili is
+    // down), so route to Meili whenever q OR attr filters are present.
+    const parsedAttrs = this.parseAttrFilters(dto.attrs);
+    const hasAttrFilters = Object.keys(parsedAttrs).length > 0;
+
+    if ((q || hasAttrFilters) && this.search.isConnected) {
+      return this.browseViaSearch(dto, parsedAttrs);
     }
     return this.browseViaPrisma(dto);
+  }
+
+  /**
+   * P4.3a — parse the JSON-encoded `attrs` filter blob. Returns an empty
+   * object for anything malformed (bad JSON, non-object, null, array) so the
+   * dispatcher/filter builder can treat "no attr filters" and "garbage attr
+   * filters" identically. Per-entry key/value sanitization happens later in
+   * browseViaSearch — this only guarantees a plain object shape.
+   */
+  private parseAttrFilters(raw?: string): Record<string, unknown> {
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // malformed → ignore
+    }
+    return {};
   }
 
   /**
@@ -878,7 +912,10 @@ export class ListingsService {
     };
   }
 
-  private async browseViaSearch(dto: BrowseListingsDto) {
+  private async browseViaSearch(
+    dto: BrowseListingsDto,
+    parsedAttrs: Record<string, unknown> = {},
+  ) {
     const {
       q = '',
       page = 1,
@@ -915,6 +952,46 @@ export class ListingsService {
       filterParts.push(`make = "${make.replace(/(["\\])/g, '\\$1')}"`);
     if (minPrice !== undefined) filterParts.push(`price >= ${minPrice}`);
     if (maxPrice !== undefined) filterParts.push(`price <= ${maxPrice}`);
+
+    // P4.3a — per-category attribute filters. CRITICAL: every key and every
+    // string value is sanitized before it touches the filter string, because
+    // Meilisearch has no parameterized filters — an unsanitized key/value is
+    // a filter-injection vector.
+    //  - KEY must match the snake_case regex (else the whole entry is
+    //    skipped); the Meili field is `attr_<key>`.
+    //  - number  → attr_<key> = <n>            (finite only)
+    //  - boolean → attr_<key> = true|false
+    //  - string  → attr_<key> = "<escaped>"    (same backslash+quote escape
+    //    the `make` filter uses)
+    //  - { min, max } (finite numbers) → attr_<key> >= min AND attr_<key> <= max
+    for (const [key, value] of Object.entries(parsedAttrs)) {
+      if (!ATTR_KEY_RE.test(key)) continue; // reject unsanitized keys outright
+      const field = `attr_${key}`;
+
+      if (typeof value === 'number') {
+        if (Number.isFinite(value)) filterParts.push(`${field} = ${value}`);
+        continue;
+      }
+      if (typeof value === 'boolean') {
+        filterParts.push(`${field} = ${value ? 'true' : 'false'}`);
+        continue;
+      }
+      if (typeof value === 'string') {
+        // Same escaping as the `make` filter above.
+        filterParts.push(`${field} = "${value.replace(/(["\\])/g, '\\$1')}"`);
+        continue;
+      }
+      // Range object { min?, max? } — only finite numeric bounds are applied.
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const { min, max } = value as { min?: unknown; max?: unknown };
+        if (typeof min === 'number' && Number.isFinite(min)) {
+          filterParts.push(`${field} >= ${min}`);
+        }
+        if (typeof max === 'number' && Number.isFinite(max)) {
+          filterParts.push(`${field} <= ${max}`);
+        }
+      }
+    }
 
     const sortBy =
       sort === 'price_asc'
@@ -1561,29 +1638,42 @@ export class ListingsService {
         });
         parentSlug = parent?.slug ?? null;
       }
-      await this.search.addDocuments(INDEXES.LISTINGS, [
-        {
-          id: listing.id,
-          title: listing.title,
-          description: listing.description,
-          make: listing.make,
-          model: listing.model,
-          calibre: listing.calibre,
-          categoryId: listing.categoryId,
-          categorySlug: listing.category?.slug,
-          categoryName: listing.category?.name,
-          parentId,
-          parentSlug,
-          status: listing.status,
-          listingType: listing.listingType,
-          condition: listing.condition,
-          province: listing.province,
-          sellerId: listing.sellerId,
-          price: listing.price,
-          priceRange: listing.price ? this.priceRange(listing.price) : null,
-          createdAt: listing.createdAt?.toISOString(),
-        },
-      ]);
+      const doc: Record<string, unknown> = {
+        id: listing.id,
+        title: listing.title,
+        description: listing.description,
+        make: listing.make,
+        model: listing.model,
+        calibre: listing.calibre,
+        categoryId: listing.categoryId,
+        categorySlug: listing.category?.slug,
+        categoryName: listing.category?.name,
+        parentId,
+        parentSlug,
+        status: listing.status,
+        listingType: listing.listingType,
+        condition: listing.condition,
+        province: listing.province,
+        sellerId: listing.sellerId,
+        price: listing.price,
+        priceRange: listing.price ? this.priceRange(listing.price) : null,
+        createdAt: listing.createdAt?.toISOString(),
+      };
+
+      // P4.3a — flatten the per-category attribute VALUES into `attr_<key>`
+      // fields so Meilisearch can facet/filter on them (native types are
+      // preserved: numbers stay numbers, booleans stay booleans). The key
+      // regex is a defence in case a malformed key ever reaches the index —
+      // only snake_case keys become facet fields.
+      const attrs = listing.attributes;
+      if (attrs && typeof attrs === 'object' && !Array.isArray(attrs)) {
+        for (const [key, value] of Object.entries(attrs as Record<string, unknown>)) {
+          if (!ATTR_KEY_RE.test(key)) continue;
+          doc[`attr_${key}`] = value;
+        }
+      }
+
+      await this.search.addDocuments(INDEXES.LISTINGS, [doc]);
     } catch (err) {
       this.logger.warn(`Failed to index listing ${listing.id}: ${(err as Error).message}`);
     }

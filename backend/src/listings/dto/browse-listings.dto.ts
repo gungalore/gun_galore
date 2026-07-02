@@ -80,4 +80,19 @@ export class BrowseListingsDto {
   @IsOptional()
   @IsEnum(['price_asc', 'price_desc', 'newest'])
   sort?: 'price_asc' | 'price_desc' | 'newest' = 'newest';
+
+  /**
+   * P4.3a — per-category attribute filters, JSON-encoded by the client.
+   * Two clause shapes are supported per attribute key:
+   *   - equality:  { "battery_chemistry": "LiFePO4", "new_with_tags": true }
+   *   - range:     { "capacity_litres": { "min": 30, "max": 60 } }
+   * Values may be number | string | boolean, or a { min?, max? } object of
+   * numbers for ranges. Parsed + heavily sanitized in the service; a
+   * malformed blob is ignored. Attribute filtering is Meilisearch-only —
+   * the Prisma fallback does NOT apply these (documented degradation when
+   * Meili is down).
+   */
+  @IsOptional()
+  @IsString()
+  attrs?: string;
 }

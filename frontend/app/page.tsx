@@ -23,6 +23,12 @@ interface SearchParams {
   maxPrice?: string;
   sort?: string;
   page?: string;
+  // Per-category attribute filters (P4.3a) — URL-encoded JSON string of
+  // { key: value } (SELECT/BOOLEAN equality) and { key: { min, max } }
+  // (NUMBER range). Only present when a single category is in scope and the
+  // buyer has set at least one attribute filter. Passed straight through to
+  // the listings endpoint, which understands the same `attrs` param.
+  attrs?: string;
 }
 
 // Map a listingType URL param to the user-facing surface name.
@@ -119,6 +125,10 @@ export default async function HomePage({
   if (params.maxPrice) qs.set('maxPrice', params.maxPrice);
   if (params.sort) qs.set('sort', params.sort);
   if (params.page) qs.set('page', params.page);
+  // Per-category attribute filters (P4.3a) — pass the already-encoded JSON
+  // string straight through. The listings endpoint parses it; when absent
+  // browse behaves exactly as before.
+  if (params.attrs) qs.set('attrs', params.attrs);
   qs.set('limit', '24');
 
   // On the bare landing page (showHero) we replace the browse grid
