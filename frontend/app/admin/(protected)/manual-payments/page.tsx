@@ -69,11 +69,20 @@ interface ZohoFailedRow {
   zohoSyncError?: string | null;
   errorMessage?: string | null;
 }
+interface ZohoFailedSwap {
+  id: string;
+  initiatorFundingRef?: string | null;
+  swapFeeInitiator?: number;
+  zohoInitiatorFeeReceiptId?: string | null;
+  swapFeeOwner?: number;
+  zohoOwnerFeeReceiptId?: string | null;
+}
 interface ZohoFailed {
   transactions: ZohoFailedRow[];
   raffleTickets: ZohoFailedRow[];
   featuredBids: ZohoFailedRow[];
   subscriptionCharges: ZohoFailedRow[];
+  swaps: ZohoFailedSwap[];
   totalFailed: number;
 }
 
@@ -538,7 +547,7 @@ export default function ManualPaymentsAdminPage() {
         ) : (
           <div className="overflow-x-auto">
             <p className="text-xs mb-2" style={{ color: 'var(--red)' }}>
-              {zohoFailed.totalFailed} entit{zohoFailed.totalFailed === 1 ? 'y' : 'ies'} failed their last Books sync. Retry from the transaction dossier, or fix the Books account/CoA issue in the error.
+              {zohoFailed.totalFailed} entit{zohoFailed.totalFailed === 1 ? 'y' : 'ies'} failed their last Books sync. Transactions, raffles &amp; featured bids retry from their dossier; swap leg-fee receipts retry automatically each hour.
             </p>
             <table className="w-full text-sm">
               <thead>
@@ -565,6 +574,15 @@ export default function ManualPaymentsAdminPage() {
                     </tr>
                   )),
                 )}
+                {/* P1.3 — swap leg-fee receipts (no zohoSync* columns; the
+                    signal is a missing receipt id). Auto-retried hourly. */}
+                {(zohoFailed.swaps ?? []).map((s) => (
+                  <tr key={`Swap-${s.id}`} style={{ borderTop: '0.5px solid var(--border)' }}>
+                    <td className="py-2 pr-4">Swap fee</td>
+                    <td className="py-2 pr-4">{s.initiatorFundingRef ?? s.id.slice(-8).toUpperCase()}</td>
+                    <td className="py-2 text-[var(--text-tertiary)]">Leg-fee Sales Receipt missing — awaiting hourly retry.</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

@@ -977,7 +977,11 @@ export class FeaturedService {
         const forfeit = await tx.featuredSlotBid.updateMany({
           where: {
             id: forfeitedBid.id,
-            status: 'WON',
+            // The PRIMARY bind-window-expiry case is a winner who never
+            // picked a listing — that bid is still ACTIVE (WON is only set
+            // once bindListingToSlot runs). Include both, but paidAt:null +
+            // windowGuard still protect a paid or in-window winner.
+            status: { in: ['ACTIVE', 'WON'] },
             paidAt: null,
             ...windowGuard,
           },
