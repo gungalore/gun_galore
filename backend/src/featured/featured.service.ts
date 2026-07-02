@@ -47,6 +47,16 @@ export function applyFeaturedDiscount(
 import { PrismaService } from '../prisma/prisma.service';
 import { StitchService } from '../payments/stitch.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { ReferenceNumberService } from '../common/reference-number.service';
+import {
+  GG_BANK_DETAILS,
+  PAYMENT_MODE,
+} from '../payments/transactions.service';
+
+// P1.2 — how long the winner has to pay the slot fee by EFT once they
+// pick a listing (manual rail). Mirrors the subscription pay window.
+const FEATURED_PAY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // Featured-slot service.
 //
@@ -72,10 +82,14 @@ export class FeaturedService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stitch: StitchService,
-    // @Global — used by bindListingToSlot() to post a Sales Receipt
-    // to Books for the featured-slot fee. Feature-flagged so it's
-    // a no-op until ZOHO_BOOKS_ENABLED=true.
+    // NOT @Global — FeaturedModule imports ZohoBooksModule explicitly
+    // (the SwapsModule boot-crash lesson). Posts the slot-fee Sales
+    // Receipt; feature-flagged no-op until ZOHO_BOOKS_ENABLED=true.
     private readonly zohoBooks: ZohoBooksService,
+    // Both @Global (NotificationsModule / ReferenceNumberModule) — used
+    // by the P1.2 manual-EFT slot-fee lane.
+    private readonly notifications: NotificationsService,
+    private readonly referenceNumbers: ReferenceNumberService,
   ) {}
 
   // ─── Config helpers ─────────────────────────────────────────────────
@@ -520,38 +534,106 @@ export class FeaturedService {
         );
       }
 
-      // AUDIT H1 — until a real Stitch (or successor gateway) charge
-      // is wired here, the binding marks the bid PAID with a fabricated
-      // id ("featured-<bidId>") which (a) gives away featuring for
-      // free, (b) inflates the admin revenue dashboard with phantom
-      // income, and (c) makes the force-evict path try to refund a
-      // gateway payment that was never captured.
-      //
-      // Until real charging lands, refuse binding in production so we
-      // can't accidentally hand out free homepage featuring. In
-      // non-prod we keep the synthetic-id path so the lifecycle is
-      // still exercisable end-to-end. Tracked on LAUNCH-CHECKLIST.md.
-      if (process.env.NODE_ENV === 'production') {
-        throw new BadRequestException(
-          'Featured-slot binding is temporarily disabled while the new payment integration is being wired. Please try again later or contact support.',
+      // P1.2 — slot-fee collection depends on the payment rail.
+      if (PAYMENT_MODE === 'manual') {
+        if (!winningBid.paidAt) {
+          // Manual-EFT prepay lane: issue (or resume) payment
+          // instructions and STOP — the slot is not occupied until the
+          // reconciler confirms the money (confirmSlotPayment). The
+          // featured cron holds the bind window open while
+          // paymentPayByAt is live, so the winner can't be cascaded
+          // mid-payment.
+          const now = new Date();
+          const chargedAmountCents = applyFeaturedDiscount(
+            winningBid.amountCents,
+            winningBid.discountPercent ?? 0,
+          );
+          // Idempotent resume: re-calling bind (same or different
+          // listing) re-uses the existing reference + deadline while
+          // they're still live, so the winner sees ONE set of banking
+          // instructions no matter how many times they hit the page.
+          const stillLive =
+            winningBid.paymentPayByAt !== null &&
+            winningBid.paymentPayByAt > now;
+          const orderReference =
+            winningBid.orderReference ??
+            (await this.referenceNumbers.allocateOrderReference('FEATURED'));
+          const paymentPayByAt = stillLive
+            ? (winningBid.paymentPayByAt as Date)
+            : new Date(now.getTime() + FEATURED_PAY_WINDOW_MS);
+          await tx.featuredSlotBid.update({
+            where: { id: winningBid.id },
+            data: {
+              status: 'WON',
+              orderReference,
+              pendingListingId: listing.id,
+              paymentPayByAt,
+              chargedAmountCents,
+            },
+          });
+          await this.recordEvent(
+            slot.id,
+            'AWAITING_EFT_PAYMENT',
+            {
+              bidId: winningBid.id,
+              orderReference,
+              amountCents: chargedAmountCents,
+              payByAt: paymentPayByAt.toISOString(),
+              pendingListingId: listing.id,
+            },
+            user.id,
+          );
+          return {
+            awaitingPayment: true as const,
+            amountCents: chargedAmountCents,
+            orderReference,
+            payByAt: paymentPayByAt,
+            bankDetails: GG_BANK_DETAILS,
+          };
+        }
+        // Already paid (reconciler confirmed the EFT) — complete the
+        // bind WITHOUT touching payment fields. Covers the auto-bind
+        // from confirmSlotPayment and the re-pick path when the
+        // original pending listing stopped being bindable while the
+        // money was in flight.
+        if (winningBid.pendingListingId !== listing.id) {
+          await tx.featuredSlotBid.update({
+            where: { id: winningBid.id },
+            data: { pendingListingId: listing.id },
+          });
+        }
+      } else {
+        // Paygate rail — AUDIT H1: until a real gateway charge is wired
+        // here, the binding marks the bid PAID with a fabricated id
+        // ("featured-<bidId>") which (a) gives away featuring for free,
+        // (b) inflates the admin revenue dashboard with phantom income,
+        // and (c) makes the force-evict path try to refund a gateway
+        // payment that was never captured. Refuse binding in production
+        // so we can't accidentally hand out free homepage featuring; in
+        // non-prod keep the synthetic-id path so the paygate lifecycle
+        // stays exercisable end-to-end. Tracked on LAUNCH-CHECKLIST.md.
+        if (process.env.NODE_ENV === 'production') {
+          throw new BadRequestException(
+            'Featured-slot binding is temporarily disabled while the new payment integration is being wired. Please try again later or contact support.',
+          );
+        }
+        const peachPaymentId = `featured-${winningBid.id}`;
+        // Phase E2 — collect the discounted amount (snapshot on the
+        // bid). Defaults to face amount when discountPercent=0.
+        const chargedAmountCents = applyFeaturedDiscount(
+          winningBid.amountCents,
+          winningBid.discountPercent ?? 0,
         );
+        await tx.featuredSlotBid.update({
+          where: { id: winningBid.id },
+          data: {
+            status: 'WON',
+            paidAt: new Date(),
+            peachPaymentId,
+            chargedAmountCents,
+          },
+        });
       }
-      const peachPaymentId = `featured-${winningBid.id}`;
-      // Phase E2 — collect the discounted amount (snapshot on the
-      // bid). Defaults to face amount when discountPercent=0.
-      const chargedAmountCents = applyFeaturedDiscount(
-        winningBid.amountCents,
-        winningBid.discountPercent ?? 0,
-      );
-      await tx.featuredSlotBid.update({
-        where: { id: winningBid.id },
-        data: {
-          status: 'WON',
-          paidAt: new Date(),
-          peachPaymentId,
-          chargedAmountCents,
-        },
-      });
 
       // Compute featuredUntil from the tier.
       const cfg = await this.getConfig();
@@ -587,6 +669,88 @@ export class FeaturedService {
 
       return { featuredUntil };
     });
+  }
+
+  // P1.2 — reconciler hook: the FS-referenced EFT landed (inContact
+  // detection or authoritative statement row). Exactly-once atomic
+  // claim on paidAt, then auto-bind the listing the winner picked at
+  // instruction time. Idempotent: a second call (statement after
+  // inContact) finds paidAt set and no-ops.
+  async confirmSlotPayment(bidId: string) {
+    const claimed = await this.prisma.featuredSlotBid.updateMany({
+      where: { id: bidId, status: 'WON', paidAt: null },
+      data: { paidAt: new Date() },
+    });
+    if (claimed.count === 0) {
+      this.logger.log(
+        `confirmSlotPayment: bid ${bidId} already paid or not payable — no-op`,
+      );
+      return { bound: false, alreadyPaid: true };
+    }
+
+    const bid = await this.prisma.featuredSlotBid.findUnique({
+      where: { id: bidId },
+      include: {
+        bidder: {
+          select: {
+            clerkId: true,
+            email: true,
+            firstName: true,
+            phone: true,
+          },
+        },
+        auction: { select: { slotId: true } },
+      },
+    });
+    if (!bid) return { bound: false, alreadyPaid: false };
+
+    // Books: Sales Receipt for the cash that just landed. Idempotent
+    // via bid.zohoInvoiceId, so the bind-completion call below (or a
+    // reconciler retry) can't double-post.
+    void this.zohoBooks.createFeaturedSlotInvoice(bidId);
+
+    try {
+      if (!bid.pendingListingId) {
+        throw new Error('no pending listing recorded on the bid');
+      }
+      const res = await this.bindListingToSlot(
+        bid.bidder.clerkId,
+        bid.auction.slotId,
+        bid.pendingListingId,
+      );
+      void this.notifications
+        .featuredSlotPaymentReceived({
+          email: bid.bidder.email,
+          name: bid.bidder.firstName ?? 'there',
+          phone: bid.bidder.phone,
+          amountCents: bid.chargedAmountCents ?? bid.amountCents,
+          bound: true,
+          featuredUntil:
+            'featuredUntil' in res ? (res.featuredUntil as Date) : null,
+        })
+        .catch(() => undefined);
+      return { bound: true };
+    } catch (err) {
+      // The pending listing stopped being bindable while the money was
+      // in flight (sold / deactivated / featured elsewhere) or the slot
+      // state changed. Money stays received (paidAt set) — the winner
+      // re-picks via the normal bind endpoint, which binds paid bids
+      // without a second charge.
+      this.logger.warn(
+        `confirmSlotPayment: paid bid ${bidId} could not auto-bind: ${(err as Error).message}`,
+      );
+      void this.notifications
+        .featuredSlotPaymentReceived({
+          email: bid.bidder.email,
+          name: bid.bidder.firstName ?? 'there',
+          phone: bid.bidder.phone,
+          amountCents: bid.chargedAmountCents ?? bid.amountCents,
+          bound: false,
+          featuredUntil: null,
+        })
+        .catch(() => undefined);
+      return { bound: false };
+    }
   }
 
   // ─── Lifecycle helpers (called by cron / hooks) ─────────────────────
@@ -738,6 +902,18 @@ export class FeaturedService {
       const auction = slot.currentAuction;
       if (!auction) return;
       const forfeitedBid = auction.winningBid;
+      // P1.2 defence-in-depth (the cron query already excludes these):
+      // never forfeit a winner who has PAID, or whose EFT window is
+      // still live — cascading them would take their money and hand
+      // the slot to someone else.
+      if (
+        forfeitedBid &&
+        (forfeitedBid.paidAt !== null ||
+          (forfeitedBid.paymentPayByAt !== null &&
+            forfeitedBid.paymentPayByAt > new Date()))
+      ) {
+        return;
+      }
       if (forfeitedBid) {
         await tx.featuredSlotBid.update({
           where: { id: forfeitedBid.id },

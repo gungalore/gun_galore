@@ -2032,10 +2032,19 @@ model FeaturedSlotBid {
   // downgrade between bid + bind. Charged cents = floor(
   // amountCents * (100 - discountPercent) / 100).
   discountPercent    Int  @default(0)
-  // Actual ZAR cents Peach charged. Null until the bid wins + binds.
+  // Actual ZAR cents charged. Null until the bid wins + binds.
   // Once set, Zoho receipt + admin revenue reports use this value
   // (NOT amountCents) so the books match the cash that landed.
   chargedAmountCents Int?
+
+  // ── P1.2 — manual-EFT slot-fee payment lane ──────────────────────
+  // On bind-request the winner gets an FS reference + a pay-by
+  // deadline; the reconciler completes the bind on payment match.
+  // pendingListingId remembers WHICH listing to feature once paid.
+  orderReference     String?   @unique
+  pendingListingId   String?
+  paymentPayByAt     DateTime?
+  paymentDetectedAt  DateTime?
 
   status FeaturedBidStatus @default(ACTIVE)
 
@@ -2366,6 +2375,9 @@ model Subscription {
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
   cancelAtPeriodEnd  Boolean                   @default(false)
+  // P1.1 — prepaid manual-EFT rail: idempotency stamp for the
+  // "renews in 3 days" reminder (cleared when a new period activates).
+  renewalReminderAt  DateTime?
   // Peach vault ID for recurring charges. NULL for comp accounts +
   // pre-Peach-tokenisation grants. Mirrored from User.peachCustomerId
   // at signup so the cron doesn't need to JOIN.
@@ -2403,7 +2415,20 @@ model SubscriptionCharge {
   attemptCount   Int          @default(1)
   chargedAt      DateTime     @default(now())
 
+  // ── P1.1 — prepaid manual-EFT purchase lane ──────────────────────
+  // A PENDING charge is an OPEN EFT request: the member pays this
+  // reference (SB prefix) and the reconciler activates the tier on
+  // match. payByAt bounds how long the reference stays payable;
+  // tierPurchased/periodDays snapshot what the payment buys (the
+  // user may be upgrading, so it can differ from subscription.tier).
+  orderReference String?           @unique
+  payByAt        DateTime?
+  tierPurchased  SubscriptionTier?
+  periodDays     Int               @default(31)
+  detectedAt     DateTime? // provisional inContact detection stamp
+
   @@index([subscriptionId, chargedAt(sort: Desc)])
+  @@index([status, payByAt])
 }
 
 // A single Ask GG chat thread. Most users will have many.
@@ -3142,6 +3167,12 @@ model Swap {
   disputedAt             DateTime?
   disputeReason          String?
   disputeRaisedById      String?
+
+  // P1.3 — Books linkage for the two flat leg fees GG retained (one
+  // Sales Receipt per paying party, booked at completion — revenue is
+  // only recognised once the swap can no longer be unwound/refunded).
+  zohoInitiatorFeeReceiptId String?
+  zohoOwnerFeeReceiptId     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -43,6 +43,10 @@ import {
 import { SubscriberRaffleWidget } from '@/components/subscriber-raffle-widget';
 import { LoadLabPanel } from './load-lab/LoadLabPanel';
 
+// P1.1 — live tier pricing for the perks table (public endpoint).
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
 function IconSparkles({ size = 22 }: { size?: number }) {
   return (
     <svg
@@ -2177,9 +2181,9 @@ function FairUseCard({ coolOff }: { coolOff: AskGgFairUseCoolOff }) {
 /** 3-column FREE / MEMBER / PRO perks comparison. Rendered on the
  *  signed-out + FREE-tier-exhausted cards so prospects (and capped
  *  free users) can see exactly what they'd get by signing up /
- *  upgrading. Prices are deliberately shown as "Launching soon"
- *  because the self-serve subscription flow is gated on Peach card
- *  tokenisation — operator sets the rand amounts once Peach lands.
+ *  upgrading. Prices are fetched live from /subscriptions/pricing
+ *  (P1.1 — self-serve prepaid EFT subscriptions are LIVE); each paid
+ *  tier links to /subscribe.
  *
  *  Perks come from the locked spec (OD1 + OD3 + the Phase E
  *  marketplace perks). The `current` prop visually highlights the
@@ -2190,6 +2194,20 @@ function TierPerksTable({
 }: {
   current: 'FREE' | 'MEMBER' | 'PRO' | null;
 }) {
+  const [prices, setPrices] = useState<{
+    memberCents: number;
+    proCents: number;
+  } | null>(null);
+  useEffect(() => {
+    fetch(`${API_URL}/subscriptions/pricing`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(
+        (p: { memberCents: number; proCents: number } | null) =>
+          p && setPrices(p),
+      )
+      .catch(() => undefined);
+  }, []);
+  const rand = (cents: number) => `R${Math.round(cents / 100)}/mo`;
   type Perk = { free: string; member: string; pro: string };
   const ROWS: Array<{ label: string; perk: Perk }> = [
     {
@@ -2237,8 +2255,18 @@ function TierPerksTable({
     accent: boolean;
   }> = [
     { key: 'FREE', label: 'Free', price: 'R0', accent: false },
-    { key: 'MEMBER', label: 'Member', price: 'Launching soon', accent: false },
-    { key: 'PRO', label: 'Pro', price: 'Launching soon', accent: true },
+    {
+      key: 'MEMBER',
+      label: 'Member',
+      price: prices ? rand(prices.memberCents) : '…',
+      accent: false,
+    },
+    {
+      key: 'PRO',
+      label: 'Pro',
+      price: prices ? rand(prices.proCents) : '…',
+      accent: true,
+    },
   ];
 
   return (
@@ -2376,6 +2404,29 @@ function TierPerksTable({
                 );
               })}
             </ul>
+
+            {/* P1.1 — paid tiers are self-serve now (prepaid EFT). */}
+            {t.key !== 'FREE' && !isCurrent && (
+              <Link
+                href="/subscribe"
+                style={{
+                  display: 'block',
+                  marginTop: 12,
+                  textAlign: 'center',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  background: t.accent ? 'var(--red)' : 'transparent',
+                  color: t.accent ? '#fff' : 'var(--red)',
+                  border: t.accent
+                    ? 'none'
+                    : '0.5px solid rgba(200,16,46,0.40)',
+                }}
+              >
+                Get {t.label}
+              </Link>
+            )}
           </div>
         );
       })}

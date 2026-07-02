@@ -17,7 +17,9 @@ export type NotificationLinkedType =
   | 'listing'
   | 'raffle'
   | 'swapProposal'
-  | 'swap';
+  | 'swap'
+  | 'subscription'
+  | 'featured';
 
 interface PersistOpts {
   userId: string;
@@ -1431,6 +1433,197 @@ export class NotificationsService {
           ? `Gun Galore: R${(d.buyerTotal / 100).toFixed(0)} refund approved for ${truncate(d.listingTitle, 30)}. Add your bank details on your profile so we can pay it: ${this.appUrl}/profile/edit`
           : `Gun Galore: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow ${d.manualEft ? '1-3' : '5-10'} business days.`,
         `refund-${d.transactionId}`,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Subscriptions (P1.1) — prepaid MEMBER/PRO periods on the EFT rail.
+  // Financial events → BOTH email + SMS (house rule); SMS skips
+  // silently when phone is null.
+  // ---------------------------------------------------------------
+  async subscriptionActivated(d: {
+    email: string;
+    name: string;
+    phone?: string | null;
+    tier: string;
+    periodEnd: Date;
+  }) {
+    const until = formatDateShort(d.periodEnd);
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'subscription_activated',
+      title: `GG+ ${d.tier} active`,
+      body: `Your ${d.tier} subscription is active until ${until}. Enjoy the perks!`,
+      url: '/ask-gg',
+      iconKey: 'transaction',
+      linkedType: 'subscription',
+      linkedId: d.tier,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'success', label: 'Active' },
+      headline: `Your GG+ ${d.tier} subscription is active`,
+      body: `Hi ${b(d.name)}, thanks — your payment has been received and your ${b(
+        `GG+ ${d.tier}`,
+      )} subscription is now active until ${b(until)}. All your tier perks (Ask GG limits, photo ID, badge and more) are live right now. Your subscription does not auto-renew — we'll remind you before it ends so you can top up if you want to keep it.`,
+      rows: [
+        { label: 'Tier', value: `GG+ ${d.tier}` },
+        { label: 'Active until', value: until },
+      ],
+      cta: { label: 'Open Ask GG', url: `${this.appUrl}/ask-gg` },
+      preheader: `GG+ ${d.tier} active until ${until}`,
+    });
+    await this.send(d.email, `GG+ ${d.tier} subscription active`, html);
+    if (d.phone) {
+      await this.sendSms(
+        d.phone,
+        `Gun Galore: your GG+ ${d.tier} subscription is active until ${until}. No auto-renew - we'll remind you before it ends.`,
+        `sub-active-${d.email}-${d.periodEnd.getTime()}`,
+      );
+    }
+  }
+
+  async subscriptionExpiring(d: {
+    email: string;
+    name: string;
+    phone?: string | null;
+    tier: string;
+    periodEnd: Date;
+  }) {
+    const until = formatDateShort(d.periodEnd);
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'subscription_expiring',
+      title: `GG+ ${d.tier} ends ${until}`,
+      body: `Your ${d.tier} subscription ends on ${until}. Renew now to keep your perks without a gap.`,
+      url: '/subscribe',
+      iconKey: 'transaction',
+      linkedType: 'subscription',
+      linkedId: d.tier,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Ending soon' },
+      headline: `Your GG+ ${d.tier} ends on ${until}`,
+      body: `Hi ${b(d.name)}, a heads-up that your ${b(
+        `GG+ ${d.tier}`,
+      )} subscription ends on ${b(
+        until,
+      )}. Subscriptions are prepaid and never renew automatically — if you'd like to keep your perks, renew before then and your new period simply stacks on top of the current one (no days lost).`,
+      rows: [
+        { label: 'Tier', value: `GG+ ${d.tier}` },
+        { label: 'Ends on', value: until },
+      ],
+      cta: { label: 'Renew now', url: `${this.appUrl}/subscribe` },
+      preheader: `GG+ ${d.tier} ends ${until} — renew to keep your perks`,
+    });
+    await this.send(d.email, `Your GG+ ${d.tier} ends on ${until}`, html);
+    if (d.phone) {
+      await this.sendSms(
+        d.phone,
+        `Gun Galore: your GG+ ${d.tier} ends on ${until}. Renew at ${this.appUrl}/subscribe to keep your perks - new days stack on top, none lost.`,
+        `sub-expiring-${d.email}-${d.periodEnd.getTime()}`,
+      );
+    }
+  }
+
+  async subscriptionLapsed(d: {
+    email: string;
+    name: string;
+    phone?: string | null;
+    tier: string;
+  }) {
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'subscription_lapsed',
+      title: `GG+ ${d.tier} has ended`,
+      body: `Your ${d.tier} subscription has ended and your account is back on the free tier. Renew any time.`,
+      url: '/subscribe',
+      iconKey: 'transaction',
+      linkedType: 'subscription',
+      linkedId: d.tier,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Ended' },
+      headline: `Your GG+ ${d.tier} subscription has ended`,
+      body: `Hi ${b(d.name)}, your prepaid ${b(
+        `GG+ ${d.tier}`,
+      )} period has ended and your account is back on the free tier. Nothing has been charged — subscriptions never renew automatically. You can re-subscribe any time and your perks switch back on immediately.`,
+      cta: { label: 'Re-subscribe', url: `${this.appUrl}/subscribe` },
+      preheader: `GG+ ${d.tier} ended — re-subscribe any time`,
+    });
+    await this.send(d.email, `Your GG+ ${d.tier} subscription has ended`, html);
+    if (d.phone) {
+      await this.sendSms(
+        d.phone,
+        `Gun Galore: your GG+ ${d.tier} subscription has ended - you're back on the free tier. Re-subscribe any time: ${this.appUrl}/subscribe`,
+        `sub-lapsed-${d.email}-${d.tier}`,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Featured slot (P1.2) — EFT slot-fee received. bound=false means the
+  // listing they picked stopped being bindable while the money was in
+  // flight — they must pick another (ACTION REQUIRED, money already
+  // taken). Financial event → email + SMS.
+  // ---------------------------------------------------------------
+  async featuredSlotPaymentReceived(d: {
+    email: string;
+    name: string;
+    phone?: string | null;
+    amountCents: number;
+    bound: boolean;
+    featuredUntil?: Date | null;
+  }) {
+    const until = d.featuredUntil ? formatDateShort(d.featuredUntil) : null;
+    await this.persistByEmail(d.email, {
+      category: 'SELLER',
+      type: 'featured_payment_received',
+      title: d.bound ? 'Your listing is featured!' : 'Payment received — pick a listing',
+      body: d.bound
+        ? `Payment of ${formatRand(d.amountCents)} received — your listing is live on the homepage${until ? ` until ${until}` : ''}.`
+        : `Payment of ${formatRand(d.amountCents)} received, but the listing you picked is no longer available to feature. Choose another listing to use your slot.`,
+      url: '/featured',
+      iconKey: 'transaction',
+      linkedType: 'featured',
+      linkedId: 'slot',
+      dismissible: d.bound,
+    });
+    const html = this.email({
+      status: d.bound
+        ? { tone: 'success', label: 'Featured live' }
+        : { tone: 'pending', label: 'Action needed' },
+      headline: d.bound
+        ? 'Your featured slot is live'
+        : 'Payment received — choose a listing to feature',
+      body: d.bound
+        ? `Hi ${b(d.name)}, we've received your slot fee of ${b(formatRand(d.amountCents))} and your listing is now featured on the homepage${until ? ` until ${b(until)}` : ''}. Good luck with the extra eyes!`
+        : `Hi ${b(d.name)}, we've received your slot fee of ${b(formatRand(d.amountCents))} — but the listing you originally picked is no longer available to feature (it may have sold or been paused in the meantime). Your slot is reserved and paid for: just pick another of your active listings to complete the feature.`,
+      rows: [{ label: 'Amount received', value: formatRand(d.amountCents) }],
+      cta: d.bound
+        ? { label: 'View homepage', url: this.appUrl }
+        : { label: 'Pick a listing', url: `${this.appUrl}/featured` },
+      preheader: d.bound
+        ? `Featured live — ${formatRand(d.amountCents)} received`
+        : `Slot fee received — pick a listing to feature`,
+    });
+    await this.send(
+      d.email,
+      d.bound
+        ? 'Your featured slot is live'
+        : 'Action needed: pick a listing for your featured slot',
+      html,
+    );
+    if (d.phone) {
+      await this.sendSms(
+        d.phone,
+        d.bound
+          ? `Gun Galore: R${(d.amountCents / 100).toFixed(0)} slot fee received - your listing is now featured on the homepage${until ? ` until ${until}` : ''}.`
+          : `Gun Galore: R${(d.amountCents / 100).toFixed(0)} slot fee received, but your chosen listing is no longer available. Pick another at ${this.appUrl}/featured - your slot is paid and reserved.`,
+        `featured-paid-${d.email}-${d.amountCents}`,
       );
     }
   }

@@ -920,6 +920,12 @@ export class SwapFundingService {
     if (result.settlementTxId) {
       void this.zohoBooks.createCommissionInvoice(result.settlementTxId);
     }
+    // P1.3 — book the two flat leg fees (courier service / firearm
+    // handling) GG retained from the funding EFTs. Recognised only at
+    // completion; idempotent per side; never throws.
+    if (result.released) {
+      void this.zohoBooks.createSwapFeeReceipts(swapId);
+    }
     return result;
   }
 

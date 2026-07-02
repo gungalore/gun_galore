@@ -938,12 +938,12 @@ export class ZohoBooksService {
           'Raffle Ticket Revenue account not found in Books chart-of-accounts',
         );
       }
-      // Deposit-to: Bank — Peach Pending (where Peach captures, before
-      // settling to FNB). Falls back to FNB Business if Peach Pending
-      // doesn't exist in the user's CoA.
+      // P1.3 — manual-EFT money lands straight in FNB, so the bank
+      // account comes FIRST; "Peach Pending" stays only as a fallback
+      // for CoAs that predate the manual rail.
       const depositAccountId =
-        (await this.getAccountIdByName('Bank — Peach Pending')) ??
-        (await this.getAccountIdByName('Bank — FNB Business'));
+        (await this.getAccountIdByName('Bank — FNB Business')) ??
+        (await this.getAccountIdByName('Bank — Peach Pending'));
       if (!depositAccountId) {
         throw new Error(
           'No deposit account found in Books (need "Bank — Peach Pending" or "Bank — FNB Business")',
@@ -1008,6 +1008,238 @@ export class ZohoBooksService {
       await this.markRaffleTicketsFailed(
         paidTickets.map((t) => t.id),
         err as Error,
+      );
+    }
+  }
+
+  /**
+   * P1.1 — Sales Receipt for a paid subscription period (manual EFT).
+   * Fired by SubscriptionsService.confirmPayment. Idempotent via
+   * SubscriptionCharge.zohoReceiptId. Never throws.
+   */
+  async createSubscriptionSalesReceipt(chargeId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    const charge = await this.prisma.subscriptionCharge.findUnique({
+      where: { id: chargeId },
+      include: {
+        subscription: {
+          include: {
+            user: { select: { id: true, email: true, username: true } },
+          },
+        },
+      },
+    });
+    if (!charge || charge.zohoReceiptId) return; // missing or already synced
+    if (charge.status !== 'SUCCEEDED' || charge.amountCents <= 0) return;
+
+    const user = charge.subscription.user;
+    const tier = charge.tierPurchased ?? charge.subscription.tier;
+    const amountRand = charge.amountCents / 100;
+    const reference = `Ask GG ${tier} subscription — ${charge.orderReference ?? charge.id.slice(-8).toUpperCase()} (${charge.periodDays} days)`;
+
+    try {
+      const contactId = await this.ensureContact(user.id, user.email);
+      if (!contactId) throw new Error('Could not resolve Books contact');
+      const revenueAccountId =
+        (await this.getAccountIdByName('Subscription Revenue')) ??
+        (await this.getAccountIdByName('Commission Revenue'));
+      if (!revenueAccountId) {
+        throw new Error(
+          'No revenue account found in Books (need "Subscription Revenue" or "Commission Revenue")',
+        );
+      }
+      // Manual-EFT money lands straight in FNB — prefer the bank account.
+      const depositAccountId =
+        (await this.getAccountIdByName('Bank — FNB Business')) ??
+        (await this.getAccountIdByName('Bank — Peach Pending'));
+      if (!depositAccountId) {
+        throw new Error(
+          'No deposit account found in Books (need "Bank — FNB Business" or "Bank — Peach Pending")',
+        );
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      type CreateSalesReceiptResp = {
+        salesreceipt?: { salesreceipt_id?: string; salesreceipt_number?: string };
+        message?: string;
+      };
+      const resp = await this.request<CreateSalesReceiptResp>(
+        'POST',
+        '/salesreceipts',
+        {
+          customer_id: contactId,
+          reference_number: reference,
+          date: today,
+          line_items: [
+            {
+              name: `Ask GG ${tier} subscription`,
+              description: reference,
+              rate: amountRand,
+              quantity: 1,
+              account_id: revenueAccountId,
+            },
+          ],
+          payment_mode: 'Bank Transfer',
+          deposit_to_account_id: depositAccountId,
+          notes: `${reference}.\nPaid by EFT (reference-matched).`,
+        },
+      );
+      const receiptId = resp.salesreceipt?.salesreceipt_id;
+      if (!receiptId) {
+        throw new Error(
+          `Books sales-receipt create returned no id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+      await this.prisma.subscriptionCharge.update({
+        where: { id: chargeId },
+        data: { zohoReceiptId: receiptId },
+      });
+      this.logger.log(
+        `Created subscription sales receipt ${resp.salesreceipt?.salesreceipt_number ?? receiptId} (R${amountRand.toFixed(2)}, ${tier}, user ${user.username ?? user.id})`,
+      );
+    } catch (err) {
+      // No zohoSync* columns on SubscriptionCharge — record the failure in
+      // errorMessage (the charge itself already SUCCEEDED financially).
+      const message = (err as Error).message.slice(0, 900);
+      this.logger.error(`Zoho subscription receipt FAILED for ${chargeId}: ${message}`);
+      await this.prisma.subscriptionCharge
+        .update({
+          where: { id: chargeId },
+          data: { errorMessage: `Zoho receipt failed: ${message}` },
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  /**
+   * P1.3 — Sales Receipts for the two flat swap leg fees GG retained
+   * (courier service fee / firearm handling fee, snapshotted on the
+   * Swap as swapFeeInitiator / swapFeeOwner and collected inside each
+   * party's funding EFT). Booked at swap COMPLETION — the only point
+   * where the fees are definitively earned (any earlier cancel/unwind
+   * reimburses the payer in full). One receipt per paying party so the
+   * Books entries mirror the two EFTs that actually landed in FNB.
+   * Idempotent per side via zoho*FeeReceiptId. Never throws.
+   */
+  async createSwapFeeReceipts(swapId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    try {
+      const swap = await this.prisma.swap.findUnique({
+        where: { id: swapId },
+        select: {
+          id: true,
+          status: true,
+          swapFeeInitiator: true,
+          swapFeeOwner: true,
+          initiatorFundingRef: true,
+          ownerFundingRef: true,
+          zohoInitiatorFeeReceiptId: true,
+          zohoOwnerFeeReceiptId: true,
+          initiator: { select: { id: true, email: true } },
+          owner: { select: { id: true, email: true } },
+        },
+      });
+      if (!swap || swap.status !== 'COMPLETED') return;
+
+      const revenueAccountId =
+        (await this.getAccountIdByName('Swap Service Revenue')) ??
+        (await this.getAccountIdByName('Commission Revenue'));
+      if (!revenueAccountId) {
+        throw new Error(
+          'No revenue account found in Books (need "Swap Service Revenue" or "Commission Revenue")',
+        );
+      }
+      const depositAccountId =
+        (await this.getAccountIdByName('Bank — FNB Business')) ??
+        (await this.getAccountIdByName('Bank — Peach Pending'));
+      if (!depositAccountId) {
+        throw new Error(
+          'No deposit account found in Books (need "Bank — FNB Business" or "Bank — Peach Pending")',
+        );
+      }
+
+      const sides: Array<{
+        key: 'initiator' | 'owner';
+        feeCents: number;
+        alreadyId: string | null;
+        userId: string;
+        email: string;
+        fundingRef: string | null;
+        column: 'zohoInitiatorFeeReceiptId' | 'zohoOwnerFeeReceiptId';
+      }> = [
+        {
+          key: 'initiator',
+          feeCents: swap.swapFeeInitiator,
+          alreadyId: swap.zohoInitiatorFeeReceiptId,
+          userId: swap.initiator.id,
+          email: swap.initiator.email,
+          fundingRef: swap.initiatorFundingRef,
+          column: 'zohoInitiatorFeeReceiptId',
+        },
+        {
+          key: 'owner',
+          feeCents: swap.swapFeeOwner,
+          alreadyId: swap.zohoOwnerFeeReceiptId,
+          userId: swap.owner.id,
+          email: swap.owner.email,
+          fundingRef: swap.ownerFundingRef,
+          column: 'zohoOwnerFeeReceiptId',
+        },
+      ];
+
+      const today = new Date().toISOString().slice(0, 10);
+      type CreateSalesReceiptResp = {
+        salesreceipt?: { salesreceipt_id?: string; salesreceipt_number?: string };
+        message?: string;
+      };
+
+      for (const side of sides) {
+        if (side.alreadyId || side.feeCents <= 0) continue;
+        const contactId = await this.ensureContact(side.userId, side.email);
+        if (!contactId) {
+          throw new Error(`Could not resolve Books contact for swap ${side.key}`);
+        }
+        const reference = `Swap service fee — ${side.fundingRef ?? swap.id.slice(-8).toUpperCase()}`;
+        const resp = await this.request<CreateSalesReceiptResp>(
+          'POST',
+          '/salesreceipts',
+          {
+            customer_id: contactId,
+            reference_number: reference,
+            date: today,
+            line_items: [
+              {
+                name: 'Swap leg service fee',
+                description: `${reference} — flat per-leg fee collected inside the funding EFT; recognised at swap completion.`,
+                rate: side.feeCents / 100,
+                quantity: 1,
+                account_id: revenueAccountId,
+              },
+            ],
+            payment_mode: 'Bank Transfer',
+            deposit_to_account_id: depositAccountId,
+            notes: `${reference}. Swap ${swap.id}.`,
+          },
+        );
+        const receiptId = resp.salesreceipt?.salesreceipt_id;
+        if (!receiptId) {
+          throw new Error(
+            `Books sales-receipt create returned no id: ${resp.message ?? 'unknown'}`,
+          );
+        }
+        await this.prisma.swap.update({
+          where: { id: swap.id },
+          data: { [side.column]: receiptId },
+        });
+        this.logger.log(
+          `Created swap fee receipt ${resp.salesreceipt?.salesreceipt_number ?? receiptId} (R${(side.feeCents / 100).toFixed(2)}, ${side.key}, swap ${swap.id})`,
+        );
+      }
+    } catch (err) {
+      // No zohoSync* columns on Swap — log only; the retry surface is the
+      // failed-sync admin report (which also lists fee-less completed
+      // swaps with missing receipts).
+      this.logger.error(
+        `Zoho swap fee receipts FAILED for ${swapId}: ${(err as Error).message}`,
       );
     }
   }
@@ -1083,9 +1315,10 @@ export class ZohoBooksService {
           'Featured-Slot Revenue account not found in Books chart-of-accounts',
         );
       }
+      // P1.3 — EFT-paid slot fees land in FNB; bank account first.
       const depositAccountId =
-        (await this.getAccountIdByName('Bank — Peach Pending')) ??
-        (await this.getAccountIdByName('Bank — FNB Business'));
+        (await this.getAccountIdByName('Bank — FNB Business')) ??
+        (await this.getAccountIdByName('Bank — Peach Pending'));
 
       const feeRand = billableCents / 100;
       const today = new Date().toISOString().slice(0, 10);

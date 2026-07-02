@@ -30,6 +30,8 @@ function makeService(over: Record<string, jest.Mock> = {}) {
     transactions as never,
     zohoBooks as never,
     {} as never, // SwapFundingService — payout-batch paths don't touch it
+    {} as never, // SubscriptionsService — payout-batch paths don't touch it
+    {} as never, // FeaturedService — payout-batch paths don't touch it
   );
   return {
     service, prisma, zohoBooks, txcMock,

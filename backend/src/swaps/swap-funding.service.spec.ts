@@ -54,7 +54,10 @@ function make() {
     fees as never,
     referenceNumbers as never,
     notifications as never,
-    { createCommissionInvoice: jest.fn().mockResolvedValue(undefined) } as never, // zohoBooks (P0.5 review fix)
+    {
+      createCommissionInvoice: jest.fn().mockResolvedValue(undefined), // P0.5 review fix
+      createSwapFeeReceipts: jest.fn().mockResolvedValue(undefined), // P1.3 leg-fee receipts
+    } as never, // zohoBooks
   );
   return { service, prisma, txc, notifications };
 }

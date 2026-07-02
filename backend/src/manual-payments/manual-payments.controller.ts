@@ -77,6 +77,19 @@ export class ManualPaymentsController {
     return this.manual.getPayoutsDue();
   }
 
+  // P1.3 — every entity whose latest Zoho Books sync FAILED, in one list.
+  @Get('zoho-failed')
+  zohoFailed() {
+    return this.manual.getZohoFailedSyncs();
+  }
+
+  // P1.4 — held-funds position: how much of the FNB balance is client
+  // money (held orders + owed payouts + owed refunds + held swap cash).
+  @Get('held-funds')
+  heldFunds() {
+    return this.manual.getHeldFundsReport();
+  }
+
   // ── Payout batches (freeze-on-download) ─────────────────────────────
   // Freeze EXACTLY what's due now into a PENDING batch + generate the FNB
   // file. Those rows leave the due queue; the operator pays in FNB then

@@ -47,6 +47,36 @@ interface PayoutBatch {
   cancelledAt: string | null;
 }
 
+// P1.4 — held-funds (client money) position.
+interface HeldBucket {
+  count: number;
+  cents: number;
+}
+interface HeldFunds {
+  asOf: string;
+  paymentMode: string;
+  heldAwaitingRelease: HeldBucket;
+  owedToSellers: HeldBucket;
+  owedToBuyerRefunds: HeldBucket;
+  swapCashHeld: HeldBucket;
+  swapFundingInFlight: HeldBucket;
+  totalClientFundsCents: number;
+}
+// P1.3 — Books failed-sync aggregate.
+interface ZohoFailedRow {
+  id: string;
+  orderReference?: string | null;
+  zohoSyncError?: string | null;
+  errorMessage?: string | null;
+}
+interface ZohoFailed {
+  transactions: ZohoFailedRow[];
+  raffleTickets: ZohoFailedRow[];
+  featuredBids: ZohoFailedRow[];
+  subscriptionCharges: ZohoFailedRow[];
+  totalFailed: number;
+}
+
 function rand(cents: number) {
   return `R${(cents / 100).toFixed(2)}`;
 }
@@ -62,6 +92,8 @@ export default function ManualPaymentsAdminPage() {
   const [batches, setBatches] = useState<PayoutBatch[]>([]);
   const [payoutBusy, setPayoutBusy] = useState(false);
   const [payoutMsg, setPayoutMsg] = useState<string | null>(null);
+  const [heldFunds, setHeldFunds] = useState<HeldFunds | null>(null);
+  const [zohoFailed, setZohoFailed] = useState<ZohoFailed | null>(null);
 
   useEffect(() => {
     setReady(requireAdminToken());
@@ -75,12 +107,16 @@ export default function ManualPaymentsAdminPage() {
   }, []);
 
   const loadPayouts = useCallback(async () => {
-    const [d, b] = await Promise.all([
+    const [d, b, h, z] = await Promise.all([
       adminFetch('/admin/manual-payments/payouts-due'),
       adminFetch('/admin/manual-payments/payout-batches'),
+      adminFetch('/admin/manual-payments/held-funds'),
+      adminFetch('/admin/manual-payments/zoho-failed'),
     ]);
     if (d.ok) setDue(await d.json());
     if (b.ok) setBatches(await b.json());
+    if (h.ok) setHeldFunds(await h.json());
+    if (z.ok) setZohoFailed(await z.json());
   }, []);
 
   useEffect(() => {
@@ -442,6 +478,93 @@ export default function ManualPaymentsAdminPage() {
                     <td className="py-2 text-[var(--text-tertiary)]">{m.note ?? '—'}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* P1.4 — Held funds (client money) position */}
+      <section className="rounded-[8px] p-5" style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}>
+        <h2 className="text-base font-medium mb-1">Held funds — client money position</h2>
+        <p className="text-xs mb-3 text-[var(--text-tertiary)]">
+          How much of the FNB balance belongs to members, not Gun Galore. The
+          bank balance should always be at least the total below.
+        </p>
+        {!heldFunds ? (
+          <p className="text-sm text-[var(--text-tertiary)]">Loading…</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <tbody>
+                {(
+                  [
+                    ['Buyer money held (awaiting delivery/release)', heldFunds.heldAwaitingRelease],
+                    ['Owed to sellers (released, not yet paid out)', heldFunds.owedToSellers],
+                    ['Owed to buyers (refunds not yet paid)', heldFunds.owedToBuyerRefunds],
+                    ['Swap cash top-ups held (locked swaps)', heldFunds.swapCashHeld],
+                    ['Swap funding in flight (one side paid, pre-lock)', heldFunds.swapFundingInFlight],
+                  ] as Array<[string, HeldBucket]>
+                ).map(([label, bucket]) => (
+                  <tr key={label} style={{ borderTop: '0.5px solid var(--border)' }}>
+                    <td className="py-2 pr-4">{label}</td>
+                    <td className="py-2 pr-4 text-[var(--text-tertiary)]">{bucket.count} item{bucket.count === 1 ? '' : 's'}</td>
+                    <td className="py-2 text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>{rand(bucket.cents)}</td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: '0.5px solid var(--border)' }}>
+                  <td className="py-2 pr-4 font-medium">Total client funds</td>
+                  <td className="py-2 pr-4" />
+                  <td className="py-2 text-right font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--red)' }}>
+                    {rand(heldFunds.totalClientFundsCents)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="text-xs mt-2 text-[var(--text-tertiary)]">
+              As of {new Date(heldFunds.asOf).toLocaleString('en-ZA')} · payment mode: {heldFunds.paymentMode}
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* P1.3 — Zoho Books failed syncs */}
+      <section className="rounded-[8px] p-5" style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}>
+        <h2 className="text-base font-medium mb-1">Zoho Books — failed syncs</h2>
+        {!zohoFailed ? (
+          <p className="text-sm text-[var(--text-tertiary)]">Loading…</p>
+        ) : zohoFailed.totalFailed === 0 ? (
+          <p className="text-sm text-[var(--text-tertiary)]">All Books syncs healthy — nothing failed.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <p className="text-xs mb-2" style={{ color: 'var(--red)' }}>
+              {zohoFailed.totalFailed} entit{zohoFailed.totalFailed === 1 ? 'y' : 'ies'} failed their last Books sync. Retry from the transaction dossier, or fix the Books account/CoA issue in the error.
+            </p>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[var(--text-tertiary)]">
+                  <th className="py-2 pr-4">Type</th>
+                  <th className="py-2 pr-4">Reference</th>
+                  <th className="py-2">Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(
+                  [
+                    ['Transaction', zohoFailed.transactions],
+                    ['Raffle ticket', zohoFailed.raffleTickets],
+                    ['Featured bid', zohoFailed.featuredBids],
+                    ['Subscription', zohoFailed.subscriptionCharges],
+                  ] as Array<[string, ZohoFailedRow[]]>
+                ).flatMap(([type, rows]) =>
+                  rows.map((r) => (
+                    <tr key={`${type}-${r.id}`} style={{ borderTop: '0.5px solid var(--border)' }}>
+                      <td className="py-2 pr-4">{type}</td>
+                      <td className="py-2 pr-4">{r.orderReference ?? r.id.slice(-8).toUpperCase()}</td>
+                      <td className="py-2 text-[var(--text-tertiary)]">{r.zohoSyncError ?? r.errorMessage ?? '—'}</td>
+                    </tr>
+                  )),
+                )}
               </tbody>
             </table>
           </div>

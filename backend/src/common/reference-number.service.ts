@@ -11,11 +11,12 @@ import { PrismaService } from '../prisma/prisma.service';
 // one place so a future "Used New" or rename of TAKE_A_SHOT doesn't
 // silently produce wrong refs.
 
-// UM/AU/TS = listings, RA = raffles, FS = featured-slot orders. Order
-// references reuse these per-prefix counters, so every issued number is
-// globally unique within its prefix whether it labels a listing or an
-// order (no two things ever share UM000042).
-export type ReferencePrefix = 'UM' | 'AU' | 'TS' | 'RA' | 'FS' | 'SW';
+// UM/AU/TS = listings, RA = raffles, FS = featured-slot orders, SB =
+// subscription purchases (P1.1). Order references reuse these per-prefix
+// counters, so every issued number is globally unique within its prefix
+// whether it labels a listing or an order (no two things ever share
+// UM000042).
+export type ReferencePrefix = 'UM' | 'AU' | 'TS' | 'RA' | 'FS' | 'SW' | 'SB';
 
 const LISTING_TYPE_TO_PREFIX: Record<ListingType, ReferencePrefix> = {
   BUY_NOW: 'UM',
@@ -26,7 +27,7 @@ const LISTING_TYPE_TO_PREFIX: Record<ListingType, ReferencePrefix> = {
 
 // Per-order reference source — the thing being paid for. Drives the
 // prefix the buyer sees as their EFT reference (e.g. UM000123).
-export type OrderRefSource = ListingType | 'RAFFLE' | 'FEATURED';
+export type OrderRefSource = ListingType | 'RAFFLE' | 'FEATURED' | 'SUBSCRIPTION';
 
 const ORDER_SOURCE_TO_PREFIX: Record<OrderRefSource, ReferencePrefix> = {
   BUY_NOW: 'UM',
@@ -35,6 +36,7 @@ const ORDER_SOURCE_TO_PREFIX: Record<OrderRefSource, ReferencePrefix> = {
   SWOP: 'SW',
   RAFFLE: 'RA',
   FEATURED: 'FS',
+  SUBSCRIPTION: 'SB',
 };
 
 const PAD_WIDTH = 6;

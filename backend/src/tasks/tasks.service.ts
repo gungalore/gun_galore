@@ -16,6 +16,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
 import { PushService } from '../push/push.service';
 import { ManualPaymentsService } from '../manual-payments/manual-payments.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 // Threshold-alert dedup window. Once we've fired an alert at any
 // severity for a given service, we won't fire ANOTHER alert at the
@@ -45,6 +46,7 @@ export class TasksService {
     private readonly sms: SmsService,
     private readonly push: PushService,
     private readonly manualPayments: ManualPaymentsService,
+    private readonly subscriptions: SubscriptionsService,
   ) {}
 
   // ─── Manual EFT — inContact inbox scan ───────────────────────────
@@ -599,11 +601,28 @@ export class TasksService {
     }
 
     // 2) Expire bind windows (winner had 15min to pick a listing).
+    //    P1.2 guard — do NOT cascade a winner who is mid-EFT-payment:
+    //    (a) unpaid with a live paymentPayByAt = they've committed and
+    //        have until the deadline to pay;
+    //    (b) PAID but not yet bound (auto-bind failed, e.g. the pending
+    //        listing sold while the money was in flight) = they've paid
+    //        for the slot and must be able to re-pick; only admin
+    //        force-evict frees such a slot.
     const bindCutoff = new Date(now.getTime() - cfg.bindWindowSec * 1000);
     const expiredBinds = await this.prisma.featuredSlot.findMany({
       where: {
         status: 'BIND_WINDOW',
         currentAuction: { closedAt: { lte: bindCutoff } },
+        NOT: {
+          currentAuction: {
+            winningBid: {
+              OR: [
+                { paidAt: { not: null } },
+                { paidAt: null, paymentPayByAt: { gt: now } },
+              ],
+            },
+          },
+        },
       },
       select: { id: true },
     });
@@ -661,6 +680,25 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('offer-expire');
+    }
+  }
+
+  // P1.1 — every 10 minutes: fail subscription charges whose 24h EFT
+  // window lapsed unpaid, send the 3-days-out renewal reminder, and
+  // downgrade expired prepaid periods to FREE. All three passes are
+  // idempotent (atomic WHERE re-checks inside the service).
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async subscriptionSweep() {
+    this.logger.debug('Running subscription sweep cron');
+    try {
+      await this.subscriptions.sweep();
+    } catch (err) {
+      this.logger.error(
+        `subscriptionSweep failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('subscription-sweep');
     }
   }
 

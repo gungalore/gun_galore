@@ -40,6 +40,7 @@ import { AskGgModule } from './ask-gg/ask-gg.module';
 import { ReloadingModule } from './reloading/reloading.module';
 import { HuntBallisticsModule } from './hunt-ballistics/hunt-ballistics.module';
 import { ManualPaymentsModule } from './manual-payments/manual-payments.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { LoadLabModule } from './load-lab/load-lab.module';
 
 @Module({
@@ -93,6 +94,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     ReloadingModule,
     HuntBallisticsModule,
     ManualPaymentsModule,
+    SubscriptionsModule,
     LoadLabModule,
     SupportModule,
   ],

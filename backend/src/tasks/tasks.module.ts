@@ -12,12 +12,14 @@ import { PaymentsModule } from '../payments/payments.module';
 import { AdminModule } from '../admin/admin.module';
 import { PushModule } from '../push/push.module';
 import { ManualPaymentsModule } from '../manual-payments/manual-payments.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   // AdminModule is imported so we can inject AdminCreditsService into
   // TasksService.pollCreditBalances (the 15-min credit-poll cron).
   // AdminModule exports AdminCreditsService for this purpose.
   // PushModule imported for the weekly subscription-prune cron.
+  // SubscriptionsModule for the P1.1 subscription sweep cron.
   imports: [
     ScheduleModule.forRoot(),
     OffersModule,
@@ -31,6 +33,7 @@ import { ManualPaymentsModule } from '../manual-payments/manual-payments.module'
     AdminModule,
     PushModule,
     ManualPaymentsModule,
+    SubscriptionsModule,
   ],
   providers: [TasksService],
 })

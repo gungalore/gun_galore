@@ -21,6 +21,8 @@ import {
 import { GG_BANK_DETAILS, PAYMENT_MODE } from '../payments/transactions.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { SwapFundingService } from '../swaps/swap-funding.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { FeaturedService } from '../featured/featured.service';
 
 // Manual-EFT reconciliation. Two feeds match payments to orders:
 //   1. scanInbox()  — FNB inContact email alerts (fast, PROVISIONAL):
@@ -67,6 +69,12 @@ export class ManualPaymentsService {
     private readonly transactions: TransactionsService,
     private readonly zohoBooks: ZohoBooksService,
     private readonly swaps: SwapFundingService,
+    // P1 — the reconciler now also settles subscription charges (P1.1)
+    // and featured-slot fees (P1.2). Both providers' modules MUST be in
+    // ManualPaymentsModule.imports (none of them are @Global — the
+    // SwapsModule boot-crash lesson).
+    private readonly subscriptions: SubscriptionsService,
+    private readonly featured: FeaturedService,
   ) {}
 
   private get imapConfigured(): boolean {
@@ -87,6 +95,8 @@ export class ManualPaymentsService {
     orderId: string | null;
     swapId?: string | null;
     swapSide?: 'INITIATOR' | 'OWNER' | null;
+    subscriptionChargeId?: string | null;
+    featuredBidId?: string | null;
   }> {
     const ref = orderRef ?? reference;
     if (!ref) return { status: 'UNMATCHED', transactionId: null, orderId: null };
@@ -164,6 +174,43 @@ export class ManualPaymentsService {
       // Locked (both funded) / cancelled (funding lapsed) — paid too late.
       if (swap.status !== 'AWAITING_FUNDING') return { status: 'EXPIRED', ...base };
       if (amount !== amountCents) return { status: 'AMBIGUOUS', ...base };
+      return { status: 'MATCHED', ...base };
+    }
+
+    // 4) Subscription purchase (P1.1) — SB ref lives on a PENDING
+    // SubscriptionCharge. SUCCEEDED = already activated; FAILED = the
+    // sweep lapsed the charge before the money arrived (paid too late —
+    // surface for admin refund/re-activate, never auto-confirm).
+    const charge = await this.prisma.subscriptionCharge.findUnique({
+      where: { orderReference: ref },
+      select: { id: true, status: true, amountCents: true },
+    });
+    if (charge) {
+      const base = {
+        transactionId: null,
+        orderId: null,
+        subscriptionChargeId: charge.id,
+      };
+      if (charge.status === 'SUCCEEDED') return { status: 'ALREADY', ...base };
+      if (charge.status !== 'PENDING') return { status: 'EXPIRED', ...base };
+      if (charge.amountCents !== amountCents)
+        return { status: 'AMBIGUOUS', ...base };
+      return { status: 'MATCHED', ...base };
+    }
+
+    // 5) Featured-slot fee (P1.2) — FS ref lives on the WON bid awaiting
+    // its EFT. paidAt = already bound; a bid that is no longer WON was
+    // forfeited/cascaded before the money arrived (paid too late).
+    const bid = await this.prisma.featuredSlotBid.findUnique({
+      where: { orderReference: ref },
+      select: { id: true, status: true, paidAt: true, chargedAmountCents: true },
+    });
+    if (bid) {
+      const base = { transactionId: null, orderId: null, featuredBidId: bid.id };
+      if (bid.paidAt) return { status: 'ALREADY', ...base };
+      if (bid.status !== 'WON') return { status: 'EXPIRED', ...base };
+      if (bid.chargedAmountCents !== amountCents)
+        return { status: 'AMBIGUOUS', ...base };
       return { status: 'MATCHED', ...base };
     }
 
@@ -307,6 +354,27 @@ export class ManualPaymentsService {
       // SWOP funding: provisional — stop the funding sweep for this side.
       await this.swaps.markFundingDetected(match.swapId, match.swapSide);
       res.detected += 1;
+    } else if (match.status === 'MATCHED' && match.subscriptionChargeId) {
+      // P1.1 — subscriptions activate on inContact DETECTION (not just the
+      // statement): zero-COGS digital perk, so the fraud exposure of a
+      // spoofed alert is negligible versus making the member wait a day
+      // for the CSV upload. confirmPayment is an atomic PENDING→SUCCEEDED
+      // claim, so the later statement pass lands on ALREADY.
+      await this.prisma.subscriptionCharge.updateMany({
+        where: { id: match.subscriptionChargeId, detectedAt: null },
+        data: { detectedAt: new Date() },
+      });
+      await this.subscriptions.confirmPayment(match.subscriptionChargeId);
+      res.detected += 1;
+    } else if (match.status === 'MATCHED' && match.featuredBidId) {
+      // P1.2 — same zero-COGS rationale: bind the featured slot on
+      // detection so the seller's boost starts immediately.
+      await this.prisma.featuredSlotBid.updateMany({
+        where: { id: match.featuredBidId, paymentDetectedAt: null },
+        data: { paymentDetectedAt: new Date() },
+      });
+      await this.featured.confirmSlotPayment(match.featuredBidId);
+      res.detected += 1;
     } else {
       res.unmatched += 1;
     }
@@ -416,6 +484,16 @@ export class ManualPaymentsService {
       // SWOP funding AUTHORITATIVE: this side is funded; both → LOCKED.
       await this.swaps.confirmSwapFunding(match.swapId, match.swapSide);
       out.verified += 1;
+    } else if (match.status === 'MATCHED' && match.subscriptionChargeId) {
+      // P1.1 — subscription activation (idempotent atomic claim; if the
+      // inContact scan already activated it, matchOrder returned ALREADY
+      // and we never reach here).
+      await this.subscriptions.confirmPayment(match.subscriptionChargeId);
+      out.verified += 1;
+    } else if (match.status === 'MATCHED' && match.featuredBidId) {
+      // P1.2 — featured-slot bind on authoritative statement match.
+      await this.featured.confirmSlotPayment(match.featuredBidId);
+      out.verified += 1;
     } else if (match.status === 'AMBIGUOUS' || match.status === 'EXPIRED') {
       // EXPIRED = paid after the 1-hour window; needs admin refund/re-fulfil
       // (never auto-confirmed — the item may already be re-sold).
@@ -445,6 +523,221 @@ export class ManualPaymentsService {
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
+  }
+
+  // ── P1.3 — Books failed-sync aggregate (read-only) ──────────────────
+  // One place listing every entity whose latest Zoho sync FAILED, so the
+  // operator doesn't have to trawl individual dossiers. Retry stays on
+  // the per-transaction admin surface (ZB-10); this is the radar.
+  async getZohoFailedSyncs() {
+    const [transactions, raffleTickets, featuredBids, subscriptionCharges] =
+      await Promise.all([
+        this.prisma.transaction.findMany({
+          where: { zohoSyncStatus: 'FAILED' },
+          orderBy: { zohoSyncLastAttemptAt: 'desc' },
+          take: 50,
+          select: {
+            id: true,
+            orderReference: true,
+            zohoSyncError: true,
+            zohoSyncLastAttemptAt: true,
+          },
+        }),
+        this.prisma.ticket.findMany({
+          where: { zohoSyncStatus: 'FAILED' },
+          orderBy: { zohoSyncLastAttemptAt: 'desc' },
+          take: 50,
+          select: {
+            id: true,
+            zohoSyncError: true,
+            zohoSyncLastAttemptAt: true,
+          },
+        }),
+        this.prisma.featuredSlotBid.findMany({
+          where: { zohoSyncStatus: 'FAILED' },
+          orderBy: { zohoSyncLastAttemptAt: 'desc' },
+          take: 50,
+          select: {
+            id: true,
+            orderReference: true,
+            zohoSyncError: true,
+            zohoSyncLastAttemptAt: true,
+          },
+        }),
+        // SubscriptionCharge has no zohoSync* columns — a receipt failure
+        // is recorded in errorMessage on a SUCCEEDED charge whose
+        // zohoReceiptId never got set.
+        this.prisma.subscriptionCharge.findMany({
+          where: {
+            status: 'SUCCEEDED',
+            zohoReceiptId: null,
+            errorMessage: { startsWith: 'Zoho' },
+          },
+          orderBy: { chargedAt: 'desc' },
+          take: 50,
+          select: {
+            id: true,
+            orderReference: true,
+            errorMessage: true,
+            chargedAt: true,
+          },
+        }),
+      ]);
+    return {
+      transactions,
+      raffleTickets,
+      featuredBids,
+      subscriptionCharges,
+      totalFailed:
+        transactions.length +
+        raffleTickets.length +
+        featuredBids.length +
+        subscriptionCharges.length,
+    };
+  }
+
+  // ── P1.4 — Held-funds reconciliation (CFP position, read-only) ──────
+  // "How much of the FNB balance is CLIENT money, not GG's?" — the number
+  // the operator checks the bank balance against. Four components:
+  //   1. Buyer money held pending delivery/release (HELD / admin-verify /
+  //      DISPUTED, payment actually verified on the manual rail).
+  //   2. Seller payouts owed (RELEASED, not yet paid out — batched or not),
+  //      net of refund children exactly like the payout queue.
+  //   3. Buyer refunds owed (REFUNDED rows not yet paid; children carry
+  //      their slice, parents their residual — mirrors collectDue).
+  //   4. Swap money held: locked-swap cash top-ups awaiting release +
+  //      one-sided funding captured before lock.
+  async getHeldFundsReport() {
+    const childrenSum = (c?: { buyerTotal: number }[] | null) =>
+      (c ?? []).reduce((s, x) => s + x.buyerTotal, 0);
+
+    // (1) Held from buyers. On the manual rail money has only actually
+    // arrived once manualVerifiedAt is stamped; rows created by a card
+    // gateway (no manualPayByAt) captured at creation.
+    const heldRows = await this.prisma.transaction.findMany({
+      where: {
+        paymentStatus: {
+          in: ['HELD', 'PENDING_ADMIN_VERIFICATION', 'DISPUTED'],
+        },
+        refundOfId: null,
+        OR: [{ manualVerifiedAt: { not: null } }, { manualPayByAt: null }],
+      },
+      select: { buyerTotal: true },
+    });
+    const heldAwaitingRelease = {
+      count: heldRows.length,
+      cents: heldRows.reduce((s, r) => s + r.buyerTotal, 0),
+    };
+
+    // (2) Owed to sellers — RELEASED and not yet settled, including rows
+    // already frozen into a pending batch (still owed until mark-paid).
+    const payoutRows = await this.prisma.transaction.findMany({
+      where: {
+        paymentStatus: 'RELEASED',
+        sellerPayout: { gt: 0 },
+        paidOutAt: null,
+        refundOfId: null,
+      },
+      select: {
+        sellerPayout: true,
+        refundChildren: { select: { buyerTotal: true } },
+      },
+    });
+    const owedToSellers = {
+      count: payoutRows.length,
+      cents: payoutRows.reduce(
+        (s, r) => s + Math.max(0, r.sellerPayout - childrenSum(r.refundChildren)),
+        0,
+      ),
+    };
+
+    // (3) Owed to buyers — refunds not yet paid (manual mode only; a card
+    // gateway reverses on the card so nothing is owed from the account).
+    const refundRows =
+      PAYMENT_MODE !== 'manual'
+        ? []
+        : await this.prisma.transaction.findMany({
+            where: {
+              paymentStatus: 'REFUNDED',
+              buyerTotal: { gt: 0 },
+              paidOutAt: null,
+            },
+            select: {
+              refundOfId: true,
+              buyerTotal: true,
+              refundChildren: { select: { buyerTotal: true } },
+            },
+          });
+    const owedToBuyerRefunds = {
+      count: refundRows.length,
+      cents: refundRows.reduce(
+        (s, r) =>
+          s +
+          (r.refundOfId
+            ? r.buyerTotal // child = its slice
+            : Math.max(0, r.buyerTotal - childrenSum(r.refundChildren))), // parent = residual
+        0,
+      ),
+    };
+
+    // (4a) Swap cash top-ups held between LOCK and release.
+    const lockedSwaps = await this.prisma.swap.findMany({
+      where: {
+        status: { in: ['LOCKED', 'IN_TRANSIT', 'AWAITING_VERIFICATION', 'DISPUTED'] },
+        cashReleasedAt: null,
+        cashAmount: { gt: 0 },
+      },
+      select: { cashAmount: true },
+    });
+    const swapCashHeld = {
+      count: lockedSwaps.length,
+      cents: lockedSwaps.reduce((s, r) => s + r.cashAmount, 0),
+    };
+
+    // (4b) One-sided funding captured pre-lock: a party has paid their
+    // funding EFT but the swap hasn't locked — if the other side lapses
+    // this money is reimbursed, so it's a liability while it sits here.
+    const fundingSwaps = await this.prisma.swap.findMany({
+      where: {
+        status: 'AWAITING_FUNDING',
+        OR: [
+          { initiatorVerifiedAt: { not: null }, initiatorRefundedAt: null },
+          { ownerVerifiedAt: { not: null }, ownerRefundedAt: null },
+        ],
+      },
+      select: {
+        initiatorVerifiedAt: true,
+        initiatorRefundedAt: true,
+        initiatorFundingAmount: true,
+        ownerVerifiedAt: true,
+        ownerRefundedAt: true,
+        ownerFundingAmount: true,
+      },
+    });
+    let fundingCents = 0;
+    for (const s of fundingSwaps) {
+      if (s.initiatorVerifiedAt && !s.initiatorRefundedAt)
+        fundingCents += s.initiatorFundingAmount;
+      if (s.ownerVerifiedAt && !s.ownerRefundedAt)
+        fundingCents += s.ownerFundingAmount;
+    }
+    const swapFundingInFlight = { count: fundingSwaps.length, cents: fundingCents };
+
+    return {
+      asOf: new Date().toISOString(),
+      paymentMode: PAYMENT_MODE,
+      heldAwaitingRelease,
+      owedToSellers,
+      owedToBuyerRefunds,
+      swapCashHeld,
+      swapFundingInFlight,
+      totalClientFundsCents:
+        heldAwaitingRelease.cents +
+        owedToSellers.cents +
+        owedToBuyerRefunds.cents +
+        swapCashHeld.cents +
+        swapFundingInFlight.cents,
+    };
   }
 
   // ── Payouts due (read-only) ─────────────────────────────────────────
