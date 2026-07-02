@@ -1235,12 +1235,51 @@ export class ZohoBooksService {
         );
       }
     } catch (err) {
-      // No zohoSync* columns on Swap — log only; the retry surface is the
-      // failed-sync admin report (which also lists fee-less completed
-      // swaps with missing receipts).
+      // No zohoSync* columns on Swap — log only. The failure is DETECTED by
+      // getZohoFailedSyncs (COMPLETED swap with a fee>0 side whose receipt id
+      // is still null) and RE-FIRED by retryMissingSwapFeeReceipts (this is
+      // idempotent per side, so a retry can only fill the missing receipt).
       this.logger.error(
         `Zoho swap fee receipts FAILED for ${swapId}: ${(err as Error).message}`,
       );
+    }
+  }
+
+  /**
+   * P1.3 — hourly retry for swap leg-fee receipts that failed at completion.
+   * createSwapFeeReceipts is idempotent per side (guarded by
+   * zoho*FeeReceiptId), so re-firing it for a COMPLETED swap with a missing
+   * receipt can only fill the gap. Bounded per run; never throws.
+   */
+  async retryMissingSwapFeeReceipts(limit = 25): Promise<number> {
+    if (!this.isEnabled()) return 0;
+    try {
+      const due = await this.prisma.swap.findMany({
+        where: {
+          status: 'COMPLETED',
+          OR: [
+            { swapFeeInitiator: { gt: 0 }, zohoInitiatorFeeReceiptId: null },
+            { swapFeeOwner: { gt: 0 }, zohoOwnerFeeReceiptId: null },
+          ],
+        },
+        orderBy: { completedAt: 'asc' },
+        take: limit,
+        select: { id: true },
+      });
+      for (const s of due) {
+        await this.createSwapFeeReceipts(s.id);
+      }
+      if (due.length > 0) {
+        this.logger.log(
+          `retryMissingSwapFeeReceipts: re-fired ${due.length} swap fee receipt(s)`,
+        );
+      }
+      return due.length;
+    } catch (err) {
+      this.logger.error(
+        `retryMissingSwapFeeReceipts failed: ${(err as Error).message}`,
+      );
+      return 0;
     }
   }
 

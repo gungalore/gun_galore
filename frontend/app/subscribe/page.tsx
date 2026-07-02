@@ -227,7 +227,7 @@ function EftInstructions({
       >
         <Row
           label="Amount (pay this exact amount)"
-          value={formatPrice(amountCents)}
+          value={`R${(amountCents / 100).toFixed(2)}`}
           copyLabel="amount"
           emphasize
         />
@@ -299,11 +299,16 @@ export default function SubscribePage() {
   const [error, setError] = useState<string | null>(null);
 
   // Public pricing loads for everyone (signed-out prospects included).
+  // Review fix: surface a fetch failure instead of leaving the price as
+  // "…" forever.
+  const [pricingFailed, setPricingFailed] = useState(false);
   useEffect(() => {
     fetch(`${API_URL}/subscriptions/pricing`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((p: Pricing | null) => p && setPricing(p))
-      .catch(() => undefined);
+      .then((p: Pricing | null) =>
+        p ? setPricing(p) : setPricingFailed(true),
+      )
+      .catch(() => setPricingFailed(true));
   }, []);
 
   const loadMine = useCallback(async () => {
@@ -326,6 +331,17 @@ export default function SubscribePage() {
     if (!isLoaded || !isSignedIn) return;
     void loadMine();
   }, [isLoaded, isSignedIn, loadMine]);
+
+  // Review fix (page never self-updates after payment): while an EFT is
+  // outstanding, poll /me every 20s so the tier flips + instructions clear
+  // as soon as the reconciler activates it — the member isn't left staring
+  // at stale banking details.
+  useEffect(() => {
+    if (!isSignedIn) return;
+    if (!mine?.pending) return;
+    const t = setInterval(() => void loadMine(), 20_000);
+    return () => clearInterval(t);
+  }, [isSignedIn, mine?.pending, loadMine]);
 
   const checkout = useCallback(
     async (tier: 'MEMBER' | 'PRO') => {
@@ -395,8 +411,8 @@ export default function SubscribePage() {
           GG+ subscriptions
         </h1>
         <p className="text-sm mb-6" style={{ color: 'var(--text-tertiary)' }}>
-          Prepaid monthly. No debit orders, no auto-renew — renew when it
-          suits you and unused days always stack.
+          Prepaid monthly. No debit orders, no auto-renew — renew your tier
+          when it suits you and your unused days stack on top.
         </p>
 
         {currentTier && currentTier !== 'FREE' && (
@@ -412,7 +428,7 @@ export default function SubscribePage() {
             {mine?.isComp
               ? ' (complimentary — no renewal needed).'
               : periodEndLabel
-                ? ` until ${periodEndLabel}. Renewing before then adds 31 days on top.`
+                ? ` until ${periodEndLabel}. Renewing before then adds 31 days on top — and you can switch tiers once this period ends, so your paid days are never lost.`
                 : '.'}
           </div>
         )}
@@ -453,6 +469,10 @@ export default function SubscribePage() {
                     </strong>{' '}
                     / month
                   </>
+                ) : pricingFailed ? (
+                  <span style={{ color: 'var(--text-tertiary)' }}>
+                    Price unavailable — please refresh
+                  </span>
                 ) : (
                   '…'
                 )}
@@ -466,26 +486,51 @@ export default function SubscribePage() {
                 ))}
               </ul>
               {isSignedIn ? (
-                <button
-                  type="button"
-                  disabled={busyTier !== null || mine?.isComp}
-                  onClick={() => void checkout(t.key)}
-                  className="w-full text-sm px-4 py-2.5 rounded-[6px]"
-                  style={{
-                    background: t.accent ? 'var(--red)' : 'transparent',
-                    color: t.accent ? '#fff' : 'var(--text-primary)',
-                    border: t.accent ? 'none' : '0.5px solid var(--border)',
-                    fontWeight: 500,
-                    opacity: busyTier !== null || mine?.isComp ? 0.6 : 1,
-                    cursor: busyTier !== null || mine?.isComp ? 'default' : 'pointer',
-                  }}
-                >
-                  {busyTier === t.key
+                (() => {
+                  // A LIVE paid period can only be RENEWED at its own tier on
+                  // the EFT rail (no mid-period tier changes — matches the
+                  // backend guard). Disable the other paid tier so a member
+                  // can't accidentally start a cross-tier charge that would
+                  // be refused (or, worse, discard paid days).
+                  const hasLivePaid =
+                    !!currentTier &&
+                    currentTier !== 'FREE' &&
+                    !!mine?.periodEnd;
+                  const isCrossTierBlocked =
+                    hasLivePaid && currentTier !== t.key;
+                  const disabled =
+                    busyTier !== null || !!mine?.isComp || isCrossTierBlocked;
+                  const label = busyTier === t.key
                     ? 'Preparing…'
                     : currentTier === t.key
                       ? 'Renew (+31 days)'
-                      : `Get ${t.key === 'MEMBER' ? 'Member' : 'Pro'}`}
-                </button>
+                      : isCrossTierBlocked
+                        ? `Switch at renewal`
+                        : `Get ${t.key === 'MEMBER' ? 'Member' : 'Pro'}`;
+                  return (
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      title={
+                        isCrossTierBlocked
+                          ? `You're on GG+ ${currentTier} until your period ends. You can switch to ${t.key === 'MEMBER' ? 'Member' : 'Pro'} then.`
+                          : undefined
+                      }
+                      onClick={() => void checkout(t.key)}
+                      className="w-full text-sm px-4 py-2.5 rounded-[6px]"
+                      style={{
+                        background: t.accent ? 'var(--red)' : 'transparent',
+                        color: t.accent ? '#fff' : 'var(--text-primary)',
+                        border: t.accent ? 'none' : '0.5px solid var(--border)',
+                        fontWeight: 500,
+                        opacity: disabled ? 0.55 : 1,
+                        cursor: disabled ? 'default' : 'pointer',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })()
               ) : (
                 <Link
                   href="/sign-in?redirect_url=/subscribe"

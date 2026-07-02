@@ -58,6 +58,13 @@ import {
 // pick a listing (manual rail). Mirrors the subscription pay window.
 const FEATURED_PAY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+// Review fix (re-arm squat): the ABSOLUTE cap on how long an UNPAID winner
+// can hold a BIND_WINDOW slot, measured from the auction's closedAt (which
+// never advances for the original winner). Past closedAt + bindWindow +
+// this, the slot is forfeited even if the winner keeps re-arming their
+// per-bind paymentPayByAt. One extra pay-window of slack beyond the first.
+export const FEATURED_UNPAID_MAX_MS = FEATURED_PAY_WINDOW_MS;
+
 // Featured-slot service.
 //
 // 10 slots rotate via per-slot auctions:
@@ -548,29 +555,62 @@ export class FeaturedService {
             winningBid.amountCents,
             winningBid.discountPercent ?? 0,
           );
-          // Idempotent resume: re-calling bind (same or different
-          // listing) re-uses the existing reference + deadline while
-          // they're still live, so the winner sees ONE set of banking
-          // instructions no matter how many times they hit the page.
           const stillLive =
             winningBid.paymentPayByAt !== null &&
             winningBid.paymentPayByAt > now;
-          const orderReference =
-            winningBid.orderReference ??
-            (await this.referenceNumbers.allocateOrderReference('FEATURED'));
-          const paymentPayByAt = stillLive
+
+          let orderReference = winningBid.orderReference;
+          let paymentPayByAt = stillLive
             ? (winningBid.paymentPayByAt as Date)
             : new Date(now.getTime() + FEATURED_PAY_WINDOW_MS);
-          await tx.featuredSlotBid.update({
-            where: { id: winningBid.id },
-            data: {
-              status: 'WON',
-              orderReference,
-              pendingListingId: listing.id,
-              paymentPayByAt,
-              chargedAmountCents,
-            },
-          });
+
+          if (!orderReference) {
+            // FIRST issue — allocate a reference race-safely. A CAS on
+            // orderReference IS null guarantees that two concurrent
+            // first-binds (bind opened on two devices) can't each hand
+            // the member a different reference; the loser re-reads the
+            // winner's committed values so the banking instructions and
+            // the stored reference always agree (review fix: orphan-ref
+            // payment stranding UNMATCHED).
+            const allocated =
+              await this.referenceNumbers.allocateOrderReference('FEATURED');
+            const claim = await tx.featuredSlotBid.updateMany({
+              where: { id: winningBid.id, orderReference: null },
+              data: {
+                status: 'WON',
+                orderReference: allocated,
+                pendingListingId: listing.id,
+                paymentPayByAt,
+                chargedAmountCents,
+              },
+            });
+            if (claim.count === 1) {
+              orderReference = allocated;
+            } else {
+              const fresh = await tx.featuredSlotBid.findUnique({
+                where: { id: winningBid.id },
+                select: {
+                  orderReference: true,
+                  paymentPayByAt: true,
+                  chargedAmountCents: true,
+                },
+              });
+              orderReference = fresh?.orderReference ?? allocated;
+              paymentPayByAt = fresh?.paymentPayByAt ?? paymentPayByAt;
+            }
+          } else {
+            // Resume (same ref) or re-arm a lapsed window: keep the
+            // reference, refresh pending listing + deadline + charge.
+            await tx.featuredSlotBid.update({
+              where: { id: winningBid.id },
+              data: {
+                status: 'WON',
+                pendingListingId: listing.id,
+                paymentPayByAt,
+                chargedAmountCents,
+              },
+            });
+          }
           await this.recordEvent(
             slot.id,
             'AWAITING_EFT_PAYMENT',
@@ -661,11 +701,18 @@ export class FeaturedService {
       });
 
       // Zoho Books: post a Sales Receipt for the slot fee. Fire-and-
-      // forget outside the DB transaction — Books failures don't
-      // block the binding. Note: we use winningBid.id (captured
-      // above) because by the time this fires, the bid has already
-      // been updated to status=WON.
-      void this.zohoBooks.createFeaturedSlotInvoice(winningBid.id);
+      // forget outside the DB transaction — Books failures don't block
+      // the binding.
+      //
+      // Review fix (duplicate receipt): on the MANUAL rail the money
+      // landed at confirmSlotPayment, which already fires this call —
+      // so firing it AGAIN here (the auto-bind runs inside
+      // confirmSlotPayment) double-posts past the non-atomic
+      // zohoInvoiceId guard. Only the PAYGATE rail captures money inside
+      // bind, so only the paygate path owns the receipt here.
+      if (PAYMENT_MODE !== 'manual') {
+        void this.zohoBooks.createFeaturedSlotInvoice(winningBid.id);
+      }
 
       return { featuredUntil };
     });
@@ -902,23 +949,44 @@ export class FeaturedService {
       const auction = slot.currentAuction;
       if (!auction) return;
       const forfeitedBid = auction.winningBid;
-      // P1.2 defence-in-depth (the cron query already excludes these):
-      // never forfeit a winner who has PAID, or whose EFT window is
-      // still live — cascading them would take their money and hand
-      // the slot to someone else.
-      if (
-        forfeitedBid &&
-        (forfeitedBid.paidAt !== null ||
-          (forfeitedBid.paymentPayByAt !== null &&
-            forfeitedBid.paymentPayByAt > new Date()))
-      ) {
-        return;
-      }
+      const nowTs = new Date();
+      // Absolute cap (re-arm squat): once the auction closed longer than
+      // bindWindow + FEATURED_UNPAID_MAX_MS ago, an UNPAID winner is
+      // forfeited even with a freshly re-armed paymentPayByAt. Paid winners
+      // are NEVER force-forfeited here (they need admin force-evict).
+      const cfg = await this.getConfig();
+      const hardCapReached =
+        auction.closedAt !== null &&
+        auction.closedAt.getTime() <=
+          nowTs.getTime() - (cfg.bindWindowSec * 1000 + FEATURED_UNPAID_MAX_MS);
       if (forfeitedBid) {
-        await tx.featuredSlotBid.update({
-          where: { id: forfeitedBid.id },
+        // Review fix (TOCTOU): forfeit ATOMICALLY, gated on the bid still
+        // being unpaid with a lapsed/absent window (or past the hard cap).
+        // A confirmSlotPayment that set paidAt (or a re-bind that re-armed
+        // paymentPayByAt) in the ms between the guard read above and this
+        // write must abort the cascade — otherwise we'd WITHDRAW a paid bid
+        // and strand the money while handing the slot to someone else.
+        const windowGuard = hardCapReached
+          ? {} // hard cap: any unpaid bid, regardless of re-armed window
+          : {
+              OR: [
+                { paymentPayByAt: null },
+                { paymentPayByAt: { lte: nowTs } },
+              ],
+            };
+        const forfeit = await tx.featuredSlotBid.updateMany({
+          where: {
+            id: forfeitedBid.id,
+            status: 'WON',
+            paidAt: null,
+            ...windowGuard,
+          },
           data: { status: 'WITHDRAWN' },
         });
+        if (forfeit.count === 0) {
+          // Paid or (non-hard-cap) re-armed under us — leave the slot as-is.
+          return;
+        }
       }
       await this.recordEvent(slotId, 'BIND_WINDOW_EXPIRED', {
         forfeitedBidId: forfeitedBid?.id ?? null,
@@ -939,18 +1007,21 @@ export class FeaturedService {
             cascadedFromId: forfeitedBid?.id ?? null,
           },
         });
+        // Review fix (runner-up burned on next tick): the cron keys the
+        // bind-window timer off auction.closedAt, so re-pointing
+        // winningBid without advancing closedAt would let the very next
+        // EVERY_MINUTE tick forfeit the fresh winner immediately. Reset
+        // closedAt to now so the runner-up gets the FULL bind window.
         await tx.featuredAuction.update({
           where: { id: auction.id },
-          data: { winningBidId: runnerUp.id },
+          data: { winningBidId: runnerUp.id, closedAt: nowTs },
         });
         await this.recordEvent(slotId, 'CASCADED_TO_RUNNER_UP', {
           fromBidId: forfeitedBid?.id ?? null,
           toBidId: runnerUp.id,
         });
-        // Slot stays in BIND_WINDOW with the new winner. Cron will
-        // start a fresh bind window timer based on the auction's
-        // updatedAt (or we could persist a separate bindWindowStartedAt
-        // — left as a follow-up).
+        // Slot stays in BIND_WINDOW with the new winner + a fresh
+        // closedAt-based timer.
         return;
       }
 
@@ -1026,38 +1097,66 @@ export class FeaturedService {
       },
     });
     if (!slot) throw new NotFoundException('Slot not found');
-    if (slot.status !== 'OCCUPIED') {
-      throw new BadRequestException('Slot is not currently occupied');
+    // Review fix: also allow eviction of a BIND_WINDOW slot. On the
+    // manual-EFT rail a paid winner whose auto-bind failed (their pending
+    // listing sold while the money was in flight) sits in BIND_WINDOW,
+    // not OCCUPIED — without this, that slot had NO working admin escape.
+    if (slot.status !== 'OCCUPIED' && slot.status !== 'BIND_WINDOW') {
+      throw new BadRequestException(
+        'Slot is not occupied or in a bind window',
+      );
     }
 
-    if (refund && slot.currentAuction?.winningBid?.peachPaymentId) {
-      const bid = slot.currentAuction.winningBid;
-      // Phase E2 — refund the amount we actually CHARGED (post-
-      // discount), not the face bid. Fall back to amountCents for
-      // legacy bids that were charged before the discount fields
-      // existed.
+    const bid = slot.currentAuction?.winningBid ?? null;
+    let refunded = false;
+    let manualRefundOwedCents = 0;
+
+    if (refund && bid) {
       const refundCents = bid.chargedAmountCents ?? bid.amountCents;
-      const r = await this.stitch.refundPayment(
-        bid.peachPaymentId!,
-        refundCents,
-      );
-      await this.prisma.featuredSlotBid.update({
-        where: { id: bid.id },
-        data: { status: 'REFUNDED' },
-      });
-      await this.recordEvent(
-        slotId,
-        'REFUND_ISSUED',
-        {
-          bidId: bid.id,
-          refundCents,
-          faceAmountCents: bid.amountCents,
-          discountPercent: bid.discountPercent,
-          peachResult: r.resultCode,
-        },
-        undefined,
-        adminId,
-      );
+      if (bid.peachPaymentId) {
+        // Paygate rail — reverse on the card via the gateway.
+        const r = await this.stitch.refundPayment(bid.peachPaymentId, refundCents);
+        await this.prisma.featuredSlotBid.update({
+          where: { id: bid.id },
+          data: { status: 'REFUNDED' },
+        });
+        refunded = true;
+        await this.recordEvent(
+          slotId,
+          'REFUND_ISSUED',
+          {
+            bidId: bid.id,
+            refundCents,
+            faceAmountCents: bid.amountCents,
+            discountPercent: bid.discountPercent,
+            peachResult: r.resultCode,
+          },
+          undefined,
+          adminId,
+        );
+      } else if (bid.paidAt) {
+        // Review fix: EFT-paid bids have no peachPaymentId — there is NO
+        // automatic reversal lane for featured fees (the payout batch
+        // only covers Transactions). Do NOT report refunded:true. Mark
+        // the bid REFUNDED (so it's out of the WON set) and surface that
+        // the operator owes a manual EFT refund of refundCents.
+        await this.prisma.featuredSlotBid.update({
+          where: { id: bid.id },
+          data: { status: 'REFUNDED' },
+        });
+        manualRefundOwedCents = refundCents;
+        await this.recordEvent(
+          slotId,
+          'MANUAL_REFUND_OWED',
+          {
+            bidId: bid.id,
+            refundCents,
+            note: 'EFT-paid featured slot force-evicted — refund the bidder by manual EFT.',
+          },
+          undefined,
+          adminId,
+        );
+      }
     }
 
     await this.prisma.featuredSlot.update({
@@ -1066,12 +1165,13 @@ export class FeaturedService {
         status: FeaturedSlotStatus.VACANT,
         currentListingId: null,
         currentSellerId: null,
+        currentAuctionId: null,
         featuredUntil: null,
       },
     });
     await this.recordEvent(slotId, 'FORCE_EVICTED', { reason }, undefined, adminId);
     await this.openAdHocAuction(slotId);
-    return { evicted: true, refunded: refund };
+    return { evicted: true, refunded, manualRefundOwedCents };
   }
 
   async manuallyAward(

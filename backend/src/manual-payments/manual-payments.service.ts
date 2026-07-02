@@ -330,7 +330,7 @@ export class ManualPaymentsService {
               : 'UNMATCHED',
         matchedTransactionId: match.transactionId,
         matchedOrderId: match.orderId,
-        note: this.matchNote(match.status),
+        note: this.matchNote(match),
       },
     });
 
@@ -382,11 +382,31 @@ export class ManualPaymentsService {
   }
 
   // Human-readable note for the admin investigation queue, by match kind.
-  private matchNote(status: MatchStatus): string | null {
-    if (status === 'AMBIGUOUS') {
+  // Review fix: subscription/featured payments are NOT goods — a late one
+  // should be RE-ACTIVATED, not "refunded / re-fulfilled". Derive the entity
+  // kind from the match so the note tells the operator the right action.
+  private matchNote(match: {
+    status: MatchStatus;
+    subscriptionChargeId?: string | null;
+    featuredBidId?: string | null;
+  }): string | null {
+    const kind = match.subscriptionChargeId
+      ? 'subscription'
+      : match.featuredBidId
+        ? 'featured'
+        : 'order';
+    if (match.status === 'AMBIGUOUS') {
+      if (kind === 'subscription')
+        return 'Reference matched a subscription charge but the amount differs (price may have changed) — investigate before activating.';
+      if (kind === 'featured')
+        return 'Reference matched a featured-slot bid but the amount differs — investigate before binding.';
       return 'Reference matched an order but the amount differs — investigate.';
     }
-    if (status === 'EXPIRED') {
+    if (match.status === 'EXPIRED') {
+      if (kind === 'subscription')
+        return 'Subscription EFT arrived after its pay-by window lapsed (the charge was failed). Activate the tier manually or refund the member.';
+      if (kind === 'featured')
+        return 'Featured-slot EFT arrived after the bid was forfeited/cascaded. Re-award the slot or refund the bidder by manual EFT.';
       return 'Buyer paid AFTER the 1-hour window expired and the item was released. Refund the buyer, or re-fulfil manually if the item is still available.';
     }
     return null;
@@ -466,7 +486,7 @@ export class ManualPaymentsService {
               : 'UNMATCHED',
         matchedTransactionId: match.transactionId,
         matchedOrderId: match.orderId,
-        note: this.matchNote(match.status),
+        note: this.matchNote(match),
       },
     });
 
@@ -530,7 +550,7 @@ export class ManualPaymentsService {
   // operator doesn't have to trawl individual dossiers. Retry stays on
   // the per-transaction admin surface (ZB-10); this is the radar.
   async getZohoFailedSyncs() {
-    const [transactions, raffleTickets, featuredBids, subscriptionCharges] =
+    const [transactions, raffleTickets, featuredBids, subscriptionCharges, swaps] =
       await Promise.all([
         this.prisma.transaction.findMany({
           where: { zohoSyncStatus: 'FAILED' },
@@ -582,17 +602,43 @@ export class ManualPaymentsService {
             chargedAt: true,
           },
         }),
+        // P1.3 — COMPLETED swaps that still owe a leg-fee Sales Receipt (the
+        // Zoho POST failed at completion). Swap has no zohoSync* columns, so
+        // the signal is a fee>0 side with a null receipt id. These are
+        // re-fired by the hourly retryMissingSwapFeeReceipts cron.
+        this.prisma.swap.findMany({
+          where: {
+            status: 'COMPLETED',
+            OR: [
+              { swapFeeInitiator: { gt: 0 }, zohoInitiatorFeeReceiptId: null },
+              { swapFeeOwner: { gt: 0 }, zohoOwnerFeeReceiptId: null },
+            ],
+          },
+          orderBy: { completedAt: 'desc' },
+          take: 50,
+          select: {
+            id: true,
+            initiatorFundingRef: true,
+            swapFeeInitiator: true,
+            zohoInitiatorFeeReceiptId: true,
+            swapFeeOwner: true,
+            zohoOwnerFeeReceiptId: true,
+            completedAt: true,
+          },
+        }),
       ]);
     return {
       transactions,
       raffleTickets,
       featuredBids,
       subscriptionCharges,
+      swaps,
       totalFailed:
         transactions.length +
         raffleTickets.length +
         featuredBids.length +
-        subscriptionCharges.length,
+        subscriptionCharges.length +
+        swaps.length,
     };
   }
 
@@ -611,22 +657,46 @@ export class ManualPaymentsService {
     const childrenSum = (c?: { buyerTotal: number }[] | null) =>
       (c ?? []).reduce((s, x) => s + x.buyerTotal, 0);
 
-    // (1) Held from buyers. On the manual rail money has only actually
-    // arrived once manualVerifiedAt is stamped; rows created by a card
-    // gateway (no manualPayByAt) captured at creation.
+    // (1) Held from buyers. Review fixes:
+    //  - swapId:null — swap-leg transactions carry zero money (cash lives on
+    //    the Swap, counted in buckets 4a/4b); counting them inflated the
+    //    item count by 2 per swap forever.
+    //  - manualCancelledAt:null — a soft-cancelled (never-paid) cart child
+    //    stays HELD forever, so it must be excluded explicitly.
+    //  - the "money has arrived" test is manualVerifiedAt on the MANUAL rail.
+    //    The old `manualPayByAt: null` arm was meant for card-gateway rows,
+    //    but multi-item cart CHILDREN also have manualPayByAt null (the window
+    //    lives on the parent Order) — so that arm counted unpaid + cancelled
+    //    cart children as client money. Under PAYMENT_MODE=manual, require
+    //    manualVerifiedAt; only fall back to the payByAt-null arm off the
+    //    manual rail (a real card gateway captures at creation).
+    //  - net out refund children (a partial refund on a still-HELD parent is
+    //    also counted in bucket 3, so the parent must shed that slice here).
+    const arrivedGuard =
+      PAYMENT_MODE === 'manual'
+        ? { manualVerifiedAt: { not: null } }
+        : { OR: [{ manualVerifiedAt: { not: null } }, { manualPayByAt: null }] };
     const heldRows = await this.prisma.transaction.findMany({
       where: {
         paymentStatus: {
           in: ['HELD', 'PENDING_ADMIN_VERIFICATION', 'DISPUTED'],
         },
         refundOfId: null,
-        OR: [{ manualVerifiedAt: { not: null } }, { manualPayByAt: null }],
+        swapId: null,
+        manualCancelledAt: null,
+        ...arrivedGuard,
       },
-      select: { buyerTotal: true },
+      select: {
+        buyerTotal: true,
+        refundChildren: { select: { buyerTotal: true } },
+      },
     });
     const heldAwaitingRelease = {
       count: heldRows.length,
-      cents: heldRows.reduce((s, r) => s + r.buyerTotal, 0),
+      cents: heldRows.reduce(
+        (s, r) => s + Math.max(0, r.buyerTotal - childrenSum(r.refundChildren)),
+        0,
+      ),
     };
 
     // (2) Owed to sellers — RELEASED and not yet settled, including rows

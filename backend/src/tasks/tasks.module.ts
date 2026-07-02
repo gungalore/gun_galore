@@ -13,6 +13,7 @@ import { AdminModule } from '../admin/admin.module';
 import { PushModule } from '../push/push.module';
 import { ManualPaymentsModule } from '../manual-payments/manual-payments.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { ZohoBooksModule } from '../zoho/zoho-books.module';
 
 @Module({
   // AdminModule is imported so we can inject AdminCreditsService into
@@ -20,6 +21,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
   // AdminModule exports AdminCreditsService for this purpose.
   // PushModule imported for the weekly subscription-prune cron.
   // SubscriptionsModule for the P1.1 subscription sweep cron.
+  // ZohoBooksModule (NOT @Global) for the P1.3 swap-fee-receipt retry cron.
   imports: [
     ScheduleModule.forRoot(),
     OffersModule,
@@ -34,6 +36,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     PushModule,
     ManualPaymentsModule,
     SubscriptionsModule,
+    ZohoBooksModule,
   ],
   providers: [TasksService],
 })

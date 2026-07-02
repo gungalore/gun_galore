@@ -42,6 +42,13 @@ const REMINDER_DAYS_BEFORE = 3;
 
 const PAID_TIERS: SubscriptionTier[] = ['MEMBER', 'PRO'];
 
+// Tier ordering so we never silently downgrade a live paid period. On the
+// prepaid-EFT rail we do NOT support mid-period tier CHANGES (proration is a
+// paygate-era feature) — checkout refuses a different-tier purchase while a
+// paid period is live, and confirmPayment defends the same invariant for any
+// stale/cross-tier charge that still lands.
+const TIER_RANK: Record<SubscriptionTier, number> = { FREE: 0, MEMBER: 1, PRO: 2 };
+
 @Injectable()
 export class SubscriptionsService {
   private readonly logger = new Logger(SubscriptionsService.name);
@@ -162,6 +169,44 @@ export class SubscriptionsService {
       update: {}, // never clobber an ACTIVE (or comp) row at checkout time
     });
 
+    // Review fix (cross-tier value destruction): comp grants are never
+    // self-serve billable, and a LIVE paid period can only be RENEWED at its
+    // OWN tier — a different-tier purchase on the prepaid rail would either
+    // strand two payable references or fresh-start the period and burn
+    // already-paid days. Tier changes wait for the next renewal (or a paygate
+    // with proration). Guard uses the Subscription row, not just User.tier, so
+    // a mid-flight sweep can't open a hole.
+    const isCompActive =
+      sub.billingCycle === 'comp' &&
+      sub.status === 'ACTIVE' &&
+      sub.currentPeriodEnd > now;
+    if (isCompActive) {
+      throw new BadRequestException(
+        'Your subscription is complimentary — there is nothing to pay.',
+      );
+    }
+    const hasLivePaidPeriod =
+      sub.status === 'ACTIVE' &&
+      sub.currentPeriodEnd > now &&
+      user.subscriptionTier !== 'FREE';
+    if (hasLivePaidPeriod && user.subscriptionTier !== tier) {
+      throw new BadRequestException(
+        `You're on GG+ ${user.subscriptionTier} until ${sub.currentPeriodEnd.toISOString().slice(0, 10)}. ` +
+          `You can switch to ${tier} once your current period ends — your remaining days aren't lost.`,
+      );
+    }
+
+    // Never let a member hold two payable references: supersede any open
+    // PENDING charge for a DIFFERENT tier before issuing/resuming this one.
+    await this.prisma.subscriptionCharge.updateMany({
+      where: {
+        subscriptionId: sub.id,
+        status: 'PENDING',
+        tierPurchased: { not: tier },
+      },
+      data: { status: 'FAILED', errorMessage: 'Superseded by a new tier selection' },
+    });
+
     // Resume an open charge for the SAME tier instead of stacking refs.
     const open = await this.prisma.subscriptionCharge.findFirst({
       where: {
@@ -237,26 +282,33 @@ export class SubscriptionsService {
       });
       if (!charge?.tierPurchased) return null;
       const sub = charge.subscription;
-      const tier = charge.tierPurchased;
+      const paidTier = charge.tierPurchased;
 
-      // Same-tier renewal before expiry STACKS from the current period
-      // end; anything else (first purchase, upgrade, lapsed renewal)
-      // starts a fresh period from now.
-      const stacks =
-        sub.user.subscriptionTier === tier && sub.currentPeriodEnd > now;
-      const periodStart = stacks ? sub.currentPeriodEnd : now;
+      // Review fix (never destroy paid days): whenever the current period is
+      // still LIVE we STACK the new block onto its end — for renewals AND for
+      // any stale/cross-tier charge that slipped past the checkout guard — so
+      // paid days are never silently discarded. Only a truly lapsed/first
+      // purchase starts fresh from now.
+      const periodLive = sub.currentPeriodEnd > now;
+      const periodStart = periodLive ? sub.currentPeriodEnd : now;
       const periodEnd = new Date(
         periodStart.getTime() + charge.periodDays * 24 * 3600 * 1000,
       );
+      // And never DOWNGRADE a live higher tier: if a lower-tier charge lands
+      // while a higher tier is still live (shouldn't happen — checkout blocks
+      // it — but defend anyway), keep the higher tier on the account.
+      const liveTier = periodLive ? sub.user.subscriptionTier : 'FREE';
+      const effectiveTier =
+        TIER_RANK[paidTier] >= TIER_RANK[liveTier] ? paidTier : liveTier;
 
       await txc.subscription.update({
         where: { id: sub.id },
         data: {
-          tier,
+          tier: effectiveTier,
           status: 'ACTIVE',
           billingCycle: 'monthly-eft',
           amountCents: charge.amountCents,
-          currentPeriodStart: stacks ? sub.currentPeriodStart : now,
+          currentPeriodStart: periodLive ? sub.currentPeriodStart : now,
           currentPeriodEnd: periodEnd,
           lastChargeAt: now,
           failedChargeCount: 0,
@@ -266,9 +318,14 @@ export class SubscriptionsService {
       });
       await txc.user.update({
         where: { id: sub.user.id },
-        data: { subscriptionTier: tier },
+        data: { subscriptionTier: effectiveTier },
       });
-      return { userId: sub.user.id, tier, periodEnd, amountCents: charge.amountCents };
+      return {
+        userId: sub.user.id,
+        tier: effectiveTier,
+        periodEnd,
+        amountCents: charge.amountCents,
+      };
     });
 
     if (!result) return;
@@ -359,15 +416,33 @@ export class SubscriptionsService {
     });
     let lapsed = 0;
     for (const s of expired) {
-      const claim = await this.prisma.subscription.updateMany({
-        where: { id: s.id, status: 'ACTIVE', currentPeriodEnd: { lt: now } },
-        data: { status: 'SUSPENDED' },
+      // Review fix (non-atomic downgrade race): claim SUSPENDED and downgrade
+      // the User in ONE transaction, and re-read the subscription AFTER the
+      // claim so a confirmPayment that renewed (moved currentPeriodEnd forward,
+      // flipped back to ACTIVE) in the gap is honoured — we must not clobber a
+      // freshly-paid ACTIVE period to FREE.
+      const didLapse = await this.prisma.$transaction(async (txc) => {
+        const claim = await txc.subscription.updateMany({
+          where: { id: s.id, status: 'ACTIVE', currentPeriodEnd: { lt: now } },
+          data: { status: 'SUSPENDED' },
+        });
+        if (claim.count === 0) return false; // renewed before our claim
+        const fresh = await txc.subscription.findUnique({
+          where: { id: s.id },
+          select: { status: true, currentPeriodEnd: true },
+        });
+        // A renewal that committed AFTER our claim but BEFORE this read wins:
+        // it will have set status ACTIVE + a future period. Don't downgrade.
+        if (!fresh || fresh.status !== 'SUSPENDED' || fresh.currentPeriodEnd > now) {
+          return false;
+        }
+        await txc.user.update({
+          where: { id: s.user.id },
+          data: { subscriptionTier: 'FREE' },
+        });
+        return true;
       });
-      if (claim.count === 0) continue; // renewed in the gap
-      await this.prisma.user.update({
-        where: { id: s.user.id },
-        data: { subscriptionTier: 'FREE' },
-      });
+      if (!didLapse) continue;
       lapsed += 1;
       this.logger.log(`Subscription lapsed: user ${s.user.id} (${s.tier} → FREE)`);
       void this.notifications

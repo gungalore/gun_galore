@@ -2198,14 +2198,14 @@ function TierPerksTable({
     memberCents: number;
     proCents: number;
   } | null>(null);
+  const [pricesFailed, setPricesFailed] = useState(false);
   useEffect(() => {
     fetch(`${API_URL}/subscriptions/pricing`)
       .then((r) => (r.ok ? r.json() : null))
-      .then(
-        (p: { memberCents: number; proCents: number } | null) =>
-          p && setPrices(p),
+      .then((p: { memberCents: number; proCents: number } | null) =>
+        p ? setPrices(p) : setPricesFailed(true),
       )
-      .catch(() => undefined);
+      .catch(() => setPricesFailed(true));
   }, []);
   const rand = (cents: number) => `R${Math.round(cents / 100)}/mo`;
   type Perk = { free: string; member: string; pro: string };
@@ -2258,13 +2258,13 @@ function TierPerksTable({
     {
       key: 'MEMBER',
       label: 'Member',
-      price: prices ? rand(prices.memberCents) : '…',
+      price: prices ? rand(prices.memberCents) : pricesFailed ? 'See /subscribe' : '…',
       accent: false,
     },
     {
       key: 'PRO',
       label: 'Pro',
-      price: prices ? rand(prices.proCents) : '…',
+      price: prices ? rand(prices.proCents) : pricesFailed ? 'See /subscribe' : '…',
       accent: true,
     },
   ];

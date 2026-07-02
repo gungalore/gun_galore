@@ -1586,7 +1586,7 @@ export class NotificationsService {
       body: d.bound
         ? `Payment of ${formatRand(d.amountCents)} received — your listing is live on the homepage${until ? ` until ${until}` : ''}.`
         : `Payment of ${formatRand(d.amountCents)} received, but the listing you picked is no longer available to feature. Choose another listing to use your slot.`,
-      url: '/featured',
+      url: d.bound ? '/' : '/featured/bid',
       iconKey: 'transaction',
       linkedType: 'featured',
       linkedId: 'slot',
@@ -1605,7 +1605,7 @@ export class NotificationsService {
       rows: [{ label: 'Amount received', value: formatRand(d.amountCents) }],
       cta: d.bound
         ? { label: 'View homepage', url: this.appUrl }
-        : { label: 'Pick a listing', url: `${this.appUrl}/featured` },
+        : { label: 'Pick a listing', url: `${this.appUrl}/featured/bid` },
       preheader: d.bound
         ? `Featured live — ${formatRand(d.amountCents)} received`
         : `Slot fee received — pick a listing to feature`,
@@ -1622,7 +1622,7 @@ export class NotificationsService {
         d.phone,
         d.bound
           ? `Gun Galore: R${(d.amountCents / 100).toFixed(0)} slot fee received - your listing is now featured on the homepage${until ? ` until ${until}` : ''}.`
-          : `Gun Galore: R${(d.amountCents / 100).toFixed(0)} slot fee received, but your chosen listing is no longer available. Pick another at ${this.appUrl}/featured - your slot is paid and reserved.`,
+          : `Gun Galore: R${(d.amountCents / 100).toFixed(0)} slot fee received, but your chosen listing is no longer available. Pick another at ${this.appUrl}/featured/bid - your slot is paid and reserved.`,
         `featured-paid-${d.email}-${d.amountCents}`,
       );
     }

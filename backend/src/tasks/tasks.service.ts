@@ -5,7 +5,10 @@ import { SwapProposalsService } from '../swaps/swap-proposals.service';
 import { SwapFundingService } from '../swaps/swap-funding.service';
 import { AuctionsService } from '../auctions/auctions.service';
 import { RafflesService } from '../raffles/raffles.service';
-import { FeaturedService } from '../featured/featured.service';
+import {
+  FeaturedService,
+  FEATURED_UNPAID_MAX_MS,
+} from '../featured/featured.service';
 import { KycService } from '../kyc/kyc.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { DispatchSlaService } from '../payments/dispatch-sla.service';
@@ -17,6 +20,7 @@ import { SmsService } from '../sms/sms.service';
 import { PushService } from '../push/push.service';
 import { ManualPaymentsService } from '../manual-payments/manual-payments.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 
 // Threshold-alert dedup window. Once we've fired an alert at any
 // severity for a given service, we won't fire ANOTHER alert at the
@@ -47,6 +51,7 @@ export class TasksService {
     private readonly push: PushService,
     private readonly manualPayments: ManualPaymentsService,
     private readonly subscriptions: SubscriptionsService,
+    private readonly zohoBooks: ZohoBooksService,
   ) {}
 
   // ─── Manual EFT — inContact inbox scan ───────────────────────────
@@ -608,21 +613,46 @@ export class TasksService {
     //        listing sold while the money was in flight) = they've paid
     //        for the slot and must be able to re-pick; only admin
     //        force-evict frees such a slot.
+    //
+    //    Review fix (re-arm squat): (a) shields an UNPAID winner while
+    //    paymentPayByAt is live, but re-binding re-arms that deadline with
+    //    no cap — a winner could hold a homepage slot for free forever.
+    //    Cap the TOTAL unpaid hold at the auction's closedAt + one pay
+    //    window (+ bind window slack): past FEATURED_UNPAID_MAX_MS the slot
+    //    is forfeited regardless of a re-armed paymentPayByAt, because
+    //    closedAt never advances for the original winner.
     const bindCutoff = new Date(now.getTime() - cfg.bindWindowSec * 1000);
+    const unpaidHardCutoff = new Date(
+      now.getTime() - (cfg.bindWindowSec * 1000 + FEATURED_UNPAID_MAX_MS),
+    );
     const expiredBinds = await this.prisma.featuredSlot.findMany({
       where: {
         status: 'BIND_WINDOW',
         currentAuction: { closedAt: { lte: bindCutoff } },
-        NOT: {
-          currentAuction: {
-            winningBid: {
-              OR: [
-                { paidAt: { not: null } },
-                { paidAt: null, paymentPayByAt: { gt: now } },
-              ],
+        OR: [
+          // Normal path: window lapsed and not shielded by paid/live-EFT.
+          {
+            NOT: {
+              currentAuction: {
+                winningBid: {
+                  OR: [
+                    { paidAt: { not: null } },
+                    { paidAt: null, paymentPayByAt: { gt: now } },
+                  ],
+                },
+              },
             },
           },
-        },
+          // Absolute cap: an UNPAID winner past the hard cutoff is forfeited
+          // even if they keep re-arming paymentPayByAt (paid winners are
+          // never touched here — they need admin force-evict).
+          {
+            currentAuction: {
+              closedAt: { lte: unpaidHardCutoff },
+              winningBid: { paidAt: null },
+            },
+          },
+        ],
       },
       select: { id: true },
     });
@@ -734,6 +764,24 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('swap-funding-sweep');
+    }
+  }
+
+  // P1.3 — hourly retry for swap leg-fee Zoho receipts that failed at
+  // completion (createSwapFeeReceipts is idempotent per side, so a re-fire
+  // can only fill a missing receipt). Keeps Books whole without an admin
+  // clicking a retry button.
+  @Cron(CronExpression.EVERY_HOUR)
+  async retrySwapFeeReceipts() {
+    try {
+      await this.zohoBooks.retryMissingSwapFeeReceipts();
+    } catch (err) {
+      this.logger.error(
+        `retrySwapFeeReceipts failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('swap-fee-receipt-retry');
     }
   }
 
