@@ -2486,6 +2486,11 @@ model AskGgMessage {
   // edition, pages }. Rendered as chips below the assistant message
   // so the user can verify against the source PDF.
   citations        Json?
+  // P2.2 — live marketplace listings the answer surfaced via
+  // searchMarketplace / getComplements. Json array of compact cards
+  // ({ id, title, priceCents, imageUrl, categoryName, … }) rendered as
+  // tappable listing cards below the assistant message.
+  listingCards     Json?
   createdAt        DateTime          @default(now())
 
   @@index([conversationId, createdAt])

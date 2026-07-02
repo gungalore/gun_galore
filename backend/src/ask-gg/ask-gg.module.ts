@@ -14,15 +14,20 @@ import { adminJwtSecret } from '../admin/admin-jwt-secret';
 import { ReloadingModule } from '../reloading/reloading.module';
 import { BallisticsModule } from '../ballistics/ballistics.module';
 import { LoadLabModule } from '../load-lab/load-lab.module';
+import { ListingsModule } from '../listings/listings.module';
 
 @Module({
   // ReloadingModule exports ReloadingService so AskGgClaudeService can
   // call searchPages + slicePagesAsPdf when answering reloading
   // questions (Phase D Sprint 2 tool-use loop).
+  // ListingsModule (P2.2) exports ListingsService for the marketplace
+  // lever — searchMarketplace (browse) + getComplements (crossSell).
+  // ListingsModule has no imports of its own, so no cycle.
   imports: [
     ReloadingModule,
     BallisticsModule,
     LoadLabModule,
+    ListingsModule,
     // For the admin KB-verification controller (uses AdminJwtGuard).
     // Same secret/config as AdminModule — kept local here so we
     // don't create a circular dep importing AdminModule.

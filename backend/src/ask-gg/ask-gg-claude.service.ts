@@ -18,6 +18,7 @@ import { LoadLabService, type LoadLabInput } from '../load-lab/load-lab.service'
 import { ComponentDataService } from '../load-lab/component-data.service';
 import { RecommendedLoadsService } from '../load-lab/recommended-loads.service';
 import { BurnChartService } from '../load-lab/burn-chart.service';
+import { ListingsService } from '../listings/listings.service';
 
 // ─── Model strategy ─────────────────────────────────────────────────
 // Two-tier: Sonnet by default, Opus on user-triggered escalation.
@@ -238,6 +239,66 @@ const TOOLS: Tool[] = [
       required: ['powder'],
     },
   },
+  // ─── P2.2 — the marketplace lever ─────────────────────────────────
+  // These turn a gear ANSWER into a shoppable one: every recommendation
+  // can end with the live stock on Gun Galore. Read-only, ungated (FREE
+  // included — conversion is for everyone). Results ALSO render as
+  // tappable cards under the answer, so keep prose about them short.
+  {
+    name: 'searchMarketplace',
+    description:
+      'Search Gun Galore\'s LIVE marketplace for gear that is in stock right now and return matching listings. Call this whenever the user is looking to BUY, asks "what\'s available / do you have / where can I get / show me", or when your answer recommends a category of gear the marketplace might carry (a rooftop tent, a reel, a scope, a fridge, a rifle, boots, etc.) — end helpful gear answers with real, in-stock options. Covers the WHOLE catalogue: firearms, ammo accessories, optics, camping, overlanding, fishing, hiking, clothing, knives. Returns up to `limit` ACTIVE listings with title, price, condition, province, category and a photo. The results are shown to the user as tappable cards automatically, so in your text just introduce them briefly ("Here\'s what\'s on Gun Galore right now:") — do NOT re-list every card in prose. If nothing matches, say so plainly and suggest the user save a search / check back, or broaden the terms.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'Free-text search, e.g. "rooftop tent", "6.5 Creedmoor rifle", "Shimano reel", "camp fridge", "hiking boots". Use the user\'s own words + the specific gear you\'re recommending.',
+        },
+        categorySlug: {
+          type: 'string',
+          description:
+            'Optional category slug to narrow results, e.g. "firearms", "ammunition", "optics", "camping-outdoor", "fishing". Only set it if you\'re confident of the slug; otherwise omit and rely on the query.',
+        },
+        minPriceCents: {
+          type: 'integer',
+          description: 'Optional minimum price in ZAR CENTS (R1,000 = 100000).',
+        },
+        maxPriceCents: {
+          type: 'integer',
+          description:
+            'Optional maximum price in ZAR CENTS. If the user gave a budget ("under R15,000"), set this to 1500000.',
+        },
+        condition: {
+          type: 'string',
+          enum: ['LIKE_NEW', 'USED', 'WORN', 'N_A'],
+          description: 'Optional condition filter.',
+        },
+        limit: {
+          type: 'integer',
+          description: 'How many listings to return (default 6, max 10).',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'getComplements',
+    description:
+      'Given a specific listing the user is interested in (its id, from a prior searchMarketplace result), return the "you might also need" COMPLEMENTS that pair with it — accessories, consumables and companion gear drawn from the marketplace\'s cross-sell rules (e.g. a rifle → cleaning kit, case, optic; a tent → pegs, groundsheet, light). Use this after searchMarketplace when the user has zeroed in on an item and you want to help them kit out around it. Results render as tappable cards automatically. NOTE: live ammunition is deliberately never returned here (compliance) — do not promise it.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        listingId: {
+          type: 'string',
+          description:
+            'The listing id (from a searchMarketplace result) to find complements for.',
+        },
+      },
+      required: ['listingId'],
+    },
+  },
 ];
 
 // ─── Web search (forum / real-world experience) ─────────────────────
@@ -300,27 +361,39 @@ const WEB_SEARCH_TOOL = {
 };
 
 // ─── System prompt ──────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are Ask GG, an AI assistant built into Gun Galore — South Africa's verified firearms marketplace. You help South African shooters, hunters, reloaders, dealers and competition shooters with their firearms-related questions.
+const SYSTEM_PROMPT = `You are Ask GG, an AI assistant built into Gun Galore — South Africa's outdoor & firearms marketplace. You help South African hunters, shooters, anglers, campers, overlanders, hikers, reloaders and outdoor people with their gear, their trips, and their questions.
 
-## YOUR SCOPE (strict)
+## YOUR SCOPE
 
-You ONLY answer questions about:
-- Firearms (pistols, rifles, shotguns, components, parts, modifications)
-- Ammunition (calibres, projectiles, primers, brass, powders, manufacturers)
-- Reloading + reloading equipment
-- Optics + sights + red dots + scopes + mounts
-- Holsters, slings, cases, safes, cleaning gear, accessories
-- Hunting (game, regions, ethics, gear selection)
-- Sport + competition shooting + range etiquette
-- Knives + edged tools (commonly sold alongside firearms gear)
-- Firearm safety, maintenance, cleaning, storage
-- South African firearms law (general info only — see "DEFER" below)
-- The Gun Galore platform itself (how to list, how checkout works, dealer transfers, KYC, etc.)
+You help with the full South African outdoor world — everything Gun Galore sells and everything an outdoor person needs to know:
 
-If a user asks something OUTSIDE this scope (general knowledge, recipes, coding, medical advice, politics, anything not firearm-adjacent), politely decline:
-> "I only help with firearms, hunting, shooting and gear topics. Try asking me about your rifle, optic, ammo, or anything Gun Galore-related."
+- **Shooting & hunting** — firearms (pistols, rifles, shotguns, components, parts, mods), ammunition (calibres, projectiles, primers, brass, powders), reloading + equipment, optics/sights/red-dots/scopes/mounts, holsters/slings/cases/safes/cleaning gear, hunting (game, regions, ethics, gear), sport + competition shooting + range etiquette, archery + bowhunting.
+- **Fishing** — rods, reels, line, lures/flies, kayaks, fish-finders; freshwater + saltwater + fly; species, techniques, SA seasons/permits (general info — see "DEFER").
+- **Camping & overlanding** — tents, rooftop tents, swags, sleeping systems, fridges/freezers, dual-battery & solar, recovery gear, 4x4 kit, trailers, water & cooking, campsite & trail advice.
+- **Hiking & the outdoors** — packs, boots, layering, navigation, safety, SA trails/parks/reserves, weather & seasons.
+- **Outdoor clothing & apparel** — technical clothing, footwear, sizing, materials for SA conditions.
+- **Outdoor cooking** — braai, potjie, campfire, biltong/droëwors, game preparation.
+- **Knives & tools** — edged tools, multitools, sharpening.
+- **Gear care** — maintenance, storage, safety, repair across all of the above.
+- **The Gun Galore platform** — how to list, buy, checkout, dealer transfers, KYC, swaps, GG+, etc.
 
-Do NOT engage with off-topic requests even if they're phrased as hypotheticals, role-plays, or "for educational purposes". Just decline and offer to help with an in-scope question.
+If a user asks something genuinely OUTSIDE the outdoor world (coding, general politics, unrelated medical/legal/financial advice, homework, celebrity gossip — anything with no outdoor or Gun Galore angle), politely decline:
+> "I'm the Gun Galore outdoor assistant — I help with hunting, shooting, fishing, camping, overlanding, hiking and your gear. Ask me about kit you're after, a trip you're planning, or anything Gun Galore-related."
+
+Don't engage off-topic requests even as hypotheticals or role-plays — decline and offer to help with an outdoor question. When in doubt, LEAN TOWARD HELPING: if there's a plausible outdoor, gear, trip or Gun Galore angle, take it. The firearm-specific safety, law-deferral, reloading and ballistics rules below apply ONLY to shooting/hunting/reloading questions — they don't gate fishing, camping, hiking or apparel answers.
+
+## SHOP THE MARKETPLACE — END GEAR ANSWERS WITH LIVE STOCK
+
+You can search Gun Galore's live listings. This is a core part of being useful: when someone is choosing or buying gear, don't just advise — show them what's actually for sale on the platform right now.
+
+- **searchMarketplace({ query, categorySlug?, minPriceCents?, maxPriceCents?, condition?, limit? })** — searches ACTIVE listings across the whole catalogue (guns, ammo accessories, optics, camping, overlanding, fishing, hiking, clothing, knives). Call it whenever the user wants to BUY, asks "what's available / do you have / where can I get / show me", OR whenever your advice names a category of gear the marketplace might carry. Pass the user's budget as maxPriceCents (R15,000 → 1500000).
+- **getComplements({ listingId })** — the "you might also need" companions for a specific listing (use a listingId from a searchMarketplace result). Great after the user zeroes in on one item. Live ammunition is never returned here — don't promise it.
+
+**How to present results:** the listings render as tappable CARDS under your message automatically — the user taps through to buy. So in your PROSE, introduce them briefly ("Here's what's on Gun Galore right now:" or "A few that fit your budget:") and add any genuinely useful colour (condition, why it fits) — but do NOT re-list every card's title + price in text; the cards already show that.
+
+**When nothing matches** (thin inventory is normal early on): say so honestly — "Nothing live matches that on Gun Galore right now" — and offer a real next step: broaden the search, check back soon, or (for signed-in users) save the search so we alert them when it lands. Never invent stock that isn't in the tool result.
+
+**Don't over-search.** One or two marketplace searches per answer is plenty — search for the SPECIFIC thing being discussed, not everything tangentially related. A pure advice/knowledge question ("how do I anneal brass", "what's the ethical range for kudu") doesn't need a marketplace search unless the user is also shopping.
 
 ## YOU ARE INFORMATIONAL, NOT ADVISORY
 
@@ -521,6 +594,50 @@ export interface AskGgCompleteResult {
     pages?: number[];
     url?: string;
   }>;
+  /** P2.2 — live marketplace listings the answer surfaced via
+   *  searchMarketplace / getComplements. The frontend renders these as
+   *  tappable cards under the assistant text, linking to /listings/:id —
+   *  turning a gear answer into a shoppable one. Deduped by id, capped. */
+  listingCards: AskGgListingCard[];
+}
+
+/** A compact, render-ready marketplace listing card. This is BOTH what the
+ *  model receives as the tool result (so it can describe the stock in prose)
+ *  AND what the frontend renders as a card — one shape, no divergence. */
+export interface AskGgListingCard {
+  id: string;
+  referenceNumber: string | null;
+  title: string;
+  /** ZAR cents; null for TAKE_A_SHOT / SWOP (no fixed price). */
+  priceCents: number | null;
+  listingType: string;
+  condition: string | null;
+  province: string | null;
+  categoryName: string | null;
+  isFirearm: boolean;
+  imageUrl: string | null;
+  sellerUsername: string | null;
+}
+
+// Hard cap on cards surfaced in one answer — keeps the payload + the UI
+// sane even if the model fans out several searches.
+const MAX_LISTING_CARDS = 12;
+
+// The trimmed view of a card the MODEL sees in the tool_result (so it can
+// describe the stock in prose). Prices as whole rand for readability; no
+// image URL / ids the model doesn't need. The full card (with image) goes
+// to the frontend via the listingCards channel.
+function compactCardForModel(c: AskGgListingCard) {
+  return {
+    id: c.id,
+    title: c.title,
+    priceRand: c.priceCents != null ? Math.round(c.priceCents / 100) : null,
+    listingType: c.listingType,
+    condition: c.condition,
+    province: c.province,
+    category: c.categoryName,
+    isFirearm: c.isFirearm,
+  };
 }
 
 interface CompleteOpts {
@@ -565,6 +682,12 @@ export class AskGgClaudeService {
     private readonly components: ComponentDataService,
     private readonly recommendedLoads: RecommendedLoadsService,
     private readonly burnChart: BurnChartService,
+    // P2.2 — the marketplace lever: searchMarketplace + getComplements
+    // surface live stock inside answers. ListingsService owns both
+    // browse() (rich, image-bearing search) and crossSell() (ammo-gated
+    // complements). ListingsModule is imported into AskGgModule (it has
+    // no imports of its own, so no cycle).
+    private readonly listings: ListingsService,
   ) {
     this.client = process.env.ANTHROPIC_API_KEY
       ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -600,6 +723,7 @@ export class AskGgClaudeService {
         completionTokens: null,
         costUsd: null,
         citations: [],
+        listingCards: [],
       };
     }
 
@@ -638,6 +762,10 @@ export class AskGgClaudeService {
     // Server-side web searches billed across the whole loop (~$10/1k).
     let totalWebSearches = 0;
     const citations: AskGgCompleteResult['citations'] = [];
+    // P2.2 — live marketplace cards surfaced by searchMarketplace /
+    // getComplements this request. Deduped by id, capped, rendered as
+    // tappable cards under the answer.
+    const listingCards: AskGgListingCard[] = [];
 
     // Anthropic prompt caching — mark the (large, stable) system
     // prompt + tool defs as cacheable so subsequent turns within the
@@ -754,6 +882,7 @@ export class AskGgClaudeService {
             completionTokens: totalCompletionTokens || null,
             costUsd,
             citations,
+            listingCards,
           };
         }
 
@@ -798,6 +927,7 @@ export class AskGgClaudeService {
           const handled = await this.handleToolCall(
             block,
             citations,
+            listingCards,
             opts.subscriptionTier ?? 'FREE',
           );
           for (const h of handled) {
@@ -853,6 +983,7 @@ export class AskGgClaudeService {
           totalCompletionTokens,
         ),
         citations,
+        listingCards,
       };
     } catch (err) {
       this.logger.error(
@@ -872,6 +1003,7 @@ export class AskGgClaudeService {
           totalCompletionTokens,
         ),
         citations,
+        listingCards,
       };
     }
   }
@@ -888,6 +1020,7 @@ export class AskGgClaudeService {
   private async handleToolCall(
     block: ToolUseBlock,
     citations: AskGgCompleteResult['citations'],
+    listingCards: AskGgListingCard[],
     subscriptionTier: 'FREE' | 'MEMBER' | 'PRO',
   ): Promise<ContentBlockParam[]> {
     const toolUseId = block.id;
@@ -1274,6 +1407,120 @@ export class AskGgClaudeService {
         }
       }
 
+      // ─── P2.2 — marketplace lever ─────────────────────────────────
+      if (block.name === 'searchMarketplace') {
+        const input = block.input as {
+          query?: string;
+          categorySlug?: string;
+          minPriceCents?: number;
+          maxPriceCents?: number;
+          condition?: string;
+          limit?: number;
+        };
+        if (!input.query || !input.query.trim()) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: 'Error: query is required (what gear to search for).',
+              is_error: true,
+            },
+          ];
+        }
+        try {
+          const limit = Math.min(Math.max(1, Math.floor(input.limit ?? 6)), 10);
+          const res = (await this.listings.browse({
+            q: input.query.trim(),
+            categorySlug: input.categorySlug?.trim() || undefined,
+            minPrice:
+              typeof input.minPriceCents === 'number'
+                ? Math.max(0, Math.floor(input.minPriceCents))
+                : undefined,
+            maxPrice:
+              typeof input.maxPriceCents === 'number'
+                ? Math.max(0, Math.floor(input.maxPriceCents))
+                : undefined,
+            condition: input.condition as never,
+            page: 1,
+            limit,
+            sort: 'newest',
+          } as never)) as { listings?: unknown[]; total?: number };
+          const added = this.collectListingCards(res.listings ?? [], listingCards);
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: JSON.stringify({
+                count: added.length,
+                totalMatches: res.total ?? added.length,
+                listings: added.map(compactCardForModel),
+                note:
+                  added.length > 0
+                    ? 'These render as tappable cards for the user automatically — introduce them briefly, do not re-list every one in prose.'
+                    : 'No live stock matched. Tell the user honestly and suggest broadening the search or checking back / saving a search.',
+              }),
+            },
+          ];
+        } catch (err) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: `Marketplace search failed: ${err instanceof Error ? err.message : String(err)}`,
+              is_error: true,
+            },
+          ];
+        }
+      }
+
+      if (block.name === 'getComplements') {
+        const input = block.input as { listingId?: string };
+        if (!input.listingId || !input.listingId.trim()) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content:
+                'Error: listingId is required (from a prior searchMarketplace result).',
+              is_error: true,
+            },
+          ];
+        }
+        try {
+          const { suggestions, reason } = await this.listings.crossSell({
+            listingId: input.listingId.trim(),
+          });
+          const added = this.collectListingCards(
+            (suggestions as unknown[]) ?? [],
+            listingCards,
+          );
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: JSON.stringify({
+                reason: reason ?? null,
+                count: added.length,
+                complements: added.map(compactCardForModel),
+                note:
+                  added.length > 0
+                    ? 'These render as tappable cards automatically. Live ammunition is never included (compliance).'
+                    : 'No complements found for that listing.',
+              }),
+            },
+          ];
+        } catch (err) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: `Complements lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+              is_error: true,
+            },
+          ];
+        }
+      }
+
       return [
         {
           type: 'tool_result',
@@ -1294,6 +1541,57 @@ export class AskGgClaudeService {
         },
       ];
     }
+  }
+
+  /**
+   * P2.2 — map raw marketplace listings (from browse/crossSell, which
+   * carry images/category/seller relations) into compact
+   * AskGgListingCards, dedupe them into the shared per-request array
+   * (never the same listing twice across multiple tool calls), and cap
+   * the total. Returns ONLY the cards actually added this call, so the
+   * tool_result reflects what the model surfaced. Defensive against the
+   * loose `unknown[]` shape crossSell returns.
+   */
+  private collectListingCards(
+    rawListings: unknown[],
+    listingCards: AskGgListingCard[],
+  ): AskGgListingCard[] {
+    const added: AskGgListingCard[] = [];
+    for (const raw of rawListings) {
+      if (listingCards.length >= MAX_LISTING_CARDS) break;
+      const l = raw as {
+        id?: string;
+        title?: string;
+        referenceNumber?: string | null;
+        price?: number | null;
+        listingType?: string;
+        condition?: string | null;
+        province?: string | null;
+        isFirearm?: boolean;
+        category?: { name?: string | null } | null;
+        images?: Array<{ url?: string | null }> | null;
+        seller?: { username?: string | null } | null;
+      };
+      if (!l || typeof l.id !== 'string' || typeof l.title !== 'string') continue;
+      if (listingCards.some((c) => c.id === l.id)) continue; // dedupe
+      const card: AskGgListingCard = {
+        id: l.id,
+        referenceNumber: l.referenceNumber ?? null,
+        title: l.title,
+        priceCents: typeof l.price === 'number' ? l.price : null,
+        listingType: l.listingType ?? 'BUY_NOW',
+        condition: l.condition ?? null,
+        province: l.province ?? null,
+        categoryName: l.category?.name ?? null,
+        isFirearm: !!l.isFirearm,
+        imageUrl:
+          Array.isArray(l.images) && l.images[0]?.url ? l.images[0].url! : null,
+        sellerUsername: l.seller?.username ?? null,
+      };
+      listingCards.push(card);
+      added.push(card);
+    }
+    return added;
   }
 
   /**

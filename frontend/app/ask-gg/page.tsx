@@ -39,6 +39,7 @@ import {
   type AskGgFairUseCoolOff,
   type AskGgCitation,
   type AskGgKbHit,
+  type AskGgListingCard,
 } from '@/lib/use-ask-gg';
 import { SubscriberRaffleWidget } from '@/components/subscriber-raffle-widget';
 import { LoadLabPanel } from './load-lab/LoadLabPanel';
@@ -469,7 +470,7 @@ export default function AskGgPage() {
                 color: 'var(--text-tertiary)',
               }}
             >
-              Your firearms-knowledgeable assistant
+              Your outdoor &amp; firearms assistant
             </p>
           </div>
         </div>
@@ -879,7 +880,7 @@ export default function AskGgPage() {
                     ? 'Quick break — back in a moment…'
                     : pendingFiles.length > 0
                       ? 'Add a note about these photos (optional)…'
-                      : 'Ask about firearms, ammo, optics, hunting…'
+                      : 'Ask about gear, hunting, fishing, camping, overlanding…'
               }
               aria-label="Type your question"
               rows={1}
@@ -1063,6 +1064,9 @@ function MessageBubble({
         )}
         {!isUser && message.citations && message.citations.length > 0 && (
           <CitationsRow citations={message.citations} />
+        )}
+        {!isUser && message.listingCards && message.listingCards.length > 0 && (
+          <ListingCardsRow cards={message.listingCards} />
         )}
         {!isUser && priorUserContent && (
           <div
@@ -1498,6 +1502,139 @@ function CitationsRow({ citations }: { citations: AskGgCitation[] }) {
   );
 }
 
+/** P2.2 — live marketplace listings the answer surfaced (searchMarketplace
+ *  / getComplements). A horizontal strip of tappable cards under the
+ *  assistant message; each links to the listing so a gear answer becomes
+ *  shoppable. Prices are ZAR cents; auction / take-a-shot / swap have no
+ *  fixed price so we show the mode instead. */
+function ListingCardsRow({ cards }: { cards: AskGgListingCard[] }) {
+  const priceLabel = (c: AskGgListingCard): string => {
+    if (typeof c.priceCents === 'number') {
+      return `R${Math.round(c.priceCents / 100).toLocaleString('en-ZA')}`;
+    }
+    if (c.listingType === 'AUCTION') return 'Auction';
+    if (c.listingType === 'TAKE_A_SHOT') return 'Take a Shot';
+    if (c.listingType === 'SWOP') return 'Swap';
+    return 'See listing';
+  };
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        paddingTop: 10,
+        borderTop: '0.5px solid var(--border)',
+      }}
+    >
+      <span
+        style={{
+          display: 'block',
+          fontSize: 10,
+          textTransform: 'uppercase',
+          letterSpacing: 0.6,
+          color: 'var(--text-tertiary)',
+          marginBottom: 6,
+        }}
+      >
+        On Gun Galore now
+      </span>
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          overflowX: 'auto',
+          paddingBottom: 4,
+          scrollbarWidth: 'thin',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
+        {cards.map((c) => (
+          <Link
+            key={c.id}
+            href={`/listings/${c.id}`}
+            style={{
+              flex: '0 0 auto',
+              width: 142,
+              textDecoration: 'none',
+              color: 'inherit',
+              border: '0.5px solid var(--border)',
+              borderRadius: 10,
+              overflow: 'hidden',
+              background: 'var(--bg-card)',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                height: 100,
+                background: 'var(--bg-inset)',
+                position: 'relative',
+              }}
+            >
+              {c.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={c.imageUrl}
+                  alt={c.title}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  loading="lazy"
+                />
+              ) : (
+                <span
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 11,
+                    color: 'var(--text-tertiary)',
+                  }}
+                >
+                  No photo
+                </span>
+              )}
+            </div>
+            <div style={{ padding: '7px 8px 9px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span
+                style={{
+                  fontSize: 12,
+                  lineHeight: 1.25,
+                  color: 'var(--text-primary)',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {c.title}
+              </span>
+              <span
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  color: 'var(--red)',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {priceLabel(c)}
+              </span>
+              {(c.condition || c.province) && (
+                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                  {[c.condition?.replace(/_/g, ' '), c.province?.replace(/_/g, ' ')]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              )}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Phase C — "Did this solve it?" pill rendered after the latest
  *  assistant turn. Yes triggers a backend RESOLVED → spawns a DRAFT
  *  KB entry the admin can verify, growing the search-first corpus.
@@ -1905,12 +2042,12 @@ function EmptyState({
   // Each tile is a one-tap starter: title, what it's for, and the
   // question it drops into the composer (ready to edit or send).
   const USES: { title: string; desc: string; prompt: string }[] = [
-    { title: 'Identify it', desc: 'Snap a photo of a part, firearm or headstamp and ask what it is.', prompt: "Help me identify a firearm part or headstamp — I'll attach a photo." },
-    { title: 'Ammo & optics', desc: 'Calibre, bullet and powder questions, zeroing, scope and gear comparisons.', prompt: 'What scope and zero distance suit a .308 hunting rifle?' },
-    { title: 'Hunting & field', desc: 'Species, shot placement, ranging and ethical-range guidance.', prompt: "What's the ethical maximum range for kudu with a .30-06?" },
+    { title: 'Find gear', desc: 'Tell me what you need and I’ll search the marketplace for live stock.', prompt: "I'm looking for a rooftop tent under R15,000 — what's available on Gun Galore?" },
+    { title: 'Identify it', desc: 'Snap a photo of any gear — a part, reel, fridge or headstamp — and ask what it is.', prompt: "Help me identify this piece of gear — I'll attach a photo." },
+    { title: 'Plan a trip', desc: 'Kit lists, seasons and gear for a hunt, camp or overland trip.', prompt: 'What should I pack for a 3-day overland trip to the Kgalagadi in winter?' },
+    { title: 'Hunting & shooting', desc: 'Ammo, optics, zeroing, shot placement and ethical-range guidance.', prompt: "What scope and zero distance suit a .308 hunting rifle, and what's the ethical range for kudu?" },
     { title: 'Reloading data', desc: 'Look up published manual loads by cartridge, bullet and powder.', prompt: 'Show me published loads for 6.5 Creedmoor with 140gr bullets.' },
-    { title: 'Sell smarter', desc: 'Turn a few photos into a ready-to-post listing description.', prompt: 'Help me write a listing description for a rifle I want to sell.' },
-    { title: 'SA firearms law', desc: 'Plain-language overview of licensing, transport and transfers.', prompt: 'Explain SA firearm licence types and the transfer process.' },
+    { title: 'Sell smarter', desc: 'Turn a few photos into a ready-to-post listing description.', prompt: 'Help me write a listing description for some gear I want to sell.' },
   ];
   return (
     <div style={{ padding: '12px 0 8px', color: 'var(--text-secondary)' }}>

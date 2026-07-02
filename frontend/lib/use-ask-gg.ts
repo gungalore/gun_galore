@@ -50,6 +50,23 @@ export interface AskGgCitation {
   url?: string;
 }
 
+/** P2.2 — a live marketplace listing the answer surfaced via
+ *  searchMarketplace / getComplements. Rendered as a tappable card
+ *  under the assistant message, linking to /listings/:id. */
+export interface AskGgListingCard {
+  id: string;
+  referenceNumber?: string | null;
+  title: string;
+  priceCents?: number | null;
+  listingType?: string;
+  condition?: string | null;
+  province?: string | null;
+  categoryName?: string | null;
+  isFirearm?: boolean;
+  imageUrl?: string | null;
+  sellerUsername?: string | null;
+}
+
 /** A verified KB entry surfaced by the search-first flow. Rendered
  *  as a card above the composer while the user is typing — clicking
  *  "This helped" expands the full answer + bumps usefulCount, no
@@ -79,6 +96,9 @@ export interface AskGgUiMessage {
   /** Reloading-manual citations attached to this assistant message
    *  (always empty / undefined for user messages). */
   citations?: AskGgCitation[];
+  /** P2.2 — live marketplace listings the answer surfaced. Rendered as
+   *  tappable cards under the assistant bubble. */
+  listingCards?: AskGgListingCard[];
   /** Phase B — Cloudinary URLs of photos the user attached to this
    *  message (always empty / undefined for assistant messages).
    *  Rendered as inline thumbnails inside the user bubble. */
@@ -161,6 +181,7 @@ type StreamEvent =
         content: string;
         model: string | null;
         citations?: AskGgCitation[] | null;
+        listingCards?: AskGgListingCard[] | null;
       };
     }
   | { type: 'error'; message?: string };
@@ -175,6 +196,7 @@ interface ConversationMessageRow {
   imageUrls?: string[] | null;
   model?: string | null;
   citations?: AskGgCitation[] | null;
+  listingCards?: AskGgListingCard[] | null;
   createdAt?: string;
 }
 
@@ -363,6 +385,9 @@ export function useAskGg(): UseAskGg {
           content: m.content,
           model: m.model ?? undefined,
           citations: Array.isArray(m.citations) ? m.citations : undefined,
+          listingCards: Array.isArray(m.listingCards)
+            ? m.listingCards
+            : undefined,
           imageUrls:
             m.imageUrls && m.imageUrls.length > 0 ? m.imageUrls : undefined,
         }));
@@ -586,6 +611,8 @@ export function useAskGg(): UseAskGg {
                       content: evt.assistantMessage.content,
                       model: evt.assistantMessage.model ?? undefined,
                       citations: evt.assistantMessage.citations ?? undefined,
+                      listingCards:
+                        evt.assistantMessage.listingCards ?? undefined,
                     }
                   : m,
               ),

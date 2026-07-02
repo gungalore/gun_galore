@@ -265,6 +265,12 @@ export class AskGgService {
           reply.citations.length > 0
             ? (reply.citations as unknown as object[])
             : undefined,
+        // P2.2 — live marketplace cards the answer surfaced. Stored as
+        // Json so a reloaded conversation re-renders the shoppable cards.
+        listingCards:
+          reply.listingCards.length > 0
+            ? (reply.listingCards as unknown as object[])
+            : undefined,
       },
     });
 
