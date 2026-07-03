@@ -167,6 +167,22 @@ export class DealerVerificationService {
         'Dealer verification applies only to DEALER_TRANSFER shipping. Private arrangement uses a different flow.',
       );
     }
+    // FLOW-F1 — a verification that already APPROVED is FINAL: the payout
+    // released and the buyer was sent the dealer's details. A re-upload here
+    // used to reset the status to PENDING_CLAUDE — "un-approving" a released
+    // transaction, wiping the audit trail the payout was granted on, and
+    // hiding the buyer's dealer panel. Same for a settled/reversed payment
+    // state: no re-upload once money has moved either way.
+    if (tx.dealerVerificationStatus === 'APPROVED') {
+      throw new BadRequestException(
+        'This transfer has already been verified and settled — the paperwork cannot be re-submitted. Contact support if something is wrong.',
+      );
+    }
+    if (tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException(
+        'This transaction is no longer awaiting verification — payment has already been settled or reversed. Contact support if something is wrong.',
+      );
+    }
     // SWOP S6 — a swap firearm leg may only be stocked-in once the swap has
     // LOCKED (both parties funded). The dealer-verify APPROVED path sets the
     // leg's deliveredAt, which drives the swap rollup; allowing it during
@@ -396,6 +412,32 @@ export class DealerVerificationService {
         return;
       }
 
+      // FLOW-F1 — PROOF-OF-PAYMENT guard. HELD is the schema DEFAULT at
+      // creation, so an UNPAID dealer-transfer order is state-identical to a
+      // funded one; without this check an APPROVED verification would release
+      // real money for an EFT that never arrived (the same class of hole the
+      // admin manual-release path closed in P5.3). Swap firearm legs are
+      // exempt below — they carry zero per-leg money and their funding is
+      // enforced on the Swap parent.
+      if (!tx.swapId && (!tx.paidAt || tx.manualCancelledAt)) {
+        this.logger.error(
+          `releaseAndNotifyOnApproval: tx ${transactionId} is NOT PAID (paidAt=${String(
+            tx.paidAt,
+          )}, manualCancelledAt=${String(tx.manualCancelledAt)}) — refusing to release; surfacing to admin`,
+        );
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'DEALER_VERIFY_UNPAID',
+              referenceId: transactionId,
+              urgent: true,
+              context: `Dealer verification APPROVED on tx ${transactionId} but the order shows no payment (paidAt null or cancelled). Funds NOT released — investigate before any manual release.`,
+            },
+          })
+          .catch(() => undefined);
+        return;
+      }
+
       // S6 — a swap firearm leg carries ZERO money (settlement happens on the
       // Swap parent in S5), so there is NO per-leg payout or totalSales bump.
       // The dealer stock-in IS this leg's delivery: route it through the normal
@@ -430,24 +472,37 @@ export class DealerVerificationService {
       }
 
       const now = new Date();
-      await this.prisma.$transaction([
-        this.prisma.transaction.update({
-          where: { id: transactionId },
-          data: {
-            paymentStatus: 'RELEASED',
-            releasedAt: now,
-            // deliveredAt = stocked-in-at-dealer for firearm DEALER_TRANSFER.
-            // We don't have a buyer-side "confirm delivery" event anymore;
-            // the verification approval IS the deliverable for our scope.
-            deliveredAt: tx.deliveredAt ?? now,
-            shippingStatus: 'DELIVERED',
-          },
-        }),
-        this.prisma.user.update({
-          where: { id: tx.sellerId },
-          data: { totalSales: { increment: 1 } },
-        }),
-      ]);
+      // FLOW-F1 — the release is an atomic CAS, not a blind update: HELD +
+      // paid-and-not-cancelled must still hold AT WRITE TIME (the pre-reads
+      // above are advisory). count===0 ⇒ a concurrent path already settled
+      // or reversed the row — no release, no totalSales bump.
+      const claim = await this.prisma.transaction.updateMany({
+        where: {
+          id: transactionId,
+          paymentStatus: 'HELD',
+          paidAt: { not: null },
+          manualCancelledAt: null,
+        },
+        data: {
+          paymentStatus: 'RELEASED',
+          releasedAt: now,
+          // deliveredAt = stocked-in-at-dealer for firearm DEALER_TRANSFER.
+          // We don't have a buyer-side "confirm delivery" event anymore;
+          // the verification approval IS the deliverable for our scope.
+          deliveredAt: tx.deliveredAt ?? now,
+          shippingStatus: 'DELIVERED',
+        },
+      });
+      if (claim.count === 0) {
+        this.logger.warn(
+          `releaseAndNotifyOnApproval: tx ${transactionId} release claim lost (state changed concurrently) — skipping`,
+        );
+        return;
+      }
+      await this.prisma.user.update({
+        where: { id: tx.sellerId },
+        data: { totalSales: { increment: 1 } },
+      });
 
       this.logger.log(
         `Dealer verification APPROVED for tx ${transactionId} — payout released`,

@@ -233,7 +233,8 @@ export class TasksService {
           id: true,
           listingId: true,
           orderReference: true,
-          listing: { select: { listingType: true } },
+          quantity: true,
+          listing: { select: { listingType: true, trackInventory: true } },
         },
         take: 100,
       });
@@ -248,19 +249,43 @@ export class TasksService {
           // P0.2 — an ENDED AUCTION must release to EXPIRED, not ACTIVE:
           // finalizeAuction already ran (endedAt set), so an ACTIVE ended
           // auction would be a zombie on browse that can never re-finalize.
-          await this.prisma.$transaction([
-            this.prisma.listing.updateMany({
-              where: { id: tx.listingId, status: 'PAYMENT_PENDING' },
-              data: {
-                status:
-                  tx.listing?.listingType === 'AUCTION' ? 'EXPIRED' : 'ACTIVE',
+          // FLOW-F1 — mirror the (1b) order sweep: CAS-claim the tx FIRST
+          // (a concurrent reconciler confirm stamps paidAt and must win),
+          // then restock. Inventory-tracked listings get their reserved
+          // units BACK (quantityAvailable/quantityReserved) — previously
+          // only the legacy status flip ran, permanently leaking one unit
+          // of stock per abandoned tracked checkout.
+          await this.prisma.$transaction(async (txc) => {
+            const claim = await txc.transaction.updateMany({
+              where: {
+                id: tx.id,
+                paymentStatus: 'HELD',
+                paidAt: null,
+                manualDetectedAt: null,
+                manualCancelledAt: null,
               },
-            }),
-            this.prisma.transaction.update({
-              where: { id: tx.id },
               data: { manualCancelledAt: now },
-            }),
-          ]);
+            });
+            if (claim.count === 0) return; // concurrently detected/paid
+            if (tx.listing?.trackInventory) {
+              await txc.listing.update({
+                where: { id: tx.listingId },
+                data: {
+                  status: 'ACTIVE',
+                  quantityAvailable: { increment: tx.quantity },
+                  quantityReserved: { decrement: tx.quantity },
+                },
+              });
+            } else {
+              await txc.listing.updateMany({
+                where: { id: tx.listingId, status: 'PAYMENT_PENDING' },
+                data: {
+                  status:
+                    tx.listing?.listingType === 'AUCTION' ? 'EXPIRED' : 'ACTIVE',
+                },
+              });
+            }
+          });
           this.logger.log(
             `Manual EFT freeze expired for order ${tx.orderReference ?? tx.id} — listing ${tx.listingId} released, order soft-cancelled`,
           );

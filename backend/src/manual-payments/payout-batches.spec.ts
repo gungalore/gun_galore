@@ -149,6 +149,9 @@ describe('ManualPaymentsService.createPayoutBatch', () => {
             bankAccountNumber: '62100',
             bankBranchCode: '250655',
             bankAccountType: 'cheque',
+            // FLOW-F1 — the batch now enforces the payout KYC hard gate.
+            kycStatus: 'VERIFIED',
+            profileCompletedAt: new Date('2026-01-01'),
           },
         },
       ],
@@ -164,6 +167,36 @@ describe('ManualPaymentsService.createPayoutBatch', () => {
     expect(txcMock.payoutBatch.create).toHaveBeenCalled();
   });
 
+  it('FLOW-F1 — skips (never pays) a seller who is not KYC-VERIFIED, even with full bank details', async () => {
+    const { service } = makeService();
+    jest.spyOn(service, 'getPayoutsDue').mockResolvedValue({
+      payouts: [
+        {
+          id: 'TX1',
+          orderReference: 'UM1',
+          sellerPayout: 15_000,
+          seller: {
+            username: 'jan',
+            email: 'j@x.co',
+            phone: '0820000000',
+            bankAccountHolder: 'Jan',
+            bankName: 'FNB',
+            bankAccountNumber: '62100',
+            bankBranchCode: '250655',
+            bankAccountType: 'cheque',
+            kycStatus: 'PENDING', // bank details present but NOT verified
+            profileCompletedAt: new Date('2026-01-01'),
+          },
+        },
+      ],
+      refunds: [],
+    } as never);
+    // The only due row is gated out → nothing to batch.
+    await expect(service.createPayoutBatch('admin_1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
   it('aborts if the linked count does not match the snapshot (concurrent freeze)', async () => {
     const { service, txcMock } = makeService();
     jest.spyOn(service, 'getPayoutsDue').mockResolvedValue({
@@ -176,6 +209,7 @@ describe('ManualPaymentsService.createPayoutBatch', () => {
             username: 'jan', email: null, phone: null,
             bankAccountHolder: 'Jan', bankName: 'FNB',
             bankAccountNumber: '62100', bankBranchCode: '250655', bankAccountType: 'cheque',
+            kycStatus: 'VERIFIED', profileCompletedAt: new Date('2026-01-01'),
           },
         },
       ],

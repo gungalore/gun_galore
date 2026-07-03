@@ -851,6 +851,11 @@ export class ManualPaymentsService {
             bankAccountNumber: true,
             bankBranchCode: true,
             bankAccountType: true,
+            // FLOW-F1 — the documented payout HARD GATE (profile complete +
+            // KYC VERIFIED) must hold on THIS path too, not only on the admin
+            // manual-release path. collectDue skips sellers failing it.
+            kycStatus: true,
+            profileCompletedAt: true,
           },
         },
       },
@@ -955,6 +960,22 @@ export class ManualPaymentsService {
       }
       if (!hasBank(p.seller)) {
         skippedRefs.push(`PAYOUT ${p.orderReference ?? p.id}`);
+        continue;
+      }
+      // FLOW-F1 — payout KYC hard gate. A seller is paid ONLY once their
+      // profile is complete AND KYC is VERIFIED (the platform's documented
+      // payout gate, previously enforced only on the admin manual-release
+      // path). The row stays in the due queue and clears automatically the
+      // day the seller verifies; the skip reason names the blocker so the
+      // 09:00 payouts-due reminder isn't a mystery. Buyer REFUND rows below
+      // are deliberately NOT gated — returning a buyer's own money must
+      // never wait on seller-style verification.
+      if (p.seller.kycStatus !== 'VERIFIED' || !p.seller.profileCompletedAt) {
+        skippedRefs.push(
+          `PAYOUT ${p.orderReference ?? p.id} (seller ${p.seller.username}: ${
+            p.seller.kycStatus !== 'VERIFIED' ? 'KYC not verified' : 'profile incomplete'
+          } — payout held until verified)`,
+        );
         continue;
       }
       recipients.push({

@@ -1586,6 +1586,17 @@ export class TransactionsService {
     if (tx.dispatchedAt) {
       throw new BadRequestException('Already dispatched — cannot reject.');
     }
+    // FLOW-F1 — reject is only legal while the money is still HELD. Without
+    // this, a PRIVATE_ARRANGE seller (funds released IMMEDIATELY at payment,
+    // by explicit buyer consent) could tap the 48h accept/reject SMS token
+    // AFTER being paid and flip a RELEASED transaction to REFUNDED — moving
+    // the money twice and stranding the buyer's "refund" in the payout batch.
+    // Mirrors the identical guard on cancelByBuyer.
+    if (tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException(
+        'This sale can no longer be rejected — payment has already been settled. Contact support if something is wrong.',
+      );
+    }
     // P6.2 — a consolidated shipment (2+ items in one parcel) must be handled
     // as a whole; single-line reject would orphan the other items that ship
     // with it. Fail closed to admin in v1 (they can refund each line from the
@@ -2204,6 +2215,21 @@ export class TransactionsService {
           },
         },
         dealer: true,
+        // P6.2 — when this line is a consolidated SIBLING (shipsWithId set), the
+        // carrier ("main item") line owns the combined shipping fee, the booked
+        // waybill/PIN and the tracking. Surface just the carrier's id +
+        // trackingReference + status so the order page can point the buyer/seller
+        // at the main item instead of offering this line its own dispatch /
+        // tracking surfaces. carrierDropoffPin is deliberately NOT selected — it
+        // stays seller-only on the carrier's own page. Null on a normal line and
+        // on the carrier itself (shipsWithId null → relation is null).
+        shipsWith: {
+          select: {
+            id: true,
+            trackingReference: true,
+            shippingStatus: true,
+          },
+        },
       },
     });
 

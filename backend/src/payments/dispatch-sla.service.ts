@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StitchService } from './stitch.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TrackingService } from '../shipping/tracking.service';
+import { ShippingService } from '../shipping/shipping.service';
 import { reversalListingData } from './inventory';
 
 // Two thresholds for courier-shipped orders (PUDO / TCG only —
@@ -25,6 +26,12 @@ export class DispatchSlaService {
     private readonly stitch: StitchService,
     private readonly notifications: NotificationsService,
     private readonly tracking: TrackingService,
+    // FLOW-F1 — the auto-refund must also cancel the carrier shipment GG
+    // booked at seller-accept, or the paid waybill stays live (courier
+    // credits burned + a parcel that could still be dropped/collected on a
+    // refunded order). Same module as TransactionsService, which already
+    // injects ShippingService.
+    private readonly shipping: ShippingService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -170,6 +177,13 @@ export class DispatchSlaService {
           });
           continue;
         }
+
+        // FLOW-F1 — cancel the carrier shipment booked at seller-accept
+        // (waybill + PIN already issued). cancelForTransaction is fail-safe:
+        // cancels while the parcel hasn't entered the network, alerts an
+        // admin instead once it's COLLECTED+, and never throws — so a
+        // carrier hiccup can't break the refund that already claimed above.
+        await this.shipping.cancelForTransaction(tx.id).catch(() => undefined);
 
         // Status already flipped to REFUNDED by the claim above. Now
         // reactivate the listing + strike the seller atomically. Phase 8a:
