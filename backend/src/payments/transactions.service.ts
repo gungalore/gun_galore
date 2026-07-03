@@ -1559,6 +1559,11 @@ export class TransactionsService {
             firstName: true,
             phone: true,
             username: true,
+            // FLOW-F2 — the refund is paid by EFT from the FNB batch; the
+            // notification must say "add your bank details" when we can't.
+            bankAccountHolder: true,
+            bankAccountNumber: true,
+            bankBranchCode: true,
           },
         },
       },
@@ -1704,6 +1709,16 @@ export class TransactionsService {
       transactionId: tx.id,
       buyerTotal: tx.buyerTotal,
       reason: trimmedReason,
+      // FLOW-F2 — rail-aware copy: EFT refund via the FNB batch, and flag
+      // when we can't pay it until the buyer adds bank details.
+      manualEft: PAYMENT_MODE === 'manual',
+      needsBankDetails:
+        PAYMENT_MODE === 'manual' &&
+        !(
+          tx.buyer.bankAccountHolder &&
+          tx.buyer.bankAccountNumber &&
+          tx.buyer.bankBranchCode
+        ),
     });
 
     this.logger.log(
@@ -1742,7 +1757,16 @@ export class TransactionsService {
       include: {
         listing: { select: { id: true, title: true } },
         buyer: {
-          select: { id: true, email: true, firstName: true, phone: true },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            phone: true,
+            // FLOW-F2 — rail-aware refund copy needs the bank state.
+            bankAccountHolder: true,
+            bankAccountNumber: true,
+            bankBranchCode: true,
+          },
         },
         seller: {
           select: { email: true, firstName: true, phone: true },
@@ -1898,6 +1922,16 @@ export class TransactionsService {
         firstName: tx.seller.firstName,
         phone: tx.seller.phone,
       },
+      // FLOW-F2 — rail-aware copy: EFT refund via the FNB batch, and flag
+      // when we can't pay it until the buyer adds bank details.
+      manualEft: PAYMENT_MODE === 'manual',
+      needsBankDetails:
+        PAYMENT_MODE === 'manual' &&
+        !(
+          tx.buyer.bankAccountHolder &&
+          tx.buyer.bankAccountNumber &&
+          tx.buyer.bankBranchCode
+        ),
     });
 
     this.logger.log(
@@ -2288,7 +2322,24 @@ export class TransactionsService {
         null;
     }
 
-    return tx;
+    // FLOW-F3 — re-viewable EFT instructions. The GG banking details used to
+    // exist ONLY in the one-shot checkout response; a buyer who navigated away
+    // could never see them (or the reference/amount) again, dead-ending an
+    // unpaid order. While THIS BUYER's single-item manual order is still
+    // awaiting payment (has a reference + open window, unpaid, not cancelled,
+    // not an order child — those pay at the ORDER level), attach the bank
+    // details so the page can re-render the full payment instructions.
+    const awaitingEft =
+      tx.buyerId === user.id &&
+      !tx.paidAt &&
+      !tx.manualCancelledAt &&
+      !tx.orderId &&
+      !!tx.orderReference &&
+      !!tx.manualPayByAt;
+    return {
+      ...tx,
+      bankDetails: awaitingEft ? GG_BANK_DETAILS : null,
+    };
   }
 
   // ------------------------------------------------------------------

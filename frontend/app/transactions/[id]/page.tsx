@@ -95,6 +95,14 @@ export default async function TransactionPage({
   // "Confirm collection").
   const isCollection = tx.shippingMethod === 'COLLECTION';
 
+  // P6.2 — this line is a consolidated SIBLING: it ships inside the same parcel
+  // as the rest of the order, and the carrier ("main item") line owns the
+  // waybill, tracking, and delivery confirmation. Siblings mirror the carrier's
+  // dispatch/delivery status (so dispatchedAt is set once the parcel ships), but
+  // they must NOT offer their own dispatch or confirm-delivery surfaces — those
+  // actions live on the carrier and cascade back to this line via the backend.
+  const isConsolidatedSibling = !!tx.shipsWithId;
+
   // TOK-7 Phase 2 — accept gates dispatch. Seller must tap "Accept this
   // sale" before they can mark dispatched. The accept panel shows from
   // paidAt until accepted/rejected; the dispatch panel only shows once
@@ -106,6 +114,7 @@ export default async function TransactionPage({
   const canDispatch =
     !isPrivateArrange &&
     !isCollection && // collection has no dispatch step
+    !isConsolidatedSibling && // sibling dispatches with the carrier, not on its own
     isSeller &&
     !!tx.acceptedAt && // hard gate — must accept first
     !isRejected &&
@@ -124,6 +133,7 @@ export default async function TransactionPage({
     !isPrivateArrange &&
     !isFirearmDealerTransfer &&
     !isCollection && // collection uses its own confirm-collection block below
+    !isConsolidatedSibling && // confirm delivery on the carrier — it releases the whole group
     isBuyer &&
     tx.paymentStatus === 'HELD' &&
     !!tx.dispatchedAt &&
@@ -209,6 +219,55 @@ export default async function TransactionPage({
               )}
             </div>
           </div>
+
+          {/* P6.2 — consolidated-shipment SIBLING note. This line ships inside
+              the same parcel as the rest of the order; the carrier ("main item")
+              line owns the waybill, tracking and delivery confirmation. Point
+              both parties there — this line's own dispatch / confirm / tracking
+              surfaces are hidden (isConsolidatedSibling) since the backend
+              cascades dispatch + release across the whole group. */}
+          {isConsolidatedSibling && (
+            <div
+              className="rounded-[8px] p-4 text-sm"
+              style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+            >
+              <p
+                className="text-xs uppercase mb-1"
+                style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em', fontWeight: 600 }}
+              >
+                Ships with your order
+              </p>
+              <p style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                {isSeller
+                  ? 'This item ships in one parcel with the rest of this order. Print the waybill and mark it dispatched from the main item — this line moves with it automatically.'
+                  : 'This item ships in one parcel with the rest of your order — tracking is on the main item. Confirming delivery there releases this item too.'}
+              </p>
+              <Link
+                href={`/transactions/${tx.shipsWithId}`}
+                className="inline-block mt-2"
+                style={{ color: 'var(--red)', textDecoration: 'underline' }}
+              >
+                View the main item →
+              </Link>
+              {!isSeller && tx.shipsWith?.trackingReference &&
+                trackingUrl(tx.shippingMethod, tx.shipsWith.trackingReference) && (
+                  <a
+                    href={trackingUrl(tx.shippingMethod, tx.shipsWith.trackingReference)!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block mt-2"
+                    style={{
+                      color: 'var(--red)',
+                      fontFamily: 'monospace',
+                      fontSize: '12px',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    Track the parcel: {tx.shipsWith.trackingReference} ↗
+                  </a>
+                )}
+            </div>
+          )}
 
           {/* PRIVATE_ARRANGE contact-reveal card. Only renders for paid
               PRIVATE_ARRANGE transactions — non-PA orders have the
@@ -513,8 +572,10 @@ export default async function TransactionPage({
 
             {/* Tracking timeline — append-only event log fed by both
                 internal milestones AND the 10-min Pudo polling cron.
-                Hidden for collection — there's no courier to track. */}
-            {!isCollection && (
+                Hidden for collection — there's no courier to track — and for
+                a consolidated sibling, whose authoritative tracking lives on
+                the carrier (surfaced in the "Ships with your order" note). */}
+            {!isCollection && !isConsolidatedSibling && (
               <div
                 className="mt-4 pt-4"
                 style={{ borderTop: '0.5px solid var(--border-divider)' }}

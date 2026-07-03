@@ -367,6 +367,19 @@ export interface Transaction {
   carrierShipmentId: string | null;
   carrierDropoffPin: string | null;
   shipmentBookedAt: string | null;
+  // P6.2 — per-seller shipping consolidation. When this line is a SIBLING of a
+  // consolidated parcel, shipsWithId points at the "carrier" (main item) line
+  // that owns the combined shipping fee, the booked waybill/PIN and the
+  // tracking. Siblings mirror the carrier's dispatch/delivery status but carry
+  // no waybill of their own (trackingReference stays null). shipsWith surfaces
+  // just enough of the carrier for the order page to link across to it. Both
+  // are null on a normal (non-consolidated) line and on the carrier itself.
+  shipsWithId: string | null;
+  shipsWith?: {
+    id: string;
+    trackingReference: string | null;
+    shippingStatus: ShippingStatus | null;
+  } | null;
   // Phase 5 — fulfilment. estimatedDeliveryAt = best-effort window set at
   // dispatch (null for non-courier). podReference = auto-captured carrier
   // delivery event; podProofUrl = optional uploaded delivery photo.

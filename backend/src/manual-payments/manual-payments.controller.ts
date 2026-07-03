@@ -72,9 +72,12 @@ export class ManualPaymentsController {
 
   // Preview of what's due now — seller payouts (RELEASED) + buyer refunds
   // (REFUNDED), excluding anything already frozen into a batch or paid out.
+  // FLOW-F2 — also returns `skipped`: due rows the batch builder would
+  // leave out (missing bank details / KYC gate / zero-net) with a
+  // structured reason each, so the admin sees blocked money up front.
   @Get('payouts-due')
   payoutsDue() {
-    return this.manual.getPayoutsDue();
+    return this.manual.getPayoutsDuePreview();
   }
 
   // P1.3 — every entity whose latest Zoho Books sync FAILED, in one list.

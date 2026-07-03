@@ -104,6 +104,29 @@ export function assertSingleSeller(sellerIds: string[]): string {
 }
 
 /**
+ * FLOW-F3 — roll a paid Order's status up from its children's payment
+ * states. Order.status previously froze at PAID forever (COMPLETED /
+ * REFUNDED / PARTIALLY_FULFILLED were never written). Pure function so the
+ * live sync + the catch-all cron + tests all share one definition.
+ *
+ * Returns null while ANY child is still in flight (HELD / DISPUTED / etc.)
+ * — the order stays PAID. Once every child is terminal:
+ *   all RELEASED → COMPLETED · all REFUNDED → REFUNDED · mixed → PARTIALLY_FULFILLED.
+ * Synthetic refund CHILD rows (refundOfId set) must be EXCLUDED by the
+ * caller — they are payment plumbing, not order lines.
+ */
+export function computeOrderRollupStatus(
+  childPaymentStatuses: string[],
+): 'COMPLETED' | 'REFUNDED' | 'PARTIALLY_FULFILLED' | null {
+  if (childPaymentStatuses.length === 0) return null;
+  const terminal = (s: string) => s === 'RELEASED' || s === 'REFUNDED';
+  if (!childPaymentStatuses.every(terminal)) return null;
+  if (childPaymentStatuses.every((s) => s === 'RELEASED')) return 'COMPLETED';
+  if (childPaymentStatuses.every((s) => s === 'REFUNDED')) return 'REFUNDED';
+  return 'PARTIALLY_FULFILLED';
+}
+
+/**
  * A cart cannot contain the same listing twice (the buyer should raise the
  * quantity instead — and firearms/auctions are single-item anyway). Throws on
  * a duplicate listingId.

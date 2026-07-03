@@ -4,6 +4,7 @@ import { StitchService } from './stitch.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { ShippingService } from '../shipping/shipping.service';
+import { PAYMENT_MODE } from './transactions.service';
 import { reversalListingData } from './inventory';
 
 // Two thresholds for courier-shipped orders (PUDO / TCG only —
@@ -247,6 +248,16 @@ export class DispatchSlaService {
             firstName: tx.seller.firstName,
             phone: tx.seller.phone,
           },
+          // FLOW-F2 — rail-aware copy: EFT refund via the FNB batch, and
+          // flag when it can't be paid until the buyer adds bank details.
+          manualEft: PAYMENT_MODE === 'manual',
+          needsBankDetails:
+            PAYMENT_MODE === 'manual' &&
+            !(
+              tx.buyer.bankAccountHolder &&
+              tx.buyer.bankAccountNumber &&
+              tx.buyer.bankBranchCode
+            ),
         });
 
         refunded++;

@@ -868,39 +868,67 @@ export class NotificationsService {
     transactionId: string;
     buyerTotal: number;
     reason: string;
+    // FLOW-F2 — rail-aware refund copy (P0.4 refundIssuedBuyer pattern). On
+    // the live manual-EFT rail there is no card: the refund is paid by EFT
+    // from the daily FNB batch, and it CANNOT be paid at all until the buyer
+    // has bank details on file — in which case we must say so and link the
+    // form, not promise a card reversal that will never happen.
+    manualEft?: boolean;
+    needsBankDetails?: boolean;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
     await this.persistByEmail(d.buyerEmail, {
       category: 'BUYER',
       type: 'sale_rejected',
-      title: 'Sale cancelled — refund issued',
-      body: `${d.listingTitle} — ${formatRand(d.buyerTotal)} refunded`,
-      url: `/transactions/${d.transactionId}`,
+      title: d.needsBankDetails
+        ? 'Sale cancelled — add your bank details for the refund'
+        : 'Sale cancelled — refund issued',
+      body: d.needsBankDetails
+        ? `${d.listingTitle} — add your bank details so we can EFT your ${formatRand(d.buyerTotal)} refund`
+        : `${d.listingTitle} — ${formatRand(d.buyerTotal)} refunded`,
+      url: d.needsBankDetails ? '/profile/edit' : `/transactions/${d.transactionId}`,
       iconKey: 'transaction',
       linkedType: 'transaction',
       linkedId: d.transactionId,
-      dismissible: true,
+      dismissible: !d.needsBankDetails,
     });
+    const refundBody = d.needsBankDetails
+      ? `A full refund of ${b(formatRand(d.buyerTotal))} has been approved — but we don't have your bank details yet, so we can't pay it out. Add your bank account under Profile → Banking details and the refund goes into the next daily payment run.`
+      : d.manualEft
+        ? `A full refund of ${b(formatRand(d.buyerTotal))} will be paid by EFT to your bank account in the next daily payment run — allow 1–3 business days.`
+        : `A full refund of ${b(formatRand(d.buyerTotal))} has been issued back to your card — allow 5–10 business days for it to reflect.`;
     const html = this.email({
       status: { tone: 'error', label: 'Cancelled' },
-      headline: 'Sale cancelled — refund issued',
-      body: `Hi ${b(d.buyerName)}, the seller couldn't fulfil your order for ${b(d.listingTitle)}. A full refund of ${b(formatRand(d.buyerTotal))} has been issued back to your card — allow 5–10 business days for it to reflect.<br><br>Seller's reason: ${b(d.reason)}<br><br>The listing has been re-activated so other buyers can grab it, but you may want to look for an alternative.`,
+      headline: d.needsBankDetails
+        ? 'Sale cancelled — we need your bank details to refund you'
+        : 'Sale cancelled — refund issued',
+      body: `Hi ${b(d.buyerName)}, the seller couldn't fulfil your order for ${b(d.listingTitle)}. ${refundBody}<br><br>Seller's reason: ${b(d.reason)}<br><br>The listing has been re-activated so other buyers can grab it, but you may want to look for an alternative.`,
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
         { label: 'Refund amount', value: formatRand(d.buyerTotal) },
-        { label: 'Refund destination', value: 'Original payment card' },
+        {
+          label: 'Refund destination',
+          value: d.manualEft ? 'Your bank account (EFT)' : 'Original payment card',
+        },
       ],
-      cta: { label: 'View order', url: txUrl },
-      preheader: `Refund of ${formatRand(d.buyerTotal)} issued`,
+      cta: d.needsBankDetails
+        ? { label: 'Add bank details', url: `${this.appUrl}/profile/edit` }
+        : { label: 'View order', url: txUrl },
+      preheader: d.needsBankDetails
+        ? 'Action needed — add bank details for your refund'
+        : `Refund of ${formatRand(d.buyerTotal)} issued`,
     });
     await this.send(
       d.buyerEmail,
-      'Sale cancelled & refunded: ' + d.listingTitle,
+      (d.needsBankDetails ? 'Action needed — refund for: ' : 'Sale cancelled & refunded: ') +
+        d.listingTitle,
       html,
     );
     await this.sendSms(
       d.buyerPhone,
-      `Gun Galore: Seller cancelled ${truncate(d.listingTitle, 30)}. R${(d.buyerTotal / 100).toFixed(0)} refund on the way (5-10 business days).`,
+      d.needsBankDetails
+        ? `Gun Galore: Seller cancelled ${truncate(d.listingTitle, 30)}. Add your bank details at gungalore.co.za/profile/edit so we can EFT your R${(d.buyerTotal / 100).toFixed(0)} refund.`
+        : `Gun Galore: Seller cancelled ${truncate(d.listingTitle, 30)}. R${(d.buyerTotal / 100).toFixed(0)} refund on the way (${d.manualEft ? '1-3' : '5-10'} business days).`,
       `sale-rejected-${d.transactionId}`,
     );
   }
@@ -2745,26 +2773,62 @@ export class NotificationsService {
     buyerTotal: number;
     buyer: { email: string; firstName: string | null; phone: string | null };
     seller: { email: string; firstName: string | null; phone: string | null };
+    // FLOW-F2 — rail-aware refund copy (see saleRejectedBuyer).
+    manualEft?: boolean;
+    needsBankDetails?: boolean;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
     const buyerName = d.buyer.firstName ?? 'Buyer';
     const sellerName = d.seller.firstName ?? 'Seller';
 
+    // FLOW-F2 — rail-aware refund copy (see saleRejectedBuyer).
+    const refundLine = d.needsBankDetails
+      ? `A refund of ${b(formatRand(d.buyerTotal))} has been approved — but we don't have your bank details yet, so we can't pay it out. Add your bank account under Profile → Banking details and the refund goes into the next daily payment run.`
+      : d.manualEft
+        ? `We've refunded ${b(formatRand(d.buyerTotal))} — it will be paid by EFT to your bank account in the next daily payment run (1–3 business days).`
+        : `We've refunded ${b(formatRand(d.buyerTotal))} back to your card. The funds should reflect in 3–7 working days.`;
+    if (d.needsBankDetails) {
+      await this.persistByEmail(d.buyer.email, {
+        category: 'BUYER',
+        type: 'refund_needs_bank_details',
+        title: 'Refund approved — add your bank details',
+        body: `${d.listingTitle} — add your bank details so we can EFT your ${formatRand(d.buyerTotal)} refund`,
+        url: '/profile/edit',
+        iconKey: 'transaction',
+        linkedType: 'transaction',
+        linkedId: d.transactionId,
+        dismissible: false,
+      });
+    }
     const buyerHtml = this.email({
-      status: { tone: 'success', label: 'Refunded' },
-      headline: 'Order refunded',
-      body: `Hi ${b(buyerName)}, the seller of ${b(d.listingTitle)} didn't dispatch within our 7-day window. We've refunded ${b(formatRand(d.buyerTotal))} back to your card. The funds should reflect in 3–7 working days. Sorry for the trouble — the listing is back on the marketplace if you want to browse alternatives.`,
+      status: d.needsBankDetails
+        ? { tone: 'pending', label: 'Action needed' }
+        : { tone: 'success', label: 'Refunded' },
+      headline: d.needsBankDetails
+        ? 'Refund approved — we need your bank details'
+        : 'Order refunded',
+      body: `Hi ${b(buyerName)}, the seller of ${b(d.listingTitle)} didn't dispatch within our 7-day window. ${refundLine} Sorry for the trouble — the listing is back on the marketplace if you want to browse alternatives.`,
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
         { label: 'Amount', value: formatRand(d.buyerTotal) },
+        {
+          label: 'Refund destination',
+          value: d.manualEft ? 'Your bank account (EFT)' : 'Original payment card',
+        },
       ],
-      cta: { label: 'Browse listings', url: `${this.appUrl}/` },
-      preheader: `Refunded ${formatRand(d.buyerTotal)} for ${d.listingTitle}`,
+      cta: d.needsBankDetails
+        ? { label: 'Add bank details', url: `${this.appUrl}/profile/edit` }
+        : { label: 'Browse listings', url: `${this.appUrl}/` },
+      preheader: d.needsBankDetails
+        ? 'Action needed — add bank details for your refund'
+        : `Refunded ${formatRand(d.buyerTotal)} for ${d.listingTitle}`,
     });
     await this.send(d.buyer.email, 'Refunded: ' + d.listingTitle, buyerHtml);
     await this.sendSms(
       d.buyer.phone,
-      `Gun Galore: ${truncate(d.listingTitle, 30)} not dispatched. Refunded ${formatRand(d.buyerTotal)} to your card.`,
+      d.needsBankDetails
+        ? `Gun Galore: ${truncate(d.listingTitle, 30)} not dispatched — refund approved. Add your bank details at gungalore.co.za/profile/edit so we can pay it.`
+        : `Gun Galore: ${truncate(d.listingTitle, 30)} not dispatched. Refunded ${formatRand(d.buyerTotal)}${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
       `auto-refund-buyer-${d.transactionId}`,
     );
 
@@ -2803,26 +2867,61 @@ export class NotificationsService {
     reason: string;
     buyer: { email: string; firstName: string | null; phone: string | null };
     seller: { email: string; firstName: string | null; phone: string | null };
+    // FLOW-F2 — rail-aware refund copy (see saleRejectedBuyer).
+    manualEft?: boolean;
+    needsBankDetails?: boolean;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
     const buyerName = d.buyer.firstName ?? 'there';
     const sellerName = d.seller.firstName ?? 'Seller';
 
+    const refundLine = d.needsBankDetails
+      ? `Your refund of ${b(formatRand(d.buyerTotal))} is approved — but we don't have your bank details yet, so we can't pay it out. Add your bank account under Profile → Banking details and it goes into the next daily payment run.`
+      : d.manualEft
+        ? `We've refunded ${b(formatRand(d.buyerTotal))} — it will be paid by EFT to your bank account in the next daily payment run (1–3 business days).`
+        : `We've refunded ${b(formatRand(d.buyerTotal))} to your card. Allow 3–7 working days for it to reflect.`;
+    if (d.needsBankDetails) {
+      await this.persistByEmail(d.buyer.email, {
+        category: 'BUYER',
+        type: 'refund_needs_bank_details',
+        title: 'Refund approved — add your bank details',
+        body: `${d.listingTitle} — add your bank details so we can EFT your ${formatRand(d.buyerTotal)} refund`,
+        url: '/profile/edit',
+        iconKey: 'transaction',
+        linkedType: 'transaction',
+        linkedId: d.transactionId,
+        dismissible: false,
+      });
+    }
     const buyerHtml = this.email({
-      status: { tone: 'success', label: 'Cancelled & refunded' },
-      headline: 'Order cancelled',
-      body: `Hi ${b(buyerName)}, we've cancelled your order for ${b(d.listingTitle)} and refunded ${b(formatRand(d.buyerTotal))} to your card. Allow 3–7 working days for it to reflect.`,
+      status: d.needsBankDetails
+        ? { tone: 'pending', label: 'Action needed' }
+        : { tone: 'success', label: 'Cancelled & refunded' },
+      headline: d.needsBankDetails
+        ? 'Order cancelled — we need your bank details to refund you'
+        : 'Order cancelled',
+      body: `Hi ${b(buyerName)}, we've cancelled your order for ${b(d.listingTitle)}. ${refundLine}`,
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
         { label: 'Refund', value: formatRand(d.buyerTotal) },
+        {
+          label: 'Refund destination',
+          value: d.manualEft ? 'Your bank account (EFT)' : 'Original payment card',
+        },
       ],
-      cta: { label: 'Browse listings', url: `${this.appUrl}/` },
-      preheader: `Cancelled & refunded ${formatRand(d.buyerTotal)} for ${d.listingTitle}`,
+      cta: d.needsBankDetails
+        ? { label: 'Add bank details', url: `${this.appUrl}/profile/edit` }
+        : { label: 'Browse listings', url: `${this.appUrl}/` },
+      preheader: d.needsBankDetails
+        ? 'Action needed — add bank details for your refund'
+        : `Cancelled & refunded ${formatRand(d.buyerTotal)} for ${d.listingTitle}`,
     });
     await this.send(d.buyer.email, 'Order cancelled: ' + d.listingTitle, buyerHtml);
     await this.sendSms(
       d.buyer.phone,
-      `Gun Galore: order for ${truncate(d.listingTitle, 30)} cancelled. ${formatRand(d.buyerTotal)} refunded to your card.`,
+      d.needsBankDetails
+        ? `Gun Galore: order for ${truncate(d.listingTitle, 30)} cancelled. Add your bank details at gungalore.co.za/profile/edit so we can EFT your ${formatRand(d.buyerTotal)} refund.`
+        : `Gun Galore: order for ${truncate(d.listingTitle, 30)} cancelled. ${formatRand(d.buyerTotal)} refunded${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
       `buyer-cancel-buyer-${d.transactionId}`,
     );
 

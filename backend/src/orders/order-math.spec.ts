@@ -1,11 +1,31 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   computeOrderTotals,
+  computeOrderRollupStatus,
   lineSubtotal,
   assertSingleSeller,
   assertNoDuplicateListings,
   OrderLineBreakdown,
 } from './order-math';
+
+describe('order-math.computeOrderRollupStatus (FLOW-F3)', () => {
+  it('stays PAID (null) while any child is still in flight', () => {
+    expect(computeOrderRollupStatus(['RELEASED', 'HELD'])).toBeNull();
+    expect(computeOrderRollupStatus(['DISPUTED', 'REFUNDED'])).toBeNull();
+    expect(computeOrderRollupStatus([])).toBeNull();
+  });
+  it('all RELEASED → COMPLETED', () => {
+    expect(computeOrderRollupStatus(['RELEASED', 'RELEASED'])).toBe('COMPLETED');
+  });
+  it('all REFUNDED → REFUNDED', () => {
+    expect(computeOrderRollupStatus(['REFUNDED'])).toBe('REFUNDED');
+  });
+  it('mixed terminal (some released, some refunded) → PARTIALLY_FULFILLED', () => {
+    expect(computeOrderRollupStatus(['RELEASED', 'REFUNDED'])).toBe(
+      'PARTIALLY_FULFILLED',
+    );
+  });
+});
 
 const line = (o: Partial<OrderLineBreakdown>): OrderLineBreakdown => ({
   unitPrice: 10_000,

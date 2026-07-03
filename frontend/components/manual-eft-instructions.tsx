@@ -204,11 +204,14 @@ export function ManualEftInstructions({
 
       <div className="mt-5 flex gap-3">
         <Link
-          href={`/transactions/${data.transactionId}`}
+          // FLOW-F3 — honour the caller's target. The cart passes
+          // /orders/:id (its "transactionId" IS the order id, so the old
+          // hardcoded /transactions/... link was a guaranteed 404).
+          href={viewHref ?? `/transactions/${data.transactionId}`}
           className="text-sm px-4 py-2 rounded-[6px]"
           style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
         >
-          View my order
+          {viewLabel ?? 'View my order'}
         </Link>
         <Link
           href="/dashboard"

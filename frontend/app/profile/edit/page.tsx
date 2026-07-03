@@ -222,6 +222,20 @@ export default function EditProfilePage() {
     { tone: 'success' | 'error'; msg: string } | null
   >(null);
 
+  // FLOW-F2 — banking details. Buyer refunds AND seller payouts are paid to
+  // this account by the daily FNB EFT batch; refund SMS/email link buyers here
+  // when there's nothing on file. Saves via PATCH /users/me/bank-details.
+  const [bankName, setBankName] = useState('');
+  const [bankAccountHolder, setBankAccountHolder] = useState('');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankBranchCode, setBankBranchCode] = useState('');
+  const [bankAccountType, setBankAccountType] =
+    useState<'cheque' | 'savings' | 'transmission'>('cheque');
+  const [savingBank, setSavingBank] = useState(false);
+  const [bankStatus, setBankStatus] = useState<
+    { tone: 'success' | 'error'; msg: string } | null
+  >(null);
+
   // Google Places picked — mirror parsed components into our address
   // state. Verbatim from the Sell form's handleAddressComponents.
   function handleAddressComponents(c: ParsedAddressComponents) {
@@ -283,6 +297,16 @@ export default function EditProfilePage() {
         });
         setAddrLat(data.addrLat ?? null);
         setAddrLng(data.addrLng ?? null);
+        setBankName(data.bankName ?? '');
+        setBankAccountHolder(data.bankAccountHolder ?? '');
+        setBankAccountNumber(data.bankAccountNumber ?? '');
+        setBankBranchCode(data.bankBranchCode ?? '');
+        if (
+          data.bankAccountType === 'savings' ||
+          data.bankAccountType === 'transmission'
+        ) {
+          setBankAccountType(data.bankAccountType);
+        }
       } catch (err) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : 'Failed to load');
@@ -364,6 +388,47 @@ export default function EditProfilePage() {
       setSavingAddress(false);
     }
   }
+
+  // ── Save banking details ────────────────────────────────────────
+  async function handleSaveBank(e: FormEvent) {
+    e.preventDefault();
+    setSavingBank(true);
+    setBankStatus(null);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/users/me/bank-details`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          bankName: bankName.trim(),
+          bankAccountHolder: bankAccountHolder.trim(),
+          bankAccountNumber: bankAccountNumber.trim(),
+          bankBranchCode: bankBranchCode.trim(),
+          bankAccountType,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
+      setMe(data);
+      setBankStatus({ tone: 'success', msg: 'Banking details saved.' });
+    } catch (err) {
+      setBankStatus({
+        tone: 'error',
+        msg: err instanceof Error ? err.message : 'Could not save',
+      });
+    } finally {
+      setSavingBank(false);
+    }
+  }
+
+  const bankReady =
+    bankName.trim() &&
+    bankAccountHolder.trim() &&
+    bankAccountNumber.trim() &&
+    bankBranchCode.trim();
 
   // ── Phone OTP: request ──────────────────────────────────────────
   async function handleRequestOtp() {
@@ -878,6 +943,91 @@ export default function EditProfilePage() {
                 <StatusBanner tone={addressStatus.tone}>
                   {addressStatus.msg}
                 </StatusBanner>
+              )}
+            </div>
+          </form>
+        </SectionCard>
+
+        {/* ── Banking details ───────────────────────────────────────
+            FLOW-F2 — the account refunds AND seller payouts are EFT'd to.
+            Refund SMS/email deep-link here when a buyer who's owed a
+            refund has nothing on file. */}
+        <SectionCard
+          title="Banking details"
+          subtitle="Refunds owed to you and any sales payouts are paid to this account by EFT. Make sure the account holder name matches your ID — we check it before the first payout."
+        >
+          <form onSubmit={handleSaveBank} className="space-y-4">
+            {me?.bankVerifiedAt && (
+              <StatusBanner tone="success">
+                ✓ Bank account on file. Editing it here resets verification —
+                we&apos;ll re-check the holder name before your next payout.
+              </StatusBanner>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Account holder" hint="Exactly as it appears on your bank account / ID.">
+                <input
+                  type="text"
+                  value={bankAccountHolder}
+                  onChange={(e) => setBankAccountHolder(e.target.value)}
+                  style={inputStyle}
+                  placeholder="e.g. N Gerber"
+                />
+              </Field>
+              <Field label="Bank">
+                <input
+                  type="text"
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                  style={inputStyle}
+                  placeholder="e.g. FNB"
+                />
+              </Field>
+              <Field label="Account number">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={bankAccountNumber}
+                  onChange={(e) =>
+                    setBankAccountNumber(e.target.value.replace(/[^0-9]/g, '').slice(0, 20))
+                  }
+                  style={inputStyle}
+                  placeholder="Account number"
+                />
+              </Field>
+              <Field label="Branch code" hint="6-digit universal branch code.">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={bankBranchCode}
+                  onChange={(e) =>
+                    setBankBranchCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
+                  }
+                  style={inputStyle}
+                  placeholder="e.g. 250655"
+                />
+              </Field>
+              <Field label="Account type">
+                <select
+                  value={bankAccountType}
+                  onChange={(e) =>
+                    setBankAccountType(
+                      e.target.value as 'cheque' | 'savings' | 'transmission',
+                    )
+                  }
+                  style={inputStyle}
+                >
+                  <option value="cheque">Cheque / current</option>
+                  <option value="savings">Savings</option>
+                  <option value="transmission">Transmission</option>
+                </select>
+              </Field>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <PrimaryButton type="submit" disabled={savingBank || !bankReady}>
+                {savingBank ? 'Saving…' : 'Save banking details'}
+              </PrimaryButton>
+              {bankStatus && (
+                <StatusBanner tone={bankStatus.tone}>{bankStatus.msg}</StatusBanner>
               )}
             </div>
           </form>

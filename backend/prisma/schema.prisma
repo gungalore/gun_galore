@@ -3152,6 +3152,11 @@ model Order {
   manualPayByAt     DateTime?
   manualDetectedAt  DateTime?
   manualCancelledAt DateTime?
+  // FLOW-F3 — idempotency stamps for the 12h/1h order-level pay reminders
+  // (mirrors Transaction.manualWarn12hAt/manualWarn1hAt; multi-item orders
+  // previously got NO reminders and were swept to CANCELLED silently).
+  manualWarn12hAt   DateTime?
+  manualWarn1hAt    DateTime?
 
   paidAt    DateTime?
   createdAt DateTime  @default(now())

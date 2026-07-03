@@ -96,6 +96,31 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
     }
   }
 
+  // P6.2 — a consolidated SIBLING never dispatches on its own. The carrier
+  // ("main item") line owns the waybill + Pudo PIN, and dispatching it mirrors
+  // dispatch onto this line automatically. The order page already hides this
+  // panel for siblings; this guard is defence-in-depth (and keeps a stray
+  // sibling from showing the manual-entry fallback) — point the seller at the
+  // main item instead.
+  if (tx.shipsWithId) {
+    return (
+      <div
+        className="rounded-[6px] px-4 py-3 text-sm"
+        style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-secondary)', lineHeight: 1.55 }}
+      >
+        This item ships in one parcel with the rest of this order. Print the
+        waybill and mark it dispatched from the{' '}
+        <a
+          href={`/transactions/${tx.shipsWithId}`}
+          style={{ color: 'var(--red)', textDecoration: 'underline' }}
+        >
+          main item
+        </a>{' '}
+        — this line moves with it automatically.
+      </div>
+    );
+  }
+
   if (done) {
     return (
       <div

@@ -27,6 +27,7 @@ import {
   UsersService,
   ProfileUpdate,
   ProfileCompleteDto,
+  BankDetailsDto,
 } from './users.service';
 
 // Per-method guards instead of class-level, so the two endpoints
@@ -344,6 +345,22 @@ export class UsersController {
     @Body() body: ProfileCompleteDto,
   ) {
     return this.users.completeProfile(clerkId, body);
+  }
+
+  // FLOW-F2 — banking-details-only update from the /profile/edit
+  // "Banking details" section. Buyer refunds AND seller payouts are
+  // paid to this account by the daily FNB EFT batch; refund
+  // notifications link buyers here when no bank details are on file
+  // (profile-complete can't be reused — it demands the full seller
+  // pack: SA ID, address, username, phone). Clerk-only: banking is
+  // sensitive, never reachable via a checkout action token.
+  @Patch('me/bank-details')
+  @UseGuards(ClerkGuard)
+  updateBankDetails(
+    @CurrentUser() clerkId: string,
+    @Body() body: BankDetailsDto,
+  ) {
+    return this.users.updateBankDetails(clerkId, body);
   }
 
   // Buyer phone capture — NO OTP. Sellers go through the OTP flow

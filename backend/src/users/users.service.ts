@@ -53,6 +53,20 @@ export interface ProfileCompleteDto {
   bankAccountType: 'cheque' | 'savings' | 'transmission';
 }
 
+// FLOW-F2 — bank-details-only update from /profile/edit. Buyer refunds
+// (and seller payouts) are paid to this account by the daily FNB bulk
+// batch; a buyer who is owed a refund has no reason to complete the
+// full seller profile (SA ID, address, username…), so this DTO carries
+// ONLY the banking quartet + account type, validated exactly like the
+// profile-completion modal path.
+export interface BankDetailsDto {
+  bankName: string;
+  bankAccountHolder: string;
+  bankAccountNumber: string;
+  bankBranchCode: string;
+  bankAccountType: 'cheque' | 'savings' | 'transmission';
+}
+
 // Editable subset of the user record. Anything not in this shape can't
 // be reached via PATCH /users/me. Phone is intentionally excluded —
 // it goes through the OTP request/verify flow below.
@@ -335,6 +349,68 @@ export class UsersService {
     this.logger.log(
       `Profile completed for ${clerkId} (bank=${dto.bankName})`,
     );
+    return updated;
+  }
+
+  // FLOW-F2 — set/replace ONLY the banking quartet (+ account type)
+  // from /profile/edit. Refund EFTs and seller payouts are both paid
+  // to this account by the daily FNB bulk batch; refund notifications
+  // link buyers here when they have no bank details on file. Same
+  // validation rules as completeProfile's banking section. Changing
+  // details resets bankVerifiedAt/bankAvsResult — the admin re-reviews
+  // the holder name against the verified identity before the next
+  // payout (manual check that replaced automated AVS).
+  async updateBankDetails(clerkId: string, dto: BankDetailsDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const bankName = (dto.bankName ?? '').trim();
+    const bankAccountHolder = (dto.bankAccountHolder ?? '').trim();
+    const bankAccountNumber = (dto.bankAccountNumber ?? '').trim();
+    const bankBranchCode = (dto.bankBranchCode ?? '').trim();
+    if (!bankName) {
+      throw new BadRequestException('Bank name is required');
+    }
+    if (!bankAccountHolder) {
+      throw new BadRequestException('Account holder name is required');
+    }
+    const validAccountTypes = ['cheque', 'savings', 'transmission'] as const;
+    if (!validAccountTypes.includes(dto.bankAccountType)) {
+      throw new BadRequestException('Invalid bank account type');
+    }
+    if (!/^\d{4,20}$/.test(bankAccountNumber)) {
+      throw new BadRequestException('Bank account number looks invalid');
+    }
+    if (!/^\d{4,8}$/.test(bankBranchCode)) {
+      throw new BadRequestException('Branch code looks invalid');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { clerkId },
+      data: {
+        bankName,
+        bankAccountHolder,
+        bankAccountNumber,
+        bankBranchCode,
+        bankAccountType: dto.bankAccountType,
+        bankVerifiedAt: null,
+        bankAvsResult: null,
+      },
+      // Trimmed response — exactly the fields /profile/edit needs to
+      // refresh its "account on file" summary. Never the whole User.
+      select: {
+        bankName: true,
+        bankAccountHolder: true,
+        bankAccountNumber: true,
+        bankBranchCode: true,
+        bankAccountType: true,
+        bankVerifiedAt: true,
+      },
+    });
+    this.logger.log(`Bank details updated for ${clerkId} (bank=${bankName})`);
     return updated;
   }
 

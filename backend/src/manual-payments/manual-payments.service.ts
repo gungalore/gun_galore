@@ -52,6 +52,16 @@ export interface ReconcileResult {
   alreadyDone: number;
 }
 
+// FLOW-F2 — a due payout/refund row the FNB batch builder would SKIP,
+// with a structured reason, so the admin payouts-due preview can show
+// blocked money BEFORE batch time (previously the skips only surfaced
+// in the batch-build response + a logger.warn).
+export interface SkippedDueRow {
+  kind: 'PAYOUT' | 'REFUND';
+  ref: string;
+  reason: string;
+}
+
 type MatchStatus =
   | 'MATCHED'
   | 'UNMATCHED'
@@ -918,8 +928,15 @@ export class ManualPaymentsService {
   // missing essential bank details (holder/account/branch) are SKIPPED so the
   // file never carries an invalid line. Returns the included tx ids (split by
   // payout vs refund) + totals so a batch can freeze exactly this set.
-  private async collectDue() {
-    const { payouts, refunds } = await this.getPayoutsDue();
+  //
+  // FLOW-F2 — `pre` lets getPayoutsDuePreview reuse a due set it already
+  // fetched (avoids a double query); omitted on the batch path, so batching
+  // semantics are unchanged. Alongside the legacy skippedRefs strings we now
+  // also build `skipped` (structured {kind, ref, reason}) for the preview.
+  private async collectDue(
+    pre?: Awaited<ReturnType<ManualPaymentsService['getPayoutsDue']>>,
+  ) {
+    const { payouts, refunds } = pre ?? (await this.getPayoutsDue());
     const recipients: FnbRecipient[] = [];
     const payoutIds: string[] = [];
     const refundIds: string[] = [];
@@ -930,6 +947,7 @@ export class ManualPaymentsService {
     let payoutTotalCents = 0;
     let refundTotalCents = 0;
     const skippedRefs: string[] = [];
+    const skipped: SkippedDueRow[] = [];
 
     const hasBank = (b: {
       bankAccountHolder: string | null;
@@ -956,10 +974,21 @@ export class ManualPaymentsService {
         skippedRefs.push(
           `PAYOUT ${p.orderReference ?? p.id} (R0 — fully consumed by ${covered}c in refunds; settled without EFT)`,
         );
+        skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason:
+            'Nets to R0 — fully consumed by refund slices; will be settled without EFT on the next batch (no action needed)',
+        });
         continue;
       }
       if (!hasBank(p.seller)) {
         skippedRefs.push(`PAYOUT ${p.orderReference ?? p.id}`);
+        skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: `Seller ${p.seller.username ?? '(no username)'} has no bank details on file — payout waits until they add banking details on their profile`,
+        });
         continue;
       }
       // FLOW-F1 — payout KYC hard gate. A seller is paid ONLY once their
@@ -976,6 +1005,13 @@ export class ManualPaymentsService {
             p.seller.kycStatus !== 'VERIFIED' ? 'KYC not verified' : 'profile incomplete'
           } — payout held until verified)`,
         );
+        skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: `Seller ${p.seller.username ?? '(no username)'}: ${
+            p.seller.kycStatus !== 'VERIFIED' ? 'KYC not verified' : 'profile incomplete'
+          } — payout held until verified`,
+        });
         continue;
       }
       recipients.push({
@@ -1009,6 +1045,11 @@ export class ManualPaymentsService {
       }
       if (!hasBank(r.buyer)) {
         skippedRefs.push(`REFUND ${r.orderReference ?? r.id}`);
+        skipped.push({
+          kind: 'REFUND',
+          ref: r.orderReference ?? r.id,
+          reason: `Buyer ${r.buyer.username ?? '(no username)'} has no bank details on file — refund waits until they add banking details on their profile (refund notifications link them there)`,
+        });
         continue;
       }
       recipients.push({
@@ -1026,7 +1067,11 @@ export class ManualPaymentsService {
       refundTotalCents += amount;
     }
 
-    if (skippedRefs.length) {
+    // Only warn-log on the BATCH path (`pre` unset). The preview path
+    // (getPayoutsDuePreview) shows the skips in the admin UI on every
+    // page load — logging "Payout batch: skipped" there would be both
+    // noisy and misleading.
+    if (skippedRefs.length && !pre) {
       this.logger.warn(
         `Payout batch: ${skippedRefs.length} row(s) skipped — ${skippedRefs.join('; ')}`,
       );
@@ -1039,7 +1084,20 @@ export class ManualPaymentsService {
       payoutTotalCents,
       refundTotalCents,
       skippedRefs,
+      skipped,
     };
+  }
+
+  // FLOW-F2 — admin preview: everything due now PLUS the rows the batch
+  // builder would skip, each with a structured reason (missing bank
+  // details / KYC gate / zero-net), so the operator sees blocked money
+  // on the payouts-due panel BEFORE freezing a batch. Read-only: the due
+  // rows are fetched once and passed into collectDue, which performs no
+  // writes on this path — batching semantics untouched.
+  async getPayoutsDuePreview() {
+    const due = await this.getPayoutsDue();
+    const { skipped } = await this.collectDue(due);
+    return { ...due, skipped };
   }
 
   private buildCsv(recipients: FnbRecipient[]): string {

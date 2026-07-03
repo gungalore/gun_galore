@@ -1,6 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TransactionsService } from '../payments/transactions.service';
+import {
+  TransactionsService,
+  GG_BANK_DETAILS,
+} from '../payments/transactions.service';
 import { CreateOrderDto } from '../payments/dto/create-order.dto';
 
 // Phase 8b — multi-item single-seller cart. A thin facade: checkout delegates
@@ -81,6 +84,19 @@ export class OrdersService {
     if (!order || order.buyerId !== user.id) {
       throw new NotFoundException('Order not found');
     }
-    return order;
+    // FLOW-F3 — re-viewable EFT instructions. The banking details used to be
+    // shown exactly once on the post-checkout screen; if the buyer navigated
+    // away, an UNPAID order was unrecoverable from the UI. While the order is
+    // awaiting payment (unpaid, not cancelled, window open) the detail payload
+    // carries the GG bank details so the page can re-render the full
+    // ManualEftInstructions block (reference + amount + account).
+    const awaitingPayment =
+      !order.paidAt &&
+      !order.manualCancelledAt &&
+      order.status === 'AWAITING_PAYMENT';
+    return {
+      ...order,
+      bankDetails: awaitingPayment ? GG_BANK_DETAILS : null,
+    };
   }
 }

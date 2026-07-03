@@ -14,6 +14,7 @@ import { TrackingService } from '../shipping/tracking.service';
 import { DispatchSlaService } from '../payments/dispatch-sla.service';
 import { TransactionsService } from '../payments/transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { computeOrderRollupStatus } from '../orders/order-math';
 import { AdminCreditsService } from '../admin/admin-credits.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
@@ -461,6 +462,12 @@ export class TasksService {
       const in1h = new Date(now.getTime() + 60 * 60 * 1000);
       await this.fireManualWarnings('manualWarn12hAt', in12h, '12 hours');
       await this.fireManualWarnings('manualWarn1hAt', in1h, '1 hour');
+      // FLOW-F3 — multi-item ORDERS got NO pay reminders (children carry no
+      // manualPayByAt so the per-tx sweep above skips them entirely) and were
+      // swept to CANCELLED silently. Fire the same 12h/1h nudges at the order
+      // level, idempotent via the new Order.manualWarn*At stamps.
+      await this.fireOrderWarnings('manualWarn12hAt', in12h, '12 hours');
+      await this.fireOrderWarnings('manualWarn1hAt', in1h, '1 hour');
     } catch (err) {
       this.logger.error(
         `manualPaymentFreezeSweep failed: ${(err as Error).message}`,
@@ -513,6 +520,100 @@ export class TasksService {
           `manual countdown (${label}) failed for ${tx.id}: ${(err as Error).message}`,
         );
       }
+    }
+  }
+
+  // FLOW-F3 — order-level twin of fireManualWarnings. Multi-item orders
+  // carry the pay-by window on the Order (not the children), so they need
+  // their own reminder sweep. Idempotent via Order.manualWarn*At.
+  private async fireOrderWarnings(
+    field: 'manualWarn12hAt' | 'manualWarn1hAt',
+    before: Date,
+    label: string,
+  ) {
+    const due = await this.prisma.order.findMany({
+      where: {
+        status: 'AWAITING_PAYMENT',
+        paidAt: null,
+        manualDetectedAt: null,
+        manualCancelledAt: null,
+        manualPayByAt: { not: null, lte: before, gt: new Date() },
+        [field]: null,
+      },
+      select: {
+        id: true,
+        orderReference: true,
+        buyerTotal: true,
+        buyer: { select: { phone: true } },
+      },
+      take: 100,
+    });
+    for (const order of due) {
+      try {
+        await this.prisma.order.update({
+          where: { id: order.id },
+          data: { [field]: new Date() },
+        });
+        if (order.buyer?.phone) {
+          await this.sms
+            .sendSms({
+              to: order.buyer.phone,
+              message: `Gun Galore: ${label} left to EFT R${(order.buyerTotal / 100).toFixed(2)} for order ${order.orderReference ?? ''}. Use the order number as your payment reference or your order is released.`,
+              reference: `order-${field}-${order.id}`,
+            })
+            .catch(() => undefined);
+        }
+      } catch (err) {
+        this.logger.warn(
+          `order countdown (${label}) failed for ${order.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  // ─── FLOW-F3 — Order.status rollup ───────────────────────────────
+  // Order.status previously froze at PAID forever. This sweep advances a
+  // PAID order to its terminal state once EVERY line (child transaction,
+  // excluding synthetic refund children) is itself terminal:
+  //   all RELEASED → COMPLETED · all REFUNDED → REFUNDED · mixed →
+  //   PARTIALLY_FULFILLED. Decoupled catch-all: covers every release/refund
+  //   path (confirm-delivery, dealer-verify, reject, cancel, admin, SLA)
+  //   without threading a call through each money site. Runs every 15 min.
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async orderStatusRollupSweep() {
+    try {
+      const paidOrders = await this.prisma.order.findMany({
+        where: { status: 'PAID' },
+        select: {
+          id: true,
+          transactions: {
+            where: { refundOfId: null }, // exclude synthetic refund children
+            select: { paymentStatus: true },
+          },
+        },
+        take: 200,
+      });
+      let advanced = 0;
+      for (const order of paidOrders) {
+        const rollup = computeOrderRollupStatus(
+          order.transactions.map((t) => t.paymentStatus),
+        );
+        if (!rollup) continue; // still in flight
+        const claim = await this.prisma.order.updateMany({
+          where: { id: order.id, status: 'PAID' },
+          data: { status: rollup },
+        });
+        if (claim.count > 0) advanced++;
+      }
+      if (advanced > 0) {
+        this.logger.log(`orderStatusRollupSweep: advanced ${advanced} order(s)`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `orderStatusRollupSweep failed: ${(err as Error).message}`,
+      );
+    } finally {
+      await this.recordCronRun('order-status-rollup');
     }
   }
 

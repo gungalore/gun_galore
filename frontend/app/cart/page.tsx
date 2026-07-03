@@ -230,7 +230,14 @@ export default function CartPage() {
       </p>
 
       {/* Items — grouped by seller (Phase 8d) */}
-      {groups.map((g) => (
+      {groups.map((g) => {
+        // P6.2 — 2+ courier (non-firearm) items from ONE seller ship as a SINGLE
+        // parcel (one waybill, one handling fee). The cart sends all courier
+        // lines to the same method + destination, so any such group consolidates
+        // at checkout. Flag it here so the buyer knows the per-parcel handling
+        // fee is charged once, not once per item.
+        const shippableInGroup = g.items.filter((i) => !i.isFirearm).length;
+        return (
         <div
           key={g.username}
           className="rounded-[8px] mb-4 overflow-hidden"
@@ -298,8 +305,24 @@ export default function CartPage() {
               </button>
             </div>
           ))}
+          {shippableInGroup >= 2 && (
+            <div
+              className="px-3 py-2 text-xs flex items-center gap-1.5"
+              style={{
+                borderTop: '0.5px solid var(--border)',
+                background: 'var(--bg-inset)',
+                color: 'var(--text-tertiary)',
+                lineHeight: 1.4,
+              }}
+            >
+              <span aria-hidden>📦</span>
+              These {shippableInGroup} items ship together as one parcel — you
+              only pay one handling fee.
+            </div>
+          )}
         </div>
-      ))}
+        );
+      })}
 
       {/* Delivery — courier picker only when there ARE shippable (non-firearm)
           items. A firearm-only cart hides this entirely. */}
