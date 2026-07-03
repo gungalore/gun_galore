@@ -15,6 +15,9 @@ const isPublicRoute = createRouteMatcher([
   '/welcome(.*)',
   '/sellers(.*)', // public seller profiles
   '/category(.*)', // public category landing/browse pages
+  '/brand(.*)',    // P5.7 — public brand index (/brands) + brand landing
+                   // pages (/brand/[slug]); SEO surfaces, must be crawlable
+                   // without auth (mirrors /category above).
   '/faq',          // public help/FAQ page
   '/how-selling-works', // public "how selling works" explainer (linked from sell flow)
   '/sitemap.xml',  // SEO — must be crawlable without auth (.xml isn't
