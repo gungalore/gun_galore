@@ -794,7 +794,7 @@ export class AuctionsService {
         endedAt: { not: null },
         expiresAt: { not: null, lt: now },
       },
-      select: { id: true, sellerId: true, currentBid: true },
+      select: { id: true, sellerId: true, currentBid: true, currentBidderId: true },
       take: 50,
     });
     let expired = 0;
@@ -816,8 +816,46 @@ export class AuctionsService {
         'WINNER_UNPAID',
         l.currentBid ?? 0,
       );
+      // FLOW-F5 (M28) — strike the winner who never paid. auctionStrikes was
+      // dead code: the place-bid gate refuses bidders with >=3 strikes, but
+      // nothing ever incremented it, so it could never fire. Mirror the
+      // seller dispatchStrikes pattern — increment + alert an admin at 3 for
+      // a manual suspension review.
+      if (l.currentBidderId) {
+        void this.strikeUnpaidWinner(l.currentBidderId, l.id);
+      }
     }
     return { expired };
+  }
+
+  // FLOW-F5 (M28) — record an unpaid-auction-win strike against the winner
+  // and alert an admin once they hit the 3-strike suspension threshold the
+  // place-bid gate enforces. Best-effort; a strike-write failure must never
+  // block the sweep.
+  private async strikeUnpaidWinner(bidderId: string, listingId: string) {
+    try {
+      const after = await this.prisma.user.update({
+        where: { id: bidderId },
+        data: { auctionStrikes: { increment: 1 }, lastStrikeAt: new Date() },
+        select: { auctionStrikes: true, username: true },
+      });
+      if (after.auctionStrikes >= 3) {
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'BIDDER_AUCTION_STRIKES_THRESHOLD',
+              referenceId: bidderId,
+              urgent: true,
+              context: `Bidder @${after.username ?? bidderId} hit ${after.auctionStrikes} unpaid-auction-win strikes (latest: auction ${listingId}) — review for bidding suspension.`,
+            },
+          })
+          .catch(() => undefined);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `strikeUnpaidWinner failed for ${bidderId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   // P0.2 review fix — Path B unpaid winner: the winner STARTED checkout

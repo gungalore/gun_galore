@@ -2276,7 +2276,10 @@ export class NotificationsService {
         html = this.email({
           status: { tone: 'pending', label: 'Reserve not met' },
           headline: 'Reserve not met',
-          body: `Bidding closed on ${b(listingTitle)} at ${b(formatRand(amount))}, which did not meet your reserve. You can accept the high bid, counter, or relist.`,
+          // FLOW-F5 (M29) — finalizeAuction's NO_RESERVE case just expires the
+          // listing; there is no accept-high-bid or counter action, only
+          // relist. The old copy promised all three.
+          body: `Bidding closed on ${b(listingTitle)} at ${b(formatRand(amount))}, which did not meet your reserve. You can relist it — at the same reserve or a lower one — from your dashboard.`,
           cta: { label: 'View dashboard', url: ctaUrl },
           preheader: `Highest bid ${formatRand(amount)} — below reserve`,
         });
