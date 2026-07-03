@@ -197,6 +197,45 @@ describe('ManualPaymentsService.createPayoutBatch', () => {
     );
   });
 
+  it('FLOW-F2 — batch response still carries the legacy skippedRefs strings', async () => {
+    const { service, txcMock } = makeService();
+    jest.spyOn(service, 'getPayoutsDue').mockResolvedValue({
+      payouts: [
+        {
+          id: 'TX1',
+          orderReference: 'UM1',
+          sellerPayout: 15_000,
+          seller: {
+            username: 'jan', email: null, phone: null,
+            bankAccountHolder: 'Jan', bankName: 'FNB',
+            bankAccountNumber: '62100', bankBranchCode: '250655', bankAccountType: 'cheque',
+            kycStatus: 'VERIFIED', profileCompletedAt: new Date('2026-01-01'),
+          },
+        },
+        {
+          id: 'TX2',
+          orderReference: 'UM2',
+          sellerPayout: 9_000,
+          seller: {
+            username: 'piet', email: null, phone: null,
+            // no bank details on file
+            bankAccountHolder: null, bankName: null,
+            bankAccountNumber: null, bankBranchCode: null, bankAccountType: null,
+            kycStatus: 'VERIFIED', profileCompletedAt: new Date('2026-01-01'),
+          },
+        },
+      ],
+      refunds: [],
+    } as never);
+    txcMock.transaction.updateMany.mockResolvedValueOnce({ count: 1 });
+
+    const res = await service.createPayoutBatch('admin_1');
+    expect(res.included).toBe(1);
+    expect(res.skipped).toBe(1);
+    // Exact legacy string shape — the admin batch toast renders these.
+    expect(res.skippedRefs).toEqual(['PAYOUT UM2']);
+  });
+
   it('aborts if the linked count does not match the snapshot (concurrent freeze)', async () => {
     const { service, txcMock } = makeService();
     jest.spyOn(service, 'getPayoutsDue').mockResolvedValue({
