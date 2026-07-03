@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { addToCart, removeFromCart, useCart, type CartItem } from '@/lib/cart-store';
 
-// Add-to-cart for the listing detail page. Rendered ONLY for ACTIVE BUY_NOW
-// non-firearm listings that aren't the viewer's own (the parent gates this).
-// A cart may mix sellers (Phase 8d) — no single-seller prompt.
+// Add-to-cart for the listing detail page. Rendered for ACTIVE BUY_NOW
+// listings (incl. firearms — they branch to dealer/in-person routing in the
+// cart) that aren't the viewer's own (the parent gates this). A cart may mix
+// sellers (Phase 8d) — no single-seller prompt.
 export function AddToCartButton({ item }: { item: CartItem }) {
   const cart = useCart();
   const inCart = cart.some((i) => i.listingId === item.listingId);

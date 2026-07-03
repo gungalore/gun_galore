@@ -41,6 +41,15 @@ const MANUAL_RATE = 0.015;
 // keeps every existing caller unchanged); 'manual' = flat 1.5% EFT fee.
 export type PaymentMode = 'paygate' | 'manual';
 
+// P6.4 — flat GG shipping handling margin, ZAR cents. Charged ONCE per waybill
+// the platform creates (a courier PUDO/TCG parcel). Buyer-paid and GG-RETAINED
+// (not remitted to the carrier), so shipping stops being pure cost pass-through.
+// A consolidated multi-item parcel books ONE waybill, so it is charged ONCE (on
+// the carrier line only). Firearm dealer/in-person transfers and collection
+// create no waybill and are never charged this. Operator decision 2026-07-03:
+// R15/waybill.
+export const SHIPPING_HANDLING_FEE_CENTS = 1_500; // R15 — per courier waybill
+
 // ── Swop / Trade (SWOP) flat fees — ZAR cents ───────────────────────────
 // A swap has no sale price, so GG earns a FLAT service fee per shipment leg
 // (two legs per swap = earned twice). Operator decision 2026-06-28: R50/leg.
@@ -80,7 +89,8 @@ export interface SwapLegFeeBreakdown {
 
 export interface FeeBreakdown {
   listingPrice: number;   // ZAR cents
-  shippingCost: number;   // ZAR cents — courier rate at checkout time
+  shippingCost: number;   // ZAR cents — courier rate at checkout time (remitted to carrier)
+  shippingHandlingCents: number; // ZAR cents — P6.4 flat GG per-waybill margin (buyer-paid, GG-retained)
   commissionZar: number;  // ZAR cents — platform commission off the listing price only
   processingFee: number;  // ZAR cents — gateway/EFT fee, charged on (listing + shipping)
   buyerTotal: number;     // ZAR cents — what the buyer pays
@@ -144,14 +154,22 @@ export class FeeCalculator {
     isTopSeller: boolean,
     shippingCostZarCents = 0,
     mode: PaymentMode = 'paygate',
+    // P6.4 — flat GG handling margin for this line, ZAR cents. Non-zero ONLY
+    // for a courier line that produces its OWN waybill (the caller decides:
+    // PUDO/TCG and not a zero-cost consolidated sibling). Buyer-paid on top of
+    // everything else and GG-retained; it does NOT enter the processing-fee
+    // base (we don't charge the EFT % on our own margin) and never touches the
+    // seller payout. Defaults to 0 so every existing caller is unchanged.
+    handlingFeeCents = 0,
   ): FeeBreakdown {
     const listingPrice = listingPriceZarCents;
     const shippingCost = Math.max(0, Math.round(shippingCostZarCents));
+    const shippingHandlingCents = Math.max(0, Math.round(handlingFeeCents));
     const commissionZar = this.calculateCommission(listingPrice, isTopSeller);
     // The processing fee is charged on whatever the buyer actually pays,
     // which always includes shipping. Don't strip shipping out of the
     // base or we under-collect. Mode selects card (3.5%+R1.50) vs the
-    // manual EFT flat 1.5%.
+    // manual EFT flat 1.5%. The handling margin is EXCLUDED from the base.
     const processingFee = this.calculateProcessingFee(
       listingPrice + shippingCost,
       mode,
@@ -161,9 +179,12 @@ export class FeeCalculator {
     //                       seller receives price - commission
     // If seller absorbs fee: buyer pays price + shipping,
     //                        seller receives price - commission - fee
-    const buyerTotal = passFeeToBuyer
-      ? listingPrice + shippingCost + processingFee
-      : listingPrice + shippingCost;
+    // The R15 handling margin is buyer-paid regardless of who absorbs the
+    // processing fee (it's a shipping surcharge, not the EFT fee).
+    const buyerTotal =
+      (passFeeToBuyer
+        ? listingPrice + shippingCost + processingFee
+        : listingPrice + shippingCost) + shippingHandlingCents;
     const sellerPayout = passFeeToBuyer
       ? listingPrice - commissionZar
       : listingPrice - commissionZar - processingFee;
@@ -171,6 +192,7 @@ export class FeeCalculator {
     return {
       listingPrice,
       shippingCost,
+      shippingHandlingCents,
       commissionZar,
       processingFee,
       buyerTotal,

@@ -99,6 +99,7 @@ function core(over: Record<string, unknown> = {}) {
     quantity: 1,
     listingPrice: 10_000,
     shippingCost: 5_000,
+    shippingHandlingCents: 0, // P6.4 — set per-test; a courier waybill line = 1_500
     commissionZar: 1_000,
     processingFee: 150,
     buyerTotal: 15_000,
@@ -108,6 +109,12 @@ function core(over: Record<string, unknown> = {}) {
 }
 
 const lineDto = (id: string) => ({ listingId: id, shippingMethod: 'PUDO' as const, pudoPickupLockerId: 'LCK' });
+// P6-A — a firearm cart line: dealer transfer, attestation supplied, no courier target.
+const firearmLineDto = (id: string) => ({
+  listingId: id,
+  shippingMethod: 'DEALER_TRANSFER' as const,
+  firearmAttestation18Plus: true,
+});
 
 describe('TransactionsService.createOrderCheckout', () => {
   it('creates an order from a single-seller cart and sums the totals', async () => {
@@ -208,16 +215,60 @@ describe('TransactionsService.createOrderCheckout', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('rejects a firearm line BEFORE reserving anything (P0.2 pre-validation)', async () => {
-    const { service, prisma } = makeService({ firearmIds: ['L1'] });
-    const spy = jest.spyOn(service as never, 'reserveAndCreateLine');
-    await expect(
-      service.createOrderCheckout('clerk_B', { lines: [lineDto('L1')] }, 'https://x'),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    // Pre-check fires before ANY reservation → nothing to unwind.
-    expect(spy).not.toHaveBeenCalled();
-    expect(prisma.listing.update).not.toHaveBeenCalled();
-    expect(prisma.transaction.delete).not.toHaveBeenCalled();
+  it('P6-A — ACCEPTS a firearm line in the cart and NEVER consolidates it', async () => {
+    // A firearm (dealer transfer) + a same-seller courier item. The firearm
+    // must not be pulled into a courier parcel, so quoteCombined is never even
+    // called for a group containing it (here the only other courier line is
+    // solo, so no consolidation happens at all), and the order is created.
+    const { service, shipping, referenceNumbers } = makeService({
+      firearmIds: ['L1'],
+    });
+    const spy = jest
+      .spyOn(service as never, 'reserveAndCreateLine')
+      .mockResolvedValueOnce(
+        core({ n: 1, isFirearm: true, shippingCost: 0, shippingHandlingCents: 0, buyerTotal: 10_000 }) as never,
+      )
+      .mockResolvedValueOnce(core({ n: 2, shippingHandlingCents: 1_500, buyerTotal: 16_500 }) as never);
+
+    const res = await service.createOrderCheckout(
+      'clerk_B',
+      { lines: [firearmLineDto('L1'), lineDto('L2')] },
+      'https://x',
+    );
+
+    // Firearm line WAS reserved (no rejection), and the order was created.
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(res.manual).toBe(true);
+    // The firearm was excluded from grouping: with only one courier line left,
+    // there is no 2+ group → quoteCombined never runs.
+    expect(shipping.quoteCombined).not.toHaveBeenCalled();
+    expect(referenceNumbers.allocateOrderReference).toHaveBeenCalledTimes(1);
+    // Firearm carries no handling; the courier line carries the R15 waybill fee.
+    expect(res.breakdown.shippingHandlingCents).toBe(1_500);
+    // items 10 000 + 10 000, shipping 0 + 5 000, handling 0 + 1 500 → buyerTotal 26 500
+    expect(res.breakdown.buyerTotal).toBe(26_500);
+  });
+
+  it('P6.4 — carries the R15 waybill margin into the order handling subtotal', async () => {
+    const { service } = makeService();
+    jest
+      .spyOn(service as never, 'reserveAndCreateLine')
+      .mockResolvedValueOnce(
+        core({ n: 1, shippingHandlingCents: 1_500, buyerTotal: 16_500 }) as never,
+      )
+      .mockResolvedValueOnce(
+        core({ n: 2, shippingHandlingCents: 1_500, buyerTotal: 16_500 }) as never,
+      );
+
+    const res = await service.createOrderCheckout(
+      'clerk_B',
+      { lines: [lineDto('L1'), lineDto('L2')] },
+      'https://x',
+    );
+
+    expect(res.breakdown.shippingHandlingCents).toBe(3_000); // R15 × 2 waybills
+    expect(res.breakdown.shippingCost).toBe(10_000); // carrier cost, handling apart
+    expect(res.breakdown.buyerTotal).toBe(33_000);
   });
 });
 

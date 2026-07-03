@@ -567,17 +567,26 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   const PEACH_RATE = 0.035;
   const PEACH_FIXED_CENTS = 150;
   const VAT_MULTIPLIER = 1.15;
+  // P6.4 — flat R15 handling per courier waybill. Applies to PUDO/TCG only;
+  // firearm dealer/in-person routes and collection produce no waybill.
+  const SHIPPING_HANDLING_CENTS = 1500;
   function previewBreakdown(): {
     listing: number;
     shipping: number;
+    handling: number;
     processing: number;
     total: number;
   } | null {
     if (!listing.price) return null;
     const item = listing.price;
+    const isCourier = method === 'PUDO' || method === 'TCG';
     const shipping =
       quoteState.kind === 'ready' ? quoteState.quote.priceCents : 0;
-    // Peach charges on the gross (item + shipping), VAT-inclusive.
+    const handling = isCourier ? SHIPPING_HANDLING_CENTS : 0;
+    // Processing is charged on (item + shipping) ONLY — the R15 handling margin
+    // is EXCLUDED from the base, matching the backend FeeCalculator.breakdown()
+    // (we don't charge the card % on our own margin). Handling is added to the
+    // total separately below.
     const processing = Math.round(
       (item + shipping) * PEACH_RATE * VAT_MULTIPLIER +
         PEACH_FIXED_CENTS * VAT_MULTIPLIER,
@@ -585,8 +594,9 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     return {
       listing: item,
       shipping,
+      handling,
       processing,
-      total: item + shipping + processing,
+      total: item + shipping + handling + processing,
     };
   }
 
@@ -1318,6 +1328,12 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
                 <BreakdownLine
                   label={`Shipping (${quoteState.quote.serviceName})`}
                   value={formatPrice(b.shipping)}
+                />
+              )}
+              {b && b.handling > 0 && (
+                <BreakdownLine
+                  label="Handling"
+                  value={formatPrice(b.handling)}
                 />
               )}
               {b && (

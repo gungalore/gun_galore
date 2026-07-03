@@ -139,7 +139,15 @@ export default function OrderDetailPage() {
               <p className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>{li.listing.title}</p>
               <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                 {li.quantity > 1 ? `${li.quantity} × ${formatPrice(li.unitPrice)}` : formatPrice(li.unitPrice)}
-                {li.transaction?.shippingStatus ? ` · ${li.transaction.shippingStatus}` : ''}
+                {/* Firearm lines route via a dealer / in person (no courier
+                    tracking); courier lines show their shipping status. */}
+                {li.transaction?.shippingMethod === 'DEALER_TRANSFER'
+                  ? ' · Ships via a dealer'
+                  : li.transaction?.shippingMethod === 'PRIVATE_ARRANGE'
+                    ? ' · Arranged in person'
+                    : li.transaction?.shippingStatus
+                      ? ` · ${li.transaction.shippingStatus}`
+                      : ''}
               </p>
             </div>
             <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>›</span>

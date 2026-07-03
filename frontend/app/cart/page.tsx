@@ -13,6 +13,11 @@ import {
   emptyManualAddress,
   type ManualAddressValue,
 } from '@/components/manual-address-fields';
+import {
+  FirearmAttestation,
+  DealerTransferConsent,
+  PrivateArrangeConsent,
+} from '@/components/firearm-consents';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -25,6 +30,16 @@ interface OrderCheckoutResponse extends ManualEftData {
 }
 
 type ShipMethod = 'PUDO' | 'TCG';
+type FirearmRoute = 'DEALER_TRANSFER' | 'PRIVATE_ARRANGE';
+
+// Per-firearm state — route + the two required confirmations, keyed by
+// listingId. Both attestation and the route's consent must be accepted
+// before the firearm is checkout-ready.
+interface FirearmState {
+  route: FirearmRoute;
+  attestationAccepted: boolean;
+  consentAccepted: boolean;
+}
 
 export default function CartPage() {
   const items = useCart();
@@ -33,11 +48,38 @@ export default function CartPage() {
   const [method, setMethod] = useState<ShipMethod>('PUDO');
   const [locker, setLocker] = useState<PudoLocker | null>(null);
   const [addr, setAddr] = useState<ManualAddressValue>(emptyManualAddress);
+  // Per-firearm route + consent state, keyed by listingId.
+  const [firearmState, setFirearmState] = useState<Record<string, FirearmState>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<OrderCheckoutResponse | null>(null);
 
   const itemsSubtotal = items.reduce((s, i) => s + i.price, 0);
+
+  // Split shippable (courier) items from firearms — firearms branch to a
+  // dealer-transfer / in-person route and never touch the courier picker.
+  const shippableItems = items.filter((i) => !i.isFirearm);
+  const firearmItems = items.filter((i) => i.isFirearm);
+
+  // The per-firearm state for a listing, defaulting to DEALER_TRANSFER with
+  // nothing accepted yet. Kept as a pure read so render + the checkout gate
+  // agree without mutating state during render.
+  const stateFor = (listingId: string): FirearmState =>
+    firearmState[listingId] ?? {
+      route: 'DEALER_TRANSFER',
+      attestationAccepted: false,
+      consentAccepted: false,
+    };
+
+  const setFirearm = (listingId: string, patch: Partial<FirearmState>) =>
+    setFirearmState((prev) => {
+      const cur = prev[listingId] ?? {
+        route: 'DEALER_TRANSFER' as FirearmRoute,
+        attestationAccepted: false,
+        consentAccepted: false,
+      };
+      return { ...prev, [listingId]: { ...cur, ...patch } };
+    });
 
   // Group lines by seller (Phase 8d — a cart can mix sellers). One payment
   // covers all; each seller ships + is paid independently.
@@ -58,7 +100,19 @@ export default function CartPage() {
     addr.city.trim() &&
     addr.province &&
     addr.postalCode.trim().length >= 4;
-  const shippingReady = method === 'PUDO' ? Boolean(locker) : Boolean(addrComplete);
+  // Courier shipping only needs to be ready when there ARE shippable items.
+  const courierReady =
+    shippableItems.length === 0 ||
+    (method === 'PUDO' ? Boolean(locker) : Boolean(addrComplete));
+
+  // Every firearm must have a chosen route, its 18+ attestation, and the
+  // consent for the chosen route accepted.
+  const firearmsReady = firearmItems.every((i) => {
+    const s = stateFor(i.listingId);
+    return s.route && s.attestationAccepted && s.consentAccepted;
+  });
+
+  const shippingReady = courierReady && firearmsReady;
 
   async function checkout() {
     if (!shippingReady || items.length === 0) return;
@@ -66,23 +120,36 @@ export default function CartPage() {
     setError(null);
     try {
       const token = await getToken();
-      const lines = items.map((i) => ({
-        listingId: i.listingId,
-        shippingMethod: method,
-        ...(method === 'PUDO'
-          ? { pudoPickupLockerId: locker?.lockerId }
-          : {
-              deliveryAddress: {
-                building: addr.building.trim() || undefined,
-                streetAddress: addr.street.trim(),
-                address2: addr.address2.trim() || undefined,
-                suburb: addr.suburb.trim(),
-                city: addr.city.trim(),
-                province: addr.province,
-                postalCode: addr.postalCode.trim(),
-              },
-            }),
-      }));
+      const lines = items.map((i) => {
+        if (i.isFirearm) {
+          const s = stateFor(i.listingId);
+          return {
+            listingId: i.listingId,
+            shippingMethod: s.route,
+            firearmAttestation18Plus: true,
+            ...(s.route === 'PRIVATE_ARRANGE'
+              ? { privateArrangeConsent: true }
+              : {}),
+          };
+        }
+        return {
+          listingId: i.listingId,
+          shippingMethod: method,
+          ...(method === 'PUDO'
+            ? { pudoPickupLockerId: locker?.lockerId }
+            : {
+                deliveryAddress: {
+                  building: addr.building.trim() || undefined,
+                  streetAddress: addr.street.trim(),
+                  address2: addr.address2.trim() || undefined,
+                  suburb: addr.suburb.trim(),
+                  city: addr.city.trim(),
+                  province: addr.province,
+                  postalCode: addr.postalCode.trim(),
+                },
+              }),
+        };
+      });
       const res = await fetch(`${API_URL}/orders/checkout`, {
         method: 'POST',
         headers: {
@@ -154,8 +221,12 @@ export default function CartPage() {
           <>From <strong>{groups.length} sellers</strong> — each ships and is paid
           separately. </>
         )}
-        One payment, one delivery choice. Shipping is quoted per item and added to
-        your total.
+        One payment. Courier items ship via Pudo or The Courier Guy (quoted at
+        payment, R15 handling per parcel).
+        {firearmItems.length > 0 && (
+          <> Firearms route through a licensed dealer or in person — confirm each
+          firearm&apos;s details below before you can continue.</>
+        )}
       </p>
 
       {/* Items — grouped by seller (Phase 8d) */}
@@ -190,13 +261,29 @@ export default function CartPage() {
               ) : (
                 <div className="w-12 h-12 rounded-[6px]" style={{ background: 'var(--bg-inset)' }} />
               )}
-              <Link
-                href={`/listings/${i.listingId}`}
-                className="flex-1 text-sm"
-                style={{ color: 'var(--text-primary)' }}
-              >
-                {i.title}
-              </Link>
+              <div className="flex-1 min-w-0">
+                <Link
+                  href={`/listings/${i.listingId}`}
+                  className="block text-sm truncate"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  {i.title}
+                </Link>
+                {i.isFirearm && (
+                  <span
+                    className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-[4px] uppercase"
+                    style={{
+                      background: 'rgba(200,16,46,0.08)',
+                      border: '0.5px solid var(--red)',
+                      color: 'var(--red)',
+                      letterSpacing: '0.03em',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Firearm — dealer / in-person
+                  </span>
+                )}
+              </div>
               <span className="text-sm" style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
                 {formatPrice(i.price)}
               </span>
@@ -214,36 +301,118 @@ export default function CartPage() {
         </div>
       ))}
 
-      {/* Delivery */}
-      <h2 className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-        Delivery
-      </h2>
-      <div className="flex gap-2 mb-3">
-        {(['PUDO', 'TCG'] as ShipMethod[]).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setMethod(m)}
-            className="flex-1 py-2.5 rounded-[6px] text-sm"
-            style={{
-              background: method === m ? 'var(--red)' : 'var(--bg-card)',
-              color: method === m ? '#fff' : 'var(--text-secondary)',
-              border: '0.5px solid var(--border)',
-              fontWeight: 500,
-            }}
-          >
-            {m === 'PUDO' ? 'Pudo locker (cheapest)' : 'Courier to my door'}
-          </button>
-        ))}
-      </div>
+      {/* Delivery — courier picker only when there ARE shippable (non-firearm)
+          items. A firearm-only cart hides this entirely. */}
+      {shippableItems.length > 0 && (
+        <>
+          <h2 className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+            Delivery
+          </h2>
+          <div className="flex gap-2 mb-3">
+            {(['PUDO', 'TCG'] as ShipMethod[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMethod(m)}
+                className="flex-1 py-2.5 rounded-[6px] text-sm"
+                style={{
+                  background: method === m ? 'var(--red)' : 'var(--bg-card)',
+                  color: method === m ? '#fff' : 'var(--text-secondary)',
+                  border: '0.5px solid var(--border)',
+                  fontWeight: 500,
+                }}
+              >
+                {m === 'PUDO' ? 'Pudo locker (cheapest)' : 'Courier to my door'}
+              </button>
+            ))}
+          </div>
 
-      <div className="mb-5">
-        {method === 'PUDO' ? (
-          <LockerPicker selectedId={locker?.lockerId} onSelect={setLocker} />
-        ) : (
-          <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
-        )}
-      </div>
+          <div className="mb-5">
+            {method === 'PUDO' ? (
+              <LockerPicker selectedId={locker?.lockerId} onSelect={setLocker} />
+            ) : (
+              <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Firearms — one route + consent block per firearm line */}
+      {firearmItems.length > 0 && (
+        <>
+          <h2 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+            Firearms
+          </h2>
+          <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+            Firearms don&apos;t ship by courier. Choose a route and confirm the
+            required details for each one.
+          </p>
+          {firearmItems.map((i) => {
+            const s = stateFor(i.listingId);
+            const offersPrivate = i.shippingMethods.includes('PRIVATE_ARRANGE');
+            return (
+              <div
+                key={i.listingId}
+                className="rounded-[8px] mb-4 p-3 space-y-3"
+                style={{ border: '0.5px solid var(--border)', background: 'var(--bg-card)' }}
+              >
+                <p className="text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                  {i.title}
+                </p>
+
+                {/* Route toggle — DEALER_TRANSFER always; PRIVATE_ARRANGE only
+                    if the seller offered it. */}
+                <div className="flex gap-2">
+                  {(['DEALER_TRANSFER', ...(offersPrivate ? ['PRIVATE_ARRANGE'] : [])] as FirearmRoute[]).map(
+                    (route) => (
+                      <button
+                        key={route}
+                        type="button"
+                        onClick={() =>
+                          // Switching route clears the previous route's consent —
+                          // each route has its own gate.
+                          setFirearm(i.listingId, { route, consentAccepted: false })
+                        }
+                        className="flex-1 py-2.5 rounded-[6px] text-xs"
+                        style={{
+                          background: s.route === route ? 'var(--red)' : 'var(--bg-inset)',
+                          color: s.route === route ? '#fff' : 'var(--text-secondary)',
+                          border: '0.5px solid var(--border)',
+                          fontWeight: 500,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {route === 'DEALER_TRANSFER'
+                          ? 'Dealer transfer — funds held until verified'
+                          : 'Arrange in person — released immediately'}
+                      </button>
+                    ),
+                  )}
+                </div>
+
+                {/* 18+/competency attestation — required for every firearm. */}
+                <FirearmAttestation
+                  accepted={s.attestationAccepted}
+                  onChange={(v) => setFirearm(i.listingId, { attestationAccepted: v })}
+                />
+
+                {/* Route-specific consent. */}
+                {s.route === 'DEALER_TRANSFER' ? (
+                  <DealerTransferConsent
+                    accepted={s.consentAccepted}
+                    onChange={(v) => setFirearm(i.listingId, { consentAccepted: v })}
+                  />
+                ) : (
+                  <PrivateArrangeConsent
+                    accepted={s.consentAccepted}
+                    onChange={(v) => setFirearm(i.listingId, { consentAccepted: v })}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
 
       {/* Payment method — paygate placeholder + EFT (the live method) */}
       <PaygateComingSoon />
@@ -263,6 +432,14 @@ export default function CartPage() {
           <span style={{ color: 'var(--text-tertiary)' }}>Shipping</span>
           <span style={{ color: 'var(--text-tertiary)' }}>Quoted at payment</span>
         </div>
+        <div className="flex justify-between text-sm py-1">
+          <span style={{ color: 'var(--text-tertiary)' }}>Handling — R15 per parcel</span>
+          <span style={{ color: 'var(--text-tertiary)' }}>Quoted at payment</span>
+        </div>
+        <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+          A R15 handling fee applies to each courier parcel. Firearms shipped via
+          a dealer or in person have no courier fee.
+        </p>
       </div>
 
       {error && (
@@ -287,9 +464,11 @@ export default function CartPage() {
           ? 'Creating your order…'
           : shippingReady
             ? 'Continue to payment'
-            : method === 'PUDO'
-              ? 'Pick a locker to continue'
-              : 'Enter a delivery address to continue'}
+            : !firearmsReady
+              ? 'Confirm the firearm details to continue'
+              : method === 'PUDO'
+                ? 'Pick a locker to continue'
+                : 'Enter a delivery address to continue'}
       </button>
       <p className="text-xs mt-2 text-center" style={{ color: 'var(--text-tertiary)' }}>
         You&apos;ll pay by EFT on the next screen. Your money is held until you

@@ -306,6 +306,15 @@ export function OfferCheckoutForm({
         </div>
       )}
 
+      {/* P6.4 — flat R15 handling per courier waybill. Shipping + handling are
+          quoted at payment; the server response carries the exact total. */}
+      {(method === 'PUDO' || method === 'TCG') && (
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+          Shipping is quoted at payment, plus a R15 handling fee for the courier
+          parcel.
+        </p>
+      )}
+
       {method === 'DEALER_TRANSFER' && (
         <DealerTransferConsent
           accepted={dtConsentAccepted}

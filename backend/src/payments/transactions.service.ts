@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { FeeCalculator } from './fee.calculator';
+import { FeeCalculator, SHIPPING_HANDLING_FEE_CENTS } from './fee.calculator';
 import { StitchService, StitchPaymentResult } from './stitch.service';
 import { FraudRiskService } from './fraud-risk.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
@@ -315,9 +315,23 @@ export class TransactionsService {
       shippingServiceCode = quote.serviceCode;
     }
 
+    // P6.4 — flat R15 handling margin charged ONCE per waybill GG creates.
+    // A line produces its own waybill iff it's a PUDO/TCG courier line that is
+    // NOT a zero-cost consolidated sibling (siblings ship free inside the
+    // carrier's single parcel). Firearm DEALER_TRANSFER / PRIVATE_ARRANGE and
+    // COLLECTION create no waybill → no handling. The margin is buyer-paid and
+    // GG-retained (never remitted to the carrier).
+    const isConsolidatedSibling =
+      shippingOverride !== undefined && shippingOverride.costCents === 0;
+    const producesWaybill =
+      (dto.shippingMethod === 'PUDO' || dto.shippingMethod === 'TCG') &&
+      !isConsolidatedSibling;
+    const handlingFeeCents = producesWaybill ? SHIPPING_HANDLING_FEE_CENTS : 0;
+
     const {
       listingPrice,
       shippingCost,
+      shippingHandlingCents,
       commissionZar,
       processingFee,
       buyerTotal,
@@ -328,6 +342,7 @@ export class TransactionsService {
       isTopSeller,
       shippingCostCents,
       PAYMENT_MODE, // manual = flat 1.5% EFT fee; paygate = card rate
+      handlingFeeCents,
     );
 
     // Reserve the listing ATOMICALLY. Only ONE buyer can flip it from
@@ -408,6 +423,7 @@ export class TransactionsService {
         commissionZar,
         processingFee,
         shippingCost,
+        shippingHandlingCents, // P6.4 — R15/waybill GG margin (0 for firearm/collection/sibling)
         shippingServiceCode,
         passFeeToBuyer: listing.passFeeToBuyer,
         buyerTotal,
@@ -481,6 +497,7 @@ export class TransactionsService {
       quantity,
       listingPrice,
       shippingCost,
+      shippingHandlingCents,
       commissionZar,
       processingFee,
       buyerTotal,
@@ -505,6 +522,8 @@ export class TransactionsService {
       buyer,
       quantity,
       listingPrice,
+      shippingCost,
+      shippingHandlingCents,
       commissionZar,
       processingFee,
       buyerTotal,
@@ -547,6 +566,8 @@ export class TransactionsService {
         bankDetails: GG_BANK_DETAILS,
         breakdown: {
           listingPrice,
+          shippingCost,
+          shippingHandlingCents, // P6.4 — R15/waybill margin (0 for firearm/collection)
           commissionZar,
           processingFee,
           buyerTotal,
@@ -659,17 +680,22 @@ export class TransactionsService {
     // AFTER a line has reserved — for a won auction that reservation is the
     // expiresAt CAS claim, and unwinding it strands the auction. Cheap
     // read-only check up front keeps auctions out of carts entirely.
+    // P6-A — firearms MAY now ride in the cart (they no longer courier-ship;
+    // they branch to their own dealer / in-person route after payment and are
+    // excluded from consolidation below), so isFirearm is NOT rejected here.
+    // Only non-BUY_NOW types (auctions / swaps / take-a-shot) stay out.
     const lineListings = await this.prisma.listing.findMany({
       where: { id: { in: lines.map((l) => l.listingId) } },
       select: { id: true, listingType: true, isFirearm: true, sellerId: true },
     });
-    if (
-      lineListings.some((l) => l.listingType !== 'BUY_NOW' || l.isFirearm)
-    ) {
+    if (lineListings.some((l) => l.listingType !== 'BUY_NOW')) {
       throw new BadRequestException(
-        'Firearms, auctions, swaps and offer items must be bought individually, not in a cart.',
+        'Auctions, swaps and offer items must be bought individually, not in a cart.',
       );
     }
+    const firearmByListing = new Map(
+      lineListings.map((l) => [l.id, l.isFirearm]),
+    );
 
     // P6.2 — per-seller shipping consolidation plan. Group the courier lines by
     // (seller, method, destination); for each group of 2+, get ONE combined
@@ -691,6 +717,12 @@ export class TransactionsService {
     {
       const groups = new Map<string, typeof lines>();
       for (const line of lines) {
+        // P6-A — a firearm NEVER consolidates: it ships via dealer / in-person,
+        // not a courier waybill, even alongside same-seller accessories. The
+        // method check below already excludes DEALER_TRANSFER / PRIVATE_ARRANGE,
+        // but skip explicitly on isFirearm too so a mis-routed firearm line
+        // (e.g. a tampered PUDO method) can never be pulled into a parcel.
+        if (firearmByListing.get(line.listingId)) continue;
         if (line.shippingMethod !== 'PUDO' && line.shippingMethod !== 'TCG')
           continue;
         const sellerId = sellerByListing.get(line.listingId);
@@ -764,6 +796,13 @@ export class TransactionsService {
           pudoPickupLockerId: line.pudoPickupLockerId,
           deliveryAddress: line.deliveryAddress,
           quantity: line.quantity,
+          // P6-A — firearm lines carry their own attestation + in-person
+          // consent + optional dealer so the shared core's firearm gates
+          // (validateShipping, the 18+ hard check, dealer lookup,
+          // privateArrangeAcceptedAt) fire exactly as on a single-item buy.
+          dealerId: line.dealerId,
+          privateArrangeConsent: line.privateArrangeConsent,
+          firearmAttestation18Plus: line.firearmAttestation18Plus,
         } as CreateTransactionDto;
 
         const core = await this.reserveAndCreateLine(
@@ -785,10 +824,17 @@ export class TransactionsService {
             quantity: core.quantity,
             listingPrice: core.listingPrice,
             shippingCost: core.shippingCost,
-            // BUYER-PAID fee only (0 when the seller absorbs it), so the Order
-            // snapshot identity items + shipping + processingFee == buyerTotal
-            // always holds. The seller-absorbed fee lives in sellerPayout.
-            processingFee: core.buyerTotal - core.listingPrice - core.shippingCost,
+            shippingHandlingCents: core.shippingHandlingCents, // P6.4 — R15/waybill margin
+            // BUYER-PAID processing fee only (0 when the seller absorbs it), so
+            // the Order snapshot identity items + shipping + handling +
+            // processingFee == buyerTotal always holds. Handling is subtracted
+            // here too — it is NOT part of the processing fee. The
+            // seller-absorbed fee lives in sellerPayout.
+            processingFee:
+              core.buyerTotal -
+              core.listingPrice -
+              core.shippingCost -
+              core.shippingHandlingCents,
             buyerTotal: core.buyerTotal,
           },
         });
@@ -799,9 +845,12 @@ export class TransactionsService {
         // would CAS its pay-window claim, and any later line failing would
         // unwind it into the un-transactable ended-ACTIVE zombie state
         // (adversarial-review finding). Auctions pay via single checkout only.
-        if (core.listing.listingType !== 'BUY_NOW' || core.listing.isFirearm || core.offerRecord) {
+        // P6-A — firearm BUY_NOW lines are now ALLOWED in the cart (they branch
+        // to dealer / in-person and never consolidate), so isFirearm is no
+        // longer part of this guard.
+        if (core.listing.listingType !== 'BUY_NOW' || core.offerRecord) {
           throw new BadRequestException(
-            'Firearms, auctions and offer items must be bought individually, not in a cart.',
+            'Auctions and offer items must be bought individually, not in a cart.',
           );
         }
       }
@@ -826,6 +875,7 @@ export class TransactionsService {
             orderReference,
             itemsSubtotal: totals.itemsSubtotal,
             shippingSubtotal: totals.shippingSubtotal,
+            handlingSubtotal: totals.handlingSubtotal, // P6.4 — GG margin (sum of line handling)
             processingFee: totals.processingFee,
             buyerTotal: totals.buyerTotal,
             manualPayByAt,
@@ -887,6 +937,7 @@ export class TransactionsService {
         breakdown: {
           listingPrice: totals.itemsSubtotal,
           shippingCost: totals.shippingSubtotal,
+          shippingHandlingCents: totals.handlingSubtotal, // P6.4 — R15/waybill GG margin
           commissionZar: created.reduce((s, c) => s + c.commissionZar, 0),
           processingFee: totals.processingFee,
           buyerTotal: totals.buyerTotal,

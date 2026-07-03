@@ -143,6 +143,12 @@ export class ReceiptService {
     };
     line('Item price', tx.listingPrice);
     if (tx.shippingCost > 0) line('Shipping', tx.shippingCost);
+    // P6.4 — the R15/waybill handling margin is part of buyerTotal but stored
+    // apart from the (remitted) carrier rate, so it needs its own line or the
+    // breakdown won't sum to "Total paid". Guarded on > 0 so firearm /
+    // collection / consolidated-sibling receipts (handling 0) are unchanged.
+    if (tx.shippingHandlingCents > 0)
+      line('Handling', tx.shippingHandlingCents);
     if (tx.passFeeToBuyer && tx.processingFee > 0)
       line('Processing fee', tx.processingFee);
     y -= 4;

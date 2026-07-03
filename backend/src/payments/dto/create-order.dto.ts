@@ -4,6 +4,8 @@ import {
   IsEnum,
   IsOptional,
   IsInt,
+  IsBoolean,
+  Equals,
   Min,
   ValidateIf,
   ValidateNested,
@@ -15,11 +17,14 @@ import { Type } from 'class-transformer';
 import { ShippingMethod } from '@prisma/client';
 import { DeliveryAddressDto } from './create-transaction.dto';
 
-// One line of a multi-item cart. A subset of CreateTransactionDto — the cart
-// only carries standard BUY_NOW non-firearm items, so there is NO offerId,
-// dealerId, privateArrangeConsent or firearm attestation here (those flows
-// stay single-item). Each line still picks its own shipping method + target,
-// because shipping is per-listing (per-parcel) on the platform.
+// One line of a multi-item cart. A subset of CreateTransactionDto. BUY_NOW
+// only (auctions / swaps / offer items stay single-item), but as of P6-A a
+// firearm BUY_NOW line MAY ride in the cart: it never courier-ships and never
+// consolidates — it branches to its own DEALER_TRANSFER or PRIVATE_ARRANGE
+// route after payment, exactly like a single-item firearm buy. So the firearm
+// fields (attestation + in-person consent + optional dealer) live here too,
+// validated the same way the single-item DTO validates them. Each line still
+// picks its own shipping method + target, because shipping is per-listing.
 export class CreateOrderLineDto {
   @IsString()
   @IsNotEmpty()
@@ -37,6 +42,32 @@ export class CreateOrderLineDto {
   @ValidateNested()
   @Type(() => DeliveryAddressDto)
   deliveryAddress?: DeliveryAddressDto;
+
+  // Firearm DEALER_TRANSFER: buyer's chosen receiving dealer. OPTIONAL — the
+  // buyer nominates any SAPS-licensed dealer after the sale and payout is gated
+  // on the DealerVerificationService stock-in, not a pre-picked dealerId.
+  @IsOptional()
+  @IsString()
+  dealerId?: string;
+
+  // PRIVATE_ARRANGE ("arrange in person"): explicit consent flag. Must be
+  // `true` for a firearm in-person line — the service refuses the line and its
+  // immediate payout without it (defence in depth over the frontend consent
+  // screen). Mirrors CreateTransactionDto.privateArrangeConsent.
+  @ValidateIf((o) => o.shippingMethod === 'PRIVATE_ARRANGE')
+  @IsBoolean()
+  @Equals(true, {
+    message:
+      'Private arrangement requires explicit consent — tick the boxes on the checkout screen.',
+  })
+  privateArrangeConsent?: boolean;
+
+  // M33 — 18+/competency attestation. The service re-checks listing.isFirearm
+  // server-side and refuses the line if this isn't true on a firearm listing.
+  // Non-firearm lines ignore it. Mirrors CreateTransactionDto.
+  @IsOptional()
+  @IsBoolean()
+  firearmAttestation18Plus?: boolean;
 
   @IsOptional()
   @IsInt()

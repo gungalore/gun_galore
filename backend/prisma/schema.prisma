@@ -952,6 +952,12 @@ model Transaction {
   // buyerTotal so we can show the breakdown later + remit to the
   // courier without re-computing.
   shippingCost        Int     @default(0)
+  // P6.4 — flat GG handling margin per waybill created (R15). Buyer-paid,
+  // GG-RETAINED (never remitted to the carrier), stored SEPARATELY from
+  // shippingCost so the carrier remittance stays the pure rate. Zero for
+  // firearm (DEALER_TRANSFER / PRIVATE_ARRANGE), collection, and consolidated
+  // sibling lines — none of those create their own waybill.
+  shippingHandlingCents Int   @default(0)
   // Service level snapshot — "L2LXS - ECO" / "D2DM - ECO" etc. Comes
   // straight from Pudo's response so we can pass it back into the
   // shipment-create call without re-fetching the quote.
@@ -3129,6 +3135,11 @@ model Order {
   // Money snapshot (ZAR cents) = sums across child transactions.
   itemsSubtotal    Int
   shippingSubtotal Int
+  // P6.4 — sum of child shippingHandlingCents (the R15-per-waybill GG margin).
+  // Kept as its own column so the invariant
+  //   itemsSubtotal + shippingSubtotal + handlingSubtotal + processingFee == buyerTotal
+  // continues to hold once a handling margin is charged.
+  handlingSubtotal Int                @default(0)
   processingFee    Int
   buyerTotal       Int
 

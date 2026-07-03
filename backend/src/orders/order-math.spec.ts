@@ -12,6 +12,7 @@ const line = (o: Partial<OrderLineBreakdown>): OrderLineBreakdown => ({
   quantity: 1,
   listingPrice: 10_000,
   shippingCost: 5_000,
+  shippingHandlingCents: 0,
   processingFee: 150,
   buyerTotal: 15_000,
   ...o,
@@ -23,9 +24,26 @@ describe('order-math.computeOrderTotals', () => {
     expect(t).toEqual({
       itemsSubtotal: 10_000,
       shippingSubtotal: 5_000,
+      handlingSubtotal: 0,
       processingFee: 150,
       buyerTotal: 15_000,
     });
+  });
+
+  it('P6.4 — sums the R15-per-waybill handling into handlingSubtotal, apart from shipping + processing', () => {
+    // Two courier lines each carrying R15 handling; buyerTotal already includes
+    // it: 16_650 = listing 10_000 + shipping 5_000 + handling 1_500 + processing 150.
+    const t = computeOrderTotals([
+      line({ shippingHandlingCents: 1_500, buyerTotal: 16_650 }),
+      line({ shippingHandlingCents: 1_500, buyerTotal: 16_650 }),
+    ]);
+    expect(t.handlingSubtotal).toBe(3_000);
+    expect(t.shippingSubtotal).toBe(10_000); // carrier cost, handling excluded
+    expect(t.processingFee).toBe(300); // handling not folded into processing
+    // The Order identity holds: items + shipping + handling + processing == buyerTotal
+    expect(
+      t.itemsSubtotal + t.shippingSubtotal + t.handlingSubtotal + t.processingFee,
+    ).toBe(t.buyerTotal);
   });
 
   it('sums multiple lines (the buyer pays the exact sum of line totals)', () => {

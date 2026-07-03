@@ -20,8 +20,11 @@ export interface OrderLineBreakdown {
   /** Line subtotal = unitPrice × quantity (FeeCalculator's listingPrice). */
   listingPrice: number;
   shippingCost: number;
+  /** P6.4 — the R15-per-waybill GG handling margin on this line (0 for
+   *  firearm / collection / consolidated-sibling lines). */
+  shippingHandlingCents: number;
   processingFee: number;
-  /** What the buyer pays for this line (incl. shipping + any passed fee). */
+  /** What the buyer pays for this line (incl. shipping + handling + any passed fee). */
   buyerTotal: number;
 }
 
@@ -29,6 +32,8 @@ export interface OrderLineBreakdown {
 export interface OrderTotals {
   itemsSubtotal: number;
   shippingSubtotal: number;
+  /** P6.4 — sum of the line handling margins (GG-retained). */
+  handlingSubtotal: number;
   processingFee: number;
   buyerTotal: number;
 }
@@ -52,16 +57,19 @@ export function computeOrderTotals(lines: OrderLineBreakdown[]): OrderTotals {
   const totals: OrderTotals = {
     itemsSubtotal: 0,
     shippingSubtotal: 0,
+    handlingSubtotal: 0,
     processingFee: 0,
     buyerTotal: 0,
   };
   for (const l of lines) {
     assertInt(l.listingPrice, 'line subtotal');
     assertInt(l.shippingCost, 'shipping');
+    assertInt(l.shippingHandlingCents, 'shipping handling');
     assertInt(l.processingFee, 'processing fee');
     assertInt(l.buyerTotal, 'line total');
     totals.itemsSubtotal += l.listingPrice;
     totals.shippingSubtotal += l.shippingCost;
+    totals.handlingSubtotal += l.shippingHandlingCents;
     totals.processingFee += l.processingFee;
     totals.buyerTotal += l.buyerTotal;
   }
