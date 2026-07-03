@@ -404,15 +404,12 @@ export class ZohoBooksService {
     if (!tx) return;
     // Idempotency — if we've already created the invoice, no-op.
     if (tx.zohoCommissionInvoiceId) return;
-    // PRIVATE_ARRANGE has no platform commission invoice (we don't
-    // hold funds for it). Skip silently.
-    if (tx.shippingMethod === 'PRIVATE_ARRANGE') {
-      await this.markSkipped(
-        transactionId,
-        'PRIVATE_ARRANGE — no commission invoice',
-      );
-      return;
-    }
+    // FLOW-F4 (H21) — PRIVATE_ARRANGE was skipped here on the false premise
+    // that "we don't hold funds / take commission on that flow". We DO:
+    // fee.calculator charges the same commission on PA sales, so skipping the
+    // invoice left every PA commission uninvoiced (revenue collected, never
+    // recorded in Books). Operator decision: keep the commission AND invoice
+    // it — PA now falls through to the standard commission-invoice path below.
     if (tx.commissionZar <= 0) {
       await this.markSkipped(transactionId, 'commissionZar is zero');
       return;

@@ -2897,6 +2897,15 @@ export class TransactionsService {
         `Transaction ${txId} PRIVATE_ARRANGE — payment released immediately, contact details revealed`,
       );
 
+      // FLOW-F4 (H21) — PA is a release point like confirm-delivery and admin
+      // release, so it must raise the commission invoice too. Previously the
+      // only PA-reachable hooks (confirmDelivery / dealer-verify) never fire
+      // for PRIVATE_ARRANGE (funds already released here), so every PA
+      // commission went uninvoiced. Idempotent + never throws; the FNB payout
+      // batch marks it paid when the settlement lands, exactly like a courier
+      // sale.
+      void this.zohoBooks.createCommissionInvoice(txId);
+
       // Two timeline rows so the buyer/seller order page shows the
       // waiver + payout chain rather than just an unexplained jump.
       void this.tracking.recordInternal(txId, 'PRIVATE_ARRANGE_WAIVER', {
