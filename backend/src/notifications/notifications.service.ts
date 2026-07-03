@@ -2766,6 +2766,58 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // FLOW-F4 (H15) — DEALER_TRANSFER stall nudge. A firearm sale routes
+  // through a licensed dealer, not a courier, so the standard dispatch
+  // nudge above (parcel / auto-refund / strike) is wrong for it. This
+  // reminds the seller to complete the dealer hand-off so the transfer
+  // can be verified and the buyer's held payment can be released. There
+  // is NO auto-refund on this path (dealer logistics run long + firearm-
+  // specific judgment), so the copy never threatens one.
+  // ---------------------------------------------------------------
+  async dealerTransferStallNudgeSeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+    daysElapsed: number;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'dealer_transfer_stall_nudge',
+      title: 'Complete the dealer transfer',
+      body: `${d.listingTitle} — the buyer paid ${d.daysElapsed} day${d.daysElapsed === 1 ? '' : 's'} ago. Hand the firearm to the dealer so the transfer can be verified and your payment released.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'dispatch',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Complete the dealer transfer',
+      body: `Hi ${b(d.sellerName)}, the buyer paid for ${b(d.listingTitle)} ${b(d.daysElapsed + ' days')} ago and their payment is being held until the licensed-dealer transfer is completed. Please arrange to hand the firearm to the dealer and have the SAPS 534 processed so the transfer can be verified — your payment is released once verification passes. If you can't complete the transfer for any reason, contact support so we can resolve it with the buyer.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Buyer paid', value: `${d.daysElapsed} days ago` },
+      ],
+      cta: { label: 'View order', url: txUrl },
+      preheader: `Complete the dealer transfer for ${d.listingTitle}`,
+    });
+    await this.send(
+      d.sellerEmail,
+      'Action needed: complete the dealer transfer for ' + d.listingTitle,
+      html,
+    );
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: ${truncate(d.listingTitle, 30)} — buyer paid ${d.daysElapsed}d ago. Complete the dealer transfer to release your payment: ${txUrl}`,
+      `dt-stall-nudge-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
   // Dispatch SLA — auto-refund fired. Two emails (buyer gets the
   // "good news, your money is back" message; seller gets the strike
   // warning).

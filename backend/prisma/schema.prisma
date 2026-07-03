@@ -1118,6 +1118,14 @@ model Transaction {
   // Mirrors licenceExpiryWarnedAt / dispatchNudgedAt.
   adminAlertedForStuckFundsAt DateTime?
 
+  // FLOW-F4 (H12/H15) — set once when the DEALER_TRANSFER stall sweep raises
+  // the urgent admin alert for a firearm order whose seller accepted but never
+  // completed the dealer transfer (dispatchDeadlineAt + grace passed, still
+  // HELD, dealer-verify not APPROVED). DT has no auto-refund by design (dealer
+  // logistics run long + firearm-specific judgment), so this is the ONLY
+  // backstop. IS NULL filter makes the alert fire exactly once per stalled DT.
+  adminAlertedForDtStallAt DateTime?
+
   // ── Seller accept flow (TOK-7) ───────────────────────────────────
   // Two-step seller workflow: after the buyer pays, the seller has 48h
   // to ACCEPT the transaction (one-tap via SMS), then 5 days from accept

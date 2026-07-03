@@ -354,4 +354,136 @@ export class DispatchSlaService {
     }
     return { scanned: stuck.length, alerted };
   }
+
+  // ------------------------------------------------------------------
+  // FLOW-F4 (H12/H15/H16) — DEALER_TRANSFER stall backstop. A firearm sale
+  // routes through a licensed dealer, so it is deliberately EXCLUDED from the
+  // courier nudge/auto-refund/stuck-funds sweeps above (all PUDO/TCG-only).
+  // That left an accepted-but-never-transferred firearm order with ZERO
+  // backstop: money HELD indefinitely, no seller reminder, no admin signal,
+  // and — until the raiseDispute fix — no buyer escape either.
+  //
+  // Two-stage, both idempotent, NO auto-refund (operator policy: dealer
+  // logistics run long + firearm transfers need human judgment, so a human
+  // resolves — refund or chase — from the dossier):
+  //   1. Past dispatchDeadlineAt (= acceptedAt + 5d) → one-shot seller nudge
+  //      to complete the dealer hand-off (guarded by dispatchNudgedAt, which
+  //      the courier nudge never sets on a DT row).
+  //   2. Past dispatchDeadlineAt + DT_STALL_ALERT_GRACE_HOURS → one-shot
+  //      urgent AdminAlert (guarded by adminAlertedForDtStallAt), created
+  //      atomically with its stamp like alertStuckHeldFunds.
+  // Scope: accepted, HELD, DEALER_TRANSFER, not a swap leg, dealer-verify not
+  // yet APPROVED (an APPROVED tx has already released, and REJECTED/pending
+  // still need the transfer completed or resolved).
+  // ------------------------------------------------------------------
+  async sweepStalledDealerTransfers(): Promise<{
+    scanned: number;
+    nudged: number;
+    alerted: number;
+  }> {
+    const DT_STALL_ALERT_GRACE_HOURS = 48;
+    const now = new Date();
+    const alertCutoff = new Date(
+      now.getTime() - DT_STALL_ALERT_GRACE_HOURS * 60 * 60 * 1000,
+    );
+
+    const stalled = await this.prisma.transaction.findMany({
+      where: {
+        acceptedAt: { not: null },
+        dispatchDeadlineAt: { lte: now },
+        dispatchedAt: null,
+        rejectedAt: null,
+        paymentStatus: 'HELD',
+        shippingMethod: 'DEALER_TRANSFER',
+        swapId: null,
+        // Not yet released via an APPROVED dealer verification. Explicit OR so
+        // the NULL case — seller never even started the transfer, the single
+        // most common stall — is unambiguously included alongside PENDING_*
+        // and REJECTED. (Prisma's `not` is null-inclusive, but on a firearm
+        // money-safety path we spell it out rather than rely on that.)
+        OR: [
+          { dealerVerificationStatus: null },
+          { dealerVerificationStatus: { not: 'APPROVED' } },
+        ],
+      },
+      include: { listing: { select: { title: true } }, seller: true },
+      take: 100,
+    });
+
+    let nudged = 0;
+    let alerted = 0;
+    for (const tx of stalled) {
+      const daysElapsed = tx.acceptedAt
+        ? Math.max(
+            1,
+            Math.floor((now.getTime() - tx.acceptedAt.getTime()) / 86_400_000),
+          )
+        : 5;
+
+      // Stage 1 — one-shot seller nudge.
+      if (!tx.dispatchNudgedAt) {
+        try {
+          await this.prisma.transaction.update({
+            where: { id: tx.id },
+            data: { dispatchNudgedAt: now },
+          });
+          await this.notifications.dealerTransferStallNudgeSeller({
+            sellerEmail: tx.seller.email,
+            sellerName:
+              [tx.seller.firstName, tx.seller.lastName]
+                .filter(Boolean)
+                .join(' ') || 'Seller',
+            sellerPhone: tx.seller.phone,
+            listingTitle: tx.listing.title,
+            transactionId: tx.id,
+            daysElapsed,
+          });
+          nudged++;
+        } catch (err) {
+          this.logger.warn(
+            `DT stall nudge failed for ${tx.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+
+      // Stage 2 — one-shot urgent admin alert once the grace window lapses.
+      if (
+        !tx.adminAlertedForDtStallAt &&
+        tx.dispatchDeadlineAt &&
+        tx.dispatchDeadlineAt <= alertCutoff
+      ) {
+        try {
+          await this.prisma.$transaction([
+            this.prisma.adminAlert.create({
+              data: {
+                type: 'DEALER_TRANSFER_STALLED',
+                referenceId: tx.id,
+                urgent: true,
+                context:
+                  `Firearm order ${tx.id.slice(-8).toUpperCase()} (${tx.listing.title}) — ` +
+                  `seller @${tx.seller.username ?? '—'} accepted ${daysElapsed}d ago but the ` +
+                  `dealer transfer is still incomplete (verification ${tx.dealerVerificationStatus ?? 'not started'}). ` +
+                  `Buyer's payment is HELD. Chase the seller or refund from the dossier — no auto-refund on this path.`,
+              },
+            }),
+            this.prisma.transaction.update({
+              where: { id: tx.id },
+              data: { adminAlertedForDtStallAt: now },
+            }),
+          ]);
+          alerted++;
+        } catch (err) {
+          this.logger.warn(
+            `DT stall alert failed for ${tx.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
+    if (nudged > 0 || alerted > 0) {
+      this.logger.log(
+        `DT stall sweep: nudged ${nudged} seller(s), alerted admin on ${alerted} order(s)`,
+      );
+    }
+    return { scanned: stalled.length, nudged, alerted };
+  }
 }

@@ -2543,15 +2543,28 @@ export class TransactionsService {
           tx.paymentStatus.toLowerCase().replace(/_/g, ' ') + '.',
       );
     }
-    // Collection orders have no dispatch step — the buyer collects in person.
-    // Allow disputes on those any time funds are HELD (seller no-show, or the
-    // item isn't as described at handover). Courier orders keep the
-    // dispatch-first rule: there's nothing to dispute before the parcel moves,
-    // and the 48h dispatch SLA auto-refunds a seller who never ships.
-    if (!tx.dispatchedAt && tx.shippingMethod !== 'COLLECTION') {
+    // FLOW-F4 (H16) — only COURIER orders (PUDO/TCG) keep the dispatch-first
+    // rule: there's nothing to dispute before the parcel moves, and the
+    // dispatch SLA auto-refunds a seller who never ships. Every OTHER funds-
+    // held method has no courier dispatch event, so blocking pre-dispatch
+    // disputes left those buyers with no exit at all:
+    //   • COLLECTION — buyer collects in person (seller no-show / not-as-
+    //     described at handover).
+    //   • DEALER_TRANSFER — the firearm routes through a dealer; dispatchedAt
+    //     is NEVER stamped pre-approval, the DT path has no auto-refund cron,
+    //     and cancelByBuyer rejects DT — so a stalled dealer transfer used to
+    //     trap the buyer with money HELD and zero recourse while the old copy
+    //     falsely promised an automatic refund. Allow the dispute (→ DISPUTED,
+    //     urgent AdminAlert) as their working escape; the dealer-verify release
+    //     CAS requires HELD so a DISPUTED row can't auto-release underneath it.
+    // (PRIVATE_ARRANGE releases funds immediately, so it never reaches here
+    //  HELD — the paymentStatus!=='HELD' guard above already rejects it.)
+    const isCourier =
+      tx.shippingMethod === 'PUDO' || tx.shippingMethod === 'TCG';
+    if (!tx.dispatchedAt && isCourier) {
       throw new BadRequestException(
         'Disputes can only be raised after the seller has dispatched. ' +
-          'If the seller has not dispatched within 48 hours of payment, the system will automatically refund you.',
+          'If the seller has not dispatched within 5 days of accepting your order, the system will automatically refund you.',
       );
     }
     if (tx.confirmedDeliveryAt) {

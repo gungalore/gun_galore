@@ -649,12 +649,17 @@ export default async function TransactionPage({
           {/* Buyer: standalone dispute panel if we're past confirm
               window for some reason but still HELD + dispatched (e.g.,
               modal flow couldn't proceed, or someone wants to dispute
-              before pressing confirm). Identical control surface. */}
+              before pressing confirm). Identical control surface.
+              FLOW-F4 (H16) — also show it for a DEALER_TRANSFER buyer once
+              paid: a firearm has no courier dispatch event, so without this
+              a stalled dealer transfer left the buyer with NO exit at all.
+              The backend raiseDispute now accepts DT once paid + HELD. */}
           {!canConfirmDelivery &&
             isBuyer &&
             tx.paymentStatus === 'HELD' &&
-            !!tx.dispatchedAt &&
-            !tx.confirmedDeliveryAt && (
+            !tx.confirmedDeliveryAt &&
+            (!!tx.dispatchedAt ||
+              (tx.shippingMethod === 'DEALER_TRANSFER' && !!tx.paidAt)) && (
               <div
                 className="rounded-[8px] p-4"
                 style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
@@ -663,7 +668,9 @@ export default async function TransactionPage({
                   Issue with this order?
                 </p>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-                  Payment stays held while admin reviews.
+                  {tx.shippingMethod === 'DEALER_TRANSFER'
+                    ? 'If the dealer transfer has stalled or something is wrong, raise it here. Your payment stays held while admin reviews.'
+                    : 'Payment stays held while admin reviews.'}
                 </p>
                 <RaiseDisputeButton transactionId={tx.id} />
               </div>
@@ -863,6 +870,12 @@ export default async function TransactionPage({
               const daysLeft = Math.floor(hoursLeft / 24);
               const expired = msLeft <= 0;
               const isCritical = msLeft > 0 && hoursLeft <= 24;
+              // FLOW-F4 (H15/H16) — a firearm routes through a licensed dealer,
+              // not a courier: there is no dispatch event, no auto-refund and
+              // no dispatch strike on this path. The old copy promised all
+              // three. Branch the wording so DT sellers/buyers see the truth.
+              const isDealerTransfer =
+                tx.shippingMethod === 'DEALER_TRANSFER';
               const tone = expired
                 ? { bg: 'rgba(200,16,46,0.12)', border: 'var(--red)', label: 'var(--red)' }
                 : isCritical
@@ -890,19 +903,73 @@ export default async function TransactionPage({
                       fontWeight: 600,
                     }}
                   >
-                    {isSeller
-                      ? expired
-                        ? 'DISPATCH OVERDUE'
-                        : `DISPATCH — ${remaining}`
-                      : expired
-                        ? 'Dispatch overdue — admin reviewing'
-                        : `Sale accepted · dispatching within ${remaining}`}
+                    {isDealerTransfer
+                      ? isSeller
+                        ? expired
+                          ? 'DEALER TRANSFER OVERDUE'
+                          : `COMPLETE DEALER TRANSFER — ${remaining}`
+                        : expired
+                          ? 'Transfer taking longer than expected — admin alerted'
+                          : `Sale accepted · dealer transfer in progress`
+                      : isSeller
+                        ? expired
+                          ? 'DISPATCH OVERDUE'
+                          : `DISPATCH — ${remaining}`
+                        : expired
+                          ? 'Dispatch overdue — admin reviewing'
+                          : `Sale accepted · dispatching within ${remaining}`}
                   </p>
                   <p
                     className="text-xs"
                     style={{ color: 'var(--text-secondary)' }}
                   >
-                    {isSeller ? (
+                    {isDealerTransfer ? (
+                      /* FLOW-F4 — firearm dealer transfer: no dispatch, no
+                         auto-refund, no strike. Truthful copy per path. */
+                      isSeller ? (
+                        expired ? (
+                          <>
+                            Your dealer transfer is overdue. Our team has been
+                            alerted and will follow up with you. Please complete
+                            the hand-off at your licensed dealer — your payment
+                            is released once the transfer is verified. Contact
+                            support if you&apos;re stuck.
+                          </>
+                        ) : (
+                          <>
+                            Complete the dealer transfer by{' '}
+                            <strong style={{ color: 'var(--text-primary)' }}>
+                              {new Date(tx.dispatchDeadlineAt).toLocaleString(
+                                'en-ZA',
+                                {
+                                  weekday: 'short',
+                                  day: 'numeric',
+                                  month: 'short',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                },
+                              )}
+                            </strong>
+                            . Your payment is released once the transfer is
+                            verified — firearm transfers are never
+                            auto-refunded.
+                          </>
+                        )
+                      ) : expired ? (
+                        <>
+                          This firearm transfer is taking longer than expected.
+                          Our team has been alerted and will follow up. If you
+                          have concerns, raise an issue from this page or
+                          contact support.
+                        </>
+                      ) : (
+                        <>
+                          The seller has accepted. This firearm transfers
+                          through a licensed dealer — we&apos;ll keep you posted
+                          at each step.
+                        </>
+                      )
+                    ) : isSeller ? (
                       expired ? (
                         <>
                           You&apos;ve missed the 5-day dispatch window. The

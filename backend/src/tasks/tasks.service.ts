@@ -1128,6 +1128,19 @@ export class TasksService {
         `Dispatch SLA auto-refund failed: ${(err as Error).message}`,
       );
     }
+    // FLOW-F4 — DEALER_TRANSFER stall backstop (the courier passes above skip
+    // DT by design). Seller nudge past the 5-day accept→transfer window, then
+    // an urgent admin alert after a 48h grace. NO auto-refund on this path.
+    try {
+      const dt = await this.dispatchSla.sweepStalledDealerTransfers();
+      if (dt.nudged > 0 || dt.alerted > 0) {
+        this.logger.log(
+          `DT stall sweep: nudged ${dt.nudged}, alerted ${dt.alerted} of ${dt.scanned}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`DT stall sweep failed: ${(err as Error).message}`);
+    }
     await this.recordCronRun('dispatch-sla');
   }
 
