@@ -329,6 +329,35 @@ export class DealerVerificationService {
         'REJECTED',
         findings?.recommendation_reason,
       );
+    } else if (status === 'PENDING_ADMIN_REVIEW') {
+      // FLOW-F4 (H17) — a firearm verification lands here whenever Claude
+      // returns 50-79% on any criterion, the vision call throws, or no API key
+      // is configured (the prompt even says "recommend ADMIN_REVIEW when
+      // uncertain"), so it is a designed-for common outcome — yet nothing used
+      // to signal the admin. The buyer's funds sit HELD and the promised 48h
+      // human review had no queue behind it. Raise an urgent admin alert
+      // pointing at the dossier override panel. Fire-and-forget so a failed
+      // insert never breaks the upload response; the hourly ageing sweep +
+      // attentionQueue count are the durable backstops.
+      void this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'DEALER_VERIFICATION_NEEDS_REVIEW',
+            referenceId: transactionId,
+            urgent: true,
+            context:
+              `Firearm verification ${transactionId.slice(-8).toUpperCase()} ` +
+              `(${[tx.listing.make, tx.listing.model].filter(Boolean).join(' ') || 'firearm'}) ` +
+              `needs a human decision — Claude confidence ${Math.round(score)}%. ` +
+              `Buyer's payment is HELD until it's approved. Review the SAPS 534 / ` +
+              `stock-register / serial photos in the transaction dossier.`,
+          },
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `dealer-verification review alert failed for ${transactionId}: ${(err as Error).message}`,
+          ),
+        );
     }
 
     return { status, score, findings };

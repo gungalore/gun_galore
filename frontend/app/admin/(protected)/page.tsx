@@ -29,6 +29,9 @@ interface AttentionQueue {
   // TOK-7 Phase 2 — sales where buyer paid but seller missed the 48h
   // accept window. Flagged by the accept-escalation cron. URGENT.
   salesAwaitingAccept: number;
+  // FLOW-F4 (H17) — firearm dealer-verifications awaiting a human decision.
+  // Buyer's payment is HELD until approved. URGENT.
+  dealerVerificationsPendingReview: number;
 }
 
 interface TodayPulse {
@@ -170,6 +173,16 @@ export default function AdminCommandCenterPage() {
           href: '/admin/transactions?status=HELD',
           tone: attention.dispatchSlaAtRisk > 0 ? 'warn' : 'calm',
           hint: 'Paid >24h, not dispatched',
+          group: 'Fulfilment',
+        },
+        {
+          // FLOW-F4 (H17) — firearm verifications waiting on a human decision.
+          label: 'Firearm verifications to review',
+          value: attention.dealerVerificationsPendingReview,
+          href: '/admin/transactions?status=HELD',
+          tone:
+            attention.dealerVerificationsPendingReview > 0 ? 'urgent' : 'calm',
+          hint: 'Dealer transfer — funds held pending review',
           group: 'Fulfilment',
         },
         {

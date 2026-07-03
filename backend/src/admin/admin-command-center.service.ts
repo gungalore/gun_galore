@@ -55,6 +55,11 @@ export interface AttentionQueue {
   // give the seller more time or force-refund the buyer. URGENT-grade
   // — the buyer's money has been held for 2+ days with no commitment.
   salesAwaitingAccept: number;
+  // FLOW-F4 (H17) — firearm dealer-verifications sitting in
+  // PENDING_ADMIN_REVIEW (Claude was uncertain, threw, or wasn't
+  // configured). URGENT-grade: the buyer's payment is HELD until a human
+  // approves the SAPS 534 / stock-register / serial photos in the dossier.
+  dealerVerificationsPendingReview: number;
 }
 
 export interface TodayPulse {
@@ -124,6 +129,7 @@ export class AdminCommandCenterService {
       rafflesNewlyDrawn,
       creditsBelowAlarm,
       salesAwaitingAccept,
+      dealerVerificationsPendingReview,
     ] = await Promise.all([
       this.prisma.listing.count({ where: { status: 'PENDING_REVIEW' } }),
       this.prisma.transaction.count({
@@ -190,6 +196,15 @@ export class AdminCommandCenterService {
           paymentStatus: 'HELD',
         },
       }),
+      // FLOW-F4 (H17): firearm verifications awaiting a human decision, funds
+      // still HELD. The uploadAndScore alert + ageing sweep raise the noisy
+      // signal; this is the standing count on the command-center card.
+      this.prisma.transaction.count({
+        where: {
+          dealerVerificationStatus: 'PENDING_ADMIN_REVIEW',
+          paymentStatus: 'HELD',
+        },
+      }),
     ]);
 
     return {
@@ -204,6 +219,7 @@ export class AdminCommandCenterService {
       rafflesNewlyDrawn,
       creditsBelowAlarm,
       salesAwaitingAccept,
+      dealerVerificationsPendingReview,
     };
   }
 

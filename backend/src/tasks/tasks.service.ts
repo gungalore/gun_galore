@@ -1167,6 +1167,107 @@ export class TasksService {
     }
   }
 
+  // FLOW-F4 (H17/M19) — dealer-verification ageing sweep. Two failure modes
+  // that previously had no backstop:
+  //   1. PENDING_ADMIN_REVIEW older than 48h — the promised human-review SLA
+  //      breached, funds still HELD. Escalate an urgent alert (deduped against
+  //      an existing unresolved overdue alert for the same tx).
+  //   2. PENDING_CLAUDE older than 1h — uploadAndScore crashed mid-scan before
+  //      writing the final status, so the row is wedged in an in-progress state
+  //      no process will ever finish. Flip it to PENDING_ADMIN_REVIEW (atomic
+  //      CAS on the stuck status = idempotency guard) so a human decides, and
+  //      alert. Hourly, heartbeat in finally.
+  @Cron(CronExpression.EVERY_HOUR)
+  async dealerVerificationAgeingSweep() {
+    const now = Date.now();
+    const reviewCutoff = new Date(now - 48 * 60 * 60 * 1000);
+    const scanCutoff = new Date(now - 60 * 60 * 1000);
+    try {
+      // 1. PENDING_ADMIN_REVIEW > 48h — SLA breached.
+      const overdue = await this.prisma.transaction.findMany({
+        where: {
+          dealerVerificationStatus: 'PENDING_ADMIN_REVIEW',
+          paymentStatus: 'HELD',
+          updatedAt: { lte: reviewCutoff },
+        },
+        select: {
+          id: true,
+          listing: { select: { make: true, model: true } },
+        },
+        take: 100,
+      });
+      for (const tx of overdue) {
+        const existing = await this.prisma.adminAlert.count({
+          where: {
+            type: 'DEALER_VERIFICATION_REVIEW_OVERDUE',
+            referenceId: tx.id,
+            resolved: false,
+          },
+        });
+        if (existing > 0) continue;
+        await this.prisma.adminAlert.create({
+          data: {
+            type: 'DEALER_VERIFICATION_REVIEW_OVERDUE',
+            referenceId: tx.id,
+            urgent: true,
+            context:
+              `Firearm verification ${tx.id.slice(-8).toUpperCase()} ` +
+              `(${[tx.listing.make, tx.listing.model].filter(Boolean).join(' ') || 'firearm'}) ` +
+              `has sat in admin review over 48h — buyer's payment is still HELD. ` +
+              `Resolve it from the transaction dossier.`,
+          },
+        });
+      }
+
+      // 2. PENDING_CLAUDE > 1h — crashed mid-scan; flip to review + alert.
+      const stuckScan = await this.prisma.transaction.findMany({
+        where: {
+          dealerVerificationStatus: 'PENDING_CLAUDE',
+          updatedAt: { lte: scanCutoff },
+        },
+        select: {
+          id: true,
+          listing: { select: { make: true, model: true } },
+        },
+        take: 100,
+      });
+      for (const tx of stuckScan) {
+        // Atomic CAS: only flip if still PENDING_CLAUDE, so two overlapping
+        // runs can't both alert. The flip itself is the idempotency guard.
+        const claim = await this.prisma.transaction.updateMany({
+          where: { id: tx.id, dealerVerificationStatus: 'PENDING_CLAUDE' },
+          data: { dealerVerificationStatus: 'PENDING_ADMIN_REVIEW' },
+        });
+        if (claim.count === 0) continue;
+        await this.prisma.adminAlert.create({
+          data: {
+            type: 'DEALER_VERIFICATION_NEEDS_REVIEW',
+            referenceId: tx.id,
+            urgent: true,
+            context:
+              `Firearm verification ${tx.id.slice(-8).toUpperCase()} ` +
+              `(${[tx.listing.make, tx.listing.model].filter(Boolean).join(' ') || 'firearm'}) ` +
+              `stalled mid-scan (Claude call never completed) and was moved to ` +
+              `manual review — buyer's payment is HELD. Decide it from the dossier.`,
+          },
+        });
+      }
+
+      if (overdue.length > 0 || stuckScan.length > 0) {
+        this.logger.log(
+          `Dealer-verification ageing: ${overdue.length} overdue review(s), ${stuckScan.length} stalled scan(s)`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `dealerVerificationAgeingSweep failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('dealer-verification-ageing');
+    }
+  }
+
   // ─── Accept-deadline escalation (TOK-7 Phase 2) ─────────────────
   // Every 10 minutes find transactions where the 48h accept window has
   // expired and the seller hasn't accepted or rejected. Flips
