@@ -19,6 +19,7 @@ import { ComponentDataService } from '../load-lab/component-data.service';
 import { RecommendedLoadsService } from '../load-lab/recommended-loads.service';
 import { BurnChartService } from '../load-lab/burn-chart.service';
 import { ListingsService } from '../listings/listings.service';
+import { PriceEstimateService } from '../listings/price-estimate.service';
 
 // ─── Model strategy ─────────────────────────────────────────────────
 // Two-tier: Sonnet by default, Opus on user-triggered escalation.
@@ -298,6 +299,38 @@ const TOOLS: Tool[] = [
         },
       },
       required: ['listingId'],
+    },
+  },
+  {
+    name: 'estimateResaleValue',
+    description:
+      'Estimate what a used piece of outdoor / hunting / fishing / shooting gear is worth to RESELL on Gun Galore. Call this whenever the user asks "what\'s my <item> worth", "how much can I sell my <item> for", "is R<x> a fair price", or is deciding what to list something for. Returns an INDICATIVE price range (low–high in ZAR) built from real recent Gun Galore sales when available, otherwise a typical SA new retail price depreciated for the item\'s condition. It is a GUIDE, never a valuation — always present it as a range, say what it\'s based on (recent sales vs. estimated-from-retail), and remind the user they set their own price. Provide as much detail as you can (make, model, category, condition) for a tighter estimate.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        make: {
+          type: 'string',
+          description: 'Brand / manufacturer, e.g. "Engel", "Shimano", "Howling Moon". Improves accuracy a lot — include it whenever known.',
+        },
+        model: {
+          type: 'string',
+          description: 'Model / variant, e.g. "MT45", "Stradic 4000". Optional but sharpens the estimate.',
+        },
+        title: {
+          type: 'string',
+          description: 'A short description of the item if make/model are unclear, e.g. "45L camping fridge", "4-person rooftop tent".',
+        },
+        categorySlug: {
+          type: 'string',
+          description: 'Optional category slug to scope comps, e.g. "camping-outdoor", "fishing", "optics". Only set if confident.',
+        },
+        condition: {
+          type: 'string',
+          enum: ['NEW', 'LIKE_NEW', 'GOOD', 'FAIR', 'POOR'],
+          description: 'The item\'s condition. Defaults to GOOD if the user hasn\'t said. Ask if it materially changes the answer.',
+        },
+      },
+      required: [],
     },
   },
 ];
@@ -703,6 +736,9 @@ export class AskGgClaudeService {
     // complements). ListingsModule is imported into AskGgModule (it has
     // no imports of its own, so no cycle).
     private readonly listings: ListingsService,
+    // Resale-value estimator — powers the estimateResaleValue chat tool
+    // ("what's my <gear> worth?"). Comps + web-anchored retail, indicative only.
+    private readonly priceEstimate: PriceEstimateService,
   ) {
     this.client = process.env.ANTHROPIC_API_KEY
       ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -1572,6 +1608,69 @@ export class AskGgClaudeService {
               type: 'tool_result',
               tool_use_id: toolUseId,
               content: `Complements lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+              is_error: true,
+            },
+          ];
+        }
+      }
+
+      if (block.name === 'estimateResaleValue') {
+        const input = block.input as {
+          make?: string;
+          model?: string;
+          title?: string;
+          categorySlug?: string;
+          condition?: string;
+        };
+        // Count against the marketplace budget so a chain of estimate calls
+        // in one answer can't run up the web-anchor spend.
+        if (++budget.marketplace > MAX_MARKETPLACE_TOOL_CALLS) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: JSON.stringify({
+                note: `Estimate/search limit for this answer reached (${MAX_MARKETPLACE_TOOL_CALLS}). Answer with what you already have.`,
+              }),
+            },
+          ];
+        }
+        try {
+          const est = await this.priceEstimate.estimate({
+            make: input.make,
+            model: input.model,
+            title: input.title,
+            categorySlug: input.categorySlug,
+            condition: input.condition,
+          });
+          const toRand = (c?: number) =>
+            typeof c === 'number' ? Math.round(c / 100) : null;
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: JSON.stringify({
+                available: est.available,
+                lowRand: toRand(est.low),
+                highRand: toRand(est.high),
+                midpointRand: toRand(est.midpoint),
+                confidence: est.confidence ?? null,
+                basis: est.basis ?? null,
+                soldCount: est.soldCount,
+                note: est.note ?? null,
+                disclaimer: est.disclaimer,
+                instruction: est.available
+                  ? 'Present this as an INDICATIVE range in rand (e.g. "roughly R900–R1,400"), say what it is based on (recent Gun Galore sales vs. an estimate from typical retail), and remind the user they set their own price. Never call it a valuation or a guaranteed price.'
+                  : 'No confident estimate — tell the user honestly there is not enough data yet, and suggest they price it against similar current listings.',
+              }),
+            },
+          ];
+        } catch (err) {
+          return [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUseId,
+              content: `Estimate failed: ${err instanceof Error ? err.message : String(err)}`,
               is_error: true,
             },
           ];

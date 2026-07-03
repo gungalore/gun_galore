@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ListingsService } from './listings.service';
 import { ListingsController } from './listings.controller';
 import { FirearmLicenceService } from './firearm-licence.service';
+import { PriceEstimateService } from './price-estimate.service';
 import { ListingQuestionsService } from './listing-questions.service';
 import {
   ListingQuestionsController,
@@ -22,7 +23,15 @@ import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module'
     ListingQuestionsController,
     SellerQuestionsController,
   ],
-  providers: [ListingsService, ListingQuestionsService, FirearmLicenceService],
-  exports: [ListingsService, ListingQuestionsService],
+  // PriceEstimateService (resale-value estimator) — exported so the Ask GG
+  // engine can reach it for the estimateResaleValue chat tool (AskGgModule
+  // already imports ListingsModule; no cycle).
+  providers: [
+    ListingsService,
+    ListingQuestionsService,
+    FirearmLicenceService,
+    PriceEstimateService,
+  ],
+  exports: [ListingsService, ListingQuestionsService, PriceEstimateService],
 })
 export class ListingsModule {}

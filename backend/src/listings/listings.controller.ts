@@ -21,6 +21,7 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ListingsService } from './listings.service';
+import { PriceEstimateService } from './price-estimate.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { BrowseListingsDto } from './dto/browse-listings.dto';
@@ -31,7 +32,10 @@ import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('listings')
 export class ListingsController {
-  constructor(private readonly listingsService: ListingsService) {}
+  constructor(
+    private readonly listingsService: ListingsService,
+    private readonly priceEstimate: PriceEstimateService,
+  ) {}
 
   // --- Public ---
   // SkipThrottle on public reads: SSR fans these out from the Next.js
@@ -202,6 +206,38 @@ export class ListingsController {
       model: body.model,
       calibre: body.calibre,
       condition: body.condition,
+    });
+  }
+
+  // POST /listings/estimate-price — resale-value estimator for the sell form's
+  // "Suggest a price" button. Auth-gated (sellers only) + throttled because it
+  // can trigger one AI + web-search call on a thin-comps item. Returns an
+  // INDICATIVE range only — never a valuation the platform stands behind.
+  @Post('estimate-price')
+  @UseGuards(ClerkGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(200)
+  estimatePrice(
+    @CurrentUser() clerkId: string,
+    @Body()
+    body: {
+      categoryId?: string;
+      categorySlug?: string;
+      make?: string;
+      model?: string;
+      title?: string;
+      condition?: string;
+    },
+  ) {
+    return this.priceEstimate.estimate({
+      categoryId: body.categoryId,
+      categorySlug: body.categorySlug,
+      make: body.make,
+      model: body.model,
+      title: body.title,
+      condition: body.condition,
+      // Per-user daily web-anchor cap key (IP throttling is defeatable).
+      userId: clerkId,
     });
   }
 
