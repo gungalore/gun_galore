@@ -122,6 +122,12 @@ export class TransactionsService {
   private async reserveAndCreateLine(
     buyerClerkId: string,
     dto: CreateTransactionDto,
+    // P6.2 — when a cart line is part of a consolidated per-seller shipment,
+    // the caller pre-computes the split (carrier line = the ONE combined
+    // quote; sibling lines = 0) and passes it here, so this line's fee
+    // breakdown is computed with the CONSOLIDATED shipping from the start
+    // (no re-quote, no re-derive). Undefined = quote per-line as normal.
+    shippingOverride?: { costCents: number; serviceCode: string | null },
   ) {
     const buyer = await this.prisma.user.findUnique({ where: { clerkId: buyerClerkId } });
     if (!buyer) throw new NotFoundException('Buyer not found');
@@ -269,6 +275,15 @@ export class TransactionsService {
     let shippingCostCents = 0;
     let shippingServiceCode: string | null = null;
     if (
+      shippingOverride !== undefined &&
+      (dto.shippingMethod === 'PUDO' || dto.shippingMethod === 'TCG')
+    ) {
+      // Consolidated-shipment split, pre-computed by createOrderCheckout from a
+      // single combined server-side quote — not client-supplied, so no tamper
+      // risk. Skip the per-line quote entirely.
+      shippingCostCents = shippingOverride.costCents;
+      shippingServiceCode = shippingOverride.serviceCode;
+    } else if (
       dto.shippingMethod === 'PUDO' ||
       dto.shippingMethod === 'TCG'
     ) {
@@ -646,7 +661,7 @@ export class TransactionsService {
     // read-only check up front keeps auctions out of carts entirely.
     const lineListings = await this.prisma.listing.findMany({
       where: { id: { in: lines.map((l) => l.listingId) } },
-      select: { id: true, listingType: true, isFirearm: true },
+      select: { id: true, listingType: true, isFirearm: true, sellerId: true },
     });
     if (
       lineListings.some((l) => l.listingType !== 'BUY_NOW' || l.isFirearm)
@@ -654,6 +669,82 @@ export class TransactionsService {
       throw new BadRequestException(
         'Firearms, auctions, swaps and offer items must be bought individually, not in a cart.',
       );
+    }
+
+    // P6.2 — per-seller shipping consolidation plan. Group the courier lines by
+    // (seller, method, destination); for each group of 2+, get ONE combined
+    // quote (combined weight + stacked box). If it succeeds, the FIRST line
+    // becomes the "carrier" (charged the whole combined cost) and the rest ship
+    // FREE with it (shipsWith the carrier) — the buyer pays one shipping fee,
+    // GG books one parcel. Too-big-to-combine groups (e.g. exceed a Pudo
+    // locker) get null and silently fall back to per-line quoting. Computed
+    // BEFORE reservation so each line's fee breakdown uses the final shipping.
+    const sellerByListing = new Map(
+      lineListings.map((l) => [l.id, l.sellerId]),
+    );
+    const shipOverride = new Map<
+      string,
+      { costCents: number; serviceCode: string | null }
+    >();
+    // sibling listingId -> carrier listingId (resolved to tx ids after create)
+    const carrierOfSibling = new Map<string, string>();
+    {
+      const groups = new Map<string, typeof lines>();
+      for (const line of lines) {
+        if (line.shippingMethod !== 'PUDO' && line.shippingMethod !== 'TCG')
+          continue;
+        const sellerId = sellerByListing.get(line.listingId);
+        if (!sellerId) continue;
+        const a = line.deliveryAddress;
+        const destKey =
+          line.shippingMethod === 'PUDO'
+            ? `L:${line.pudoPickupLockerId ?? ''}`
+            : `A:${a?.streetAddress ?? ''}|${a?.suburb ?? ''}|${a?.city ?? ''}|${a?.postalCode ?? ''}`;
+        const key = `${sellerId}|${line.shippingMethod}|${destKey}`;
+        const arr = groups.get(key) ?? [];
+        arr.push(line);
+        groups.set(key, arr);
+      }
+      for (const group of groups.values()) {
+        if (group.length < 2) continue;
+        const method = group[0].shippingMethod as 'PUDO' | 'TCG';
+        const a = group[0].deliveryAddress;
+        const combined = await this.shipping.quoteCombined(
+          group.map((g) => ({
+            listingId: g.listingId,
+            quantity: (g as { quantity?: number }).quantity ?? 1,
+          })),
+          method,
+          method === 'PUDO'
+            ? { toLockerId: group[0].pudoPickupLockerId }
+            : {
+                deliveryAddress: a
+                  ? {
+                      streetAddress: a.streetAddress,
+                      suburb: a.suburb,
+                      city: a.city,
+                      postalCode: a.postalCode,
+                      province: a.province as Province,
+                      lat: (a as { lat?: number }).lat ?? 0,
+                      lng: (a as { lng?: number }).lng ?? 0,
+                    }
+                  : undefined,
+              },
+        );
+        if (!combined) continue; // too big / ineligible → per-line fallback
+        const carrier = group[0];
+        shipOverride.set(carrier.listingId, {
+          costCents: combined.priceCents,
+          serviceCode: combined.serviceCode,
+        });
+        for (let i = 1; i < group.length; i++) {
+          shipOverride.set(group[i].listingId, {
+            costCents: 0,
+            serviceCode: null,
+          });
+          carrierOfSibling.set(group[i].listingId, carrier.listingId);
+        }
+      }
     }
 
     const created: Array<{
@@ -675,7 +766,11 @@ export class TransactionsService {
           quantity: line.quantity,
         } as CreateTransactionDto;
 
-        const core = await this.reserveAndCreateLine(buyerClerkId, lineDto);
+        const core = await this.reserveAndCreateLine(
+          buyerClerkId,
+          lineDto,
+          shipOverride.get(line.listingId),
+        );
         const unitPrice = core.listing.price ?? 0;
         // Record the reservation BEFORE any further validation so the catch
         // below unwinds it too.
@@ -753,6 +848,24 @@ export class TransactionsService {
           where: { id: { in: created.map((c) => c.tx.id) } },
           data: { orderId: o.id },
         });
+        // P6.2 — link each consolidated sibling line to its carrier line's
+        // transaction, so booking/tracking/delivery/release treat the group
+        // as one shipment. Resolved from the listingId→txId map just built.
+        if (carrierOfSibling.size > 0) {
+          const txByListing = new Map(
+            created.map((c) => [c.listing.id, c.tx.id]),
+          );
+          for (const [siblingListingId, carrierListingId] of carrierOfSibling) {
+            const siblingTxId = txByListing.get(siblingListingId);
+            const carrierTxId = txByListing.get(carrierListingId);
+            if (siblingTxId && carrierTxId) {
+              await txc.transaction.update({
+                where: { id: siblingTxId },
+                data: { shipsWithId: carrierTxId },
+              });
+            }
+          }
+        }
         return o;
       });
 
@@ -1292,17 +1405,33 @@ export class TransactionsService {
       acceptedAt.getTime() + DISPATCH_DEADLINE_DAYS * 24 * 60 * 60 * 1000,
     );
 
-    const updated = await this.prisma.transaction.update({
-      where: { id: transactionId },
+    // P6.2 — a consolidated shipment ships as ONE parcel, so accepting ANY
+    // line accepts the WHOLE group (carrier + its siblings) and books the ONE
+    // shipment on the carrier. carrierId = this line's carrier, or itself when
+    // it's a standalone line (a "group of one"). Stamp every still-live member
+    // that isn't already accepted/rejected.
+    const carrierId = tx.shipsWithId ?? transactionId;
+    await this.prisma.transaction.updateMany({
+      where: {
+        OR: [{ id: carrierId }, { shipsWithId: carrierId }],
+        acceptedAt: null,
+        rejectedAt: null,
+        paymentStatus: 'HELD',
+      },
       data: { acceptedAt, dispatchDeadlineAt },
     });
+    const updated =
+      (await this.prisma.transaction.findUnique({
+        where: { id: transactionId },
+      })) ?? tx;
 
     // P5.2: book the real carrier shipment now that the seller has
-    // committed. Fire-and-forget + fully self-contained (idempotent,
-    // courier-only, fail-safe) — it must never make accept fail. On success
-    // it SMSes/emails the seller the waybill + Pudo PIN + label link; on
-    // failure the seller keeps the manual dispatch fallback.
-    void this.shipping.bookForTransaction(transactionId);
+    // committed — on the CARRIER line, which combines the whole group's
+    // parcel. Fire-and-forget + fully self-contained (idempotent, courier-only,
+    // fail-safe) — it must never make accept fail. On success it SMSes/emails
+    // the seller the waybill + Pudo PIN + label link; on failure the seller
+    // keeps the manual dispatch fallback.
+    void this.shipping.bookForTransaction(carrierId);
 
     // Timeline + notifications — fire-and-forget.
     void this.tracking.recordInternal(transactionId, 'SELLER_ACCEPTED');
@@ -1323,6 +1452,20 @@ export class TransactionsService {
       `Transaction ${transactionId} accepted by seller ${seller.id}; dispatch deadline ${dispatchDeadlineAt.toISOString()}`,
     );
     return updated;
+  }
+
+  // P6.2 — is this transaction part of a LIVE consolidated shipment group?
+  // True if it's a sibling (shipsWithId set) OR a carrier that still has live
+  // (HELD) siblings shipping with it. A standalone line is never in a group.
+  private async isConsolidatedGroupMember(
+    transactionId: string,
+    shipsWithId: string | null,
+  ): Promise<boolean> {
+    if (shipsWithId) return true;
+    const liveSiblings = await this.prisma.transaction.count({
+      where: { shipsWithId: transactionId, paymentStatus: 'HELD' },
+    });
+    return liveSiblings > 0;
   }
 
   // ------------------------------------------------------------------
@@ -1391,6 +1534,15 @@ export class TransactionsService {
     }
     if (tx.dispatchedAt) {
       throw new BadRequestException('Already dispatched — cannot reject.');
+    }
+    // P6.2 — a consolidated shipment (2+ items in one parcel) must be handled
+    // as a whole; single-line reject would orphan the other items that ship
+    // with it. Fail closed to admin in v1 (they can refund each line from the
+    // dossier) rather than risk a partial-parcel money/logistics bug.
+    if (await this.isConsolidatedGroupMember(transactionId, tx.shipsWithId)) {
+      throw new BadRequestException(
+        'This item ships as one parcel with other items in the same order. To decline it, please contact support so the whole parcel is handled together.',
+      );
     }
 
     // Fire the Stitch refund first — only stamp rejectedAt if it
@@ -1560,6 +1712,13 @@ export class TransactionsService {
     }
     if (tx.paymentStatus !== 'HELD') {
       throw new BadRequestException(`Order is no longer cancellable (status: ${tx.paymentStatus}).`);
+    }
+    // P6.2 — a consolidated shipment must be cancelled as a whole parcel;
+    // cancelling one line would orphan the others. Fail closed to admin in v1.
+    if (await this.isConsolidatedGroupMember(transactionId, tx.shipsWithId)) {
+      throw new BadRequestException(
+        'This item ships as one parcel with other items in your order. To change or cancel it, please contact support so the whole parcel is handled together.',
+      );
     }
     if (!['PUDO', 'TCG'].includes(tx.shippingMethod ?? '')) {
       throw new BadRequestException(
@@ -1852,6 +2011,19 @@ export class TransactionsService {
         trackingReference: data.trackingReference,
       },
     });
+    // P6.2 — a consolidated parcel dispatches as one. Mirror the dispatch onto
+    // the group's other live lines so the auto-refund cron doesn't strand them
+    // as "accepted but never dispatched" while the shared parcel is on its way.
+    const carrierId = tx.shipsWithId ?? transactionId;
+    await this.prisma.transaction.updateMany({
+      where: {
+        OR: [{ id: carrierId }, { shipsWithId: carrierId }],
+        id: { not: transactionId },
+        dispatchedAt: null,
+        paymentStatus: 'HELD',
+      },
+      data: { dispatchedAt, estimatedDeliveryAt, shippingStatus: 'COLLECTED' },
+    });
     // INTERNAL timeline entry — fires immediately so the buyer sees
     // "Seller dispatched" before any carrier event lands.
     void this.tracking.recordInternal(transactionId, 'SELLER_DISPATCHED');
@@ -2109,6 +2281,58 @@ export class TransactionsService {
         data: { totalSales: { increment: 1 } },
       });
     });
+
+    // P6.2 — the buyer just confirmed receipt of ONE physical parcel that
+    // carried the whole consolidated group. Release every OTHER live line that
+    // ships with it (same seller, same parcel, delivered together) so a
+    // multi-item order settles on one confirmation, not one-per-item.
+    const carrierId = tx.shipsWithId ?? transactionId;
+    const siblingIds = (
+      await this.prisma.transaction.findMany({
+        where: {
+          OR: [{ id: carrierId }, { shipsWithId: carrierId }],
+          id: { not: transactionId },
+          paymentStatus: 'HELD',
+          confirmedDeliveryAt: null,
+          swapId: null,
+        },
+        select: { id: true },
+      })
+    ).map((t) => t.id);
+    if (siblingIds.length > 0) {
+      await this.prisma.$transaction(async (txc) => {
+        const rel = await txc.transaction.updateMany({
+          where: {
+            id: { in: siblingIds },
+            paymentStatus: 'HELD',
+            confirmedDeliveryAt: null,
+          },
+          data: {
+            paymentStatus: 'RELEASED',
+            releasedAt: now,
+            confirmedDeliveryAt: now,
+            deliveredAt: now,
+            shippingStatus: 'DELIVERED',
+          },
+        });
+        if (rel.count > 0) {
+          await txc.user.update({
+            where: { id: tx.sellerId },
+            data: { totalSales: { increment: rel.count } },
+          });
+        }
+      });
+      for (const sid of siblingIds) {
+        void this.zohoBooks.createCommissionInvoice(sid);
+        void this.tracking.recordInternal(sid, 'BUYER_CONFIRMED_DELIVERY', {
+          occurredAt: now,
+        });
+        void this.tracking.recordInternal(sid, 'PAYOUT_RELEASED', {
+          occurredAt: new Date(now.getTime() + 1),
+        });
+        void this.sendReleasedNotification(sid);
+      }
+    }
 
     this.logger.log(`Transaction ${transactionId} delivery confirmed — payment released`);
     // P0.6 — commission invoice into Books at release. Previously only the

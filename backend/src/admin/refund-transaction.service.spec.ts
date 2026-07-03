@@ -38,6 +38,9 @@ function makeService(overrides: {
       findUnique: jest.fn().mockResolvedValue(overrides.tx),
       updateMany: jest.fn().mockResolvedValue({ count: overrides.claimCount ?? 1 }),
       update: jest.fn().mockResolvedValue({}),
+      // P6.2 — the full-refund path counts live consolidated siblings; 0 = a
+      // standalone (non-consolidated) tx, which these tests exercise.
+      count: jest.fn().mockResolvedValue(0),
     },
     adminAlert: {
       create: jest.fn().mockResolvedValue({}),

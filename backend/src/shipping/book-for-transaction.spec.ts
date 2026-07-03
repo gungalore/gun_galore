@@ -33,6 +33,7 @@ function makeService(over: { claimCount?: number; tx?: unknown } = {}) {
 
 const PUDO_TX = {
   id: 'TX1',
+  paymentStatus: 'HELD', // P6.2 — bookForTransaction refuses non-HELD orders
   shippingMethod: 'PUDO',
   shippingServiceCode: 'L2LXS - ECO',
   pudoPickupLockerId: 'CG929',

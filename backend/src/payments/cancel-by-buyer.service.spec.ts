@@ -20,6 +20,9 @@ function makeService(opts: {
       findUnique: jest.fn().mockResolvedValue(opts.tx),
       updateMany: jest.fn().mockResolvedValue({ count: opts.claimCount ?? 1 }),
       update: jest.fn().mockResolvedValue({}),
+      // P6.2 — cancelByBuyer's consolidation guard counts live siblings; 0 =
+      // the standalone (non-consolidated) tx these tests exercise.
+      count: jest.fn().mockResolvedValue(0),
     },
     user: {
       findUnique: jest

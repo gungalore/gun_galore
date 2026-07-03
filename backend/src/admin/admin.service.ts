@@ -1218,6 +1218,22 @@ export class AdminService {
     }
     const willBeFullyRefunded = tx.refundedAmount + amount >= tx.buyerTotal;
 
+    // P6.2 — a FULL refund of a consolidated CARRIER line cancels the shared
+    // parcel, which would orphan its still-HELD siblings (their shipment is
+    // gone + they'd point at a refunded carrier). Refund the other items in
+    // the parcel first. A sibling is always refundable (it has no siblings of
+    // its own); a partial refund leaves the parcel intact, so both are allowed.
+    if (willBeFullyRefunded) {
+      const liveSiblings = await this.prisma.transaction.count({
+        where: { shipsWithId: txId, paymentStatus: 'HELD' },
+      });
+      if (liveSiblings > 0) {
+        throw new BadRequestException(
+          `This item carries the shipment for ${liveSiblings} other item(s) in the same parcel. Refund those item(s) first, then fully refund this one.`,
+        );
+      }
+    }
+
     // ─── Atomic claim (concurrency + over-refund lock) ───────────────
     // Reserve the amount in a single conditional update BEFORE the gateway
     // call. The guards make it the lock: two near-simultaneous refunds

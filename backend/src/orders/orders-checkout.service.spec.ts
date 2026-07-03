@@ -12,10 +12,21 @@ function makeService(over: {
   $transaction?: jest.Mock;
   orderFindUnique?: jest.Mock;
   firearmIds?: string[];
+  combinedQuote?: { priceCents: number; serviceCode: string } | null;
 } = {}) {
   const txcMock = {
     order: { create: jest.fn().mockResolvedValue({ id: 'O1' }) },
-    transaction: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    transaction: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+  };
+  // P6.2 — the consolidation pass calls shipping.quoteCombined. Default null =
+  // no consolidation (existing tests keep summing per-line shipping).
+  const shipping = {
+    quoteCombined: jest
+      .fn()
+      .mockResolvedValue(over.combinedQuote ?? null),
   };
   const prisma = {
     $transaction:
@@ -31,6 +42,7 @@ function makeService(over: {
             id,
             listingType: 'BUY_NOW',
             isFirearm: over.firearmIds?.includes(id) ?? false,
+            sellerId: 'S1', // P6.2 grouping key; combinedQuote null → no-op
           })),
         ),
       ),
@@ -57,17 +69,17 @@ function makeService(over: {
     {} as never,
     notifications as never,
     {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
+    {} as never, // kyc
+    shipping as never, // shipping (P6.2 quoteCombined)
+    {} as never, // tracking
+    {} as never, // tokens
     referenceNumbers as never,
     {} as never,
     {} as never,
     { createCommissionInvoice: jest.fn().mockResolvedValue(undefined) } as never, // zohoBooks (P0.6)
     { notifyItemSold: jest.fn().mockResolvedValue(undefined) } as never, // wishlistAlerts (P5.2)
   );
-  return { service, prisma, notifications, referenceNumbers, txcMock };
+  return { service, prisma, notifications, referenceNumbers, txcMock, shipping };
 }
 
 // A fake shared-core result for one line.
@@ -144,6 +156,36 @@ describe('TransactionsService.createOrderCheckout', () => {
     // happy path → no compensation
     expect(prisma.listing.update).not.toHaveBeenCalled();
     expect(prisma.transaction.delete).not.toHaveBeenCalled();
+  });
+
+  it('P6.2 — consolidates a same-seller PUDO group: one combined quote + shipsWith on the sibling', async () => {
+    const { service, shipping, txcMock } = makeService({
+      combinedQuote: { priceCents: 6_000, serviceCode: 'PUDO-X' },
+    });
+    const spy = jest
+      .spyOn(service as never, 'reserveAndCreateLine')
+      .mockResolvedValueOnce(core({ n: 1, sellerId: 'S1' }) as never)
+      .mockResolvedValueOnce(core({ n: 2, sellerId: 'S1' }) as never);
+
+    await service.createOrderCheckout(
+      'clerk_B',
+      { lines: [lineDto('L1'), lineDto('L2')] }, // same seller, PUDO, same locker
+      'https://x',
+    );
+
+    // ONE combined quote for the 2-line group.
+    expect(shipping.quoteCombined).toHaveBeenCalledTimes(1);
+    // Carrier (first line, TX1) charged the combined cost; sibling (TX2) = 0.
+    const overrides = spy.mock.calls.map((c) => (c as unknown[])[2]);
+    expect(overrides).toContainEqual({ costCents: 6_000, serviceCode: 'PUDO-X' });
+    expect(overrides).toContainEqual({ costCents: 0, serviceCode: null });
+    // The sibling tx is linked to the carrier's shipment.
+    expect(txcMock.transaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'TX2' },
+        data: { shipsWithId: 'TX1' },
+      }),
+    );
   });
 
   it('rejects a duplicate listing before reserving anything', async () => {

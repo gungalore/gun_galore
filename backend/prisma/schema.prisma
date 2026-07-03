@@ -1056,6 +1056,19 @@ model Transaction {
   shipmentBookingStartedAt DateTime?
   shipmentBookedAt         DateTime?
 
+  // P6.2 — per-seller shipping consolidation. When a buyer buys 2+ items from
+  // the SAME seller via the SAME courier method to the SAME destination, they
+  // ship as ONE physical parcel / ONE waybill. The FIRST line of the group is
+  // the "carrier": it holds the COMBINED shippingCost, the booked shipment and
+  // the waybill/PIN/tracking. Every OTHER line points at it via shipsWithId,
+  // carries shippingCost 0, is skipped by the booking + dispatch crons, and
+  // mirrors the carrier's shippingStatus/dispatchedAt/deliveredAt (propagated
+  // on carrier update). Only PUDO/TCG lines consolidate; firearm + collection
+  // never enter a cart, so they never carry this. A refund SET NULLs the FK.
+  shipsWithId String?
+  shipsWith   Transaction?  @relation("ConsolidatedShipment", fields: [shipsWithId], references: [id])
+  shippedWith Transaction[] @relation("ConsolidatedShipment")
+
   // Swop/Trade leg (SWOP). A swap is ONE Swap parent fanning out to TWO
   // Transaction legs (one per shipping direction); seller = the party
   // shipping this leg, buyer = the recipient. Leg money fields stay ZERO —
@@ -1264,6 +1277,8 @@ model Transaction {
   @@index([paymentStatus, paidOutAt, payoutBatchId])
   // P0.3 — refund children lookup (parent → its synthetic refund slices).
   @@index([refundOfId])
+  // P6.2 — consolidated-shipment group lookup (carrier → its sibling lines).
+  @@index([shipsWithId])
 }
 
 // Append-only timeline of shipping + payment milestones per Transaction.

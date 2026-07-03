@@ -249,6 +249,113 @@ export class ShippingService {
     );
   }
 
+  // P6.2 — quote ONE consolidated parcel for 2+ items from the SAME seller,
+  // shipping via the SAME method to the SAME destination. Combined weight =
+  // Σ(item weight × qty); combined box = a conservative STACKED bounding box
+  // (max length, max width, Σ height) so we never UNDER-quote (GG remits the
+  // real carrier cost). Returns null when the combined parcel is too big for
+  // the method (e.g. exceeds a Pudo locker) — the caller then falls back to
+  // per-line quoting so checkout never breaks. All items must be the same
+  // seller's non-firearm, non-collection, method-offering listings.
+  async quoteCombined(
+    items: Array<{ listingId: string; quantity: number }>,
+    method: 'PUDO' | 'TCG',
+    dest: {
+      toLockerId?: string;
+      deliveryAddress?: QuoteRequestBody['deliveryAddress'];
+    },
+  ): Promise<ShippingQuote | null> {
+    if (items.length === 0) return null;
+    const listings = await this.prisma.listing.findMany({
+      where: { id: { in: items.map((i) => i.listingId) } },
+    });
+    const byId = new Map(listings.map((l) => [l.id, l]));
+
+    let weightGrams = 0;
+    let lengthCm = 0;
+    let widthCm = 0;
+    let heightCm = 0;
+    let declaredValueCents = 0;
+    for (const it of items) {
+      const l = byId.get(it.listingId);
+      const qty = Math.max(1, it.quantity);
+      if (
+        !l ||
+        l.isFirearm ||
+        l.collectionOnly ||
+        !l.weightGrams ||
+        !l.lengthCm ||
+        !l.widthCm ||
+        !l.heightCm
+      ) {
+        // Any ineligible / dimensionless item → don't consolidate this group.
+        return null;
+      }
+      if (l.shippingMethods.length > 0 && !l.shippingMethods.includes(method)) {
+        return null;
+      }
+      weightGrams += l.weightGrams * qty;
+      lengthCm = Math.max(lengthCm, l.lengthCm);
+      widthCm = Math.max(widthCm, l.widthCm);
+      heightCm += l.heightCm * qty;
+      declaredValueCents += (l.price ?? 0) * qty;
+    }
+    const parcel: ParcelDims = { lengthCm, widthCm, heightCm, weightGrams };
+
+    if (method === 'PUDO') {
+      if (!dest.toLockerId) return null;
+      return this.pudo.quoteL2L(dest.toLockerId, parcel);
+    }
+
+    // TCG door-to-door. Pickup is the (shared) seller's address — take it off
+    // the first listing (same seller, so same pickup).
+    const pickup = listings[0];
+    if (
+      !pickup?.pickupStreet ||
+      !pickup.pickupCity ||
+      pickup.pickupLat == null ||
+      pickup.pickupLng == null ||
+      !dest.deliveryAddress
+    ) {
+      return null;
+    }
+    const from: TcgResidentialAddress = {
+      streetAddress: pickup.pickupStreet,
+      suburb: pickup.pickupSuburb ?? '',
+      city: pickup.pickupCity,
+      postalCode: pickup.pickupPostalCode ?? '',
+      province: PROVINCE_LONG[pickup.province],
+      lat: pickup.pickupLat,
+      lng: pickup.pickupLng,
+    };
+    const to: TcgResidentialAddress = {
+      streetAddress: dest.deliveryAddress.streetAddress,
+      suburb: dest.deliveryAddress.suburb,
+      city: dest.deliveryAddress.city,
+      postalCode: dest.deliveryAddress.postalCode,
+      province: PROVINCE_LONG[dest.deliveryAddress.province],
+      lat: dest.deliveryAddress.lat,
+      lng: dest.deliveryAddress.lng,
+    };
+    const tcgQuote = await this.tcg.getQuote(
+      from,
+      to,
+      {
+        weightKg: parcel.weightGrams / 1000,
+        lengthCm: parcel.lengthCm,
+        widthCm: parcel.widthCm,
+        heightCm: parcel.heightCm,
+      },
+      declaredValueCents,
+    );
+    if (!tcgQuote) return null;
+    return {
+      serviceCode: tcgQuote.serviceCode,
+      serviceName: tcgQuote.serviceName,
+      priceCents: tcgQuote.priceCents,
+    };
+  }
+
   // ------------------------------------------------------------------
   // Platform-arranged shipment booking (P5.2)
   // ------------------------------------------------------------------
@@ -271,6 +378,20 @@ export class ShippingService {
   async bookForTransaction(
     transactionId: string,
   ): Promise<CarrierShipmentResult | null> {
+    // P6.2 — a consolidated SIBLING line has no shipment of its own; it ships
+    // inside its carrier's one parcel. Never book (or even claim) it — the
+    // carrier books the whole group. (accept cascades booking to the carrier.)
+    const shipsWith = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: { shipsWithId: true },
+    });
+    if (shipsWith?.shipsWithId) {
+      this.logger.log(
+        `bookForTransaction ${transactionId}: consolidated sibling — ships with ${shipsWith.shipsWithId}, no own booking`,
+      );
+      return null;
+    }
+
     // Atomic claim — only the first caller past this point books.
     const claim = await this.prisma.transaction.updateMany({
       where: {
@@ -290,9 +411,34 @@ export class ShippingService {
     try {
       const tx = await this.prisma.transaction.findUnique({
         where: { id: transactionId },
-        include: { listing: true, buyer: true, seller: true },
+        include: {
+          listing: true,
+          buyer: true,
+          seller: true,
+          // P6.2 — the sibling lines that ship inside THIS carrier's parcel.
+          // Only still-live ones count toward the combined weight/dims: a
+          // sibling refunded/cancelled/rejected before booking is no longer
+          // HELD, so it drops out of the parcel automatically.
+          shippedWith: {
+            where: { paymentStatus: 'HELD' },
+            include: { listing: true },
+          },
+        },
       });
       if (!tx) throw new Error('transaction not found');
+
+      // Money backstop (P6.2 review) — NEVER book a shipment for a sale whose
+      // funds aren't currently HELD. A refunded/rejected/disputed/released
+      // order must not (re)book + (re)bill the courier wallet. This also closes
+      // the consolidated-carrier orphan path: if an admin refunds a carrier and
+      // a sibling is later accepted (which books the carrier), this refuses.
+      if (tx.paymentStatus !== 'HELD') {
+        this.logger.warn(
+          `bookForTransaction ${transactionId}: paymentStatus is ${tx.paymentStatus} (not HELD) — refusing to book`,
+        );
+        await this.releaseBookingClaim(transactionId);
+        return null;
+      }
 
       // Courier sales only. Release the claim for everything else so the
       // row never looks like a stuck in-progress booking.
@@ -376,6 +522,24 @@ export class ShippingService {
         if (!PROVINCE_LONG[d.province]) {
           throw new Error(`invalid delivery province on transaction: ${d.province}`);
         }
+        // P6.2 — the physical parcel is the CARRIER line plus every live
+        // sibling that ships with it. Combine into one conservative stacked
+        // box (max L, max W, Σ height×qty; Σ weight×qty) so the booked
+        // shipment matches the combined quote the buyer was charged. Declared
+        // value = Σ line totals. A standalone tx has no siblings → identical
+        // to the old single-parcel behaviour.
+        let weightGrams = (L.weightGrams ?? 0) * tx.quantity;
+        let lengthCm = L.lengthCm ?? 0;
+        let widthCm = L.widthCm ?? 0;
+        let heightCm = (L.heightCm ?? 0) * tx.quantity;
+        let declaredValueCents = tx.listingPrice;
+        for (const s of tx.shippedWith) {
+          weightGrams += (s.listing.weightGrams ?? 0) * s.quantity;
+          lengthCm = Math.max(lengthCm, s.listing.lengthCm ?? 0);
+          widthCm = Math.max(widthCm, s.listing.widthCm ?? 0);
+          heightCm += (s.listing.heightCm ?? 0) * s.quantity;
+          declaredValueCents += s.listingPrice;
+        }
         result = await this.tcg.createShipment({
           serviceCode: tx.shippingServiceCode,
           from: {
@@ -397,12 +561,12 @@ export class ShippingService {
             lng: d.lng,
           },
           parcel: {
-            weightKg: (L.weightGrams ?? 0) / 1000,
-            lengthCm: L.lengthCm ?? 0,
-            widthCm: L.widthCm ?? 0,
-            heightCm: L.heightCm ?? 0,
+            weightKg: weightGrams / 1000,
+            lengthCm,
+            widthCm,
+            heightCm,
           },
-          declaredValueCents: L.price ?? 0,
+          declaredValueCents,
           collectionContact,
           deliveryContact,
         });
@@ -695,6 +859,15 @@ export class ShippingService {
 
       await tx.transaction.update({
         where: { id: transactionId },
+        data: dataPatch,
+      });
+
+      // P6.2 — mirror the carrier's shipping state onto its consolidated
+      // siblings (they ride in this one parcel), so their status + dispatched/
+      // delivered timestamps track the carrier for display, and nothing sees a
+      // sibling as un-dispatched while the shared parcel is on its way.
+      await tx.transaction.updateMany({
+        where: { shipsWithId: transactionId },
         data: dataPatch,
       });
 
