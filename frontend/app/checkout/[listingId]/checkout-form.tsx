@@ -567,6 +567,17 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   const PEACH_RATE = 0.035;
   const PEACH_FIXED_CENTS = 150;
   const VAT_MULTIPLIER = 1.15;
+  // FLOW-F4 (M23) — the live rail is manual EFT, which charges a FLAT 1.5% of
+  // (item + shipping), no fixed component, no VAT multiplier (fee.calculator
+  // calculateProcessingFee, 'manual' branch). The preview used to hardcode the
+  // paygate card formula regardless, so on the manual rail every summary
+  // over-stated the fee — and DEALER_TRANSFER showed no summary at all, so the
+  // Pay button under-stated the true total by the whole 1.5%. A buyer then
+  // EFT'd the wrong amount and reconciliation (buyerTotal === amountCents
+  // exactly) rejected it as AMBIGUOUS. Match the server per PAYMENT_MODE.
+  const PAYMENT_MODE =
+    process.env.NEXT_PUBLIC_PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
+  const MANUAL_RATE = 0.015;
   // P6.4 — flat R15 handling per courier waybill. Applies to PUDO/TCG only;
   // firearm dealer/in-person routes and collection produce no waybill.
   const SHIPPING_HANDLING_CENTS = 1500;
@@ -585,12 +596,19 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     const handling = isCourier ? SHIPPING_HANDLING_CENTS : 0;
     // Processing is charged on (item + shipping) ONLY — the R15 handling margin
     // is EXCLUDED from the base, matching the backend FeeCalculator.breakdown()
-    // (we don't charge the card % on our own margin). Handling is added to the
-    // total separately below.
-    const processing = Math.round(
-      (item + shipping) * PEACH_RATE * VAT_MULTIPLIER +
-        PEACH_FIXED_CENTS * VAT_MULTIPLIER,
-    );
+    // (we don't charge the % on our own margin). Handling is added to the total
+    // separately below. FLOW-F4 (M23): pick the fee formula by PAYMENT_MODE
+    // (manual EFT flat 1.5% vs paygate card rate) and only add it to the total
+    // when the buyer absorbs it (passFeeToBuyer) — same as the backend.
+    const base = item + shipping;
+    const processing = !listing.passFeeToBuyer
+      ? 0
+      : PAYMENT_MODE === 'manual'
+        ? Math.round(base * MANUAL_RATE)
+        : Math.round(
+            base * PEACH_RATE * VAT_MULTIPLIER +
+              PEACH_FIXED_CENTS * VAT_MULTIPLIER,
+          );
     return {
       listing: item,
       shipping,
@@ -1271,9 +1289,14 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           spinner while we fetch, red banner on error, full line items
           when ready. The Pay button below mirrors quoteState through
           isReady() so the buyer can't submit on a stale estimate. */}
-      {(method === 'PUDO' || method === 'TCG') &&
-        (() => {
+      {(() => {
+          // FLOW-F4 (M23) — render the summary for EVERY method, not just
+          // courier: a DEALER_TRANSFER / PRIVATE_ARRANGE / COLLECTION buyer
+          // must see the processing fee before committing, or they EFT the
+          // wrong total. Courier-only rows (shipping) are gated on isCourier.
           const b = previewBreakdown();
+          if (!b) return null;
+          const isCourier = method === 'PUDO' || method === 'TCG';
           return (
             <div
               className="rounded-[8px] p-4"
@@ -1292,20 +1315,15 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
               >
                 Order summary
               </p>
-              {b && (
-                <BreakdownLine
-                  label="Item"
-                  value={formatPrice(b.listing)}
-                />
-              )}
-              {quoteState.kind === 'loading' && (
+              <BreakdownLine label="Item" value={formatPrice(b.listing)} />
+              {isCourier && quoteState.kind === 'loading' && (
                 <BreakdownLine
                   label="Shipping"
                   value="Calculating…"
                   muted
                 />
               )}
-              {quoteState.kind === 'error' && (
+              {isCourier && quoteState.kind === 'error' && (
                 <p
                   className="text-xs my-2"
                   style={{ color: 'var(--red)', lineHeight: 1.5 }}
@@ -1313,7 +1331,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
                   {quoteState.message}
                 </p>
               )}
-              {quoteState.kind === 'idle' && (
+              {isCourier && quoteState.kind === 'idle' && (
                 <BreakdownLine
                   label="Shipping"
                   value={
@@ -1324,26 +1342,26 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
                   muted
                 />
               )}
-              {quoteState.kind === 'ready' && b && (
+              {isCourier && quoteState.kind === 'ready' && (
                 <BreakdownLine
                   label={`Shipping (${quoteState.quote.serviceName})`}
                   value={formatPrice(b.shipping)}
                 />
               )}
-              {b && b.handling > 0 && (
+              {b.handling > 0 && (
                 <BreakdownLine
                   label="Handling"
                   value={formatPrice(b.handling)}
                 />
               )}
-              {b && (
+              {b.processing > 0 && (
                 <BreakdownLine
-                  label="Payment processing fee (incl VAT)"
+                  label={`Payment processing fee${PAYMENT_MODE === 'paygate' ? ' (incl VAT)' : ''}`}
                   value={formatPrice(b.processing)}
                   muted
                 />
               )}
-              {b && (
+              {(
                 <div
                   className="flex justify-between items-baseline pt-2 mt-2"
                   style={{ borderTop: '0.5px solid var(--border)' }}
@@ -1392,11 +1410,13 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
         {(() => {
           if (submitting) return 'Setting up payment…';
           const b = previewBreakdown();
-          if (
-            b &&
-            (method === 'PUDO' || method === 'TCG') &&
-            quoteState.kind === 'ready'
-          ) {
+          const isCourier = method === 'PUDO' || method === 'TCG';
+          // FLOW-F4 (M23) — courier still needs a ready quote for the true
+          // total (shipping unknown until then); DEALER_TRANSFER / PA /
+          // COLLECTION have no shipping, so b.total (item + 1.5% fee) is
+          // complete immediately. Previously those fell through to the raw
+          // listing price and under-stated the total by the whole fee.
+          if (b && (!isCourier || quoteState.kind === 'ready')) {
             return `Pay ${formatPrice(b.total)}`;
           }
           return `Pay ${listing.price ? formatPrice(listing.price) : 'now'}`;
