@@ -569,6 +569,15 @@ export class DealerVerificationService {
         sellerName,
       });
 
+      // FLOW-F4 (M20) — a firearm DT buyer never reaches confirmDelivery (the
+      // button is hidden and the tx is RELEASED here, so its HELD-guard would
+      // reject anyway), so the buyer's non-dismissible "your order is on the
+      // way / confirm receipt" inbox row and the seller's reshoot row were
+      // never resolved — they lingered forever on a completed sale. This
+      // approval IS the terminal event for GG, so clear every open inbox row
+      // linked to the transaction (unscoped). No-throw; fired after release.
+      void this.notifications.resolveByEntity('transaction', transactionId);
+
       // ── Zoho Books accounting hooks ──────────────────────────────
       // Create the commission invoice (Gun Galore → Seller) and
       // immediately mark it paid from Client Funds Payable. Both
