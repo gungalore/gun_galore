@@ -49,6 +49,23 @@ const inputStyle: React.CSSProperties = {
   fontSize: '14px',
 };
 
+// FLOW-F5 — the 9 SA provinces, values matching the Prisma Province enum.
+// The backend DeliveryAddressDto requires `province` (@IsNotEmpty) and the
+// TCG rate engine keys on PROVINCE_LONG[province], so a TCG offer checkout
+// with no province ALWAYS 400'd. TCG uses province-zone flat rates (no
+// lat/lng needed — same as the cart), so the select alone unblocks it.
+const SA_PROVINCES: { value: string; label: string }[] = [
+  { value: 'EASTERN_CAPE', label: 'Eastern Cape' },
+  { value: 'FREE_STATE', label: 'Free State' },
+  { value: 'GAUTENG', label: 'Gauteng' },
+  { value: 'KWAZULU_NATAL', label: 'KwaZulu-Natal' },
+  { value: 'LIMPOPO', label: 'Limpopo' },
+  { value: 'MPUMALANGA', label: 'Mpumalanga' },
+  { value: 'NORTH_WEST', label: 'North West' },
+  { value: 'NORTHERN_CAPE', label: 'Northern Cape' },
+  { value: 'WESTERN_CAPE', label: 'Western Cape' },
+];
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -126,6 +143,7 @@ export function OfferCheckoutForm({
         tcgAddress.streetAddress &&
         tcgAddress.suburb &&
         tcgAddress.city &&
+        tcgAddress.province && // FLOW-F5 — required by the backend DTO + rate engine
         tcgAddress.postalCode &&
         tcgAddress.contactName &&
         tcgAddress.contactPhone
@@ -287,6 +305,36 @@ export function OfferCheckoutForm({
                 ['streetAddress', 'Street address'],
                 ['suburb', 'Suburb'],
                 ['city', 'City'],
+              ] as [keyof typeof tcgAddress, string][]
+            ).map(([key, label]) => (
+              <Field key={key} label={label}>
+                <input
+                  type="text"
+                  required
+                  value={tcgAddress[key]}
+                  onChange={(e) => setTcgAddress((a) => ({ ...a, [key]: e.target.value }))}
+                  style={inputStyle}
+                />
+              </Field>
+            ))}
+            {/* FLOW-F5 — province is required by the backend DTO + TCG rate
+                engine; it was missing entirely, so every TCG offer 400'd. */}
+            <Field label="Province">
+              <select
+                value={tcgAddress.province}
+                onChange={(e) => setTcgAddress((a) => ({ ...a, province: e.target.value }))}
+                style={inputStyle}
+              >
+                <option value="">Select a province…</option>
+                {SA_PROVINCES.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {(
+              [
                 ['postalCode', 'Postal code'],
                 ['contactName', 'Full name'],
                 ['contactPhone', 'Phone number'],

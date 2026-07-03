@@ -245,6 +245,12 @@ export class OffersService {
     });
 
     void this.notifySellerOfCounterAccepted(offerId);
+    // FLOW-F5 — the buyer accepted the seller's counter, so the AGREED price
+    // is now the counter amount. Mint the buyer a CHECKOUT token + send the
+    // "pay now" link exactly like the seller-accept path (notifyBuyerOfAccept)
+    // — previously acceptCounter told the seller but never handed the buyer a
+    // way to pay (the promised payment link was never sent).
+    void this.notifyBuyerOfCounterAccept(offerId);
     // Buyer resolved their "offer countered". Seller's new
     // counterAccepted row is dismissible (buyer will pay next).
     void this.notifications.resolveByEntity('offer', offerId);
@@ -491,6 +497,47 @@ export class OffersService {
       });
     } catch (err) {
       this.logger.error(`notifyBuyerOfAccept failed: ${(err as Error).message}`);
+    }
+  }
+
+  // FLOW-F5 — buyer accepted the seller's counter. Agreed price = the
+  // counter amount; mint a CHECKOUT token bound to the buyer + send the
+  // "pay now" link (mirrors notifyBuyerOfAccept, which serves the
+  // seller-accept path). Idempotency: acceptCounter has already flipped the
+  // offer to ACCEPTED under a status guard, so a retried accept is a no-op
+  // upstream and this only fires on the winning transition.
+  private async notifyBuyerOfCounterAccept(offerId: string) {
+    try {
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: offerId },
+        include: { listing: true, buyer: true },
+      });
+      if (!offer || !offer.counterAmount) return;
+      const token = await this.actionTokens
+        .mint({
+          purpose: 'CHECKOUT',
+          targetType: 'listing',
+          targetId: offer.listing.id,
+          authorisedUserId: offer.buyerId,
+          expiresAt: new Date(Date.now() + CHECKOUT_TTL_HOURS * 3600_000),
+          metadata: { offerId: offer.id, agreedAmount: offer.counterAmount },
+        })
+        .catch((err) => {
+          this.logger.warn(`CHECKOUT token mint failed: ${(err as Error).message}`);
+          return null;
+        });
+      await this.notifications.offerAccepted({
+        buyerEmail: offer.buyer.email,
+        buyerName: offer.buyer.firstName ?? 'Buyer',
+        buyerPhone: offer.buyer.phone,
+        listingTitle: offer.listing.title,
+        listingId: offer.listing.id,
+        acceptedAmount: offer.counterAmount,
+        offerId: offer.id,
+        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
+      });
+    } catch (err) {
+      this.logger.error(`notifyBuyerOfCounterAccept failed: ${(err as Error).message}`);
     }
   }
 

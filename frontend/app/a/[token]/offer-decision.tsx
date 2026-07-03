@@ -9,11 +9,12 @@
  *                      Endpoints: accept-offer / counter-offer / reject-offer
  *
  *   COUNTER_DECISION — buyer sees the seller's counter
- *                      Actions: Accept / Counter back / Reject
- *                      Endpoints: accept-counter / counter-offer / reject-counter
- *                      (counter-back currently routes to the same
- *                      counter-offer handler, but reuses the COUNTER_DECISION
- *                      token semantics — handler resolves who's countering)
+ *                      Actions: Accept / Reject only
+ *                      Endpoints: accept-counter / reject-counter
+ *                      (the offer state machine is single-counter — the buyer
+ *                      cannot counter-back, so no counter button is shown here.
+ *                      FLOW-F5: showing it 403'd on the OFFER_DECISION-only
+ *                      counter-offer handler and burned the token's attempts.)
  *
  * Mobile-only: single column, large tap targets, no desktop layout.
  */
@@ -325,19 +326,28 @@ export function OfferDecisionPage({
             : `Accept ${formatRand(decisionAmount)}`}
         </ActionButton>
 
-        <ActionButton
-          variant="secondary"
-          disabled={isSubmitting}
-          onClick={() => {
-            if (isCountering) {
-              setView({ kind: 'choice' });
-            } else {
-              setView({ kind: 'countering', amountCents: initialCounter });
-            }
-          }}
-        >
-          {isCountering ? '← Cancel counter' : 'Counter offer'}
-        </ActionButton>
+        {/* FLOW-F5 — the counter button only exists for the SELLER's
+            OFFER_DECISION view. The offer state machine is single-counter
+            (buyer offers → seller counters once → buyer accepts/rejects); there
+            is no buyer counter-back handler, so showing it on the buyer's
+            COUNTER_DECISION view routed to counter-offer, which requires an
+            OFFER_DECISION token → 403 + a burned attempt each tap. The buyer's
+            choices on a counter are Accept or Reject. */}
+        {payload.kind === 'OFFER_DECISION' && (
+          <ActionButton
+            variant="secondary"
+            disabled={isSubmitting}
+            onClick={() => {
+              if (isCountering) {
+                setView({ kind: 'choice' });
+              } else {
+                setView({ kind: 'countering', amountCents: initialCounter });
+              }
+            }}
+          >
+            {isCountering ? '← Cancel counter' : 'Counter offer'}
+          </ActionButton>
+        )}
 
         <ActionButton
           variant="ghost"
