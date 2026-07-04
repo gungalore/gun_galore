@@ -836,6 +836,15 @@ export class RafflesService {
   // of tickets CONFIRMED and bumps the sold counter on the raffle. If
   // this purchase pushes the raffle to sold-out, immediately moves it
   // into CLOSED_AWAITING_DRAW with a 24h cooling window.
+  //
+  // FOLLOW-UP (operator #69): the full manual-EFT raffle PURCHASE lane is a
+  // deliberate deferral — it needs (a) a matchOrder() raffle branch in
+  // ManualPaymentsService that resolves a shared per-bundle EFT reference to
+  // these tickets, and (b) a webhook/reconciler caller that actually invokes
+  // this method in production. Neither is wired yet; on the live manual rail
+  // the paid EnterPanel shows an "opening soon → enter free by post" state
+  // instead of a dead Pay button (see enter-panel.tsx). This method and the
+  // best-effort raffleEntryConfirmed below are ready for when that lane lands.
   async confirmTickets(ticketIds: string[], peachPaymentId: string) {
     if (ticketIds.length === 0) return;
     return this.prisma.$transaction(async (tx) => {
@@ -891,6 +900,38 @@ export class RafflesService {
     // confirmation. Fire-and-forget; failures stamp FAILED status on
     // the ticket rows so admin can retry.
     void this.zohoBooks.createRaffleTicketSalesReceipt(ticketIds);
+
+    // Buyer purchase-confirmation notification (best-effort, outside the tx
+    // like the Zoho receipt above). Only meaningful once the paid rail
+    // actually confirms tickets (see the follow-up note on this method), but
+    // wired now so it's live the moment that lane lands.
+    void (async () => {
+      try {
+        const confirmed = await this.prisma.ticket.findMany({
+          where: { id: { in: ticketIds }, status: 'CONFIRMED' },
+          select: {
+            referenceCode: true,
+            buyer: { select: { email: true } },
+            raffle: { select: { id: true, title: true } },
+          },
+        });
+        const email = confirmed[0]?.buyer?.email;
+        const raffle = confirmed[0]?.raffle;
+        if (email && raffle) {
+          await this.notifications.raffleEntryConfirmed(
+            email,
+            raffle.title,
+            confirmed.length,
+            confirmed.map((t) => t.referenceCode),
+            raffle.id,
+          );
+        }
+      } catch (err) {
+        this.logger.warn(
+          `raffleEntryConfirmed failed: ${(err as Error).message}`,
+        );
+      }
+    })();
   }
 
   // -------------------------------------------------------------------

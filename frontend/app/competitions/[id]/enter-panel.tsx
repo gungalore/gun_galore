@@ -5,6 +5,16 @@ import { useUser, useAuth } from '@clerk/nextjs';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
+// The live rail is manual EFT; the Stitch card gateway is dormant. On the
+// manual rail buyTickets() reserves tickets but returns an empty redirectUrl
+// (no gateway link), so a Pay button here would only ever reserve tickets
+// that then expire. Until the paid manual-EFT purchase lane lands (see the
+// follow-up note by confirmTickets / matchOrder — operator #69) we don't show
+// a dead Pay button: we surface the honest "paid entries opening soon" state
+// and point the buyer at the free postal route below.
+const PAID_ENTRIES_LIVE =
+  process.env.NEXT_PUBLIC_PAYMENT_MODE === 'paygate';
+
 function formatRand(cents: number) {
   return `R${(cents / 100).toLocaleString('en-ZA', {
     minimumFractionDigits: 0,
@@ -80,6 +90,34 @@ export default function EnterPanel({
         }}
       >
         All tickets sold — draw pending
+      </div>
+    );
+  }
+
+  // Interim: paid entries not live on the manual rail. Show an honest
+  // "opening soon" state that points at the free postal route (rendered
+  // just below this panel on the detail page) rather than a Pay button
+  // that would reserve tickets destined to expire unpaid.
+  if (!PAID_ENTRIES_LIVE) {
+    return (
+      <div
+        className="rounded-[6px] p-4"
+        style={{
+          background: 'var(--bg-inset)',
+          border: '0.5px solid var(--border)',
+        }}
+      >
+        <p
+          className="text-sm mb-1.5"
+          style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+        >
+          Paid entries are opening soon
+        </p>
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          Card &amp; EFT ticket purchases aren&apos;t switched on yet. In the
+          meantime you can enter this competition for free by post — no
+          purchase necessary. Use the free postal entry form just below.
+        </p>
       </div>
     );
   }
