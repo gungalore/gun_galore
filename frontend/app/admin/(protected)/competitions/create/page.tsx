@@ -58,6 +58,10 @@ export default function CreateCompetitionPage() {
     // 'MEMBER' = Ask GG Member raffle (Members + Pros auto-entered),
     // 'PRO' = Ask GG Pro raffle (Pros only).
     subscriberTierRestriction: '' as '' | 'MEMBER' | 'PRO',
+    // Is the prize a firearm? Gates dispatch (bare-courier reject →
+    // dealer-transfer / SAPS-534) and forces an 18+/licence attestation
+    // on the winner before they can claim.
+    prizeIsFirearm: false,
   });
   const isSubscriberRaffle = form.subscriberTierRestriction !== '';
 
@@ -130,7 +134,7 @@ export default function CreateCompetitionPage() {
               subscriberTierRestriction: form.subscriberTierRestriction,
               hidePrizeValue: true,
             }
-          : {}),
+          : { prizeIsFirearm: form.prizeIsFirearm }),
       };
 
       const res = await adminFetch(`/admin/raffles`, {
@@ -338,6 +342,48 @@ export default function CreateCompetitionPage() {
                 />
               </Field>
             </div>
+          )}
+
+          {/* Firearm-prize toggle — public raffles only. When on, the
+              prize can't ship on a bare courier ref (dealer-transfer /
+              SAPS-534 required) and the winner must complete an 18+/licence
+              attestation before claiming. */}
+          {!isSubscriberRaffle && (
+            <label
+              className="flex items-start gap-3 rounded-[6px] p-4 cursor-pointer"
+              style={{
+                background: form.prizeIsFirearm
+                  ? 'rgba(200,16,46,0.08)'
+                  : 'var(--bg-card)',
+                border: form.prizeIsFirearm
+                  ? '0.5px solid var(--red)'
+                  : '0.5px solid var(--border)',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={form.prizeIsFirearm}
+                onChange={(e) => set('prizeIsFirearm', e.target.checked)}
+                className="mt-0.5"
+                style={{ accentColor: 'var(--red)' }}
+              />
+              <span>
+                <span
+                  className="text-sm block"
+                  style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+                >
+                  This prize is a firearm
+                </span>
+                <span
+                  className="text-xs block mt-0.5"
+                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.45 }}
+                >
+                  Winner must confirm 18+ and a valid licence/competency before
+                  claiming, and the prize can only be handed over via a licensed
+                  dealer transfer (SAPS 534) — never a courier tracking ref.
+                </span>
+              </span>
+            </label>
           )}
 
           {/* Multiple-choice question — C is always correct. */}

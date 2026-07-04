@@ -201,6 +201,10 @@ export class RafflesService {
         itemCostCents: dto.itemCostCents,
         targetTicketCount,
         ticketPriceCents: dto.ticketPriceCents,
+        // Firearm prize? Keystone flag for the dispatch gate + claim
+        // attestation. Subscriber raffles never raffle firearms, so a
+        // stray true is ignored for them.
+        prizeIsFirearm: isSubscriberRaffle ? false : !!dto.prizeIsFirearm,
         question: dto.question,
         optionA: dto.optionA,
         optionB: dto.optionB,
@@ -233,6 +237,7 @@ export class RafflesService {
         itemCostCents: dto.itemCostCents,
         itemValueCents: dto.itemValueCents,
         subscriberTierRestriction: dto.subscriberTierRestriction ?? null,
+        prizeIsFirearm: isSubscriberRaffle ? false : !!dto.prizeIsFirearm,
       },
       undefined,
       adminId,
@@ -1113,7 +1118,11 @@ export class RafflesService {
   // Winner claim
   // -------------------------------------------------------------------
 
-  async claimPrize(clerkId: string, winnerId: string) {
+  async claimPrize(
+    clerkId: string,
+    winnerId: string,
+    attestation?: { ageAndRulesAccepted?: boolean; licenceRef?: string },
+  ) {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not synced');
 
@@ -1133,10 +1142,29 @@ export class RafflesService {
       throw new BadRequestException('Claim window has expired');
     }
 
+    // Firearm-prize claim gate. Before a firearm prize can be claimed the
+    // winner must confirm they are 18+, hold a valid firearm licence /
+    // competency, and consent to dealer-transfer routing — mirroring the
+    // per-recipient 18+ attestation every other firearm surface enforces.
+    // We persist it on the winner row so the later dispatch flow can verify.
+    let firearmAttestation: { winnerAttestedAdultAt: Date; winnerLicenceRef: string } | null = null;
+    if (winner.raffle.prizeIsFirearm) {
+      const licenceRef = (attestation?.licenceRef ?? '').trim();
+      if (!attestation?.ageAndRulesAccepted || licenceRef.length === 0) {
+        throw new BadRequestException(
+          'This prize is a firearm — you must confirm you are 18 or older, hold a valid firearm licence / competency, and consent to dealer-transfer collection before you can claim.',
+        );
+      }
+      firearmAttestation = {
+        winnerAttestedAdultAt: new Date(),
+        winnerLicenceRef: licenceRef.slice(0, 200),
+      };
+    }
+
     const claimedAt = new Date();
     await this.prisma.raffleWinner.update({
       where: { id: winnerId },
-      data: { claimedAt },
+      data: { claimedAt, ...(firearmAttestation ?? {}) },
     });
     if (winner.position === 1) {
       await this.prisma.raffle.update({
@@ -1394,7 +1422,7 @@ export class RafflesService {
       where: { id: winnerId },
       include: {
         user: { select: { id: true, email: true, phone: true, username: true } },
-        raffle: { select: { id: true, title: true } },
+        raffle: { select: { id: true, title: true, prizeIsFirearm: true } },
       },
     });
     if (!winner) throw new NotFoundException('Winner not found');
@@ -1404,6 +1432,17 @@ export class RafflesService {
     if (winner.forfeitedAt) {
       throw new BadRequestException(
         'Winner has forfeited — promote the backup before dispatching',
+      );
+    }
+    // Firearm-prize gate (interim). A firearm prize can NEVER ship on a
+    // bare courier tracking ref — that skips the dealer transfer, SAPS-534
+    // and dealer-verification a firearm sale makes mandatory. Block it here
+    // and route the operator to the dealer-transfer workflow. The full
+    // in-app dealer-transfer flow for raffle prizes is a follow-up; this
+    // guard ensures a firearm can never silently ship on a Pudo/Aramex ref.
+    if (winner.raffle.prizeIsFirearm) {
+      throw new BadRequestException(
+        'Firearm prizes cannot be dispatched by courier — route through the dealer-transfer / SAPS-534 workflow',
       );
     }
 

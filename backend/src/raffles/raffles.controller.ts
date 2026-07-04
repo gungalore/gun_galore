@@ -145,13 +145,16 @@ export class RafflesBuyerController {
     return this.raffles.getMyWins(clerkId);
   }
 
-  // Claim a prize
+  // Claim a prize. The optional body carries the firearm attestation
+  // (18+/licence/dealer-transfer consent) — required + persisted only when
+  // the prize is a firearm; ignored for non-firearm prizes.
   @Post('wins/:winnerId/claim')
   claim(
     @CurrentUser() clerkId: string,
     @Param('winnerId') winnerId: string,
+    @Body() body?: { ageAndRulesAccepted?: boolean; licenceRef?: string },
   ) {
-    return this.raffles.claimPrize(clerkId, winnerId);
+    return this.raffles.claimPrize(clerkId, winnerId, body);
   }
 
   // DEV ONLY — confirm tickets without going through Peach. Behind a flag.

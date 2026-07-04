@@ -1791,6 +1791,14 @@ model Raffle {
   ticketPriceCents  Int
   targetTicketCount Int // derived = ceil(itemValueCents / ticketPriceCents)
 
+  // Is the prize a firearm? Keystone flag for the firearm controls: when
+  // true, dispatch is BLOCKED on the bare-courier path (must route via the
+  // dealer-transfer / SAPS-534 workflow) and the winner must supply an
+  // 18+/licence attestation before they can claim. Dropped from an earlier
+  // spec and re-added — see RafflesService.markWinnerPrizeDispatched /
+  // claimPrize for the gates that key off it.
+  prizeIsFirearm    Boolean @default(false)
+
   // Sold counts (cheap to read on the public detail page)
   ticketsSoldPaid   Int @default(0) // CONFIRMED tickets only
   ticketsSoldPostal Int @default(0) // POSTAL entries (free)
@@ -1975,6 +1983,12 @@ model RaffleWinner {
   prizeCarrierLabel        String? // 'Pudo' | 'The Courier Guy' | 'Aramex' | 'Other' (freeform)
   prizeDispatchedByAdminId String? // AdminUser.id of who marked dispatched
   prizeDispatchNote        String? // optional admin note (e.g. waybill #, condition)
+
+  // Firearm-prize winner attestation (captured at claim time when
+  // Raffle.prizeIsFirearm). NULL for non-firearm prizes. The dispatch gate
+  // can verify these before a firearm prize is released to a dealer.
+  winnerAttestedAdultAt    DateTime? // 18+/rules/dealer-transfer consent confirmed
+  winnerLicenceRef         String? // firearm licence / competency reference supplied
 
   createdAt DateTime @default(now())
 

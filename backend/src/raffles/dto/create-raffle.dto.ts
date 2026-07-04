@@ -12,8 +12,7 @@ import { SubscriptionTier } from '@prisma/client';
 // Three operator inputs: itemPrice (selling price), itemCost (what we
 // paid), ticketPrice. targetTicketCount is auto-derived on the backend
 // as ceil(itemValueCents / ticketPriceCents) — sell-out exactly covers
-// the prize selling price. The "is this a firearm?" toggle was dropped
-// per spec.
+// the prize selling price.
 export class CreateRaffleDto {
   @IsString()
   @Length(5, 200)
@@ -52,6 +51,13 @@ export class CreateRaffleDto {
   @IsOptional()
   @IsBoolean()
   hidePrizeValue?: boolean;
+
+  // Is the prize a firearm? Persisted on the Raffle so the dispatch gate
+  // (bare-courier reject → dealer-transfer routing) and the claim-time
+  // 18+/licence attestation can be enforced. Defaults false.
+  @IsOptional()
+  @IsBoolean()
+  prizeIsFirearm?: boolean;
 
   // Multiple choice question — C is always the correct answer. Backend
   // enforces this in createPendingTickets().
