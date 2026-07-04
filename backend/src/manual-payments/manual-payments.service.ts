@@ -417,7 +417,7 @@ export class ManualPaymentsService {
         return 'Subscription EFT arrived after its pay-by window lapsed (the charge was failed). Activate the tier manually or refund the member.';
       if (kind === 'featured')
         return 'Featured-slot EFT arrived after the bid was forfeited/cascaded. Re-award the slot or refund the bidder by manual EFT.';
-      return 'Buyer paid AFTER the 1-hour window expired and the item was released. Refund the buyer, or re-fulfil manually if the item is still available.';
+      return 'Buyer paid AFTER the 24-hour window expired and the item was released. Refund the buyer, or re-fulfil manually if the item is still available.';
     }
     return null;
   }
@@ -525,7 +525,7 @@ export class ManualPaymentsService {
       await this.featured.confirmSlotPayment(match.featuredBidId);
       out.verified += 1;
     } else if (match.status === 'AMBIGUOUS' || match.status === 'EXPIRED') {
-      // EXPIRED = paid after the 1-hour window; needs admin refund/re-fulfil
+      // EXPIRED = paid after the 24-hour window; needs admin refund/re-fulfil
       // (never auto-confirmed — the item may already be re-sold).
       out.ambiguous += 1;
     } else if (match.status === 'UNMATCHED') {

@@ -816,7 +816,7 @@ export default async function TransactionPage({
                     </>
                   ) : (
                     <>
-                      Your card has been charged but the funds are{' '}
+                      We&apos;ve received your payment and the funds are{' '}
                       <strong style={{ color: 'var(--text-primary)' }}>
                         held safely
                       </strong>{' '}
@@ -1057,7 +1057,9 @@ export default async function TransactionPage({
                     Mark as dispatched
                   </p>
                   <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
-                    Once you&apos;ve handed the item to the courier or transferred it to the receiving dealer, confirm dispatch here. Payment will be released after the buyer confirms delivery.
+                    {tx.shippingMethod === 'DEALER_TRANSFER'
+                      ? "Once you've transferred the firearm to the receiving dealer, confirm dispatch here, then upload the SAPS 534 + stock-in photos. Payment is released once that transfer is verified."
+                      : "Once you've handed the item to the courier, confirm dispatch here. Payment is released after the buyer confirms delivery."}
                   </p>
                 </>
               )}

@@ -234,8 +234,8 @@ export function PrivateArrangeConsent({
         }}
       >
         <li>
-          The seller will be paid <strong style={{ color: 'var(--text-primary)' }}>immediately</strong> when
-          your card is captured — funds are not held.
+          The seller will be paid <strong style={{ color: 'var(--text-primary)' }}>immediately</strong> once
+          your bank transfer (EFT) is confirmed — funds are not held.
         </li>
         <li>
           You will <strong style={{ color: 'var(--text-primary)' }}>not</strong> be able to

@@ -537,12 +537,15 @@ export class DealerVerificationService {
         `Dealer verification APPROVED for tx ${transactionId} — payout released`,
       );
 
-      // Seller notification: standard "payment released" — same one
-      // the buyer-confirms-delivery path would have triggered.
+      // Seller notification: the DEALER-TRANSFER release is driven by
+      // SAPS-534 verification, NOT a buyer confirm-delivery — so send the
+      // dealer-verification-approved copy (dealerVerificationApproved),
+      // not the generic paymentReleasedSeller ("buyer has confirmed
+      // delivery") which is false on this path.
       const sellerName =
         [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
         'Seller';
-      await this.notifications.paymentReleasedSeller({
+      await this.notifications.dealerVerificationApproved({
         sellerEmail: tx.seller.email,
         sellerName,
         sellerPhone: tx.seller.phone,

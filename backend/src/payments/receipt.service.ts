@@ -185,6 +185,12 @@ export class ReceiptService {
       note(
         `Payment was released to the seller immediately at your request — payment protection was waived at checkout on ${waiverDate}.`,
       );
+    } else if (tx.shippingMethod === 'DEALER_TRANSFER') {
+      // A firearm DEALER_TRANSFER release is gated on SAPS-534 dealer
+      // verification, not a buyer delivery confirmation.
+      note(
+        'Your payment is held by Gun Galore and released to the seller once the SAPS 534 dealer transfer is verified.',
+      );
     } else {
       note(
         'Your payment is held by Gun Galore and released to the seller once delivery is confirmed.',

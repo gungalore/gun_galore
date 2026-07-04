@@ -208,7 +208,7 @@ export default function CartPage() {
           Your cart is empty
         </h1>
         <p className="text-sm mb-6" style={{ color: 'var(--text-tertiary)' }}>
-          Add buy-now items from the same seller to check out together in one payment.
+          Add buy-now items to your cart and check out in one payment. Items ship per seller.
         </p>
         <Link
           href="/"
