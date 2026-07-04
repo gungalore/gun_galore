@@ -1809,44 +1809,21 @@ export class RafflesService {
   // Internal: allocate a ticket, retrying the ticketNumber on collision
   // -------------------------------------------------------------------
   //
-  // With @@unique([raffleId, ticketNumber]) a concurrent insert that would
-  // have produced a duplicate now throws P2002 instead of silently
-  // duplicating. Belt-and-suspenders alongside the per-raffle FOR UPDATE
-  // lock: on P2002 for the ticket-number index, re-read the current max
-  // and retry with max+1 a few times. Runs inside the caller's transaction
-  // so the ticketNumber stays raffle-sequential.
+  // ticketNumber collisions are prevented by the per-raffle SELECT ... FOR
+  // UPDATE lock every caller takes before counting — that lock is the real
+  // serialization guarantee, so no P2002 retry is possible here. (The old
+  // retry loop was dead code anyway: the aborted pg transaction makes the
+  // follow-up findFirst throw 25P02/P2010, never reaching a clean retry.)
+  // Any P2002 now propagates honestly instead of being masked.
   private async createTicketWithRetry(
     tx: Prisma.TransactionClient,
     raffleId: string,
     ticketNumber: number,
     data: Omit<Prisma.TicketUncheckedCreateInput, 'raffleId' | 'ticketNumber'>,
   ) {
-    let n = ticketNumber;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      try {
-        return await tx.ticket.create({
-          data: { ...data, raffleId, ticketNumber: n },
-        });
-      } catch (err) {
-        if (
-          err instanceof Prisma.PrismaClientKnownRequestError &&
-          err.code === 'P2002' &&
-          attempt < 4
-        ) {
-          const last = await tx.ticket.findFirst({
-            where: { raffleId },
-            orderBy: { ticketNumber: 'desc' },
-            select: { ticketNumber: true },
-          });
-          n = (last?.ticketNumber ?? 0) + 1;
-          continue;
-        }
-        throw err;
-      }
-    }
-    // Unreachable — the loop either returns or throws — but satisfies the
-    // compiler's return-path analysis.
-    throw new BadRequestException('Could not allocate a ticket number');
+    return tx.ticket.create({
+      data: { ...data, raffleId, ticketNumber },
+    });
   }
 
   // -------------------------------------------------------------------

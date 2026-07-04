@@ -1354,6 +1354,14 @@ export class SwapFundingService {
 
   private async notifyLocked(swapId: string) {
     try {
+      // Idempotency CAS — sweepStalledLockedSwaps re-drives stalled locked
+      // swaps, which re-enters this path. Claim the notify exactly once so the
+      // email+SMS+inbox don't re-fire on every sweep.
+      const claim = await this.prisma.swap.updateMany({
+        where: { id: swapId, lockedNotifiedAt: null },
+        data: { lockedNotifiedAt: new Date() },
+      });
+      if (claim.count === 0) return;
       const swap = await this.prisma.swap.findUnique({
         where: { id: swapId },
         include: { initiator: true, owner: true },

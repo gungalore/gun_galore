@@ -236,13 +236,21 @@ export class OffersService {
       throw new BadRequestException('No counter to accept');
     }
 
-    const updated = await this.prisma.offer.update({
-      where: { id: offerId },
+    // Atomic guard (mirrors accept()): include status=COUNTERED in the WHERE
+    // clause so a concurrent rejectCounter() / expiry cron cannot interleave
+    // between the read above and this write. If another transition already
+    // won, updateMany returns count=0 and we surface the same error.
+    const guard = await this.prisma.offer.updateMany({
+      where: { id: offerId, status: OfferStatus.COUNTERED },
       data: {
         status: OfferStatus.ACCEPTED,
         expiresAt: new Date(Date.now() + COUNTER_TTL_HOURS * 3_600_000),
       },
     });
+    if (guard.count === 0) {
+      throw new BadRequestException('No counter to accept');
+    }
+    const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
 
     void this.notifySellerOfCounterAccepted(offerId);
     // FLOW-F5 — the buyer accepted the seller's counter, so the AGREED price

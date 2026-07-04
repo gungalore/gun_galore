@@ -3413,6 +3413,10 @@ model Swap {
   ownerRefundedAt    DateTime?
 
   lockedAt        DateTime?
+  // Exactly-once guard for the "swap locked" email+SMS+inbox notification.
+  // The sweepStalledLockedSwaps re-drive cron re-invokes notifyLocked, so a
+  // CAS on this stamp stops the notification firing twice.
+  lockedNotifiedAt DateTime?
   completedAt     DateTime?
   cancelledAt     DateTime?
   cancelledReason String?
