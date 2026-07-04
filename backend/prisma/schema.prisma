@@ -1944,6 +1944,10 @@ model Ticket {
 
   createdAt DateTime @default(now())
 
+  // A raffle can never hold two tickets with the same number. This turns
+  // a concurrent-buy race into a thrown P2002 (retried on max+1) instead
+  // of a silent duplicate that would corrupt the draw pool + audit trail.
+  @@unique([raffleId, ticketNumber])
   @@index([raffleId, status])
   @@index([buyerId])
 }

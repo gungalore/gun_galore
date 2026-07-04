@@ -6,6 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { randomBytes, createHash } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
@@ -309,8 +310,12 @@ export class RafflesService {
 
     let issued = 0;
     await this.prisma.$transaction(async (tx) => {
+      // Same FOR UPDATE lock as the paid/postal allocators so subscriber
+      // auto-enter can't race them on the shared ticketNumber sequence.
+      await tx.$queryRaw`SELECT id FROM "Raffle" WHERE id = ${raffleId} FOR UPDATE`;
+
       // Sequential ticketNumber per raffle. Pull current max once,
-      // increment locally for each insert.
+      // increment locally for each insert (retry handles any collision).
       const last = await tx.ticket.findFirst({
         where: { raffleId },
         orderBy: { ticketNumber: 'desc' },
@@ -319,15 +324,11 @@ export class RafflesService {
       let n = last?.ticketNumber ?? 0;
       for (const s of toIssue) {
         n += 1;
-        await tx.ticket.create({
-          data: {
-            raffleId,
-            buyerId: s.id,
-            ticketNumber: n,
-            referenceCode: generateRef(),
-            status: 'CONFIRMED',
-            amountCents: 0,
-          },
+        await this.createTicketWithRetry(tx, raffleId, n, {
+          buyerId: s.id,
+          referenceCode: generateRef(),
+          status: 'CONFIRMED',
+          amountCents: 0,
         });
         issued += 1;
       }
@@ -640,11 +641,18 @@ export class RafflesService {
       throw new BadRequestException('Incorrect answer to the question');
     }
 
-    // Allocate ticket numbers atomically — we read the next number from the
-    // raffle and bump it inside a transaction so two concurrent buyers can
-    // never collide. The oversell check also lives inside the transaction
-    // because the pre-tx counter is stale under concurrent buyers.
+    // Serialize all cap-affecting inserts per raffle. A plain count()
+    // inside a READ COMMITTED transaction does NOT see another concurrent
+    // buyer's still-uncommitted PENDING_PAYMENT rows, so two buyers near
+    // the cap could both pass the oversell guard and both allocate the
+    // same ticket numbers. Taking a FOR UPDATE row lock on the raffle at
+    // the top of the transaction forces the second buyer to block until
+    // the first commits — after which its count() sees the now-committed
+    // rows and both the oversell guard and the ticketNumber counter are
+    // correct. (The @@unique on ticketNumber is the belt to this braces.)
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Raffle" WHERE id = ${raffleId} FOR UPDATE`;
+
       const counted = await tx.ticket.count({
         where: {
           raffleId,
@@ -666,15 +674,11 @@ export class RafflesService {
 
       const created: { id: string; ticketNumber: number; referenceCode: string }[] = [];
       for (let i = 0; i < dto.quantity; i += 1) {
-        const t = await tx.ticket.create({
-          data: {
-            raffleId,
-            buyerId: buyer.id,
-            ticketNumber: counted + i + 1,
-            referenceCode: generateRef(),
-            status: 'PENDING_PAYMENT',
-            amountCents: freshRaffle.ticketPriceCents,
-          },
+        const t = await this.createTicketWithRetry(tx, raffleId, counted + i + 1, {
+          buyerId: buyer.id,
+          referenceCode: generateRef(),
+          status: 'PENDING_PAYMENT',
+          amountCents: freshRaffle.ticketPriceCents,
         });
         created.push({
           id: t.id,
@@ -837,6 +841,11 @@ export class RafflesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // Same FOR UPDATE lock as createPendingTickets — postal inserts also
+      // affect the cap + share the ticketNumber sequence, so they must
+      // serialize against concurrent paid buys and subscriber auto-enter.
+      await tx.$queryRaw`SELECT id FROM "Raffle" WHERE id = ${dto.raffleId} FOR UPDATE`;
+
       const entry = await tx.postalEntry.create({
         data: {
           raffleId: dto.raffleId,
@@ -856,14 +865,10 @@ export class RafflesService {
 
       const tickets = [];
       for (let i = 0; i < dto.ticketCount; i += 1) {
-        const t = await tx.ticket.create({
-          data: {
-            raffleId: dto.raffleId,
-            ticketNumber: counted + i + 1,
-            referenceCode: generateRef(),
-            status: 'POSTAL',
-            postalEntryId: entry.id,
-          },
+        const t = await this.createTicketWithRetry(tx, dto.raffleId, counted + i + 1, {
+          referenceCode: generateRef(),
+          status: 'POSTAL',
+          postalEntryId: entry.id,
         });
         tickets.push(t);
       }
@@ -1510,6 +1515,50 @@ export class RafflesService {
     });
     if (!raffle) throw new NotFoundException('Raffle not found');
     return raffle;
+  }
+
+  // -------------------------------------------------------------------
+  // Internal: allocate a ticket, retrying the ticketNumber on collision
+  // -------------------------------------------------------------------
+  //
+  // With @@unique([raffleId, ticketNumber]) a concurrent insert that would
+  // have produced a duplicate now throws P2002 instead of silently
+  // duplicating. Belt-and-suspenders alongside the per-raffle FOR UPDATE
+  // lock: on P2002 for the ticket-number index, re-read the current max
+  // and retry with max+1 a few times. Runs inside the caller's transaction
+  // so the ticketNumber stays raffle-sequential.
+  private async createTicketWithRetry(
+    tx: Prisma.TransactionClient,
+    raffleId: string,
+    ticketNumber: number,
+    data: Omit<Prisma.TicketUncheckedCreateInput, 'raffleId' | 'ticketNumber'>,
+  ) {
+    let n = ticketNumber;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        return await tx.ticket.create({
+          data: { ...data, raffleId, ticketNumber: n },
+        });
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002' &&
+          attempt < 4
+        ) {
+          const last = await tx.ticket.findFirst({
+            where: { raffleId },
+            orderBy: { ticketNumber: 'desc' },
+            select: { ticketNumber: true },
+          });
+          n = (last?.ticketNumber ?? 0) + 1;
+          continue;
+        }
+        throw err;
+      }
+    }
+    // Unreachable — the loop either returns or throws — but satisfies the
+    // compiler's return-path analysis.
+    throw new BadRequestException('Could not allocate a ticket number');
   }
 
   // -------------------------------------------------------------------
