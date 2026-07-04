@@ -15,6 +15,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { resolvePurchaseQuantity, reversalListingData } from './inventory';
 import { NotificationsService } from '../notifications/notifications.service';
+import { Saps534Service, Saps534Data } from './saps534.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {
@@ -106,6 +107,7 @@ export class TransactionsService {
     private readonly zohoBooks: ZohoBooksService,
     // P5.2 — wishlist "your saved item sold" fan-out.
     private readonly wishlistAlerts: WishlistAlertsService,
+    private readonly saps534: Saps534Service,
   ) {}
 
   // ------------------------------------------------------------------
@@ -3092,9 +3094,6 @@ export class TransactionsService {
       // the payment finalisation.
       if (tx.listing.isFirearm && tx.shippingMethod === 'DEALER_TRANSFER') {
         try {
-          const cat = tx.listing.category;
-          const isBarrel =
-            /barrel/i.test(cat?.name ?? '') || /barrel/i.test(cat?.slug ?? '');
           await this.notifications.sap534ForSeller({
             sellerEmail: tx.seller.email,
             sellerName: details.sellerName,
@@ -3103,44 +3102,7 @@ export class TransactionsService {
             transactionId: txId,
             orderReference:
               tx.orderReference ?? txId.slice(-8).toUpperCase(),
-            form: {
-              // ─── Section C (seller / current owner) ───
-              surname: tx.seller.lastName,
-              firstNames: tx.seller.firstName,
-              idNumber: this.readSellerIdNumber(tx.seller.idNumberEncrypted),
-              // Compose a single-line residential address from the
-              // seller's stored address parts.
-              residentialAddress: [
-                tx.seller.addrBuilding,
-                tx.seller.addrStreet,
-                tx.seller.addrAddress2,
-                tx.seller.addrSuburb,
-                tx.seller.addrCity,
-              ]
-                .filter(Boolean)
-                .join(', '),
-              residentialPostalCode: tx.seller.addrPostalCode,
-              // We only hold one address on User — reuse it for the
-              // postal address too (seller can amend by hand if needed).
-              postalAddress: [
-                tx.seller.addrBuilding,
-                tx.seller.addrStreet,
-                tx.seller.addrAddress2,
-                tx.seller.addrSuburb,
-                tx.seller.addrCity,
-              ]
-                .filter(Boolean)
-                .join(', '),
-              postalPostalCode: tx.seller.addrPostalCode,
-              cellPhone: tx.seller.phone,
-              email: tx.seller.email,
-              // ─── Section D (firearm) ───
-              calibre: tx.listing.calibre,
-              make: tx.listing.make,
-              model: tx.listing.model,
-              serialNumber: tx.listing.serialNumber,
-              isBarrel,
-            },
+            form: this.assembleSaps534Data(tx),
           });
         } catch (err) {
           this.logger.error(
@@ -3176,6 +3138,100 @@ export class TransactionsService {
       );
       return null;
     }
+  }
+
+  // Shared SAPS-534 Section-C/D data assembly. Used by BOTH the markPaid
+  // email path (sendSaleNotifications) and the on-demand re-download
+  // endpoint (getSaps534Pdf) so the two forms are byte-for-byte identical.
+  // Expects a tx with { listing: { category }, seller } included.
+  private assembleSaps534Data(tx: {
+    listing: {
+      calibre: string | null;
+      make: string | null;
+      model: string | null;
+      serialNumber: string | null;
+      category: { name: string | null; slug: string | null } | null;
+    };
+    seller: {
+      firstName: string | null;
+      lastName: string | null;
+      idNumberEncrypted: string | null;
+      phone: string | null;
+      email: string;
+      addrBuilding: string | null;
+      addrStreet: string | null;
+      addrAddress2: string | null;
+      addrSuburb: string | null;
+      addrCity: string | null;
+      addrPostalCode: string | null;
+    };
+  }): Saps534Data {
+    const cat = tx.listing.category;
+    const isBarrel =
+      /barrel/i.test(cat?.name ?? '') || /barrel/i.test(cat?.slug ?? '');
+    // Compose a single-line address from the seller's stored parts. We
+    // only hold one address on User — reused for both residential and
+    // postal (seller amends by hand if they differ).
+    const address = [
+      tx.seller.addrBuilding,
+      tx.seller.addrStreet,
+      tx.seller.addrAddress2,
+      tx.seller.addrSuburb,
+      tx.seller.addrCity,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      // ─── Section C (seller / current owner) ───
+      surname: tx.seller.lastName,
+      firstNames: tx.seller.firstName,
+      idNumber: this.readSellerIdNumber(tx.seller.idNumberEncrypted),
+      residentialAddress: address,
+      residentialPostalCode: tx.seller.addrPostalCode,
+      postalAddress: address,
+      postalPostalCode: tx.seller.addrPostalCode,
+      cellPhone: tx.seller.phone,
+      email: tx.seller.email,
+      // ─── Section D (firearm) ───
+      calibre: tx.listing.calibre,
+      make: tx.listing.make,
+      model: tx.listing.model,
+      serialNumber: tx.listing.serialNumber,
+      isBarrel,
+    };
+  }
+
+  // Seller re-downloads the pre-filled SAPS 534 on demand (M21). Rebuilds
+  // the PDF from the same particulars the markPaid email used — a fresh
+  // copy every time in case the emailed attachment bounced, spammed, or
+  // was deleted. Seller-only, firearm DEALER_TRANSFER only, paid only.
+  async getSaps534Pdf(
+    transactionId: string,
+    sellerClerkId: string,
+  ): Promise<{ pdf: Buffer; filename: string }> {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        listing: { include: { category: true } },
+        seller: true,
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.seller.clerkId !== sellerClerkId) {
+      throw new ForbiddenException('Not authorised');
+    }
+    if (
+      !tx.listing.isFirearm ||
+      tx.shippingMethod !== 'DEALER_TRANSFER' ||
+      !tx.paidAt
+    ) {
+      throw new BadRequestException(
+        'No SAPS 534 form is available for this order.',
+      );
+    }
+    const pdf = await this.saps534.build(this.assembleSaps534Data(tx));
+    const ref = tx.orderReference ?? transactionId.slice(-8).toUpperCase();
+    return { pdf, filename: `SAP534-${ref}.pdf` };
   }
 
   private async sendDispatchedNotification(txId: string) {

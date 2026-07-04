@@ -734,7 +734,11 @@ export class NotificationsService {
       const html = this.email({
         status: { tone: 'pending', label: 'Action needed' },
         headline: 'Complete your SAPS 534 transfer form',
-        body: `Hi ${b(d.sellerName)}, your firearm ${b(d.listingTitle)} has sold via licensed-dealer transfer. We've attached a <strong>SAPS 534 "Transfer of Firearm Ownership"</strong> form, pre-filled with the details we already hold (your particulars and the firearm details).<br><br>What to do next:
+        body: `Hi ${b(d.sellerName)}, your firearm ${b(d.listingTitle)} has sold via licensed-dealer transfer. ${
+          pdfBuffer
+            ? `We've attached a <strong>SAPS 534 "Transfer of Firearm Ownership"</strong> form, pre-filled with the details we already hold (your particulars and the firearm details).`
+            : `Your pre-filled <strong>SAPS 534 "Transfer of Firearm Ownership"</strong> form is ready to download from your order page (tap "View sale & upload" below, then "Download pre-filled SAPS 534").`
+        }<br><br>What to do next:
 <ol style="margin: 12px 0; padding-left: 22px; line-height: 1.7;">
   <li><b>Check</b> the pre-filled details and complete anything that's blank (in <b>BLOCK LETTERS</b>).</li>
   <li><b>Sign</b> the form and take it to your SAPS-licensed dealer to be completed and stamped when you hand over the firearm.</li>

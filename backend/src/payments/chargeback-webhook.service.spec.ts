@@ -36,6 +36,7 @@ function makeService(opts: {
     {} as never,
     { createCommissionInvoice: jest.fn().mockResolvedValue(undefined) } as never, // zohoBooks (P0.6)
     { notifyItemSold: jest.fn().mockResolvedValue(undefined) } as never, // wishlistAlerts (P5.2)
+    { build: jest.fn().mockResolvedValue(Buffer.from('')) } as never, // saps534 (FLOW-F4 M21)
   );
   return { service, prisma, tracking };
 }

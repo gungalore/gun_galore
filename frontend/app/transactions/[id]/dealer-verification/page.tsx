@@ -19,6 +19,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
+import { DownloadSaps534Button } from '../download-saps534-button';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -358,6 +359,23 @@ export default function DealerVerificationPage() {
           to fill the form in capital letters.
         </p>
       </div>
+
+      {/* Grab the pre-filled SAPS 534 here — same form we emailed at sale
+          time, rebuilt on demand in case that email bounced or was lost. */}
+      {id && (
+        <div
+          className="rounded-[8px] p-4 mb-5"
+          style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+        >
+          <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+            Need the pre-filled form?
+          </p>
+          <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
+            Download the SAPS 534 we pre-filled with your particulars and the firearm details. Complete anything blank in BLOCK LETTERS, have the dealer stamp it, then upload the stamped copy below.
+          </p>
+          <DownloadSaps534Button transactionId={id} />
+        </div>
+      )}
 
       {/* Rubric — what Claude is going to check. Set the seller's
           expectations BEFORE they upload so there are no surprises. */}

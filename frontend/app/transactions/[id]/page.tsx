@@ -7,6 +7,7 @@ import { formatPrice, PROVINCE_LABELS } from '@/lib/utils';
 import { DispatchButton } from './dispatch-button';
 import { ConfirmDeliveryButton } from './confirm-delivery-button';
 import { DownloadReceiptButton } from './download-receipt-button';
+import { DownloadSaps534Button } from './download-saps534-button';
 import { RaiseDisputeButton } from './raise-dispute-button';
 import { RatingWidget } from './rating-widget';
 import { TrackingTimeline } from './tracking-timeline';
@@ -694,6 +695,24 @@ export default async function TransactionPage({
                   ? "Your payment is held while we investigate. We'll contact you within 48 hours with next steps. Please don't confirm delivery until the dispute is resolved."
                   : 'The buyer has raised a dispute. Payment is paused while admin reviews. You will be contacted with the outcome.'}
               </p>
+            </div>
+          )}
+
+          {/* Seller: (re)download the pre-filled SAPS 534 — firearm
+              dealer-transfer only, once paid. Rebuilt on demand so a
+              bounced/deleted email attachment is never a dead end. */}
+          {isSeller && isFirearmDealerTransfer && !!tx.paidAt && (
+            <div
+              className="rounded-[8px] p-4"
+              style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+            >
+              <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                SAPS 534 transfer form
+              </p>
+              <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                Pre-filled with your particulars and the firearm details. Print it, complete anything blank in BLOCK LETTERS, have your dealer stamp it, then upload the stamped form back to release your payment.
+              </p>
+              <DownloadSaps534Button transactionId={tx.id} />
             </div>
           )}
 

@@ -183,6 +183,28 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
+  // Seller re-downloads the pre-filled SAPS 534 transfer form (PDF).
+  // Seller-only, firearm DEALER_TRANSFER + paid only — all enforced in
+  // the service. Rebuilt on demand so a bounced/deleted email attachment
+  // is never a dead end (M21).
+  // ---------------------------------------------------------------
+  @Get(':id/saps534')
+  @UseGuards(ClerkGuard)
+  async saps534(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { pdf, filename } = await this.txService.getSaps534Pdf(id, clerkId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Length': String(pdf.length),
+    });
+    return new StreamableFile(pdf);
+  }
+
+  // ---------------------------------------------------------------
   // Buyer confirms delivery → releases payment
   // ---------------------------------------------------------------
   @Post(':id/confirm-delivery')
