@@ -207,7 +207,7 @@ export default async function CompetitionDetailPage({
               {r.status === 'CLOSED_AWAITING_DRAW' ? 'Closed — draw pending' :
                r.status === 'DRAWN' ? 'Winner drawn' :
                r.status === 'CLAIMED' ? 'Prize claimed' :
-               r.status === 'CANCELLED_BY_ADMIN' ? 'Cancelled — buyers refunded' :
+               r.status === 'CANCELLED_BY_ADMIN' ? 'Cancelled — refunds in progress' :
                'Not accepting entries'}
             </div>
           )}

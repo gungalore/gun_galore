@@ -1010,6 +1010,123 @@ export class ZohoBooksService {
   }
 
   /**
+   * FLOW-F7 — Credit Note reversing a raffle ticket Sales Receipt when the
+   * operator cancels a raffle and refunds buyers. Since a Sales Receipt
+   * (not an Invoice) was issued at confirm time, the correct Books
+   * instrument is a standalone credit note / refund-receipt — do NOT
+   * attempt apply-to-invoice.
+   *
+   * Called fire-and-forget from RafflesService.refundAllAndCancel with the
+   * ticket ids being refunded (settled on paygate, or owed by EFT on the
+   * manual rail — either way the revenue must be reversed in Books).
+   *
+   * Idempotent — a ticket already stamped zohoSyncStatus='REVERSED' is
+   * skipped. No-ops if the feature flag is off or the batch never got a
+   * Sales Receipt (e.g. postal-only / unsynced). Never throws.
+   */
+  async createRaffleTicketRefundCreditNote(
+    ticketIds: string[],
+  ): Promise<void> {
+    if (!this.isEnabled() || ticketIds.length === 0) return;
+
+    const tickets = await this.prisma.ticket.findMany({
+      where: { id: { in: ticketIds } },
+      include: {
+        buyer: { select: { id: true, email: true } },
+        raffle: { select: { id: true, title: true, referenceNumber: true } },
+      },
+    });
+    if (tickets.length === 0) return;
+
+    // Only reverse tickets that were actually booked to revenue and not
+    // already reversed. Postal tickets (amountCents = 0) never hit Books.
+    const toReverse = tickets.filter(
+      (t) =>
+        t.amountCents > 0 &&
+        t.zohoSalesReceiptId &&
+        t.zohoSyncStatus !== 'REVERSED',
+    );
+    if (toReverse.length === 0) return;
+
+    const buyer = toReverse[0].buyer;
+    const raffle = toReverse[0].raffle;
+    if (!buyer || !raffle) return;
+    const totalCents = toReverse.reduce((s, t) => s + t.amountCents, 0);
+    const totalRand = totalCents / 100;
+    const unitRand = toReverse[0].amountCents / 100;
+    const raffleRef =
+      raffle.referenceNumber ?? raffle.id.slice(-8).toUpperCase();
+
+    try {
+      const contactId = await this.ensureContact(buyer.id, buyer.email);
+      if (!contactId) {
+        throw new Error('Could not resolve Books contact for buyer');
+      }
+      const raffleAccountId = await this.getAccountIdByName(
+        'Raffle Ticket Revenue',
+      );
+      if (!raffleAccountId) {
+        throw new Error(
+          'Raffle Ticket Revenue account not found in Books chart-of-accounts',
+        );
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const reference = `Raffle refund — ${raffleRef} (${toReverse.length} ${toReverse.length === 1 ? 'ticket' : 'tickets'})`;
+
+      type CreateCreditNoteResp = {
+        creditnote?: { creditnote_id?: string; creditnote_number?: string };
+        message?: string;
+      };
+      const payload = {
+        customer_id: contactId,
+        reference_number: reference,
+        date: today,
+        line_items: [
+          {
+            name: 'Raffle Ticket — refund',
+            description: `${raffleRef} — ${raffle.title} (x${toReverse.length})`,
+            rate: unitRand,
+            quantity: toReverse.length,
+            account_id: raffleAccountId,
+          },
+        ],
+        notes: `${reference}.\nRaffle cancelled by admin — reversing R${totalRand.toFixed(2)} of ticket revenue.`,
+      };
+
+      const resp = await this.request<CreateCreditNoteResp>(
+        'POST',
+        '/creditnotes',
+        payload,
+      );
+
+      const creditNoteId = resp.creditnote?.creditnote_id;
+      if (!creditNoteId) {
+        throw new Error(
+          `Books credit-note create returned no creditnote_id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+
+      await this.prisma.ticket.updateMany({
+        where: { id: { in: toReverse.map((t) => t.id) } },
+        data: {
+          zohoSyncStatus: 'REVERSED',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Created raffle refund credit note ${resp.creditnote?.creditnote_number ?? creditNoteId} (R${totalRand.toFixed(2)}, ${toReverse.length} tickets, raffle ${raffleRef})`,
+      );
+    } catch (err) {
+      await this.markRaffleTicketsFailed(
+        toReverse.map((t) => t.id),
+        err as Error,
+      );
+    }
+  }
+
+  /**
    * P1.1 — Sales Receipt for a paid subscription period (manual EFT).
    * Fired by SubscriptionsService.confirmPayment. Idempotent via
    * SubscriptionCharge.zohoReceiptId. Never throws.

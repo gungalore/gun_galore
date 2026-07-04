@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { StitchService } from '../payments/stitch.service';
+import { PAYMENT_MODE } from '../payments/transactions.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { CreateRaffleDto } from './dto/create-raffle.dto';
 import { BuyTicketsDto } from './dto/buy-tickets.dto';
@@ -1277,10 +1278,18 @@ export class RafflesService {
   // Called by the "Refund all buyers" admin button. Confirmation flow:
   // the admin must type the raffle's referenceNumber (RAxxxxxx) in the
   // UI; the controller forwards it here and we double-check it before
-  // touching anything. Iterates every CONFIRMED ticket and asks Peach
-  // to refund. The raffle is moved to CANCELLED_BY_ADMIN regardless of
-  // per-ticket refund outcome — the operator can manually retry any
-  // failures from the audit log.
+  // touching anything. The raffle is moved to CANCELLED_BY_ADMIN
+  // regardless of per-ticket refund outcome.
+  //
+  // Rail split (mirrors the rest of the platform):
+  //   * MANUAL (live) — the card gateway is dormant, so calling
+  //     stitch.refundPayment would return a MOCK success and stamp tickets
+  //     REFUNDED while moving ZERO rand. Instead we leave the tickets
+  //     CONFIRMED, record the refund as PENDING (owed by EFT), and rely on
+  //     the operator paying them out of the FNB batch. Never claim a card
+  //     refund on the manual rail.
+  //   * PAYGATE — reverse each ticket's charge on Stitch and stamp REFUNDED
+  //     only on a real gateway success.
   async refundAllAndCancel(adminId: string, raffleId: string, typedReference: string) {
     const raffle = await this.prisma.raffle.findUnique({ where: { id: raffleId } });
     if (!raffle) throw new NotFoundException('Raffle not found');
@@ -1306,25 +1315,44 @@ export class RafflesService {
       },
     });
 
-    const results: { ticketId: string; success: boolean; message?: string }[] = [];
-    for (const t of tickets) {
-      if (!t.peachPaymentId) {
-        results.push({ ticketId: t.id, success: false, message: 'No payment ID' });
-        continue;
+    // On the manual rail the gateway is dormant — refundPayment would fake a
+    // success and move no money. Gate off it so we never mis-stamp REFUNDED.
+    const manualRail = PAYMENT_MODE === 'manual' || !this.stitch.isConfigured;
+
+    const results: {
+      ticketId: string;
+      success: boolean;
+      pending?: boolean;
+      message?: string;
+    }[] = [];
+
+    if (manualRail) {
+      // Leave every ticket CONFIRMED and mark the refund PENDING. The buyer
+      // is owed an EFT refund the operator settles via the FNB batch; we do
+      // NOT stamp REFUNDED here because no money has moved yet.
+      for (const t of tickets) {
+        results.push({ ticketId: t.id, success: false, pending: true });
       }
-      try {
-        const r = await this.stitch.refundPayment(t.peachPaymentId, t.amountCents);
-        if (r.success) {
-          await this.prisma.ticket.update({
-            where: { id: t.id },
-            data: { status: 'REFUNDED', refundedAt: new Date() },
-          });
-          results.push({ ticketId: t.id, success: true });
-        } else {
-          results.push({ ticketId: t.id, success: false, message: r.message ?? r.resultCode });
+    } else {
+      for (const t of tickets) {
+        if (!t.peachPaymentId) {
+          results.push({ ticketId: t.id, success: false, message: 'No payment ID' });
+          continue;
         }
-      } catch (err) {
-        results.push({ ticketId: t.id, success: false, message: (err as Error).message });
+        try {
+          const r = await this.stitch.refundPayment(t.peachPaymentId, t.amountCents);
+          if (r.success) {
+            await this.prisma.ticket.update({
+              where: { id: t.id },
+              data: { status: 'REFUNDED', refundedAt: new Date() },
+            });
+            results.push({ ticketId: t.id, success: true });
+          } else {
+            results.push({ ticketId: t.id, success: false, message: r.message ?? r.resultCode });
+          }
+        } catch (err) {
+          results.push({ ticketId: t.id, success: false, message: (err as Error).message });
+        }
       }
     }
 
@@ -1333,24 +1361,60 @@ export class RafflesService {
       data: { status: 'CANCELLED_BY_ADMIN' },
     });
 
+    const refundedIds = results.filter((r) => r.success).map((r) => r.ticketId);
+    const pendingIds = results.filter((r) => r.pending).map((r) => r.ticketId);
+
     await this.recordEvent(
       raffleId,
       'CANCELLED_BY_ADMIN',
       {
+        rail: manualRail ? 'manual' : 'paygate',
         ticketsProcessed: results.length,
-        ticketsRefunded: results.filter((r) => r.success).length,
+        ticketsRefunded: refundedIds.length,
+        // On the manual rail these are owed by EFT, not yet paid.
+        ticketsRefundPending: pendingIds.length,
         ticketsFailed: results
-          .filter((r) => !r.success)
+          .filter((r) => !r.success && !r.pending)
           .map((r) => ({ ticketId: r.ticketId, message: r.message })),
       },
       undefined,
       adminId,
     );
 
+    // Zoho Books reversal — credit-note the confirmed sales receipt(s) for
+    // every ticket we're refunding (whether settled now on paygate or owed
+    // by EFT on the manual rail), so Books doesn't overstate raffle revenue
+    // after the cancellation. Fire-and-forget, outside the DB writes.
+    const reversalIds = [...refundedIds, ...pendingIds];
+    if (reversalIds.length > 0) {
+      void this.zohoBooks.createRaffleTicketRefundCreditNote(reversalIds);
+    }
+
+    // Notify each affected buyer once (best-effort). raffleMinNotMet's copy
+    // says "your payment will be refunded" — EFT-safe, never "to your card".
+    const buyerIds = [...new Set(tickets.map((t) => t.buyerId).filter(Boolean))] as string[];
+    if (buyerIds.length > 0) {
+      const buyers = await this.prisma.user.findMany({
+        where: { id: { in: buyerIds } },
+        select: { email: true, phone: true },
+      });
+      for (const bU of buyers) {
+        if (bU.email) {
+          void this.notifications.raffleMinNotMet(
+            bU.email,
+            raffle.title,
+            bU.phone,
+            raffleId,
+          );
+        }
+      }
+    }
+
     return {
       ticketsProcessed: results.length,
-      ticketsRefunded: results.filter((r) => r.success).length,
-      ticketsFailed: results.filter((r) => !r.success),
+      ticketsRefunded: refundedIds.length,
+      ticketsRefundPending: pendingIds.length,
+      ticketsFailed: results.filter((r) => !r.success && !r.pending),
     };
   }
 
