@@ -486,4 +486,127 @@ export class DispatchSlaService {
     }
     return { scanned: stalled.length, nudged, alerted };
   }
+
+  // ------------------------------------------------------------------
+  // FLOW-F6 (H6) — COLLECTION stall backstop. An in-person pickup has no
+  // dispatch step, so it is EXCLUDED from every courier sweep (PUDO/TCG-only)
+  // and the DEALER_TRANSFER sweep. That left a paid + accepted + never-
+  // collected order with ZERO backstop: money HELD indefinitely, no buyer
+  // reminder, no admin signal — and it only polluted the mislabelled
+  // "dispatch SLA at risk" counts.
+  //
+  // Two-stage, both idempotent, NO auto-refund (operator policy — collection
+  // logistics are between the two members; a human resolves refund-or-chase
+  // from the dossier):
+  //   1. Past dispatchDeadlineAt (= acceptedAt + 5d) → one-shot buyer
+  //      "please confirm your collection" nudge (guarded by
+  //      collectionConfirmNudgedAt).
+  //   2. Past dispatchDeadlineAt + COLLECTION_STALL_ALERT_GRACE_HOURS →
+  //      one-shot urgent AdminAlert STUCK_HELD_FUNDS_COLLECTION_UNCONFIRMED
+  //      (guarded by adminAlertedForCollectionStallAt), created atomically
+  //      with its stamp like alertStuckHeldFunds.
+  // Scope: accepted, HELD, paid, COLLECTION, not a swap leg, not confirmed,
+  // not rejected.
+  // ------------------------------------------------------------------
+  async sweepStalledCollection(): Promise<{
+    scanned: number;
+    nudged: number;
+    alerted: number;
+  }> {
+    const COLLECTION_STALL_ALERT_GRACE_HOURS = 48;
+    const now = new Date();
+    const alertCutoff = new Date(
+      now.getTime() - COLLECTION_STALL_ALERT_GRACE_HOURS * 60 * 60 * 1000,
+    );
+
+    const stalled = await this.prisma.transaction.findMany({
+      where: {
+        acceptedAt: { not: null },
+        dispatchDeadlineAt: { lte: now },
+        paidAt: { not: null },
+        rejectedAt: null,
+        confirmedDeliveryAt: null,
+        paymentStatus: 'HELD',
+        shippingMethod: 'COLLECTION',
+        swapId: null,
+      },
+      include: { listing: { select: { title: true } }, buyer: true, seller: true },
+      take: 100,
+    });
+
+    let nudged = 0;
+    let alerted = 0;
+    for (const tx of stalled) {
+      const daysElapsed = tx.acceptedAt
+        ? Math.max(
+            1,
+            Math.floor((now.getTime() - tx.acceptedAt.getTime()) / 86_400_000),
+          )
+        : 5;
+
+      // Stage 1 — one-shot buyer collection-confirm nudge.
+      if (!tx.collectionConfirmNudgedAt) {
+        try {
+          await this.prisma.transaction.update({
+            where: { id: tx.id },
+            data: { collectionConfirmNudgedAt: now },
+          });
+          await this.notifications.collectionConfirmNudgeBuyer({
+            buyerEmail: tx.buyer.email,
+            buyerName:
+              [tx.buyer.firstName, tx.buyer.lastName]
+                .filter(Boolean)
+                .join(' ') || 'Buyer',
+            buyerPhone: tx.buyer.phone,
+            listingTitle: tx.listing.title,
+            transactionId: tx.id,
+            daysElapsed,
+          });
+          nudged++;
+        } catch (err) {
+          this.logger.warn(
+            `collection stall nudge failed for ${tx.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+
+      // Stage 2 — one-shot urgent admin alert once the grace window lapses.
+      if (
+        !tx.adminAlertedForCollectionStallAt &&
+        tx.dispatchDeadlineAt &&
+        tx.dispatchDeadlineAt <= alertCutoff
+      ) {
+        try {
+          await this.prisma.$transaction([
+            this.prisma.adminAlert.create({
+              data: {
+                type: 'STUCK_HELD_FUNDS_COLLECTION_UNCONFIRMED',
+                referenceId: tx.id,
+                urgent: true,
+                context:
+                  `Collection order ${tx.orderReference ?? tx.id.slice(-8).toUpperCase()} (${tx.listing.title}) — ` +
+                  `buyer @${tx.buyer.username ?? '—'} paid + seller @${tx.seller.username ?? '—'} accepted ${daysElapsed}d ago but the buyer ` +
+                  `never confirmed collection. Payment is HELD. Chase the buyer/seller or refund from the dossier — no auto-refund on this path.`,
+              },
+            }),
+            this.prisma.transaction.update({
+              where: { id: tx.id },
+              data: { adminAlertedForCollectionStallAt: now },
+            }),
+          ]);
+          alerted++;
+        } catch (err) {
+          this.logger.warn(
+            `collection stall alert failed for ${tx.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
+    if (nudged > 0 || alerted > 0) {
+      this.logger.log(
+        `Collection stall sweep: nudged ${nudged} buyer(s), alerted admin on ${alerted} order(s)`,
+      );
+    }
+    return { scanned: stalled.length, nudged, alerted };
+  }
 }

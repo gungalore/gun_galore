@@ -688,11 +688,37 @@ export class TransactionsService {
     // Only non-BUY_NOW types (auctions / swaps / take-a-shot) stay out.
     const lineListings = await this.prisma.listing.findMany({
       where: { id: { in: lines.map((l) => l.listingId) } },
-      select: { id: true, listingType: true, isFirearm: true, sellerId: true },
+      select: {
+        id: true,
+        listingType: true,
+        isFirearm: true,
+        sellerId: true,
+        collectionOnly: true,
+        title: true,
+        shippingMethods: true,
+      },
     });
     if (lineListings.some((l) => l.listingType !== 'BUY_NOW')) {
       throw new BadRequestException(
         'Auctions, swaps and offer items must be bought individually, not in a cart.',
+      );
+    }
+    // Collection-only lines can't ride the cart rail — the cart only carries
+    // courier + firearm routes, so a COLLECTION line would fail deep in the
+    // shared shipping validator with an anonymous error after reservations had
+    // to be unwound. Reject up front and NAME the item so the buyer knows
+    // exactly which line to remove and buy on its own. Covers both the
+    // collectionOnly flag and the >100Wh-lithium case (shippingMethods carries
+    // only COLLECTION while collectionOnly stays false).
+    const collectionLine = lineListings.find(
+      (l) =>
+        l.collectionOnly ||
+        (l.shippingMethods.length > 0 &&
+          l.shippingMethods.every((m) => m === 'COLLECTION')),
+    );
+    if (collectionLine) {
+      throw new BadRequestException(
+        `"${collectionLine.title}" is collection-only — it can't be bought in a cart. Remove it and buy it on its own to arrange collection with the seller.`,
       );
     }
     const firearmByListing = new Map(
@@ -1513,6 +1539,7 @@ export class TransactionsService {
       listingTitle: tx.listing.title,
       transactionId: tx.id,
       dispatchDeadlineAt,
+      isCollection: tx.shippingMethod === 'COLLECTION',
     });
 
     this.logger.log(

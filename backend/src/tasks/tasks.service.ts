@@ -1141,6 +1141,22 @@ export class TasksService {
     } catch (err) {
       this.logger.warn(`DT stall sweep failed: ${(err as Error).message}`);
     }
+    // FLOW-F6 — COLLECTION stall backstop (courier + DT passes above all skip
+    // COLLECTION by design). Buyer collection-confirm nudge past the 5-day
+    // accept window, then an urgent admin alert after a 48h grace. NO
+    // auto-refund on this path.
+    try {
+      const col = await this.dispatchSla.sweepStalledCollection();
+      if (col.nudged > 0 || col.alerted > 0) {
+        this.logger.log(
+          `Collection stall sweep: nudged ${col.nudged}, alerted ${col.alerted} of ${col.scanned}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Collection stall sweep failed: ${(err as Error).message}`,
+      );
+    }
     await this.recordCronRun('dispatch-sla');
   }
 

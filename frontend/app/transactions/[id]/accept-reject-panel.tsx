@@ -50,10 +50,12 @@ export function AcceptRejectPanel({
   transactionId,
   acceptDeadlineAt,
   isDealerTransfer,
+  isCollection = false,
 }: {
   transactionId: string;
   acceptDeadlineAt: string | null;
   isDealerTransfer: boolean;
+  isCollection?: boolean;
 }) {
   const router = useRouter();
   const { getToken } = useAuth();
@@ -293,12 +295,23 @@ export function AcceptRejectPanel({
       >
         The buyer has paid and the funds are being held by Gun Galore. Tap{' '}
         <strong style={{ color: 'var(--text-primary)' }}>Accept</strong> to
-        commit — you’ll then have{' '}
-        <strong style={{ color: 'var(--text-primary)' }}>5 days</strong> to
-        dispatch.{' '}
-        {isDealerTransfer
-          ? 'You can drop the firearm with your dealer in parallel — the SAPS 534 photos upload after dispatch.'
-          : ''}
+        commit —{' '}
+        {isCollection ? (
+          <>
+            then arrange a pickup time with the buyer. There’s no courier and
+            no dispatch step; your payment is released once the buyer confirms
+            they’ve collected the item in person.
+          </>
+        ) : (
+          <>
+            you’ll then have{' '}
+            <strong style={{ color: 'var(--text-primary)' }}>5 days</strong> to
+            dispatch.{' '}
+            {isDealerTransfer
+              ? 'You can drop the firearm with your dealer in parallel — the SAPS 534 photos upload after dispatch.'
+              : ''}
+          </>
+        )}
       </p>
 
       {view.kind === 'error' && (

@@ -361,21 +361,42 @@ export default async function ListingDetailPage({
                 </Link>
                 {/* Add to cart — firearm BUY_NOW listings are now
                     allowed too; they branch to a dealer-transfer /
-                    in-person route + 18+ attestation in the cart. */}
-                <AddToCartButton
-                  item={{
-                    listingId: listing.id,
-                    title: listing.title,
-                    price: listing.price ?? 0,
-                    imageUrl:
-                      listing.images?.find((i) => i.isPrimary)?.url ??
-                      listing.images?.[0]?.url,
-                    sellerId: listing.seller.clerkId,
-                    sellerUsername: listing.seller.username ?? 'Seller',
-                    isFirearm: listing.isFirearm,
-                    shippingMethods: listing.shippingMethods,
-                  }}
-                />
+                    in-person route + 18+ attestation in the cart.
+                    Collection-only items are the exception: the cart
+                    rail only carries courier + firearm lines, so a
+                    collection line can never check out from the cart
+                    (M5/M8). Suppress Add-to-cart for them and point the
+                    buyer at Buy Now (checkout-form handles COLLECTION). */}
+                {listing.collectionOnly ??
+                listing.shippingMethods?.includes('COLLECTION') ? (
+                  <div
+                    className="block w-full py-3 rounded-[6px] text-xs text-center mb-3"
+                    style={{
+                      background: 'var(--bg-inset)',
+                      color: 'var(--text-secondary)',
+                      border: '0.5px solid var(--border)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Collection only — use Buy Now to arrange collection with
+                    the seller.
+                  </div>
+                ) : (
+                  <AddToCartButton
+                    item={{
+                      listingId: listing.id,
+                      title: listing.title,
+                      price: listing.price ?? 0,
+                      imageUrl:
+                        listing.images?.find((i) => i.isPrimary)?.url ??
+                        listing.images?.[0]?.url,
+                      sellerId: listing.seller.clerkId,
+                      sellerUsername: listing.seller.username ?? 'Seller',
+                      isFirearm: listing.isFirearm,
+                      shippingMethods: listing.shippingMethods,
+                    }}
+                  />
+                )}
                 <div className="mb-5">
                   <HelpText>
                     Takes you to secure checkout. Your card is charged

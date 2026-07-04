@@ -517,6 +517,12 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   async orderConfirmedBuyer(d: SaleDetails) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    // COLLECTION is an in-person pickup with no dispatch step — it completes
+    // when the buyer taps "Confirm collection" (which releases the seller's
+    // payment), not via courier delivery. Swap the courier copy out so we
+    // don't tell a trailer/caravan buyer to wait for a dispatch SMS that
+    // never comes.
+    const isCollection = d.shippingMethod === 'COLLECTION';
     const rows: { label: string; value: string }[] = [
       { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
       { label: 'Listing price', value: formatRand(d.listingPrice) },
@@ -535,7 +541,9 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'success', label: 'Order confirmed' },
       headline: 'Order confirmed',
-      body: `Hi ${b(d.buyerName)}, your purchase of ${b(d.listingTitle)} has been confirmed. The seller has been notified and will dispatch your item soon.`,
+      body: isCollection
+        ? `Hi ${b(d.buyerName)}, your purchase of ${b(d.listingTitle)} has been confirmed. This is a <b>collection</b> item — the seller's contact details are on your order page. Arrange a pickup, and once you have the item tap <b>Confirm collection</b> (that's what releases the seller's payment).`
+        : `Hi ${b(d.buyerName)}, your purchase of ${b(d.listingTitle)} has been confirmed. The seller has been notified and will dispatch your item soon.`,
       rows,
       cta: { label: 'View order', url: txUrl },
       preheader: `Order confirmed — ${d.listingTitle}`,
@@ -543,7 +551,9 @@ export class NotificationsService {
     await this.send(d.buyerEmail, 'Order confirmed — ' + d.listingTitle, html);
     await this.sendSms(
       d.buyerPhone,
-      `Gun Galore: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. We'll SMS again when it's dispatched.`,
+      isCollection
+        ? `Gun Galore: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. Collection item — seller contact is on your order page; tap Confirm collection when you have it.`
+        : `Gun Galore: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. We'll SMS again when it's dispatched.`,
       `order-confirmed-${d.transactionId}`,
     );
   }
@@ -626,13 +636,18 @@ export class NotificationsService {
     // front so they can prepare and the dealer can fill the form in
     // block letters at the counter (most-common cause of delay).
     const isDealerTransfer = d.shippingMethod === 'DEALER_TRANSFER';
+    // COLLECTION seller hands the item over in person — no dispatch, no
+    // courier. Payment releases when the buyer confirms collection.
+    const isCollection = d.shippingMethod === 'COLLECTION';
     // The accept-first framing is added to the lede when we have a
     // token. The dealer-transfer SAPS-534 paragraph still appears
     // below so the seller can prepare while the firearm is still in
     // their safe (the accept step doesn't gate it — they can ready
     // the paperwork in parallel).
     const acceptLede = hasAcceptToken
-      ? `<p style="margin: 0 0 14px;"><b>First — confirm you can fulfil this sale within 48 hours.</b> Tap the Accept button below to lock the sale in. After accepting you have 5 days to dispatch.</p>`
+      ? isCollection
+        ? `<p style="margin: 0 0 14px;"><b>First — confirm you can fulfil this sale within 48 hours.</b> Tap the Accept button below to lock the sale in. This item is collected in person — the buyer's contact details are on the sale page, so arrange the handover once you've accepted.</p>`
+        : `<p style="margin: 0 0 14px;"><b>First — confirm you can fulfil this sale within 48 hours.</b> Tap the Accept button below to lock the sale in. After accepting you have 5 days to dispatch.</p>`
       : '';
     const bodyText = isDealerTransfer
       ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by Gun Galore. Once you transfer the firearm to the chosen dealer, you'll need to upload 3 photos so we can verify the stock-in before releasing your payout:
@@ -642,7 +657,9 @@ export class NotificationsService {
   <li>The <b>firearm with its serial number visible</b>, next to a slip of paper showing the order reference</li>
 </ol>
 <p style="margin: 8px 0; font-size: 13px; color: #666;">Ask the dealer to print in BLOCK LETTERS — that lets our automated check pass instantly. Cursive or unclear writing means a 48-hour human review before payout.</p>`
-      : `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by Gun Galore — pack and dispatch as soon as possible. Once the buyer confirms delivery, payment will be released to you automatically.`;
+      : isCollection
+        ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by Gun Galore. This is a <b>collection</b> sale — the buyer collects in person. Their contact details are on the sale page, so arrange the handover with them. Your payment is released as soon as the buyer confirms collection.`
+        : `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by Gun Galore — pack and dispatch as soon as possible. Once the buyer confirms delivery, payment will be released to you automatically.`;
 
     const html = this.email({
       status: { tone: 'success', label: 'New sale' },
@@ -675,10 +692,14 @@ export class NotificationsService {
     const smsBody = hasAcceptToken
       ? isDealerTransfer
         ? `Gun Galore: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (then 5d to dispatch): ${acceptUrl}`
-        : `Gun Galore: New sale ${truncate(d.listingTitle, 28)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h: ${acceptUrl}`
+        : isCollection
+          ? `Gun Galore: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (collection - arrange pickup): ${acceptUrl}`
+          : `Gun Galore: New sale ${truncate(d.listingTitle, 28)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h: ${acceptUrl}`
       : isDealerTransfer
         ? `Gun Galore: New sale ${truncate(d.listingTitle, 30)} - R${(d.sellerPayout / 100).toFixed(0)}. After dealer transfer, upload 3 photos (SAPS 534 BLOCK LETTERS) to release payout. See email.`
-        : `Gun Galore: New sale! ${truncate(d.listingTitle, 40)} - R${(d.sellerPayout / 100).toFixed(0)} payout pending dispatch. Check email for details.`;
+        : isCollection
+          ? `Gun Galore: New sale! ${truncate(d.listingTitle, 36)} - R${(d.sellerPayout / 100).toFixed(0)}. Collection sale - arrange pickup with the buyer. See email.`
+          : `Gun Galore: New sale! ${truncate(d.listingTitle, 40)} - R${(d.sellerPayout / 100).toFixed(0)} payout pending dispatch. Check email for details.`;
     await this.sendSms(
       d.sellerPhone,
       smsBody,
@@ -823,13 +844,18 @@ export class NotificationsService {
     listingTitle: string;
     transactionId: string;
     dispatchDeadlineAt: Date;
+    // COLLECTION accepts have no dispatch/tracking step — the buyer arranges
+    // an in-person pickup and confirms collection to release the payment.
+    isCollection?: boolean;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
     await this.persistByEmail(d.buyerEmail, {
       category: 'BUYER',
       type: 'sale_accepted',
       title: 'Seller accepted your order',
-      body: `${d.listingTitle} — dispatch within 5 days`,
+      body: d.isCollection
+        ? `${d.listingTitle} — arrange collection with the seller`
+        : `${d.listingTitle} — dispatch within 5 days`,
       url: `/transactions/${d.transactionId}`,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -844,14 +870,18 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'success', label: 'Accepted' },
       headline: 'Seller accepted your order',
-      body: `Hi ${b(d.buyerName)}, the seller has accepted your order for ${b(d.listingTitle)} and has up to <strong>5 days</strong> to dispatch (by ${b(deadline)}). We'll SMS you the tracking reference as soon as it's on its way.`,
+      body: d.isCollection
+        ? `Hi ${b(d.buyerName)}, the seller has accepted your order for ${b(d.listingTitle)}. This is a <strong>collection</strong> item — the seller's contact details are on your order page. Arrange a pickup, and tap <strong>Confirm collection</strong> once you have the item (that releases the seller's payment).`
+        : `Hi ${b(d.buyerName)}, the seller has accepted your order for ${b(d.listingTitle)} and has up to <strong>5 days</strong> to dispatch (by ${b(deadline)}). We'll SMS you the tracking reference as soon as it's on its way.`,
       cta: { label: 'View order', url: txUrl },
       preheader: `Seller accepted — ${d.listingTitle}`,
     });
     await this.send(d.buyerEmail, 'Order accepted: ' + d.listingTitle, html);
     await this.sendSms(
       d.buyerPhone,
-      `Gun Galore: Seller accepted ${truncate(d.listingTitle, 40)}. Dispatch within 5 days — we'll SMS the tracking ref when it ships.`,
+      d.isCollection
+        ? `Gun Galore: Seller accepted ${truncate(d.listingTitle, 40)}. Collection item — arrange pickup (seller contact is on your order page) and tap Confirm collection.`
+        : `Gun Galore: Seller accepted ${truncate(d.listingTitle, 40)}. Dispatch within 5 days — we'll SMS the tracking ref when it ships.`,
       `sale-accepted-${d.transactionId}`,
     );
   }
@@ -2818,6 +2848,57 @@ export class NotificationsService {
       d.sellerPhone,
       `Gun Galore: ${truncate(d.listingTitle, 30)} — buyer paid ${d.daysElapsed}d ago. Complete the dealer transfer to release your payment: ${txUrl}`,
       `dt-stall-nudge-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Buyer: collection-confirm reminder (FLOW-F6 / H6). A COLLECTION order
+  // the seller accepted but the buyer never confirmed collection on — funds
+  // sit HELD. One-shot, idempotent via collectionConfirmNudgedAt on the cron
+  // side. Reminds the buyer to arrange the pickup (seller contact is on the
+  // order page) and tap Confirm collection, which releases the seller's
+  // payment. NO auto-refund on this path.
+  // ---------------------------------------------------------------
+  async collectionConfirmNudgeBuyer(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+    daysElapsed: number;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'collection_confirm_nudge',
+      title: 'Confirm your collection',
+      body: `${d.listingTitle} — arrange the pickup and tap Confirm collection to release the seller's payment.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Confirm your collection',
+      body: `Hi ${b(d.buyerName)}, you paid for ${b(d.listingTitle)} ${b(d.daysElapsed + ' days')} ago and it's waiting to be collected. This is an in-person collection — the seller's contact details are on your order page. Please arrange the pickup, and once you have the item tap <b>Confirm collection</b> so the seller's payment can be released. If you've had trouble reaching the seller or the item wasn't as described at the handover, you can raise a dispute from the same page.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Paid', value: `${d.daysElapsed} days ago` },
+      ],
+      cta: { label: 'View order', url: txUrl },
+      preheader: `Confirm your collection for ${d.listingTitle}`,
+    });
+    await this.send(
+      d.buyerEmail,
+      'Action needed: confirm your collection for ' + d.listingTitle,
+      html,
+    );
+    await this.sendSms(
+      d.buyerPhone,
+      `Gun Galore: ${truncate(d.listingTitle, 30)} is waiting for collection. Arrange pickup (seller contact on your order page) and tap Confirm collection: ${txUrl}`,
+      `collection-confirm-nudge-${d.transactionId}`,
     );
   }
 

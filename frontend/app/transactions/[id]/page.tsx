@@ -473,7 +473,9 @@ export default async function TransactionPage({
                 <div className="flex justify-between">
                   <span style={{ color: 'var(--text-tertiary)' }}>Status</span>
                   <span style={{ color: 'var(--text-primary)' }}>
-                    {SHIPPING_STATUS_LABEL[tx.shippingStatus]}
+                    {isCollection && tx.shippingStatus === 'PENDING'
+                      ? 'Awaiting collection'
+                      : SHIPPING_STATUS_LABEL[tx.shippingStatus]}
                   </span>
                 </div>
               )}
@@ -656,11 +658,15 @@ export default async function TransactionPage({
               a stalled dealer transfer left the buyer with NO exit at all.
               The backend raiseDispute now accepts DT once paid + HELD. */}
           {!canConfirmDelivery &&
+            !canConfirmCollection &&
             isBuyer &&
             tx.paymentStatus === 'HELD' &&
+            !!tx.paidAt &&
+            !tx.rejectedAt &&
             !tx.confirmedDeliveryAt &&
             (!!tx.dispatchedAt ||
-              (tx.shippingMethod === 'DEALER_TRANSFER' && !!tx.paidAt)) && (
+              (tx.shippingMethod === 'DEALER_TRANSFER' && !!tx.paidAt) ||
+              isCollection) && (
               <div
                 className="rounded-[8px] p-4"
                 style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
@@ -671,6 +677,8 @@ export default async function TransactionPage({
                 <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
                   {tx.shippingMethod === 'DEALER_TRANSFER'
                     ? 'If the dealer transfer has stalled or something is wrong, raise it here. Your payment stays held while admin reviews.'
+                    : isCollection
+                    ? "If the seller is unreachable, or the item isn't as described at handover, raise it here. Your payment stays held while admin reviews — don't confirm collection until it's resolved."
                     : 'Payment stays held while admin reviews.'}
                 </p>
                 <RaiseDisputeButton transactionId={tx.id} />
@@ -754,6 +762,7 @@ export default async function TransactionPage({
               transactionId={tx.id}
               acceptDeadlineAt={tx.acceptDeadlineAt}
               isDealerTransfer={tx.shippingMethod === 'DEALER_TRANSFER'}
+              isCollection={isCollection}
             />
           )}
 

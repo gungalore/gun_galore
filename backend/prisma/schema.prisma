@@ -1137,6 +1137,18 @@ model Transaction {
   // backstop. IS NULL filter makes the alert fire exactly once per stalled DT.
   adminAlertedForDtStallAt DateTime?
 
+  // FLOW-F6 (H6) — COLLECTION (in-person pickup) stall backstop stamps. A
+  // collection order has no dispatch step and is excluded from every courier
+  // and DEALER_TRANSFER sweep, so a paid + accepted + never-collected order had
+  // no backstop at all. Set once each by sweepStalledCollection: the first when
+  // the buyer gets the one-shot "please confirm your collection" nudge, the
+  // second when the urgent admin alert fires after the grace window. IS NULL
+  // filters make each fire exactly once. NO auto-refund on this path (operator
+  // policy — a human resolves from the dossier). Mirrors dispatchNudgedAt /
+  // adminAlertedForDtStallAt.
+  collectionConfirmNudgedAt        DateTime?
+  adminAlertedForCollectionStallAt DateTime?
+
   // ── Seller accept flow (TOK-7) ───────────────────────────────────
   // Two-step seller workflow: after the buyer pays, the seller has 48h
   // to ACCEPT the transaction (one-tap via SMS), then 5 days from accept

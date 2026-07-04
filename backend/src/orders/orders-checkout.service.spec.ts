@@ -12,6 +12,7 @@ function makeService(over: {
   $transaction?: jest.Mock;
   orderFindUnique?: jest.Mock;
   firearmIds?: string[];
+  collectionOnlyIds?: string[];
   combinedQuote?: { priceCents: number; serviceCode: string } | null;
 } = {}) {
   const txcMock = {
@@ -43,6 +44,13 @@ function makeService(over: {
             listingType: 'BUY_NOW',
             isFirearm: over.firearmIds?.includes(id) ?? false,
             sellerId: 'S1', // P6.2 grouping key; combinedQuote null → no-op
+            // FLOW-F6 M8 — P0.2 select now carries these for the up-front
+            // collection-only rejection. Default: courier-capable non-collection.
+            collectionOnly: over.collectionOnlyIds?.includes(id) ?? false,
+            title: `Item ${id}`,
+            shippingMethods: over.collectionOnlyIds?.includes(id)
+              ? ['COLLECTION']
+              : ['PUDO', 'TCG'],
           })),
         ),
       ),
@@ -214,6 +222,19 @@ describe('TransactionsService.createOrderCheckout', () => {
     await expect(
       service.createOrderCheckout('clerk_B', { lines: [] }, 'https://x'),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('FLOW-F6 M8 — rejects a collection-only line up front and NAMES it, before reserving', async () => {
+    const { service } = makeService({ collectionOnlyIds: ['L2'] });
+    const spy = jest.spyOn(service as never, 'reserveAndCreateLine');
+    await expect(
+      service.createOrderCheckout(
+        'clerk_B',
+        { lines: [lineDto('L1'), lineDto('L2')] },
+        'https://x',
+      ),
+    ).rejects.toThrow(/Item L2.*collection-only/);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('P6-A — ACCEPTS a firearm line in the cart and NEVER consolidates it', async () => {

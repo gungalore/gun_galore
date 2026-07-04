@@ -58,7 +58,18 @@ export default function CartPage() {
 
   // Split shippable (courier) items from firearms — firearms branch to a
   // dealer-transfer / in-person route and never touch the courier picker.
-  const shippableItems = items.filter((i) => !i.isFirearm);
+  // Collection-only lines (trailers / oversized goods / >100Wh lithium) can't
+  // ride the cart rail at all — the backend rejects a courier method for them
+  // and there's no cart collection route. The listing page now suppresses
+  // Add-to-cart for these, but a stale localStorage cart written before that
+  // fix may still carry one, so belt-and-braces here: surface + block them by
+  // name rather than letting the whole basket hard-fail with an unnamed error.
+  const collectionItems = items.filter(
+    (i) => !i.isFirearm && i.shippingMethods?.includes('COLLECTION'),
+  );
+  const shippableItems = items.filter(
+    (i) => !i.isFirearm && !i.shippingMethods?.includes('COLLECTION'),
+  );
   const firearmItems = items.filter((i) => i.isFirearm);
 
   // The per-firearm state for a listing, defaulting to DEALER_TRANSFER with
@@ -112,7 +123,8 @@ export default function CartPage() {
     return s.route && s.attestationAccepted && s.consentAccepted;
   });
 
-  const shippingReady = courierReady && firearmsReady;
+  const shippingReady =
+    courierReady && firearmsReady && collectionItems.length === 0;
 
   async function checkout() {
     if (!shippingReady || items.length === 0) return;
@@ -323,6 +335,42 @@ export default function CartPage() {
         </div>
         );
       })}
+
+      {/* Collection-only lines can't check out from the cart — name each one
+          and point the buyer at its own Buy Now checkout. Blocks Continue via
+          shippingReady above until they're removed. */}
+      {collectionItems.map((i) => (
+        <div
+          key={i.listingId}
+          className="rounded-[8px] mb-4 p-3"
+          style={{ border: '0.5px solid var(--red)', background: 'rgba(200,16,46,0.06)' }}
+        >
+          <p className="text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+            {i.title}
+          </p>
+          <p className="text-xs mt-1 mb-2" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            This item is collection only — it can&apos;t be bought in a cart.
+            Buy it on its own to arrange collection with the seller.
+          </p>
+          <div className="flex gap-2">
+            <Link
+              href={`/checkout/${i.listingId}`}
+              className="text-xs px-3 py-1.5 rounded-[6px]"
+              style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+            >
+              Buy this item on its own
+            </Link>
+            <button
+              type="button"
+              onClick={() => removeFromCart(i.listingId)}
+              className="text-xs px-3 py-1.5 rounded-[6px]"
+              style={{ border: '0.5px solid var(--border)', color: 'var(--text-tertiary)' }}
+            >
+              Remove from cart
+            </button>
+          </div>
+        </div>
+      ))}
 
       {/* Delivery — courier picker only when there ARE shippable (non-firearm)
           items. A firearm-only cart hides this entirely. */}
