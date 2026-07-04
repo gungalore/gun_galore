@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminStatusChip as StatusChip } from '@/components/admin/status-chip';
 import DossierActions from './dossier-actions';
+import PayoutHoldPanel from './payout-hold-panel';
 import DealerVerificationPanel from './dealer-verification-panel';
 import { ZohoSyncPanel } from './zoho-sync-panel';
 
@@ -32,6 +33,11 @@ interface TransactionDossier {
     peachResultCode: string | null;
     paidAt: string | null;
     releasedAt: string | null;
+    // M26 — payout-hold lever fields (auto-returned by the dossier endpoint).
+    payoutHeldAt: string | null;
+    payoutHoldReason: string | null;
+    payoutBatchId: string | null;
+    paidOutAt: string | null;
     shippingMethod: string | null;
     trackingReference: string | null;
     dispatchedAt: string | null;
@@ -315,6 +321,14 @@ export default function TransactionDossierPage() {
             paymentStatus={t.paymentStatus}
             buyerTotal={t.buyerTotal}
             refundedAmount={t.refundedAmount ?? 0}
+          />
+          {/* M26 — post-release payout-hold lever (self-contained). */}
+          <PayoutHoldPanel
+            txId={t.id}
+            paymentStatus={t.paymentStatus}
+            payoutHeldAt={t.payoutHeldAt}
+            payoutHoldReason={t.payoutHoldReason}
+            payoutSettled={!!t.payoutBatchId || !!t.paidOutAt}
           />
           {(t.refundedAmount ?? 0) > 0 && t.paymentStatus !== 'REFUNDED' && (
             <p className="text-xs mt-2" style={{ color: 'var(--amber, #f59e0b)' }}>

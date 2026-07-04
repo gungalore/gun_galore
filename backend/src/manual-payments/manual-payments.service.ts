@@ -839,6 +839,9 @@ export class ManualPaymentsService {
         payoutBatchId: null,
         // P0.3 — synthetic refund children are never seller payouts.
         refundOfId: null,
+        // M26 — a held row is withheld from the sweep until an admin clears
+        // the hold (post-release fraud lever). Never enters an FNB batch.
+        payoutHeldAt: null,
       },
       orderBy: { releasedAt: 'asc' },
       select: {
@@ -890,6 +893,8 @@ export class ManualPaymentsService {
         buyerTotal: { gt: 0 },
         paidOutAt: null,
         payoutBatchId: null,
+        // M26 — held refund rows are withheld from the sweep too.
+        payoutHeldAt: null,
       },
       orderBy: { updatedAt: 'asc' },
       select: {

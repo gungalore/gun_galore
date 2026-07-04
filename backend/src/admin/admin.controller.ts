@@ -378,6 +378,30 @@ export class AdminTransactionsController {
     );
   }
 
+  // M26 (FLOW-F4) — payout-HOLD lever. Withhold a RELEASED/REFUNDED payout that
+  // is still due (not yet in a bank batch) so a post-release fraud allegation
+  // can be actioned before the cash leaves GG. Body: { reason } (>=5 chars,
+  // recorded in the audit log). The daily FNB sweep skips held rows.
+  @Post(':id/hold-payout')
+  @HttpCode(200)
+  holdPayout(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { reason?: string },
+  ) {
+    return this.adminService.holdPayout(id, admin.sub, body.reason ?? '');
+  }
+
+  @Post(':id/release-payout-hold')
+  @HttpCode(200)
+  releasePayoutHold(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { reason?: string },
+  ) {
+    return this.adminService.releasePayoutHold(id, admin.sub, body.reason ?? '');
+  }
+
   // Dealer-verification override. Admin reviews Claude's findings +
   // the 3 photos and approves or rejects manually. Body: { decision,
   // reason }. Used for borderline Claude verdicts (PENDING_ADMIN_REVIEW)

@@ -1019,6 +1019,17 @@ model Transaction {
   payoutBatch   PayoutBatch? @relation(fields: [payoutBatchId], references: [id], onDelete: SetNull)
   paidOutAt     DateTime?
 
+  // M26 (FLOW-F4) — admin payout-HOLD lever. A RELEASED (or otherwise-due) row
+  // with payoutHeldAt set is excluded from getPayoutsDue/collectDue and never
+  // enters an FNB batch until an admin clears the hold. The only control point
+  // between PRIVATE_ARRANGE's immediate HELD->RELEASED flip (no delivery gate)
+  // and the daily bulk-payment sweep, so a fraud allegation raised after
+  // release can still stop the cash leaving GG's account. Reason + admin id
+  // captured for the audit log.
+  payoutHeldAt     DateTime?
+  payoutHoldReason String?
+  payoutHeldById   String?
+
   // Shipping
   shippingMethod    ShippingMethod?
   shippingStatus    ShippingStatus?

@@ -1520,6 +1520,113 @@ export class AdminService {
   }
 
   // ---------------------------------------------------------------
+  // M26 (FLOW-F4) — payout-HOLD lever. The only admin control between a PA
+  // immediate release (HELD->RELEASED at payment, no delivery gate) and the
+  // daily FNB bulk-payment sweep. Setting payoutHeldAt drops the row out of
+  // getPayoutsDue/collectDue so the cash stays with GG until the hold is
+  // cleared — buying time to refund or dispute after release. Only valid while
+  // the row is still DUE (not yet frozen into a batch, not yet paid); once
+  // committed the money is gone and a hold would mislead.
+  // ---------------------------------------------------------------
+  async holdPayout(txId: string, adminId: string, reason: string) {
+    const trimmed = (reason ?? '').trim();
+    if (trimmed.length < 5) {
+      throw new BadRequestException(
+        'Provide a reason of at least 5 characters for placing this payout on hold.',
+      );
+    }
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: txId },
+      select: {
+        id: true,
+        paymentStatus: true,
+        payoutBatchId: true,
+        paidOutAt: true,
+        payoutHeldAt: true,
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (!['RELEASED', 'REFUNDED'].includes(tx.paymentStatus)) {
+      throw new BadRequestException(
+        `Payout hold only applies to a RELEASED or REFUNDED payout awaiting the bank batch. Current state: ${tx.paymentStatus}.`,
+      );
+    }
+    if (tx.paidOutAt) {
+      throw new BadRequestException(
+        'This payout has already been paid out — it can no longer be held.',
+      );
+    }
+    if (tx.payoutBatchId) {
+      throw new BadRequestException(
+        'This payout is already frozen into a bank batch. Cancel that batch first, then hold this row.',
+      );
+    }
+    if (tx.payoutHeldAt) {
+      throw new BadRequestException('This payout is already on hold.');
+    }
+
+    const now = new Date();
+    await this.prisma.transaction.update({
+      where: { id: txId },
+      data: {
+        payoutHeldAt: now,
+        payoutHoldReason: trimmed,
+        payoutHeldById: adminId,
+      },
+    });
+
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'PAYOUT_HELD',
+      resourceType: 'Transaction',
+      resourceId: txId,
+      oldValue: 'due',
+      newValue: 'held',
+      reason: trimmed,
+    });
+
+    return { payoutHeld: true };
+  }
+
+  async releasePayoutHold(txId: string, adminId: string, reason: string) {
+    const trimmed = (reason ?? '').trim();
+    if (trimmed.length < 5) {
+      throw new BadRequestException(
+        'Provide a reason of at least 5 characters for releasing this payout hold.',
+      );
+    }
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: txId },
+      select: { id: true, payoutHeldAt: true },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (!tx.payoutHeldAt) {
+      throw new BadRequestException('This payout is not currently on hold.');
+    }
+
+    await this.prisma.transaction.update({
+      where: { id: txId },
+      data: {
+        payoutHeldAt: null,
+        payoutHoldReason: null,
+        payoutHeldById: null,
+      },
+    });
+
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'PAYOUT_HOLD_RELEASED',
+      resourceType: 'Transaction',
+      resourceId: txId,
+      oldValue: 'held',
+      newValue: 'due',
+      reason: trimmed,
+    });
+
+    return { payoutHeld: false };
+  }
+
+  // ---------------------------------------------------------------
   // Admin management — only SUPERADMIN can create new admins.
   // ---------------------------------------------------------------
   // Listing is open to any admin (so monitoring admins can see who
