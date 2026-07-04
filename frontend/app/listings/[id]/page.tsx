@@ -383,7 +383,7 @@ export default async function ListingDetailPage({
                     collection line can never check out from the cart
                     (M5/M8). Suppress Add-to-cart for them and point the
                     buyer at Buy Now (checkout-form handles COLLECTION). */}
-                {listing.collectionOnly ??
+                {listing.collectionOnly ||
                 listing.shippingMethods?.includes('COLLECTION') ? (
                   <div
                     className="block w-full py-3 rounded-[6px] text-xs text-center mb-3"
@@ -417,8 +417,7 @@ export default async function ListingDetailPage({
                   <HelpText>
                     Takes you to secure checkout. You&apos;ll get bank-transfer
                     (EFT) details and 24 hours to pay; funds are held until the
-                    item arrives and you confirm delivery — then released to
-                    the seller.
+                    sale completes, then released to the seller.
                   </HelpText>
                 </div>
               </>

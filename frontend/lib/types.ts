@@ -730,5 +730,6 @@ export interface MyWin {
     itemValueCents: number;
     status: RaffleStatus;
     drawnAt: string | null;
+    prizeIsFirearm: boolean;
   };
 }

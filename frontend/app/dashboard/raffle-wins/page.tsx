@@ -145,7 +145,10 @@ function WinCard({ win, canClaim }: { win: MyWin; canClaim?: boolean }) {
       </div>
       {canClaim && (
         <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
-          <ClaimButton winnerId={win.id} />
+          <ClaimButton
+            winnerId={win.id}
+            prizeIsFirearm={win.raffle.prizeIsFirearm}
+          />
         </div>
       )}
     </div>

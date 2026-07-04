@@ -1361,6 +1361,10 @@ export class RafflesService {
             itemValueCents: true,
             status: true,
             drawnAt: true,
+            // The claim UI needs this to render the firearm 18+/licence
+            // attestation the backend claimPrize now requires for firearm
+            // prizes — without it, legit firearm-prize winners are locked out.
+            prizeIsFirearm: true,
           },
         },
       },

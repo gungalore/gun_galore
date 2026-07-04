@@ -890,6 +890,11 @@ export default async function TransactionPage({
             !!tx.acceptedAt &&
             !tx.dispatchedAt &&
             !isRejected &&
+            // A DEALER_TRANSFER order releases via dealer-verify and never sets
+            // dispatchedAt, so this chip would keep showing "overdue" on an
+            // already-RELEASED order. Gate on HELD (mirrors the dispute panel)
+            // so the countdown disappears once funds have moved.
+            tx.paymentStatus === 'HELD' &&
             tx.dispatchDeadlineAt &&
             (tx.shippingMethod === 'PUDO' ||
               tx.shippingMethod === 'TCG' ||
