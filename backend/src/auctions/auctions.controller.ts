@@ -36,13 +36,6 @@ export class AuctionsController {
     return this.auctions.placeBid(clerkId, listingId, dto);
   }
 
-  // BUYER: prepare a Buy Now purchase (only if zero bids and buyNowPrice set)
-  @UseGuards(ClerkGuard)
-  @Post(':listingId/buy-now')
-  buyNow(@CurrentUser() clerkId: string, @Param('listingId') listingId: string) {
-    return this.auctions.buyNow(clerkId, listingId);
-  }
-
   // BUYER: list of auctions you've bid on
   @UseGuards(ClerkGuard)
   @Get('me/bids')

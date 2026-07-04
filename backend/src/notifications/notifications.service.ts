@@ -476,7 +476,17 @@ export class NotificationsService {
   async resolveByEntity(
     linkedType: NotificationLinkedType,
     linkedId: string,
-    opts: { userId?: string; resolvedBy?: 'user_action' | 'auto_expired' } = {},
+    opts: {
+      userId?: string;
+      resolvedBy?: 'user_action' | 'auto_expired';
+      // Restrict the resolve to specific notification `type` values.
+      // REQUIRED for the auction-end sweep: an unscoped resolve in the
+      // WON case would race with and wrongly clear the winner's freshly
+      // persisted `auction_won` row (same linkedType/linkedId).
+      types?: string[];
+      // Skip a user (e.g. the winner) when resolving loser rows.
+      excludeUserId?: string;
+    } = {},
   ): Promise<number> {
     try {
       const r = await this.prisma.notification.updateMany({
@@ -485,6 +495,10 @@ export class NotificationsService {
           linkedId,
           resolvedAt: null,
           ...(opts.userId ? { userId: opts.userId } : {}),
+          ...(opts.excludeUserId
+            ? { userId: { not: opts.excludeUserId } }
+            : {}),
+          ...(opts.types ? { type: { in: opts.types } } : {}),
         },
         data: {
           resolvedAt: new Date(),
@@ -2194,6 +2208,75 @@ export class NotificationsService {
         buyerPhone,
         smsBody,
         `outbid-${listingId ?? 'x'}-${newAmount}`,
+      );
+    }
+  }
+
+  // M30 — one-shot 'auction ended, you did not win' notice for a losing
+  // bidder. Dismissible (final state, no action). Linked on the listing so
+  // it can auto-resolve if ever needed. No SMS spam beyond the single row +
+  // email — losers already got per-bid outbid SMS during the auction.
+  async auctionEndedLoser(
+    loserEmail: string,
+    listingTitle: string,
+    finalBid: number,
+    listingId: string,
+  ) {
+    await this.persistByEmail(loserEmail, {
+      category: 'BUYER',
+      type: 'auction_lost',
+      title: 'Auction ended — you didn’t win',
+      body: `${listingTitle} closed at ${formatRand(finalBid)}.`,
+      url: `/listings/${listingId}`,
+      iconKey: 'bid',
+      linkedType: 'listing',
+      linkedId: listingId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'error', label: 'Auction ended' },
+      headline: 'Auction ended',
+      body: `Bidding has closed on ${b(listingTitle)} at ${b(formatRand(finalBid))}. You weren’t the winning bidder this time — browse similar listings to keep hunting.`,
+      cta: { label: 'View listing', url: `${this.appUrl}/listings/${listingId}` },
+      preheader: `Auction ended — you didn’t win ${listingTitle}`,
+    });
+    await this.send(loserEmail, 'Auction ended — ' + listingTitle, html);
+  }
+
+  // M31 — one-shot notice to a winner whose 24h pay window lapsed and whose
+  // sale was cancelled. Dismissible final state. Sent from AuctionsService's
+  // unpaid-winner terminals after their auction_won inbox row is resolved.
+  async auctionWinnerLapsed(
+    winnerEmail: string,
+    listingTitle: string,
+    finalBid: number,
+    winnerPhone: string | null | undefined,
+    listingId: string,
+  ) {
+    await this.persistByEmail(winnerEmail, {
+      category: 'BUYER',
+      type: 'auction_win_lapsed',
+      title: 'Payment window missed',
+      body: `Your win on ${listingTitle} was cancelled — the 24h payment window passed.`,
+      url: `/listings/${listingId}`,
+      iconKey: 'bid',
+      linkedType: 'listing',
+      linkedId: listingId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'error', label: 'Payment window missed' },
+      headline: 'Your auction win was cancelled',
+      body: `The 24-hour payment window for ${b(listingTitle)} (${b(formatRand(finalBid))}) has passed, so this sale has been cancelled. Repeated missed payments can lead to your bidding being suspended.`,
+      cta: { label: 'View listing', url: `${this.appUrl}/listings/${listingId}` },
+      preheader: `Payment window missed — ${listingTitle}`,
+    });
+    await this.send(winnerEmail, 'Payment window missed — ' + listingTitle, html);
+    if (winnerPhone) {
+      await this.sendSms(
+        winnerPhone,
+        `Gun Galore: Your win on ${truncate(listingTitle, 26)} was cancelled — the 24h payment window passed.`,
+        `auction-lapsed-${listingId}`,
       );
     }
   }

@@ -67,7 +67,6 @@ export class AuctionsService {
         listingType: true,
         status: true,
         price: true, // starting bid
-        buyNowPrice: true,
         currentBid: true,
         currentBidderId: true,
         bidCount: true,
@@ -120,7 +119,9 @@ export class AuctionsService {
       id: listing.id,
       status: listing.status,
       startingBid: listing.price,
-      buyNowPrice: listing.bidCount === 0 ? listing.buyNowPrice : null,
+      // FIX-11 — Buy-Now on auctions is disabled (no reserve, /checkout 404s).
+      // Stop advertising a price the UI can't act on. Kept out of the payload
+      // rather than always-null so no client re-adds a dead CTA off it.
       currentBid: listing.currentBid,
       currentBidderName,
       bidCount: listing.bidCount,
@@ -543,49 +544,6 @@ export class AuctionsService {
     });
   }
 
-  // --- Buy Now (auction with zero bids only) -----------------------------
-
-  async buyNow(clerkId: string, listingId: string) {
-    const buyer = await this.prisma.user.findUnique({ where: { clerkId } });
-    if (!buyer) throw new ForbiddenException('User not synced');
-
-    const listing = await this.prisma.listing.findUnique({
-      where: { id: listingId },
-      select: {
-        id: true,
-        sellerId: true,
-        listingType: true,
-        status: true,
-        bidCount: true,
-        buyNowPrice: true,
-      },
-    });
-    if (!listing) throw new NotFoundException('Listing not found');
-    if (listing.listingType !== 'AUCTION') {
-      throw new BadRequestException('Not an auction');
-    }
-    if (listing.status !== 'ACTIVE') {
-      throw new BadRequestException('Auction is not active');
-    }
-    if (listing.sellerId === buyer.id) {
-      throw new ForbiddenException('Cannot buy your own listing');
-    }
-    if (listing.bidCount > 0) {
-      throw new BadRequestException('Buy Now is no longer available — bidding has started');
-    }
-    if (!listing.buyNowPrice) {
-      throw new BadRequestException('This auction does not offer Buy Now');
-    }
-
-    // We don't create the Transaction here — the buyer goes through the same
-    // /checkout flow as a BUY_NOW listing. Instead, we just flag the listing
-    // so the checkout page knows to use buyNowPrice instead of price.
-    return {
-      checkoutAmount: listing.buyNowPrice,
-      listingId: listing.id,
-    };
-  }
-
   // --- Buyer's own bids -------------------------------------------------
 
   async getMyBids(clerkId: string) {
@@ -754,6 +712,10 @@ export class AuctionsService {
         // Notifications fire after the tx commits
         void this.notifyAuctionWon(listing.currentBidderId, listingId, listing.currentBid!);
         void this.notifyAuctionEndedSeller(listing.sellerId, listingId, 'WON', listing.currentBid!);
+        // M30 — resolve losers' stuck bid_outbid rows + send each a one-shot
+        // 'you didn't win' notice. Type-filtered + excludeUserId so the
+        // winner's freshly-persisted auction_won row is never touched.
+        void this.resolveAndNotifyLosers(listingId, listing.currentBidderId, listing.currentBid ?? 0);
         return;
       }
 
@@ -764,6 +726,9 @@ export class AuctionsService {
           data: { status: 'EXPIRED', endedAt: now },
         });
         void this.notifyAuctionEndedSeller(listing.sellerId, listingId, 'NO_RESERVE', listing.currentBid ?? 0);
+        // M30 — no winner in a reserve-not-met close, so every bidder is a
+        // loser: resolve all bid_outbid rows on the listing + notify each.
+        void this.resolveAndNotifyLosers(listingId, null, listing.currentBid ?? 0);
         return;
       }
 
@@ -774,6 +739,52 @@ export class AuctionsService {
       });
       void this.notifyAuctionEndedSeller(listing.sellerId, listingId, 'NO_BIDS', 0);
     });
+  }
+
+  // M30 — resolve losing bidders' stuck bid_outbid rows on an ended auction
+  // and send each distinct loser a one-shot 'you didn't win' notice. The
+  // type filter is REQUIRED — an unscoped resolve in the WON case would
+  // clear the winner's freshly-persisted auction_won row (same
+  // linkedType/linkedId). winnerUserId (nullable — null in reserve-not-met
+  // closes) is additionally excluded so a winner never gets a loser notice.
+  private async resolveAndNotifyLosers(
+    listingId: string,
+    winnerUserId: string | null,
+    finalBid: number,
+  ) {
+    try {
+      await this.notifications.resolveByEntity('listing', listingId, {
+        resolvedBy: 'auto_expired',
+        types: ['bid_outbid'],
+        ...(winnerUserId ? { excludeUserId: winnerUserId } : {}),
+      });
+      const listing = await this.prisma.listing.findUnique({
+        where: { id: listingId },
+        select: { title: true },
+      });
+      if (!listing) return;
+      const bidders = await this.prisma.bid.findMany({
+        where: {
+          listingId,
+          ...(winnerUserId ? { bidderId: { not: winnerUserId } } : {}),
+        },
+        distinct: ['bidderId'],
+        select: { bidder: { select: { email: true } } },
+      });
+      for (const b of bidders) {
+        if (!b.bidder?.email) continue;
+        void this.notifications.auctionEndedLoser(
+          b.bidder.email,
+          listing.title,
+          finalBid,
+          listingId,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `resolveAndNotifyLosers failed for ${listingId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   // P0.2 — sweep won auctions whose winner never STARTED checkout inside
@@ -823,6 +834,9 @@ export class AuctionsService {
       // a manual suspension review.
       if (l.currentBidderId) {
         void this.strikeUnpaidWinner(l.currentBidderId, l.id);
+        // M31 — the winner never started/finished payment: resolve their
+        // stuck 'pay within 24h' inbox row and tell them the sale lapsed.
+        void this.notifyWinnerLapsed(l.currentBidderId, l.id, l.currentBid ?? 0);
       }
     }
     return { expired };
@@ -866,7 +880,7 @@ export class AuctionsService {
   async notifyWinnerUnpaid(listingId: string) {
     const listing = await this.prisma.listing.findUnique({
       where: { id: listingId },
-      select: { sellerId: true, currentBid: true },
+      select: { sellerId: true, currentBid: true, currentBidderId: true },
     });
     if (!listing) return;
     void this.notifyAuctionEndedSeller(
@@ -875,6 +889,52 @@ export class AuctionsService {
       'WINNER_UNPAID',
       listing.currentBid ?? 0,
     );
+    // M31 — Path B (winner started checkout but the EFT lapsed and the
+    // freeze sweep expired the listing): resolve the winner's stuck
+    // 'pay within 24h' row + notify them the sale was cancelled.
+    if (listing.currentBidderId) {
+      void this.notifyWinnerLapsed(
+        listing.currentBidderId,
+        listingId,
+        listing.currentBid ?? 0,
+      );
+    }
+  }
+
+  // M31 — resolve the lapsed winner's auction_won inbox row (dismissible:
+  // false, so only a server-side resolve can clear it) and send a one-shot
+  // 'payment window missed — sale cancelled' notice. Best-effort.
+  private async notifyWinnerLapsed(
+    winnerId: string,
+    listingId: string,
+    finalBid: number,
+  ) {
+    try {
+      await this.notifications.resolveByEntity('listing', listingId, {
+        userId: winnerId,
+        resolvedBy: 'auto_expired',
+        types: ['auction_won'],
+      });
+      const [winner, listing] = await Promise.all([
+        this.prisma.user.findUnique({ where: { id: winnerId } }),
+        this.prisma.listing.findUnique({
+          where: { id: listingId },
+          select: { title: true },
+        }),
+      ]);
+      if (!winner?.email || !listing) return;
+      void this.notifications.auctionWinnerLapsed(
+        winner.email,
+        listing.title,
+        finalBid,
+        winner.phone,
+        listingId,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `notifyWinnerLapsed failed for ${winnerId}/${listingId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   // --- Notification fan-out (thin wrappers; safe to fail silently) ------

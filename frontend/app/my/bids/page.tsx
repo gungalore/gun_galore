@@ -80,9 +80,19 @@ export default async function MyBidsPage() {
   const live = bids.filter(
     (b) => b.listingStatus === 'ACTIVE' && !b.endedAt,
   );
-  const won = bids.filter((b) => b.isWinner);
+  // Only a win still awaiting payment (listing PAYMENT_PENDING) belongs in
+  // 'Won — pay now' with the /checkout CTA. A win that was PAID lands the
+  // listing on SOLD; a lapsed win lands it on EXPIRED — both must NOT show
+  // the (now-404ing) Complete Checkout button.
+  const won = bids.filter(
+    (b) => b.isWinner && b.listingStatus === 'PAYMENT_PENDING',
+  );
+  const purchased = bids.filter(
+    (b) => b.isWinner && b.listingStatus === 'SOLD',
+  );
   const closed = bids.filter(
-    (b) => !live.includes(b) && !won.includes(b),
+    (b) =>
+      !live.includes(b) && !won.includes(b) && !purchased.includes(b),
   );
 
   // Featured bids split: still bidding / won the slot (BIND_WINDOW) /
@@ -172,6 +182,14 @@ export default async function MyBidsPage() {
       {won.length > 0 && (
         <div data-reveal><Section title="Won — pay now">
           {won.map((b) => (
+            <BidCard key={b.bidId} row={b} />
+          ))}
+        </Section></div>
+      )}
+
+      {purchased.length > 0 && (
+        <div data-reveal><Section title="Purchased">
+          {purchased.map((b) => (
             <BidCard key={b.bidId} row={b} />
           ))}
         </Section></div>
@@ -367,7 +385,7 @@ function BidCard({ row }: { row: MyBidRow }) {
         </div>
       </div>
 
-      {row.isWinner && (
+      {row.isWinner && row.listingStatus === 'PAYMENT_PENDING' && (
         <div
           className="mt-3 pt-3"
           style={{ borderTop: '0.5px solid var(--border)' }}
@@ -386,6 +404,38 @@ function BidCard({ row }: { row: MyBidRow }) {
           </a>
         </div>
       )}
+      {row.isWinner && row.listingStatus === 'SOLD' && (
+        <div
+          className="mt-3 pt-3"
+          style={{ borderTop: '0.5px solid var(--border)' }}
+        >
+          <Link
+            href="/transactions"
+            className="block w-full py-2.5 rounded-[6px] text-sm text-center"
+            style={{
+              background: 'var(--bg-inset)',
+              color: 'var(--text-secondary)',
+              border: '0.5px solid var(--border)',
+              textDecoration: 'none',
+            }}
+          >
+            View purchase
+          </Link>
+        </div>
+      )}
+      {row.isWinner &&
+        row.listingStatus !== 'PAYMENT_PENDING' &&
+        row.listingStatus !== 'SOLD' && (
+          <div
+            className="mt-3 pt-3 text-xs"
+            style={{
+              borderTop: '0.5px solid var(--border)',
+              color: 'var(--text-tertiary)',
+            }}
+          >
+            Payment window missed — this sale was cancelled.
+          </div>
+        )}
     </div>
   );
 }

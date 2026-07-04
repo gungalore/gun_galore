@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useUser, useAuth, SignInButton } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
 import { HelpTip } from '@/components/help-tip';
 import { HelpText } from '@/components/help-text';
 import {
@@ -25,7 +24,6 @@ interface AuctionState {
   id: string;
   status: string;
   startingBid: number;
-  buyNowPrice: number | null;
   currentBid: number | null;
   currentBidderName: string | null;
   bidCount: number;
@@ -100,7 +98,6 @@ export default function AuctionPanel({
 }) {
   const { user, isLoaded } = useUser();
   const { getToken } = useAuth();
-  const router = useRouter();
 
   const [state, setState] = useState<AuctionState | null>(null);
   const [myBid, setMyBid] = useState<MyBidState | null>(null);
@@ -119,7 +116,7 @@ export default function AuctionPanel({
   // Which modal is open. The three CTAs each open their own; only one
   // is ever visible at a time. null = closed.
   const [openModal, setOpenModal] = useState<
-    null | 'placeBid' | 'autoBid' | 'buyNow'
+    null | 'placeBid' | 'autoBid'
   >(null);
 
   // Tick once per second for the countdown
@@ -287,28 +284,6 @@ export default function AuctionPanel({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to cancel auto bid');
     } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleBuyNow() {
-    if (!state?.buyNowPrice) return;
-    setSubmitting(true);
-    setError('');
-    try {
-      const token = await getToken();
-      const res = await fetch(`${API_URL}/auctions/${listingId}/buy-now`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
-      router.push(`/checkout/${listingId}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start Buy Now');
       setSubmitting(false);
     }
   }
@@ -677,14 +652,6 @@ export default function AuctionPanel({
               submitting={submitting}
             />
           )}
-          {openModal === 'buyNow' && state.buyNowPrice && (
-            <BuyNowModal
-              priceCents={state.buyNowPrice}
-              onCancel={() => setOpenModal(null)}
-              onConfirm={handleBuyNow}
-              submitting={submitting}
-            />
-          )}
         </>
       )}
 
@@ -907,86 +874,6 @@ function BidModal({
             }}
           >
             {submitting ? 'Submitting…' : `${ctaLabel} — ${formatRandStrict(valueCents)}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Confirm dialog for Buy Now. No editor — the price is fixed by the
-// seller. Just a "Buy now for R{X}?" gate before we POST to the
-// backend and redirect to /checkout.
-function BuyNowModal({
-  priceCents,
-  onCancel,
-  onConfirm,
-  submitting,
-}: {
-  priceCents: number;
-  onCancel: () => void;
-  onConfirm: () => void;
-  submitting: boolean;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
-      style={{ background: 'rgba(0,0,0,0.6)' }}
-      onClick={onCancel}
-    >
-      <div
-        className="rounded-[8px] p-6 max-w-sm w-full"
-        style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3
-          className="text-lg mb-3"
-          style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-        >
-          Buy Now
-        </h3>
-        <p
-          className="text-sm mb-2"
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          Skip the bidding and buy outright at the seller&apos;s set
-          price. You&apos;ll be taken to checkout.
-        </p>
-        <p
-          className="text-2xl my-4 text-center"
-          style={{ color: 'var(--red)', fontWeight: 500 }}
-        >
-          {formatRandStrict(priceCents)}
-        </p>
-
-        <div className="flex gap-2 mt-5">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={submitting}
-            className="flex-1 py-2.5 rounded-[6px] text-sm"
-            style={{
-              background: 'var(--bg-inset)',
-              color: 'var(--text-secondary)',
-              border: '0.5px solid var(--border)',
-              cursor: submitting ? 'not-allowed' : 'pointer',
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={submitting}
-            className="flex-1 py-2.5 rounded-[6px] text-sm font-medium"
-            style={{
-              background: submitting ? 'var(--bg-inset)' : 'var(--red)',
-              color: submitting ? 'var(--text-tertiary)' : '#fff',
-              border: 'none',
-              cursor: submitting ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {submitting ? 'Starting…' : 'Buy Now & Checkout'}
           </button>
         </div>
       </div>
