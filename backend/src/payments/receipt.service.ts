@@ -167,9 +167,24 @@ export class ReceiptService {
       text(s, { size: 8.5, color: GREY });
       y -= 12;
     };
-    note(
-      'Your payment is held by Gun Galore and released to the seller once delivery is confirmed.',
-    );
+    // FLOW-F4 (M27) — method-aware. A PRIVATE_ARRANGE order releases funds to
+    // the seller immediately at payment (the buyer waived protection at
+    // checkout), so the generic "held until delivery is confirmed" line is
+    // false on a PA receipt (which even prints "Payment status: RELEASED").
+    if (
+      tx.shippingMethod === 'PRIVATE_ARRANGE' &&
+      tx.privateArrangeAcceptedAt
+    ) {
+      const w = tx.privateArrangeAcceptedAt;
+      const waiverDate = `${w.getUTCFullYear()}-${String(w.getUTCMonth() + 1).padStart(2, '0')}-${String(w.getUTCDate()).padStart(2, '0')}`;
+      note(
+        `Payment was released to the seller immediately at your request — payment protection was waived at checkout on ${waiverDate}.`,
+      );
+    } else {
+      note(
+        'Your payment is held by Gun Galore and released to the seller once delivery is confirmed.',
+      );
+    }
     note(
       'This is a proof-of-purchase receipt, not a tax invoice. Questions: support@gungalore.co.za',
     );

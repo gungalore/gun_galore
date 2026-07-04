@@ -742,7 +742,10 @@ export default async function TransactionPage({
               to the seller's AcceptRejectPanel. Live countdown to
               acceptDeadlineAt. Reassures the buyer that their card
               has been charged but the order isn't locked in yet. */}
-          {isBuyer && isPaidAwaitingAccept && tx.acceptDeadlineAt && (() => {
+          {/* FLOW-F4 (M14) — never show the "awaiting seller accept" countdown
+              (which decays into a false auto-refund promise) for PRIVATE_ARRANGE:
+              PA has no accept step and funds are already released. Mirrors canAccept. */}
+          {isBuyer && isPaidAwaitingAccept && !isPrivateArrange && tx.acceptDeadlineAt && (() => {
             const deadline = new Date(tx.acceptDeadlineAt).getTime();
             const msLeft = deadline - Date.now();
             const hoursLeft = Math.max(0, Math.floor(msLeft / 3_600_000));

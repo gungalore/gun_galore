@@ -1462,7 +1462,7 @@ export class TransactionsService {
     // it's a standalone line (a "group of one"). Stamp every still-live member
     // that isn't already accepted/rejected.
     const carrierId = tx.shipsWithId ?? transactionId;
-    await this.prisma.transaction.updateMany({
+    const stamped = await this.prisma.transaction.updateMany({
       where: {
         OR: [{ id: carrierId }, { shipsWithId: carrierId }],
         acceptedAt: null,
@@ -1475,6 +1475,20 @@ export class TransactionsService {
       (await this.prisma.transaction.findUnique({
         where: { id: transactionId },
       })) ?? tx;
+
+    // FLOW-F4 (M25) — defence in depth: if nothing was actually stamped the
+    // sale is not in an acceptable state (PRIVATE_ARRANGE already RELEASED, or
+    // the row is REFUNDED/DISPUTED). Return the re-read row WITHOUT booking a
+    // shipment, recording a SELLER_ACCEPTED timeline row, resolving inbox rows,
+    // or firing the false 'dispatch within 5 days + tracking' buyer notice.
+    // (The already-accepted idempotent case is handled by the acceptedAt guard
+    // earlier, so a genuine standalone/carrier accept always stamps >=1.)
+    if (stamped.count === 0) {
+      this.logger.warn(
+        `acceptTransaction ${transactionId}: 0 rows stamped (not HELD — PA-released/refunded/disputed); skipping shipment/timeline/notify`,
+      );
+      return updated;
+    }
 
     // P5.2: book the real carrier shipment now that the seller has
     // committed — on the CARRIER line, which combines the whole group's
@@ -2993,6 +3007,18 @@ export class TransactionsService {
         },
       });
       if (!tx) return;
+
+      // FLOW-F4 (H22/M15/M24/M25) — PRIVATE_ARRANGE has NO accept/dispatch
+      // step: maybeImmediatePayout releases the funds at payment and
+      // sendPrivateArrangeContactReveal already notifies BOTH parties with
+      // the correct immediate-release + contact-reveal copy. So for PA we
+      // must NOT mint the TRANSACTION_ACCEPT token and must NOT fire the
+      // generic courier orderConfirmedBuyer / newSaleSeller pair (those
+      // promise 'held funds / accept within 48h / dispatch within 5 days',
+      // all false for PA). Bail out here; the contact-reveal path owns PA
+      // notifications end to end (incl. a dismissible seller inbox row).
+      if (tx.shippingMethod === 'PRIVATE_ARRANGE') return;
+
       // Mint the TRANSACTION_ACCEPT token so the seller can tap the
       // SMS link and accept the sale in one tap (no sign-in). 48h TTL
       // matches the operator-confirmed accept window; if the seller

@@ -3085,6 +3085,23 @@ export class NotificationsService {
       `Gun Galore: ${truncate(d.listingTitle, 30)} sold to ${buyerName}${d.buyer.phone ? ' (' + d.buyer.phone + ')' : ''}. Payment released. Arrange the dealer meet.`,
       `pa-seller-${d.transactionId}`,
     );
+
+    // FLOW-F4 (M24) — a PRIVATE_ARRANGE sale has no accept/dispatch step, so
+    // it must NOT create the courier 'new_sale — accept within 48h'
+    // (dismissible:false) inbox row. Instead drop a truthful, DISMISSIBLE
+    // seller row so the inbox isn't silent and nothing becomes a permanent
+    // nag (nothing resolves rows on a healthy PA — funds are already out).
+    await this.persistByEmail(d.seller.email, {
+      category: 'SELLER',
+      type: 'new_sale',
+      title: 'Your listing sold',
+      body: `${d.listingTitle} sold — payment released. Arrange the SAPS dealer meet with the buyer.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'sold',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+    });
   }
 
   // ---------------------------------------------------------------
