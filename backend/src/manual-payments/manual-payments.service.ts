@@ -1134,7 +1134,15 @@ export class ManualPaymentsService {
     // marked paid via the normal drain — the commission WAS retained.
     if (d.zeroNetIds.length) {
       await this.prisma.transaction.updateMany({
-        where: { id: { in: d.zeroNetIds }, payoutBatchId: null, paidOutAt: null },
+        // M26 — respect a payout hold placed during the freeze window. A held
+        // row must not be silently settled here either (mirrors the freeze
+        // guard below); an excluded row simply stays in the due queue.
+        where: {
+          id: { in: d.zeroNetIds },
+          payoutBatchId: null,
+          paidOutAt: null,
+          payoutHeldAt: null,
+        },
         data: { paidOutAt: new Date() },
       });
       this.logger.log(
@@ -1178,11 +1186,18 @@ export class ManualPaymentsService {
           createdById: adminClerkId,
         },
       });
-      // Link only rows STILL un-batched + un-paid. If a concurrent freeze
-      // grabbed any, the count won't match → abort (rolls back) so the CSV
-      // always matches the linked set; the operator simply retries.
+      // Link only rows STILL un-batched + un-paid + un-held. If a concurrent
+      // freeze grabbed any — or a payout hold (M26) landed during this freeze
+      // window — the count won't match → abort (rolls back) so the CSV always
+      // matches the linked set; the operator simply retries with the held row
+      // excluded. getPayoutsDue's read-time filter alone missed this race.
       const linked = await txc.transaction.updateMany({
-        where: { id: { in: allIds }, payoutBatchId: null, paidOutAt: null },
+        where: {
+          id: { in: allIds },
+          payoutBatchId: null,
+          paidOutAt: null,
+          payoutHeldAt: null,
+        },
         data: { payoutBatchId: b.id },
       });
       if (linked.count !== allIds.length) {
