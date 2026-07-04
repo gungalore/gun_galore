@@ -659,6 +659,16 @@ export interface AdminRaffleWinnerDossier {
       addrProvince: string | null;
       addrPostalCode: string | null;
     } | null;
+    // Postal (free-entry) winner contact — only present when user is null.
+    // Keyed off the winning ticket's PostalEntry so the operator can ship
+    // to a no-account winner from the dossier.
+    postalContact: {
+      firstName: string;
+      lastName: string;
+      email: string | null;
+      phone: string | null;
+      address: string | null;
+    } | null;
   }[];
 }
 

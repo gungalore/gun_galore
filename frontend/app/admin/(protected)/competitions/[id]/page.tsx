@@ -347,6 +347,27 @@ function WinnerCard({
             />
           </div>
         </div>
+      ) : winner.postalContact ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+          <Field
+            label="Postal entrant"
+            value={
+              [winner.postalContact.firstName, winner.postalContact.lastName]
+                .filter(Boolean)
+                .join(' ') || '—'
+            }
+          />
+          <Field label="Email" value={winner.postalContact.email ?? '—'} mono />
+          <Field label="Phone" value={winner.postalContact.phone ?? '—'} mono />
+          <Field label="Ticket" value={winner.ticketId} mono />
+          <div className="md:col-span-2">
+            <Field
+              label="Postal address"
+              value={winner.postalContact.address ?? '— No address on entry —'}
+              multiline
+            />
+          </div>
+        </div>
       ) : (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
           Postal entry — contact details live on the postal-entries page.

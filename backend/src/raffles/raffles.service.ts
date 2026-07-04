@@ -1008,6 +1008,11 @@ export class RafflesService {
             ticketId: w.ticketId,
             position: w.position,
             claimDeadline,
+            // Postal winners (userId null) have no Clerk account to click
+            // Claim, so treat them as auto-claimed at draw time. Without
+            // this the 7-day expireClaims cron would force-forfeit every
+            // postal winner the operator is manually processing.
+            claimedAt: w.userId ? null : new Date(),
           },
         });
       }
@@ -1029,7 +1034,10 @@ export class RafflesService {
         winners: winners.map((w) => ({ position: w.position, ticketId: w.ticketId })),
       });
 
-      // Notify winner #1 (best-effort)
+      // Notify winner #1 (best-effort). Account winners get email/SMS/in-app
+      // via their User row; postal winners (userId null) are contacted via
+      // the PostalEntry on the winning ticket — otherwise a legally-required
+      // free-entry winner is never told and silently forfeits.
       const w1 = winners[0];
       if (w1?.userId) {
         const user = await tx.user.findUnique({ where: { id: w1.userId } });
@@ -1039,6 +1047,22 @@ export class RafflesService {
             raffle.title,
             w1.position,
             claimDeadline,
+            raffleId,
+          );
+        }
+      } else if (w1) {
+        const ticket = await tx.ticket.findUnique({
+          where: { id: w1.ticketId },
+          select: { postalEntry: { select: { email: true } } },
+        });
+        const pe = ticket?.postalEntry;
+        if (pe?.email) {
+          void this.notifications.raffleWinnerPicked(
+            pe.email,
+            raffle.title,
+            w1.position,
+            claimDeadline,
+            raffleId,
           );
         }
       }
@@ -1054,16 +1078,43 @@ export class RafflesService {
   async expireClaims() {
     const now = new Date();
     const lapsed = await this.prisma.raffleWinner.findMany({
-      where: { claimDeadline: { lte: now }, claimedAt: null, forfeitedAt: null },
+      // prizeDispatchedAt: null so a winner whose prize was already shipped
+      // (dispatch doesn't require claimedAt) is never forfeited + re-promoted
+      // for a prize that is physically already gone.
+      where: {
+        claimDeadline: { lte: now },
+        claimedAt: null,
+        forfeitedAt: null,
+        prizeDispatchedAt: null,
+      },
       orderBy: [{ raffleId: 'asc' }, { position: 'asc' }],
     });
     let processed = 0;
     for (const w of lapsed) {
       try {
-        await this.prisma.raffleWinner.update({
-          where: { id: w.id },
+        // Guarded CAS forfeit. positions 1/2/3 share one draw-time
+        // claimDeadline, so all lapsed winners land in this one snapshot.
+        // When position 1 forfeits it promotes position 2 with a FRESH
+        // deadline — but position 2 is still in the stale snapshot. An
+        // unconditional update would then clobber that just-promoted row
+        // and cascade-forfeit every backup in a single pass. The
+        // claimDeadline:{lte:now} predicate fails for a promoted row
+        // (fresh deadline > now) so updateMany matches 0 rows and we skip.
+        const res = await this.prisma.raffleWinner.updateMany({
+          where: {
+            id: w.id,
+            claimedAt: null,
+            forfeitedAt: null,
+            claimDeadline: { lte: now },
+          },
           data: { forfeitedAt: now },
         });
+        if (res.count === 0) {
+          // Row was promoted (fresh deadline) or claimed since the
+          // snapshot was taken — skip; do NOT cascade-forfeit or promote
+          // the next backup.
+          continue;
+        }
         await this.recordEvent(w.raffleId, 'WINNER_FORFEIT', {
           position: w.position,
         });
@@ -1395,7 +1446,50 @@ export class RafflesService {
       },
     });
 
-    return { raffle, winners };
+    // Postal winners (userId null) have no User row — their contact lives
+    // on the PostalEntry keyed off the winning ticket. Load those so the
+    // operator can physically ship/hand the prize without leaving the
+    // dossier, and attach each onto its winner as `postalContact`.
+    const postalTicketIds = winners
+      .filter((w) => !w.userId)
+      .map((w) => w.ticketId);
+    const postalByTicketId = new Map<
+      string,
+      {
+        firstName: string;
+        lastName: string;
+        email: string | null;
+        phone: string | null;
+        address: string | null;
+      }
+    >();
+    if (postalTicketIds.length > 0) {
+      const postalTickets = await this.prisma.ticket.findMany({
+        where: { id: { in: postalTicketIds } },
+        select: {
+          id: true,
+          postalEntry: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+              address: true,
+            },
+          },
+        },
+      });
+      for (const t of postalTickets) {
+        if (t.postalEntry) postalByTicketId.set(t.id, t.postalEntry);
+      }
+    }
+
+    const withPostal = winners.map((w) => ({
+      ...w,
+      postalContact: w.userId ? null : postalByTicketId.get(w.ticketId) ?? null,
+    }));
+
+    return { raffle, winners: withPostal };
   }
 
   // -------------------------------------------------------------------
@@ -1431,6 +1525,16 @@ export class RafflesService {
       },
     });
     if (!winner) throw new NotFoundException('Winner not found');
+    // Postal winners have no User row — pull their contact off the winning
+    // ticket's PostalEntry so the dispatch notify can reach them too.
+    let postalContact: { email: string | null; phone: string | null } | null = null;
+    if (!winner.userId) {
+      const ticket = await this.prisma.ticket.findUnique({
+        where: { id: winner.ticketId },
+        select: { postalEntry: { select: { email: true, phone: true } } },
+      });
+      postalContact = ticket?.postalEntry ?? null;
+    }
     if (winner.prizeDispatchedAt) {
       throw new BadRequestException('Prize already marked as dispatched');
     }
@@ -1479,14 +1583,19 @@ export class RafflesService {
       adminId,
     );
 
-    // Notify the winner — fail-open, never block the dispatch.
-    if (winner.userId && winner.user) {
+    // Notify the winner — fail-open, never block the dispatch. Account
+    // winners go via their User row; postal winners via the PostalEntry
+    // contact, so a free-entry winner also gets their tracking info.
+    const dispatchEmail = winner.user?.email ?? postalContact?.email ?? null;
+    const dispatchPhone = winner.user?.phone ?? postalContact?.phone ?? null;
+    if (dispatchEmail) {
       void this.notifications.raffleWinnerPrizeDispatched({
-        winnerEmail: winner.user.email,
-        winnerPhone: winner.user.phone,
+        winnerEmail: dispatchEmail,
+        winnerPhone: dispatchPhone,
         raffleTitle: winner.raffle.title,
         trackingRef,
         carrierLabel: dto.carrierLabel ?? null,
+        raffleId: winner.raffle.id,
       });
     }
 
