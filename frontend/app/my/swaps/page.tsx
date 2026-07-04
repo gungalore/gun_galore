@@ -58,6 +58,8 @@ interface SwapRow {
   getIsFirearm: boolean;
   giveProofCode: string | null;
   giveProofStatus: string | null;
+  giveTracking: { status: string | null; waybill: string | null; estimatedDeliveryAt: string | null } | null;
+  getTracking: { status: string | null; waybill: string | null; estimatedDeliveryAt: string | null } | null;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -203,11 +205,17 @@ function SwapCard({
         </Note>
       )}
       {swap.status === 'IN_TRANSIT' && (
-        <Note tone="info">
-          {swap.giveIsFirearm || swap.getIsFirearm
-            ? 'In progress. Firearm legs transfer through a licensed dealer; courier legs are on the way.'
-            : 'Both couriers are booked — your parcels are on the way. We’ll confirm here once both are delivered.'}
-        </Note>
+        <>
+          <Note tone="info">
+            {swap.giveIsFirearm || swap.getIsFirearm
+              ? 'In progress. Firearm legs transfer through a licensed dealer; courier legs are on the way.'
+              : 'Both couriers are booked — your parcels are on the way. We’ll confirm here once both are delivered.'}
+          </Note>
+          <div className="mt-2 flex flex-col gap-1.5">
+            <TrackingLine label="Parcel you're sending" t={swap.giveTracking} isFirearm={swap.giveIsFirearm} />
+            <TrackingLine label="Parcel you're receiving" t={swap.getTracking} isFirearm={swap.getIsFirearm} />
+          </div>
+        </>
       )}
       {/* S6 — firearm the caller is SENDING: prompt the dealer drop + SAPS 534
           upload (the same page normal firearm sellers use). */}
@@ -558,6 +566,37 @@ function ProofSection({
         This proves your item is real and in your hands before anyone ships —
         both sides must verify before the swap can be funded.
       </p>
+    </div>
+  );
+}
+
+function TrackingLine({
+  label,
+  t,
+  isFirearm,
+}: {
+  label: string;
+  t: { status: string | null; waybill: string | null; estimatedDeliveryAt: string | null } | null;
+  isFirearm: boolean;
+}) {
+  // Firearm legs move via a dealer, not a courier waybill — say so plainly.
+  if (isFirearm) {
+    return (
+      <div className="flex items-center justify-between gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+        <span>{label}</span>
+        <span>Via licensed dealer</span>
+      </div>
+    );
+  }
+  const waybill = t?.waybill;
+  const status = t?.status;
+  return (
+    <div className="flex items-center justify-between gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+      <span>{label}</span>
+      <span style={{ color: 'var(--text-secondary)', textAlign: 'right' }}>
+        {waybill ? <>Waybill <strong style={{ color: 'var(--text-primary)' }}>{waybill}</strong></> : 'Booking…'}
+        {status ? ` · ${status.replace(/_/g, ' ').toLowerCase()}` : ''}
+      </span>
     </div>
   );
 }

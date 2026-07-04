@@ -211,6 +211,22 @@ export class TasksService {
     }
   }
 
+  // Recover PRIVATE_ARRANGE sales stranded paid+HELD (crash between markPaid
+  // and the immediate-payout fire-and-forget). Small, idempotent, cheap.
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async reconcileStrandedPrivateArrange() {
+    this.logger.debug('Running PRIVATE_ARRANGE payout reconcile');
+    try {
+      await this.transactions.reconcileStrandedPrivateArrange();
+    } catch (err) {
+      this.logger.error(
+        `reconcileStrandedPrivateArrange failed: ${(err as Error).message}`,
+      );
+    } finally {
+      await this.recordCronRun('pa-payout-reconcile');
+    }
+  }
+
   // ─── Manual EFT — freeze expiry + payment reminders ──────────────
   // Every 5 min: (1) release listings whose 24-hour pay-by window lapsed
   // with no payment detected, SOFT-cancelling the stale order (the row
@@ -910,6 +926,23 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('swap-fee-receipt-retry');
+    }
+  }
+
+  // Re-drive swaps wedged at LOCKED (crash between the lock write and the
+  // IN_TRANSIT flip). Runs every 5 min so a stranded fully-funded swap is
+  // picked up promptly, not left for the admin to notice by hand.
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async sweepStalledLockedSwaps() {
+    this.logger.debug('Running swap LOCKED re-drive sweep');
+    try {
+      await this.swapFunding.sweepStalledLockedSwaps();
+    } catch (err) {
+      this.logger.error(
+        `sweepStalledLockedSwaps failed: ${(err as Error).message}`,
+      );
+    } finally {
+      await this.recordCronRun('swap-locked-redrive');
     }
   }
 

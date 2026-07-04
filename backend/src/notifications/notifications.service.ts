@@ -2345,6 +2345,10 @@ export class NotificationsService {
     // don't have it yet can still call this method — the row just
     // won't auto-resolve.
     listingId?: string,
+    // Seller phone — every auction-lifecycle event SMSes (per-bid,
+    // won, dispatch all do); the seller-side end notice was the only
+    // one that didn't. Optional so existing callers still compile.
+    sellerPhone?: string | null,
   ) {
     const ctaUrl = `${this.appUrl}/dashboard`;
     // In-app inbox: WON is action-required (seller needs to track the
@@ -2423,6 +2427,17 @@ export class NotificationsService {
         break;
     }
     await this.send(sellerEmail, subject, html);
+    if (sellerPhone) {
+      const smsBody =
+        outcome === 'WON'
+          ? `Gun Galore: Your auction ${truncate(listingTitle, 24)} SOLD for R${(amount / 100).toFixed(0)}. Buyer has 24h to pay.`
+          : outcome === 'WINNER_UNPAID'
+            ? `Gun Galore: The winner of ${truncate(listingTitle, 22)} didn't pay in time. You can relist it: ${ctaUrl}`
+            : outcome === 'NO_RESERVE'
+              ? `Gun Galore: ${truncate(listingTitle, 22)} closed at R${(amount / 100).toFixed(0)} — below your reserve. Relist: ${ctaUrl}`
+              : `Gun Galore: ${truncate(listingTitle, 24)} ended with no bids. Relist: ${ctaUrl}`;
+      await this.sendSms(sellerPhone, smsBody, `auction-ended-${outcome.toLowerCase()}-${listingId ?? 'x'}`);
+    }
   }
 
   // ---------------------------------------------------------------

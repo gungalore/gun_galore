@@ -1036,7 +1036,14 @@ export class AuctionsService {
       const seller = await this.prisma.user.findUnique({ where: { id: sellerId } });
       const listing = await this.prisma.listing.findUnique({ where: { id: listingId } });
       if (!seller || !listing) return;
-      await this.notifications.auctionEndedForSeller(seller.email, listing.title, outcome, amount);
+      await this.notifications.auctionEndedForSeller(
+        seller.email,
+        listing.title,
+        outcome,
+        amount,
+        listingId,
+        seller.phone,
+      );
     } catch (err) {
       this.logger.warn(`auctionEnded notify failed: ${(err as Error).message}`);
     }

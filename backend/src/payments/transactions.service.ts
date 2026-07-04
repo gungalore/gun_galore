@@ -2912,6 +2912,44 @@ export class TransactionsService {
   // depth — a missing stamp means the buyer didn't go through the
   // consent screen so we MUST not auto-release).
   // ------------------------------------------------------------------
+  // Reconcile sweep — re-run the PRIVATE_ARRANGE immediate payout for any row
+  // that is paid + HELD + consent-stamped but never got released (a crash /
+  // transient DB failure between markPaid and maybeImmediatePayout completing).
+  // maybeImmediatePayout is fully idempotent (guards on shippingMethod, consent
+  // stamp, and paymentStatus HELD; the RELEASED flip is a single atomic write),
+  // so re-running it is exactly-once-safe. A short age floor avoids racing the
+  // happy-path call that fires microseconds after markPaid.
+  async reconcileStrandedPrivateArrange(): Promise<{ recovered: number }> {
+    const floor = new Date(Date.now() - 5 * 60_000); // 5 min past capture
+    const stranded = await this.prisma.transaction.findMany({
+      where: {
+        shippingMethod: 'PRIVATE_ARRANGE',
+        paymentStatus: 'HELD',
+        paidAt: { not: null, lt: floor },
+        privateArrangeAcceptedAt: { not: null },
+      },
+      select: { id: true },
+      take: 50,
+    });
+    let recovered = 0;
+    for (const t of stranded) {
+      try {
+        await this.maybeImmediatePayout(t.id);
+        recovered += 1;
+      } catch (err) {
+        this.logger.warn(
+          `reconcileStrandedPrivateArrange failed for ${t.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (recovered > 0) {
+      this.logger.log(
+        `reconcileStrandedPrivateArrange re-drove ${recovered} PA payout(s)`,
+      );
+    }
+    return { recovered };
+  }
+
   private async maybeImmediatePayout(txId: string) {
     try {
       const tx = await this.prisma.transaction.findUnique({

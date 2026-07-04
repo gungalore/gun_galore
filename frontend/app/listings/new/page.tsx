@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { Category, CategoryAttributeDef, Me } from '@/lib/types';
 import { CONDITION_LABELS } from '@/lib/utils';
@@ -487,6 +487,62 @@ export default function NewListingPage() {
   // change; restore on mount; clear on successful publish.
   const draftKey = 'gg-listing-new-draft';
   const [draftRestored, setDraftRestored] = useState(false);
+
+  // Relist prefill — one-shot. The 'Relist' CTA on /my/listings routes here
+  // with ?relistFrom=<sourceListingId>. Fetch that listing (public detail
+  // endpoint) and seed the text fields so the seller doesn't retype title,
+  // description, category + attributes. Photos are File objects and can't be
+  // carried over — the seller re-uploads them (the form already requires
+  // that). Price/reserve are seeded from the source; the seller can lower
+  // them (the NO_BIDS/NO_RESERVE copy tells them to). We gate on an empty
+  // draft so a live draft-restore always wins and a relist never clobbers a
+  // half-finished listing.
+  const searchParams = useSearchParams();
+  const relistFromId = searchParams.get('relistFrom');
+  const relistDoneRef = useRef(false);
+  useEffect(() => {
+    if (relistDoneRef.current || !relistFromId) return;
+    relistDoneRef.current = true;
+    if (typeof window !== 'undefined' && localStorage.getItem(draftKey)) {
+      // A saved draft takes precedence — never overwrite in-progress work.
+      return;
+    }
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/listings/${relistFromId}`);
+        if (!res.ok) return;
+        const l = (await res.json()) as {
+          title?: string;
+          description?: string;
+          categoryId?: string;
+          condition?: string;
+          province?: string;
+          price?: number; // cents
+          reservePrice?: number | null; // cents
+          attributes?: Record<string, string | boolean> | null;
+        };
+        setForm((f) => ({
+          ...f,
+          title: l.title ?? f.title,
+          description: l.description ?? f.description,
+          categoryId: l.categoryId ?? f.categoryId,
+          condition: l.condition ?? f.condition,
+          province: l.province ?? f.province,
+          // Rand strings for the inputs (state stores rand, submit multiplies).
+          price: l.price != null ? String(l.price / 100) : f.price,
+          reservePrice:
+            l.reservePrice != null
+              ? String(l.reservePrice / 100)
+              : f.reservePrice,
+        }));
+        if (l.attributes && typeof l.attributes === 'object') {
+          setAttrValues((prev) => ({ ...prev, ...l.attributes! }));
+        }
+      } catch {
+        // Source gone / network — fall through to a blank form.
+      }
+    })();
+  }, [relistFromId]);
 
   // Restore on mount (one-shot ref so a re-render doesn't loop).
   const restoredRef = useRef(false);

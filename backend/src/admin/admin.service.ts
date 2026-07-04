@@ -775,6 +775,14 @@ export class AdminService {
           bidder: { select: { id: true, username: true } },
         },
       }),
+      // NOTE (LOW-auction-watchlist-stub): AuctionWatch is a DORMANT stub —
+      // the POST/DELETE :listingId/watch endpoints exist but NO frontend
+      // surface writes to it (the public "N watching" count comes from
+      // WatchedListing / the wishlist path, not this table), so this query is
+      // effectively always empty. Wiring a real Watch button + an
+      // ending-soon watcher-notification cron is a deferred FUTURE feature
+      // (needs a product decision on notification cadence + throttle). Kept
+      // here so the dossier shape is stable if/when the feature lands.
       this.prisma.auctionWatch.findMany({
         where: { listingId },
         orderBy: { createdAt: 'desc' },

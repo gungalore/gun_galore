@@ -522,6 +522,14 @@ export class SwapFundingService {
             dealerVerificationStatus: true,
             swapProofCode: true,
             swapProofStatus: true,
+            // Carrier tracking so /my/swaps can surface a waybill + live
+            // status for each leg while parcels are in transit. Both the
+            // leg the caller SENDS and the leg they RECEIVE are useful.
+            shippingStatus: true,
+            trackingReference: true,
+            pudoTrackingCode: true,
+            tcgWaybill: true,
+            estimatedDeliveryAt: true,
             listing: {
               select: {
                 id: true,
@@ -573,6 +581,26 @@ export class SwapFundingService {
         // "verify your item" step on /my/swaps).
         giveProofCode: giveLeg?.swapProofCode ?? null,
         giveProofStatus: giveLeg?.swapProofStatus ?? null,
+        // Tracking for the leg the caller SENDS (their own parcel).
+        giveTracking: {
+          status: giveLeg?.shippingStatus ?? null,
+          waybill:
+            giveLeg?.trackingReference ??
+            giveLeg?.tcgWaybill ??
+            giveLeg?.pudoTrackingCode ??
+            null,
+          estimatedDeliveryAt: giveLeg?.estimatedDeliveryAt?.toISOString() ?? null,
+        },
+        // Tracking for the leg the caller RECEIVES (the incoming parcel).
+        getTracking: {
+          status: getLeg?.shippingStatus ?? null,
+          waybill:
+            getLeg?.trackingReference ??
+            getLeg?.tcgWaybill ??
+            getLeg?.pudoTrackingCode ??
+            null,
+          estimatedDeliveryAt: getLeg?.estimatedDeliveryAt?.toISOString() ?? null,
+        },
       };
     });
     return { bankDetails: GG_BANK_DETAILS, swaps: mapped };
@@ -746,6 +774,59 @@ export class SwapFundingService {
     this.logger.log(
       `Swap ${swapId} ${side} reimbursed ${amount}c (synthetic refund tx)`,
     );
+  }
+
+  // Cron — re-drive any swap wedged at LOCKED. onSwapLocked runs outside a
+  // transaction (notify → book both legs → flip LOCKED→IN_TRANSIT); a crash
+  // between the tryLock commit and that flip strands the swap at LOCKED with
+  // legs possibly unbooked. bookForTransaction is idempotent + fail-safe and
+  // the LOCKED→IN_TRANSIT flip is guarded on status=LOCKED, so simply re-running
+  // onSwapLocked is safe and exactly-once-ish. A short age floor avoids racing
+  // a lock that is mid-onSwapLocked in the normal path. If it still can't flip
+  // after a grace window, raise an admin alert so a genuinely stuck swap surfaces.
+  async sweepStalledLockedSwaps() {
+    if (PAYMENT_MODE !== 'manual') return;
+    const now = Date.now();
+    const graceFloor = new Date(now - 10 * 60_000); // 10 min: past the normal book window
+    const alertFloor = new Date(now - 60 * 60_000); // 1 h: genuinely stuck → alert
+    const stuck = await this.prisma.swap.findMany({
+      where: {
+        status: SwapStatus.LOCKED,
+        lockedAt: { not: null, lt: graceFloor },
+      },
+      select: { id: true, lockedAt: true },
+      take: 50,
+    });
+    for (const s of stuck) {
+      try {
+        // Re-drive: notify (idempotent), re-book legs (idempotent), flip.
+        await this.onSwapLocked(s.id);
+        // If it's been stuck past the alert floor and STILL LOCKED after the
+        // re-drive attempt, raise a one-shot admin alert.
+        if (s.lockedAt && s.lockedAt < alertFloor) {
+          const fresh = await this.prisma.swap.findUnique({
+            where: { id: s.id },
+            select: { status: true },
+          });
+          if (fresh?.status === SwapStatus.LOCKED) {
+            await this.prisma.adminAlert
+              .create({
+                data: {
+                  type: 'swap-locked-stalled',
+                  referenceId: s.id,
+                  urgent: true,
+                  context: `Swap ${s.id} has been LOCKED (fully funded) for over an hour without flipping to IN_TRANSIT — courier booking may have failed. Needs admin review.`,
+                },
+              })
+              .catch(() => undefined);
+          }
+        }
+      } catch (err) {
+        this.logger.warn(
+          `sweepStalledLockedSwaps re-drive failed for ${s.id}: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   // ----------------------------------------------------------------

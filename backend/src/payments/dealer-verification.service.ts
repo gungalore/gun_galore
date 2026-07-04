@@ -183,6 +183,41 @@ export class DealerVerificationService {
         'This transaction is no longer awaiting verification — payment has already been settled or reversed. Contact support if something is wrong.',
       );
     }
+    // Reshoot cap — a persistently-failing (or hostile) seller must not loop
+    // upload→REJECTED forever; each cycle costs a Claude vision call + 3
+    // Cloudinary uploads. After MAX_REVERIFY_ATTEMPTS we stop auto-scanning,
+    // route the tx to a human, and tell the seller support is now reviewing.
+    const MAX_REVERIFY_ATTEMPTS = 5;
+    if ((tx.dealerVerifyAttempts ?? 0) >= MAX_REVERIFY_ATTEMPTS) {
+      // Flip to PENDING_ADMIN_REVIEW so it lands in the human queue + ageing
+      // sweep, and raise a one-shot escalation alert. Idempotent-ish: repeated
+      // hits just re-assert the state (the alert insert is best-effort).
+      await this.prisma.transaction.updateMany({
+        where: { id: transactionId, dealerVerificationStatus: 'REJECTED' },
+        data: { dealerVerificationStatus: 'PENDING_ADMIN_REVIEW' },
+      });
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'DEALER_VERIFICATION_RESHOOT_CAP',
+            referenceId: transactionId,
+            urgent: true,
+            context:
+              `Firearm verification ${transactionId.slice(-8).toUpperCase()} has failed ` +
+              `automated checks ${MAX_REVERIFY_ATTEMPTS}+ times — no more auto-scans. ` +
+              `A human must review the photos in the transaction dossier (approve, ` +
+              `reject, or contact the seller).`,
+          },
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `reshoot-cap alert failed for ${transactionId}: ${(err as Error).message}`,
+          ),
+        );
+      throw new BadRequestException(
+        'This transfer has been submitted several times and is now with our team for manual review — please don’t re-upload. We’ll be in touch shortly.',
+      );
+    }
     // SWOP S6 — a swap firearm leg may only be stocked-in once the swap has
     // LOCKED (both parties funded). The dealer-verify APPROVED path sets the
     // leg's deliveredAt, which drives the swap rollup; allowing it during
@@ -238,6 +273,8 @@ export class DealerVerificationService {
         stockRegisterPhotoUrl: stockRegisterUpload.url,
         firearmSerialPhotoUrl: firearmSerialUpload.url,
         dealerVerificationStatus: 'PENDING_CLAUDE',
+        // Count this attempt (drives the reshoot cap above on the next upload).
+        dealerVerifyAttempts: { increment: 1 },
         dealerStockRegisterRef:
           dealerStockRegisterRef?.trim().slice(0, 40) || null,
         // Persist the dealer contact the seller typed in. Surfaced

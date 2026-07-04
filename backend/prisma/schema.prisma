@@ -1224,6 +1224,11 @@ model Transaction {
   // the admin panel can re-render Claude's reasoning without a re-run.
   dealerVerificationFindings Json?
   dealerVerifiedAt           DateTime?
+  // Reshoot cap — incremented on every dealer-verification upload attempt
+  // (each burns a Claude vision call + 3 Cloudinary uploads). Past a cap the
+  // upload is blocked and the tx is escalated to a human review queue instead
+  // of letting a persistently-bad (or hostile) seller loop forever.
+  dealerVerifyAttempts       Int      @default(0)
   // Stock-register entry number the dealer (or seller) types in, for
   // SAPS audit cross-reference. Optional — not always available at
   // upload time.
