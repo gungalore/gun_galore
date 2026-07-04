@@ -445,6 +445,37 @@ export class AdminTransactionsController {
 }
 
 // ---------------------------------------------------------------
+// Orders (P8b multi-item cart) — list + dossier. FLOW-F3 (H11).
+// Read-only discovery surface over the Order parent + its child
+// Transaction lines. Money actions still happen per-line on the
+// transaction dossier (the refund endpoint's sibling-ordering guard
+// sequences the parcel unwind correctly).
+// ---------------------------------------------------------------
+@Controller('admin/orders')
+@UseGuards(AdminJwtGuard)
+export class AdminOrdersController {
+  constructor(private readonly adminService: AdminService) {}
+
+  @Get()
+  getOrders(
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.getOrders(
+      status,
+      Number(page) || 1,
+      Number(limit) || 20,
+    );
+  }
+
+  @Get(':id/dossier')
+  getOrderDossier(@Param('id') id: string) {
+    return this.adminService.getOrderDossier(id);
+  }
+}
+
+// ---------------------------------------------------------------
 // Admins — list, create, update role, deactivate
 // ---------------------------------------------------------------
 // Listing is open to any logged-in admin (so monitoring admins know

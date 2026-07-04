@@ -1243,6 +1243,20 @@ export default async function TransactionPage({
               <span style={{ color: 'var(--text-primary)' }}>{formatPrice(tx.listingPrice)}</span>
             </div>
 
+            {tx.shippingCost > 0 && (
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--text-tertiary)' }}>Shipping</span>
+                <span style={{ color: 'var(--text-primary)' }}>{formatPrice(tx.shippingCost)}</span>
+              </div>
+            )}
+
+            {tx.shippingHandlingCents > 0 && (
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--text-tertiary)' }}>Handling</span>
+                <span style={{ color: 'var(--text-primary)' }}>{formatPrice(tx.shippingHandlingCents)}</span>
+              </div>
+            )}
+
             {tx.passFeeToBuyer && tx.processingFee > 0 && (
               <div className="flex justify-between">
                 <span style={{ color: 'var(--text-tertiary)' }}>Processing fee</span>

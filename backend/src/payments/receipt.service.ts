@@ -53,6 +53,11 @@ export class ReceiptService {
       include: {
         listing: { select: { title: true } },
         seller: { select: { username: true } },
+        // Cart-child transactions carry NO per-tx orderReference — the single
+        // GG-ORD-… EFT memo the buyer actually paid under lives on the parent
+        // Order. Pull it so the receipt prints the real bank reference instead
+        // of the raw transaction cuid.
+        order: { select: { orderReference: true } },
       },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
@@ -65,7 +70,7 @@ export class ReceiptService {
       throw new ForbiddenException('Receipt available once payment is made');
     }
 
-    const ref = tx.orderReference ?? tx.id;
+    const ref = tx.orderReference ?? tx.order?.orderReference ?? tx.id;
     const paid = tx.paidAt;
     const dateStr = `${paid.getUTCFullYear()}-${String(paid.getUTCMonth() + 1).padStart(2, '0')}-${String(paid.getUTCDate()).padStart(2, '0')}`;
 

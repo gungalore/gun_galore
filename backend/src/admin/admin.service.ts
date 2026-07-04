@@ -524,12 +524,12 @@ export class AdminService {
   async globalSearch(query: string) {
     const q = (query ?? '').trim();
     if (q.length < 2) {
-      return { users: [], listings: [], transactions: [] };
+      return { users: [], listings: [], transactions: [], orders: [] };
     }
     const insensitive = { contains: q, mode: 'insensitive' as const };
     const upper = q.toUpperCase();
 
-    const [users, listings, transactions] = await Promise.all([
+    const [users, listings, transactions, orders] = await Promise.all([
       this.prisma.user.findMany({
         where: {
           OR: [
@@ -574,6 +574,7 @@ export class AdminService {
         where: {
           OR: [
             { id: q },
+            { orderReference: insensitive },
             { peachCheckoutId: q },
             { peachPaymentId: q },
             { tcgWaybill: insensitive },
@@ -588,9 +589,32 @@ export class AdminService {
           listing: { select: { title: true, referenceNumber: true } },
         },
       }),
+      // FLOW-F3 (H11) — the buyer-quoted GG-ORD reference lives on the
+      // Order, not the child transactions. Match it so an operator can
+      // paste the single EFT memo and land on the parcel.
+      this.prisma.order.findMany({
+        where: {
+          OR: [
+            { id: q },
+            { orderReference: insensitive },
+            { gatewayCheckoutId: q },
+            { gatewayPaymentId: q },
+          ],
+        },
+        take: 8,
+        select: {
+          id: true,
+          orderReference: true,
+          status: true,
+          buyerTotal: true,
+          createdAt: true,
+          buyer: { select: { username: true } },
+          _count: { select: { transactions: true } },
+        },
+      }),
     ]);
 
-    return { users, listings, transactions };
+    return { users, listings, transactions, orders };
   }
 
   // ---------------------------------------------------------------
@@ -890,6 +914,36 @@ export class AdminService {
             recordedAt: true,
           },
         },
+        // FLOW-F3 (H11 / M17) — parent Order + sibling lines for the P8b
+        // cart rail. Single round-trip so the admin can (a) see the whole
+        // parcel and jump to any sibling line when a member is funnelled
+        // into a consolidated 'contact support' flow, and (b) resolve the
+        // real GG-ORD EFT reference for a cart child (children carry no
+        // per-tx orderReference). _count.lineItems powers the "item N of M"
+        // line under the Tx-ID on the dossier page.
+        order: {
+          select: {
+            id: true,
+            orderReference: true,
+            status: true,
+            paidAt: true,
+            buyerTotal: true,
+            createdAt: true,
+            _count: { select: { lineItems: true } },
+            transactions: {
+              select: {
+                id: true,
+                paymentStatus: true,
+                shippingMethod: true,
+                shippingStatus: true,
+                shipsWithId: true,
+                buyerTotal: true,
+                listing: { select: { title: true, referenceNumber: true } },
+              },
+              orderBy: { createdAt: 'asc' },
+            },
+          },
+        },
         rating: {
           select: {
             id: true,
@@ -921,6 +975,83 @@ export class AdminService {
     });
 
     return { transaction: tx, auditEvents };
+  }
+
+  // ---------------------------------------------------------------
+  // Orders (P8b multi-item cart) — list + dossier. FLOW-F3 (H11).
+  // The Order is the buyer-facing parent that owns the single EFT
+  // capture; each line is a child Transaction. Gives the operator a
+  // grouped discovery + parcel view behind the consolidated support
+  // flows.
+  // ---------------------------------------------------------------
+  async getOrders(status?: string, page = 1, limit = 20) {
+    const where = status ? { status: status as never } : {};
+    const [orders, total] = await Promise.all([
+      this.prisma.order.findMany({
+        where,
+        select: {
+          id: true,
+          orderReference: true,
+          status: true,
+          paymentMethod: true,
+          buyerTotal: true,
+          paidAt: true,
+          createdAt: true,
+          buyer: { select: { id: true, username: true, email: true } },
+          _count: { select: { transactions: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+    return { orders, total, page, limit };
+  }
+
+  async getOrderDossier(orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        orderReference: true,
+        status: true,
+        paymentMethod: true,
+        itemsSubtotal: true,
+        shippingSubtotal: true,
+        handlingSubtotal: true,
+        processingFee: true,
+        buyerTotal: true,
+        manualPayByAt: true,
+        manualDetectedAt: true,
+        manualCancelledAt: true,
+        paidAt: true,
+        createdAt: true,
+        updatedAt: true,
+        buyer: {
+          select: { id: true, username: true, email: true, phone: true },
+        },
+        transactions: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            paymentStatus: true,
+            shippingMethod: true,
+            shippingStatus: true,
+            shipsWithId: true,
+            buyerTotal: true,
+            sellerPayout: true,
+            refundedAmount: true,
+            listing: {
+              select: { id: true, title: true, referenceNumber: true },
+            },
+            seller: { select: { id: true, username: true } },
+          },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return { order };
   }
 
   // ---------------------------------------------------------------
@@ -990,6 +1121,10 @@ export class AdminService {
       where: where as never,
       select: {
         orderReference: true,
+        // Cart children carry no per-tx orderReference — pull the parent
+        // Order's GG-ORD reference so the accountant can tie N rows to the
+        // single EFT credit on the FNB statement.
+        order: { select: { orderReference: true } },
         createdAt: true,
         paidAt: true,
         releasedAt: true,
@@ -998,6 +1133,10 @@ export class AdminService {
         commissionZar: true,
         processingFee: true,
         shippingCost: true,
+        // R15/waybill handling margin (GG-retained). Kept as its own column
+        // so Gross = Item + Shipping + Shipping handling + Processing closes
+        // per courier row.
+        shippingHandlingCents: true,
         buyerTotal: true,
         sellerPayout: true,
         refundedAmount: true,
@@ -1015,10 +1154,10 @@ export class AdminService {
       'Order ref', 'Created', 'Paid', 'Released', 'Status', 'Item',
       'Buyer', 'Buyer email', 'Seller', 'Seller email',
       'Item price', 'Gross (buyer paid)', 'Commission', 'Processing fee',
-      'Shipping', 'Net payout', 'Refunded',
+      'Shipping', 'Shipping handling (GG)', 'Net payout', 'Refunded',
     ];
     const body = rows.map((t) => [
-      t.orderReference ?? '',
+      t.orderReference ?? t.order?.orderReference ?? '',
       d(t.createdAt),
       d(t.paidAt),
       d(t.releasedAt),
@@ -1033,6 +1172,7 @@ export class AdminService {
       r(t.commissionZar),
       r(t.processingFee),
       r(t.shippingCost),
+      r(t.shippingHandlingCents),
       r(t.sellerPayout),
       r(t.refundedAmount),
     ]);

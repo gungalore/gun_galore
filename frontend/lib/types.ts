@@ -348,6 +348,8 @@ export interface Transaction {
   listingPrice: number;
   commissionZar: number;
   processingFee: number;
+  shippingCost: number;
+  shippingHandlingCents: number;
   passFeeToBuyer: boolean;
   buyerTotal: number;
   sellerPayout: number;

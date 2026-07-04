@@ -33,6 +33,15 @@ interface SearchResult {
     createdAt: string;
     listing: { title: string; referenceNumber: string | null };
   }[];
+  orders: {
+    id: string;
+    orderReference: string | null;
+    status: string;
+    buyerTotal: number;
+    createdAt: string;
+    buyer: { username: string | null };
+    _count: { transactions: number };
+  }[];
 }
 
 export default function GlobalSearch() {
@@ -50,11 +59,12 @@ export default function GlobalSearch() {
   // regardless of group. memoised so the index stays valid as long
   // as the results don't change.
   const flatItems = useMemo(() => {
-    if (!results) return [] as { href: string; type: 'user' | 'listing' | 'transaction' }[];
+    if (!results) return [] as { href: string; type: 'user' | 'listing' | 'transaction' | 'order' }[];
     return [
       ...results.users.map((u) => ({ href: `/admin/users/${u.id}`, type: 'user' as const })),
       ...results.listings.map((l) => ({ href: `/admin/listings/${l.id}`, type: 'listing' as const })),
       ...results.transactions.map((t) => ({ href: `/admin/transactions/${t.id}`, type: 'transaction' as const })),
+      ...results.orders.map((o) => ({ href: `/admin/orders/${o.id}`, type: 'order' as const })),
     ];
   }, [results]);
 
@@ -144,7 +154,8 @@ export default function GlobalSearch() {
     results &&
     (results.users.length > 0 ||
       results.listings.length > 0 ||
-      results.transactions.length > 0);
+      results.transactions.length > 0 ||
+      results.orders.length > 0);
 
   return (
     <div ref={wrapperRef} style={{ position: 'relative', width: '100%' }}>
@@ -155,7 +166,7 @@ export default function GlobalSearch() {
         onChange={(e) => setQ(e.target.value)}
         onFocus={() => results && setOpen(true)}
         onKeyDown={handleInputKey}
-        placeholder="Search users · listings · transactions · refs · IDs   (⌘K)"
+        placeholder="Search users · listings · transactions · orders · refs · IDs   (⌘K)"
         aria-label="Search admin: users, listings, transactions"
         aria-autocomplete="list"
         aria-expanded={open}
@@ -264,6 +275,26 @@ export default function GlobalSearch() {
                           title={t.listing.title}
                           sub={`${t.listing.referenceNumber ?? t.id.slice(0, 8)} · R${(t.buyerTotal / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`}
                           chip={t.paymentStatus}
+                          chipColor="var(--text-tertiary)"
+                        />
+                      );
+                    })}
+                  </ResultGroup>
+                )}
+                {results.orders.length > 0 && (
+                  <ResultGroup label={`Orders (${results.orders.length})`}>
+                    {results.orders.map((o) => {
+                      idx += 1;
+                      const active = idx === activeIndex;
+                      return (
+                        <ResultRow
+                          key={o.id}
+                          active={active}
+                          onClick={() => navigate(`/admin/orders/${o.id}`)}
+                          onMouseEnter={((i) => () => setActiveIndex(i))(idx)}
+                          title={o.orderReference ?? o.id.slice(0, 8)}
+                          sub={`@${o.buyer.username ?? 'anon'} · ${o._count.transactions} line${o._count.transactions === 1 ? '' : 's'} · R${(o.buyerTotal / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`}
+                          chip={o.status}
                           chipColor="var(--text-tertiary)"
                         />
                       );

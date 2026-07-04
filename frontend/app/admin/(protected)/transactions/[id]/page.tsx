@@ -112,6 +112,16 @@ interface TransactionDossier {
       city: string;
       phone: string | null;
     } | null;
+    // Parent order (present only for cart / multi-item purchases). Cart
+    // children carry no per-tx orderReference, so this is where the real
+    // GG-ORD EFT reference lives.
+    order: {
+      id: string;
+      orderReference: string | null;
+      status: string;
+      buyerTotal: number;
+      _count: { lineItems: number };
+    } | null;
     trackingEvents: {
       id: string;
       status: string;
@@ -306,6 +316,19 @@ export default function TransactionDossierPage() {
               {' · Created '}{formatDateTime(t.createdAt)}
               {' · Updated '}{formatDateTime(t.updatedAt)}
             </p>
+            {t.order && (
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                Part of order{' '}
+                <Link
+                  href={`/admin/orders/${t.order.id}`}
+                  style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}
+                >
+                  {t.order.orderReference ?? t.order.id}
+                </Link>
+                {' · '}{t.order._count.lineItems} item{t.order._count.lineItems === 1 ? '' : 's'}
+                {' · '}{t.order.status.replace(/_/g, ' ')}
+              </p>
+            )}
           </div>
         </div>
 
