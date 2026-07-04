@@ -1051,6 +1051,29 @@ export class TasksService {
     }
   }
 
+  // Run every 5 minutes — reclaim stale PENDING_PAYMENT raffle reservations
+  // (older than 30 min, never paid). An abandoned reservation permanently
+  // subtracts from the sellable pool (the oversell count includes
+  // PENDING_PAYMENT), so without this a raffle can wedge short of sell-out.
+  // Never touches ticketsSoldPaid. Heartbeat resolves the pending-tickets-sweep
+  // health key.
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async sweepPendingRaffleTickets() {
+    try {
+      const result = await this.rafflesService.sweepStalePendingTickets();
+      if (result.swept > 0) {
+        this.logger.log(`Swept ${result.swept} stale pending raffle ticket(s)`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `sweepPendingRaffleTickets failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('pending-tickets-sweep');
+    }
+  }
+
   // Phase E3 — every 5 minutes, fire the 48h auto-draw for any
   // subscriber raffle whose subscriberDrawAt has passed. Re-uses
   // the same draw() pipeline so winners + DrawProof flow are

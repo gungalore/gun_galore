@@ -717,6 +717,53 @@ export class RafflesService {
   }
 
   // -------------------------------------------------------------------
+  // Cron: sweep stale PENDING_PAYMENT reservations
+  // -------------------------------------------------------------------
+  //
+  // A reserved-but-never-paid ticket permanently subtracts from the
+  // sellable pool: the oversell count in createPendingTickets/createPostalEntry
+  // counts PENDING_PAYMENT against targetTicketCount. Without this sweep an
+  // abandoned checkout can wedge a raffle short of sell-out forever.
+  //
+  // We DELETE stale reservations rather than mark them (there is no EXPIRED
+  // ticket status, and buyTickets already deletes on checkout failure). This
+  // NEVER touches ticketsSoldPaid — that counter is only ever incremented by
+  // confirmTickets, which requires paidAt, so a pending ticket was never
+  // counted into it. A 30-minute floor protects any in-flight reservation
+  // still on its way to the paygate.
+  async sweepStalePendingTickets(): Promise<{ swept: number }> {
+    const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+    const stale = await this.prisma.ticket.findMany({
+      where: {
+        status: 'PENDING_PAYMENT',
+        paidAt: null,
+        createdAt: { lt: cutoff },
+      },
+      select: { id: true, raffleId: true },
+      take: 500,
+    });
+    if (stale.length === 0) return { swept: 0 };
+
+    await this.prisma.ticket.deleteMany({
+      where: { id: { in: stale.map((t) => t.id) } },
+    });
+
+    // One audit row per affected raffle so the trail shows the reclaim.
+    const byRaffle = new Map<string, number>();
+    for (const t of stale) {
+      byRaffle.set(t.raffleId, (byRaffle.get(t.raffleId) ?? 0) + 1);
+    }
+    for (const [raffleId, count] of byRaffle) {
+      await this.recordEvent(raffleId, 'PENDING_TICKETS_SWEPT', { count });
+    }
+
+    this.logger.log(
+      `Swept ${stale.length} stale pending raffle ticket(s) across ${byRaffle.size} raffle(s).`,
+    );
+    return { swept: stale.length };
+  }
+
+  // -------------------------------------------------------------------
   // Buy tickets → Stitch paygate (the real production purchase path)
   // -------------------------------------------------------------------
   //
