@@ -294,7 +294,7 @@ export default function AdminCompetitionsPage() {
                       {r.ticketsSoldPaid + r.ticketsSoldPostal} / {r.targetTicketCount}
                     </Td>
                     <Td>{formatPrice(r.ticketPriceCents)}</Td>
-                    <Td>{formatPrice(r.itemValueCents)}</Td>
+                    <Td>{r.itemValueCents != null ? formatPrice(r.itemValueCents) : '—'}</Td>
 
                     {showWinnerCols && (
                       <>

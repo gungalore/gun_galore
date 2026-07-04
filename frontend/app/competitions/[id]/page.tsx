@@ -38,7 +38,12 @@ export default async function CompetitionDetailPage({
 
   const ticketsSold = r.ticketsSoldPaid + r.ticketsSoldPostal;
   const ticketsRemaining = Math.max(0, r.targetTicketCount - ticketsSold);
-  const progress = Math.min(100, Math.round((ticketsSold / r.targetTicketCount) * 100));
+  // Guard against a 0-target raffle (subscriber raffles have targetTicketCount
+  // = 0) reached directly — (sold / 0) * 100 is NaN, which would render "NaN%".
+  const progress =
+    r.targetTicketCount > 0
+      ? Math.min(100, Math.round((ticketsSold / r.targetTicketCount) * 100))
+      : 0;
 
   // Sort uploaded images by their stored `order` field (admins drag
   // to reorder when creating the raffle). If the raffle pre-dates the
@@ -136,12 +141,14 @@ export default async function CompetitionDetailPage({
               >
                 Ticket price
               </span>
-              <span
-                className="text-xs"
-                style={{ color: 'var(--text-tertiary)' }}
-              >
-                Prize value {formatPrice(r.itemValueCents)}
-              </span>
+              {r.itemValueCents != null && (
+                <span
+                  className="text-xs"
+                  style={{ color: 'var(--text-tertiary)' }}
+                >
+                  Prize value {formatPrice(r.itemValueCents)}
+                </span>
+              )}
             </div>
             <div
               className="text-2xl mb-3"

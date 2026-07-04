@@ -92,11 +92,19 @@ export class RafflesService {
   // -------------------------------------------------------------------
 
   async listActive() {
-    return this.prisma.raffle.findMany({
-      where: { status: { in: ['ACTIVE', 'CLOSED_AWAITING_DRAW', 'DRAWN'] } },
+    const rows = await this.prisma.raffle.findMany({
+      // subscriberTierRestriction: null keeps subscriber raffles (0-value,
+      // 0-target) out of the public paid grid — they'd otherwise render as
+      // broken "R0 / Sold out / NaN%" cards. Eligible members see them via
+      // the dedicated /raffles/me/subscriber endpoint.
+      where: {
+        status: { in: ['ACTIVE', 'CLOSED_AWAITING_DRAW', 'DRAWN'] },
+        subscriberTierRestriction: null,
+      },
       orderBy: { createdAt: 'desc' },
       select: this.publicSelect(),
     });
+    return rows.map((r) => this.scrubHiddenValue(r));
   }
 
   async getPublic(id: string) {
@@ -105,12 +113,23 @@ export class RafflesService {
       select: this.publicSelect(),
     });
     if (!raffle) throw new NotFoundException('Raffle not found');
-    return raffle;
+    return this.scrubHiddenValue(raffle);
+  }
+
+  // Strip the prize value before it leaves the server when the operator
+  // hid it. hidePrizeValue is selected so the public type can render the
+  // gate, but itemValueCents is nulled so the amount never reaches a client.
+  private scrubHiddenValue<T extends { hidePrizeValue: boolean; itemValueCents: number }>(
+    r: T,
+  ): T | (Omit<T, 'itemValueCents'> & { itemValueCents: number | null }) {
+    return r.hidePrizeValue ? { ...r, itemValueCents: null } : r;
   }
 
   // Fields safe to expose publicly. Question + options ARE public — the
   // buyer needs them to enter. The correct answer is NOT a field (it's
   // hardcoded as 'C' in CORRECT_ANSWER) so it can never leak via the API.
+  // itemCostCents (what we paid) is deliberately NOT selected — it would
+  // let any scraper derive GG's per-competition margin.
   private publicSelect() {
     return {
       id: true,
@@ -119,7 +138,7 @@ export class RafflesService {
       description: true,
       imageUrl: true,
       itemValueCents: true,
-      itemCostCents: true,
+      hidePrizeValue: true,
       targetTicketCount: true,
       ticketPriceCents: true,
       ticketsSoldPaid: true,
@@ -1049,12 +1068,13 @@ export class RafflesService {
             w1.position,
             claimDeadline,
             raffleId,
+            user.phone,
           );
         }
       } else if (w1) {
         const ticket = await tx.ticket.findUnique({
           where: { id: w1.ticketId },
-          select: { postalEntry: { select: { email: true } } },
+          select: { postalEntry: { select: { email: true, phone: true } } },
         });
         const pe = ticket?.postalEntry;
         if (pe?.email) {
@@ -1064,6 +1084,7 @@ export class RafflesService {
             w1.position,
             claimDeadline,
             raffleId,
+            pe.phone,
           );
         }
       }
@@ -1133,7 +1154,7 @@ export class RafflesService {
           // BEFORE notifying so the email shows the real deadline.
           const raffle = await this.prisma.raffle.findUnique({
             where: { id: w.raffleId },
-            select: { itemValueCents: true },
+            select: { itemValueCents: true, title: true },
           });
           const tier = tierForValue(raffle?.itemValueCents ?? 1000);
           const freshDeadline = new Date(
@@ -1149,6 +1170,8 @@ export class RafflesService {
               user.email,
               w.raffleId,
               updatedNext.claimDeadline,
+              raffle?.title,
+              user.phone,
             );
           }
           await this.recordEvent(w.raffleId, 'BACKUP_PROMOTED', {

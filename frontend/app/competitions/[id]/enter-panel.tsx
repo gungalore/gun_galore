@@ -38,6 +38,9 @@ export default function EnterPanel({
   // null = no answer picked yet. The Pay button stays greyed until the
   // user clicks one of the four radios — that's the operator's rule.
   const [answer, setAnswer] = useState<Letter | null>(null);
+  // 18+/competition-rules attestation — the submit stays disabled until
+  // the buyer ticks it (backend also hard-rejects a missing/false value).
+  const [accepted, setAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState<{
@@ -140,6 +143,10 @@ export default function EnterPanel({
       setError('Pick an answer to the question first');
       return;
     }
+    if (!accepted) {
+      setError('Confirm you are 18 or older and accept the competition rules');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -150,7 +157,7 @@ export default function EnterPanel({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ quantity: qty, answer }),
+        body: JSON.stringify({ quantity: qty, answer, ageAndRulesAccepted: accepted }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
@@ -207,7 +214,7 @@ export default function EnterPanel({
   }
 
   const total = qty * ticketPrice;
-  const canPay = answer !== null && !submitting;
+  const canPay = answer !== null && accepted && !submitting;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
@@ -359,6 +366,23 @@ export default function EnterPanel({
         )}
       </div>
 
+      {/* 18+/rules attestation — required before the button enables. */}
+      <label
+        className="flex items-start gap-2.5 text-xs cursor-pointer"
+        style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}
+      >
+        <input
+          type="checkbox"
+          checked={accepted}
+          onChange={(e) => setAccepted(e.target.checked)}
+          className="mt-0.5"
+          style={{ accentColor: 'var(--red)' }}
+        />
+        <span>
+          I confirm I am 18 or older and accept the competition rules.
+        </span>
+      </label>
+
       {error && (
         <p className="text-xs" style={{ color: 'var(--red)' }}>
           {error}
@@ -376,13 +400,21 @@ export default function EnterPanel({
           cursor: canPay ? 'pointer' : 'not-allowed',
           border: canPay ? 'none' : '0.5px solid var(--border)',
         }}
-        title={!answer ? 'Answer the question to enable payment' : undefined}
+        title={
+          !answer
+            ? 'Answer the question to enable payment'
+            : !accepted
+              ? 'Confirm you are 18+ and accept the rules'
+              : undefined
+        }
       >
         {submitting
           ? 'Reserving tickets…'
-          : answer
-            ? `Pay & Enter — ${formatRand(total)}`
-            : 'Answer the question to continue'}
+          : !answer
+            ? 'Answer the question to continue'
+            : !accepted
+              ? 'Confirm 18+ and rules to continue'
+              : `Pay & Enter — ${formatRand(total)}`}
       </button>
     </form>
   );

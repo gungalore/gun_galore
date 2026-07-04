@@ -573,8 +573,11 @@ export interface Raffle {
   title: string;
   description: string;
   imageUrl: string | null;
-  itemValueCents: number;
-  itemCostCents: number;
+  // null when hidePrizeValue is set — the server strips the amount before
+  // it leaves the API, so every render site must guard on != null.
+  itemValueCents: number | null;
+  // When true the prize value is hidden; itemValueCents comes back null.
+  hidePrizeValue: boolean;
   // Derived on the backend as ceil(itemValueCents / ticketPriceCents);
   // kept on the row so the progress bar / sold-out trigger don't have
   // to recompute it.

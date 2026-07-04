@@ -2598,6 +2598,7 @@ export class NotificationsService {
     position: number,
     claimDeadline: Date,
     raffleId?: string,
+    winnerPhone?: string | null,
   ) {
     const place = position === 1 ? 'WINNER' : `Backup #${position - 1}`;
     const url = `${this.appUrl}/dashboard/raffle-wins`;
@@ -2640,15 +2641,41 @@ export class NotificationsService {
       (isWinner ? 'You won — ' : 'Backup pick — ') + raffleTitle,
       html,
     );
+    // SMS — the single highest-stakes moment (a paid-for prize auto-forfeited
+    // if unclaimed within the window) deserves the same nudge the lower-stakes
+    // auction win already gets. sendSms null-guards a phoneless winner.
+    await this.sendSms(
+      winnerPhone,
+      isWinner
+        ? `Gun Galore: You WON "${truncate(raffleTitle, 28)}"! Claim by ${claimDeadline.toLocaleDateString('en-ZA')} or it passes to a backup: ${url}`
+        : `Gun Galore: You're a backup pick for "${truncate(raffleTitle, 24)}". If the winner doesn't claim you're up next. Details: ${url}`,
+      `raffle-winner-${raffleId ?? 'x'}-${position}`,
+    );
   }
 
   async raffleBackupPromoted(
     winnerEmail: string,
     raffleId: string,
     claimDeadline: Date,
+    raffleTitle?: string,
+    winnerPhone?: string | null,
   ) {
     const url = `${this.appUrl}/dashboard/raffle-wins`;
     const deadlineStr = claimDeadline.toLocaleString('en-ZA');
+    // In-app inbox row — the primary's winner-picked notice persisted one;
+    // a promoted backup is now the live winner on the same forfeiture fuse,
+    // so it needs its own inbox row too (email-only was strictly weaker).
+    await this.persistByEmail(winnerEmail, {
+      category: 'BUYER',
+      type: 'raffle_backup_promoted',
+      title: '🎉 You’re up — claim your prize',
+      body: `${raffleTitle ?? 'A raffle'} — the winner didn't claim. Claim by ${deadlineStr}.`,
+      url: '/dashboard/raffle-wins',
+      iconKey: 'raffle',
+      linkedType: 'raffle',
+      linkedId: raffleId,
+      dismissible: true,
+    });
     const html = this.email({
       status: { tone: 'success', label: 'Promoted' },
       headline: 'Promoted to winner',
@@ -2658,6 +2685,11 @@ export class NotificationsService {
       preheader: 'Backup promoted — claim your prize',
     });
     await this.send(winnerEmail, 'Backup promoted to winner', html);
+    await this.sendSms(
+      winnerPhone,
+      `Gun Galore: The winner didn't claim — you're up${raffleTitle ? ` for "${truncate(raffleTitle, 24)}"` : ''}! Claim by ${claimDeadline.toLocaleDateString('en-ZA')}: ${url}`,
+      `raffle-backup-promoted-${raffleId}`,
+    );
   }
 
   // ---------------------------------------------------------------

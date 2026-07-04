@@ -165,12 +165,14 @@ export default async function CompetitionsPage() {
                   >
                     {r.ticketsSoldPaid + r.ticketsSoldPostal} / {r.targetTicketCount} tickets sold
                   </p>
-                  <p
-                    className="text-xs mt-1"
-                    style={{ color: 'var(--text-tertiary)' }}
-                  >
-                    Prize value: {formatPrice(r.itemValueCents)}
-                  </p>
+                  {r.itemValueCents != null && (
+                    <p
+                      className="text-xs mt-1"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
+                      Prize value: {formatPrice(r.itemValueCents)}
+                    </p>
+                  )}
                 </div>
               </div>
             </Link>
