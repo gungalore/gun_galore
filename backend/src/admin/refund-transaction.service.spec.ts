@@ -42,6 +42,11 @@ function makeService(overrides: {
       // standalone (non-consolidated) tx, which these tests exercise.
       count: jest.fn().mockResolvedValue(0),
     },
+    // M3 — a full refund now restocks/relists the listing via
+    // reversalListingData (best-effort, fire-and-forget).
+    listing: {
+      update: jest.fn().mockResolvedValue({}),
+    },
     adminAlert: {
       create: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -49,6 +54,8 @@ function makeService(overrides: {
   };
   const notifications = {
     refundIssuedBuyer: jest.fn().mockResolvedValue(undefined),
+    // M3 — seller gets a neutral 'refunded + relisted, no strike' note.
+    refundIssuedSeller: jest.fn().mockResolvedValue(undefined),
     resolveByEntity: jest.fn().mockResolvedValue(undefined),
   };
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
@@ -81,7 +88,8 @@ const baseTx = {
   buyerTotal: 100_000, // R1 000
   refundedAmount: 0,
   peachPaymentId: 'pay_123',
-  listing: { title: 'Scope' },
+  quantity: 1,
+  listing: { title: 'Scope', trackInventory: false, listingType: 'BUY_NOW' },
   buyer: {
     email: 'b@x.co',
     firstName: 'Bo',
@@ -90,6 +98,13 @@ const baseTx = {
     bankAccountHolder: 'Bo B',
     bankAccountNumber: '123456',
     bankBranchCode: '250655',
+  },
+  // M3 — the seller notification on a full refund reads these.
+  seller: {
+    email: 's@x.co',
+    firstName: 'Sam',
+    username: 'sam',
+    phone: null,
   },
 };
 

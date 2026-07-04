@@ -177,6 +177,19 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   const [error, setError] = useState<string | null>(null);
   const [checkout, setCheckout] = useState<CreateTxResponse | null>(null);
 
+  // P8a — units to buy. Only inventory-tracked BUY_NOW listings honour
+  // quantity server-side (create-transaction.dto quantity, resolved to 1
+  // for everything else). Cap at the seller-side `sellable` count so the
+  // buyer can't request more than is in stock; the backend re-checks the
+  // counter atomically on POST /transactions anyway.
+  const maxQty = listing.trackInventory
+    ? Math.max(
+        1,
+        (listing.quantityAvailable ?? 1) - (listing.quantityReserved ?? 0),
+      )
+    : 1;
+  const [quantity, setQuantity] = useState(1);
+
   // Live shipping quote, refreshed whenever the buyer changes method or
   // their destination (PUDO locker / TCG address). Null while we're
   // waiting on the API; { error: string } when the quote endpoint
@@ -467,6 +480,8 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     const base = {
       listingId: listing.id,
       shippingMethod: method,
+      // P8a — units to buy. Backend resolves to 1 for non-tracked listings.
+      ...(listing.trackInventory ? { quantity } : {}),
       ...attestation,
       ...papers,
     };
@@ -589,7 +604,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     total: number;
   } | null {
     if (!listing.price) return null;
-    const item = listing.price;
+    const item = listing.price * (listing.trackInventory ? quantity : 1);
     const isCourier = method === 'PUDO' || method === 'TCG';
     const shipping =
       quoteState.kind === 'ready' ? quoteState.quote.priceCents : 0;
@@ -1281,6 +1296,68 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           accepted={firearmAttestation}
           onChange={setFirearmAttestation}
         />
+      )}
+
+      {/* P8a — quantity stepper. Only for inventory-tracked BUY_NOW
+          listings; single-item listings never render this. Clamped to
+          the sellable stock; the backend re-checks the counter on Pay. */}
+      {listing.trackInventory && maxQty > 1 && (
+        <div>
+          <p
+            className="text-sm mb-2"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            Quantity
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+              disabled={quantity <= 1}
+              className="w-9 h-9 rounded-[6px] text-base"
+              style={{
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                color:
+                  quantity <= 1
+                    ? 'var(--text-tertiary)'
+                    : 'var(--text-primary)',
+                cursor: quantity <= 1 ? 'not-allowed' : 'pointer',
+              }}
+            >
+              −
+            </button>
+            <span
+              className="text-sm"
+              style={{ color: 'var(--text-primary)', minWidth: 24, textAlign: 'center' }}
+            >
+              {quantity}
+            </span>
+            <button
+              type="button"
+              onClick={() => setQuantity((q) => Math.min(maxQty, q + 1))}
+              disabled={quantity >= maxQty}
+              className="w-9 h-9 rounded-[6px] text-base"
+              style={{
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                color:
+                  quantity >= maxQty
+                    ? 'var(--text-tertiary)'
+                    : 'var(--text-primary)',
+                cursor: quantity >= maxQty ? 'not-allowed' : 'pointer',
+              }}
+            >
+              +
+            </button>
+            <span
+              className="text-xs"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              {maxQty} available
+            </span>
+          </div>
+        </div>
       )}
 
       {/* Live order breakdown — only meaningful for the courier-routed

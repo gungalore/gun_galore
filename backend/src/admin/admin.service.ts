@@ -14,6 +14,7 @@ import { AdminAuditService } from './admin-audit.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { StitchService } from '../payments/stitch.service';
 import { TransactionsService, PAYMENT_MODE } from '../payments/transactions.service';
+import { reversalListingData } from '../payments/inventory';
 import { ListingReviewDto, ReviewAction } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { toCsv } from '../common/csv.util';
@@ -1327,7 +1328,7 @@ export class AdminService {
   ) {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: txId },
-      include: { listing: true, buyer: true },
+      include: { listing: true, buyer: true, seller: true },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
 
@@ -1535,6 +1536,34 @@ export class AdminService {
       // Best-effort + idempotent; only cancels while the parcel hasn't been
       // collected yet, else it alerts an admin to handle manually.
       void this.transactions.cancelBookedShipment(txId);
+
+      // M3 — a fully-refunded sale must be reversed on the listing too, the
+      // same way seller-reject / buyer-cancel / auto-refund do. Without this
+      // the item stays SOLD (and a tracked listing loses its units) after the
+      // admin returns the money. reversalListingData: ended auctions → EXPIRED
+      // (never resurrected to ACTIVE), tracked listings → restock units,
+      // single items → plain ACTIVE reactivation.
+      void this.prisma.listing
+        .update({
+          where: { id: tx.listingId },
+          data: reversalListingData(
+            tx.listing.trackInventory ?? false,
+            tx.quantity ?? 1,
+            tx.listing.listingType,
+          ),
+        })
+        .catch(() => undefined);
+
+      // M3 — notify the seller their item was refunded + relisted, mirroring
+      // the buyer notification above and the buyer-cancel seller email. The
+      // seller took no wrongdoing here (admin decision) so no strike copy.
+      void this.notifications.refundIssuedSeller({
+        sellerEmail: tx.seller.email,
+        sellerName: tx.seller.firstName ?? tx.seller.username ?? 'Seller',
+        sellerPhone: tx.seller.phone,
+        listingTitle: tx.listing.title,
+        transactionId: txId,
+      });
     }
 
     // Audit row — refunds change real money state; the operator

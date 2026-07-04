@@ -347,6 +347,22 @@ export default async function ListingDetailPage({
               </div>
             ) : (
               <>
+                {listing.trackInventory && (
+                  <p
+                    className="text-sm mb-2"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {(() => {
+                      const sellable =
+                        (listing.quantityAvailable ?? 0) -
+                        (listing.quantityReserved ?? 0);
+                      if (sellable <= 0) return 'Sold out';
+                      if (sellable <= 5)
+                        return `Only ${sellable} left in stock`;
+                      return `${sellable} in stock`;
+                    })()}
+                  </p>
+                )}
                 <Link
                   href={`/checkout/${listing.id}`}
                   className="block w-full py-3 rounded-[6px] text-sm text-center mb-2"

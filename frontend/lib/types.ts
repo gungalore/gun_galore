@@ -255,6 +255,7 @@ export interface Listing {
   // Inventory / quantity (Phase 8a). trackInventory=false for single items.
   trackInventory?: boolean;
   quantityAvailable?: number;
+  quantityReserved?: number;
   make: string | null;
   model: string | null;
   calibre: string | null;

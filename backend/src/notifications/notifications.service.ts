@@ -3085,6 +3085,40 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // M3 — admin issued a FULL refund on a held order. The seller did
+  // nothing wrong (admin decision), so this is a neutral 'refunded +
+  // relisted, no strike' note — mirrors the buyer-cancel seller email.
+  // Fire-and-forget from admin.refundTransaction on the fully-refunded
+  // branch only (a partial leaves the sale live).
+  // ---------------------------------------------------------------
+  async refundIssuedSeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone: string | null;
+    listingTitle: string;
+    transactionId: string;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const html = this.email({
+      status: { tone: 'pending', label: 'Order refunded' },
+      headline: 'Order refunded — item relisted',
+      body: `Hi ${b(d.sellerName)}, the order for ${b(d.listingTitle)} was refunded to the buyer by our support team. The funds held were returned to them and your listing is back on the marketplace — no action needed and no strike to your account.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Item', value: truncate(d.listingTitle, 60) },
+      ],
+      cta: { label: 'Open order', url: txUrl },
+      preheader: `${d.listingTitle} refunded — relisted, no strike`,
+    });
+    await this.send(d.sellerEmail, 'Order refunded: ' + d.listingTitle, html);
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: the order for ${truncate(d.listingTitle, 30)} was refunded by support. It's back on the marketplace. No strike.`,
+      `admin-refund-seller-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
   // PRIVATE_ARRANGE — buyer waived payment protection + opted into a peer
   // arrangement. Two emails go out (one to each party) with the
   // OTHER party's contact details so they can coordinate the SAPS
