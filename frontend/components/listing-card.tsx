@@ -7,6 +7,8 @@ import { formatPrice, CONDITION_LABELS, TIER_LABELS } from '@/lib/utils';
 import { WishlistButton } from './wishlist-button';
 import { useCountdown, formatCountdown } from '@/lib/use-countdown';
 import { UserBadges } from './user-badges';
+import { UrgencyChip } from './urgency-chip';
+import { SellerRating } from './seller-rating';
 
 export function ListingCard({ listing }: { listing: Listing }) {
   // Defensive: if upstream returns a partial listing without the
@@ -94,6 +96,22 @@ export function ListingCard({ listing }: { listing: Listing }) {
           >
             {CONDITION_LABELS[listing.condition]}
           </span>
+          {/* UX-1a — low-stock urgency chip. Bottom-right so it clears the
+              condition chip (bottom-left) and the heart (top-right). Only
+              for inventory-tracked listings at ≤5 sellable units; the
+              threshold guard keeps it honest (no fake scarcity). */}
+          {listing.trackInventory &&
+            (() => {
+              const sellable =
+                (listing.quantityAvailable ?? 0) -
+                (listing.quantityReserved ?? 0);
+              return sellable >= 1 && sellable <= 5 ? (
+                <UrgencyChip
+                  left={sellable}
+                  className="absolute bottom-2 right-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
+                />
+              ) : null;
+            })()}
           {/* Heart — save for later. Top-right with a subtle blurred
               dark background so it reads against any photo. Tapping
               the heart stops propagation so the parent <Link> doesn't
@@ -144,6 +162,19 @@ export function ListingCard({ listing }: { listing: Listing }) {
               />
             </span>
           </div>
+
+          {/* UX-1b — seller rating (compact) under the seller line.
+              Self-hides when the seller has no ratings yet. */}
+          {listing.seller.averageRating != null &&
+            (listing.seller._count?.ratingsReceived ?? 0) > 0 && (
+              <div className="mt-1">
+                <SellerRating
+                  rating={listing.seller.averageRating}
+                  count={listing.seller._count?.ratingsReceived}
+                  compact
+                />
+              </div>
+            )}
 
           {/* Auction-specific meta — bid count + time remaining.
               Snipe-protection extension means endTime can change, but

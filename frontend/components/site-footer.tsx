@@ -16,9 +16,30 @@
 // page. Server-rendered to keep zero JS cost.
 
 import Link from 'next/link';
+import { apiFetch } from '@/lib/api';
+import type { CategoryWithCount } from '@/lib/types';
+import { GetTheAppCta } from '@/components/get-the-app-cta';
 
-export function SiteFooter() {
+// UX-1f — payment methods, driven by a config array so card-brand logos slot
+// in beside EFT at paygate go-live without touching layout. Manual EFT is the
+// only live rail today (funds held until the buyer confirms delivery).
+const PAYMENT_METHODS: string[] = ['Secure EFT — payment held'];
+
+export async function SiteFooter() {
   const year = new Date().getFullYear();
+
+  // UX-1f — crawlable root-category links on every page (SEO + discovery).
+  // Fetched server-side (this footer is passed to the client PublicFooter as
+  // children, so it stays a server component) and cached for 10 min — the same
+  // call the homepage curtain makes. Fails soft to no row on any hiccup.
+  const categories = await apiFetch<CategoryWithCount[]>(
+    '/categories/with-counts',
+    { next: { revalidate: 600 } } as RequestInit,
+  ).catch(() => [] as CategoryWithCount[]);
+  const rootCategories = categories
+    .filter((c) => c.parentId === null && c.isActive)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
   return (
     <footer
       style={{
@@ -130,7 +151,86 @@ export function SiteFooter() {
             </li>
           </ul>
         </div>
+
+        {/* Account links (UX-1f) — the common buyer tasks, one click from any
+            page. Routes match lib/account-menu.tsx (single source of truth). */}
+        <div>
+          <p
+            style={{
+              color: 'var(--text-primary)',
+              fontWeight: 500,
+              marginBottom: 8,
+            }}
+          >
+            Account
+          </p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, lineHeight: 1.9 }}>
+            <li><Link href="/my/orders" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>My orders</Link></li>
+            <li><Link href="/wishlist" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Wishlist</Link></li>
+            <li><Link href="/saved-searches" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Saved searches</Link></li>
+            <li><Link href="/support" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Support</Link></li>
+            <li><Link href="/faq" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>FAQ</Link></li>
+          </ul>
+        </div>
       </div>
+
+      {/* Payment methods + "Get the app" band (UX-1f). Payment chips are
+          config-driven so card logos slot in beside EFT at paygate go-live. */}
+      <div
+        style={{
+          maxWidth: 1280,
+          margin: '0 auto',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 16,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingTop: 20,
+          borderTop: '0.5px solid var(--border)',
+          marginBottom: 20,
+        }}
+      >
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+          <span style={{ color: 'var(--text-tertiary-on-card)', fontSize: 12 }}>Payment</span>
+          {PAYMENT_METHODS.map((label) => (
+            <span
+              key={label}
+              style={{
+                fontSize: 12,
+                color: 'var(--text-secondary)',
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                borderRadius: 4,
+                padding: '3px 8px',
+              }}
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+        <GetTheAppCta />
+      </div>
+
+      {/* Category text-link row (UX-1f) — roots only, crawlable on every
+          page. Hidden if the fetch returned nothing. */}
+      {rootCategories.length > 0 && (
+        <div style={{ maxWidth: 1280, margin: '0 auto', marginBottom: 20 }}>
+          <p style={{ color: 'var(--text-primary)', fontWeight: 500, marginBottom: 8 }}>
+            Browse by category
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
+            {rootCategories.map((c) => (
+              <Link
+                key={c.id}
+                href={`/category/${c.slug}`}
+                style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 12 }}
+              >
+                {c.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ECT § 43 disclosures — mandatory on every commercial SA page.
           Compact form here; full version with VAT, director, etc. on

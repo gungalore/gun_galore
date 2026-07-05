@@ -124,6 +124,12 @@ export interface ListingSeller {
   subscriptionTier?: SubscriptionTier;
   isVerifiedExpert?: boolean;
   expertBadgeReason?: string | null;
+  // UX-1b — seller-level rating shown on cards + near the PDP title.
+  // averageRating is a cached denormalised field (null until the seller
+  // has any rating); _count.ratingsReceived is the review count. Both are
+  // populated by the browse + listing-detail selections.
+  averageRating?: number | null;
+  _count?: { ratingsReceived?: number };
 }
 
 // Public seller profile (GET /sellers/:clerkId). Superset of the

@@ -9,9 +9,9 @@
 // page which sits OUTSIDE the (protected) group but should still
 // hide the public chrome).
 
+import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { Nav } from '@/components/nav';
-import { SiteFooter } from '@/components/site-footer';
 
 export function PublicNav() {
   const pathname = usePathname();
@@ -28,14 +28,14 @@ export function PublicNav() {
   );
 }
 
-export function PublicFooter() {
+// Takes the (server-rendered) SiteFooter as children so its data fetch
+// (UX-1f category row) stays server-side — a client wrapper can't render an
+// async server component it imports directly, but it CAN slot one passed as
+// children.
+export function PublicFooter({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   // Hide on admin pages (own chrome) and on the offline fallback (PWA).
   if (pathname.startsWith('/admin')) return null;
   if (pathname === '/offline') return null;
-  return (
-    <div data-public-footer>
-      <SiteFooter />
-    </div>
-  );
+  return <div data-public-footer>{children}</div>;
 }

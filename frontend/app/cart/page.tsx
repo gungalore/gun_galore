@@ -18,6 +18,7 @@ import {
   DealerTransferConsent,
   PrivateArrangeConsent,
 } from '@/components/firearm-consents';
+import { TrustBullets } from '@/components/trust-bullets';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -545,6 +546,16 @@ export default function CartPage() {
         You&apos;ll pay by EFT on the next screen. Your money is held until you
         confirm delivery.
       </p>
+
+      {/* UX-1e — trust bullets under the cart summary CTA. Same component
+          as the PDP (UX-1d). Firearm bullet shown when the cart contains a
+          firearm line. */}
+      <div
+        className="mt-4 rounded-[8px] p-4"
+        style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+      >
+        <TrustBullets isFirearm={items.some((i) => i.isFirearm)} />
+      </div>
     </main>
   );
 }

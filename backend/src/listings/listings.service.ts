@@ -1539,6 +1539,11 @@ export class ListingsService {
             id: true,
             username: true,
             sellerTier: true,
+            // UX-1b — seller rating shown on cards. averageRating is a
+            // cached denormalised field on User; the review count is a
+            // cheap joined aggregate (same query, no N+1). Both public.
+            averageRating: true,
+            _count: { select: { ratingsReceived: true } },
           },
         },
       },
@@ -1647,6 +1652,11 @@ export class ListingsService {
               // + OD2 locked).
               subscriptionTier: true,
               isVerifiedExpert: true,
+              // UX-1b — seller rating on cards. averageRating is a cached
+              // denormalised field; the count is a cheap joined aggregate
+              // (same query, no N+1). Both public.
+              averageRating: true,
+              _count: { select: { ratingsReceived: true } },
             },
           },
         },
@@ -1683,6 +1693,10 @@ export class ListingsService {
             // the badge is a public award; private rationale lives
             // in AdminAuditEvent only.
             expertBadgeReason: true,
+            // UX-1b — seller rating shown near the PDP title (links to
+            // the seller profile). Cached average + cheap joined count.
+            averageRating: true,
+            _count: { select: { ratingsReceived: true } },
           },
         },
         // Social-proof signals: how many people have saved this

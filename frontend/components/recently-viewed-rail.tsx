@@ -39,7 +39,7 @@ export function RecentlyViewedRail({
   title = 'Recently viewed',
   excludeId,
 }: Props) {
-  const { ids } = useRecentlyViewed();
+  const { ids, clear } = useRecentlyViewed();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -115,6 +115,9 @@ export function RecentlyViewedRail({
         </h2>
         <span
           style={{
+            display: 'inline-flex',
+            alignItems: 'baseline',
+            gap: 12,
             fontSize: 11,
             color: 'var(--text-tertiary)',
             textTransform: 'uppercase',
@@ -122,6 +125,26 @@ export function RecentlyViewedRail({
           }}
         >
           {listings.length} on this device
+          {/* UX-1g — clears the localStorage history; the rail then
+              self-hides (drops below the 2-item threshold). */}
+          <button
+            type="button"
+            onClick={clear}
+            aria-label="Clear recently viewed"
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              font: 'inherit',
+              color: 'var(--text-secondary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              textDecoration: 'underline',
+            }}
+          >
+            Clear all
+          </button>
         </span>
       </header>
       <div

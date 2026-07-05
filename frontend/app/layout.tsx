@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Suspense } from 'react';
 import { ClerkProvider } from '@clerk/nextjs';
 import { PublicNav, PublicFooter } from '@/components/public-chrome';
+import { SiteFooter } from '@/components/site-footer';
 import { InstallPrompt } from '@/components/install-prompt';
 import { AvatarLightbox } from '@/components/avatar-lightbox';
 import { SwKillSwitch } from '@/components/sw-killswitch';
@@ -265,7 +266,9 @@ export default function RootLayout({
               with zero further changes. Until then routes navigate
               with a hard cut (existing behaviour). */}
           {children}
-          <PublicFooter />
+          <PublicFooter>
+            <SiteFooter />
+          </PublicFooter>
           {/* Sticky featured-listings strip — hugs the bottom tab bar
               on the 5 shopping-surface pages in standalone mode.
               Self-gates on standalone + pathname. */}

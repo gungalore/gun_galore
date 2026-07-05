@@ -34,6 +34,10 @@ import { SocialProofPill } from '@/components/social-proof-pill';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
 import { RecordVisit } from '@/components/record-visit';
+import { UrgencyChip } from '@/components/urgency-chip';
+import { SellerRating } from '@/components/seller-rating';
+import { TrustBullets } from '@/components/trust-bullets';
+import { getListingDeliveryEstimate } from '@/lib/delivery-estimate';
 
 export async function generateMetadata({
   params,
@@ -83,6 +87,20 @@ export default async function ListingDetailPage({
   // appear — it's confusing UX and was triggering a 400 round-trip.
   const { userId } = await auth();
   const isOwnListing = !!userId && userId === listing.seller.clerkId;
+
+  // UX-1a — sellable units for the low-stock urgency chip beside the price.
+  // Only inventory-tracked (multi-unit BUY_NOW) listings carry this; null
+  // otherwise so the chip never renders for single-item / firearm / auction
+  // listings.
+  const trackedSellable = listing.trackInventory
+    ? (listing.quantityAvailable ?? 0) - (listing.quantityReserved ?? 0)
+    : null;
+  const showUrgencyChip =
+    trackedSellable !== null && trackedSellable >= 1 && trackedSellable <= 5;
+
+  // UX-1c — pre-purchase delivery estimate line (computed from the listing's
+  // shipping shape; no extra fetch).
+  const deliveryEstimate = getListingDeliveryEstimate(listing);
 
   // Product/Offer structured data so Google can show rich price/availability
   // results. Only emit an Offer when there's a fixed price (BUY_NOW /
@@ -308,6 +326,20 @@ export default async function ListingDetailPage({
             {listing.title}
           </h1>
 
+          {/* UX-1b — seller rating near the title, linked to the seller
+              profile. Seller-level (not item-level) — the copy says so.
+              Self-hides when the seller has no ratings yet. */}
+          {listing.seller.averageRating != null &&
+            (listing.seller._count?.ratingsReceived ?? 0) > 0 && (
+              <div className="mb-3">
+                <SellerRating
+                  rating={listing.seller.averageRating}
+                  count={listing.seller._count?.ratingsReceived}
+                  href={`/sellers/${listing.seller.clerkId}`}
+                />
+              </div>
+            )}
+
           {/* Seller-only moderation banner — shows above the CTA. */}
           <ModerationBanner
             listingId={listing.id}
@@ -322,10 +354,56 @@ export default async function ListingDetailPage({
               so we suppress the static price block. */}
           {listing.price && listing.listingType !== 'AUCTION' && (
             <div
-              className="text-2xl mb-5"
-              style={{ color: 'var(--red)', fontWeight: 500 }}
+              className={`flex items-center gap-2 flex-wrap ${
+                deliveryEstimate ? 'mb-2' : 'mb-5'
+              }`}
             >
-              {formatPrice(listing.price)}
+              <span
+                className="text-2xl"
+                style={{ color: 'var(--red)', fontWeight: 500 }}
+              >
+                {formatPrice(listing.price)}
+              </span>
+              {/* UX-1a — low-stock urgency chip beside the price. */}
+              {showUrgencyChip && <UrgencyChip left={trackedSellable!} />}
+            </div>
+          )}
+
+          {/* UX-1c — pre-purchase delivery estimate. A range/method line,
+              never a hard promise. Null (hidden) for experiences and any
+              listing with no platform-estimable shipping. */}
+          {deliveryEstimate && (
+            <div
+              className="text-sm mb-5"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              {deliveryEstimate.kind === 'FIREARM' ? (
+                <>
+                  Transfer via licensed dealer —{' '}
+                  <Link
+                    href="/firearms-compliance"
+                    style={{
+                      color: 'var(--text-secondary)',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    see how it works
+                  </Link>
+                </>
+              ) : deliveryEstimate.kind === 'COLLECTION' ? (
+                <>Collection from seller ({PROVINCE_LABELS[listing.province]})</>
+              ) : deliveryEstimate.minDays === deliveryEstimate.maxDays ? (
+                <>
+                  Estimated delivery: about {deliveryEstimate.maxDays} business
+                  days via courier (after dispatch)
+                </>
+              ) : (
+                <>
+                  Estimated delivery: {deliveryEstimate.minDays}–
+                  {deliveryEstimate.maxDays} business days via courier (after
+                  dispatch)
+                </>
+              )}
             </div>
           )}
 
@@ -357,22 +435,22 @@ export default async function ListingDetailPage({
               </div>
             ) : (
               <>
-                {listing.trackInventory && (
-                  <p
-                    className="text-sm mb-2"
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    {(() => {
-                      const sellable =
-                        (listing.quantityAvailable ?? 0) -
-                        (listing.quantityReserved ?? 0);
-                      if (sellable <= 0) return 'Sold out';
-                      if (sellable <= 5)
-                        return `Only ${sellable} left in stock`;
-                      return `${sellable} in stock`;
-                    })()}
-                  </p>
-                )}
+                {/* Stock line. The ≤5 "low stock" case is shown as the red
+                    urgency chip beside the price (UX-1a), so here we only
+                    surface Sold out and comfortable-stock counts to avoid
+                    duplicate messaging. */}
+                {listing.trackInventory &&
+                  trackedSellable !== null &&
+                  (trackedSellable <= 0 || trackedSellable > 5) && (
+                    <p
+                      className="text-sm mb-2"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      {trackedSellable <= 0
+                        ? 'Sold out'
+                        : `${trackedSellable} in stock`}
+                    </p>
+                  )}
                 <Link
                   href={`/checkout/${listing.id}`}
                   className="block w-full py-3 rounded-[6px] text-sm text-center mb-2"
@@ -461,6 +539,13 @@ export default async function ListingDetailPage({
               {listing.status === 'SOLD' ? 'Sold' : 'Not available'}
             </div>
           ) : null}
+
+          {/* UX-1d — trust bullets under the CTA, on every listing type.
+              Point-of-decision reassurance; house-rule-safe copy (never
+              "escrow"). Firearm listings get the dealer-transfer bullet. */}
+          <div className="mb-4">
+            <TrustBullets isFirearm={listing.isFirearm} />
+          </div>
 
           {/* Quick-actions row — Wishlist (save for later) + Share
               (Web Share API → clipboard fallback). Sits directly under
