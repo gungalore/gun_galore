@@ -11,11 +11,39 @@
 
 import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
+import Link from 'next/link';
+import Image from 'next/image';
 import { Nav } from '@/components/nav';
+
+// UX-8 — stripped checkout chrome: logo + "Secure checkout 🔒" + Help only.
+// Replaces the full marketplace nav on /checkout/* so the buyer stays focused
+// through the secure flow. Rendered WITHOUT the data-public-nav wrapper so it
+// stays visible in installed-PWA (standalone) mode too — the buyer keeps a
+// clear header + a route home while paying (the bottom tab bar is still there).
+function CheckoutHeader() {
+  return (
+    <div style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--bg-deep)' }}>
+      <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center justify-between">
+        <Link href="/" aria-label="Gun Galore" className="flex items-center shrink-0">
+          <Image src="/logo.svg" alt="Gun Galore" width={180} height={36} priority style={{ height: 36, width: 'auto' }} />
+        </Link>
+        <span className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
+          <span aria-hidden>🔒</span> Secure checkout
+        </span>
+        <Link href="/support" className="text-sm" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>
+          Help
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 export function PublicNav() {
   const pathname = usePathname();
   if (pathname.startsWith('/admin')) return null;
+  // UX-8 — minimal secure chrome on the checkout flow (single-item, offer,
+  // and the post-payment complete page all live under /checkout/*).
+  if (pathname.startsWith('/checkout')) return <CheckoutHeader />;
   // data-public-nav wrapper lets globals.css hide the whole thing in
   // standalone-PWA mode (`html[data-standalone='true'] [data-public-nav]`).
   // We deliberately keep it server-renderable — no useStandalone here —
@@ -37,5 +65,7 @@ export function PublicFooter({ children }: { children: ReactNode }) {
   // Hide on admin pages (own chrome) and on the offline fallback (PWA).
   if (pathname.startsWith('/admin')) return null;
   if (pathname === '/offline') return null;
+  // UX-8 — no marketplace footer during the secure checkout flow.
+  if (pathname.startsWith('/checkout')) return null;
   return <div data-public-footer>{children}</div>;
 }

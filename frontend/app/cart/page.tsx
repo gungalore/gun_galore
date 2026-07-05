@@ -6,7 +6,7 @@ import { useAuth } from '@clerk/nextjs';
 import { useCart, removeFromCart, clearCart } from '@/lib/cart-store';
 import { formatPrice } from '@/lib/utils';
 import { ManualEftInstructions, type ManualEftData } from '@/components/manual-eft-instructions';
-import { PaygateComingSoon } from '@/components/paygate-coming-soon';
+import { PaymentMethodSection } from '@/components/payment-method-section';
 import { LockerPicker, type PudoLocker } from '@/components/locker-picker';
 import {
   ManualAddressFields,
@@ -505,8 +505,8 @@ export default function CartPage() {
         </>
       )}
 
-      {/* Payment method — paygate placeholder + EFT (the live method) */}
-      <PaygateComingSoon />
+      {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
+      <PaymentMethodSection />
 
       {/* Totals */}
       <div

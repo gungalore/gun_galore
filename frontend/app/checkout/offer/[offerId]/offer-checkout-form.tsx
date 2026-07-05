@@ -5,7 +5,7 @@ import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { formatPrice } from '@/lib/utils';
 import { ManualEftInstructions } from '@/components/manual-eft-instructions';
-import { PaygateComingSoon } from '@/components/paygate-coming-soon';
+import { PaymentMethodSection } from '@/components/payment-method-section';
 import { FeeBreakdown, ShippingMethod, Address } from '@/lib/types';
 import { LockerPicker, PudoLocker } from '@/components/locker-picker';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
@@ -440,7 +440,8 @@ export function OfferCheckoutForm({
         </div>
       )}
 
-      <PaygateComingSoon />
+      {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
+      <PaymentMethodSection />
 
       <button
         type="button"

@@ -13,8 +13,9 @@ import {
 } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
+import { DeliveryMethodCards } from '@/components/delivery-method-cards';
+import { PaymentMethodSection } from '@/components/payment-method-section';
 import { ManualEftInstructions } from '@/components/manual-eft-instructions';
-import { PaygateComingSoon } from '@/components/paygate-coming-soon';
 import { LockerPicker, PudoLocker } from '@/components/locker-picker';
 import {
   AddressAutocomplete,
@@ -1077,35 +1078,17 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       )}
 
       {!isCollection && allowedMethods.length > 0 && (
-        <div>
-          <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-            {listing.isFirearm ? 'Transfer method' : 'Delivery method'}
-          </p>
-          <div className="flex gap-2 flex-wrap">
-            {allowedMethods.map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMethod(m)}
-                className="px-4 py-2 rounded-[6px] text-sm"
-                style={{
-                  background: method === m ? 'var(--red)' : 'var(--bg-inset)',
-                  color: method === m ? '#fff' : 'var(--text-secondary)',
-                  border: `0.5px solid ${method === m ? 'var(--red)' : 'var(--border)'}`,
-                  cursor: 'pointer',
-                }}
-              >
-                {m === 'PUDO'
-                  ? 'Pudo locker'
-                  : m === 'TCG'
-                    ? 'Door delivery (TCG)'
-                    : m === 'DEALER_TRANSFER'
-                      ? 'Dealer transfer'
-                      : 'Private arrangement'}
-              </button>
-            ))}
-          </div>
-        </div>
+        // UX-8 — option cards; onSelect is the SAME setMethod, so state +
+        // payload are unchanged. Live courier quote shows on PUDO/TCG cards.
+        <DeliveryMethodCards
+          methods={allowedMethods}
+          selected={method}
+          onSelect={setMethod}
+          isFirearm={listing.isFirearm}
+          quotePriceCents={
+            quoteState.kind === 'ready' ? quoteState.quote.priceCents : undefined
+          }
+        />
       )}
 
       {/* Pudo collection locker — gated on a saved address with
@@ -1695,8 +1678,8 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           );
         })()}
 
-      {/* Payment method — paygate placeholder above the live EFT flow */}
-      <PaygateComingSoon />
+      {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
+      <PaymentMethodSection />
 
       {/* Proceed button */}
       <button
