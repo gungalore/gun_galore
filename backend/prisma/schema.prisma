@@ -100,6 +100,7 @@ enum ShippingMethod {
   DEALER_TRANSFER // Routed through a SAPS-licensed dealer (firearm — buyer picks dealer at checkout)
   PRIVATE_ARRANGE // Buyer + seller arrange in-person legal transfer (firearm — pair go to a dealer themselves)
   COLLECTION // Buyer collects in person from the seller — no courier, no rate. Forced for collectionOnly categories (trailers, oversized/dangerous goods). Funds stay HELD until the buyer confirms collection (payment protection); contact details are revealed post-payment so they can coordinate the meet.
+  ON_SITE_SERVICE // Future-dated on-site SERVICE (hunting package / range day). No courier, no rate, no parcel — the buyer attends on a scheduled event date. Funds stay HELD until the buyer confirms the experience happened. Deliberately matches NONE of the courier-cron shippingMethod filters (PUDO/TCG/DEALER_TRANSFER/COLLECTION) so experience bookings are invisible to every dispatch/auto-refund sweep.
 }
 
 enum ShippingStatus {
@@ -122,6 +123,14 @@ enum Province {
   NORTH_WEST
   NORTHERN_CAPE
   WESTERN_CAPE
+}
+
+// Hunting-package / experience kind. Extensible later (dangerous game, bird,
+// bow, fishing charter…). RANGE_DAY carries the lowest legal risk (no game /
+// permit / TOPS exposure) and is the recommended launch lead.
+enum ExperienceType {
+  RANGE_DAY
+  PLAINS_GAME_HUNT
 }
 
 enum RaffleStatus {
@@ -526,49 +535,55 @@ model Notification {
 }
 
 model Category {
-  id                  String     @id @default(cuid())
-  name                String
-  slug                String     @unique
-  parentId            String?
-  parent              Category?  @relation("SubCategories", fields: [parentId], references: [id])
-  children            Category[] @relation("SubCategories")
+  id                           String     @id @default(cuid())
+  name                         String
+  slug                         String     @unique
+  parentId                     String?
+  parent                       Category?  @relation("SubCategories", fields: [parentId], references: [id])
+  children                     Category[] @relation("SubCategories")
   // True when this category contains items legally classified as firearms
   // (the Firearms parent + all its children, plus Barrels under Gun Smithing).
-  isFirearm           Boolean    @default(false)
+  isFirearm                    Boolean    @default(false)
   // Subset of isFirearm — these MUST ship via licensed-dealer transfer.
   // SAPS regulation: firearms + barrels cannot move between individuals
   // without dealer paperwork.
-  requiresLicence     Boolean    @default(false)
+  requiresLicence              Boolean    @default(false)
   // Whether this category appears on the used marketplace (Sell form +
   // marketplace filters). False for live-ammo categories.
-  availableSecondhand Boolean    @default(true)
+  availableSecondhand          Boolean    @default(true)
   // Whether this category appears on the dealer New Store (M3 phase).
-  availableNewStore   Boolean    @default(false)
+  availableNewStore            Boolean    @default(false)
   // Cross-sell: may THIS category's listings be shown as a "you might also
   // need" suggestion? Default true; set false for prohibited/sensitive
   // categories (e.g. Ammo). Generic gate governing every category incl.
   // future ones, so the cross-sell engine needs no per-category code.
-  crossSellEligible   Boolean    @default(true)
+  crossSellEligible            Boolean    @default(true)
   // Collection-only categories (trailers, off-road caravans, oversized /
   // dangerous goods that no courier will carry). Listings inherit this at
   // create time → their only shipping method is COLLECTION, no courier
   // rate is quoted, and funds stay HELD until the buyer confirms
   // collection. Mirrors how isFirearm drives DEALER_TRANSFER.
-  collectionOnly      Boolean    @default(false)
+  collectionOnly               Boolean    @default(false)
   // Registered-goods categories (trailers, off-road caravans) where the
   // seller must attest they hold valid NaTIS registration / roadworthy
   // papers and will hand them over at collection. POPIA note: we NEVER
   // collect or display the actual documents — only a boolean attestation.
-  requiresPapers      Boolean    @default(false)
+  requiresPapers               Boolean    @default(false)
   // P5.4 — electronics/appliance categories (camp fridges, GPS, trail cams,
   // fish finders, e-bikes, drones) that show the OPTIONAL "tested & working"
   // seller-attestation checkbox on the sell form. Data-driven so the operator
   // can toggle categories without a code change. Mirrors collectionOnly /
   // requiresPapers gating.
-  showTestedWorkingAttestation Boolean @default(false)
-  isActive            Boolean    @default(true)
-  sortOrder           Int        @default(0)
-  createdAt           DateTime   @default(now())
+  showTestedWorkingAttestation Boolean    @default(false)
+  // Hunting-package / experience categories ("Hunting Packages & Experiences").
+  // Snapshotted to Listing.isExperience at create (like isFirearm /
+  // collectionOnly). Drives the on-site-service fulfilment path: no courier /
+  // parcel, Buy Now or Auction only, funds held until the buyer confirms the
+  // experience happened, and every listing routed to PENDING_REVIEW.
+  isExperience                 Boolean    @default(false)
+  isActive                     Boolean    @default(true)
+  sortOrder                    Int        @default(0)
+  createdAt                    DateTime   @default(now())
 
   listings Listing[]
 
@@ -598,21 +613,21 @@ enum AttributeType {
 }
 
 model CategoryAttribute {
-  id         String   @id @default(cuid())
+  id         String        @id @default(cuid())
   categoryId String
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category   Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   // Machine key, snake_case, stable — used as the Listing.attributes JSON key
   // AND the Meili facet field `attr_<key>`. Unique per category.
   key        String
   label      String // human label shown in the sell form + filters
   type       AttributeType
   unit       String? // "L", "Ah", "cm", "lbs" — display only
-  options    String[] @default([]) // for SELECT — allowed values, in order
-  required   Boolean  @default(false) // seller must supply at listing time
-  filterable Boolean  @default(true) // exposed as a Meili facet + browse filter
-  sortOrder  Int      @default(0)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
+  options    String[]      @default([]) // for SELECT — allowed values, in order
+  required   Boolean       @default(false) // seller must supply at listing time
+  filterable Boolean       @default(true) // exposed as a Meili facet + browse filter
+  sortOrder  Int           @default(0)
+  isActive   Boolean       @default(true)
+  createdAt  DateTime      @default(now())
 
   @@unique([categoryId, key])
   @@index([categoryId, isActive, sortOrder])
@@ -681,28 +696,60 @@ model Listing {
   condition   Condition
   province    Province
 
-  isFirearm Boolean @default(false)
+  isFirearm               Boolean   @default(false)
   // Snapshotted from Category.collectionOnly at create time (like
   // isFirearm). When true the only shipping method is COLLECTION — no
   // courier rate is quoted and the buyer collects in person.
-  collectionOnly Boolean @default(false)
+  collectionOnly          Boolean   @default(false)
   // Snapshotted from Category.requiresPapers at create time. When true
   // the seller attested (at listing) + the buyer acknowledges (at
   // checkout) that valid NaTIS registration / roadworthy papers change
   // hands at collection. Boolean attestation only — no documents stored.
-  requiresPapers Boolean @default(false)
+  requiresPapers          Boolean   @default(false)
   // Set when a requiresPapers seller ticks the papers attestation at
   // listing creation. Durable evidence they affirmed holding the papers.
-  papersAttestedAt DateTime?
+  papersAttestedAt        DateTime?
   // P5.4 — set when the seller ticks the OPTIONAL "tested & working" claim
   // (categories flagged Category.showTestedWorkingAttestation, e.g. camp
   // fridges / GPS / trail cams). The SELLER'S own attestation, never a GG
   // certification (CPA s41). Snapshotted into the dispute record if the buyer
   // later disputes.
   testedWorkingAttestedAt DateTime?
-  make      String?
-  model     String?
-  calibre   String?
+
+  // ----- Hunting Packages / Experiences (on-site SERVICE, no shipping) -----
+  // Snapshotted from Category.isExperience at create time (like isFirearm).
+  // When true the listing is a future-dated ON-SITE service: fulfilment is
+  // ShippingMethod.ON_SITE_SERVICE (no courier / no parcel), it may ONLY be
+  // BUY_NOW or AUCTION, it never carries inventory, and funds stay HELD until
+  // the buyer confirms the experience happened. Listing is open self-serve
+  // (any KYC-verified member) so every experience routes to PENDING_REVIEW
+  // and an admin reviews the supplier docs before it goes live.
+  isExperience               Boolean         @default(false)
+  experienceType             ExperienceType?
+  eventStartDate             DateTime? // the scheduled date, or window start
+  eventEndDate               DateTime? // null = single day; set = multi-day window
+  eventProvince              Province?
+  locationText               String? // property / area, free text (no exact address publicly)
+  capacitySlots              Int? // hunters / guests the package accommodates
+  durationText               String? // "3 nights / 2 hunting days"
+  speciesList                String[]        @default([]) // for PLAINS_GAME_HUNT
+  whatsIncluded              String? // accommodation, PH/guide, field prep…
+  rifleProvided              Boolean         @default(false) // rifle provided vs bring-own
+  // Supplier (outfitter) attestations + registration/insurance capture. We
+  // store the registration NUMBER + Cloudinary doc URLs only; the docs are
+  // Claude-vision reviewed like the SAP-534 dealer-verification flow.
+  supplierRegistrationNumber String?
+  supplierRegistrationDocUrl String?
+  supplierInsuranceUrl       String?
+  supplierAttestedAt         DateTime?
+  supplierDocReviewStatus    String? // PENDING_CLAUDE | PENDING_ADMIN_REVIEW | APPROVED | REJECTED
+  supplierDocReviewScore     Float?
+  supplierDocReviewFindings  Json?
+  supplierDocReviewedAt      DateTime?
+
+  make    String?
+  model   String?
+  calibre String?
 
   // P4 — structured per-category attribute VALUES, keyed by
   // CategoryAttribute.key (e.g. { "fridge_litres": 40, "battery_chemistry":
@@ -849,20 +896,20 @@ model Listing {
   // window so a seller nudging the price down can't spam every watcher's inbox.
   priceDropNotifiedAt DateTime?
 
-  images         ListingImage[]
-  transactions   Transaction[]
-  orderLineItems OrderLineItem[]
-  offers         Offer[]
-  bids           Bid[]
-  watchers       AuctionWatch[]
-  swapProposals        SwapProposal[] @relation("SwapProposalTarget")
-  swapProposalsOffered SwapProposal[] @relation("SwapProposalOffered")
+  images               ListingImage[]
+  transactions         Transaction[]
+  orderLineItems       OrderLineItem[]
+  offers               Offer[]
+  bids                 Bid[]
+  watchers             AuctionWatch[]
+  swapProposals        SwapProposal[]    @relation("SwapProposalTarget")
+  swapProposalsOffered SwapProposal[]    @relation("SwapProposalOffered")
   // Users who saved this listing to their wishlist. Distinct from
   // `watchers` (auction-bidding opt-in). Used for the heart-icon
   // state across browse grids + /wishlist page + future "X people
   // saved this" social-proof signal.
-  wishlistedBy   WatchedListing[]
-  questions      ListingQuestion[]
+  wishlistedBy         WatchedListing[]
+  questions            ListingQuestion[]
 
   // Featured-slot back-relation. When a seller wins a featured slot
   // auction + binds this listing to it, the slot's
@@ -943,28 +990,28 @@ model Transaction {
   quantity Int @default(1)
 
   // Pricing — all ZAR cents, snapshot at point of sale
-  listingPrice        Int // snapshot of listing.price × quantity
-  commissionZar       Int
-  processingFee       Int // Peach fee (3.5% + R1.50 fixed, ×1.15 VAT)
+  listingPrice          Int // snapshot of listing.price × quantity
+  commissionZar         Int
+  processingFee         Int // Peach fee (3.5% + R1.50 fixed, ×1.15 VAT)
   // Shipping cost the buyer paid, sourced from a live Pudo / TCG rate
   // quote at checkout. Zero for firearm listings (DEALER_TRANSFER and
   // PRIVATE_ARRANGE don't use the courier API). Stored separately from
   // buyerTotal so we can show the breakdown later + remit to the
   // courier without re-computing.
-  shippingCost        Int     @default(0)
+  shippingCost          Int     @default(0)
   // P6.4 — flat GG handling margin per waybill created (R15). Buyer-paid,
   // GG-RETAINED (never remitted to the carrier), stored SEPARATELY from
   // shippingCost so the carrier remittance stays the pure rate. Zero for
   // firearm (DEALER_TRANSFER / PRIVATE_ARRANGE), collection, and consolidated
   // sibling lines — none of those create their own waybill.
-  shippingHandlingCents Int   @default(0)
+  shippingHandlingCents Int     @default(0)
   // Service level snapshot — "L2LXS - ECO" / "D2DM - ECO" etc. Comes
   // straight from Pudo's response so we can pass it back into the
   // shipment-create call without re-fetching the quote.
-  shippingServiceCode String?
-  passFeeToBuyer      Boolean // snapshot of listing.passFeeToBuyer
-  buyerTotal          Int // what buyer is charged by Peach
-  sellerPayout        Int // what seller receives after deductions
+  shippingServiceCode   String?
+  passFeeToBuyer        Boolean // snapshot of listing.passFeeToBuyer
+  buyerTotal            Int // what buyer is charged by Peach
+  sellerPayout          Int // what seller receives after deductions
 
   // Fraud-risk signals (Phase 3b). Computed AFTER payment capture
   // (fire-and-forget in markPaid) — log-only, never blocks payment.
@@ -1228,7 +1275,7 @@ model Transaction {
   // (each burns a Claude vision call + 3 Cloudinary uploads). Past a cap the
   // upload is blocked and the tx is escalated to a human review queue instead
   // of letting a persistently-bad (or hostile) seller loop forever.
-  dealerVerifyAttempts       Int      @default(0)
+  dealerVerifyAttempts       Int       @default(0)
   // Stock-register entry number the dealer (or seller) types in, for
   // SAPS audit cross-reference. Optional — not always available at
   // upload time.
@@ -1710,8 +1757,8 @@ model SavedSearch {
   sort         String?
   attrs        String? // URL-encoded JSON; round-trips the URL, NOT applied by the matcher
 
-  fingerprint   String // canonical hash of the filter set (idempotent save)
-  notifyEnabled Boolean   @default(true)
+  fingerprint    String // canonical hash of the filter set (idempotent save)
+  notifyEnabled  Boolean   @default(true)
   lastNotifiedAt DateTime?
 
   createdAt DateTime @default(now())
@@ -1797,7 +1844,7 @@ model Raffle {
   // 18+/licence attestation before they can claim. Dropped from an earlier
   // spec and re-added — see RafflesService.markWinnerPrizeDispatched /
   // claimPrize for the gates that key off it.
-  prizeIsFirearm    Boolean @default(false)
+  prizeIsFirearm Boolean @default(false)
 
   // Sold counts (cheap to read on the public detail page)
   ticketsSoldPaid   Int @default(0) // CONFIRMED tickets only
@@ -1991,8 +2038,8 @@ model RaffleWinner {
   // Firearm-prize winner attestation (captured at claim time when
   // Raffle.prizeIsFirearm). NULL for non-firearm prizes. The dispatch gate
   // can verify these before a firearm prize is released to a dealer.
-  winnerAttestedAdultAt    DateTime? // 18+/rules/dealer-transfer consent confirmed
-  winnerLicenceRef         String? // firearm licence / competency reference supplied
+  winnerAttestedAdultAt DateTime? // 18+/rules/dealer-transfer consent confirmed
+  winnerLicenceRef      String? // firearm licence / competency reference supplied
 
   createdAt DateTime @default(now())
 
@@ -2290,10 +2337,10 @@ model FeaturedSlotBid {
   // On bind-request the winner gets an FS reference + a pay-by
   // deadline; the reconciler completes the bind on payment match.
   // pendingListingId remembers WHICH listing to feature once paid.
-  orderReference     String?   @unique
-  pendingListingId   String?
-  paymentPayByAt     DateTime?
-  paymentDetectedAt  DateTime?
+  orderReference    String?   @unique
+  pendingListingId  String?
+  paymentPayByAt    DateTime?
+  paymentDetectedAt DateTime?
 
   status FeaturedBidStatus @default(ACTIVE)
 
@@ -3193,7 +3240,7 @@ model Order {
   // Kept as its own column so the invariant
   //   itemsSubtotal + shippingSubtotal + handlingSubtotal + processingFee == buyerTotal
   // continues to hold once a handling margin is charged.
-  handlingSubtotal Int                @default(0)
+  handlingSubtotal Int @default(0)
   processingFee    Int
   buyerTotal       Int
 
@@ -3335,8 +3382,8 @@ model SwapProposal {
   offeredListing   Listing @relation("SwapProposalOffered", fields: [offeredListingId], references: [id])
 
   // Optional cash top-up. cashAmount in ZAR cents; cashDirection = who pays.
-  cashAmount    Int       @default(0)
-  cashDirection SwapRole?
+  cashAmount           Int       @default(0)
+  cashDirection        SwapRole?
   // Owner's single counter (cash only).
   counterCashAmount    Int?
   counterCashDirection SwapRole?
@@ -3412,14 +3459,14 @@ model Swap {
   ownerVerifiedAt    DateTime?
   ownerRefundedAt    DateTime?
 
-  lockedAt        DateTime?
+  lockedAt         DateTime?
   // Exactly-once guard for the "swap locked" email+SMS+inbox notification.
   // The sweepStalledLockedSwaps re-drive cron re-invokes notifyLocked, so a
   // CAS on this stamp stops the notification firing twice.
   lockedNotifiedAt DateTime?
-  completedAt     DateTime?
-  cancelledAt     DateTime?
-  cancelledReason String?
+  completedAt      DateTime?
+  cancelledAt      DateTime?
+  cancelledReason  String?
 
   // ── S5 settlement + verification window ──────────────────────────────
   // Both legs delivered → AWAITING_VERIFICATION with verificationDeadlineAt

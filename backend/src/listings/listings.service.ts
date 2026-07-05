@@ -411,6 +411,115 @@ export class ListingsService {
           : 'Collection-only items (e.g. trailers and caravans) can be listed as Buy Now or Auction — not Take-a-Shot or Swop.',
       );
     }
+    // ---- Hunting Packages / Experiences (Category.isExperience) ----------
+    // A future-dated on-site SERVICE (hunting package / range day): no courier
+    // or parcel, Buy Now or Auction only, funds held until the buyer confirms
+    // the experience happened. Open self-serve, so we capture the supplier's
+    // registration + public-liability insurance + attestations and route every
+    // experience to PENDING_REVIEW for an admin to check before it goes live.
+    const isExperience = category.isExperience;
+    let supplierAttestedAt: Date | null = null;
+    let experienceEventStart: Date | null = null;
+    let experienceEventEnd: Date | null = null;
+    if (isExperience) {
+      if (dto.listingType !== 'BUY_NOW' && dto.listingType !== 'AUCTION') {
+        throw new BadRequestException(
+          'Hunting packages and experiences can only be listed as Marketplace (Buy Now) or Auction — not Take a Shot or Swop.',
+        );
+      }
+      if (dto.shippingMethods && dto.shippingMethods.length > 0) {
+        throw new BadRequestException(
+          'Hunting packages are delivered on-site — no courier or collection method applies.',
+        );
+      }
+      if (!dto.experienceType) {
+        throw new BadRequestException(
+          'Select the experience type (range day or plains-game hunt).',
+        );
+      }
+      if (!dto.eventStartDate) {
+        throw new BadRequestException(
+          'An event date is required for a hunting package.',
+        );
+      }
+      experienceEventStart = new Date(dto.eventStartDate);
+      if (
+        Number.isNaN(experienceEventStart.getTime()) ||
+        experienceEventStart.getTime() <= Date.now()
+      ) {
+        throw new BadRequestException('The event date must be in the future.');
+      }
+      if (dto.eventEndDate) {
+        experienceEventEnd = new Date(dto.eventEndDate);
+        if (
+          Number.isNaN(experienceEventEnd.getTime()) ||
+          experienceEventEnd.getTime() < experienceEventStart.getTime()
+        ) {
+          throw new BadRequestException(
+            'The event end date must be on or after the start date.',
+          );
+        }
+      }
+      if (!dto.eventProvince) {
+        throw new BadRequestException(
+          'Select the province where the experience takes place.',
+        );
+      }
+      if (!dto.capacitySlots || dto.capacitySlots < 1) {
+        throw new BadRequestException(
+          'Set how many hunters/guests the package accommodates (at least 1).',
+        );
+      }
+      if (!dto.whatsIncluded || dto.whatsIncluded.trim().length === 0) {
+        throw new BadRequestException(
+          'Describe what the package includes (accommodation, guide, field prep…).',
+        );
+      }
+      if (
+        dto.experienceType === 'PLAINS_GAME_HUNT' &&
+        (!dto.speciesList || dto.speciesList.length === 0)
+      ) {
+        throw new BadRequestException(
+          'List at least one species for a plains-game hunt.',
+        );
+      }
+      if (
+        !dto.supplierRegistrationNumber ||
+        dto.supplierRegistrationNumber.trim().length === 0
+      ) {
+        throw new BadRequestException(
+          'Enter your professional-hunter / outfitter registration number.',
+        );
+      }
+      if (!dto.supplierRegistrationDocUrl || !dto.supplierInsuranceUrl) {
+        throw new BadRequestException(
+          'Upload your registration document and public-liability insurance certificate.',
+        );
+      }
+      if (
+        dto.supplierPublicLiabilityAttested !== true ||
+        dto.supplierAuthorityAttested !== true ||
+        dto.supplierRiskDisclosureAttested !== true
+      ) {
+        throw new BadRequestException(
+          'You must confirm all supplier declarations before listing an experience.',
+        );
+      }
+      supplierAttestedAt = new Date();
+    } else if (
+      dto.experienceType ||
+      dto.eventStartDate ||
+      dto.eventProvince ||
+      dto.capacitySlots ||
+      dto.supplierRegistrationNumber
+    ) {
+      // Experience fields were sent for a non-experience category — reject so
+      // they can't be smuggled onto a normal listing.
+      throw new BadRequestException(
+        'Experience details are only valid for hunting-package categories.',
+      );
+    }
+
     // Papers attestation — NaTIS-registered goods (trailers / caravans). The
     // seller affirms they hold valid registration / roadworthy papers and
     // will hand them over at collection. Boolean only — we never collect or
@@ -579,6 +688,13 @@ export class ListingsService {
       status = ListingStatus.PENDING_REVIEW;
     }
 
+    // Experiences are ALWAYS admin-reviewed before going live — open
+    // self-serve supplier, so a human checks the registration / insurance /
+    // attestations regardless of Claude's moderation verdict.
+    if (isExperience) {
+      status = ListingStatus.PENDING_REVIEW;
+    }
+
     // Allocate the human-trackable reference number (UM/AU/TS + 6 digits)
     // BEFORE the create so the row lands with refNumber already populated
     // and we never have a moment where a listing is missing one.
@@ -593,7 +709,7 @@ export class ListingsService {
     // (trackInventory=false, quantityAvailable=1).
     const requestedStock = Math.floor(Number(dto.quantityAvailable ?? 1));
     const trackInventory =
-      inventoryEligible(dto.listingType, category.isFirearm) &&
+      inventoryEligible(dto.listingType, category.isFirearm, isExperience) &&
       Number.isFinite(requestedStock) &&
       requestedStock > 1;
     const quantityAvailable = trackInventory
@@ -628,6 +744,32 @@ export class ListingsService {
         requiresPapers: category.requiresPapers,
         papersAttestedAt,
         testedWorkingAttestedAt,
+        // Experience snapshot (Category.isExperience). Inert for every normal
+        // listing; drives the on-site-service fulfilment path when set.
+        isExperience,
+        experienceType: dto.experienceType ?? null,
+        eventStartDate: experienceEventStart,
+        eventEndDate: experienceEventEnd,
+        eventProvince: isExperience ? (dto.eventProvince ?? null) : null,
+        locationText: isExperience ? (dto.locationText ?? null) : null,
+        capacitySlots: isExperience ? (dto.capacitySlots ?? null) : null,
+        durationText: isExperience ? (dto.durationText ?? null) : null,
+        speciesList: isExperience ? (dto.speciesList ?? []) : [],
+        whatsIncluded: isExperience ? (dto.whatsIncluded ?? null) : null,
+        rifleProvided: isExperience ? (dto.rifleProvided ?? false) : false,
+        supplierRegistrationNumber: isExperience
+          ? (dto.supplierRegistrationNumber?.trim() ?? null)
+          : null,
+        supplierRegistrationDocUrl: isExperience
+          ? (dto.supplierRegistrationDocUrl ?? null)
+          : null,
+        supplierInsuranceUrl: isExperience
+          ? (dto.supplierInsuranceUrl ?? null)
+          : null,
+        supplierAttestedAt,
+        // Inert default so the listing lands in the admin review queue; the
+        // Claude-vision doc review is wired in E5.
+        supplierDocReviewStatus: isExperience ? 'PENDING_ADMIN_REVIEW' : null,
         trackInventory,
         quantityAvailable,
         // P4.2 — cleaned per-listing attribute values (or JsonNull when none).
@@ -650,9 +792,11 @@ export class ListingsService {
         endTime,
         // Delivery + pickup address. Collection-only categories are forced
         // to the single COLLECTION method regardless of what the client sent.
-        shippingMethods: effectiveCollectionOnly
-          ? [ShippingMethod.COLLECTION]
-          : (dto.shippingMethods ?? []),
+        shippingMethods: isExperience
+          ? [ShippingMethod.ON_SITE_SERVICE]
+          : effectiveCollectionOnly
+            ? [ShippingMethod.COLLECTION]
+            : (dto.shippingMethods ?? []),
         // Phase M dealer-lock — optional planned-dealer hint shown
         // to buyers near that dealer. Trimmed to spec-allowed 200
         // chars at the DTO layer; we also defensively null out

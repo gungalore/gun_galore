@@ -16,13 +16,16 @@
 export type ListingTypeLike = 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT' | 'SWOP';
 
 // A listing may only be inventory-tracked (qty > 1) if it is a plain
-// BUY_NOW, non-firearm listing. Firearms are 1-serial-per-SAPS-534;
-// auctions + take-a-shot + swop are inherently single-item.
+// BUY_NOW, non-firearm, non-experience listing. Firearms are
+// 1-serial-per-SAPS-534; auctions + take-a-shot + swop are inherently
+// single-item; a hunting-package experience is a single on-site booking
+// (capacity is metadata, not sellable stock).
 export function inventoryEligible(
   listingType: ListingTypeLike,
   isFirearm: boolean,
+  isExperience = false,
 ): boolean {
-  return listingType === 'BUY_NOW' && !isFirearm;
+  return listingType === 'BUY_NOW' && !isFirearm && !isExperience;
 }
 
 // Validate a requested purchase quantity against a listing's state.

@@ -8,6 +8,7 @@ import {
   IsArray,
   IsNumber,
   IsObject,
+  IsDateString,
   ArrayMinSize,
   ArrayMaxSize,
   Min,
@@ -15,7 +16,13 @@ import {
   MaxLength,
   ValidateIf,
 } from 'class-validator';
-import { ListingType, Condition, Province, ShippingMethod } from '@prisma/client';
+import {
+  ListingType,
+  Condition,
+  Province,
+  ShippingMethod,
+  ExperienceType,
+} from '@prisma/client';
 
 export class CreateListingDto {
   @IsString()
@@ -172,6 +179,37 @@ export class CreateListingDto {
   @IsOptional()
   @IsObject()
   attributes?: Record<string, unknown>;
+
+  // ---- Hunting Packages / Experiences (Category.isExperience) ----------
+  // Required only when the category is an experience (enforced server-side in
+  // ListingsService.create). An experience is a future-dated on-site SERVICE
+  // (hunting package / range day): no courier or parcel, Buy Now or Auction
+  // only. All fields optional at the DTO layer; the service enforces them
+  // only for experience categories and strips them for everything else.
+  @IsOptional() @IsEnum(ExperienceType) experienceType?: ExperienceType;
+  @IsOptional() @IsDateString() eventStartDate?: string;
+  @IsOptional() @IsDateString() eventEndDate?: string;
+  @IsOptional() @IsEnum(Province) eventProvince?: Province;
+  @IsOptional() @IsString() @MaxLength(200) locationText?: string;
+  @IsOptional() @IsInt() @Min(1) capacitySlots?: number;
+  @IsOptional() @IsString() @MaxLength(200) durationText?: string;
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(30)
+  speciesList?: string[];
+  @IsOptional() @IsString() @MaxLength(5000) whatsIncluded?: string;
+  @IsOptional() @IsBoolean() rifleProvided?: boolean;
+  // Supplier (outfitter) registration + insurance. Docs uploaded to Cloudinary
+  // BEFORE create; URLs passed here for admin / Claude-vision review.
+  @IsOptional() @IsString() @MaxLength(120) supplierRegistrationNumber?: string;
+  @IsOptional() @IsString() @MaxLength(500) supplierRegistrationDocUrl?: string;
+  @IsOptional() @IsString() @MaxLength(500) supplierInsuranceUrl?: string;
+  // Supplier declarations — must all be true when the category is an
+  // experience. Boolean only; the service re-checks + stamps supplierAttestedAt.
+  @IsOptional() @IsBoolean() supplierPublicLiabilityAttested?: boolean;
+  @IsOptional() @IsBoolean() supplierAuthorityAttested?: boolean;
+  @IsOptional() @IsBoolean() supplierRiskDisclosureAttested?: boolean;
 
   // Number of photos the frontend is about to upload AFTER the create
   // call returns. We use this to fail-fast at create-time when the
