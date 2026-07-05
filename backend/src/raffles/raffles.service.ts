@@ -1708,7 +1708,30 @@ export class RafflesService {
   async getWinnersForAdmin(raffleId: string) {
     const raffle = await this.prisma.raffle.findUnique({
       where: { id: raffleId },
-      select: { id: true, title: true, referenceNumber: true, status: true },
+      select: {
+        id: true,
+        title: true,
+        referenceNumber: true,
+        status: true,
+        // EXP-E5 — experience-prize metadata + sponsor settlement so the
+        // dossier can show the sponsored package, gate the "Mark experience
+        // fulfilled" button (prizeIsExperience) and drive "Settle sponsor".
+        prizeIsExperience: true,
+        experienceType: true,
+        eventStartDate: true,
+        eventEndDate: true,
+        eventProvince: true,
+        locationText: true,
+        durationText: true,
+        speciesList: true,
+        whatsIncluded: true,
+        rifleProvided: true,
+        sponsorUserId: true,
+        sponsorSettlementCents: true,
+        sponsorSettledAt: true,
+        sponsorSettlementRef: true,
+        drawnAt: true,
+      },
     });
     if (!raffle) throw new NotFoundException('Raffle not found');
 

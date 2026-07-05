@@ -46,6 +46,14 @@ export default function AdminCompetitionDossierPage() {
   // dispatched. null when the modal is closed.
   const [dispatchingFor, setDispatchingFor] = useState<string | null>(null);
 
+  // EXP-E5 — which winner row is currently being marked experience-fulfilled
+  // (the on-site equivalent of dispatch). null when the modal is closed.
+  const [fulfillingFor, setFulfillingFor] = useState<string | null>(null);
+
+  // EXP-E5 — sponsor-settlement action state (single per-raffle action).
+  const [settling, setSettling] = useState(false);
+  const [settleError, setSettleError] = useState<string | null>(null);
+
   // Bumped after each successful dispatch so the useEffect re-fetches
   // the dossier without a full page reload. Plain version counter
   // beats lifting all of the modal state up here.
@@ -81,6 +89,28 @@ export default function AdminCompetitionDossierPage() {
       cancelled = true;
     };
   }, [id, version]);
+
+  // EXP-E5 — settle the outfitter sponsor out of ticket revenue via the
+  // existing FNB payout batch. No body — the amount + recipient live on the
+  // raffle. Idempotent server-side; disabled once sponsorSettledAt is stamped.
+  async function handleSettleSponsor() {
+    setSettling(true);
+    setSettleError(null);
+    try {
+      const res = await adminFetch(`/admin/raffles/${id}/settle-sponsor`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const body = await safeJson(res);
+        throw new Error(body?.message ?? `HTTP ${res.status}`);
+      }
+      setVersion((v) => v + 1);
+    } catch (err) {
+      setSettleError((err as Error).message);
+    } finally {
+      setSettling(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -186,6 +216,19 @@ export default function AdminCompetitionDossierPage() {
         )}
       </div>
 
+      {/* ─── Experience prize + sponsor settlement (EXP-E5) ─────
+          Only for outfitter-sponsored experience prizes. Shows the
+          sponsored package metadata + the sponsor settlement state and
+          the "Settle sponsor" action. */}
+      {raffle.prizeIsExperience && (
+        <ExperiencePrizePanel
+          raffle={raffle}
+          settling={settling}
+          settleError={settleError}
+          onSettle={handleSettleSponsor}
+        />
+      )}
+
       {/* ─── Winner cards (1 + backups) ───────────────────────── */}
       <p
         className="text-xs uppercase tracking-wider mb-2"
@@ -203,7 +246,9 @@ export default function AdminCompetitionDossierPage() {
             <WinnerCard
               key={w.id}
               winner={w}
+              isExperience={raffle.prizeIsExperience}
               onDispatch={() => setDispatchingFor(w.id)}
+              onFulfil={() => setFulfillingFor(w.id)}
             />
           ))}
         </div>
@@ -224,6 +269,170 @@ export default function AdminCompetitionDossierPage() {
           }}
         />
       )}
+
+      {/* ─── Fulfil-experience modal (EXP-E5) ─────────────────────
+          The on-site equivalent of the dispatch modal — records that the
+          guided hunt / range day happened. Courier dispatch hard-rejects an
+          experience prize, so this is how an experience winner is closed. */}
+      {fulfillingFor && (
+        <FulfilExperienceModal
+          winner={winners.find((w) => w.id === fulfillingFor)!}
+          onClose={() => setFulfillingFor(null)}
+          onSuccess={() => {
+            setFulfillingFor(null);
+            setVersion((v) => v + 1);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Experience prize + sponsor settlement panel (EXP-E5) ────────────
+
+const EXPERIENCE_TYPE_LABEL: Record<string, string> = {
+  RANGE_DAY: 'Shooting range day',
+  PLAINS_GAME_HUNT: 'Plains-game hunt',
+};
+
+function ExperiencePrizePanel({
+  raffle,
+  settling,
+  settleError,
+  onSettle,
+}: {
+  raffle: AdminRaffleWinnerDossier['raffle'];
+  settling: boolean;
+  settleError: string | null;
+  onSettle: () => void;
+}) {
+  const settled = !!raffle.sponsorSettledAt;
+  // "Settle sponsor" only makes sense once the raffle is drawn and there's a
+  // sponsor + amount on file. The server re-checks all of this; the button is
+  // a friendly pre-gate so the operator isn't clicking into a 400.
+  const canSettle =
+    !settled &&
+    !!raffle.sponsorUserId &&
+    !!raffle.sponsorSettlementCents &&
+    raffle.sponsorSettlementCents > 0 &&
+    !!raffle.drawnAt;
+  const eventWindow = raffle.eventEndDate
+    ? `${formatMaybeDate(raffle.eventStartDate)} → ${formatMaybeDate(raffle.eventEndDate)}`
+    : formatMaybeDate(raffle.eventStartDate);
+
+  return (
+    <div
+      className="rounded-[6px] p-5 mb-5"
+      style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+    >
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <div>
+          <p
+            className="text-sm"
+            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+          >
+            Experience prize
+          </p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+            Outfitter-sponsored on-site experience — fulfilled on-site, sponsor settled from ticket revenue
+          </p>
+        </div>
+        <Pill
+          tone={settled ? 'success' : 'pending'}
+          label={
+            settled
+              ? `Sponsor settled · ${formatDate(raffle.sponsorSettledAt!)}`
+              : 'Sponsor unsettled'
+          }
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 text-sm mb-4">
+        <Field
+          label="Type"
+          value={
+            raffle.experienceType
+              ? (EXPERIENCE_TYPE_LABEL[raffle.experienceType] ?? raffle.experienceType)
+              : '—'
+          }
+        />
+        <Field label="Date window" value={eventWindow} />
+        <Field label="Province" value={raffle.eventProvince ?? '—'} />
+        <Field label="Location" value={raffle.locationText ?? '—'} />
+        <Field label="Duration" value={raffle.durationText ?? '—'} />
+        <Field
+          label="Species"
+          value={raffle.speciesList.length > 0 ? raffle.speciesList.join(', ') : '—'}
+        />
+        <Field
+          label="Rifle provided"
+          value={raffle.rifleProvided ? 'Yes' : 'No (bring-own)'}
+        />
+        <Field
+          label="Sponsor settlement"
+          value={
+            raffle.sponsorSettlementCents != null
+              ? formatRand(raffle.sponsorSettlementCents)
+              : '—'
+          }
+        />
+        {raffle.whatsIncluded && (
+          <div className="md:col-span-2">
+            <Field label="What's included" value={raffle.whatsIncluded} multiline />
+          </div>
+        )}
+      </div>
+
+      {/* Sponsor settlement action + state. */}
+      <div
+        className="mt-4 pt-4 flex items-center justify-between gap-4 flex-wrap"
+        style={{ borderTop: '0.5px solid var(--border)' }}
+      >
+        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          {settled ? (
+            <>
+              Settled
+              {raffle.sponsorSettlementRef && (
+                <>
+                  {' · ref '}
+                  <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                    {raffle.sponsorSettlementRef}
+                  </span>
+                </>
+              )}
+              {' — queued on the next FNB payout batch (KYC/bank-gated).'}
+            </>
+          ) : !raffle.sponsorUserId ? (
+            'No sponsor recipient on file — set the sponsor before settling.'
+          ) : !raffle.sponsorSettlementCents ? (
+            'No sponsor settlement amount set — set the amount before settling.'
+          ) : !raffle.drawnAt ? (
+            'Settle once the raffle has been drawn.'
+          ) : (
+            'Queues the agreed EFT to the sponsor via the FNB payout batch.'
+          )}
+          {settleError && (
+            <span className="block mt-1" style={{ color: 'var(--red)' }}>
+              {settleError}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={onSettle}
+          disabled={!canSettle || settling}
+          className="text-sm px-4 py-2 rounded-[6px]"
+          style={{
+            background: canSettle && !settling ? 'var(--red)' : 'var(--bg-inset)',
+            color: canSettle && !settling ? '#fff' : 'var(--text-tertiary)',
+            border: canSettle && !settling ? 'none' : '0.5px solid var(--border)',
+            fontWeight: 500,
+            cursor: !canSettle || settling ? 'not-allowed' : 'pointer',
+            opacity: settling ? 0.7 : 1,
+          }}
+        >
+          {settled ? 'Sponsor settled' : settling ? 'Settling…' : 'Settle sponsor'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -232,10 +441,14 @@ export default function AdminCompetitionDossierPage() {
 
 function WinnerCard({
   winner,
+  isExperience,
   onDispatch,
+  onFulfil,
 }: {
   winner: AdminRaffleWinnerDossier['winners'][number];
+  isExperience: boolean;
   onDispatch: () => void;
+  onFulfil: () => void;
 }) {
   const { user } = winner;
   // Position 1 = the primary winner. Backups (2, 3) are only relevant
@@ -249,11 +462,21 @@ function WinnerCard({
     : winner.forfeitedAt
       ? 'FORFEITED'
       : 'AWAITING';
-  const dispatchState: 'DISPATCHED' | 'PENDING' | 'BLOCKED' = winner.prizeDispatchedAt
-    ? 'DISPATCHED'
-    : claimState === 'CLAIMED'
-      ? 'PENDING'
-      : 'BLOCKED';
+  // EXP-E5 — for experience prizes, "fulfilled" replaces "dispatched" (the
+  // on-site day instead of a courier). experienceFulfilledAt is the closing
+  // stamp; the courier dispatch path hard-rejects an experience prize.
+  const fulfilState: 'DISPATCHED' | 'PENDING' | 'BLOCKED' = isExperience
+    ? winner.experienceFulfilledAt
+      ? 'DISPATCHED'
+      : claimState === 'CLAIMED'
+        ? 'PENDING'
+        : 'BLOCKED'
+    : winner.prizeDispatchedAt
+      ? 'DISPATCHED'
+      : claimState === 'CLAIMED'
+        ? 'PENDING'
+        : 'BLOCKED';
+  const dispatchState = fulfilState;
 
   return (
     <div
@@ -311,15 +534,58 @@ function WinnerCard({
                   : 'neutral'
             }
             label={
-              dispatchState === 'DISPATCHED'
-                ? `Dispatched · ${formatDate(winner.prizeDispatchedAt!)}`
-                : dispatchState === 'PENDING'
-                  ? 'To dispatch'
-                  : 'Awaiting claim'
+              isExperience
+                ? dispatchState === 'DISPATCHED'
+                  ? `Fulfilled · ${formatDate(winner.experienceFulfilledAt!)}`
+                  : dispatchState === 'PENDING'
+                    ? 'To fulfil'
+                    : 'Awaiting claim'
+                : dispatchState === 'DISPATCHED'
+                  ? `Dispatched · ${formatDate(winner.prizeDispatchedAt!)}`
+                  : dispatchState === 'PENDING'
+                    ? 'To dispatch'
+                    : 'Awaiting claim'
             }
           />
         </div>
       </div>
+
+      {/* EXP-E5 — experience-prize claim evidence (18+/hunting-risk
+          attestation, contact confirmation, preferred date) captured at
+          claim time. Only shown for experience prizes with claim data. */}
+      {isExperience &&
+        (winner.winnerExperienceAttestedAt ||
+          winner.winnerContactConfirmedAt ||
+          winner.winnerPreferredDate) && (
+          <div
+            className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3 text-sm"
+          >
+            <Field
+              label="Attested (18+/risk)"
+              value={
+                winner.winnerExperienceAttestedAt
+                  ? formatDate(winner.winnerExperienceAttestedAt)
+                  : '—'
+              }
+            />
+            <Field
+              label="Contact confirmed"
+              value={
+                winner.winnerContactConfirmedAt
+                  ? formatDate(winner.winnerContactConfirmedAt)
+                  : '—'
+              }
+            />
+            <Field
+              label="Preferred date"
+              value={
+                winner.winnerPreferredDate
+                  ? formatDate(winner.winnerPreferredDate)
+                  : '—'
+              }
+            />
+          </div>
+        )}
 
       {/* Contact + address — only when a user is attached. Postal
           entries have no User row; we show a stub instead so the
@@ -374,8 +640,40 @@ function WinnerCard({
         </p>
       )}
 
-      {/* Dispatch metadata, only when already dispatched. */}
-      {winner.prizeDispatchedAt && (
+      {/* EXP-E5 — fulfilment metadata for an experience prize, only when
+          already fulfilled (the on-site equivalent of dispatch metadata). */}
+      {isExperience && winner.experienceFulfilledAt && (
+        <div
+          className="mt-4 pt-4 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 text-sm"
+          style={{ borderTop: '0.5px solid var(--border)' }}
+        >
+          <Field
+            label="Fulfilled at"
+            value={formatDate(winner.experienceFulfilledAt)}
+          />
+          <Field
+            label="Fulfilled by"
+            value={
+              winner.experienceFulfilledByAdminId
+                ? winner.experienceFulfilledByAdminId.slice(0, 8) + '…'
+                : '—'
+            }
+            mono
+          />
+          {winner.experienceFulfilmentNote && (
+            <div className="md:col-span-2">
+              <Field
+                label="Fulfilment note"
+                value={winner.experienceFulfilmentNote}
+                multiline
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Dispatch metadata, only when already dispatched (non-experience). */}
+      {!isExperience && winner.prizeDispatchedAt && (
         <div
           className="mt-4 pt-4 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 text-sm"
           style={{ borderTop: '0.5px solid var(--border)' }}
@@ -415,14 +713,15 @@ function WinnerCard({
       )}
 
       {/* Action button — only when the winner has claimed AND the
-          prize is not yet dispatched AND they haven't forfeited.
+          prize is not yet dispatched/fulfilled AND they haven't forfeited.
           Forfeited backups can't ship until promoted; primary winners
-          who haven't claimed can't either (the operator might ship
-          something the winner can't legally receive otherwise). */}
+          who haven't claimed can't either. For an experience prize the
+          courier dispatch path hard-rejects, so we show "Mark experience
+          fulfilled" (the on-site equivalent) instead. */}
       {dispatchState === 'PENDING' && (
         <div className="mt-4 flex justify-end">
           <button
-            onClick={onDispatch}
+            onClick={isExperience ? onFulfil : onDispatch}
             className="text-sm px-4 py-2 rounded-[6px]"
             style={{
               background: 'var(--red)',
@@ -432,7 +731,7 @@ function WinnerCard({
               cursor: 'pointer',
             }}
           >
-            Mark as dispatched
+            {isExperience ? 'Mark experience fulfilled' : 'Mark as dispatched'}
           </button>
         </div>
       )}
@@ -640,6 +939,168 @@ function DispatchModal({
   );
 }
 
+// ─── Fulfil-experience modal (EXP-E5) ────────────────────────────────
+
+function FulfilExperienceModal({
+  winner,
+  onClose,
+  onSuccess,
+}: {
+  winner: AdminRaffleWinnerDossier['winners'][number];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  // Default the fulfilment date to today (YYYY-MM-DD for the date input). The
+  // server treats an omitted/unparseable date as "now"; the stamp is what
+  // matters, so a sensible default keeps the common path one click.
+  const [fulfilledDate, setFulfilledDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await adminFetch(
+        `/admin/raffles/winners/${winner.id}/fulfil-experience`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            note: note.trim() || undefined,
+            fulfilledDate: fulfilledDate || undefined,
+          }),
+        },
+      );
+      if (!res.ok) {
+        const body = await safeJson(res);
+        throw new Error(body?.message ?? `HTTP ${res.status}`);
+      }
+      onSuccess();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.7)' }}
+      onClick={onClose}
+    >
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={handleSubmit}
+        className="w-full max-w-md rounded-[8px] p-5"
+        style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+      >
+        <h2
+          className="text-base mb-1"
+          style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+        >
+          Mark experience fulfilled
+        </h2>
+        <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
+          Records that the guided hunt / range day happened for{' '}
+          <span style={{ color: 'var(--text-secondary)' }}>
+            {winner.user?.username ?? '(postal entry)'}
+          </span>{' '}
+          and notifies them. This is the on-site equivalent of dispatch — courier
+          dispatch is blocked for an experience prize.
+        </p>
+
+        <label className="block mb-3">
+          <span
+            className="text-xs uppercase tracking-wider"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            Fulfilled date
+          </span>
+          <input
+            type="date"
+            value={fulfilledDate}
+            onChange={(e) => setFulfilledDate(e.target.value)}
+            className="w-full mt-1 px-3 py-2 rounded-[6px] text-sm"
+            style={{
+              background: 'var(--bg-inset)',
+              border: '0.5px solid var(--border)',
+              color: 'var(--text-primary)',
+              outline: 'none',
+            }}
+          />
+        </label>
+
+        <label className="block mb-4">
+          <span
+            className="text-xs uppercase tracking-wider"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            Note (optional)
+          </span>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Hunt outcome, species taken, notes for the file…"
+            rows={3}
+            className="w-full mt-1 px-3 py-2 rounded-[6px] text-sm"
+            style={{
+              background: 'var(--bg-inset)',
+              border: '0.5px solid var(--border)',
+              color: 'var(--text-primary)',
+              outline: 'none',
+              resize: 'vertical',
+            }}
+          />
+        </label>
+
+        {error && (
+          <p className="text-xs mb-3" style={{ color: 'var(--red)' }}>
+            {error}
+          </p>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="text-sm px-3 py-2 rounded-[6px]"
+            style={{
+              background: 'transparent',
+              color: 'var(--text-tertiary)',
+              border: '0.5px solid var(--border)',
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="text-sm px-4 py-2 rounded-[6px]"
+            style={{
+              background: 'var(--red)',
+              color: '#fff',
+              border: 'none',
+              fontWeight: 500,
+              cursor: submitting ? 'wait' : 'pointer',
+              opacity: submitting ? 0.7 : 1,
+            }}
+          >
+            {submitting ? 'Saving…' : 'Confirm fulfilment'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ─── Small reusable bits ─────────────────────────────────────────────
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -730,6 +1191,21 @@ function formatDate(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+// Date-only formatter for nullable event dates (no time component). Returns an
+// em-dash for null so the experience panel reads cleanly.
+function formatMaybeDate(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function formatRand(cents: number): string {
+  return `R${(cents / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
 }
 
 // Multi-line shipping label rendered into the dossier. Concatenates

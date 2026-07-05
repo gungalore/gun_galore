@@ -680,6 +680,24 @@ export interface AdminRaffleWinnerDossier {
     title: string;
     referenceNumber: string | null;
     status: string;
+    // EXP-E5 — experience-prize metadata + sponsor settlement. Populated only
+    // when prizeIsExperience; drives the "Mark experience fulfilled" gate and
+    // the "Settle sponsor" action.
+    prizeIsExperience: boolean;
+    experienceType: string | null;
+    eventStartDate: string | null;
+    eventEndDate: string | null;
+    eventProvince: string | null;
+    locationText: string | null;
+    durationText: string | null;
+    speciesList: string[];
+    whatsIncluded: string | null;
+    rifleProvided: boolean;
+    sponsorUserId: string | null;
+    sponsorSettlementCents: number | null;
+    sponsorSettledAt: string | null;
+    sponsorSettlementRef: string | null;
+    drawnAt: string | null;
   };
   winners: {
     id: string;
@@ -695,6 +713,14 @@ export interface AdminRaffleWinnerDossier {
     prizeCarrierLabel: string | null;
     prizeDispatchedByAdminId: string | null;
     prizeDispatchNote: string | null;
+    // EXP-E5 — experience-prize claim evidence + on-site fulfilment (the
+    // on-site equivalent of dispatch). Populated only for experience prizes.
+    winnerExperienceAttestedAt: string | null;
+    winnerContactConfirmedAt: string | null;
+    winnerPreferredDate: string | null;
+    experienceFulfilledAt: string | null;
+    experienceFulfilledByAdminId: string | null;
+    experienceFulfilmentNote: string | null;
     createdAt: string;
     user: {
       id: string;

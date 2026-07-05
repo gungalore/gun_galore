@@ -22,6 +22,24 @@ interface ListingDossier {
     condition: string;
     province: string;
     isFirearm: boolean;
+    // Experience / supplier (Hunting Packages & Experiences). Populated only
+    // when isExperience — surfaced in the "Experience & supplier review" panel.
+    isExperience: boolean;
+    experienceType: string | null;
+    eventStartDate: string | null;
+    eventEndDate: string | null;
+    eventProvince: string | null;
+    locationText: string | null;
+    capacitySlots: number | null;
+    durationText: string | null;
+    speciesList: string[];
+    whatsIncluded: string | null;
+    rifleProvided: boolean;
+    supplierRegistrationNumber: string | null;
+    supplierRegistrationDocUrl: string | null;
+    supplierInsuranceUrl: string | null;
+    supplierAttestedAt: string | null;
+    supplierDocReviewStatus: string | null;
     make: string | null;
     model: string | null;
     calibre: string | null;
@@ -371,6 +389,9 @@ export default function ListingDossierPage() {
         )}
       </div>
 
+      {/* ─── Experience & supplier review (Hunting Packages) ────── */}
+      {l.isExperience && <ExperiencePanel l={l} />}
+
       {/* ─── Details + description ─────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
         <Section title="Details">
@@ -596,6 +617,166 @@ export default function ListingDossierPage() {
 }
 
 // ─── Subcomponents ──────────────────────────────────────────────────
+
+const EXPERIENCE_TYPE_LABEL: Record<string, string> = {
+  RANGE_DAY: 'Shooting range day',
+  PLAINS_GAME_HUNT: 'Plains-game hunt',
+};
+
+// Colour for the supplier doc-review status pill (PENDING_CLAUDE /
+// PENDING_ADMIN_REVIEW / APPROVED / REJECTED). APPROVED/REJECTED aren't in the
+// shared status map, so pass explicit colours; the two PENDING_* states use amber.
+const SUPPLIER_DOC_STATUS_COLOR: Record<string, string> = {
+  PENDING_CLAUDE: '#f59e0b',
+  PENDING_ADMIN_REVIEW: '#f59e0b',
+  APPROVED: '#22c55e',
+  REJECTED: 'var(--red)',
+};
+
+// Experience & supplier review panel — shown for isExperience listings so an
+// admin approving/rejecting a PENDING_REVIEW hunting package can see the event
+// metadata + the supplier's registration number and the two uploaded docs
+// (registration + public-liability insurance) as clickable images. The existing
+// list-page approve/reject controls action the decision — this only surfaces it.
+function ExperiencePanel({
+  l,
+}: {
+  l: ListingDossier['listing'];
+}) {
+  const eventWindow = l.eventEndDate
+    ? `${formatDate(l.eventStartDate)} → ${formatDate(l.eventEndDate)}`
+    : formatDate(l.eventStartDate);
+  const status = l.supplierDocReviewStatus;
+
+  return (
+    <div
+      className="rounded-[8px] p-4 mb-5"
+      style={{
+        background: 'var(--bg-card)',
+        border: `0.5px solid ${
+          status === 'REJECTED' ? 'var(--red)' : 'var(--border)'
+        }`,
+      }}
+    >
+      <div className="flex justify-between items-start mb-3 flex-wrap gap-2">
+        <div>
+          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+            Experience & supplier review
+          </p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+            Hunting package / on-site experience — verify the supplier docs before approving
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            Doc review
+          </span>
+          {status ? (
+            <StatusChip status={status} color={SUPPLIER_DOC_STATUS_COLOR[status]} />
+          ) : (
+            <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              —
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Experience metadata */}
+        <DataList
+          rows={[
+            [
+              'Type',
+              l.experienceType
+                ? (EXPERIENCE_TYPE_LABEL[l.experienceType] ?? l.experienceType)
+                : '—',
+            ],
+            ['Date window', eventWindow],
+            ['Province', l.eventProvince ?? '—'],
+            ['Location', l.locationText ?? '—'],
+            ['Capacity', l.capacitySlots != null ? `${l.capacitySlots} slots` : '—'],
+            ['Duration', l.durationText ?? '—'],
+            ['Species', l.speciesList.length > 0 ? l.speciesList.join(', ') : '—'],
+            ['Rifle provided', l.rifleProvided ? 'Yes' : 'No (bring-own)'],
+            ['Reg. number', l.supplierRegistrationNumber ?? '—'],
+            ['Supplier attested', formatDateTime(l.supplierAttestedAt)],
+          ]}
+        />
+
+        {/* Supplier docs + what's included */}
+        <div className="flex flex-col gap-3">
+          <div>
+            <p
+              className="text-xs uppercase tracking-wider mb-2"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              Supplier documents
+            </p>
+            <div className="flex gap-3 flex-wrap">
+              <DocImage label="Registration" url={l.supplierRegistrationDocUrl} />
+              <DocImage label="Public-liability insurance" url={l.supplierInsuranceUrl} />
+            </div>
+          </div>
+          {l.whatsIncluded && (
+            <div>
+              <p
+                className="text-xs uppercase tracking-wider mb-1"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                What's included
+              </p>
+              <div
+                className="rounded-[6px] p-3 text-xs whitespace-pre-wrap"
+                style={{
+                  background: 'var(--bg-inset)',
+                  color: 'var(--text-secondary)',
+                  maxHeight: 160,
+                  overflowY: 'auto',
+                  lineHeight: 1.5,
+                }}
+              >
+                {l.whatsIncluded}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// One supplier doc rendered as a clickable thumbnail that opens the full image
+// in a new tab. Docs are Cloudinary URLs; a missing URL shows a placeholder.
+function DocImage({ label, url }: { label: string; url: string | null }) {
+  return (
+    <div className="flex flex-col gap-1">
+      {url ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" title={`Open ${label}`}>
+          <img
+            src={url}
+            alt={label}
+            className="w-28 h-28 rounded-[6px] object-cover"
+            style={{ border: '0.5px solid var(--border)', cursor: 'zoom-in' }}
+          />
+        </a>
+      ) : (
+        <div
+          className="w-28 h-28 rounded-[6px] flex items-center justify-center text-center text-[10px] px-2"
+          style={{
+            background: 'var(--bg-inset)',
+            border: '0.5px dashed var(--border)',
+            color: 'var(--text-tertiary)',
+          }}
+        >
+          Not uploaded
+        </div>
+      )}
+      <span className="text-[10px] max-w-28" style={{ color: 'var(--text-tertiary)' }}>
+        {label}
+      </span>
+    </div>
+  );
+}
 
 function Mini({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
