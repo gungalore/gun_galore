@@ -12,11 +12,15 @@ import { PrismaService } from '../prisma/prisma.service';
 // silently produce wrong refs.
 
 // UM/AU/TS = listings, RA = raffles, FS = featured-slot orders, SB =
-// subscription purchases (P1.1). Order references reuse these per-prefix
-// counters, so every issued number is globally unique within its prefix
-// whether it labels a listing or an order (no two things ever share
-// UM000042).
-export type ReferencePrefix = 'UM' | 'AU' | 'TS' | 'RA' | 'FS' | 'SW' | 'SB';
+// subscription purchases (P1.1), HP = hunting-package / experience ORDER
+// references (EXP-E1). Order references reuse these per-prefix counters, so
+// every issued number is globally unique within its prefix whether it labels
+// a listing or an order (no two things ever share UM000042). NOTE: HP is an
+// ORDER-ref prefix only — an experience LISTING reuses the BUY_NOW (UM) /
+// AUCTION (AU) listing prefix, because an experience is still fundamentally a
+// BUY_NOW or AUCTION listing; HP only distinguishes the buyer's per-booking
+// EFT reference so hunting bookings reconcile / report separately.
+export type ReferencePrefix = 'UM' | 'AU' | 'TS' | 'RA' | 'FS' | 'SW' | 'SB' | 'HP';
 
 const LISTING_TYPE_TO_PREFIX: Record<ListingType, ReferencePrefix> = {
   BUY_NOW: 'UM',
@@ -26,8 +30,16 @@ const LISTING_TYPE_TO_PREFIX: Record<ListingType, ReferencePrefix> = {
 };
 
 // Per-order reference source — the thing being paid for. Drives the
-// prefix the buyer sees as their EFT reference (e.g. UM000123).
-export type OrderRefSource = ListingType | 'RAFFLE' | 'FEATURED' | 'SUBSCRIPTION';
+// prefix the buyer sees as their EFT reference (e.g. UM000123). EXPERIENCE
+// is the hunting-package booking source (EXP-E1) — it maps to the HP prefix
+// so experience bookings reconcile / report separately from ordinary goods,
+// even though the underlying listing is still BUY_NOW or AUCTION.
+export type OrderRefSource =
+  | ListingType
+  | 'RAFFLE'
+  | 'FEATURED'
+  | 'SUBSCRIPTION'
+  | 'EXPERIENCE';
 
 const ORDER_SOURCE_TO_PREFIX: Record<OrderRefSource, ReferencePrefix> = {
   BUY_NOW: 'UM',
@@ -37,6 +49,7 @@ const ORDER_SOURCE_TO_PREFIX: Record<OrderRefSource, ReferencePrefix> = {
   RAFFLE: 'RA',
   FEATURED: 'FS',
   SUBSCRIPTION: 'SB',
+  EXPERIENCE: 'HP',
 };
 
 const PAD_WIDTH = 6;

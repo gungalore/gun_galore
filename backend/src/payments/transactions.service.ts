@@ -207,14 +207,119 @@ export class TransactionsService {
     }
     // ----
 
+    // ─── Hunting Packages / Experiences (EXP-E1) checkout branch ────────
+    // An experience is a future-dated ON-SITE service — no courier, no parcel,
+    // no shipping quote. It may only be BUY_NOW or AUCTION (E0 forces that at
+    // listing create + rejects TAKE_A_SHOT/SWOP), so the offer path above can
+    // never carry one; only the BUY_NOW ACTIVE gate + the AUCTION-winner gate
+    // reach here for an experience. We compute the booking evidence up front so
+    // the create + fee maths below can branch on a single isExperience flag.
+    const isExperience = listing.isExperience;
+    let experienceEventDate: Date | null = null;
+    let experienceEventEndDate: Date | null = null;
+    let experiencePartySize: number | null = null;
+    let experienceStampAt: Date | null = null;
+    if (isExperience) {
+      // Experiences NEVER ride the multi-item cart / Order path (single-item
+      // v1). reserveAndCreateLine is called by both single create() and
+      // createOrderCheckout; when it's a cart line the caller passes a
+      // shippingOverride. Reject an experience that reached here as a cart line
+      // so it can't be fanned out (createOrderCheckout also excludes it up
+      // front, before any reservation — this is defence in depth).
+      if (shippingOverride !== undefined) {
+        throw new BadRequestException(
+          'Hunting packages and experiences must be booked individually, not in a cart.',
+        );
+      }
+
+      // HARD gate — all five buyer attestations must be explicitly true.
+      // Mirror the firearm 18+ server check: the frontend gate is UX, this is
+      // authoritative. Each maps to a *At evidence stamp persisted below.
+      if (
+        dto.experienceBuyerAttested18Plus !== true ||
+        dto.experienceHuntingLicenceOrSupervisionAccepted !== true ||
+        dto.experienceIntermediaryAcknowledged !== true ||
+        dto.experienceCancellationPolicyAccepted !== true ||
+        dto.experienceRisksAccepted !== true
+      ) {
+        throw new BadRequestException(
+          'To book this experience you must confirm all of: you are 18+, you hold a firearm licence/competency or will hunt under the outfitter’s supervision, you understand Gun Galore is a payment-protection intermediary and the outfitter is the supplier, you accept the cancellation policy, and you accept the hunting risks.',
+        );
+      }
+      experienceStampAt = new Date();
+
+      // Force the on-site fulfilment method + skip the courier shipping
+      // validator entirely (validateShipping only knows courier/firearm/
+      // collection methods and would reject ON_SITE_SERVICE). No Pudo/TCG/
+      // dealer path, no rate quote — shippingCost stays 0.
+      dto.shippingMethod = ShippingMethod.ON_SITE_SERVICE;
+
+      // eventDate is required and must be one of the dates the outfitter
+      // offered: inside the listing window and in the future. Bind to the
+      // listing's server-side window, never a client-sent range.
+      if (!dto.eventDate) {
+        throw new BadRequestException(
+          'Please choose the date you want to book for this experience.',
+        );
+      }
+      const chosen = new Date(dto.eventDate);
+      if (Number.isNaN(chosen.getTime())) {
+        throw new BadRequestException('The chosen booking date is not valid.');
+      }
+      const windowStart = listing.eventStartDate;
+      if (!windowStart) {
+        throw new BadRequestException(
+          'This experience has no scheduled date and cannot be booked yet.',
+        );
+      }
+      const windowEnd = listing.eventEndDate ?? windowStart;
+      const now = new Date();
+      if (chosen.getTime() < now.getTime()) {
+        throw new BadRequestException(
+          'The chosen booking date is in the past.',
+        );
+      }
+      // Compare against the window on a whole-day basis at the boundaries so a
+      // same-day time-of-day difference doesn't reject a legitimate date. The
+      // window end is inclusive to the end of that day.
+      const windowStartMs = windowStart.getTime();
+      const windowEndMs =
+        windowEnd.getTime() + 24 * 60 * 60 * 1000 - 1; // inclusive end-of-day
+      if (chosen.getTime() < windowStartMs || chosen.getTime() > windowEndMs) {
+        throw new BadRequestException(
+          'The chosen date is outside the dates this experience is offered on.',
+        );
+      }
+      experienceEventDate = chosen;
+      experienceEventEndDate = listing.eventEndDate ?? null;
+
+      // partySize: default 1, must be within the package's capacity.
+      const requestedParty = dto.partySize ?? 1;
+      if (!Number.isInteger(requestedParty) || requestedParty < 1) {
+        throw new BadRequestException('Party size must be a whole number of 1 or more.');
+      }
+      const capacity = listing.capacitySlots ?? 1;
+      if (requestedParty > capacity) {
+        throw new BadRequestException(
+          `This package accommodates up to ${capacity} guest${capacity === 1 ? '' : 's'}.`,
+        );
+      }
+      experiencePartySize = requestedParty;
+    }
+
     // Enforce shipping routing rules: legal class (firearm vs not) AND
-    // the seller's offered methods (a subset of the legal options).
-    this.validateShipping(
-      listing.isFirearm,
-      listing.collectionOnly,
-      listing.shippingMethods,
-      dto.shippingMethod,
-    );
+    // the seller's offered methods (a subset of the legal options). SKIPPED
+    // for experiences — ON_SITE_SERVICE is not a courier/firearm/collection
+    // method the validator knows about, and the experience branch above has
+    // already pinned the method + attestations.
+    if (!isExperience) {
+      this.validateShipping(
+        listing.isFirearm,
+        listing.collectionOnly,
+        listing.shippingMethods,
+        dto.shippingMethod,
+      );
+    }
 
     // M33 — 18+/competency attestation on firearm checkouts. Required
     // by the audit + SAPS regulatory framework. Refuse the transaction
@@ -338,14 +443,26 @@ export class TransactionsService {
       processingFee,
       buyerTotal,
       sellerPayout,
-    } = this.fees.breakdown(
-      agreedPrice * quantity, // line subtotal — commission bands apply to the line
-      listing.passFeeToBuyer,
-      isTopSeller,
-      shippingCostCents,
-      PAYMENT_MODE, // manual = flat 1.5% EFT fee; paygate = card rate
-      handlingFeeCents,
-    );
+    } = isExperience
+      ? // EXP-E1 — full package value held, standard tiered bands, R0
+        // shipping + R0 handling (no waybill). Price is bound to the
+        // server-side value (listing.price for BUY_NOW, listing.currentBid for
+        // an AUCTION winner) via agreedPrice above — never a client amount.
+        // Experiences are single-item, so quantity is always 1 here.
+        this.fees.breakdownExperience(
+          agreedPrice,
+          listing.passFeeToBuyer,
+          isTopSeller,
+          PAYMENT_MODE,
+        )
+      : this.fees.breakdown(
+          agreedPrice * quantity, // line subtotal — commission bands apply to the line
+          listing.passFeeToBuyer,
+          isTopSeller,
+          shippingCostCents,
+          PAYMENT_MODE, // manual = flat 1.5% EFT fee; paygate = card rate
+          handlingFeeCents,
+        );
 
     // Reserve the listing ATOMICALLY. Only ONE buyer can flip it from
     // ACTIVE → PAYMENT_PENDING. This is the double-sell guard: for
@@ -449,6 +566,17 @@ export class TransactionsService {
           listing.requiresPapers && dto.collectionPapersAccepted
             ? new Date()
             : null,
+        // EXP-E1 — experience booking + the 5 buyer-attestation evidence
+        // stamps. All null for a non-experience checkout. experienceStampAt is
+        // the single affirm instant captured once the hard gate passed above.
+        eventDate: experienceEventDate,
+        eventEndDate: experienceEventEndDate,
+        partySize: experiencePartySize,
+        experienceAttested18PlusAt: experienceStampAt,
+        experienceLicenceOrSupervisionAt: experienceStampAt,
+        experienceIntermediaryAckAt: experienceStampAt,
+        experienceCancellationAcceptedAt: experienceStampAt,
+        experienceRisksAcceptedAt: experienceStampAt,
       },
     });
     const tx = await createTx().catch(async (err) => {
@@ -539,7 +667,12 @@ export class TransactionsService {
     // the 1-hour freeze) and the daily FNB statement reconciliation
     // confirms it (→ confirmManualPayment → SOLD → seller notified).
     if (PAYMENT_MODE === 'manual') {
-      const orderRefSource: OrderRefSource = offerRecord
+      // EXP-E1 — an experience booking gets the HP order-ref prefix so hunting
+      // bookings reconcile / report separately, even though the underlying
+      // listing is still BUY_NOW or AUCTION. Offers → TS; else the listing type.
+      const orderRefSource: OrderRefSource = listing.isExperience
+        ? 'EXPERIENCE'
+        : offerRecord
         ? 'TAKE_A_SHOT'
         : (listing.listingType as OrderRefSource);
       const orderReference =
@@ -692,6 +825,7 @@ export class TransactionsService {
         id: true,
         listingType: true,
         isFirearm: true,
+        isExperience: true,
         sellerId: true,
         collectionOnly: true,
         title: true,
@@ -701,6 +835,20 @@ export class TransactionsService {
     if (lineListings.some((l) => l.listingType !== 'BUY_NOW')) {
       throw new BadRequestException(
         'Auctions, swaps and offer items must be bought individually, not in a cart.',
+      );
+    }
+    // EXP-E1 — an experience is a BUY_NOW listing (so the type gate above lets
+    // it through) but is a future-dated on-site booking that must be checked
+    // out individually: it needs the 5 buyer attestations + eventDate +
+    // partySize the cart line DTO doesn't carry, ships ON_SITE_SERVICE (never
+    // consolidates), and holds full value against ONE booking. Reject it up
+    // front — before any reservation — and NAME the item so the buyer knows
+    // which line to remove and book on its own. (reserveAndCreateLine also
+    // rejects an experience cart line as defence in depth.)
+    const experienceLine = lineListings.find((l) => l.isExperience);
+    if (experienceLine) {
+      throw new BadRequestException(
+        `"${experienceLine.title}" is a hunting package / experience — it must be booked individually, not in a cart. Remove it and book it on its own.`,
       );
     }
     // Collection-only lines can't ride the cart rail — the cart only carries
@@ -2406,6 +2554,19 @@ export class TransactionsService {
     if (tx.buyer.clerkId !== buyerClerkId) throw new ForbiddenException('Only the buyer can confirm delivery');
     if (tx.paymentStatus !== 'HELD') throw new BadRequestException('Payment is not in HELD state');
     if (tx.confirmedDeliveryAt) throw new BadRequestException('Delivery already confirmed');
+
+    // EXP — an on-site experience (hunting package / range day) is a
+    // future-dated SERVICE, NOT a parcel. It must NEVER settle through the
+    // goods delivery-confirmation path: that flips HELD→RELEASED the instant
+    // the buyer clicks, which could pay the outfitter BEFORE the event date.
+    // Experiences release only via the dedicated post-event completion step
+    // (guarded on eventDate). Refuse here so experience funds can never move
+    // early via this endpoint.
+    if (tx.shippingMethod === 'ON_SITE_SERVICE') {
+      throw new BadRequestException(
+        'On-site experiences are confirmed through the "Confirm the experience happened" step after the event date, not delivery confirmation.',
+      );
+    }
 
     // Firearm DEALER_TRANSFER gates payout on the SAPS 534 verification
     // having been APPROVED (either automatically by Claude vision or

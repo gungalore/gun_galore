@@ -1242,6 +1242,45 @@ model Transaction {
   // firearm 18+ attestation, but persisted since we add the column here.
   collectionPapersAckAt DateTime?
 
+  // ─── Hunting Packages / Experiences (EXP-E1 checkout → HELD) ─────────
+  // An experience is a future-dated ON-SITE service (ShippingMethod.
+  // ON_SITE_SERVICE): no courier, no parcel, delivered on eventDate at a
+  // venue. The buyer books a specific date the outfitter offered (must
+  // fall inside listing.eventStartDate..eventEndDate) for a party of
+  // partySize (≤ listing.capacitySlots). Full value is HELD until the
+  // buyer confirms the experience happened (release is a later phase).
+  eventDate    DateTime? // the specific date booked (within the listing window)
+  eventEndDate DateTime? // copy of listing.eventEndDate for a multi-day window
+  partySize    Int? // hunters / guests on this booking (≥1, ≤ capacitySlots)
+
+  // Buyer attestation evidence stamps — mirror the firearm 18+ boolean →
+  // hard server check → *At evidence column pattern (transactions.service
+  // reserveAndCreateLine). All five are HARD-required true at experience
+  // checkout; each *At is durable proof the buyer affirmed at booking time
+  // (CPA disclosure + dispute defence).
+  experienceAttested18PlusAt       DateTime? // (1) 18+
+  experienceLicenceOrSupervisionAt DateTime? // (2) firearm licence/competency OR outfitter-supervised
+  experienceIntermediaryAckAt      DateTime? // (3) GG is a payment-protection intermediary; outfitter is the supplier
+  experienceCancellationAcceptedAt DateTime? // (4) accept CPA-s17 cancellation policy
+  experienceRisksAcceptedAt        DateTime? // (5) accept hunting risks
+
+  // ─── Experience booking lifecycle (added inert in E1; driven later) ──
+  // Populated by E2 (accept + completion release), E3 (cancellation) and E4
+  // (SLA cron + dispute). Added now so the E1 additive migration carries the
+  // whole column set and later phases need no further Transaction migration.
+  bookingConfirmedAt                DateTime? // outfitter accepted the booking
+  bookingDeclinedAt                 DateTime? // outfitter declined → full refund
+  bookingDeclinedReason             String?
+  bookingConfirmDeadlineAt          DateTime? // = paidAt + 48h; outfitter-accept window
+  bookingConfirmNudgedAt            DateTime? // SLA one-shot: "please confirm this booking"
+  bookingConfirmEscalatedAt         DateTime? // SLA one-shot: unconfirmed past deadline → admin
+  eventCompletedConfirmedAt         DateTime? // buyer confirmed the experience happened → release
+  eventPreReminderSentAt            DateTime? // SLA one-shot: ~3d-out reminder
+  eventCompletionNudgedAt           DateTime? // SLA one-shot: post-event "confirm it happened"
+  adminAlertedForEventUnconfirmedAt DateTime? // SLA one-shot: still HELD after event+grace → admin
+  cpaCancelTier                     String? // which CPA-s17 cancellation tier was applied
+  cpaAdminFeeCents                  Int? // GG-retained admin fee slice on a 60+ day cancel
+
   // ─── Dealer-stock-in verification (firearm DEALER_TRANSFER only) ──
   // When the firearm is delivered to the chosen SAPS-licensed dealer,
   // the seller uploads 3 photos (SAPS 534 form, last line of dealer's
@@ -1368,6 +1407,9 @@ model Transaction {
   @@index([refundOfId])
   // P6.2 — consolidated-shipment group lookup (carrier → its sibling lines).
   @@index([shipsWithId])
+  // EXP-E1 — experience booking sweeps: the SLA cron scans HELD
+  // ON_SITE_SERVICE rows by event date (nudge/reminder/escalate windows).
+  @@index([shippingMethod, paymentStatus, eventDate])
 }
 
 // Append-only timeline of shipping + payment milestones per Transaction.

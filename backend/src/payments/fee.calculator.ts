@@ -97,6 +97,16 @@ export interface FeeBreakdown {
   sellerPayout: number;   // ZAR cents — what the seller actually receives
 }
 
+// EXP-E1 — fee breakdown for a hunting-package / experience booking. An
+// experience is a future-dated ON-SITE service: no courier, no waybill, so
+// shipping AND the R15 handling margin are always ZERO. Commission uses the
+// SAME tiered bands as goods (breakdown()); the 1.5% manual processing fee
+// passes through on the package price. Full value is HELD. buyerTotal =
+// packagePrice + processingFee; sellerPayout = packagePrice − commission −
+// (processingFee if the outfitter absorbs it). Structurally identical to
+// FeeBreakdown so it flows through the same Transaction columns + Zoho.
+export interface ExperienceFeeBreakdown extends FeeBreakdown {}
+
 @Injectable()
 export class FeeCalculator {
   calculateCommission(priceZarCents: number, isTopSeller: boolean): number {
@@ -227,6 +237,48 @@ export class FeeCalculator {
       Math.max(0, Math.round(cashAmountCents)) - SWAP_CASH_COMMISSION_FREE_CENTS;
     if (excess <= 0) return 0;
     return this.calculateCommission(excess, false);
+  }
+
+  /**
+   * EXP-E1 — fee breakdown for a hunting-package / experience booking.
+   *
+   * An experience is a future-dated ON-SITE service: there is no courier and
+   * no waybill, so shipping AND the P6.4 R15 handling margin are ALWAYS zero.
+   * Everything else mirrors goods exactly — the standard tiered commission
+   * bands (NOT a flat experience rate) via the shared calculateCommission, and
+   * the mode-selected processing fee (manual = flat 1.5%). Full package value
+   * is held.
+   *
+   * This is a thin per-mode wrapper over breakdown() (the breakdownSwapLeg
+   * pattern): it pins shippingCost = 0 and handlingFee = 0 and delegates the
+   * band commission + processing-fee maths to the one shared implementation,
+   * so band parity with breakdown() for the same price is guaranteed by
+   * construction. passFeeToBuyer is honoured the same way it is for goods:
+   *   - passFeeToBuyer = true  → buyerTotal = price + processingFee,
+   *                              sellerPayout = price − commission
+   *   - passFeeToBuyer = false → buyerTotal = price,
+   *                              sellerPayout = price − commission − processingFee
+   * The returned shape is ExperienceFeeBreakdown (≡ FeeBreakdown with shipping
+   * + handling pinned to 0) so it flows through the same Transaction columns
+   * and Zoho commission-invoice path as an ordinary sale.
+   */
+  breakdownExperience(
+    packagePriceZarCents: number,
+    passFeeToBuyer: boolean,
+    isTopSeller: boolean,
+    mode: PaymentMode = 'manual',
+  ): ExperienceFeeBreakdown {
+    // No courier line + no waybill for an on-site service → shipping = 0 and
+    // handling = 0. Delegating to breakdown() reuses the exact band-commission
+    // + processing-fee logic (band parity guaranteed) rather than re-deriving.
+    return this.breakdown(
+      Math.max(0, Math.round(packagePriceZarCents)),
+      passFeeToBuyer,
+      isTopSeller,
+      0, // shippingCost — on-site service, no courier rate
+      mode,
+      0, // handlingFeeCents — no waybill, no R15 margin
+    );
   }
 
   breakdownSwapLeg(

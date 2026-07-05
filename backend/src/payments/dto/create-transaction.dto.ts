@@ -11,6 +11,7 @@ import {
   ValidateNested,
   IsPostalCode,
   MinLength,
+  IsDateString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ShippingMethod } from '@prisma/client';
@@ -138,4 +139,48 @@ export class CreateTransactionDto {
   @IsInt()
   @Min(1)
   quantity?: number;
+
+  // ─── Hunting Packages / Experiences (EXP-E1) buyer attestations ──────
+  // Five booleans the buyer must tick at experience checkout. The service
+  // re-checks listing.isExperience server-side and HARD-refuses the
+  // transaction unless every one is explicitly `true` (defence in depth over
+  // the frontend gate), persisting a *At evidence stamp for each — mirrors the
+  // firearm 18+ attestation. @IsOptional here so non-experience checkouts are
+  // unaffected; the experience branch enforces presence + truthiness.
+  @IsOptional()
+  @IsBoolean()
+  experienceBuyerAttested18Plus?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  experienceHuntingLicenceOrSupervisionAccepted?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  experienceIntermediaryAcknowledged?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  experienceCancellationPolicyAccepted?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  experienceRisksAccepted?: boolean;
+
+  // The specific date the buyer booked — one of the dates the outfitter
+  // offered. ISO date-time string. The service validates it falls within the
+  // listing's eventStartDate..(eventEndDate ?? eventStartDate) window and is in
+  // the future, then persists it as Transaction.eventDate. Required by the
+  // experience branch; @IsOptional at the DTO layer so it never affects a
+  // goods checkout.
+  @IsOptional()
+  @IsDateString()
+  eventDate?: string;
+
+  // Guests / hunters on this booking. The service validates 1 ≤ partySize ≤
+  // listing.capacitySlots and persists it as Transaction.partySize.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  partySize?: number;
 }
