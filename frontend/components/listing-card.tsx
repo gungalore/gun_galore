@@ -55,16 +55,31 @@ export function ListingCard({ listing }: { listing: Listing }) {
               No photo
             </div>
           )}
-          {/* Category badge — top-left */}
-          <span
-            className="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
-            style={{
-              background: 'rgba(0,0,0,0.72)',
-              color: 'var(--text-secondary)',
-            }}
-          >
-            {listing.category.name}
-          </span>
+          {/* Category badge — top-left. For an experience (hunting package)
+              we swap in a distinct "Experience · on-site" badge so browsers
+              can tell at a glance it's a booking, not a shippable item. */}
+          {listing.isExperience ? (
+            <span
+              className="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
+              style={{
+                background: 'rgba(232,181,58,0.85)',
+                color: '#1a1206',
+                fontWeight: 600,
+              }}
+            >
+              Experience · on-site
+            </span>
+          ) : (
+            <span
+              className="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
+              style={{
+                background: 'rgba(0,0,0,0.72)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              {listing.category.name}
+            </span>
+          )}
           {/* Condition chip — moved to bottom-left of the image (was
               top-right) to free the top-right corner for the heart
               button. Keeps the at-a-glance "Used" / "Like new" info

@@ -3,8 +3,8 @@
 import { useState, useEffect, useMemo, useRef, FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
-import { Category, CategoryAttributeDef, Me } from '@/lib/types';
-import { CONDITION_LABELS } from '@/lib/utils';
+import { Category, CategoryAttributeDef, Me, ExperienceType } from '@/lib/types';
+import { CONDITION_LABELS, EXPERIENCE_TYPE_LABELS, PROVINCE_LABELS } from '@/lib/utils';
 import { CategoryPicker } from '@/components/category-picker';
 import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
 import { PhotoDropzone } from '@/components/photo-dropzone';
@@ -87,6 +87,25 @@ const SELL_MODES: {
     bestFor: ['Upgrading your kit', 'No cash to spare', 'Item-for-item, ± a top-up'],
   },
 ];
+
+// Common SA plains-game species for the PLAINS_GAME_HUNT multi-select.
+// The seller ticks whatever the package includes; sent as speciesList[].
+const SPECIES_OPTIONS = [
+  'Impala',
+  'Blesbok',
+  'Kudu',
+  'Gemsbok (Oryx)',
+  'Springbok',
+  'Warthog',
+  'Zebra',
+  'Wildebeest',
+  'Nyala',
+  'Waterbuck',
+  'Red Hartebeest',
+  'Eland',
+  'Bushbuck',
+  'Duiker',
+] as const;
 
 function calcCommissionCents(priceCents: number): number {
   let commission = 0;
@@ -409,6 +428,42 @@ export default function NewListingPage() {
   const [serialNumber, setSerialNumber] = useState('');
   const [serialPhoto, setSerialPhoto] = useState<File | null>(null);
   const [licencePhoto, setLicencePhoto] = useState<File | null>(null);
+
+  // ── Hunting Packages / Experiences (Phase E) ──────────────────────────
+  // Collected + sent only when the selected category is an experience. An
+  // experience is a future-dated on-site SERVICE (no courier/parcel): the
+  // seller captures the event window, venue, capacity, package type, and —
+  // for a plains-game hunt — the species on offer. The supplier compliance
+  // block below reuses the firearm File-state + upload pattern for the two
+  // Cloudinary docs (PLI cert + registration doc) and gates three
+  // mandatory attestations. None of this is persisted to the localStorage
+  // draft (File objects don't serialise; the rest is category-scoped).
+  const [exp, setExp] = useState({
+    experienceType: 'RANGE_DAY' as ExperienceType,
+    eventStartDate: '', // yyyy-mm-dd
+    eventEndDate: '', // optional yyyy-mm-dd (multi-day window)
+    eventProvince: '', // Province enum key
+    locationText: '',
+    capacitySlots: '',
+    durationText: '',
+    whatsIncluded: '',
+    rifleProvided: false,
+  });
+  // Species multi-select (PLAINS_GAME_HUNT only). Held as a string[] of the
+  // common SA plains-game species the seller ticked.
+  const [species, setSpecies] = useState<string[]>([]);
+  // Supplier & compliance capture. Registration number + two docs + three
+  // attestations. Docs upload to /listings/experience-supplier-docs (same
+  // FormData pattern as firearm-docs) BEFORE the create call.
+  const [supplierRegNumber, setSupplierRegNumber] = useState('');
+  const [supplierInsuranceDoc, setSupplierInsuranceDoc] = useState<File | null>(
+    null,
+  );
+  const [supplierRegDoc, setSupplierRegDoc] = useState<File | null>(null);
+  const [supplierPliAttested, setSupplierPliAttested] = useState(false);
+  const [supplierAuthorityAttested, setSupplierAuthorityAttested] =
+    useState(false);
+  const [supplierRiskAttested, setSupplierRiskAttested] = useState(false);
   const [pickupAddress, setPickupAddress] = useState<ManualAddressValue>(
     emptyManualAddress,
   );
@@ -741,6 +796,16 @@ export default function NewListingPage() {
   const requiresPapers = selectedCategory?.requiresPapers ?? false;
   const showTestedWorking =
     selectedCategory?.showTestedWorkingAttestation ?? false;
+  // Hunting Packages / Experiences (Phase E) — the selected category is an
+  // experience. Mirrors the isFirearm / collectionOnly snapshot-flag
+  // derivations: when true we restrict the selling modes to BUY_NOW /
+  // AUCTION, hide the whole courier/parcel + delivery-method UI (like
+  // effectiveCollectionOnly), and surface the Experience-details +
+  // Supplier-compliance sections in the final step.
+  const isExperience = selectedCategory?.isExperience ?? false;
+  // Only a plains-game hunt collects a species list; a range day doesn't.
+  const isPlainsGameHunt =
+    isExperience && exp.experienceType === 'PLAINS_GAME_HUNT';
 
   // P4.3b — dangerous-goods gate (transparency mirror). A LOOSE lithium
   // battery rated above the courier limit (UN3480) can't be couriered, so the
@@ -964,6 +1029,27 @@ export default function NewListingPage() {
       setShippingMethods(['COLLECTION']);
     }
   }, [effectiveCollectionOnly, shippingMethods]);
+
+  // Experiences fulfil on-site (ON_SITE_SERVICE) — no courier, no parcel.
+  // Mirror the collection-only lock: when the seller switches into an
+  // experience category, force shippingMethods to ['ON_SITE_SERVICE'] and
+  // keep it locked (the courier picker + parcel inputs are hidden below).
+  const lastIsExperience = useRef(isExperience);
+  useEffect(() => {
+    if (lastIsExperience.current !== isExperience) {
+      lastIsExperience.current = isExperience;
+      if (isExperience) setShippingMethods(['ON_SITE_SERVICE']);
+    }
+  }, [isExperience]);
+  useEffect(() => {
+    if (
+      isExperience &&
+      (shippingMethods.length !== 1 ||
+        shippingMethods[0] !== 'ON_SITE_SERVICE')
+    ) {
+      setShippingMethods(['ON_SITE_SERVICE']);
+    }
+  }, [isExperience, shippingMethods]);
   // Collection-only items settle through the standard checkout, which only
   // handles Buy Now / Auction — Take-a-Shot's offer-checkout and Swop have no
   // collection path (the backend rejects them). If the seller switches into a
@@ -972,14 +1058,14 @@ export default function NewListingPage() {
   // they never hit an opaque publish error.
   useEffect(() => {
     if (
-      effectiveCollectionOnly &&
+      (effectiveCollectionOnly || isExperience) &&
       form.listingType !== 'BUY_NOW' &&
       form.listingType !== 'AUCTION'
     ) {
       set('listingType', 'BUY_NOW');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveCollectionOnly, form.listingType]);
+  }, [effectiveCollectionOnly, isExperience, form.listingType]);
 
   // ─────────────────── Step completion (drives the accordion) ───────────
   // Each step's `isComplete` is a pure function of the form state.
@@ -1034,6 +1120,7 @@ export default function NewListingPage() {
     const parcelFilled =
       isFirearm ||
       effectiveCollectionOnly ||
+      isExperience || // on-site service has no parcel to quote
       (parsedParcel.weightKg != null &&
         parsedParcel.lengthCm != null &&
         parsedParcel.widthCm != null &&
@@ -1041,8 +1128,35 @@ export default function NewListingPage() {
     // Collection papers attestation — required checkbox for requiresPapers
     // categories (trailers / caravans). Publish is blocked until ticked.
     const papersOk = !requiresPapers || papersAttested;
+    // Experience gate — the Experience-details + Supplier-compliance
+    // sections replace the courier UI in the final step. Require the core
+    // event metadata, the venue, capacity, the package fields (species for a
+    // hunt), the supplier registration number + both docs, and all three
+    // supplier attestations before the step is complete. Publish is gated
+    // again in handlePublish.
+    const experienceOk =
+      !isExperience ||
+      (!!exp.eventStartDate &&
+        !!exp.eventProvince &&
+        exp.locationText.trim().length > 0 &&
+        parseInt(exp.capacitySlots || '0', 10) >= 1 &&
+        exp.durationText.trim().length > 0 &&
+        exp.whatsIncluded.trim().length > 0 &&
+        (!isPlainsGameHunt || species.length > 0) &&
+        // window sanity — end (if given) can't precede start
+        (!exp.eventEndDate || exp.eventEndDate >= exp.eventStartDate) &&
+        supplierRegNumber.trim().length > 0 &&
+        !!supplierInsuranceDoc &&
+        !!supplierRegDoc &&
+        supplierPliAttested &&
+        supplierAuthorityAttested &&
+        supplierRiskAttested);
     const step4 =
-      shippingMethods.length > 0 && addressFilled && parcelFilled && papersOk;
+      shippingMethods.length > 0 &&
+      addressFilled &&
+      parcelFilled &&
+      papersOk &&
+      experienceOk;
 
     return { step1, step2, step3, step4 };
   }, [
@@ -1056,6 +1170,16 @@ export default function NewListingPage() {
     requiresPapers,
     papersAttested,
     missingRequiredAttrs,
+    isExperience,
+    isPlainsGameHunt,
+    exp,
+    species,
+    supplierRegNumber,
+    supplierInsuranceDoc,
+    supplierRegDoc,
+    supplierPliAttested,
+    supplierAuthorityAttested,
+    supplierRiskAttested,
   ]);
 
   // Which step is "up next" — the first incomplete one. Drives the red
@@ -1295,6 +1419,38 @@ export default function NewListingPage() {
         : {}),
       // P5.4 — optional "tested & working" claim, only for flagged categories.
       ...(showTestedWorking ? { testedWorkingAttested } : {}),
+      // Hunting Packages / Experiences (Phase E) — the event metadata +
+      // supplier attestations. Only sent for experience categories (the
+      // backend strips them otherwise). supplierRegistrationDocUrl /
+      // supplierInsuranceUrl are attached in handlePublish after the docs
+      // upload, not here (mirrors the firearm serial/licence URL flow).
+      ...(isExperience
+        ? {
+            experienceType: exp.experienceType,
+            eventStartDate: exp.eventStartDate
+              ? new Date(exp.eventStartDate).toISOString()
+              : undefined,
+            eventEndDate: exp.eventEndDate
+              ? new Date(exp.eventEndDate).toISOString()
+              : undefined,
+            eventProvince: exp.eventProvince || undefined,
+            locationText: exp.locationText.trim() || undefined,
+            capacitySlots: exp.capacitySlots
+              ? parseInt(exp.capacitySlots, 10)
+              : undefined,
+            durationText: exp.durationText.trim() || undefined,
+            whatsIncluded: exp.whatsIncluded.trim() || undefined,
+            rifleProvided: exp.rifleProvided,
+            // Species only for a plains-game hunt; a range day sends none.
+            ...(isPlainsGameHunt && species.length > 0
+              ? { speciesList: species }
+              : {}),
+            supplierRegistrationNumber: supplierRegNumber.trim() || undefined,
+            supplierPublicLiabilityAttested: supplierPliAttested,
+            supplierAuthorityAttested,
+            supplierRiskDisclosureAttested: supplierRiskAttested,
+          }
+        : {}),
       pickupBuilding: pickupAddress.building.trim() || undefined,
       pickupStreet: pickupAddress.street.trim() || undefined,
       pickupAddress2: pickupAddress.address2.trim() || undefined,
@@ -1323,7 +1479,7 @@ export default function NewListingPage() {
         : undefined,
       // Stock (Phase 8a) — only for BUY_NOW non-firearm + >1; backend
       // ignores it otherwise and keeps the listing a single item.
-      ...(form.listingType === 'BUY_NOW' && !isFirearm && Math.floor(Number(stock)) > 1
+      ...(form.listingType === 'BUY_NOW' && !isFirearm && !isExperience && Math.floor(Number(stock)) > 1
         ? { quantityAvailable: Math.floor(Number(stock)) }
         : {}),
       // Per-category attributes (P4.2) — only sent when the seller filled
@@ -1497,6 +1653,24 @@ export default function NewListingPage() {
       );
       return;
     }
+    // Experience guard — mirror the firearm guard. Abort before touching the
+    // API if the supplier registration/attestations/docs are missing so the
+    // seller gets an instant, clear message rather than a server-side 400.
+    // Non-experience listings skip this entirely.
+    if (
+      isExperience &&
+      (!supplierRegNumber.trim() ||
+        !supplierInsuranceDoc ||
+        !supplierRegDoc ||
+        !supplierPliAttested ||
+        !supplierAuthorityAttested ||
+        !supplierRiskAttested)
+    ) {
+      setPublishError(
+        'Experience listings need the supplier registration number, the public-liability insurance certificate, the registration document, and all three supplier confirmations. Add the missing items in the "Supplier & compliance" step.',
+      );
+      return;
+    }
     // Required per-category attributes (P4.2) guard — mirror the firearm /
     // papers guards: abort before the API call so the seller gets an instant,
     // clear message naming the missing fields rather than a server-side 400.
@@ -1554,6 +1728,43 @@ export default function NewListingPage() {
         body.serialNumber = serialNumber.trim();
         body.serialPhotoUrl = serialPhotoUrl;
         body.licencePhotoUrl = licencePhotoUrl;
+      }
+
+      // Experience supplier docs — upload the public-liability insurance
+      // cert + the registration document FIRST, before creating the
+      // listing, exactly like the firearm serial/licence flow. The backend
+      // Claude-vision reviews these; if the upload fails we abort outright so
+      // no listing is created. The returned Cloudinary URLs are attached to
+      // the create body.
+      if (isExperience && supplierInsuranceDoc && supplierRegDoc) {
+        const docsForm = new FormData();
+        docsForm.append('insuranceDoc', supplierInsuranceDoc);
+        docsForm.append('registrationDoc', supplierRegDoc);
+        const docsToken = await getToken();
+        const docsRes = await fetch(
+          `${API_URL}/listings/experience-supplier-docs`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${docsToken}` },
+            body: docsForm,
+          },
+        );
+        if (!docsRes.ok) {
+          const errBody = await docsRes.json().catch(() => ({}));
+          const msg = Array.isArray(errBody.message)
+            ? errBody.message.join(', ')
+            : (errBody.message ?? `Error ${docsRes.status}`);
+          throw new Error(
+            `Couldn't upload your supplier documents — ${msg}`,
+          );
+        }
+        const { insuranceUrl, registrationDocUrl } =
+          (await docsRes.json()) as {
+            insuranceUrl: string;
+            registrationDocUrl: string;
+          };
+        body.supplierInsuranceUrl = insuranceUrl;
+        body.supplierRegistrationDocUrl = registrationDocUrl;
       }
       // Fresh token per request. Clerk session JWTs are short-lived
       // (~60s) and verified by exp on the backend. Capturing ONE token
@@ -2171,10 +2382,12 @@ export default function NewListingPage() {
               <div className="flex flex-col gap-2">
                 {/* Collection-only categories (trailers / caravans) settle
                     through the standard checkout — only Buy Now + Auction are
-                    offered; Take-a-Shot + Swop have no collection path. */}
+                    offered; Take-a-Shot + Swop have no collection path. An
+                    experience (hunting package) is the same: sold as a
+                    fixed-price booking or auctioned, never Take-a-Shot/Swop. */}
                 {SELL_MODES.filter(
                   (m) =>
-                    !effectiveCollectionOnly ||
+                    (!effectiveCollectionOnly && !isExperience) ||
                     m.value === 'BUY_NOW' ||
                     m.value === 'AUCTION',
                 ).map((m) => {
@@ -2423,8 +2636,9 @@ export default function NewListingPage() {
 
             {/* Quantity — right under the Buy-Now price so it's part of the
                 pricing decision, not buried in the delivery step. Only
-                Buy-Now non-firearm (auctions + firearms are single-item). */}
-            {form.listingType === 'BUY_NOW' && !isFirearm && (
+                Buy-Now non-firearm (auctions + firearms are single-item). An
+                experience is a slot booking, never multi-unit stock. */}
+            {form.listingType === 'BUY_NOW' && !isFirearm && !isExperience && (
               <Field
                 label="Quantity available"
                 hint="How many identical units are you selling? Your listing stays live until every unit sells. Leave at 1 for a single item."
@@ -2713,9 +2927,17 @@ export default function NewListingPage() {
           {/* Step 4 — Delivery & address */}
           <StepAccordion
             number={4}
-            title={effectiveCollectionOnly ? 'Collection & address' : 'Delivery & address'}
+            title={
+              isExperience
+                ? 'Experience, supplier & address'
+                : effectiveCollectionOnly
+                  ? 'Collection & address'
+                  : 'Delivery & address'
+            }
             description={
-              effectiveCollectionOnly
+              isExperience
+                ? 'A hunting package is a future-dated on-site experience — no courier. Add the event details, your supplier registration + compliance, and a contact/pickup address.'
+                : effectiveCollectionOnly
                 ? 'Buyers collect this item in person from you — no courier. Add your pickup address so buyers know where they’re collecting from.'
                 : isFirearm
                 ? 'Firearms must move through a SAPS-licensed dealer. Pick one or both arrangement options below, then add your pickup address.'
@@ -2726,7 +2948,9 @@ export default function NewListingPage() {
             onToggle={() => toggleStep(4)}
             summary={
               stepComplete.step4
-                ? effectiveCollectionOnly
+                ? isExperience
+                  ? `${EXPERIENCE_TYPE_LABELS[exp.experienceType]} · ${exp.eventStartDate || 'date set'}`
+                  : effectiveCollectionOnly
                   ? `Collection only · ${pickupAddress.city || 'pickup set'}`
                   : `${shippingMethods.length} method${shippingMethods.length === 1 ? '' : 's'} · ${pickupAddress.city || 'pickup set'}`
                 : undefined
@@ -2739,7 +2963,7 @@ export default function NewListingPage() {
                 Hidden for firearms because DEALER_TRANSFER and
                 PRIVATE_ARRANGE don't use the courier API. Also hidden for
                 collection-only listings — there's no courier to quote. */}
-            {!isFirearm && !effectiveCollectionOnly && (
+            {!isFirearm && !effectiveCollectionOnly && !isExperience && (
               <Field
                 label="Parcel weight & size"
                 required
@@ -2793,6 +3017,393 @@ export default function NewListingPage() {
                   </p>
                 )}
               </Field>
+            )}
+
+            {/* ── Hunting Packages / Experiences (Phase E) ──────────────
+                Replaces the courier/parcel + delivery-method UI. Two
+                sub-sections: "Experience details" (event window, venue,
+                capacity, package type + species, what's-included, rifle)
+                and "Supplier & compliance" (registration number, the two
+                doc uploaders reusing the firearm File-state pattern, three
+                mandatory attestations). shippingMethods is locked to
+                ['ON_SITE_SERVICE'] by the effects above. */}
+            {isExperience && (
+              <div className="space-y-6 mb-4">
+                {/* Experience details */}
+                <div
+                  className="rounded-[6px] p-4 space-y-4"
+                  style={{
+                    background: 'var(--bg-card)',
+                    border: '0.5px solid var(--border)',
+                  }}
+                >
+                  <p
+                    className="text-xs uppercase"
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      letterSpacing: '0.05em',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Experience details
+                  </p>
+
+                  <Field label="Package type" required>
+                    <PillGroup
+                      value={exp.experienceType}
+                      onChange={(v) =>
+                        setExp((e) => ({
+                          ...e,
+                          experienceType: v as ExperienceType,
+                        }))
+                      }
+                      options={(
+                        Object.entries(EXPERIENCE_TYPE_LABELS) as [
+                          ExperienceType,
+                          string,
+                        ][]
+                      ).map(([k, label]) => ({ value: k, label }))}
+                    />
+                  </Field>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Field
+                      label="Event date"
+                      required
+                      hint="The scheduled date, or the first day of a multi-day package."
+                    >
+                      <input
+                        type="date"
+                        value={exp.eventStartDate}
+                        onChange={(e) =>
+                          setExp((s) => ({
+                            ...s,
+                            eventStartDate: e.target.value,
+                          }))
+                        }
+                        style={inputStyle}
+                      />
+                    </Field>
+                    <Field
+                      label="End date (optional)"
+                      hint="Leave blank for a single-day package. Set it for a multi-day window."
+                    >
+                      <input
+                        type="date"
+                        value={exp.eventEndDate}
+                        min={exp.eventStartDate || undefined}
+                        onChange={(e) =>
+                          setExp((s) => ({
+                            ...s,
+                            eventEndDate: e.target.value,
+                          }))
+                        }
+                        style={inputStyle}
+                      />
+                    </Field>
+                  </div>
+
+                  <Field label="Province" required>
+                    <select
+                      value={exp.eventProvince}
+                      onChange={(e) =>
+                        setExp((s) => ({
+                          ...s,
+                          eventProvince: e.target.value,
+                        }))
+                      }
+                      style={inputStyle}
+                    >
+                      <option value="">Select a province…</option>
+                      {Object.entries(PROVINCE_LABELS).map(([k, label]) => (
+                        <option key={k} value={k}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field
+                    label="Location"
+                    required
+                    hint="Property / area, e.g. “Waterberg, near Vaalwater”. Don’t publish an exact street address."
+                  >
+                    <input
+                      type="text"
+                      maxLength={200}
+                      value={exp.locationText}
+                      onChange={(e) =>
+                        setExp((s) => ({ ...s, locationText: e.target.value }))
+                      }
+                      style={inputStyle}
+                      placeholder="Waterberg, Limpopo"
+                    />
+                  </Field>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Field
+                      label="Capacity (guests)"
+                      required
+                      hint="How many hunters / guests the package accommodates."
+                    >
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={exp.capacitySlots}
+                        onChange={(e) =>
+                          setExp((s) => ({
+                            ...s,
+                            capacitySlots: e.target.value.replace(/[^0-9]/g, ''),
+                          }))
+                        }
+                        style={inputStyle}
+                        placeholder="e.g. 4"
+                      />
+                    </Field>
+                    <Field
+                      label="Duration"
+                      required
+                      hint="e.g. “3 nights / 2 hunting days”."
+                    >
+                      <input
+                        type="text"
+                        maxLength={200}
+                        value={exp.durationText}
+                        onChange={(e) =>
+                          setExp((s) => ({
+                            ...s,
+                            durationText: e.target.value,
+                          }))
+                        }
+                        style={inputStyle}
+                        placeholder="3 nights / 2 hunting days"
+                      />
+                    </Field>
+                  </div>
+
+                  {/* Species — only for a plains-game hunt. */}
+                  {isPlainsGameHunt && (
+                    <Field
+                      label="Species on offer"
+                      required
+                      hint="Tick the plains-game species this package includes."
+                    >
+                      <MultiSelectPillGroup<string>
+                        value={species}
+                        onChange={setSpecies}
+                        options={SPECIES_OPTIONS.map((s) => ({
+                          value: s,
+                          label: s,
+                        }))}
+                      />
+                    </Field>
+                  )}
+
+                  <Field
+                    label="What’s included"
+                    required
+                    hint="Accommodation, PH / guide, field prep, meals, transfers — set clear expectations."
+                  >
+                    <textarea
+                      maxLength={5000}
+                      rows={4}
+                      value={exp.whatsIncluded}
+                      onChange={(e) =>
+                        setExp((s) => ({
+                          ...s,
+                          whatsIncluded: e.target.value,
+                        }))
+                      }
+                      style={{ ...inputStyle, resize: 'vertical' }}
+                      placeholder="e.g. 3 nights’ chalet accommodation, professional hunter, daily field prep, all meals, transfers from the airstrip. Trophy fees quoted separately."
+                    />
+                  </Field>
+
+                  <label
+                    className="flex items-start gap-2 cursor-pointer"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={exp.rifleProvided}
+                      onChange={(e) =>
+                        setExp((s) => ({
+                          ...s,
+                          rifleProvided: e.target.checked,
+                        }))
+                      }
+                      style={{ accentColor: 'var(--red)', marginTop: 3 }}
+                    />
+                    <span className="text-sm">
+                      A rifle is provided with this package
+                      <span
+                        className="block text-xs mt-0.5"
+                        style={{ color: 'var(--text-tertiary)' }}
+                      >
+                        Leave unticked if the guest brings their own firearm.
+                        Buyers see this on the listing.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                {/* Supplier & compliance */}
+                <div
+                  className="rounded-[6px] p-4 space-y-4"
+                  style={{
+                    background: 'rgba(200,16,46,0.06)',
+                    border: '0.5px solid var(--red)',
+                  }}
+                >
+                  <p
+                    className="text-xs uppercase"
+                    style={{
+                      color: 'var(--red)',
+                      letterSpacing: '0.05em',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Supplier &amp; compliance — required
+                  </p>
+                  <p
+                    className="text-xs"
+                    style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+                  >
+                    Every experience listing is reviewed before it goes live.
+                    You are the supplier of this package — Gun Galore is a
+                    payment-protection intermediary. Provide your registration
+                    and public-liability cover so buyers know they’re booking
+                    with a bona-fide outfitter.
+                  </p>
+
+                  <Field
+                    label="PH / outfitter registration number"
+                    required
+                    hint="Your professional hunter or hunting-outfitter registration number."
+                  >
+                    <input
+                      type="text"
+                      maxLength={120}
+                      value={supplierRegNumber}
+                      onChange={(e) => setSupplierRegNumber(e.target.value)}
+                      style={inputStyle}
+                      placeholder="e.g. LP/OUT/2024/00123"
+                    />
+                  </Field>
+
+                  <Field
+                    label="Public-liability insurance certificate"
+                    required
+                    hint="Upload your current PLI cover certificate (PDF or photo). Reviewed before the listing goes live."
+                  >
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) =>
+                        setSupplierInsuranceDoc(e.target.files?.[0] ?? null)
+                      }
+                      style={{
+                        ...inputStyle,
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                      }}
+                    />
+                    {supplierInsuranceDoc && (
+                      <p
+                        className="text-xs mt-1.5"
+                        style={{ color: 'var(--text-tertiary)' }}
+                      >
+                        Selected: {supplierInsuranceDoc.name}
+                      </p>
+                    )}
+                  </Field>
+
+                  <Field
+                    label="Registration document"
+                    required
+                    hint="Upload your PH / outfitter registration document (PDF or photo)."
+                  >
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) =>
+                        setSupplierRegDoc(e.target.files?.[0] ?? null)
+                      }
+                      style={{
+                        ...inputStyle,
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                      }}
+                    />
+                    {supplierRegDoc && (
+                      <p
+                        className="text-xs mt-1.5"
+                        style={{ color: 'var(--text-tertiary)' }}
+                      >
+                        Selected: {supplierRegDoc.name}
+                      </p>
+                    )}
+                  </Field>
+
+                  <div className="space-y-3 pt-1">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={supplierPliAttested}
+                        onChange={(e) =>
+                          setSupplierPliAttested(e.target.checked)
+                        }
+                        style={{ marginTop: 3, accentColor: 'var(--red)' }}
+                      />
+                      <span
+                        className="text-sm"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        I hold valid public-liability insurance covering this
+                        experience, and the certificate I uploaded is current.
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={supplierAuthorityAttested}
+                        onChange={(e) =>
+                          setSupplierAuthorityAttested(e.target.checked)
+                        }
+                        style={{ marginTop: 3, accentColor: 'var(--red)' }}
+                      />
+                      <span
+                        className="text-sm"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        I am a registered outfitter / PH (or duly authorised to
+                        offer this package) and hold the required permits to
+                        run it lawfully.
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={supplierRiskAttested}
+                        onChange={(e) =>
+                          setSupplierRiskAttested(e.target.checked)
+                        }
+                        style={{ marginTop: 3, accentColor: 'var(--red)' }}
+                      />
+                      <span
+                        className="text-sm"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        I will disclose the material risks of this activity to
+                        every guest and run it to accepted safety standards. I
+                        understand Gun Galore is a payment-protection
+                        intermediary, not the supplier.
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Collection-only info panel — replaces the whole courier
@@ -2925,7 +3536,7 @@ export default function NewListingPage() {
               </div>
             )}
 
-            {!effectiveCollectionOnly && (
+            {!effectiveCollectionOnly && !isExperience && (
             <Field
               label="Delivery options"
               required

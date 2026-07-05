@@ -14,6 +14,7 @@ import { TrackingTimeline } from './tracking-timeline';
 import { AcceptRejectPanel } from './accept-reject-panel';
 import BuyerCancelPanel from './buyer-cancel-panel';
 import PodProofSection from './pod-proof-section';
+import ExperienceOrderPanel from './experience-order-panel';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -96,6 +97,14 @@ export default async function TransactionPage({
   // "Confirm collection").
   const isCollection = tx.shippingMethod === 'COLLECTION';
 
+  // Hunting Packages / Experiences (Phase E) — a future-dated on-site
+  // booking (ON_SITE_SERVICE). Its whole lifecycle (outfitter accept/decline,
+  // buyer confirm-completed, CPA-s17 cancel quote + cancel, dispute) lives in
+  // the dedicated ExperienceOrderPanel and uses its own endpoints — so we
+  // suppress the standard accept-panel + awaiting-accept chip below for it.
+  const isExperience =
+    !!tx.listing?.isExperience || tx.shippingMethod === 'ON_SITE_SERVICE';
+
   // P6.2 — this line is a consolidated SIBLING: it ships inside the same parcel
   // as the rest of the order, and the carrier ("main item") line owns the
   // waybill, tracking, and delivery confirmation. Siblings mirror the carrier's
@@ -111,7 +120,8 @@ export default async function TransactionPage({
   const isPaidAwaitingAccept =
     !!tx.paidAt && !tx.acceptedAt && !tx.rejectedAt && !tx.dispatchedAt;
   const isRejected = !!tx.rejectedAt;
-  const canAccept = isSeller && isPaidAwaitingAccept && !isPrivateArrange;
+  const canAccept =
+    isSeller && isPaidAwaitingAccept && !isPrivateArrange && !isExperience;
   const canDispatch =
     !isPrivateArrange &&
     !isCollection && // collection has no dispatch step
@@ -220,6 +230,23 @@ export default async function TransactionPage({
               )}
             </div>
           </div>
+
+          {/* Hunting Packages / Experiences (Phase E) — the on-site booking
+              lifecycle panel: outfitter accept/decline, buyer confirm-happened,
+              live CPA-s17 cancel quote + cancel, and a dispute escape. Replaces
+              the courier accept/dispatch/confirm-delivery surfaces (which don't
+              apply to an on-site service). */}
+          {isExperience && (isBuyer || isSeller) && (
+            <ExperienceOrderPanel
+              transactionId={tx.id}
+              role={isBuyer ? 'buyer' : isSeller ? 'seller' : 'other'}
+              paymentStatus={tx.paymentStatus}
+              eventDate={tx.eventDate ?? null}
+              bookingConfirmedAt={tx.bookingConfirmedAt ?? null}
+              bookingDeclinedAt={tx.bookingDeclinedAt ?? null}
+              eventCompletedConfirmedAt={tx.eventCompletedConfirmedAt ?? null}
+            />
+          )}
 
           {/* P6.2 — consolidated-shipment SIBLING note. This line ships inside
               the same parcel as the rest of the order; the carrier ("main item")
@@ -449,7 +476,7 @@ export default async function TransactionPage({
             style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
           >
             <p className="text-xs uppercase mb-3" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
-              {isCollection ? 'Collection' : 'Shipping'}
+              {isExperience ? 'Booking' : isCollection ? 'Shipping' : 'Shipping'}
             </p>
             <div className="space-y-2">
               <div className="flex justify-between">
@@ -465,6 +492,8 @@ export default async function TransactionPage({
                     ? 'Collection in person'
                     : tx.shippingMethod === 'PRIVATE_ARRANGE'
                     ? 'Private arrangement'
+                    : tx.shippingMethod === 'ON_SITE_SERVICE'
+                    ? 'On-site experience'
                     : '—'}
                 </span>
               </div>
@@ -578,7 +607,7 @@ export default async function TransactionPage({
                 Hidden for collection — there's no courier to track — and for
                 a consolidated sibling, whose authoritative tracking lives on
                 the carrier (surfaced in the "Ships with your order" note). */}
-            {!isCollection && !isConsolidatedSibling && (
+            {!isCollection && !isConsolidatedSibling && !isExperience && (
               <div
                 className="mt-4 pt-4"
                 style={{ borderTop: '0.5px solid var(--border-divider)' }}
@@ -773,7 +802,7 @@ export default async function TransactionPage({
           {/* FLOW-F4 (M14) — never show the "awaiting seller accept" countdown
               (which decays into a false auto-refund promise) for PRIVATE_ARRANGE:
               PA has no accept step and funds are already released. Mirrors canAccept. */}
-          {isBuyer && isPaidAwaitingAccept && !isPrivateArrange && tx.acceptDeadlineAt && (() => {
+          {isBuyer && isPaidAwaitingAccept && !isPrivateArrange && !isExperience && tx.acceptDeadlineAt && (() => {
             const deadline = new Date(tx.acceptDeadlineAt).getTime();
             const msLeft = deadline - Date.now();
             const hoursLeft = Math.max(0, Math.floor(msLeft / 3_600_000));

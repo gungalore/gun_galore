@@ -15,6 +15,7 @@ import SellerControls from './seller-controls';
 import OfferPanel from './offer-panel';
 import AuctionPanel from './auction-panel';
 import SwapPanel from './swap-panel';
+import ExperiencePanel from './experience-panel';
 import ModerationBanner from './moderation-banner';
 import BackLink from './back-link';
 import { QuestionsPanel } from './questions-panel';
@@ -328,8 +329,17 @@ export default async function ListingDetailPage({
             </div>
           )}
 
+          {/* Hunting Packages / Experiences (Phase E) — the experience detail
+              panel replaces the standard shipping/CTA block. For a fixed-price
+              experience it renders its own "Book" CTA into checkout; for an
+              auction experience it shows the event details and the standard
+              AuctionPanel below handles bidding. */}
+          {listing.isExperience && (
+            <ExperiencePanel listing={listing} isOwnListing={isOwnListing} />
+          )}
+
           {/* CTA */}
-          {listing.status === 'ACTIVE' && listing.listingType === 'BUY_NOW' ? (
+          {listing.isExperience && listing.listingType !== 'AUCTION' ? null : listing.status === 'ACTIVE' && listing.listingType === 'BUY_NOW' ? (
             isOwnListing ? (
               // Self-buy guard. Backend rejects the purchase anyway,
               // but the button shouldn't be clickable in the first
@@ -580,8 +590,9 @@ export default async function ListingDetailPage({
                   protection and the seller is paid directly. The copy
                   branches on listing.isFirearm + shippingMethods so
                   non-firearm listings don't see the opt-out paragraph
-                  at all. */}
-          {listing.status === 'ACTIVE' && (
+                  at all. Experiences have no shipping — the ExperiencePanel
+                  renders its own on-site notice instead. */}
+          {listing.status === 'ACTIVE' && !listing.isExperience && (
             <div
               className="rounded-[6px] p-3 mb-4 text-xs"
               style={{

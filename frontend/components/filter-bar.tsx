@@ -293,6 +293,41 @@ export function FilterBar({
         className="flex-1 min-w-[200px]"
       />
 
+      {/* Hunting Packages / Experiences (Phase E) — a one-tap "Experiences"
+          chip that scopes browse to the experience category. Only rendered
+          when an experience category exists in the taxonomy; toggles the
+          categoryId param on/off. */}
+      {(() => {
+        const experienceCat = categories.find((c) => c.isExperience);
+        if (!experienceCat) return null;
+        const active = currentParams.categoryId === experienceCat.id;
+        return (
+          <button
+            type="button"
+            aria-pressed={active}
+            onClick={() => {
+              setAttrFilters({});
+              setNumBuf({});
+              push({
+                categoryId: active ? undefined : experienceCat.id,
+                attrs: undefined,
+              });
+            }}
+            className="text-[13px] px-3 py-[7px] rounded-[6px]"
+            style={{
+              background: active ? 'rgba(232,181,58,0.85)' : 'var(--bg-inset)',
+              color: active ? '#1a1206' : 'var(--text-secondary)',
+              border: `0.5px solid ${active ? 'rgba(232,181,58,0.85)' : 'var(--border)'}`,
+              fontWeight: active ? 600 : 400,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Experiences
+          </button>
+        );
+      })()}
+
       <select
         aria-label="Filter by category"
         value={currentParams.categoryId ?? ''}
