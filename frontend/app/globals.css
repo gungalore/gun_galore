@@ -233,3 +233,30 @@ html[data-standalone='true']::view-transition-old(root) {
 html[data-standalone='true']::view-transition-new(root) {
   animation: gg-vt-slide-in 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
+
+/* ─── Ask GG "lure" glow ────────────────────────────────────────────
+   A gentle pulsing red halo on the Ask GG nav pill to draw the eye to
+   the AI assistant. Hover intensifies + pauses the pulse; reduced-motion
+   users get a soft static glow instead of the animation. */
+@keyframes gg-ask-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 5px rgba(200, 16, 46, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(200, 16, 46, 0.7);
+  }
+}
+.ask-gg-lure {
+  animation: gg-ask-glow 2.4s ease-in-out infinite;
+}
+.ask-gg-lure:hover {
+  box-shadow: 0 0 16px rgba(200, 16, 46, 0.85);
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-gg-lure {
+    animation: none;
+    box-shadow: 0 0 10px rgba(200, 16, 46, 0.5);
+  }
+}

@@ -417,11 +417,25 @@ export function Nav() {
                 Assistant section; the installed PWA has its own bottom tab. */}
             <Link
               href="/ask-gg"
-              style={{ color: 'var(--text-secondary)' }}
-              className="flex items-center gap-1.5 hover:text-[#f5f5f5] transition-colors ml-auto"
+              className="ask-gg-lure flex items-center gap-1.5"
+              style={{
+                color: '#fff',
+                fontWeight: 500,
+                background: 'rgba(200,16,46,0.14)',
+                border: '0.5px solid rgba(200,16,46,0.55)',
+                borderRadius: 999,
+                padding: '3px 12px',
+              }}
               aria-label="Ask GG — AI assistant"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden
+                style={{ color: 'var(--red)' }}
+              >
                 <path
                   d="M12 4 L13.6 9.4 L19 11 L13.6 12.6 L12 18 L10.4 12.6 L5 11 L10.4 9.4 Z"
                   stroke="currentColor"
