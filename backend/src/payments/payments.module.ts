@@ -3,6 +3,7 @@ import { FeeCalculator } from './fee.calculator';
 import { StitchService } from './stitch.service';
 import { TransactionsService } from './transactions.service';
 import { DispatchSlaService } from './dispatch-sla.service';
+import { ExperienceSlaService } from './experience-sla.service';
 import { DealerVerificationService } from './dealer-verification.service';
 import { ReceiptService } from './receipt.service';
 import { FraudRiskService } from './fraud-risk.service';
@@ -26,6 +27,7 @@ import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module'
     StitchService,
     TransactionsService,
     DispatchSlaService,
+    ExperienceSlaService,
     DealerVerificationService,
     ReceiptService,
     FraudRiskService,
@@ -39,6 +41,7 @@ import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module'
     FeeCalculator,
     TransactionsService,
     DispatchSlaService,
+    ExperienceSlaService,
     StitchService,
     DealerVerificationService,
   ],

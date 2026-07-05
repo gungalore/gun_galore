@@ -12,6 +12,7 @@ import {
 import { KycService } from '../kyc/kyc.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { DispatchSlaService } from '../payments/dispatch-sla.service';
+import { ExperienceSlaService } from '../payments/experience-sla.service';
 import { TransactionsService } from '../payments/transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeOrderRollupStatus } from '../orders/order-math';
@@ -45,6 +46,7 @@ export class TasksService {
     private readonly kycService: KycService,
     private readonly trackingService: TrackingService,
     private readonly dispatchSla: DispatchSlaService,
+    private readonly experienceSla: ExperienceSlaService,
     private readonly transactions: TransactionsService,
     private readonly prisma: PrismaService,
     private readonly adminCredits: AdminCreditsService,
@@ -1214,6 +1216,40 @@ export class TasksService {
       );
     }
     await this.recordCronRun('dispatch-sla');
+  }
+
+  // EXP-E4 — experience (hunting-package) SLA sweep. The nudge/alert twin of
+  // the dispatch SLA for future-dated ON_SITE_SERVICE bookings (invisible to
+  // every courier/DT/collection sweep by design). Four idempotent passes in
+  // one call: outfitter booking-confirm nudge → escalate-to-admin past the 48h
+  // window; confirmed-booking pre-event reminder; post-event buyer confirm
+  // nudge → admin alert if still HELD after the 7-day window. NO pass moves
+  // money, releases, or refunds. Hourly (like dispatchSlaSweep — the human
+  // doesn't perceive a sub-hour difference); heartbeat in finally.
+  @Cron(CronExpression.EVERY_HOUR)
+  async experienceSlaSweep() {
+    try {
+      const r = await this.experienceSla.experienceSlaSweep();
+      if (
+        r.bookingNudged > 0 ||
+        r.bookingEscalated > 0 ||
+        r.preEventReminded > 0 ||
+        r.postEventNudged > 0 ||
+        r.postEventAlerted > 0
+      ) {
+        this.logger.log(
+          `Experience SLA sweep: booking nudged ${r.bookingNudged}, escalated ${r.bookingEscalated}, ` +
+            `pre-event reminded ${r.preEventReminded}, post-event nudged ${r.postEventNudged}, alerted ${r.postEventAlerted}`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `experienceSlaSweep failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('experience-sla');
+    }
   }
 
   // P5.3 — stuck HELD funds: courier orders delivered >72h ago that the buyer

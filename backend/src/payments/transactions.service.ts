@@ -3846,6 +3846,123 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
+  // BUYER raises a dispute on an experience booking (EXP-E4)
+  // ------------------------------------------------------------------
+  // A thin analog of raiseDispute for a future-dated ON_SITE_SERVICE booking.
+  // An experience never dispatches (there's no parcel), so there is NO
+  // "must be dispatched first" gate — the carve-out COLLECTION / DEALER_TRANSFER
+  // already have. The dispute window is bounded to the event: it can only be
+  // raised while HELD + paid + now <= (eventEndDate ?? eventDate) +
+  // POST_EVENT_CONFIRM_WINDOW_DAYS (7d), so a buyer can't re-open a booking
+  // long after the event settled. Atomic CAS HELD→DISPUTED (count===0 aborts —
+  // a concurrent release/refund/decline won the row). Once DISPUTED, the CAS
+  // where-clauses in confirmExperienceCompleted (release) and
+  // cancelExperienceByBuyer / declineExperienceBooking (all require HELD) can
+  // never fire underneath it — the admin resolves via the existing
+  // resolveDisputeRelease / refundTransaction paths. Raises an urgent AdminAlert.
+  // NO money moves here.
+  async raiseExperienceDispute(
+    transactionId: string,
+    buyerClerkId: string,
+    reason?: string,
+  ) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        buyer: { select: { clerkId: true, username: true } },
+        listing: { select: { title: true } },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.buyer.clerkId !== buyerClerkId) {
+      throw new ForbiddenException('Only the buyer can raise a dispute');
+    }
+    if (tx.shippingMethod !== ShippingMethod.ON_SITE_SERVICE) {
+      throw new BadRequestException(
+        'This is not an experience — use the standard dispute flow.',
+      );
+    }
+    if (!tx.paidAt) {
+      throw new BadRequestException(
+        'This booking has not been paid yet, so there is nothing to dispute.',
+      );
+    }
+    if (tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException(
+        'Disputes can only be raised while the payment is held. This booking is already ' +
+          tx.paymentStatus.toLowerCase().replace(/_/g, ' ') + '.',
+      );
+    }
+    // Event-bounded window: no "must be dispatched first" gate (experiences
+    // never dispatch). Allowed up to (eventEndDate ?? eventDate) + 7 days — the
+    // same POST_EVENT_CONFIRM_WINDOW_DAYS the SLA post-event alert uses. If
+    // there is no eventDate at all (shouldn't happen for a booked experience),
+    // fall through and allow the dispute (the buyer's only escape).
+    const EXPERIENCE_DISPUTE_WINDOW_DAYS = 7;
+    const effectiveEnd = tx.eventEndDate ?? tx.eventDate;
+    if (effectiveEnd) {
+      const windowCloses = new Date(
+        effectiveEnd.getTime() + EXPERIENCE_DISPUTE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+      );
+      if (new Date().getTime() > windowCloses.getTime()) {
+        throw new BadRequestException(
+          'The dispute window for this booking has closed (more than 7 days after the event). Please contact support.',
+        );
+      }
+    }
+
+    const trimmedReason = (reason ?? '').trim().slice(0, 500);
+    const note = `[BUYER EXPERIENCE DISPUTE] ${trimmedReason || '(no reason given)'}`;
+
+    // Atomic CAS HELD→DISPUTED — a concurrent confirmExperienceCompleted
+    // (release), cancel, or decline all require HELD, so exactly one of them
+    // wins the row. count===0 ⇒ the row already moved; abort with a clear error.
+    const claim = await this.prisma.transaction.updateMany({
+      where: {
+        id: transactionId,
+        paymentStatus: 'HELD',
+        shippingMethod: ShippingMethod.ON_SITE_SERVICE,
+      },
+      data: {
+        paymentStatus: 'DISPUTED',
+        adminNote: tx.adminNote ? `${tx.adminNote}\n\n${note}` : note,
+      },
+    });
+    if (claim.count === 0) {
+      throw new BadRequestException(
+        'This booking can no longer be disputed — it may have just been released, refunded, or cancelled.',
+      );
+    }
+
+    void this.tracking.recordInternal(transactionId, 'BUYER_RAISED_DISPUTE', {
+      occurredAt: new Date(),
+      message: 'Buyer raised a dispute on the experience booking',
+    });
+
+    void this.prisma.adminAlert
+      .create({
+        data: {
+          type: 'EXPERIENCE_DISPUTE_RAISED',
+          referenceId: transactionId,
+          urgent: true,
+          context:
+            `${tx.listing.title} — buyer @${tx.buyer.username ?? 'anon'} disputed the experience booking: ` +
+            `${trimmedReason.slice(0, 200) || '(no reason given)'}`,
+        },
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `Admin alert insert failed for experience dispute on ${transactionId}: ${(err as Error).message}`,
+        );
+      });
+
+    this.logger.log(
+      `Experience booking ${transactionId} disputed by buyer`,
+    );
+    return { disputed: true };
+  }
+
+  // ------------------------------------------------------------------
   // Manual EFT confirmation (PAYMENT_MODE=manual)
   // ------------------------------------------------------------------
   // Called by ManualPaymentsService when the AUTHORITATIVE FNB statement

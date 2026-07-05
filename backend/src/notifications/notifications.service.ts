@@ -3033,6 +3033,172 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // EXP-E4 — experience booking-confirm nudge (outfitter). The buyer
+  // has paid for a hunting package / range day and the outfitter has
+  // NOT yet confirmed the booking with the accept-window deadline
+  // approaching. One-shot, best-effort — reminds the outfitter to
+  // confirm or the booking will be escalated to admin. NO auto-refund
+  // is threatened on this path (an experience never auto-refunds).
+  // ---------------------------------------------------------------
+  async experienceBookingConfirmNudgeOutfitter(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+    eventDate?: Date | null;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const when = d.eventDate
+      ? d.eventDate.toLocaleDateString('en-ZA', {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+        })
+      : null;
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'experience_booking_confirm_nudge',
+      title: 'Confirm this booking',
+      body: `${d.listingTitle} — a client has paid. Please confirm the booking.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Please confirm this booking',
+      body: `Hi ${b(d.sellerName)}, a client has paid for ${b(d.listingTitle)}${when ? ` (booked for ${b(when)})` : ''} and their payment is being held for you. Please confirm the booking so the client knows it's locked in. If you don't confirm soon, our team will follow up.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        ...(when ? [{ label: 'Event date', value: when }] : []),
+      ],
+      cta: { label: 'Confirm booking', url: txUrl },
+      preheader: `Confirm the booking for ${d.listingTitle}`,
+    });
+    await this.send(
+      d.sellerEmail,
+      'Action needed: confirm the booking for ' + d.listingTitle,
+      html,
+    );
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: a client paid for ${truncate(d.listingTitle, 30)}. Please confirm the booking: ${txUrl}`,
+      `experience-booking-nudge-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // EXP-E4 — pre-event reminder (buyer + outfitter). Sent ~3 days out
+  // for a confirmed experience booking. Best-effort, informational —
+  // reminds both parties the event is coming up. One method, called
+  // once per recipient by the SLA sweep.
+  // ---------------------------------------------------------------
+  async experiencePreEventReminder(d: {
+    recipientEmail: string;
+    recipientName: string;
+    recipientPhone?: string | null;
+    role: 'BUYER' | 'OUTFITTER';
+    listingTitle: string;
+    transactionId: string;
+    eventDate?: Date | null;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    const when = d.eventDate
+      ? d.eventDate.toLocaleDateString('en-ZA', {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+        })
+      : 'soon';
+    const isBuyer = d.role === 'BUYER';
+    await this.persistByEmail(d.recipientEmail, {
+      category: isBuyer ? 'BUYER' : 'SELLER',
+      type: 'experience_pre_event_reminder',
+      title: 'Your experience is coming up',
+      body: `${d.listingTitle} — ${when}`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Reminder' },
+      headline: 'Your experience is coming up',
+      body: isBuyer
+        ? `Hi ${b(d.recipientName)}, this is a reminder that your booking for ${b(d.listingTitle)} is on ${b(when)}. Make sure you've sorted any travel and gear. After the event, tap <b>Confirm it happened</b> on your order page so the outfitter's payment is released.`
+        : `Hi ${b(d.recipientName)}, this is a reminder that the booking for ${b(d.listingTitle)} is on ${b(when)}. Please make sure everything's ready for your client.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+        { label: 'Event date', value: when },
+      ],
+      cta: { label: 'View booking', url: txUrl },
+      preheader: `${d.listingTitle} is coming up on ${when}`,
+    });
+    await this.send(
+      d.recipientEmail,
+      'Reminder: ' + d.listingTitle + ' is coming up',
+      html,
+    );
+    await this.sendSms(
+      d.recipientPhone,
+      `Gun Galore: reminder — ${truncate(d.listingTitle, 30)} is on ${when}. Details: ${txUrl}`,
+      `experience-pre-event-${d.role.toLowerCase()}-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // EXP-E4 — post-event confirm nudge (buyer). The event date has
+  // passed but the buyer hasn't confirmed the experience happened, so
+  // the outfitter's payment is still held. One-shot, best-effort —
+  // asks the buyer to confirm (or raise a dispute if it didn't happen).
+  // NO auto-release / auto-refund on this path.
+  // ---------------------------------------------------------------
+  async experiencePostEventConfirmNudgeBuyer(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'experience_post_event_confirm_nudge',
+      title: 'Did your experience happen?',
+      body: `${d.listingTitle} — confirm it happened to release the outfitter's payment.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Did your experience happen?',
+      body: `Hi ${b(d.buyerName)}, the date for your booking of ${b(d.listingTitle)} has passed. If everything went ahead, please tap <b>Confirm it happened</b> on your order page so the outfitter's payment can be released. If it didn't happen or something went wrong, you can raise a dispute from the same page and our team will help sort it out.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+      ],
+      cta: { label: 'Confirm it happened', url: txUrl },
+      preheader: `Confirm your experience for ${d.listingTitle}`,
+    });
+    await this.send(
+      d.buyerEmail,
+      'Action needed: confirm your experience for ' + d.listingTitle,
+      html,
+    );
+    await this.sendSms(
+      d.buyerPhone,
+      `Gun Galore: did your booking for ${truncate(d.listingTitle, 30)} go ahead? Confirm it happened (or raise an issue) here: ${txUrl}`,
+      `experience-post-event-nudge-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
   // Dispatch SLA — auto-refund fired. Two emails (buyer gets the
   // "good news, your money is back" message; seller gets the strike
   // warning).

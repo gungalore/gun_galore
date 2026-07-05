@@ -470,6 +470,25 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
+  // Hunting Packages / Experiences (EXP-E4) — buyer raises a dispute.
+  // Buyer-only, Clerk-guarded, mirroring the standard :id/dispute route.
+  // An experience never dispatches, so there's no "dispatch first" gate;
+  // allowed while HELD + paid + within the event-bounded window (7d after
+  // the event). Atomic HELD→DISPUTED; blocks release/cancel until an admin
+  // resolves it. NO money moves.
+  // ---------------------------------------------------------------
+  @Post(':id/experience/dispute')
+  @UseGuards(ClerkGuard)
+  @HttpCode(200)
+  raiseExperienceDispute(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.txService.raiseExperienceDispute(id, clerkId, body?.reason);
+  }
+
+  // ---------------------------------------------------------------
   // Proof-of-delivery photo upload (Phase 5 P5.3). Buyer OR seller may
   // attach a single delivery photo as dispute evidence — does NOT gate
   // payout (that stays on the buyer's Confirm Delivery). Owner-checked +
