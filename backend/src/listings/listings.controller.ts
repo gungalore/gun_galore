@@ -179,6 +179,38 @@ export class ListingsController {
     );
   }
 
+  // POST /listings/experience-supplier-docs — pre-upload the outfitter's
+  // public-liability insurance + registration proof for a hunting-package /
+  // experience listing. Returns Cloudinary URLs the Sell form passes into
+  // POST /listings for the admin / vision supplier-doc review. Two named
+  // files: insuranceDoc + registrationDoc.
+  @Post('experience-supplier-docs')
+  @UseGuards(ClerkGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'insuranceDoc', maxCount: 1 },
+        { name: 'registrationDoc', maxCount: 1 },
+      ],
+      { storage: memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } },
+    ),
+  )
+  uploadSupplierDocs(
+    @CurrentUser() clerkId: string,
+    @UploadedFiles()
+    files: {
+      insuranceDoc?: Express.Multer.File[];
+      registrationDoc?: Express.Multer.File[];
+    },
+  ) {
+    return this.listingsService.uploadSupplierDocs(
+      clerkId,
+      files?.insuranceDoc?.[0],
+      files?.registrationDoc?.[0],
+    );
+  }
+
   // POST /listings/enhance-description — used by the "Enhance wording"
   // button on /listings/new before the listing exists. Returns the
   // rewritten text plus a flag for whether it changed. Auth-gated so

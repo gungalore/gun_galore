@@ -140,6 +140,37 @@ export class ListingsService {
     return { serialPhotoUrl: s.url, licencePhotoUrl: l.url };
   }
 
+  // Pre-upload the outfitter's public-liability insurance + registration
+  // proof to Cloudinary BEFORE create() for a hunting-package / experience
+  // listing, so the Sell form can pass the returned URLs into POST /listings
+  // for the admin / Claude-vision supplier-doc review. Mirrors
+  // uploadFirearmDocs (open self-serve safeguard for experiences).
+  async uploadSupplierDocs(
+    clerkId: string,
+    insurance: Express.Multer.File | undefined,
+    registration: Express.Multer.File | undefined,
+  ): Promise<{ insuranceUrl: string; registrationDocUrl: string }> {
+    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+    if (!user) throw new ForbiddenException('User not synced — try again in a moment');
+    if (user.isBanned) throw new ForbiddenException('Account is suspended');
+    if (!insurance || !registration) {
+      throw new BadRequestException(
+        'Both a public-liability insurance certificate and an outfitter registration document are required.',
+      );
+    }
+    const [ins, reg] = await Promise.all([
+      this.cloudinary.uploadImage(
+        insurance.buffer,
+        `experience-supplier-docs/${user.id}`,
+      ),
+      this.cloudinary.uploadImage(
+        registration.buffer,
+        `experience-supplier-docs/${user.id}`,
+      ),
+    ]);
+    return { insuranceUrl: ins.url, registrationDocUrl: reg.url };
+  }
+
   // Ask Claude to rewrite a draft description. Used by the "Enhance
   // wording" button on the Sell form before the user commits to publishing.
   // We don't write anything to the DB — this is a pure read-side helper.
