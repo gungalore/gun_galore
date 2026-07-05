@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { ClerkProvider } from '@clerk/nextjs';
 import { PublicNav, PublicFooter } from '@/components/public-chrome';
 import { SiteFooter } from '@/components/site-footer';
+import { AddedToCartDrawer } from '@/components/added-to-cart-drawer';
 import { InstallPrompt } from '@/components/install-prompt';
 import { AvatarLightbox } from '@/components/avatar-lightbox';
 import { SwKillSwitch } from '@/components/sw-killswitch';
@@ -292,6 +293,9 @@ export default function RootLayout({
           <InstallPrompt />
           {/* Site-wide click-to-enlarge for user profile photos. */}
           <AvatarLightbox />
+          {/* UX-4 — added-to-cart confirmation drawer + cross-sell rail.
+              Global listener; opens on the AddToCartButton's add event. */}
+          <AddedToCartDrawer />
           {/* First-launch push opt-in card — only shows in installed
               PWA mode, only when push isn't already enabled, only
               outside the 30-day snooze window. Self-hides under any
