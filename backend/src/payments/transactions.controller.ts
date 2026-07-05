@@ -395,6 +395,42 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
+  // Hunting Packages / Experiences (EXP-E2) — the happy money-OUT path.
+  // These replace accept / confirm-delivery / reject for a future-dated
+  // ON_SITE_SERVICE booking. Clerk-guarded, mirroring the routes above:
+  //   accept          — seller (outfitter) confirms they'll honour the booking
+  //   confirm-completed — buyer confirms the hunt happened (after eventDate)
+  //   decline         — seller declines → full refund + relist
+  // ---------------------------------------------------------------
+  @Post(':id/experience/accept')
+  @UseGuards(ClerkGuard)
+  @HttpCode(200)
+  acceptExperience(@Param('id') id: string, @CurrentUser() clerkId: string) {
+    return this.txService.acceptExperienceBooking(id, clerkId);
+  }
+
+  @Post(':id/experience/confirm-completed')
+  @UseGuards(ClerkGuard)
+  @HttpCode(200)
+  confirmExperienceCompleted(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+  ) {
+    return this.txService.confirmExperienceCompleted(id, clerkId);
+  }
+
+  @Post(':id/experience/decline')
+  @UseGuards(ClerkGuard)
+  @HttpCode(200)
+  declineExperience(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.txService.declineExperienceBooking(id, clerkId, body?.reason);
+  }
+
+  // ---------------------------------------------------------------
   // Proof-of-delivery photo upload (Phase 5 P5.3). Buyer OR seller may
   // attach a single delivery photo as dispute evidence — does NOT gate
   // payout (that stays on the buyer's Confirm Delivery). Owner-checked +

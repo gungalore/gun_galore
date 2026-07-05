@@ -2829,6 +2829,419 @@ export class TransactionsService {
     return { disputed: true };
   }
 
+  // ==================================================================
+  // Hunting Packages / Experiences (EXP-E2) — the happy money-OUT path
+  // ==================================================================
+  // Three seller/buyer lifecycle methods that replace the goods
+  // accept→dispatch→confirm-delivery machinery for a future-dated ON-SITE
+  // service (ShippingMethod.ON_SITE_SERVICE). Each mirrors an existing money
+  // method 1:1 and reuses the SAME atomic primitives — no new money mechanics:
+  //   • acceptExperienceBooking   ≙ acceptTransaction   (seller CAS, NO release)
+  //   • confirmExperienceCompleted ≙ confirmDelivery    (atomic HELD→RELEASED)
+  //   • declineExperienceBooking  ≙ rejectTransaction   (full refund + relist)
+  // Money invariants preserved: (a) NO release before eventDate; (b) NO
+  // double-release (CAS count===0); (c) DISPUTED blocks release (CAS requires
+  // HELD); (d) decline never pays the seller + always relists; (e) commission
+  // invoice fires once on release; (f) seller-only accept/decline, buyer-only
+  // confirm-completed.
+
+  // ------------------------------------------------------------------
+  // OUTFITTER confirms the booking (EXP-E2) — the "accept" step
+  // ------------------------------------------------------------------
+  // Seller-only. Atomic compare-and-set stamps bookingConfirmedAt exactly once
+  // on a HELD ON_SITE_SERVICE row that isn't already confirmed. Mirrors
+  // acceptTransaction's seller-auth pattern, but there is NO courier booking
+  // and — crucially — NO funds release: an experience releases only via the
+  // post-event confirmExperienceCompleted step (guarded on eventDate). A
+  // confirmed booking simply tells the buyer the outfitter will honour it.
+  async acceptExperienceBooking(transactionId: string, sellerClerkId: string) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        listing: { select: { title: true, isExperience: true } },
+        buyer: {
+          select: {
+            email: true,
+            firstName: true,
+            phone: true,
+            username: true,
+          },
+        },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+
+    const seller = await this.prisma.user.findUnique({
+      where: { clerkId: sellerClerkId },
+    });
+    if (!seller || tx.sellerId !== seller.id) {
+      throw new ForbiddenException('Not authorised');
+    }
+    if (!tx.paidAt) {
+      throw new BadRequestException('Payment not confirmed yet');
+    }
+    if (tx.shippingMethod !== ShippingMethod.ON_SITE_SERVICE) {
+      throw new BadRequestException(
+        'This is not an experience booking — use the standard accept flow.',
+      );
+    }
+    if (tx.bookingConfirmedAt) {
+      // Idempotent — already-confirmed is a successful no-op.
+      return tx;
+    }
+
+    // Atomic CAS — stamp bookingConfirmedAt on a still-HELD, still-unconfirmed
+    // experience row. count===0 ⇒ another pass confirmed it, it moved out of
+    // HELD (DISPUTED / REFUNDED / RELEASED), or it isn't an experience. Does
+    // NOT touch paymentStatus: money stays HELD until the post-event confirm.
+    const confirmedAt = new Date();
+    const stamped = await this.prisma.transaction.updateMany({
+      where: {
+        id: transactionId,
+        paymentStatus: 'HELD',
+        shippingMethod: ShippingMethod.ON_SITE_SERVICE,
+        bookingConfirmedAt: null,
+      },
+      data: { bookingConfirmedAt: confirmedAt },
+    });
+    if (stamped.count === 0) {
+      throw new BadRequestException(
+        'This booking can no longer be confirmed — it may already be confirmed, refunded, or disputed.',
+      );
+    }
+
+    // Best-effort buyer notice + timeline (fire-and-forget; never blocks the
+    // seller's confirm). Reuse the existing sale_accepted buyer notification —
+    // a COLLECTION-style accept (no dispatch/tracking), which is the closest
+    // fit for an on-site booking. E5 can introduce experience-specific copy.
+    void this.tracking.recordInternal(transactionId, 'SELLER_ACCEPTED', {
+      occurredAt: confirmedAt,
+    });
+    void this.notifications.resolveByEntity('transaction', transactionId);
+    void this.notifications
+      .saleAcceptedBuyer({
+        buyerEmail: tx.buyer.email,
+        buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
+        buyerPhone: tx.buyer.phone,
+        listingTitle: tx.listing.title,
+        transactionId: tx.id,
+        dispatchDeadlineAt: tx.eventDate ?? confirmedAt,
+        isCollection: true,
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `acceptExperienceBooking notify failed for ${transactionId}: ${(err as Error).message}`,
+        ),
+      );
+
+    this.logger.log(
+      `Experience booking ${transactionId} confirmed by outfitter ${seller.id}`,
+    );
+    return (
+      (await this.prisma.transaction.findUnique({
+        where: { id: transactionId },
+      })) ?? tx
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // BUYER confirms the experience happened (EXP-E2) — the release step
+  // ------------------------------------------------------------------
+  // Buyer-only. The load-bearing anti-early-release guard is `now >= eventDate`
+  // — funds can NEVER move before the event, no matter what the buyer clicks.
+  // Mirrors confirmDelivery's atomic HELD→RELEASED CAS exactly (same $transaction
+  // shape, same count===0 abort, same totalSales++ + idempotent Zoho commission
+  // invoice). Because the CAS where-clause requires paymentStatus='HELD', a
+  // DISPUTED row can never release underneath it. Once RELEASED, the funds
+  // become payout-eligible through the UNCHANGED getPayoutsDue (RELEASED +
+  // sellerPayout>0 + KYC gate) — no payout-path change.
+  async confirmExperienceCompleted(transactionId: string, buyerClerkId: string) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: { buyer: true },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.buyer.clerkId !== buyerClerkId) {
+      throw new ForbiddenException(
+        'Only the buyer can confirm the experience happened',
+      );
+    }
+    if (tx.shippingMethod !== ShippingMethod.ON_SITE_SERVICE) {
+      throw new BadRequestException(
+        'This is not an experience — use the standard confirm-delivery flow.',
+      );
+    }
+    if (tx.paymentStatus !== 'HELD') {
+      // DISPUTED / REFUNDED / RELEASED all land here — nothing to release.
+      throw new BadRequestException(
+        'Payment is not in a releasable state — it may have been disputed or already released.',
+      );
+    }
+    if (tx.eventCompletedConfirmedAt) {
+      throw new BadRequestException('You have already confirmed this experience.');
+    }
+    // ANTI-EARLY-RELEASE — the single most important guard on this method.
+    // The buyer can only confirm the hunt happened AFTER the event date; before
+    // then there is nothing to confirm and releasing would pay the outfitter for
+    // a service not yet rendered.
+    if (!tx.eventDate) {
+      throw new BadRequestException(
+        'This booking has no event date on record — contact support.',
+      );
+    }
+    const now = new Date();
+    if (now.getTime() < tx.eventDate.getTime()) {
+      throw new BadRequestException(
+        'You can only confirm the experience after the event date.',
+      );
+    }
+
+    // Atomic guarded release — identical shape to confirmDelivery. Including
+    // paymentStatus='HELD' + eventCompletedConfirmedAt=null in the WHERE makes
+    // this a compare-and-set: a concurrent admin dispute (HELD→DISPUTED) or a
+    // double-click can't slip between the read above and this write and release
+    // a disputed / already-released booking. count===0 → the row moved out of
+    // HELD since we read it; abort and roll the whole interactive transaction
+    // back (seller increment too). We stamp deliveredAt/confirmedDeliveryAt too
+    // so the row's downstream shape matches a settled goods sale (receipts,
+    // ratings-eligibility, analytics all key off those).
+    await this.prisma.$transaction(async (txc) => {
+      const guard = await txc.transaction.updateMany({
+        where: {
+          id: transactionId,
+          paymentStatus: 'HELD',
+          eventCompletedConfirmedAt: null,
+        },
+        data: {
+          paymentStatus: 'RELEASED',
+          releasedAt: now,
+          eventCompletedConfirmedAt: now,
+          confirmedDeliveryAt: now,
+          deliveredAt: now,
+        },
+      });
+      if (guard.count === 0) {
+        throw new BadRequestException(
+          'Payment is no longer in a releasable state — it may have been disputed or already released.',
+        );
+      }
+      await txc.user.update({
+        where: { id: tx.sellerId },
+        data: { totalSales: { increment: 1 } },
+      });
+    });
+
+    this.logger.log(
+      `Experience ${transactionId} confirmed completed by buyer — payment released`,
+    );
+    // Commission invoice into Books at release — exactly like confirmDelivery
+    // (idempotent + never throws). breakdownExperience populated commissionZar /
+    // listingPrice / sellerPayout at checkout, so no Zoho change is needed.
+    void this.zohoBooks.createCommissionInvoice(transactionId);
+    void this.tracking.recordInternal(transactionId, 'BUYER_CONFIRMED_DELIVERY', {
+      occurredAt: now,
+    });
+    void this.tracking.recordInternal(transactionId, 'PAYOUT_RELEASED', {
+      occurredAt: new Date(now.getTime() + 1),
+    });
+    void this.sendReleasedNotification(transactionId);
+    void this.notifications.resolveByEntity('transaction', transactionId, {
+      userId: tx.buyerId,
+    });
+    return { released: true };
+  }
+
+  // ------------------------------------------------------------------
+  // OUTFITTER declines the booking (EXP-E2) — full refund + relist
+  // ------------------------------------------------------------------
+  // Seller-only. The outfitter can't / won't honour the booking → the buyer is
+  // FULLY refunded and the listing goes back to ACTIVE. NEVER releases funds to
+  // the seller. Mirrors rejectTransaction's mechanics, using the manual-rail
+  // synthetic-child refund primitive (the same one AdminService.refundTransaction
+  // uses): an atomic HELD-guarded flip to REFUNDED that ALSO mints a synthetic
+  // REFUNDED child (buyerTotal = the slice the FNB refund batch pays the buyer),
+  // then reactivates the listing via reversalListingData. Manual rail only —
+  // refunds are gated to PAYMENT_MODE=manual (a card gateway reverses the card
+  // itself; paying the batch too would double-refund).
+  async declineExperienceBooking(
+    transactionId: string,
+    sellerClerkId: string,
+    reason?: string,
+  ) {
+    const trimmedReason = (reason ?? '').trim().slice(0, 500) || undefined;
+
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        listing: { select: { id: true, title: true, trackInventory: true, listingType: true } },
+        buyer: {
+          select: {
+            email: true,
+            firstName: true,
+            phone: true,
+            username: true,
+            bankAccountHolder: true,
+            bankAccountNumber: true,
+            bankBranchCode: true,
+          },
+        },
+        seller: {
+          select: { email: true, firstName: true, phone: true, username: true },
+        },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+
+    const seller = await this.prisma.user.findUnique({
+      where: { clerkId: sellerClerkId },
+    });
+    if (!seller || tx.sellerId !== seller.id) {
+      throw new ForbiddenException('Not authorised');
+    }
+    if (!tx.paidAt) {
+      throw new BadRequestException('Payment not confirmed yet');
+    }
+    if (tx.shippingMethod !== ShippingMethod.ON_SITE_SERVICE) {
+      throw new BadRequestException(
+        'This is not an experience booking — use the standard reject flow.',
+      );
+    }
+    if (tx.bookingDeclinedAt) {
+      // Idempotent — already-declined is a successful no-op.
+      return tx;
+    }
+    // Decline is only legal while the money is still HELD — mirror the reject /
+    // cancel HELD guard. A RELEASED / REFUNDED / DISPUTED experience must not be
+    // flipped to REFUNDED here (that would move money twice / undercut an admin
+    // dispute resolution).
+    if (tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException(
+        'This booking can no longer be declined — payment has already been settled or is under dispute. Contact support if something is wrong.',
+      );
+    }
+    // Refunds only settle on the manual EFT rail (the FNB batch pays the
+    // synthetic child). Under a live card gateway the reversal happens on the
+    // card, so this path would need the gateway reversal instead — fail loudly
+    // rather than silently mis-refunding. (E5/paygate seam handles card mode.)
+    if (PAYMENT_MODE !== 'manual') {
+      throw new BadRequestException(
+        'Experience decline refunds are currently available via EFT only.',
+      );
+    }
+
+    // Atomic claim + synthetic refund child, in ONE interactive transaction —
+    // the SAME primitive AdminService.refundTransaction uses on the manual rail.
+    // The HELD-guarded updateMany is the concurrency lock (a simultaneous buyer
+    // confirm-completed or admin dispute sees count===0 and this bails); the
+    // minted REFUNDED child (buyerTotal = full value, refundOfId = parent) is
+    // what the FNB refund batch actually pays the buyer. The full buyerTotal is
+    // refunded — an outfitter decline is a supplier failure, so no cancellation
+    // charge applies (CPA: the supplier didn't perform).
+    const declinedAt = new Date();
+    const res = await this.prisma.$transaction(async (txc) => {
+      const claim = await txc.transaction.updateMany({
+        where: { id: transactionId, paymentStatus: 'HELD' },
+        data: {
+          paymentStatus: 'REFUNDED',
+          bookingDeclinedAt: declinedAt,
+          bookingDeclinedReason: trimmedReason ?? null,
+          refundedAmount: tx.buyerTotal,
+          lastRefundAt: declinedAt,
+          releasedAt: null,
+        },
+      });
+      if (claim.count === 0) return { count: 0 };
+      // Synthetic REFUNDED child — the FNB refund batch pays THIS row to the
+      // buyer (buyerTotal = the full package value; sellerPayout 0 so the
+      // outfitter is never paid). refundOfId links it to the parent so it's
+      // excluded from the sales/purchase lists + the payout (not refund) queue.
+      await txc.transaction.create({
+        data: {
+          refundOfId: transactionId,
+          listingId: tx.listingId,
+          buyerId: tx.buyerId,
+          sellerId: tx.sellerId,
+          quantity: 1,
+          listingPrice: 0,
+          commissionZar: 0,
+          processingFee: 0,
+          shippingCost: 0,
+          passFeeToBuyer: false,
+          buyerTotal: tx.buyerTotal, // full-value refund slice the FNB batch pays
+          sellerPayout: 0,
+          refundedAmount: tx.buyerTotal,
+          paymentStatus: 'REFUNDED',
+          orderReference: `${tx.orderReference ?? tx.id}-R${tx.buyerTotal}`,
+        },
+      });
+      return { count: claim.count };
+    });
+    if (res.count === 0) {
+      throw new BadRequestException(
+        'This booking could not be declined — its state just changed (it may have been confirmed complete or disputed). Reload and try again.',
+      );
+    }
+
+    // Reactivate the listing so it can be booked again. reversalListingData:
+    // ended auctions land EXPIRED (never resurrected to ACTIVE), tracked
+    // listings restock, single items → plain ACTIVE. Experiences are single
+    // BUY_NOW/AUCTION items, so this is the same reactivation reject/cancel use.
+    await this.prisma.listing
+      .update({
+        where: { id: tx.listingId },
+        data: reversalListingData(
+          tx.listing.trackInventory ?? false,
+          tx.quantity ?? 1,
+          tx.listing.listingType,
+        ),
+      })
+      .catch(() => undefined);
+
+    // Timeline + best-effort refund notifications (fire-and-forget). Reuse the
+    // seller-reject buyer notice + the refund seller notice — rail-aware copy so
+    // the buyer is told to add bank details when the FNB batch can't pay them.
+    void this.tracking.recordInternal(transactionId, 'SELLER_REJECTED', {
+      occurredAt: declinedAt,
+      message: trimmedReason
+        ? `Outfitter declined the booking: ${trimmedReason}`
+        : 'Outfitter declined the booking',
+    });
+    void this.notifications.resolveByEntity('transaction', transactionId);
+    void this.notifications
+      .saleRejectedBuyer({
+        buyerEmail: tx.buyer.email,
+        buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
+        buyerPhone: tx.buyer.phone,
+        listingTitle: tx.listing.title,
+        listingId: tx.listingId,
+        transactionId: tx.id,
+        buyerTotal: tx.buyerTotal,
+        reason: trimmedReason ?? 'The outfitter could not honour this booking.',
+        manualEft: PAYMENT_MODE === 'manual',
+        needsBankDetails:
+          PAYMENT_MODE === 'manual' &&
+          !(
+            tx.buyer.bankAccountHolder &&
+            tx.buyer.bankAccountNumber &&
+            tx.buyer.bankBranchCode
+          ),
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `declineExperienceBooking buyer-notify failed for ${transactionId}: ${(err as Error).message}`,
+        ),
+      );
+
+    this.logger.log(
+      `Experience booking ${transactionId} DECLINED by outfitter ${seller.id} — buyer fully refunded (${tx.buyerTotal}c), listing relisted`,
+    );
+    return (
+      (await this.prisma.transaction.findUnique({
+        where: { id: transactionId },
+      })) ?? tx
+    );
+  }
+
   // ------------------------------------------------------------------
   // Manual EFT confirmation (PAYMENT_MODE=manual)
   // ------------------------------------------------------------------
