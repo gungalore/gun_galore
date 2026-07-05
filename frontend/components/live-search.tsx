@@ -67,10 +67,15 @@ export function LiveSearch({
   placeholder = 'Search listings…',
   className,
   style,
+  variant,
 }: {
   placeholder?: string;
   className?: string;
   style?: React.CSSProperties;
+  // 'attached' — strips the input's own border/background/radius so it can
+  // sit flush inside a shared bordered control (the nav's Categories+search
+  // unit). Default keeps the standalone bordered box.
+  variant?: 'attached';
 }) {
   const router = useRouter();
   const [q, setQ] = useState('');
@@ -144,13 +149,27 @@ export function LiveSearch({
     router.push(`/?q=${encodeURIComponent(term)}`);
   }
 
+  const finalInputStyle: React.CSSProperties =
+    variant === 'attached'
+      ? {
+          ...inputStyle,
+          border: 'none',
+          background: 'transparent',
+          borderRadius: 0,
+        }
+      : inputStyle;
+
   return (
     <div
       ref={wrapRef}
       className={className}
-      style={{ position: 'relative', ...style }}
+      style={{
+        position: 'relative',
+        ...(variant === 'attached' ? { display: 'flex' } : {}),
+        ...style,
+      }}
     >
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} style={variant === 'attached' ? { flex: 1 } : undefined}>
         <input
           type="search"
           placeholder={placeholder}
@@ -159,7 +178,7 @@ export function LiveSearch({
           onFocus={() => {
             if (hits && hits.length > 0) setOpen(true);
           }}
-          style={inputStyle}
+          style={finalInputStyle}
           aria-label="Search listings"
           autoComplete="off"
         />

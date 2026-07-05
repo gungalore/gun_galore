@@ -122,65 +122,26 @@ export function Nav() {
             />
           </Link>
 
-          {/* Primary nav — four shopping surfaces. Desktop only; mobile
-              users get these via the hamburger menu on the right. */}
-          <div className="hidden md:flex items-center gap-5 text-sm shrink-0">
-            {/* UX-5 — "Shop by Category" flyout, left of the mode links.
-                Desktop-only (this container is hidden md:flex); mobile keeps
-                the Shop sheet / hamburger drawer, untouched. */}
-            <CategoryMenu />
-            {SHOP_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                style={{ color: 'var(--text-secondary)' }}
-                className="hover:text-[#f5f5f5] transition-colors"
-              >
-                {link.label}
-              </Link>
-            ))}
-            {/* Ask GG — paid AI assistant, deliberately set apart from
-                SHOP_LINKS (it's not a shopping surface). Sparkles icon
-                + slight accent so it reads as "different product". The
-                installed-PWA equivalent is the dedicated tab in the
-                bottom-tab-bar (5-tab layout, sparkles icon, same colour
-                language). Mobile-web users reach it via the hamburger
-                drawer's Assistant section below. */}
-            <Link
-              href="/ask-gg"
-              style={{ color: 'var(--text-secondary)' }}
-              className="flex items-center gap-1.5 hover:text-[#f5f5f5] transition-colors"
-              aria-label="Ask GG — AI assistant"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden
-              >
-                <path
-                  d="M12 4 L13.6 9.4 L19 11 L13.6 12.6 L12 18 L10.4 12.6 L5 11 L10.4 9.4 Z"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M18.5 4 L19 5.5 L20.5 6 L19 6.5 L18.5 8 L18 6.5 L16.5 6 L18 5.5 Z"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              Ask GG
-            </Link>
-          </div>
-
-          {/* Live search — desktop only. On mobile it lives inside the
-              hamburger drawer so the nav stays uncluttered + the Sell
-              CTA + hamburger don't get pushed off-screen. */}
-          <div className="hidden md:block flex-1 max-w-[420px]">
-            <LiveSearch placeholder="Search listings…" />
+          {/* Category browse + live search, fused into one control
+              (Takealot-style): a "Categories ▾" segment on the left of a
+              wide search box. Desktop only + flex-1 so the search fills the
+              row; mobile keeps search in the hamburger drawer. The selling-
+              mode links moved to the slim second tier below so they no
+              longer crush the search. */}
+          <div
+            className="hidden md:flex flex-1 max-w-[600px] items-stretch"
+            style={{
+              border: '0.5px solid var(--border)',
+              borderRadius: 6,
+              background: 'var(--bg-inset)',
+            }}
+          >
+            <CategoryMenu variant="search" />
+            <LiveSearch
+              placeholder="Search listings…"
+              variant="attached"
+              className="flex-1"
+            />
           </div>
 
           {/* Right side */}
@@ -429,6 +390,54 @@ export function Nav() {
               </button>
             </div>
           )}
+        </div>
+
+        {/* Second tier — selling-mode links + Ask GG. Desktop only; keeps
+            the four selling modes + Competitions fully visible on their own
+            slim strip instead of crushing the search on the top row. Mobile
+            reaches these via the hamburger drawer's Shop / Assistant sections. */}
+        <div
+          className="hidden md:block"
+          style={{ borderTop: '0.5px solid var(--border)' }}
+        >
+          <div className="max-w-[1280px] mx-auto px-4 h-10 flex items-center gap-5 text-sm">
+            {SHOP_LINKS.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                style={{ color: 'var(--text-secondary)' }}
+                className="hover:text-[#f5f5f5] transition-colors"
+              >
+                {link.label}
+              </Link>
+            ))}
+            {/* Ask GG — paid AI assistant, set apart from SHOP_LINKS with a
+                sparkles icon so it reads as a different product. Pushed to the
+                right edge of the strip. Mobile-web reaches it via the drawer's
+                Assistant section; the installed PWA has its own bottom tab. */}
+            <Link
+              href="/ask-gg"
+              style={{ color: 'var(--text-secondary)' }}
+              className="flex items-center gap-1.5 hover:text-[#f5f5f5] transition-colors ml-auto"
+              aria-label="Ask GG — AI assistant"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path
+                  d="M12 4 L13.6 9.4 L19 11 L13.6 12.6 L12 18 L10.4 12.6 L5 11 L10.4 9.4 Z"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M18.5 4 L19 5.5 L20.5 6 L19 6.5 L18.5 8 L18 6.5 L16.5 6 L18 5.5 Z"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              Ask GG
+            </Link>
+          </div>
         </div>
       </nav>
 

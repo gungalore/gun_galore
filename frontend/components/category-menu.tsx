@@ -39,7 +39,8 @@ async function loadCategories(): Promise<CategoryWithCount[]> {
   return inflight;
 }
 
-export function CategoryMenu() {
+export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }) {
+  const isSearch = variant === 'search';
   const [open, setOpen] = useState(false);
   const [cats, setCats] = useState<CategoryWithCount[]>(cache ?? []);
   const [activeRoot, setActiveRoot] = useState<string | null>(null);
@@ -117,7 +118,12 @@ export function CategoryMenu() {
   }
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative' }} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+    <div
+      ref={wrapRef}
+      style={{ position: 'relative', display: isSearch ? 'flex' : undefined }}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+    >
       <button
         ref={btnRef}
         type="button"
@@ -140,17 +146,38 @@ export function CategoryMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Shop by category"
-        className="flex items-center gap-1 hover:text-[#f5f5f5] transition-colors"
-        style={{
-          color: 'var(--text-secondary)',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          font: 'inherit',
-          padding: 0,
-        }}
+        className={
+          isSearch
+            ? 'flex items-center gap-1 shrink-0 hover:text-[#f5f5f5] transition-colors'
+            : 'flex items-center gap-1 hover:text-[#f5f5f5] transition-colors'
+        }
+        style={
+          isSearch
+            ? {
+                // Left segment fused into the search control: transparent so
+                // the shared bordered wrapper shows through, a single divider
+                // on the right against the input, full-height via stretch.
+                color: 'var(--text-secondary)',
+                background: 'transparent',
+                border: 'none',
+                borderRight: '0.5px solid var(--border)',
+                cursor: 'pointer',
+                font: 'inherit',
+                fontSize: 13,
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+              }
+            : {
+                color: 'var(--text-secondary)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                font: 'inherit',
+                padding: 0,
+              }
+        }
       >
-        Shop by Category
+        {isSearch ? 'Categories' : 'Shop by Category'}
         <svg
           width="12"
           height="12"
