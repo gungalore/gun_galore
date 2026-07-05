@@ -16,8 +16,6 @@
 // page. Server-rendered to keep zero JS cost.
 
 import Link from 'next/link';
-import { apiFetch } from '@/lib/api';
-import type { CategoryWithCount } from '@/lib/types';
 import { GetTheAppCta } from '@/components/get-the-app-cta';
 
 // UX-1f — payment methods, driven by a config array so card-brand logos slot
@@ -25,20 +23,8 @@ import { GetTheAppCta } from '@/components/get-the-app-cta';
 // only live rail today (funds held until the buyer confirms delivery).
 const PAYMENT_METHODS: string[] = ['Secure EFT — payment held'];
 
-export async function SiteFooter() {
+export function SiteFooter() {
   const year = new Date().getFullYear();
-
-  // UX-1f — crawlable root-category links on every page (SEO + discovery).
-  // Fetched server-side (this footer is passed to the client PublicFooter as
-  // children, so it stays a server component) and cached for 10 min — the same
-  // call the homepage curtain makes. Fails soft to no row on any hiccup.
-  const categories = await apiFetch<CategoryWithCount[]>(
-    '/categories/with-counts',
-    { next: { revalidate: 600 } } as RequestInit,
-  ).catch(() => [] as CategoryWithCount[]);
-  const rootCategories = categories
-    .filter((c) => c.parentId === null && c.isActive)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   return (
     <footer
@@ -210,27 +196,6 @@ export async function SiteFooter() {
         </div>
         <GetTheAppCta />
       </div>
-
-      {/* Category text-link row (UX-1f) — roots only, crawlable on every
-          page. Hidden if the fetch returned nothing. */}
-      {rootCategories.length > 0 && (
-        <div style={{ maxWidth: 1280, margin: '0 auto', marginBottom: 20 }}>
-          <p style={{ color: 'var(--text-primary)', fontWeight: 500, marginBottom: 8 }}>
-            Browse by category
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
-            {rootCategories.map((c) => (
-              <Link
-                key={c.id}
-                href={`/category/${c.slug}`}
-                style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 12 }}
-              >
-                {c.name}
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* ECT § 43 disclosures — mandatory on every commercial SA page.
           Compact form here; full version with VAT, director, etc. on

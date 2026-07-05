@@ -1,13 +1,12 @@
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
-import { BrowseResponse, Category, CategoryWithCount } from '@/lib/types';
+import { BrowseResponse, Category } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { FilterBar } from '@/components/filter-bar';
 import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
-import { CategoryCurtain } from '@/components/category-curtain';
 import { FeaturedRail } from '@/components/featured-rail';
 import { SignedInWelcome } from '@/components/signed-in-welcome';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
@@ -137,7 +136,7 @@ export default async function HomePage({
   // with the FEATURED grid. On every other surface we keep the
   // standard browse. Both queries fire in parallel so the slower
   // doesn't block the other.
-  const [browse, categories, featuredListings, brands, categoryTiles, facetData] =
+  const [browse, categories, featuredListings, brands, facetData] =
     await Promise.all([
     apiFetch<BrowseResponse>(`/listings?${qs}`, { cache: 'no-store' }).catch(
       () => ({ listings: [], total: 0, page: 1, limit: 24 }),
@@ -164,16 +163,6 @@ export default async function HomePage({
     apiFetch<string[]>('/listings/brands', {
       next: { revalidate: 3600 },
     } as RequestInit).catch(() => [] as string[]),
-    // Category taxonomy with rolled-up active-listing counts — powers the
-    // "Shop by category" tile strip on the landing page. Only fetched on the
-    // bare landing page (where the strip renders); other surfaces skip it.
-    // Progressive enhancement: on failure the strip renders nothing rather
-    // than breaking the homepage.
-    showHero
-      ? apiFetch<CategoryWithCount[]>('/categories/with-counts', {
-          next: { revalidate: 600 },
-        } as RequestInit).catch(() => [] as CategoryWithCount[])
-      : Promise.resolve([] as CategoryWithCount[]),
     // P4-polish — FilterBar facet counts ("Toyota (12)"). Only meaningful when
     // a category is scoped (the surface that renders attr facets); the backend
     // returns {} otherwise, so skip the call entirely on non-category surfaces.
@@ -187,15 +176,6 @@ export default async function HomePage({
           facets: {} as Record<string, Record<string, number>>,
         }),
   ]);
-
-  // Root categories only (parentId === null, active), sorted by the operator's
-  // sortOrder. Includes the new outdoor roots (Overlanding & 4×4, Hunting,
-  // Outdoor Clothing & Footwear, Archery & Bowhunting) automatically — they
-  // come straight from the endpoint. ALL roots are shown (no cap) and revealed
-  // as a column-by-column curtain on scroll (CategoryCurtain).
-  const rootCategoryTiles = categoryTiles
-    .filter((c) => c.parentId === null && c.isActive)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   const currentPage = browse.page;
 
@@ -258,45 +238,6 @@ export default async function HomePage({
 
       {showHero && <Hero />}
       {showHero && <SignedInWelcome />}
-
-      {/* ─── Shop by category ─── Real, rolled-up root categories from
-          /categories/with-counts (parentId === null, active, sortOrder).
-          Each tile deep-links to /category/[slug]. Progressive enhancement:
-          if the endpoint failed the array is empty and this whole block is
-          skipped — the homepage never shows an error for it. */}
-      {showHero && rootCategoryTiles.length > 0 && (
-        <section className="max-w-[1280px] mx-auto px-4 pt-10">
-          <div className="flex items-end justify-between mb-4 gap-4 flex-wrap">
-            <h2
-              className="text-xl sm:text-2xl"
-              style={{
-                color: 'var(--text-primary)',
-                fontWeight: 500,
-                letterSpacing: '-0.01em',
-              }}
-            >
-              Shop by category
-            </h2>
-            {/* No dedicated category index exists — send "browse all" to the
-                All-listings surface (sort=newest routes to ALL_LISTINGS). */}
-            <Link
-              href="/?sort=newest"
-              className="text-sm"
-              style={{ color: 'var(--red)', fontWeight: 500, textDecoration: 'none' }}
-            >
-              Browse all listings →
-            </Link>
-          </div>
-          <CategoryCurtain
-            tiles={rootCategoryTiles.map((c) => ({
-              id: c.id,
-              name: c.name,
-              slug: c.slug,
-              count: c.count,
-            }))}
-          />
-        </section>
-      )}
 
       {/* ─── Bare landing page: featured-only grid, no rail, no filter ───
           When the user lands on "/" with no filters, the main grid
