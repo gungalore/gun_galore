@@ -77,7 +77,7 @@ export default async function AccountPage() {
   ]);
 
   const me: Me | null = meRes?.ok ? await meRes.json() : null;
-  const sub: { tier?: string; currentPeriodEnd?: string | null } | null =
+  const sub: { tier?: string; periodEnd?: string | null } | null =
     subRes?.ok ? await subRes.json() : null;
   const alerts: { total?: number } | null = alertsRes?.ok ? await alertsRes.json() : null;
   const orders: { paymentStatus?: string }[] = ordersRes?.ok ? await ordersRes.json() : [];
@@ -99,7 +99,7 @@ export default async function AccountPage() {
   const username = me?.username ?? 'Your account';
   const kyc = KYC_TONE[me?.kycStatus ?? 'NONE'] ?? KYC_TONE.NONE;
   const ggPlus = sub?.tier === 'MEMBER' || sub?.tier === 'PRO' ? sub.tier : null;
-  const periodEnd = fmtDate(sub?.currentPeriodEnd);
+  const periodEnd = fmtDate(sub?.periodEnd);
 
   return (
     <>

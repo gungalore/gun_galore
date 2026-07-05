@@ -77,8 +77,11 @@ export function DeliveryMethodCards({
         {methods.map((m) => {
           const meta = META[m] ?? { title: m, subtitle: '', icon: null };
           const active = selected === m;
+          // The quote in state belongs to the SELECTED method only (the parent
+          // refetches per method), so only show it on the active courier card —
+          // otherwise the unselected courier would show the wrong price.
           const price =
-            (m === 'PUDO' || m === 'TCG') && quotePriceCents != null
+            active && (m === 'PUDO' || m === 'TCG') && quotePriceCents != null
               ? quotePriceCents
               : undefined;
           return (

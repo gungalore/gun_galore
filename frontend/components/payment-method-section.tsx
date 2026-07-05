@@ -45,7 +45,7 @@ export function PaymentMethodSection() {
           </span>
           <span style={{ flex: 1, minWidth: 0 }}>
             <span className="block text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-              Instant EFT — bank transfer
+              Bank transfer (EFT)
             </span>
             <span className="block text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
               Pay by bank transfer. Payment held until you confirm delivery.
