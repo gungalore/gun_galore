@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -9,8 +9,10 @@ import {
   Me,
   ShippingMethod,
   ShippingQuote,
+  Address,
 } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
+import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { ManualEftInstructions } from '@/components/manual-eft-instructions';
 import { PaygateComingSoon } from '@/components/paygate-coming-soon';
 import { LockerPicker, PudoLocker } from '@/components/locker-picker';
@@ -226,6 +228,9 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   const [captureLng, setCaptureLng] = useState<number | null>(null);
   const [savingAddr, setSavingAddr] = useState(false);
   const [addrError, setAddrError] = useState<string | null>(null);
+  // UX-3 — set true once an address-book entry is picked, so the /users/me
+  // mount prefill below can't race-overwrite the picked address.
+  const addrPinnedRef = useRef(false);
 
   // PRIVATE_ARRANGE consent — gated state for the hard-consent screen
   // (two checkboxes + literal "I UNDERSTAND" typed). Reset when the
@@ -305,17 +310,21 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
         setMe(data);
         // Pre-fill the capture form with whatever pieces they have, so
         // the UX is "tweak and save" rather than "type from scratch".
-        setCaptureAddr({
-          building: data.addrBuilding ?? '',
-          street: data.addrStreet ?? '',
-          address2: data.addrAddress2 ?? '',
-          suburb: data.addrSuburb ?? '',
-          city: data.addrCity ?? '',
-          postalCode: data.addrPostalCode ?? '',
-          province: data.addrProvince ?? '',
-        });
-        setCaptureLat(data.addrLat ?? null);
-        setCaptureLng(data.addrLng ?? null);
+        // Skipped once a saved-address-book entry has been picked (UX-3) so
+        // this async prefill can't clobber the picked address.
+        if (!addrPinnedRef.current) {
+          setCaptureAddr({
+            building: data.addrBuilding ?? '',
+            street: data.addrStreet ?? '',
+            address2: data.addrAddress2 ?? '',
+            suburb: data.addrSuburb ?? '',
+            city: data.addrCity ?? '',
+            postalCode: data.addrPostalCode ?? '',
+            province: data.addrProvince ?? '',
+          });
+          setCaptureLat(data.addrLat ?? null);
+          setCaptureLng(data.addrLng ?? null);
+        }
       } catch {
         // Non-fatal — the user can still pick a locker via search even
         // if /users/me fails to load.
@@ -339,6 +348,27 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // for this order; otherwise the profile values. Drives the
   // LockerPicker props and TCG buildPayload uniformly.
   const usingCaptureAddr = !hasSavedAddress || useDifferentAddress;
+
+  // UX-3 — a picked address-book entry drives the SAME capture state a typed
+  // address does, so the checkout payload is byte-identical to typing it. We
+  // pin it (so the profile prefill can't clobber it) and flip to the capture
+  // path. Only surfaces for buyers with 2+ saved addresses; everyone else sees
+  // today's flow unchanged.
+  function handlePickSavedAddress(a: Address) {
+    addrPinnedRef.current = true;
+    setCaptureAddr({
+      building: a.building ?? '',
+      street: a.street,
+      address2: a.address2 ?? '',
+      suburb: a.suburb ?? '',
+      city: a.city,
+      postalCode: a.postalCode,
+      province: a.province,
+    });
+    setCaptureLat(a.lat ?? null);
+    setCaptureLng(a.lng ?? null);
+    setUseDifferentAddress(true);
+  }
 
   // ─── Live shipping quote ──────────────────────────────────────────
   // Re-fetch whenever the buyer changes shipping method or destination.
@@ -1308,6 +1338,9 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
             Delivery address
           </p>
+          {/* UX-3 — saved-address picker (renders only for 2+ book addresses).
+              Picking one drives the same capture state a typed address does. */}
+          <SavedAddressPicker onSelect={handlePickSavedAddress} />
           {!meLoaded ? (
             <p
               className="text-xs"

@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 import { formatPrice } from '@/lib/utils';
 import { ManualEftInstructions } from '@/components/manual-eft-instructions';
 import { PaygateComingSoon } from '@/components/paygate-coming-soon';
-import { FeeBreakdown, ShippingMethod } from '@/lib/types';
+import { FeeBreakdown, ShippingMethod, Address } from '@/lib/types';
 import { LockerPicker, PudoLocker } from '@/components/locker-picker';
+import { SavedAddressPicker } from '@/components/saved-address-picker';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -299,6 +300,20 @@ export function OfferCheckoutForm({
       {method === 'TCG' && (
         <div className="space-y-3">
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Delivery address</p>
+          {/* UX-3 — saved-address picker (2+ book addresses only). Fills the
+              address fields; contact name/phone stay for the buyer. */}
+          <SavedAddressPicker
+            onSelect={(a: Address) =>
+              setTcgAddress((prev) => ({
+                ...prev,
+                streetAddress: a.street,
+                suburb: a.suburb ?? '',
+                city: a.city,
+                province: a.province,
+                postalCode: a.postalCode,
+              }))
+            }
+          />
           <div className="grid grid-cols-1 gap-3">
             {(
               [

@@ -19,6 +19,8 @@ import {
   PrivateArrangeConsent,
 } from '@/components/firearm-consents';
 import { TrustBullets } from '@/components/trust-bullets';
+import { SavedAddressPicker } from '@/components/saved-address-picker';
+import type { Address } from '@/lib/types';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -403,7 +405,24 @@ export default function CartPage() {
             {method === 'PUDO' ? (
               <LockerPicker selectedId={locker?.lockerId} onSelect={setLocker} />
             ) : (
-              <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
+              <>
+                {/* UX-3 — saved-address picker (2+ book addresses only).
+                    Picking one fills the same `addr` state the payload reads. */}
+                <SavedAddressPicker
+                  onSelect={(a: Address) =>
+                    setAddr({
+                      building: a.building ?? '',
+                      street: a.street,
+                      address2: a.address2 ?? '',
+                      suburb: a.suburb ?? '',
+                      city: a.city,
+                      postalCode: a.postalCode,
+                      province: a.province,
+                    })
+                  }
+                />
+                <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
+              </>
             )}
           </div>
         </>
