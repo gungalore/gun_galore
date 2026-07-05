@@ -26,7 +26,7 @@ const DISMISSED_KEY = 'gg-install-prompt-dismissed-until';
 const DISMISS_DAYS = 14;
 
 export function InstallPrompt() {
-  const { canInstall, isInstalled, isIosSafari, promptInstall } =
+  const { canInstall, isInstalled, isIosSafari, isIosNonSafari, promptInstall } =
     useInstallPrompt();
   const [dismissed, setDismissed] = useState(true); // assume dismissed until effect checks
   const [helpOpen, setHelpOpen] = useState(false);
@@ -77,21 +77,38 @@ export function InstallPrompt() {
     dismissFor(DISMISS_DAYS);
   }
 
-  // Once armed, if the one-tap install still isn't available and it's not iOS,
-  // show the "Add to home screen" shortcut nudge instead (low-end / non-Chrome).
+  // Once armed, if the one-tap install still isn't available and it's neither
+  // iOS-Safari nor iOS-non-Safari (both have their own path), show the generic
+  // "Add to home screen" shortcut nudge (low-end / non-Chrome Android).
   const showFallbackHint =
-    fallbackArmed && isMobile && !canInstall && !isIosSafari && !isInstalled;
+    fallbackArmed &&
+    isMobile &&
+    !canInstall &&
+    !isIosSafari &&
+    !isIosNonSafari &&
+    !isInstalled;
 
-  // The floating CTA shows only when there's an actionable path and the user
-  // hasn't dismissed it / already installed.
+  // The floating CTA shows when there's an actionable path and the user hasn't
+  // dismissed it / already installed. iOS-non-Safari shows immediately (not
+  // gated behind the 5s fallback delay) — those users have a real blocker to
+  // fix: they must switch to Safari before they can install at all.
   const showFloating =
-    !isInstalled && !dismissed && (canInstall || isIosSafari || showFallbackHint);
+    !isInstalled &&
+    !dismissed &&
+    (canInstall || isIosSafari || isIosNonSafari || showFallbackHint);
 
-  // Copy adapts to the path: real install vs. shortcut fallback.
-  const title = canInstall ? 'Install Gun Galore' : 'Add to home screen';
+  // Copy adapts to the path: native install / iOS-Safari steps / switch-to-
+  // Safari / generic shortcut.
+  const title = canInstall
+    ? 'Install Gun Galore'
+    : isIosNonSafari
+      ? 'Open in Safari to install'
+      : 'Add to home screen';
   const subtitle = canInstall
     ? 'Faster repeat visits, home-screen icon, fullscreen launch.'
-    : 'Get a Gun Galore icon on your home screen.';
+    : isIosNonSafari
+      ? 'iPhone apps install through Safari — tap to switch.'
+      : 'Get a Gun Galore icon on your home screen.';
 
   if (!showFloating && !helpOpen) return null;
 
@@ -174,7 +191,7 @@ export function InstallPrompt() {
                 whiteSpace: 'nowrap',
               }}
             >
-              {isIosSafari ? 'How' : 'Add'}
+              {isIosSafari ? 'How' : isIosNonSafari ? 'Open' : 'Add'}
             </button>
           )}
           <button
@@ -199,6 +216,7 @@ export function InstallPrompt() {
       {helpOpen && (
         <InstallHelpModal
           isIos={isIosSafari}
+          isIosNonSafari={isIosNonSafari}
           canInstall={canInstall}
           onInstall={async () => {
             const outcome = await promptInstall();
@@ -216,15 +234,29 @@ export function InstallPrompt() {
 // native prompt is available it offers the one-tap Install button too.
 function InstallHelpModal({
   isIos,
+  isIosNonSafari,
   canInstall,
   onInstall,
   onClose,
 }: {
   isIos: boolean;
+  isIosNonSafari: boolean;
   canInstall: boolean;
   onInstall: () => void;
   onClose: () => void;
 }) {
+  // Best-effort jump to Safari from a non-Safari iOS browser / in-app webview.
+  // The undocumented `x-safari-` URL scheme force-opens Safari on most iOS
+  // versions; if the OS ignores it nothing happens, so we ALWAYS show the manual
+  // "⋯ → Open in Safari" fallback below the button as the guaranteed path.
+  function openInSafari() {
+    try {
+      window.location.href =
+        'x-safari-' + window.location.origin + window.location.pathname;
+    } catch {
+      /* scheme unsupported — manual instruction below is the fallback */
+    }
+  }
   return (
     <div
       role="dialog"
@@ -261,7 +293,76 @@ function InstallHelpModal({
           maxHeight: 'calc(100dvh - 24px)',
         }}
       >
-        {isIos ? (
+        {isIosNonSafari ? (
+          <>
+            <div>
+              <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
+                Open Gun Galore in Safari to install
+              </p>
+              <p
+                style={{
+                  fontSize: 12.5,
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.5,
+                  margin: 0,
+                }}
+              >
+                On iPhone, home-screen apps can only be added from{' '}
+                <strong>Safari</strong>. You&rsquo;re in another browser — open
+                Gun Galore in Safari, then add it to your home screen.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={openInSafari}
+              style={{
+                width: '100%',
+                background: 'var(--red)',
+                color: '#fff',
+                border: 'none',
+                padding: '11px 14px',
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Open in Safari
+            </button>
+            <p
+              style={{
+                fontSize: 11.5,
+                color: 'var(--text-tertiary)',
+                lineHeight: 1.5,
+                margin: 0,
+              }}
+            >
+              If nothing opens, tap your browser&rsquo;s{' '}
+              <strong>⋯ / share</strong> menu → <strong>Open in Safari</strong>.
+            </p>
+            <div
+              style={{
+                width: '100%',
+                aspectRatio: '9 / 16',
+                maxHeight: '42dvh',
+                margin: '0 auto',
+              }}
+            >
+              <InstallAnimation />
+            </div>
+            <p
+              style={{
+                fontSize: 12.5,
+                color: 'var(--text-secondary)',
+                lineHeight: 1.5,
+                margin: 0,
+              }}
+            >
+              Then in Safari: tap <strong>Share</strong> (the box with an arrow)
+              → <strong>Add to Home Screen</strong> → <strong>Add</strong>.
+            </p>
+          </>
+        ) : isIos ? (
           <>
             <div
               style={{

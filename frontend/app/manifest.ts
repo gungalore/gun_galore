@@ -30,6 +30,18 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: '#0f0f0f',
     categories: ['shopping', 'sports', 'lifestyle'],
     lang: 'en-ZA',
+    // Lets navigator.getInstalledRelatedApps() actually report THIS PWA as
+    // installed on Android Chrome — it matches the current page's manifest URL
+    // against this 'webapp' entry. Without it we can never tell an installed
+    // Android user apart from a first-timer, so we keep nagging them to install.
+    // We still prefer the web app itself over any native app.
+    prefer_related_applications: false,
+    related_applications: [
+      {
+        platform: 'webapp',
+        url: 'https://gungalore.co.za/manifest.webmanifest',
+      },
+    ],
     shortcuts: [
       {
         name: 'Browse marketplace',

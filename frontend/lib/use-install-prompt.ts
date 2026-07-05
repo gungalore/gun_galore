@@ -44,6 +44,12 @@ export interface InstallState {
   isStandalone: boolean;
   /** iOS Safari — no native prompt; must use manual Share → Add steps. */
   isIosSafari: boolean;
+  /**
+   * iOS in Chrome / Firefox / Edge / an in-app webview. These CANNOT install a
+   * PWA at all (Apple only allows Add to Home Screen from Safari) — the flow has
+   * to send them to Safari first.
+   */
+  isIosNonSafari: boolean;
   /** Fire the native install dialog. Returns 'unavailable' if no event yet. */
   promptInstall: () => Promise<'accepted' | 'dismissed' | 'unavailable'>;
 }
@@ -61,6 +67,7 @@ export function useInstallPrompt(): InstallState {
   const [isInstalled, setIsInstalled] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isIosSafari, setIsIosSafari] = useState(false);
+  const [isIosNonSafari, setIsIosNonSafari] = useState(false);
 
   useEffect(() => {
     // 1) Hydrate from the early-capture global — covers the race where Chrome
@@ -93,11 +100,16 @@ export function useInstallPrompt(): InstallState {
         });
     }
 
-    // 4) iOS Safari has no beforeinstallprompt — flag it for the manual hint.
+    // 4) iOS has no beforeinstallprompt. Safari can Add to Home Screen (show the
+    //    animated guide); Chrome/Firefox/Edge/in-app webviews on iOS CANNOT
+    //    install a PWA at all — the only path is to reopen the site in Safari.
     const ua = window.navigator.userAgent;
     const isIos = /iPad|iPhone|iPod/.test(ua) && !('MSStream' in window);
     const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
-    if (isIos && isSafari && !standalone) setIsIosSafari(true);
+    if (isIos && !standalone) {
+      if (isSafari) setIsIosSafari(true);
+      else setIsIosNonSafari(true);
+    }
 
     function onAvailable() {
       setEvent(window.__ggInstallEvent ?? null);
@@ -106,6 +118,7 @@ export function useInstallPrompt(): InstallState {
       setEvent(null);
       setIsInstalled(true);
       setIsIosSafari(false);
+      setIsIosNonSafari(false);
     }
     window.addEventListener('gg:install-available', onAvailable);
     window.addEventListener('gg:installed', onInstalled);
@@ -141,6 +154,7 @@ export function useInstallPrompt(): InstallState {
     isInstalled,
     isStandalone,
     isIosSafari,
+    isIosNonSafari,
     promptInstall,
   };
 }
