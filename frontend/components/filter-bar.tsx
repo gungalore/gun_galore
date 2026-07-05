@@ -96,6 +96,9 @@ export function FilterBar({
   currentParams,
   brands = [],
   facets = {},
+  basePath = '/',
+  hideProvinceFilter = false,
+  hideSearch = false,
 }: {
   categories: Category[];
   currentParams: FilterParams;
@@ -105,6 +108,16 @@ export function FilterBar({
   // AND-consistent with the current filter set. Empty when a category isn't
   // scoped or Meili is down → options render without counts (graceful).
   facets?: Record<string, Record<string, number>>;
+  // Path filter changes navigate to. Defaults to the homepage grid ('/');
+  // the seller storefront (UX-6) passes '/sellers/[clerkId]' so filtering
+  // stays scoped to that seller instead of jumping home.
+  basePath?: string;
+  // Seller storefront hides the province filter — one seller ≈ one location,
+  // so the facet adds no value.
+  hideProvinceFilter?: boolean;
+  // Seller storefront hides the global search box (Enter would jump to
+  // site-wide results, breaking the seller scope).
+  hideSearch?: boolean;
 }) {
   const router = useRouter();
 
@@ -270,7 +283,7 @@ export function FilterBar({
     Object.entries(merged).forEach(([k, v]) => {
       if (v) next.set(k, String(v));
     });
-    router.push(`/?${next}`);
+    router.push(`${basePath}?${next}`);
   }
 
   function applyPrice() {
@@ -287,11 +300,16 @@ export function FilterBar({
       {/* Live typeahead — talks to /listings?q=…, Meilisearch handles
           typo tolerance (1 typo for 5–8 char terms, 2 for ≥9). Selecting
           a hit navigates to its listing; pressing Enter falls through to
-          the full results page at /?q=…, same as the old input. */}
-      <LiveSearch
-        placeholder="Search listings…"
-        className="flex-1 min-w-[200px]"
-      />
+          the full results page at /?q=…, same as the old input.
+          Hidden on the seller storefront (UX-6): the browse is scoped to
+          one seller via the Prisma path, which doesn't do text search, and
+          Enter would jump the user to global results. */}
+      {!hideSearch && (
+        <LiveSearch
+          placeholder="Search listings…"
+          className="flex-1 min-w-[200px]"
+        />
+      )}
 
       {/* Hunting Packages / Experiences (Phase E) — a one-tap "Experiences"
           chip that scopes browse to the experience category. Only rendered
@@ -365,24 +383,26 @@ export function FilterBar({
         </select>
       )}
 
-      <select
-        aria-label="Filter by province"
-        value={currentParams.province ?? ''}
-        onChange={(e) => push({ province: e.target.value || undefined })}
-        style={selectStyle}
-      >
-        <option value="">All provinces</option>
-        {Object.entries(PROVINCE_LABELS).map(([k, v]) => (
-          <option key={k} value={k}>
-            {v}
-            {facetCount(
-              'province',
-              k,
-              currentParams.province ? 'province' : undefined,
-            )}
-          </option>
-        ))}
-      </select>
+      {!hideProvinceFilter && (
+        <select
+          aria-label="Filter by province"
+          value={currentParams.province ?? ''}
+          onChange={(e) => push({ province: e.target.value || undefined })}
+          style={selectStyle}
+        >
+          <option value="">All provinces</option>
+          {Object.entries(PROVINCE_LABELS).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+              {facetCount(
+                'province',
+                k,
+                currentParams.province ? 'province' : undefined,
+              )}
+            </option>
+          ))}
+        </select>
+      )}
 
       <select
         aria-label="Filter by condition"

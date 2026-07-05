@@ -1,14 +1,31 @@
 import { notFound } from 'next/navigation';
-import Link from 'next/link';
 import { ListingCard } from '@/components/listing-card';
 import { PageReveal } from '@/components/page-reveal';
 import { UserBadgesWithTooltip } from '@/components/user-badges';
 import { ReportButton } from '@/components/report-button';
 import { ClickableAvatar } from '@/components/avatar-lightbox';
+import { FilterBar } from '@/components/filter-bar';
+import { Pagination } from '@/components/pagination';
+import { apiFetch } from '@/lib/api';
 import { auth } from '@clerk/nextjs/server';
-import type { BrowseResponse, PublicSellerProfile } from '@/lib/types';
+import type { BrowseResponse, PublicSellerProfile, Category } from '@/lib/types';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
+// UX-6 — the seller storefront now takes the same browse filters as the
+// homepage, scoped to this seller. Province is intentionally omitted (one
+// seller ≈ one location) and search is hidden (browse runs the Prisma path
+// which doesn't do text search).
+interface SellerSearchParams {
+  categoryId?: string;
+  condition?: string;
+  make?: string;
+  minPrice?: string;
+  maxPrice?: string;
+  sort?: string;
+  page?: string;
+  attrs?: string;
+}
 
 const TIER_COLOR: Record<string, string> = {
   NEW: 'var(--text-tertiary)',
@@ -30,41 +47,81 @@ interface SellerRating {
 
 export default async function SellerProfilePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ clerkId: string }>;
+  searchParams: Promise<SellerSearchParams>;
 }) {
   const { clerkId } = await params;
+  const sp = await searchParams;
   const { userId } = await auth();
   const isOwnProfile = !!userId && userId === clerkId;
 
-  const [profileRes, ratingsRes, listingsRes] = await Promise.all([
-    // Phase E1 — public seller profile with badge fields. 404 here
-    // is the canonical "no such seller" so we propagate it to the
-    // page's notFound() below.
-    fetch(`${API_URL}/sellers/${clerkId}`, { cache: 'no-store' }),
-    fetch(`${API_URL}/ratings/seller/${clerkId}`, { cache: 'no-store' }),
-    // Scope by sellerClerkId so we only show THIS seller's active
-    // listings, not the platform's first-8 (which was the original
-    // bug — every seller profile showed the same global feed).
-    fetch(
-      `${API_URL}/listings?sellerClerkId=${encodeURIComponent(clerkId)}&limit=8`,
-      { cache: 'no-store' },
-    ),
-  ]);
+  // Seller-scoped browse query (filters + pagination). sellerClerkId lives in
+  // the route, so it's added here server-side but NOT passed to the FilterBar
+  // (which keeps it out of the user-facing URL). Province is omitted.
+  const qs = new URLSearchParams();
+  qs.set('sellerClerkId', clerkId);
+  if (sp.categoryId) qs.set('categoryId', sp.categoryId);
+  if (sp.condition) qs.set('condition', sp.condition);
+  if (sp.make) qs.set('make', sp.make);
+  if (sp.minPrice) qs.set('minPrice', sp.minPrice);
+  if (sp.maxPrice) qs.set('maxPrice', sp.maxPrice);
+  if (sp.sort) qs.set('sort', sp.sort);
+  if (sp.page) qs.set('page', sp.page);
+  if (sp.attrs) qs.set('attrs', sp.attrs);
+  qs.set('limit', '24');
+
+  const [profileRes, ratingsRes, browse, categories, brands, facetData] =
+    await Promise.all([
+      // Phase E1 — public seller profile with badge fields. 404 here
+      // is the canonical "no such seller" so we propagate it to the
+      // page's notFound() below.
+      fetch(`${API_URL}/sellers/${clerkId}`, { cache: 'no-store' }),
+      fetch(`${API_URL}/ratings/seller/${clerkId}`, { cache: 'no-store' }),
+      // Scope by sellerClerkId + the active filters. Same browse assembly the
+      // homepage uses (24/page). The backend routes sellerClerkId to the
+      // Prisma path with every other filter applied.
+      apiFetch<BrowseResponse>(`/listings?${qs}`, { cache: 'no-store' }).catch(
+        () => ({ listings: [], total: 0, page: 1, limit: 24 }),
+      ),
+      apiFetch<Category[]>('/categories', { next: { revalidate: 3600 } } as RequestInit).catch(
+        () => [] as Category[],
+      ),
+      apiFetch<string[]>('/listings/brands', { next: { revalidate: 3600 } } as RequestInit).catch(
+        () => [] as string[],
+      ),
+      sp.categoryId
+        ? apiFetch<{ facets: Record<string, Record<string, number>> }>(
+            `/listings/facets?${qs}`,
+            { cache: 'no-store' },
+          ).catch(() => ({ facets: {} }))
+        : Promise.resolve({ facets: {} as Record<string, Record<string, number>> }),
+    ]);
 
   if (!profileRes.ok) notFound();
   if (!ratingsRes.ok) notFound();
 
   const profile: PublicSellerProfile = await profileRes.json();
   const ratings: SellerRating[] = await ratingsRes.json();
-  const browse: BrowseResponse = listingsRes.ok
-    ? await listingsRes.json()
-    : { listings: [], total: 0, page: 1, limit: 8 };
 
   const avgRating =
     ratings.length > 0
       ? ratings.reduce((s, r) => s + r.stars, 0) / ratings.length
       : null;
+
+  const currentPage = browse.page;
+  const totalPages = Math.max(1, Math.ceil(browse.total / browse.limit));
+
+  function pageHref(p: number) {
+    const next = new URLSearchParams(
+      Object.fromEntries(
+        Object.entries(sp).filter(([, v]) => v !== undefined),
+      ) as Record<string, string>,
+    );
+    next.set('page', String(p));
+    return `/sellers/${clerkId}?${next}`;
+  }
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
@@ -126,19 +183,50 @@ export default async function SellerProfilePage({
       </div>
 
       <div data-reveal className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-        {/* Active listings */}
+        {/* Active listings — filtered + paginated (UX-6) */}
         <div>
           <p className="text-xs uppercase tracking-wider mb-3" style={{ color: 'var(--text-tertiary)' }}>
-            Active listings
+            {browse.total} active listing{browse.total !== 1 ? 's' : ''}
           </p>
+          <div className="mb-4">
+            <FilterBar
+              categories={categories}
+              currentParams={{
+                categoryId: sp.categoryId,
+                condition: sp.condition,
+                make: sp.make,
+                minPrice: sp.minPrice,
+                maxPrice: sp.maxPrice,
+                sort: sp.sort,
+                page: sp.page,
+                attrs: sp.attrs,
+              }}
+              brands={brands}
+              facets={facetData.facets}
+              basePath={`/sellers/${clerkId}`}
+              hideProvinceFilter
+              hideSearch
+            />
+          </div>
           {browse.listings.length === 0 ? (
-            <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No active listings.</p>
+            <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+              No listings match these filters.
+            </p>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {browse.listings.map((l) => (
-                <ListingCard key={l.id} listing={l} />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {browse.listings.map((l) => (
+                  <ListingCard key={l.id} listing={l} />
+                ))}
+              </div>
+              <div className="mt-6">
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  hrefFor={pageHref}
+                />
+              </div>
+            </>
           )}
         </div>
 
