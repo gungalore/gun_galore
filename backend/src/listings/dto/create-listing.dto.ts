@@ -40,6 +40,15 @@ export class CreateListingDto {
   @Min(100)
   price?: number; // ZAR cents
 
+  // UX-7 — optional compare-at / "was" price (ZAR cents). Display-only: shown
+  // as a strikethrough + "% off" chip. NEVER enters fee/checkout math. The
+  // service validates compareAt > price and caps it at 4× price (CPA s41
+  // anti-anchoring), and only allows it on BUY_NOW listings.
+  @IsOptional()
+  @IsInt()
+  @Min(100)
+  compareAtPriceZarCents?: number; // ZAR cents
+
   @IsEnum(ListingType)
   listingType: ListingType;
 

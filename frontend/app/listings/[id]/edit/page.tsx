@@ -55,6 +55,8 @@ export default function EditListingPage() {
     title: '',
     description: '',
     price: '',
+    // UX-7 — optional compare-at / "was" price (Rands; BUY_NOW only).
+    compareAtPriceZarCents: '',
     condition: 'GOOD',
     province: 'GAUTENG',
     make: '',
@@ -145,6 +147,9 @@ export default function EditListingPage() {
           title: l.title,
           description: l.description,
           price: l.price ? String(l.price / 100) : '',
+          compareAtPriceZarCents: l.compareAtPriceZarCents
+            ? String(l.compareAtPriceZarCents / 100)
+            : '',
           condition: l.condition,
           province: l.province,
           make: l.make ?? '',
@@ -181,6 +186,13 @@ export default function EditListingPage() {
         condition: form.condition,
         province: form.province,
       };
+      // UX-7 — compare-at ("was") price, BUY_NOW only. Send the value when set,
+      // or null to clear it (display-only; the backend re-validates).
+      if (listing?.listingType === 'BUY_NOW') {
+        body.compareAtPriceZarCents = form.compareAtPriceZarCents.trim()
+          ? Math.round(parseFloat(form.compareAtPriceZarCents) * 100)
+          : null;
+      }
       if (form.make.trim()) body.make = form.make.trim();
       if (form.model.trim()) body.model = form.model.trim();
       if (form.calibre.trim()) body.calibre = form.calibre.trim();
@@ -461,6 +473,22 @@ export default function EditListingPage() {
             </select>
           </Field>
         </div>
+
+        {/* UX-7 — optional compare-at / "was" price (BUY_NOW only). Display
+            only; accountable to the seller (CPA s41). Must exceed the price. */}
+        {listing?.listingType === 'BUY_NOW' && (
+          <Field label="Original / retail price (R) — optional">
+            <input
+              type="number"
+              min={1}
+              step="0.01"
+              value={form.compareAtPriceZarCents}
+              onChange={(e) => set('compareAtPriceZarCents', e.target.value)}
+              style={inputStyle}
+              placeholder="Shown as a strikethrough discount — must exceed your price"
+            />
+          </Field>
+        )}
 
         <Field label="Province">
           <select value={form.province} onChange={(e) => set('province', e.target.value)} style={inputStyle}>

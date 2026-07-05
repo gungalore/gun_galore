@@ -508,6 +508,9 @@ export default function NewListingPage() {
     title: '',
     description: '',
     price: '',
+    // UX-7 — optional compare-at / "was" price (Rands in the input; converted
+    // to ZAR cents on submit). BUY_NOW only; display-only.
+    compareAtPriceZarCents: '',
     // Intentionally empty — we want the seller to consciously pick
     // Marketplace, Auction, or Take a Shot. The old default of
     // 'BUY_NOW' meant sellers who never read past the title field
@@ -1492,6 +1495,13 @@ export default function NewListingPage() {
     };
     if (!isPriceless) {
       body.price = Math.round(parseFloat(form.price) * 100);
+    }
+    // UX-7 — optional compare-at ("was") price, BUY_NOW only. Display-only;
+    // the backend validates it (> price, ≤ 4× price) and never uses it in fees.
+    if (form.listingType === 'BUY_NOW' && form.compareAtPriceZarCents) {
+      body.compareAtPriceZarCents = Math.round(
+        parseFloat(form.compareAtPriceZarCents) * 100,
+      );
     }
     if (form.autoAcceptThreshold) {
       body.autoAcceptThreshold = Math.round(
@@ -2631,6 +2641,38 @@ export default function NewListingPage() {
                 <PriceBreakdown
                   priceCents={Math.round((parseFloat(form.price) || 0) * 100)}
                 />
+              </Field>
+            )}
+
+            {/* UX-7 — optional compare-at / "was" price (BUY_NOW only). */}
+            {form.listingType === 'BUY_NOW' && (
+              <Field
+                label="Original / retail price (optional)"
+                hint="Only if truthful — you're accountable for this claim (CPA s41). Shown to buyers as a strikethrough discount. Must be higher than your price."
+              >
+                <div style={{ position: 'relative' }}>
+                  <span
+                    style={{
+                      position: 'absolute',
+                      left: 12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: 'var(--text-tertiary)',
+                      fontSize: 14,
+                    }}
+                  >
+                    R
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    step="0.01"
+                    value={form.compareAtPriceZarCents}
+                    onChange={(e) => set('compareAtPriceZarCents', e.target.value)}
+                    style={{ ...inputStyle, paddingLeft: 26 }}
+                    placeholder="Optional — the 'was' price"
+                  />
+                </div>
               </Field>
             )}
 

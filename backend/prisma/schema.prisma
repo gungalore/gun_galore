@@ -691,6 +691,12 @@ model Listing {
   title       String
   description String
   price       Int? // ZAR cents; null for TAKE_A_SHOT listings
+  // UX-7 — optional compare-at / "was" price (ZAR cents). DISPLAY-ONLY:
+  // rendered as a strikethrough + "% off" chip on cards + the PDP. It NEVER
+  // enters fee/checkout math (fee.calculator.ts must never read it). Guarded
+  // in create()/update(): BUY_NOW only, must exceed price, capped at 4× price
+  // (CPA s41 anti-anchoring); the displayed discount is further capped at 70%.
+  compareAtPriceZarCents Int?
   listingType ListingType
   status      ListingStatus @default(DRAFT)
   condition   Condition

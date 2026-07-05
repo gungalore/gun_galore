@@ -10,6 +10,7 @@ import {
   PROVINCE_LABELS,
   TIER_LABELS,
   LISTING_TYPE_LABELS,
+  discountPercent,
 } from '@/lib/utils';
 import SellerControls from './seller-controls';
 import OfferPanel from './offer-panel';
@@ -101,6 +102,12 @@ export default async function ListingDetailPage({
   // UX-1c — pre-purchase delivery estimate line (computed from the listing's
   // shipping shape; no extra fetch).
   const deliveryEstimate = getListingDeliveryEstimate(listing);
+
+  // UX-7 — compare-at ("was") price discount, BUY_NOW only. Display-only.
+  const compareAtPct =
+    listing.listingType === 'BUY_NOW'
+      ? discountPercent(listing.price, listing.compareAtPriceZarCents)
+      : null;
 
   // Product/Offer structured data so Google can show rich price/availability
   // results. Only emit an Offer when there's a fixed price (BUY_NOW /
@@ -358,12 +365,37 @@ export default async function ListingDetailPage({
                 deliveryEstimate ? 'mb-2' : 'mb-5'
               }`}
             >
-              <span
-                className="text-2xl"
-                style={{ color: 'var(--red)', fontWeight: 500 }}
-              >
-                {formatPrice(listing.price)}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                {/* UX-7 — strikethrough "was" price (BUY_NOW only). */}
+                {compareAtPct != null && (
+                  <span
+                    style={{ fontSize: 16, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}
+                  >
+                    {formatPrice(listing.compareAtPriceZarCents!)}
+                  </span>
+                )}
+                <span
+                  className="text-2xl"
+                  style={{ color: 'var(--red)', fontWeight: 500 }}
+                >
+                  {formatPrice(listing.price)}
+                </span>
+              </div>
+              {/* UX-7 — "% off" chip + seller-stated disclaimer. */}
+              {compareAtPct != null && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <span
+                    className="text-sm px-2 py-0.5 rounded-[4px]"
+                    style={{ background: 'rgba(200,16,46,0.10)', color: 'var(--red)', fontWeight: 600 }}
+                  >
+                    {compareAtPct}% off
+                  </span>
+                  <HelpTip title="Original price">
+                    Original price stated by the seller — Gun Galore does not
+                    verify it.
+                  </HelpTip>
+                </span>
+              )}
               {/* UX-1a — low-stock urgency chip beside the price. */}
               {showUrgencyChip && <UrgencyChip left={trackedSellable!} />}
             </div>

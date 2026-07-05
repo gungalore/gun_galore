@@ -248,6 +248,31 @@ export class ListingsService {
       throw new BadRequestException('Take a Shot and Swop listings must not have a listed price');
     }
 
+    // UX-7 — compare-at ("was") price is DISPLAY-ONLY (strikethrough + "% off"),
+    // never part of any fee/checkout calculation. When present, guard it:
+    //  • BUY_NOW only (never auction bids / offers / swaps)
+    //  • strictly greater than the sale price (it's a discount, not a markup)
+    //  • capped at 4× the sale price so it can't fabricate an extreme anchor
+    //    (CPA s41 anti-anchoring). The displayed % is further capped at 70%.
+    if (dto.compareAtPriceZarCents != null) {
+      if (dto.listingType !== 'BUY_NOW') {
+        throw new BadRequestException(
+          'A compare-at (original) price is only available on Buy Now listings.',
+        );
+      }
+      const salePrice = dto.price ?? 0;
+      if (dto.compareAtPriceZarCents <= salePrice) {
+        throw new BadRequestException(
+          'The original price must be higher than the sale price.',
+        );
+      }
+      if (dto.compareAtPriceZarCents > salePrice * 4) {
+        throw new BadRequestException(
+          'The original price can be at most 4× the sale price.',
+        );
+      }
+    }
+
     // Firearm listings MUST include DEALER_TRANSFER in shippingMethods
     // (operator decision 2026-05-26 — was previously seller's choice).
     // The seller can additionally offer PRIVATE_ARRANGE, but they
@@ -276,6 +301,7 @@ export class ListingsService {
         categoryName: category.name,
         categoryIsFirearm: category.isFirearm,
         priceCents: dto.price ?? null,
+        compareAtPriceCents: dto.compareAtPriceZarCents ?? null,
         imageUrls: [], // post-upload moderation will fill these in
         // dto.images is the seller's staged photos, base64-encoded so
         // Claude's vision pass can scan them for contact details + QR
@@ -351,6 +377,31 @@ export class ListingsService {
     }
     if (PRICELESS_LISTING_TYPES.has(dto.listingType) && dto.price) {
       throw new BadRequestException('Take a Shot and Swop listings must not have a listed price');
+    }
+
+    // UX-7 — compare-at ("was") price is DISPLAY-ONLY (strikethrough + "% off"),
+    // never part of any fee/checkout calculation. When present, guard it:
+    //  • BUY_NOW only (never auction bids / offers / swaps)
+    //  • strictly greater than the sale price (it's a discount, not a markup)
+    //  • capped at 4× the sale price so it can't fabricate an extreme anchor
+    //    (CPA s41 anti-anchoring). The displayed % is further capped at 70%.
+    if (dto.compareAtPriceZarCents != null) {
+      if (dto.listingType !== 'BUY_NOW') {
+        throw new BadRequestException(
+          'A compare-at (original) price is only available on Buy Now listings.',
+        );
+      }
+      const salePrice = dto.price ?? 0;
+      if (dto.compareAtPriceZarCents <= salePrice) {
+        throw new BadRequestException(
+          'The original price must be higher than the sale price.',
+        );
+      }
+      if (dto.compareAtPriceZarCents > salePrice * 4) {
+        throw new BadRequestException(
+          'The original price can be at most 4× the sale price.',
+        );
+      }
     }
 
     // Firearm listings MUST include DEALER_TRANSFER in shippingMethods
@@ -674,6 +725,7 @@ export class ListingsService {
         categoryName: category.name,
         categoryIsFirearm: category.isFirearm,
         priceCents: dto.price ?? null,
+        compareAtPriceCents: dto.compareAtPriceZarCents ?? null,
         imageUrls: [], // images come in after create; vision pass happened in /listings/preview
         imageCount: dto.imageCount,
         sellerFirstFirearmListings: false, // safety-net removed
@@ -758,6 +810,8 @@ export class ListingsService {
         title: dto.title,
         description: finalDescription,
         price: dto.price,
+        // UX-7 — display-only "was" price (validated above; BUY_NOW only).
+        compareAtPriceZarCents: dto.compareAtPriceZarCents ?? null,
         listingType: dto.listingType,
         status,
         // P5.1 — stamp discoverability time when publishing straight to ACTIVE;
@@ -1858,6 +1912,41 @@ export class ListingsService {
       throw new BadRequestException(
         'The serial number and licence documents are verified when a listing is created and cannot be changed. Cancel this listing and create a new one to list a different firearm.',
       );
+    }
+
+    // UX-7 — re-validate the compare-at ("was") price on edit so a crafted
+    // PATCH can't bypass the CPA s41 anti-anchoring cap the create path
+    // enforces. Only runs when the edit actually touches price or compare-at;
+    // otherwise a valid stored pair is left alone (e.g. a description-only
+    // edit). Effective values fall back to the stored listing when omitted, so
+    // changing only the price still re-checks the existing compare-at.
+    if (
+      dto.price !== undefined ||
+      dto.compareAtPriceZarCents !== undefined
+    ) {
+      const effectiveCompareAt =
+        dto.compareAtPriceZarCents !== undefined
+          ? dto.compareAtPriceZarCents
+          : listing.compareAtPriceZarCents;
+      if (effectiveCompareAt != null) {
+        if (listing.listingType !== 'BUY_NOW') {
+          throw new BadRequestException(
+            'A compare-at (original) price is only available on Buy Now listings.',
+          );
+        }
+        const effectivePrice =
+          dto.price !== undefined ? (dto.price ?? 0) : (listing.price ?? 0);
+        if (effectiveCompareAt <= effectivePrice) {
+          throw new BadRequestException(
+            'The original price must be higher than the sale price.',
+          );
+        }
+        if (effectiveCompareAt > effectivePrice * 4) {
+          throw new BadRequestException(
+            'The original price can be at most 4× the sale price.',
+          );
+        }
+      }
     }
 
     // Normalise the optional planned-dealer hint: trim, null out

@@ -239,6 +239,9 @@ export interface Listing {
   title: string;
   description: string;
   price: number | null; // ZAR cents; null for TAKE_A_SHOT
+  // UX-7 — optional compare-at / "was" price (ZAR cents). Display-only discount
+  // signal (strikethrough + "% off"); BUY_NOW only, > price, ≤ 4× price.
+  compareAtPriceZarCents?: number | null;
   listingType: ListingType;
   // Shipping methods the seller offered in the Sell form. Subset of
   // [PUDO, TCG] for non-firearms or [DEALER_TRANSFER, PRIVATE_ARRANGE]

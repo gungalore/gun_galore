@@ -43,6 +43,13 @@ export class PreviewListingDto {
   @Min(100)
   price?: number;
 
+  // UX-7 — optional compare-at / "was" price (ZAR cents). Display-only; passed
+  // through so the moderation preview matches the real create pass.
+  @IsOptional()
+  @IsInt()
+  @Min(100)
+  compareAtPriceZarCents?: number;
+
   @IsEnum(ListingType)
   listingType: ListingType;
 

@@ -106,6 +106,9 @@ export interface ListingModerationInput {
   categoryName: string;
   categoryIsFirearm: boolean;
   priceCents: number | null;
+  /** UX-7 — seller's claimed "was"/original price (ZAR cents), if any. Passed
+   *  to the moderator so a fabricated anchor can be flagged (CPA s41). */
+  compareAtPriceCents?: number | null;
   /** Cloudinary URLs of already-uploaded photos (post-publish path). */
   imageUrls: string[];
   /** Base64 photos staged client-side (preview path before upload). When
@@ -462,6 +465,9 @@ Hard rules:
           (input.priceCents !== null
             ? `Price: R${(input.priceCents / 100).toFixed(2)}\n`
             : 'Price: not set (Take a Shot)\n') +
+          (input.compareAtPriceCents
+            ? `Seller-claimed original ("was") price: R${(input.compareAtPriceCents / 100).toFixed(2)} — shown to buyers as a strikethrough discount. Flag if this looks like a fabricated anchor (CPA s41).\n`
+            : '') +
           `Photos staged: ${photosNote}\n` +
           (input.sellerFirstFirearmListings
             ? 'Seller note: this is one of the first firearm listings from a new seller — be cautious.\n'

@@ -5,6 +5,19 @@ export function formatPrice(cents: number): string {
   })}`;
 }
 
+// UX-7 — displayed discount percent for a compare-at ("was") price, or null
+// when there's no valid discount to show. Capped at 70% (CPA s41 anti-
+// anchoring; the backend also rejects compare-at > 4× price at write time).
+// compareAt must exceed the sale price to render anything.
+export function discountPercent(
+  price: number | null | undefined,
+  compareAt: number | null | undefined,
+): number | null {
+  if (!price || !compareAt || compareAt <= price) return null;
+  const raw = Math.round(((compareAt - price) / compareAt) * 100);
+  return Math.min(70, raw);
+}
+
 export const CONDITION_LABELS: Record<string, string> = {
   NEW: 'New',
   LIKE_NEW: 'Like New',

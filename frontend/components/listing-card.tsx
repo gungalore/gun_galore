@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { Listing } from '@/lib/types';
-import { formatPrice, CONDITION_LABELS, TIER_LABELS } from '@/lib/utils';
+import { formatPrice, CONDITION_LABELS, TIER_LABELS, discountPercent } from '@/lib/utils';
 import { WishlistButton } from './wishlist-button';
 import { useCountdown, formatCountdown } from '@/lib/use-countdown';
 import { UserBadges } from './user-badges';
@@ -18,6 +18,11 @@ export function ListingCard({ listing }: { listing: Listing }) {
   // is the user-visible signal that data is missing.
   const images = listing.images ?? [];
   const primaryImage = images.find((i) => i.isPrimary) ?? images[0];
+  // UX-7 — compare-at ("was") price discount, BUY_NOW only.
+  const compareAtPct =
+    listing.listingType === 'BUY_NOW'
+      ? discountPercent(listing.price, listing.compareAtPriceZarCents)
+      : null;
 
   return (
     <Link href={`/listings/${listing.id}`} className="block group">
@@ -129,18 +134,33 @@ export function ListingCard({ listing }: { listing: Listing }) {
           </p>
 
           <div className="flex items-center justify-between">
-            <span
-              className="text-base"
-              style={{ color: 'var(--red)', fontWeight: 500 }}
-            >
-              {/* For auctions, show the current bid (or starting bid if no bids yet). */}
-              {listing.listingType === 'AUCTION'
-                ? formatPrice(listing.currentBid ?? listing.price ?? 0)
-                : listing.listingType === 'SWOP'
-                  ? 'Swap'
-                  : listing.price
-                    ? formatPrice(listing.price)
-                    : 'Make an offer'}
+            <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
+              <span
+                className="text-base"
+                style={{ color: 'var(--red)', fontWeight: 500 }}
+              >
+                {/* For auctions, show the current bid (or starting bid if no bids yet). */}
+                {listing.listingType === 'AUCTION'
+                  ? formatPrice(listing.currentBid ?? listing.price ?? 0)
+                  : listing.listingType === 'SWOP'
+                    ? 'Swap'
+                    : listing.price
+                      ? formatPrice(listing.price)
+                      : 'Make an offer'}
+              </span>
+              {/* UX-7 — "was" price + % off (BUY_NOW only). */}
+              {compareAtPct != null && (
+                <>
+                  <span
+                    style={{ fontSize: 11, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}
+                  >
+                    {formatPrice(listing.compareAtPriceZarCents!)}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 600 }}>
+                    −{compareAtPct}%
+                  </span>
+                </>
+              )}
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center' }}>
               <span
