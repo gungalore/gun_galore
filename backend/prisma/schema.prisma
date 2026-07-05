@@ -1888,6 +1888,38 @@ model Raffle {
   // claimPrize for the gates that key off it.
   prizeIsFirearm Boolean @default(false)
 
+  // EXP-E5 — is the prize an outfitter-sponsored EXPERIENCE (guided hunt /
+  // range day)? Mirrors prizeIsFirearm exactly: the paid-ticket draw / CPA-s36
+  // postal / backup logic reads NEITHER flag, so this slots beside it with zero
+  // draw-logic change. When true, claimPrize enforces an experience attestation
+  // gate (18+, hunting risks, licence-or-supervised, contact + preferred date)
+  // and the prize is FULFILLED on-site (markWinnerExperienceFulfilled) rather
+  // than couriered — markWinnerPrizeDispatched hard-rejects it. A subscriber
+  // raffle never allows it (forced false in create, like prizeIsFirearm).
+  prizeIsExperience Boolean @default(false)
+
+  // Experience prize metadata — snapshot of the sponsored package, mirroring
+  // the Listing experience columns. Null for non-experience raffles.
+  experienceType ExperienceType?
+  eventStartDate DateTime?
+  eventEndDate   DateTime?
+  eventProvince  Province?
+  locationText   String?
+  durationText   String?
+  speciesList    String[]        @default([])
+  whatsIncluded  String?
+  rifleProvided  Boolean         @default(false)
+
+  // Sponsor settlement — the vetted outfitter GG pays out of ticket revenue
+  // after the draw. sponsorUserId is the recipient (bank read on the FNB batch
+  // via a synthetic RELEASED settlement tx); sponsorSettlementCents is the
+  // agreed EFT amount; sponsorSettledAt + sponsorSettlementRef stamp the one-
+  // time settlement (idempotent — settleSponsor refuses if already stamped).
+  sponsorUserId          String?
+  sponsorSettlementCents Int?
+  sponsorSettledAt       DateTime?
+  sponsorSettlementRef   String?
+
   // Sold counts (cheap to read on the public detail page)
   ticketsSoldPaid   Int @default(0) // CONFIRMED tickets only
   ticketsSoldPostal Int @default(0) // POSTAL entries (free)
@@ -2082,6 +2114,25 @@ model RaffleWinner {
   // can verify these before a firearm prize is released to a dealer.
   winnerAttestedAdultAt DateTime? // 18+/rules/dealer-transfer consent confirmed
   winnerLicenceRef      String? // firearm licence / competency reference supplied
+
+  // EXP-E5 — experience-prize winner claim evidence (captured at claim time
+  // when Raffle.prizeIsExperience). NULL for non-experience prizes. Mirrors the
+  // firearm attestation columns: the winner confirms 18+, accepts hunting
+  // risks, holds a licence/competency OR hunts under supervision, and confirms
+  // contact + a preferred date so the outfitter can schedule the on-site day.
+  winnerExperienceAttestedAt DateTime? // 18+/hunting-risk/licence-or-supervised confirmed
+  winnerContactConfirmedAt   DateTime? // winner confirmed their contact details
+  winnerPreferredDate        DateTime? // preferred date for the guided hunt / range day
+
+  // EXP-E5 — experience-prize fulfilment (the on-site equivalent of dispatch).
+  // Stamped by an admin via markWinnerExperienceFulfilled once the hunt / range
+  // day has been delivered. markWinnerPrizeDispatched (courier) hard-rejects an
+  // experience prize; experienceFulfilledAt is what closes the loop instead and
+  // is added to the expireClaims exclusion so a fulfilled winner is never
+  // force-forfeited.
+  experienceFulfilledAt        DateTime?
+  experienceFulfilledByAdminId String? // AdminUser.id of who marked it fulfilled
+  experienceFulfilmentNote     String? // optional admin note (e.g. hunt outcome)
 
   createdAt DateTime @default(now())
 

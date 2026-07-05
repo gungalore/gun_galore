@@ -4,10 +4,12 @@ import {
   IsOptional,
   IsEnum,
   IsBoolean,
+  IsArray,
+  IsDateString,
   Min,
   Length,
 } from 'class-validator';
-import { SubscriptionTier } from '@prisma/client';
+import { SubscriptionTier, ExperienceType, Province } from '@prisma/client';
 
 // Three operator inputs: itemPrice (selling price), itemCost (what we
 // paid), ticketPrice. targetTicketCount is auto-derived on the backend
@@ -58,6 +60,69 @@ export class CreateRaffleDto {
   @IsOptional()
   @IsBoolean()
   prizeIsFirearm?: boolean;
+
+  // EXP-E5 — is the prize an outfitter-sponsored EXPERIENCE (guided hunt /
+  // range day)? Mirrors prizeIsFirearm: forced false for subscriber raffles
+  // in the service. Defaults false.
+  @IsOptional()
+  @IsBoolean()
+  prizeIsExperience?: boolean;
+
+  // EXP-E5 — experience-prize metadata (snapshot of the sponsored package,
+  // mirroring the Listing experience columns). Only meaningful when
+  // prizeIsExperience is true; ignored otherwise.
+  @IsOptional()
+  @IsEnum(ExperienceType)
+  experienceType?: ExperienceType;
+
+  @IsOptional()
+  @IsDateString()
+  eventStartDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  eventEndDate?: string;
+
+  @IsOptional()
+  @IsEnum(Province)
+  eventProvince?: Province;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 500)
+  locationText?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 200)
+  durationText?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  speciesList?: string[];
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 5000)
+  whatsIncluded?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  rifleProvided?: boolean;
+
+  // EXP-E5 — sponsor settlement: the vetted outfitter GG pays out of ticket
+  // revenue after the draw. sponsorUserId is the recipient (User.id); the
+  // agreed EFT amount is sponsorSettlementCents. Both optional so a
+  // platform-owned experience prize (no sponsor) is still valid.
+  @IsOptional()
+  @IsString()
+  sponsorUserId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sponsorSettlementCents?: number;
 
   // Multiple choice question — C is always the correct answer. Backend
   // enforces this in createPendingTickets().

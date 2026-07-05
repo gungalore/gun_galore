@@ -2761,6 +2761,52 @@ export class NotificationsService {
     );
   }
 
+  // EXP-E5 — an outfitter-sponsored EXPERIENCE prize (guided hunt / range day)
+  // has been recorded as fulfilled on-site by an admin. On-site equivalent of
+  // raffleWinnerPrizeDispatched — informational, dismissible, no tracking ref.
+  async raffleExperienceFulfilled(opts: {
+    winnerEmail: string;
+    winnerPhone?: string | null;
+    raffleTitle: string;
+    note?: string | null;
+    raffleId?: string;
+  }) {
+    const { winnerEmail, winnerPhone, raffleTitle } = opts;
+    await this.persistByEmail(winnerEmail, {
+      category: 'BUYER',
+      type: 'raffle_experience_fulfilled',
+      title: 'Your experience prize is confirmed',
+      body: `${raffleTitle} recorded as fulfilled. Enjoy!`,
+      url: '/dashboard/raffle-wins',
+      iconKey: 'dispatch',
+      linkedType: opts.raffleId ? 'raffle' : undefined,
+      linkedId: opts.raffleId,
+      dismissible: true,
+    });
+
+    const rows: { label: string; value: string }[] = [];
+    if (opts.note?.trim()) rows.push({ label: 'Note', value: opts.note.trim() });
+
+    const html = this.email({
+      status: { tone: 'success', label: 'Fulfilled' },
+      headline: 'Your experience prize is confirmed',
+      body: `Your prize from ${b(raffleTitle)} has been recorded as fulfilled by the Gun Galore team. The outfitter will be in touch to finalise the details of your guided hunt / range day.`,
+      rows,
+      preheader: `Experience prize fulfilled — ${raffleTitle}`,
+    });
+    await this.send(
+      winnerEmail,
+      'Your experience prize is confirmed — ' + raffleTitle,
+      html,
+    );
+
+    await this.sendSms(
+      winnerPhone,
+      `Gun Galore: Your experience prize for "${truncate(raffleTitle, 40)}" is confirmed. The outfitter will contact you to schedule.`,
+      `raffle-exp-fulfilled-${opts.raffleId ?? winnerEmail}`,
+    );
+  }
+
   async raffleMinNotMet(
     buyerEmail: string,
     raffleTitle: string,

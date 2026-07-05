@@ -152,7 +152,19 @@ export class RafflesBuyerController {
   claim(
     @CurrentUser() clerkId: string,
     @Param('winnerId') winnerId: string,
-    @Body() body?: { ageAndRulesAccepted?: boolean; licenceRef?: string },
+    @Body()
+    body?: {
+      ageAndRulesAccepted?: boolean;
+      licenceRef?: string;
+      // EXP-E5 — experience-prize claim sub-object (18+/risk/licence-or-
+      // supervised + contact + preferred date). Required only when the prize
+      // is an experience; ignored otherwise.
+      experience?: {
+        ageRiskAndLicenceAccepted?: boolean;
+        contactConfirmed?: boolean;
+        preferredDate?: string;
+      };
+    },
   ) {
     return this.raffles.claimPrize(clerkId, winnerId, body);
   }
@@ -221,6 +233,29 @@ export class RafflesAdminController {
     @Body() body: { trackingRef: string; carrierLabel?: string; note?: string },
   ) {
     return this.raffles.markWinnerPrizeDispatched(winnerId, admin.sub, body);
+  }
+
+  // EXP-E5 — mark an experience prize (guided hunt / range day) as fulfilled
+  // on-site. Courier dispatch hard-rejects an experience prize; this is the
+  // on-site equivalent. Body carries an optional note + fulfilment date.
+  @Post('winners/:winnerId/fulfil-experience')
+  fulfilExperience(
+    @CurrentAdmin() admin: { sub: string },
+    @Param('winnerId') winnerId: string,
+    @Body() body: { note?: string; fulfilledDate?: string },
+  ) {
+    return this.raffles.markWinnerExperienceFulfilled(winnerId, admin.sub, body);
+  }
+
+  // EXP-E5 — settle the outfitter sponsor of an experience raffle. Queues the
+  // agreed sponsorSettlementCents EFT via the existing FNB payout batch (a
+  // synthetic RELEASED settlement tx). Idempotent; manual-rail gated.
+  @Post(':id/settle-sponsor')
+  settleSponsor(
+    @CurrentAdmin() admin: { sub: string },
+    @Param('id') id: string,
+  ) {
+    return this.raffles.settleSponsor(id, admin.sub);
   }
 
   // Force a draw — for testing in dev. In prod this is invoked by cron.

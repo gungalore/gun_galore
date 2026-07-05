@@ -226,6 +226,56 @@ export class RafflesService {
         // attestation. Subscriber raffles never raffle firearms, so a
         // stray true is ignored for them.
         prizeIsFirearm: isSubscriberRaffle ? false : !!dto.prizeIsFirearm,
+        // EXP-E5 — outfitter-sponsored experience prize? Same guard as the
+        // firearm flag: a subscriber raffle NEVER allows it (forced false).
+        // Persist the package metadata + sponsor settlement fields only when
+        // it's an experience prize; otherwise they stay null / empty so a
+        // stray value can't leak onto a normal raffle.
+        prizeIsExperience: isSubscriberRaffle ? false : !!dto.prizeIsExperience,
+        experienceType:
+          !isSubscriberRaffle && dto.prizeIsExperience
+            ? dto.experienceType ?? null
+            : null,
+        eventStartDate:
+          !isSubscriberRaffle && dto.prizeIsExperience && dto.eventStartDate
+            ? new Date(dto.eventStartDate)
+            : null,
+        eventEndDate:
+          !isSubscriberRaffle && dto.prizeIsExperience && dto.eventEndDate
+            ? new Date(dto.eventEndDate)
+            : null,
+        eventProvince:
+          !isSubscriberRaffle && dto.prizeIsExperience
+            ? dto.eventProvince ?? null
+            : null,
+        locationText:
+          !isSubscriberRaffle && dto.prizeIsExperience
+            ? dto.locationText ?? null
+            : null,
+        durationText:
+          !isSubscriberRaffle && dto.prizeIsExperience
+            ? dto.durationText ?? null
+            : null,
+        speciesList:
+          !isSubscriberRaffle && dto.prizeIsExperience
+            ? dto.speciesList ?? []
+            : [],
+        whatsIncluded:
+          !isSubscriberRaffle && dto.prizeIsExperience
+            ? dto.whatsIncluded ?? null
+            : null,
+        rifleProvided:
+          !isSubscriberRaffle && dto.prizeIsExperience
+            ? !!dto.rifleProvided
+            : false,
+        sponsorUserId:
+          !isSubscriberRaffle && dto.prizeIsExperience
+            ? dto.sponsorUserId ?? null
+            : null,
+        sponsorSettlementCents:
+          !isSubscriberRaffle && dto.prizeIsExperience
+            ? dto.sponsorSettlementCents ?? null
+            : null,
         question: dto.question,
         optionA: dto.optionA,
         optionB: dto.optionB,
@@ -259,6 +309,7 @@ export class RafflesService {
         itemValueCents: dto.itemValueCents,
         subscriberTierRestriction: dto.subscriberTierRestriction ?? null,
         prizeIsFirearm: isSubscriberRaffle ? false : !!dto.prizeIsFirearm,
+        prizeIsExperience: isSubscriberRaffle ? false : !!dto.prizeIsExperience,
       },
       undefined,
       adminId,
@@ -1190,12 +1241,16 @@ export class RafflesService {
     const lapsed = await this.prisma.raffleWinner.findMany({
       // prizeDispatchedAt: null so a winner whose prize was already shipped
       // (dispatch doesn't require claimedAt) is never forfeited + re-promoted
-      // for a prize that is physically already gone.
+      // for a prize that is physically already gone. EXP-E5 —
+      // experienceFulfilledAt: null does the same for an experience prize that
+      // has already been delivered on-site (fulfilment, like dispatch, doesn't
+      // require claimedAt), so a fulfilled winner is never force-forfeited.
       where: {
         claimDeadline: { lte: now },
         claimedAt: null,
         forfeitedAt: null,
         prizeDispatchedAt: null,
+        experienceFulfilledAt: null,
       },
       orderBy: [{ raffleId: 'asc' }, { position: 'asc' }],
     });
@@ -1289,7 +1344,20 @@ export class RafflesService {
   async claimPrize(
     clerkId: string,
     winnerId: string,
-    attestation?: { ageAndRulesAccepted?: boolean; licenceRef?: string },
+    attestation?: {
+      ageAndRulesAccepted?: boolean;
+      licenceRef?: string;
+      // EXP-E5 — experience-prize claim sub-object. Required + persisted only
+      // when Raffle.prizeIsExperience; ignored for firearm / physical prizes.
+      experience?: {
+        // 18+, accepts hunting risks, holds a licence/competency OR will hunt
+        // under the outfitter's supervision — all folded into one hard boolean
+        // (mirrors the firearm ageAndRulesAccepted gate).
+        ageRiskAndLicenceAccepted?: boolean;
+        contactConfirmed?: boolean;
+        preferredDate?: string;
+      };
+    },
   ) {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not synced');
@@ -1329,10 +1397,49 @@ export class RafflesService {
       };
     }
 
+    // EXP-E5 — experience-prize claim gate (parallel to the firearm gate).
+    // Before an outfitter-sponsored hunt / range day can be claimed the winner
+    // must confirm they are 18+, accept the hunting risks, hold a firearm
+    // licence / competency OR agree to hunt under the outfitter's supervision,
+    // AND confirm their contact details + a preferred date so the outfitter can
+    // schedule the on-site day. We persist the evidence + preferred date on the
+    // winner row so the later fulfilment flow has what it needs.
+    let experienceAttestation:
+      | {
+          winnerExperienceAttestedAt: Date;
+          winnerContactConfirmedAt: Date;
+          winnerPreferredDate: Date;
+        }
+      | null = null;
+    if (winner.raffle.prizeIsExperience) {
+      const exp = attestation?.experience;
+      const preferred = exp?.preferredDate ? new Date(exp.preferredDate) : null;
+      if (
+        !exp?.ageRiskAndLicenceAccepted ||
+        !exp?.contactConfirmed ||
+        !preferred ||
+        Number.isNaN(preferred.getTime())
+      ) {
+        throw new BadRequestException(
+          'This prize is a guided hunting / range experience — you must confirm you are 18 or older, accept the hunting risks, hold a valid firearm licence / competency or agree to hunt under the outfitter’s supervision, and confirm your contact details plus a preferred date before you can claim.',
+        );
+      }
+      const now = new Date();
+      experienceAttestation = {
+        winnerExperienceAttestedAt: now,
+        winnerContactConfirmedAt: now,
+        winnerPreferredDate: preferred,
+      };
+    }
+
     const claimedAt = new Date();
     await this.prisma.raffleWinner.update({
       where: { id: winnerId },
-      data: { claimedAt, ...(firearmAttestation ?? {}) },
+      data: {
+        claimedAt,
+        ...(firearmAttestation ?? {}),
+        ...(experienceAttestation ?? {}),
+      },
     });
     if (winner.position === 1) {
       await this.prisma.raffle.update({
@@ -1365,6 +1472,13 @@ export class RafflesService {
             // attestation the backend claimPrize now requires for firearm
             // prizes — without it, legit firearm-prize winners are locked out.
             prizeIsFirearm: true,
+            // EXP-E5 — same reason for experience prizes: the claim UI renders
+            // the 18+/hunting-risk/licence-or-supervised + contact + preferred
+            // date gate that claimPrize now requires for experience prizes.
+            prizeIsExperience: true,
+            experienceType: true,
+            eventProvince: true,
+            locationText: true,
           },
         },
       },
@@ -1700,7 +1814,14 @@ export class RafflesService {
       where: { id: winnerId },
       include: {
         user: { select: { id: true, email: true, phone: true, username: true } },
-        raffle: { select: { id: true, title: true, prizeIsFirearm: true } },
+        raffle: {
+          select: {
+            id: true,
+            title: true,
+            prizeIsFirearm: true,
+            prizeIsExperience: true,
+          },
+        },
       },
     });
     if (!winner) throw new NotFoundException('Winner not found');
@@ -1731,6 +1852,15 @@ export class RafflesService {
     if (winner.raffle.prizeIsFirearm) {
       throw new BadRequestException(
         'Firearm prizes cannot be dispatched by courier — route through the dealer-transfer / SAPS-534 workflow',
+      );
+    }
+    // EXP-E5 — experience prizes are delivered ON SITE (guided hunt / range
+    // day), never couriered. Block the courier-dispatch path and route the
+    // operator to markWinnerExperienceFulfilled instead (mirrors the firearm
+    // guard above).
+    if (winner.raffle.prizeIsExperience) {
+      throw new BadRequestException(
+        'Experience prizes are fulfilled on-site — use “Mark experience fulfilled”, not courier dispatch',
       );
     }
 
@@ -1783,6 +1913,239 @@ export class RafflesService {
       prizeDispatchedAt: dispatchedAt,
       prizeTrackingRef: trackingRef,
       prizeCarrierLabel: dto.carrierLabel ?? null,
+    };
+  }
+
+  // -------------------------------------------------------------------
+  // Admin: mark an EXPERIENCE prize as fulfilled (on-site delivery)
+  // -------------------------------------------------------------------
+  //
+  // EXP-E5 — the on-site equivalent of markWinnerPrizeDispatched. An
+  // experience prize (guided hunt / range day) is never couriered, so it can't
+  // flow through the tracking-ref dispatch path (which now hard-rejects it).
+  // Instead the operator records the on-site fulfilment here once the winner's
+  // day has happened. Refuses if the prize isn't an experience / already
+  // fulfilled / the winner has forfeited. Stamps experienceFulfilledAt +
+  // who did it + an optional note, appends an EXPERIENCE_FULFILLED audit row,
+  // and best-effort notifies the winner.
+  async markWinnerExperienceFulfilled(
+    winnerId: string,
+    adminId: string,
+    dto: { note?: string; fulfilledDate?: string },
+  ) {
+    const winner = await this.prisma.raffleWinner.findUnique({
+      where: { id: winnerId },
+      include: {
+        user: { select: { id: true, email: true, phone: true, username: true } },
+        raffle: { select: { id: true, title: true, prizeIsExperience: true } },
+      },
+    });
+    if (!winner) throw new NotFoundException('Winner not found');
+    if (!winner.raffle.prizeIsExperience) {
+      throw new BadRequestException(
+        'This prize is not an experience — use the courier dispatch flow',
+      );
+    }
+    if (winner.experienceFulfilledAt) {
+      throw new BadRequestException('Experience already marked as fulfilled');
+    }
+    if (winner.forfeitedAt) {
+      throw new BadRequestException(
+        'Winner has forfeited — promote the backup before fulfilling',
+      );
+    }
+
+    // Postal winners have no User row — pull their contact off the winning
+    // ticket's PostalEntry so the fulfilment notify can reach them too.
+    let postalContact: { email: string | null; phone: string | null } | null = null;
+    if (!winner.userId) {
+      const ticket = await this.prisma.ticket.findUnique({
+        where: { id: winner.ticketId },
+        select: { postalEntry: { select: { email: true, phone: true } } },
+      });
+      postalContact = ticket?.postalEntry ?? null;
+    }
+
+    // Optional operator-supplied fulfilment date; default to now if omitted
+    // or unparseable (the stamp itself is what matters for the gate).
+    const parsed = dto.fulfilledDate ? new Date(dto.fulfilledDate) : null;
+    const fulfilledAt =
+      parsed && !Number.isNaN(parsed.getTime()) ? parsed : new Date();
+
+    await this.prisma.raffleWinner.update({
+      where: { id: winnerId },
+      data: {
+        experienceFulfilledAt: fulfilledAt,
+        experienceFulfilledByAdminId: adminId,
+        experienceFulfilmentNote: dto.note?.trim() || null,
+      },
+    });
+
+    await this.recordEvent(
+      winner.raffleId,
+      'EXPERIENCE_FULFILLED',
+      {
+        winnerId,
+        position: winner.position,
+        fulfilledAt: fulfilledAt.toISOString(),
+        note: dto.note ?? null,
+      },
+      undefined,
+      adminId,
+    );
+
+    // Notify the winner — fail-open, never block the fulfilment stamp.
+    const fulfilEmail = winner.user?.email ?? postalContact?.email ?? null;
+    const fulfilPhone = winner.user?.phone ?? postalContact?.phone ?? null;
+    if (fulfilEmail) {
+      void this.notifications
+        .raffleExperienceFulfilled({
+          winnerEmail: fulfilEmail,
+          winnerPhone: fulfilPhone,
+          raffleTitle: winner.raffle.title,
+          note: dto.note ?? null,
+          raffleId: winner.raffle.id,
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `raffleExperienceFulfilled notify failed: ${(err as Error).message}`,
+          ),
+        );
+    }
+
+    return {
+      winnerId,
+      experienceFulfilledAt: fulfilledAt,
+    };
+  }
+
+  // -------------------------------------------------------------------
+  // Admin: settle the outfitter sponsor of an experience raffle
+  // -------------------------------------------------------------------
+  //
+  // EXP-E5 — an outfitter-sponsored experience raffle owes the sponsor a fixed,
+  // pre-agreed EFT out of ticket revenue (sponsorSettlementCents). We queue it
+  // via the EXISTING FNB payout batch rail — NOT a new payout path — exactly
+  // like the swap cash settlement: mint ONE synthetic RELEASED Transaction with
+  // the sponsor as sellerId (so the batch builder reads their bank details) and
+  // sellerPayout = the agreed amount. getPayoutsDue sweeps
+  // { paymentStatus: RELEASED, sellerPayout > 0, paidOutAt/payoutBatchId/
+  //   payoutHeldAt null, refundOfId null } → the row rides the next batch,
+  // KYC/bank-gated like every other payout.
+  //
+  // Idempotent: refuses if sponsorSettledAt is already stamped. Manual-rail
+  // gated (PAYMENT_MODE === 'manual') — the FNB batch IS the manual rail; under
+  // a live card gateway sponsor settlement will route through the gateway seam,
+  // not this batch, so we don't queue a phantom EFT.
+  async settleSponsor(raffleId: string, adminId: string) {
+    const raffle = await this.prisma.raffle.findUnique({
+      where: { id: raffleId },
+      select: {
+        id: true,
+        title: true,
+        referenceNumber: true,
+        prizeIsExperience: true,
+        sponsorUserId: true,
+        sponsorSettlementCents: true,
+        sponsorSettledAt: true,
+        sponsorSettlementRef: true,
+      },
+    });
+    if (!raffle) throw new NotFoundException('Raffle not found');
+    if (!raffle.prizeIsExperience) {
+      throw new BadRequestException('This raffle is not an experience prize');
+    }
+    if (!raffle.sponsorUserId) {
+      throw new BadRequestException('This raffle has no sponsor to settle');
+    }
+    if (!raffle.sponsorSettlementCents || raffle.sponsorSettlementCents <= 0) {
+      throw new BadRequestException(
+        'This raffle has no sponsor settlement amount set',
+      );
+    }
+    // Idempotency — a settled sponsor can never be queued a second time.
+    if (raffle.sponsorSettledAt) {
+      throw new BadRequestException('Sponsor already settled');
+    }
+    // Manual-rail gate — the FNB batch is the manual EFT rail. Under a live
+    // card gateway this path would queue an EFT the gateway also pays.
+    if (PAYMENT_MODE !== 'manual') {
+      throw new BadRequestException(
+        'Sponsor settlement via the FNB batch is only available on the manual EFT rail',
+      );
+    }
+
+    // The synthetic settlement Transaction needs a valid listingId + buyerId FK
+    // (Transaction requires both), but the FNB payout builder reads NEITHER —
+    // only seller.* bank fields + orderReference + sellerPayout. Source a real
+    // listingId from the sponsor's own listings (an outfitter always has the
+    // experience listing that became the prize); buyerId self-references the
+    // sponsor (harmless — the buyer side of a RELEASED payout row is never
+    // read). No listing on file → we can't queue via the Transaction rail.
+    const sponsorListing = await this.prisma.listing.findFirst({
+      where: { sellerId: raffle.sponsorUserId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    if (!sponsorListing) {
+      throw new BadRequestException(
+        'Sponsor has no listing on file to anchor the settlement payout — cannot queue the EFT',
+      );
+    }
+
+    const settlementRef = `SPON-${raffle.referenceNumber ?? raffle.id}`;
+    const now = new Date();
+
+    // Atomically: mint the synthetic RELEASED payout tx AND stamp the raffle,
+    // guarded so a double-click can't queue two EFTs. The updateMany CAS on
+    // sponsorSettledAt: null is the exactly-once guard.
+    const settlementTxId = await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.raffle.updateMany({
+        where: { id: raffleId, sponsorSettledAt: null },
+        data: { sponsorSettledAt: now, sponsorSettlementRef: settlementRef },
+      });
+      if (claim.count === 0) {
+        // Lost the race — another settle stamped it first.
+        throw new BadRequestException('Sponsor already settled');
+      }
+      const created = await tx.transaction.create({
+        data: {
+          listingId: sponsorListing.id,
+          sellerId: raffle.sponsorUserId!, // recipient → FNB batch reads bank
+          buyerId: raffle.sponsorUserId!, // self-ref; buyer side never read
+          orderReference: settlementRef,
+          listingPrice: 0,
+          commissionZar: 0,
+          processingFee: 0,
+          passFeeToBuyer: false,
+          buyerTotal: 0,
+          sellerPayout: raffle.sponsorSettlementCents!,
+          paymentStatus: 'RELEASED',
+          releasedAt: now,
+        },
+      });
+      return created.id;
+    });
+
+    await this.recordEvent(
+      raffleId,
+      'SPONSOR_SETTLED',
+      {
+        sponsorUserId: raffle.sponsorUserId,
+        sponsorSettlementCents: raffle.sponsorSettlementCents,
+        settlementRef,
+        settlementTxId,
+      },
+      undefined,
+      adminId,
+    );
+
+    return {
+      raffleId,
+      sponsorSettledAt: now,
+      sponsorSettlementRef: settlementRef,
+      sponsorSettlementCents: raffle.sponsorSettlementCents,
+      settlementTxId,
     };
   }
 
