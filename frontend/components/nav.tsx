@@ -11,6 +11,7 @@ import { UrgentBell } from '@/components/urgent-bell';
 import { CartButton } from '@/components/cart-button';
 import { useInstallPrompt } from '@/lib/use-install-prompt';
 import { AccountMenuList, LogoutIcon } from '@/lib/account-menu';
+import { CategoryMenu } from '@/components/category-menu';
 
 export function Nav() {
   const { isSignedIn, isLoaded, user } = useUser();
@@ -124,6 +125,10 @@ export function Nav() {
           {/* Primary nav — four shopping surfaces. Desktop only; mobile
               users get these via the hamburger menu on the right. */}
           <div className="hidden md:flex items-center gap-5 text-sm shrink-0">
+            {/* UX-5 — "Shop by Category" flyout, left of the mode links.
+                Desktop-only (this container is hidden md:flex); mobile keeps
+                the Shop sheet / hamburger drawer, untouched. */}
+            <CategoryMenu />
             {SHOP_LINKS.map((link) => (
               <Link
                 key={link.href}
@@ -292,7 +297,7 @@ export function Nav() {
                           }}
                         >
                           <Link
-                            href="/profile"
+                            href="/account"
                             onClick={() => setMenuOpen(false)}
                             style={{
                               display: 'flex',
@@ -335,7 +340,7 @@ export function Nav() {
                                 {displayName || 'Your account'}
                               </p>
                               <p style={{ margin: 0, fontSize: 11, color: 'var(--text-tertiary)' }}>
-                                View profile
+                                Account overview
                               </p>
                             </div>
                           </Link>
@@ -635,7 +640,7 @@ export function Nav() {
               {isSignedIn ? (
                 <>
                   <Link
-                    href="/profile"
+                    href="/account"
                     onClick={() => setMobileOpen(false)}
                     style={{
                       display: 'flex',
@@ -667,7 +672,7 @@ export function Nav() {
                         {displayName || 'Your account'}
                       </p>
                       <p style={{ margin: 0, fontSize: 12, color: 'var(--text-tertiary)' }}>
-                        View profile
+                        Account overview
                       </p>
                     </div>
                   </Link>

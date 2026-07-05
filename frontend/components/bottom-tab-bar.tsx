@@ -942,14 +942,15 @@ function MoreSheet({
           }}
         />
 
-        {/* Profile header. Signed-in users see avatar + username + a
-            "View profile" chevron — tapping the whole card opens
-            /profile. Signed-out users see a single Sign in pill.
+        {/* Profile header. Signed-in users see avatar + username + an
+            "Account overview" chevron — tapping the whole card opens the
+            /account hub (the flat grouped list still lives below, so the
+            hub is additive). Signed-out users see a single Sign in pill.
             Sits flush at the top of the sheet to give the bottom-
             sheet a clear "this is YOUR drawer" anchor. */}
         {isSignedIn ? (
           <Link
-            href="/profile"
+            href="/account"
             onClick={onClose}
             style={{
               display: 'flex',
@@ -1024,7 +1025,7 @@ function MoreSheet({
                   marginTop: 2,
                 }}
               >
-                View profile
+                Account overview
               </span>
             </span>
             <span style={{ color: 'var(--text-tertiary)' }}>
