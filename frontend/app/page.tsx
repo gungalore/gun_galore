@@ -7,6 +7,7 @@ import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
+import { CategoryCurtain } from '@/components/category-curtain';
 import { FeaturedRail } from '@/components/featured-rail';
 import { SignedInWelcome } from '@/components/signed-in-welcome';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
@@ -190,12 +191,11 @@ export default async function HomePage({
   // Root categories only (parentId === null, active), sorted by the operator's
   // sortOrder. Includes the new outdoor roots (Overlanding & 4×4, Hunting,
   // Outdoor Clothing & Footwear, Archery & Bowhunting) automatically — they
-  // come straight from the endpoint. Capped at 12 tiles to keep the strip
-  // tasteful; the "Browse all" link opens the full catalogue.
+  // come straight from the endpoint. ALL roots are shown (no cap) and revealed
+  // as a column-by-column curtain on scroll (CategoryCurtain).
   const rootCategoryTiles = categoryTiles
     .filter((c) => c.parentId === null && c.isActive)
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .slice(0, 12);
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   const currentPage = browse.page;
 
@@ -287,38 +287,14 @@ export default async function HomePage({
               Browse all listings →
             </Link>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {rootCategoryTiles.map((c) => (
-              <Link
-                key={c.id}
-                href={`/category/${c.slug}`}
-                className="block rounded-[8px] p-4 transition-colors"
-                style={{
-                  background: 'var(--bg-card)',
-                  border: '0.5px solid var(--border)',
-                  textDecoration: 'none',
-                }}
-              >
-                <p
-                  className="text-sm leading-snug"
-                  style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-                >
-                  {c.name}
-                </p>
-                {/* Hide the count entirely when 0 — a "0 items" tile reads
-                    worse than no number at all. */}
-                {c.count > 0 && (
-                  <p
-                    className="text-xs mt-1"
-                    style={{ color: 'var(--text-tertiary)' }}
-                  >
-                    {c.count.toLocaleString('en-ZA')} item
-                    {c.count !== 1 ? 's' : ''}
-                  </p>
-                )}
-              </Link>
-            ))}
-          </div>
+          <CategoryCurtain
+            tiles={rootCategoryTiles.map((c) => ({
+              id: c.id,
+              name: c.name,
+              slug: c.slug,
+              count: c.count,
+            }))}
+          />
         </section>
       )}
 
