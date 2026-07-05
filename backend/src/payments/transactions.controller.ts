@@ -431,6 +431,45 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
+  // Hunting Packages / Experiences (EXP-E3) — CPA-s17 cancellation.
+  // Clerk-guarded, mirroring the E2 routes above:
+  //   cancel-quote     — actor previews the split BEFORE confirming (GET, no writes)
+  //   cancel           — buyer cancels → tiered CPA-s17 split (refund/partial/forfeit)
+  //   outfitter-cancel — outfitter cancels → always a full refund (supplier failure)
+  // ---------------------------------------------------------------
+  @Get(':id/experience/cancel-quote')
+  @UseGuards(ClerkGuard)
+  cancelExperienceQuote(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @Query('exemptReason') exemptReason?: string,
+  ) {
+    return this.txService.getExperienceCancelQuote(id, clerkId, exemptReason);
+  }
+
+  @Post(':id/experience/cancel')
+  @UseGuards(ClerkGuard)
+  @HttpCode(200)
+  cancelExperienceByBuyer(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @Body() body: { exemptReason?: string },
+  ) {
+    return this.txService.cancelExperienceByBuyer(id, clerkId, body?.exemptReason);
+  }
+
+  @Post(':id/experience/outfitter-cancel')
+  @UseGuards(ClerkGuard)
+  @HttpCode(200)
+  cancelExperienceByOutfitter(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.txService.cancelExperienceByOutfitter(id, clerkId, body?.reason);
+  }
+
+  // ---------------------------------------------------------------
   // Proof-of-delivery photo upload (Phase 5 P5.3). Buyer OR seller may
   // attach a single delivery photo as dispute evidence — does NOT gate
   // payout (that stays on the buyer's Confirm Delivery). Owner-checked +

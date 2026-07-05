@@ -33,6 +33,14 @@ import {
   ReferenceNumberService,
   type OrderRefSource,
 } from '../common/reference-number.service';
+import {
+  computeCpaCancellation,
+  isExemptReason,
+  DEFAULT_CANCELLATION_TIERS,
+  CPA_ADMIN_FEE_CENTS,
+  type CancellationExemptReason,
+  type CancellationTier,
+} from './cancellation-policy';
 
 // Manual EFT mode (no live card gateway). When PAYMENT_MODE=manual the
 // checkout issues bank-deposit instructions + an order reference instead
@@ -3239,6 +3247,601 @@ export class TransactionsService {
       (await this.prisma.transaction.findUnique({
         where: { id: transactionId },
       })) ?? tx
+    );
+  }
+
+  // ==================================================================
+  // Hunting Packages / Experiences (EXP-E3) — CPA-s17 cancellation engine
+  // ==================================================================
+  // The MOST intricate money phase: a buyer-initiated cancel splits buyerTotal
+  // three ways — refund to the buyer, release to the outfitter (their held-date
+  // loss, minus GG's band commission), and GG's retained commission — with the
+  // split maths done by the PURE computeCpaCancellation (cancellation-policy.ts)
+  // on `buyerTotal`, so it CONSERVES exactly (refund + outfitterRelease +
+  // ggRetained === buyerTotal). Execution reuses the EXISTING atomic primitives:
+  //   • full refund (exempt / >0-notice full)  ≙ declineExperienceBooking
+  //   • partial: the retained slice is RELEASED to the outfitter (HELD→RELEASED,
+  //     sellerPayout = outfitterReleaseCents) AND a synthetic REFUNDED child pays
+  //     the buyer refundCents — the SAME child mechanic AdminService.refundTransaction
+  //     uses for a partial refund. GG keeps ggRetained implicitly.
+  //   • 100% forfeit: HELD→RELEASED, no refund child, listing NOT reactivated.
+  // Every parent flip is a single atomic CAS on {id, paymentStatus:'HELD'};
+  // count===0 aborts (blocks concurrent release/dispute/double-cancel).
+
+  // Read the optional operator/attorney tier-schedule override from the
+  // `experienceCancellationTiers` Setting (JSON: { tiers?: CancellationTier[],
+  // adminFeeCents?: number }). Read directly off prisma.setting (like
+  // SettingsService.get) so no new constructor injection is needed — additive.
+  // Fails OPEN to the baked-in defaults on any read/parse error so a bad Setting
+  // row can never break a cancellation.
+  private async loadCancellationConfig(): Promise<{
+    tiers: CancellationTier[];
+    adminFeeCents: number;
+  }> {
+    const fallback = {
+      tiers: DEFAULT_CANCELLATION_TIERS,
+      adminFeeCents: CPA_ADMIN_FEE_CENTS,
+    };
+    try {
+      const row = await this.prisma.setting.findUnique({
+        where: { key: 'experienceCancellationTiers' },
+      });
+      if (!row?.value) return fallback;
+      const parsed = JSON.parse(row.value) as {
+        tiers?: CancellationTier[];
+        adminFeeCents?: number;
+      };
+      const tiers =
+        Array.isArray(parsed.tiers) &&
+        parsed.tiers.length > 0 &&
+        parsed.tiers.every(
+          (t) =>
+            t &&
+            typeof t.minDaysBefore === 'number' &&
+            typeof t.forfeitPct === 'number' &&
+            typeof t.label === 'string',
+        )
+          ? parsed.tiers
+          : DEFAULT_CANCELLATION_TIERS;
+      const adminFeeCents =
+        typeof parsed.adminFeeCents === 'number' && parsed.adminFeeCents >= 0
+          ? Math.round(parsed.adminFeeCents)
+          : CPA_ADMIN_FEE_CENTS;
+      return { tiers, adminFeeCents };
+    } catch (err) {
+      this.logger.warn(
+        `experienceCancellationTiers Setting read failed — using defaults: ${(err as Error).message}`,
+      );
+      return fallback;
+    }
+  }
+
+  // Shared cancel-eligibility read + guards + split compute (NO writes). Used by
+  // both the preview (getExperienceCancelQuote) and the executing buyer/outfitter
+  // cancel methods, so the guards + maths can never drift between preview and
+  // action. Returns the loaded tx (with the joins the executors need) + the
+  // computed split. Throws the same guard exceptions the executors would.
+  private async prepareExperienceCancellation(opts: {
+    transactionId: string;
+    initiator: 'BUYER' | 'OUTFITTER';
+    exemptReason?: CancellationExemptReason;
+    // BUYER cancel is buyer-authorised; OUTFITTER cancel is seller-authorised.
+    // The caller passes the acting user's clerkId; we resolve + authorise here.
+    actorClerkId: string;
+    // preview mode relaxes the PAYMENT_MODE gate (a quote is safe to show even
+    // if refunds aren't currently on the manual rail); the executors enforce it.
+    forExecution: boolean;
+  }) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: opts.transactionId },
+      include: {
+        listing: {
+          select: {
+            id: true,
+            title: true,
+            trackInventory: true,
+            listingType: true,
+          },
+        },
+        buyer: {
+          select: {
+            id: true,
+            clerkId: true,
+            email: true,
+            firstName: true,
+            phone: true,
+            username: true,
+            bankAccountHolder: true,
+            bankAccountNumber: true,
+            bankBranchCode: true,
+          },
+        },
+        seller: {
+          select: {
+            id: true,
+            clerkId: true,
+            email: true,
+            firstName: true,
+            phone: true,
+            username: true,
+            sellerTier: true,
+          },
+        },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+
+    // Authorise the actor for their role.
+    if (opts.initiator === 'BUYER') {
+      if (tx.buyer.clerkId !== opts.actorClerkId) {
+        throw new ForbiddenException('Only the buyer can cancel this booking');
+      }
+    } else {
+      if (tx.seller.clerkId !== opts.actorClerkId) {
+        throw new ForbiddenException(
+          'Only the outfitter can cancel this booking',
+        );
+      }
+    }
+
+    // Experience-only.
+    if (tx.shippingMethod !== ShippingMethod.ON_SITE_SERVICE) {
+      throw new BadRequestException(
+        'This is not an experience booking — the cancellation policy does not apply.',
+      );
+    }
+    if (!tx.paidAt) {
+      throw new BadRequestException('Payment not confirmed yet');
+    }
+    // Only a HELD booking is cancellable. A DISPUTED / RELEASED / REFUNDED row
+    // is refused (an admin dispute resolution or a completed release must not be
+    // undercut, and money must never move twice).
+    if (tx.paymentStatus !== 'HELD') {
+      throw new BadRequestException(
+        'This booking can no longer be cancelled — it may be under dispute, already refunded, or already settled. Contact support if something is wrong.',
+      );
+    }
+    // Idempotency: a cancel already applied stamps cpaCancelTier (buyer) or
+    // bookingDeclinedAt (outfitter reuses the decline path). Refuse a repeat.
+    if (tx.cpaCancelTier) {
+      throw new BadRequestException('This booking has already been cancelled.');
+    }
+    if (!tx.eventDate) {
+      throw new BadRequestException(
+        'This booking has no event date on record — contact support.',
+      );
+    }
+    // Can't "cancel" after the event has started — that's a dispute / no-show
+    // path, not a cancellation. (A buyer no-show is charged 100% via the tier
+    // engine only while now < eventDate; once the event has passed the buyer
+    // must confirm-completed or dispute.)
+    const now = new Date();
+    if (now.getTime() >= tx.eventDate.getTime()) {
+      throw new BadRequestException(
+        'The event date has passed — this booking can no longer be cancelled. If the experience did not happen as agreed, raise a dispute.',
+      );
+    }
+    // Refunds settle on the manual EFT rail only (the FNB batch pays the
+    // synthetic refund child). Under a live card gateway the reversal happens on
+    // the card, so fail loudly rather than silently mis-refunding. Enforced for
+    // EXECUTION only — a quote is safe to preview regardless.
+    if (opts.forExecution && PAYMENT_MODE !== 'manual') {
+      throw new BadRequestException(
+        'Experience cancellation refunds are currently available via EFT only.',
+      );
+    }
+
+    const isTopSeller = tx.seller.sellerTier === 'TOP_SELLER';
+    const { tiers, adminFeeCents } = await this.loadCancellationConfig();
+    const split = computeCpaCancellation({
+      buyerTotalCents: tx.buyerTotal,
+      isTopSeller,
+      eventDate: tx.eventDate,
+      now,
+      initiator: opts.initiator,
+      exemptReason: opts.exemptReason,
+      calculateCommission: (retained, top) =>
+        this.fees.calculateCommission(retained, top),
+      tiers,
+      adminFeeCents,
+    });
+
+    return { tx, split, now };
+  }
+
+  // ------------------------------------------------------------------
+  // GET preview — the buyer's cancellation quote (EXP-E3). NO WRITES.
+  // ------------------------------------------------------------------
+  // Returns the computed split + tier label + human copy so the buyer sees
+  // exactly what they'll be refunded / forfeit BEFORE confirming the cancel.
+  // Uses the same guards + maths as the executor (prepareExperienceCancellation)
+  // so the preview can never disagree with what the action does.
+  async getExperienceCancelQuote(
+    transactionId: string,
+    actorClerkId: string,
+    exemptReason?: string,
+  ) {
+    // Only the buyer-supplied statutory reasons are previewable on the buyer
+    // route (SUPPLIER_FAILURE is the outfitter path — it must not let a buyer
+    // preview a free full refund the buyer-cancel action would then reject).
+    const reason =
+      exemptReason &&
+      isExemptReason(exemptReason) &&
+      exemptReason !== 'SUPPLIER_FAILURE'
+        ? exemptReason
+        : undefined;
+    const { tx, split } = await this.prepareExperienceCancellation({
+      transactionId,
+      initiator: 'BUYER',
+      exemptReason: reason,
+      actorClerkId,
+      forExecution: false,
+    });
+    const rands = (c: number) => `R${(c / 100).toFixed(2)}`;
+    return {
+      transactionId: tx.id,
+      buyerTotalCents: tx.buyerTotal,
+      eventDate: tx.eventDate,
+      tierLabel: split.tierLabel,
+      refundCents: split.refundCents,
+      retainedCents: split.retainedCents,
+      outfitterReleaseCents: split.outfitterReleaseCents,
+      ggRetainedCents: split.ggRetainedCents,
+      adminFeeCents: split.adminFeeCents,
+      exemptReason: reason ?? null,
+      // Buyer-facing copy. Never say "escrow"; use "held" / "refund".
+      summary: split.isTopTier
+        ? `If you cancel now, ${rands(split.refundCents)} of your ${rands(
+            tx.buyerTotal,
+          )} will be refunded — a ${rands(
+            split.adminFeeCents,
+          )} admin fee is retained.`
+        : split.refundCents === tx.buyerTotal
+          ? `You will be fully refunded ${rands(tx.buyerTotal)}.`
+          : split.refundCents === 0
+            ? `This close to the event no refund is due — the full ${rands(
+                tx.buyerTotal,
+              )} is forfeited under the cancellation policy (${split.tierLabel}).`
+            : `If you cancel now, ${rands(
+                split.refundCents,
+              )} of your ${rands(
+                tx.buyerTotal,
+              )} will be refunded and ${rands(
+                split.retainedCents,
+              )} is retained under the cancellation policy (${split.tierLabel}).`,
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // BUYER cancels the booking (EXP-E3) — the tiered split money-out
+  // ------------------------------------------------------------------
+  // Buyer-only. Applies the CPA-s17 tiered split atomically. Three branches off
+  // the computed refundCents (all guarded by a single HELD-CAS):
+  //   • refund == buyerTotal → behaves EXACTLY like declineExperienceBooking:
+  //     parent HELD→REFUNDED + a full-value REFUNDED child; seller NEVER paid;
+  //     listing reactivated. (exempt reason, or a full-refund tier.)
+  //   • refund == 0 (100% forfeit) → parent HELD→RELEASED, sellerPayout =
+  //     outfitterReleaseCents; Zoho commission invoice; NO refund child; NO
+  //     totalSales++ (no service rendered); listing NOT reactivated (the date
+  //     was consumed as a forfeit — treat like a completed sale, stays SOLD).
+  //   • 0 < refund < buyerTotal (partial) → the combined case: parent
+  //     HELD→RELEASED with sellerPayout = outfitterReleaseCents AND a synthetic
+  //     REFUNDED child paying the buyer refundCents. GG keeps ggRetained
+  //     implicitly. Listing reactivated (the date is freed).
+  async cancelExperienceByBuyer(
+    transactionId: string,
+    buyerClerkId: string,
+    exemptReason?: string,
+  ) {
+    // Validate the exempt reason if supplied. DEATH/HOSPITALISATION are
+    // buyer-supplied here (admin verifies out of band — we just record it);
+    // SUPPLIER_FAILURE is not a buyer-cancel reason (that's the outfitter path),
+    // so reject it on the buyer route.
+    let reason: CancellationExemptReason | undefined;
+    if (exemptReason != null && exemptReason !== '') {
+      if (!isExemptReason(exemptReason)) {
+        throw new BadRequestException(
+          'Invalid cancellation reason. Allowed statutory reasons are DEATH or HOSPITALISATION.',
+        );
+      }
+      if (exemptReason === 'SUPPLIER_FAILURE') {
+        throw new BadRequestException(
+          'Supplier failure is not a buyer cancellation reason — if the outfitter cannot honour the booking, the outfitter cancels it (full refund).',
+        );
+      }
+      reason = exemptReason;
+    }
+
+    const { tx, split, now } = await this.prepareExperienceCancellation({
+      transactionId,
+      initiator: 'BUYER',
+      exemptReason: reason,
+      actorClerkId: buyerClerkId,
+      forExecution: true,
+    });
+
+    // Conservation invariant — defence in depth. The pure calc guarantees this,
+    // but assert before moving money: a bug here must never over-refund or
+    // over-release. refund + outfitterRelease + ggRetained === buyerTotal.
+    const sum =
+      split.refundCents + split.outfitterReleaseCents + split.ggRetainedCents;
+    if (
+      sum !== tx.buyerTotal ||
+      split.refundCents < 0 ||
+      split.outfitterReleaseCents < 0 ||
+      split.ggRetainedCents < 0
+    ) {
+      this.logger.error(
+        `cancelExperienceByBuyer ${transactionId}: split does not conserve (refund ${split.refundCents} + release ${split.outfitterReleaseCents} + ggRetained ${split.ggRetainedCents} != buyerTotal ${tx.buyerTotal}) — refusing`,
+      );
+      throw new BadRequestException(
+        'Cancellation could not be processed — the refund split failed an internal check. Support has not moved any money; please contact support.',
+      );
+    }
+
+    const fullRefund = split.refundCents === tx.buyerTotal; // retained == 0
+    const noRefund = split.refundCents === 0; // 100% forfeit
+
+    // ── FULL REFUND branch — identical mechanics to declineExperienceBooking.
+    // Parent HELD→REFUNDED + a full-value synthetic REFUNDED child; seller
+    // never paid; listing reactivated.
+    if (fullRefund) {
+      const res = await this.prisma.$transaction(async (txc) => {
+        const claim = await txc.transaction.updateMany({
+          where: { id: transactionId, paymentStatus: 'HELD' },
+          data: {
+            paymentStatus: 'REFUNDED',
+            cancelledByBuyerAt: now,
+            cancelledReason: reason
+              ? `Buyer cancellation (${reason})`
+              : 'Buyer cancellation — full refund',
+            cpaCancelTier: split.tierLabel,
+            cpaAdminFeeCents: 0,
+            refundedAmount: tx.buyerTotal,
+            lastRefundAt: now,
+            releasedAt: null,
+          },
+        });
+        if (claim.count === 0) return { count: 0 };
+        await txc.transaction.create({
+          data: {
+            refundOfId: transactionId,
+            listingId: tx.listingId,
+            buyerId: tx.buyerId,
+            sellerId: tx.sellerId,
+            quantity: 1,
+            listingPrice: 0,
+            commissionZar: 0,
+            processingFee: 0,
+            shippingCost: 0,
+            passFeeToBuyer: false,
+            buyerTotal: tx.buyerTotal, // full-value refund slice the FNB batch pays
+            sellerPayout: 0,
+            refundedAmount: tx.buyerTotal,
+            paymentStatus: 'REFUNDED',
+            orderReference: `${tx.orderReference ?? tx.id}-R${tx.buyerTotal}`,
+          },
+        });
+        return { count: claim.count };
+      });
+      if (res.count === 0) {
+        throw new BadRequestException(
+          'This booking could not be cancelled — its state just changed. Reload and try again.',
+        );
+      }
+      // Reactivate the listing (the date is freed).
+      await this.prisma.listing
+        .update({
+          where: { id: tx.listingId },
+          data: reversalListingData(
+            tx.listing.trackInventory ?? false,
+            tx.quantity ?? 1,
+            tx.listing.listingType,
+          ),
+        })
+        .catch(() => undefined);
+
+      void this.tracking.recordInternal(transactionId, 'BUYER_CANCELLED', {
+        occurredAt: now,
+        message: `Buyer cancelled (${split.tierLabel}) — full refund ${tx.buyerTotal}c`,
+      });
+      void this.notifications.resolveByEntity('transaction', transactionId);
+      void this.notifications
+        .saleRejectedBuyer({
+          buyerEmail: tx.buyer.email,
+          buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
+          buyerPhone: tx.buyer.phone,
+          listingTitle: tx.listing.title,
+          listingId: tx.listingId,
+          transactionId: tx.id,
+          buyerTotal: tx.buyerTotal,
+          reason: `Your booking was cancelled — ${split.tierLabel}.`,
+          manualEft: PAYMENT_MODE === 'manual',
+          needsBankDetails:
+            PAYMENT_MODE === 'manual' &&
+            !(
+              tx.buyer.bankAccountHolder &&
+              tx.buyer.bankAccountNumber &&
+              tx.buyer.bankBranchCode
+            ),
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `cancelExperienceByBuyer full-refund notify failed for ${transactionId}: ${(err as Error).message}`,
+          ),
+        );
+      this.logger.log(
+        `Experience ${transactionId} cancelled by buyer — FULL refund ${tx.buyerTotal}c (${split.tierLabel})`,
+      );
+      return {
+        cancelled: true,
+        outcome: 'FULL_REFUND' as const,
+        refundCents: split.refundCents,
+        outfitterReleaseCents: 0,
+        ggRetainedCents: 0,
+        tierLabel: split.tierLabel,
+      };
+    }
+
+    // ── FORFEIT / PARTIAL branch — parent HELD→RELEASED with sellerPayout =
+    // outfitterReleaseCents; a refund child is minted ONLY when there is a
+    // refund slice (partial). GG keeps ggRetained implicitly (buyerTotal −
+    // outfitterRelease − refund). Single HELD-CAS is the lock.
+    const res = await this.prisma.$transaction(async (txc) => {
+      const claim = await txc.transaction.updateMany({
+        where: { id: transactionId, paymentStatus: 'HELD' },
+        data: {
+          paymentStatus: 'RELEASED',
+          releasedAt: now,
+          // Recompute the money-moved fields on the RETAINED value: the
+          // outfitter nets outfitterReleaseCents, GG keeps the commission.
+          //
+          // CRITICAL — the FNB payout batch pays the seller
+          // `sellerPayout − Σ(refund children)` (manual-payments.service.ts
+          // ~L973: it DOCKS the buyer's refund slices out of the seller's
+          // payout). On a PARTIAL cancel we mint a refund child of
+          // `refundCents`, so `sellerPayout` must be the GROSS pre-dock figure
+          // `outfitterRelease + refund` (= buyerTotal − ggRetained); after the
+          // batch docks the child the outfitter nets exactly outfitterRelease.
+          // On a 100% forfeit refund=0 so this is just outfitterRelease.
+          // Setting it to outfitterRelease directly would short the outfitter
+          // by the refund amount (GG silently over-retaining it).
+          sellerPayout: split.outfitterReleaseCents + split.refundCents,
+          commissionZar: split.ggRetainedCents,
+          cpaCancelTier: split.tierLabel,
+          cpaAdminFeeCents: split.adminFeeCents,
+          // Record the buyer-cancel evidence + refunded slice (0 on a full
+          // forfeit). A partial keeps the row RELEASED (its refund is the child).
+          cancelledByBuyerAt: now,
+          cancelledReason: `Buyer cancellation (${split.tierLabel})`,
+          refundedAmount: split.refundCents,
+          lastRefundAt: noRefund ? null : now,
+        },
+      });
+      if (claim.count === 0) return { count: 0 };
+      // Partial → mint the synthetic REFUNDED child that pays the buyer their
+      // refund slice (same child mechanic as AdminService.refundTransaction).
+      if (!noRefund) {
+        await txc.transaction.create({
+          data: {
+            refundOfId: transactionId,
+            listingId: tx.listingId,
+            buyerId: tx.buyerId,
+            sellerId: tx.sellerId,
+            quantity: 1,
+            listingPrice: 0,
+            commissionZar: 0,
+            processingFee: 0,
+            shippingCost: 0,
+            passFeeToBuyer: false,
+            buyerTotal: split.refundCents, // the slice the FNB batch pays the buyer
+            sellerPayout: 0,
+            refundedAmount: split.refundCents,
+            paymentStatus: 'REFUNDED',
+            orderReference: `${tx.orderReference ?? tx.id}-R${split.refundCents}`,
+          },
+        });
+      }
+      return { count: claim.count };
+    });
+    if (res.count === 0) {
+      throw new BadRequestException(
+        'This booking could not be cancelled — its state just changed (it may have been disputed or already settled). Reload and try again.',
+      );
+    }
+
+    // Fire the commission invoice on the retained commission — the outfitter is
+    // being paid outfitterReleaseCents, so GG's commissionZar is now earned.
+    // Idempotent + never throws (mirrors the release path). It reads the
+    // recomputed commissionZar/sellerPayout off the row.
+    void this.zohoBooks.createCommissionInvoice(transactionId);
+
+    // Listing state: a PARTIAL cancel frees the date → reactivate. A 100%
+    // FORFEIT consumed the date (treat like a completed sale) → leave it SOLD.
+    if (!noRefund) {
+      await this.prisma.listing
+        .update({
+          where: { id: tx.listingId },
+          data: reversalListingData(
+            tx.listing.trackInventory ?? false,
+            tx.quantity ?? 1,
+            tx.listing.listingType,
+          ),
+        })
+        .catch(() => undefined);
+    }
+
+    void this.tracking.recordInternal(transactionId, 'BUYER_CANCELLED', {
+      occurredAt: now,
+      message: noRefund
+        ? `Buyer cancelled (${split.tierLabel}) — 100% forfeit; outfitter released ${split.outfitterReleaseCents}c`
+        : `Buyer cancelled (${split.tierLabel}) — buyer refunded ${split.refundCents}c, outfitter released ${split.outfitterReleaseCents}c`,
+    });
+    void this.notifications.resolveByEntity('transaction', transactionId);
+    // Best-effort seller "you've been paid the retained portion" notice + buyer
+    // refund notice (partial only). Reuse the existing released/refund copy.
+    void this.sendReleasedNotification(transactionId);
+    if (!noRefund) {
+      void this.notifications
+        .saleRejectedBuyer({
+          buyerEmail: tx.buyer.email,
+          buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
+          buyerPhone: tx.buyer.phone,
+          listingTitle: tx.listing.title,
+          listingId: tx.listingId,
+          transactionId: tx.id,
+          buyerTotal: split.refundCents,
+          reason: `Your booking was cancelled — ${split.tierLabel}. A partial refund of R${(
+            split.refundCents / 100
+          ).toFixed(2)} is being processed; the rest is retained per the cancellation policy.`,
+          manualEft: PAYMENT_MODE === 'manual',
+          needsBankDetails:
+            PAYMENT_MODE === 'manual' &&
+            !(
+              tx.buyer.bankAccountHolder &&
+              tx.buyer.bankAccountNumber &&
+              tx.buyer.bankBranchCode
+            ),
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `cancelExperienceByBuyer partial-refund notify failed for ${transactionId}: ${(err as Error).message}`,
+          ),
+        );
+    }
+
+    this.logger.log(
+      `Experience ${transactionId} cancelled by buyer — ${
+        noRefund ? '100% FORFEIT' : 'PARTIAL'
+      } (${split.tierLabel}): refund ${split.refundCents}c, outfitter ${split.outfitterReleaseCents}c, GG ${split.ggRetainedCents}c`,
+    );
+    return {
+      cancelled: true,
+      outcome: noRefund ? ('FORFEIT' as const) : ('PARTIAL' as const),
+      refundCents: split.refundCents,
+      outfitterReleaseCents: split.outfitterReleaseCents,
+      ggRetainedCents: split.ggRetainedCents,
+      tierLabel: split.tierLabel,
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // OUTFITTER cancels the booking (EXP-E3) — always a full refund
+  // ------------------------------------------------------------------
+  // Seller-only. An outfitter cancel is ALWAYS a SUPPLIER_FAILURE full refund —
+  // never charge the consumer for the supplier's failure — even AFTER accept.
+  // Reuses declineExperienceBooking (the full-refund + relist primitive), which
+  // already: HELD-guards the flip, mints the full-value refund child, never pays
+  // the seller, and reactivates the listing. Recording the reason there.
+  async cancelExperienceByOutfitter(
+    transactionId: string,
+    sellerClerkId: string,
+    reason?: string,
+  ) {
+    return this.declineExperienceBooking(
+      transactionId,
+      sellerClerkId,
+      reason ?? 'Outfitter cancelled the booking',
     );
   }
 
