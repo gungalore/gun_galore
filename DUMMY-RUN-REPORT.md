@@ -1,6 +1,6 @@
 # Gun Galore — End-to-End Dummy Run Report
 
-Generated: 2026-07-08T08:27:50.647Z
+Generated: 2026-07-08T11:11:27.533Z
 
 Fully offline simulation against the isolated throwaway DB `gun_galore_dummyrun`. Every external integration (payments gateway, courier, KYC, email/SMS, Zoho, Cloudinary, Anthropic) is a no-op/stub. The harness calls the REAL service methods and invokes each sweep directly (all crons stopped).
 
@@ -15,9 +15,9 @@ Fully offline simulation against the isolated throwaway DB `gun_galore_dummyrun`
 | Cart / Orders (multi-seller) | **PASS** | 6/6 |
 | Experiences (on-site) | **PASS** | 6/6 |
 | Subscriptions | **PASS** | 3/3 |
-| Featured slots | **PARTIAL** | 5/6 |
+| Featured slots | **PASS** | 5/5 |
 | Swop / Trade | **PASS** | 11/11 |
-| Raffles | **PARTIAL** | 6/7 |
+| Raffles | **PASS** | 7/7 |
 | Content smoke | **PASS** | 3/3 |
 | Held-funds closing balance | **PASS** | 3/3 |
 
@@ -108,14 +108,13 @@ Fully offline simulation against the isolated throwaway DB `gun_galore_dummyrun`
 - ✅ SUBSCRIPTION: a PENDING EFT charge was allocated
 - ✅ SUBSCRIPTION: confirm → ACTIVE, tier MEMBER on subscription + user
 
-### Featured slots — PARTIAL
+### Featured slots — PASS
 
 - ✅ FEATURED: auction opened → slot AUCTION_RUNNING
 - ✅ FEATURED: bid registered (ACTIVE)
 - ✅ FEATURED: auction closed → CLOSED_AWARDED, slot BIND_WINDOW
 - ✅ FEATURED: bind on manual rail → awaiting payment (bid WON)
-- ❌ FEATURED: payment confirmed → slot OCCUPIED — slot stuck at BIND_WINDOW; confirmSlotPayment returned bound=false. bid.paidAt=true (money captured, slot NOT bound)
-- ✅ FEATURED: (impact) money was captured despite the failed bind
+- ✅ FEATURED: payment confirmed → slot OCCUPIED + featuredUntil
 
 ### Swop / Trade — PASS
 
@@ -131,11 +130,11 @@ Fully offline simulation against the isolated throwaway DB `gun_galore_dummyrun`
 - ✅ SWAP: money conserved across both funding EFTs
 - ✅ SWAP: cash recipient settled via payout batch
 
-### Raffles — PARTIAL
+### Raffles — PASS
 
 - ✅ RAFFLE: created (DRAFT, subscriber-restricted)
 - ✅ RAFFLE: opened → ACTIVE + subscribers auto-entered (free CONFIRMED tickets)
-- ❌ RAFFLE: postal entry creates free POSTAL tickets
+- ✅ RAFFLE: postal entry creates free POSTAL tickets
 - ✅ RAFFLE: draw ran → DRAWN with a position-1 winner
 - ✅ RAFFLE: a position-1 winner row exists
 - ✅ RAFFLE: subscriber winner claimed the prize
@@ -177,11 +176,4 @@ All amounts ZAR. For every settled lifecycle:
 
 ## Bugs found (product code, not harness)
 
-### [Featured slots] src/featured/featured.service.ts:683 (tx.featuredSlot.update) + :693/:698 (this.recordEvent) inside bindListingToSlot occupy $transaction
-- **Symptom:** On the MANUAL EFT rail (production rail), confirmSlotPayment captures the slot fee (bid.paidAt set) but the occupy step self-deadlocks and never binds the slot. Inside the interactive $transaction, bindListingToSlot first runs tx.featuredSlot.update({ status: OCCUPIED, currentListingId, ... }) — updating the @unique currentListingId column takes a key-level row lock on the slot — and then awaits this.recordEvent() (LISTING_BOUND / FEATURED_LIVE, lines 693/698), which writes FeaturedSlotAuditEvent via the BASE this.prisma client on a SEPARATE connection, FK-referencing that same locked slot row. The audit INSERT blocks on the key lock while the outer transaction awaits it → self-deadlock resolved only when the 5000ms interactive-transaction timeout fires, rolling the whole bind back. Net effect: the winning bidder is charged but their slot never reaches OCCUPIED (reproduced deterministically at ~5009ms); a manual re-bind hits the same path. PrismaService uses the same @prisma/adapter-pg driver adapter in production. Same class as the raffles createPostalEntry bug. Fix: write the audit rows with the tx client (inside the transaction), or move recordEvent outside it.
-- **Failing assertion:** slot.status expected OCCUPIED, got BIND_WINDOW — Prisma "A query/commit cannot be executed on an expired transaction (5000 ms)"
-
-### [Raffles] src/raffles/raffles.service.ts:1006 + 1039/1058 (recordEvent inside createPostalEntry $transaction)
-- **Symptom:** createPostalEntry ALWAYS fails: its interactive $transaction runs `SELECT id FROM "Raffle" ... FOR UPDATE` (line 1006) to lock the raffle row, then awaits this.recordEvent() (lines 1039/1058) which writes RaffleAuditEvent via the BASE this.prisma client on a SEPARATE connection, FK-referencing the FOR UPDATE-locked raffle row. The audit INSERT blocks on that lock while the outer transaction awaits it → self-deadlock resolved only when the 5000ms interactive-transaction timeout fires, aborting the whole postal entry (reproduced at ~5010ms). PrismaService uses the same @prisma/adapter-pg (PrismaPg) driver adapter in production, so free postal raffle entries are broken on prod. Same recordEvent-inside-tx anti-pattern as the featured-slot bind. Fix: pass the tx client to recordEvent (write the audit row inside the transaction) or move recordEvent outside it.
-- **Failing assertion:** createPostalEntry threw "A query cannot be executed on an expired transaction (5000 ms)"
-
+_None — every driven flow behaved as expected._

@@ -1042,6 +1042,7 @@ export class RafflesService {
         { entryId: entry.id, ticketCount: tickets.length, referenceCode: entry.referenceCode },
         undefined,
         adminId,
+        tx,
       );
 
       // Postal tickets can also tip the raffle over the sold-out edge.
@@ -1055,7 +1056,7 @@ export class RafflesService {
           where: { id: dto.raffleId },
           data: { status: 'CLOSED_AWAITING_DRAW', drawAt },
         });
-        await this.recordEvent(dto.raffleId, 'SOLD_OUT', { drawAt: drawAt.toISOString(), via: 'POSTAL' });
+        await this.recordEvent(dto.raffleId, 'SOLD_OUT', { drawAt: drawAt.toISOString(), via: 'POSTAL' }, undefined, undefined, tx);
       }
 
       return { entry, tickets };
@@ -2222,19 +2223,36 @@ export class RafflesService {
     payload: unknown,
     actorUserId?: string,
     actorAdminId?: string,
+    // When called INSIDE an interactive $transaction that holds a
+    // conflicting lock on the raffle row (createPostalEntry runs
+    // SELECT … FOR UPDATE on the Raffle), the audit INSERT MUST run on the
+    // SAME tx client. On the base pooled client it takes the FK's
+    // FOR KEY SHARE on the FOR-UPDATE-locked raffle → self-deadlock until
+    // the interactive-tx timeout rolls the whole postal entry back.
+    // Defaults to the base client for the non-transactional callers.
+    tx?: Prisma.TransactionClient,
   ) {
+    const data = {
+      raffleId,
+      eventType,
+      payloadJson:
+        payload === null || payload === undefined ? null : JSON.stringify(payload),
+      actorUserId,
+      actorAdminId,
+    };
+    if (tx) {
+      // On-transaction: the audit row is atomic with the mutation, so a
+      // failure here MUST propagate and roll the whole operation back — never
+      // swallow it. Swallowing on the tx client would either abort the tx
+      // silently or let a phantom "success" return while nothing persisted
+      // (adversarial-review fix on the CPA-s36 postal route).
+      await tx.raffleAuditEvent.create({ data });
+      return;
+    }
+    // Base client (the many non-transactional callers): audit is best-effort;
+    // a failure must never break the surrounding operation.
     try {
-      await this.prisma.raffleAuditEvent.create({
-        data: {
-          raffleId,
-          eventType,
-          payloadJson: payload === null || payload === undefined
-            ? null
-            : JSON.stringify(payload),
-          actorUserId,
-          actorAdminId,
-        },
-      });
+      await this.prisma.raffleAuditEvent.create({ data });
     } catch (err) {
       this.logger.warn(`audit log failed: ${(err as Error).message}`);
     }

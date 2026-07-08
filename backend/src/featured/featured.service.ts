@@ -622,6 +622,8 @@ export class FeaturedService {
               pendingListingId: listing.id,
             },
             user.id,
+            undefined,
+            tx,
           );
           return {
             awaitingPayment: true as const,
@@ -694,11 +696,11 @@ export class FeaturedService {
         listingId: listing.id,
         featuredUntil: featuredUntil.toISOString(),
         durationSec,
-      }, user.id);
+      }, user.id, undefined, tx);
       await this.recordEvent(slot.id, 'FEATURED_LIVE', {
         listingId: listing.id,
         featuredUntil: featuredUntil.toISOString(),
-      });
+      }, undefined, undefined, tx);
 
       // Zoho Books: post a Sales Receipt for the slot fee. Fire-and-
       // forget outside the DB transaction — Books failures don't block
@@ -890,7 +892,7 @@ export class FeaturedService {
         await this.recordEvent(auction.slotId, 'AUCTION_CLOSED', {
           auctionId,
           outcome: 'NO_BIDS',
-        });
+        }, undefined, undefined, tx);
         return;
       }
 
@@ -925,11 +927,11 @@ export class FeaturedService {
         outcome: 'AWARDED',
         winningBidId: top.id,
         winningAmountCents: top.amountCents,
-      });
+      }, undefined, undefined, tx);
       await this.recordEvent(auction.slotId, 'BIND_WINDOW_OPENED', {
         winningBidId: top.id,
         winnerUserId: top.bidderId,
-      });
+      }, undefined, undefined, tx);
     });
   }
 
@@ -1418,18 +1420,36 @@ export class FeaturedService {
     payload: unknown,
     actorUserId?: string,
     actorAdminId?: string,
+    // When called INSIDE an interactive $transaction that holds a
+    // conflicting row lock on the slot (bindListingToSlot writes the
+    // @unique currentListingId; closeAuction's NO_BIDS branch writes the
+    // @unique currentAuctionId), the audit INSERT MUST run on the SAME tx
+    // client. On the base pooled client it takes the FK's FOR KEY SHARE on
+    // a row the outer tx already holds FOR UPDATE → self-deadlock until the
+    // interactive-tx timeout rolls the whole bind/close back. Defaults to
+    // the base client for the many non-transactional callers.
+    tx?: Prisma.TransactionClient,
   ) {
+    const data = {
+      slotId,
+      eventType,
+      payloadJson: payload == null ? null : JSON.stringify(payload),
+      actorUserId,
+      actorAdminId,
+    };
+    if (tx) {
+      // On-transaction: the audit row is atomic with the slot mutation, so a
+      // failure here MUST propagate and roll the whole bind/close back — never
+      // swallow it. Swallowing on the tx client would either abort the tx
+      // silently or let a phantom "success" return while nothing persisted
+      // (adversarial-review fix).
+      await tx.featuredSlotAuditEvent.create({ data });
+      return;
+    }
+    // Base client (the many non-transactional callers): audit is best-effort;
+    // a failure must never break the surrounding operation.
     try {
-      await this.prisma.featuredSlotAuditEvent.create({
-        data: {
-          slotId,
-          eventType,
-          payloadJson:
-            payload == null ? null : JSON.stringify(payload),
-          actorUserId,
-          actorAdminId,
-        },
-      });
+      await this.prisma.featuredSlotAuditEvent.create({ data });
     } catch (err) {
       this.logger.warn(`audit log failed: ${(err as Error).message}`);
     }
