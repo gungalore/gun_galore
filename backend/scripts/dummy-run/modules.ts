@@ -1,0 +1,1085 @@
+/**
+ * Module drivers. Each function drives ONE money/fulfilment lifecycle end to
+ * end via the REAL services, asserting state after each transition and money
+ * conservation at the end. Failures are recorded (non-fatal) by the harness.
+ */
+import { Ctx, Actor, makeListing, DELIVERY_ADDRESS } from './seed';
+import { check, checkAsync, assert, eq, Reporter } from './harness';
+import { svc, assertConserves, ggRevenueOf, drainPayouts, waitFor } from './money';
+import { TransactionsService } from '../../src/payments/transactions.service';
+import { FeeCalculator } from '../../src/payments/fee.calculator';
+import { DealerVerificationService } from '../../src/payments/dealer-verification.service';
+import { AuctionsService } from '../../src/auctions/auctions.service';
+import { OffersService } from '../../src/offers/offers.service';
+import { TasksService } from '../../src/tasks/tasks.service';
+import { SubscriptionsService } from '../../src/subscriptions/subscriptions.service';
+import { FeaturedService } from '../../src/featured/featured.service';
+import { AskGgService } from '../../src/ask-gg/ask-gg.service';
+import { RecommendedLoadsService } from '../../src/load-lab/recommended-loads.service';
+import { PriceEstimateService } from '../../src/listings/price-estimate.service';
+import { SwapProposalsService } from '../../src/swaps/swap-proposals.service';
+import { SwapFundingService } from '../../src/swaps/swap-funding.service';
+import { ShippingService } from '../../src/shipping/shipping.service';
+import { RafflesService } from '../../src/raffles/raffles.service';
+import { ManualPaymentsService } from '../../src/manual-payments/manual-payments.service';
+import {
+  SWAP_SHIPPING_FEE_CENTS,
+} from '../../src/payments/fee.calculator';
+
+const tsvc = (ctx: Ctx) => svc(ctx, TransactionsService);
+const P = (ctx: Ctx) => ctx.prisma as any;
+
+async function tx(ctx: Ctx, id: string) {
+  return P(ctx).transaction.findUnique({ where: { id } });
+}
+
+/**
+ * Shared goods lifecycle: confirm payment → accept → dispatch → confirm
+ * delivery → payout, with assertions at each hop. Returns the settled tx row.
+ */
+async function drivePaidGoodsSale(
+  ctx: Ctx,
+  txId: string,
+  seller: Actor,
+  buyer: Actor,
+  label: string,
+) {
+  const rep = ctx.rep;
+  const T = tsvc(ctx);
+
+  await T.confirmManualPayment(txId);
+  let row = await tx(ctx, txId);
+  check(rep, `${label}: payment confirmed → HELD + paidAt + listing SOLD`, () => {
+    eq(row.paymentStatus, 'HELD', 'paymentStatus');
+    assert(row.paidAt, 'paidAt not set');
+    assert(row.manualVerifiedAt, 'manualVerifiedAt not set');
+  });
+  const listingAfterPay = await P(ctx).listing.findUnique({ where: { id: row.listingId } });
+  check(rep, `${label}: listing flipped SOLD`, () => eq(listingAfterPay.status, 'SOLD', 'listing.status'));
+
+  // idempotent re-confirm is a no-op
+  await T.confirmManualPayment(txId);
+  const reRow = await tx(ctx, txId);
+  check(rep, `${label}: re-confirm payment is idempotent (paidAt unchanged)`, () =>
+    eq(reRow.paidAt.getTime(), row.paidAt.getTime(), 'paidAt'),
+  );
+
+  await T.acceptTransaction(txId, seller.clerkId);
+  row = await tx(ctx, txId);
+  check(rep, `${label}: seller accepted (acceptedAt + dispatch deadline)`, () => {
+    assert(row.acceptedAt, 'acceptedAt not set');
+    assert(row.dispatchDeadlineAt, 'dispatchDeadlineAt not set');
+  });
+
+  await T.confirmDispatch(txId, seller.clerkId, {});
+  row = await tx(ctx, txId);
+  check(rep, `${label}: dispatched (dispatchedAt + shippingStatus COLLECTED)`, () => {
+    assert(row.dispatchedAt, 'dispatchedAt not set');
+    eq(row.shippingStatus, 'COLLECTED', 'shippingStatus');
+  });
+
+  await T.confirmDelivery(txId, buyer.clerkId);
+  row = await tx(ctx, txId);
+  check(rep, `${label}: buyer confirmed delivery → RELEASED (exactly once)`, () => {
+    eq(row.paymentStatus, 'RELEASED', 'paymentStatus');
+    assert(row.releasedAt, 'releasedAt not set');
+    assert(row.confirmedDeliveryAt, 'confirmedDeliveryAt not set');
+  });
+
+  // exactly-once: a second confirm must NOT move money again
+  const releasedAt = row.releasedAt.getTime();
+  let doubleReleased = false;
+  try {
+    await T.confirmDelivery(txId, buyer.clerkId);
+  } catch {
+    /* expected: already released */
+  }
+  row = await tx(ctx, txId);
+  if (row.releasedAt.getTime() !== releasedAt) doubleReleased = true;
+  check(rep, `${label}: releasedAt is exactly-once (no double release)`, () =>
+    assert(!doubleReleased, 'releasedAt changed on second confirmDelivery'),
+  );
+
+  check(rep, `${label}: money conserved on the settled transaction`, () => assertConserves(row));
+
+  await drivePayoutAndLedger(ctx, txId, label);
+  return tx(ctx, txId);
+}
+
+/** Settle via the FNB batch, then assert the row is paid out + record ledger. */
+async function drivePayoutAndLedger(ctx: Ctx, txId: string, label: string) {
+  const rep = ctx.rep;
+  const before = await tx(ctx, txId);
+  await drainPayouts(ctx);
+  const row = await tx(ctx, txId);
+  check(rep, `${label}: payout batch settled the seller (paidOutAt + batch id)`, () => {
+    assert(row.paidOutAt, 'paidOutAt not set');
+    assert(row.payoutBatchId, 'payoutBatchId not set');
+  });
+  rep.money({
+    label,
+    buyerPaid: before.buyerTotal,
+    sellerPaid: before.sellerPayout,
+    ggRevenue: ggRevenueOf(before),
+    carrier: before.shippingCost,
+    refunded: 0,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Marketplace BUY_NOW (+ collection + private-arrange variants)
+// ─────────────────────────────────────────────────────────────────────────
+export async function moduleBuyNow(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { seller, buyer } = ctx.actors;
+  const T = tsvc(ctx);
+  const fc = svc(ctx, FeeCalculator);
+
+  // ── Variant A: courier (PUDO) ─────────────────────────────────────────
+  const listingA = await makeListing(ctx.prisma, {
+    seller,
+    categoryId: ctx.cats.normal,
+    listingType: 'BUY_NOW',
+    price: 250_000,
+    title: 'BUY_NOW courier item',
+  });
+  const createdA: any = await T.create(
+    buyer.clerkId,
+    { listingId: listingA.id, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
+    'http://localhost',
+  );
+  check(rep, 'PUDO: checkout created a manual-EFT transaction', () => {
+    assert(createdA.transactionId, 'no transactionId');
+    assert(createdA.manual === true, 'not manual mode');
+    assert(createdA.orderReference, 'no order reference');
+  });
+  // cross-check the fee breakdown the service persisted against FeeCalculator
+  const rowA0 = await tx(ctx, createdA.transactionId);
+  const expected = fc.breakdown(250_000, listingA.passFeeToBuyer, true /*TOP_SELLER*/, 6500, 'manual', 1500);
+  check(rep, 'PUDO: persisted fee breakdown matches FeeCalculator', () => {
+    eq(rowA0.commissionZar, expected.commissionZar, 'commission');
+    eq(rowA0.processingFee, expected.processingFee, 'processingFee');
+    eq(rowA0.shippingCost, expected.shippingCost, 'shippingCost');
+    eq(rowA0.shippingHandlingCents, expected.shippingHandlingCents, 'handling');
+    eq(rowA0.buyerTotal, expected.buyerTotal, 'buyerTotal');
+    eq(rowA0.sellerPayout, expected.sellerPayout, 'sellerPayout');
+  });
+  await drivePaidGoodsSale(ctx, createdA.transactionId, seller, buyer, 'PUDO');
+
+  // ── Variant B: in-person COLLECTION (no courier, no handling) ──────────
+  const listingB = await makeListing(ctx.prisma, {
+    seller,
+    categoryId: ctx.cats.collection,
+    listingType: 'BUY_NOW',
+    price: 180_000,
+    title: 'BUY_NOW collection item',
+    extra: { collectionOnly: true, shippingMethods: ['COLLECTION'] },
+  });
+  const createdB: any = await T.create(
+    buyer.clerkId,
+    { listingId: listingB.id, shippingMethod: 'COLLECTION' } as any,
+    'http://localhost',
+  );
+  const rowB0 = await tx(ctx, createdB.transactionId);
+  check(rep, 'COLLECTION: no shipping cost + no handling margin', () => {
+    eq(rowB0.shippingCost, 0, 'shippingCost');
+    eq(rowB0.shippingHandlingCents, 0, 'handling');
+  });
+  await drivePaidGoodsSale(ctx, createdB.transactionId, seller, buyer, 'COLLECTION');
+
+  // ── Variant C: firearm PRIVATE_ARRANGE (immediate release at payment) ──
+  const listingC = await makeListing(ctx.prisma, {
+    seller,
+    categoryId: ctx.cats.firearm,
+    listingType: 'BUY_NOW',
+    price: 900_000,
+    title: 'BUY_NOW firearm private-arrange',
+    isFirearm: true,
+    extra: { shippingMethods: ['DEALER_TRANSFER', 'PRIVATE_ARRANGE'] },
+  });
+  const createdC: any = await T.create(
+    buyer.clerkId,
+    {
+      listingId: listingC.id,
+      shippingMethod: 'PRIVATE_ARRANGE',
+      privateArrangeConsent: true,
+      firearmAttestation18Plus: true,
+    } as any,
+    'http://localhost',
+  );
+  await T.confirmManualPayment(createdC.transactionId);
+  // maybeImmediatePayout fires fire-and-forget inside markPaid; give it a tick.
+  await settleTick();
+  let rowC = await tx(ctx, createdC.transactionId);
+  check(rep, 'PRIVATE_ARRANGE: released immediately at payment (no delivery step)', () => {
+    eq(rowC.paymentStatus, 'RELEASED', 'paymentStatus');
+    assert(rowC.releasedAt, 'releasedAt not set');
+    assert(rowC.privateArrangeAcceptedAt, 'privateArrangeAcceptedAt not set');
+  });
+  check(rep, 'PRIVATE_ARRANGE: money conserved', () => assertConserves(rowC));
+  await drivePayoutAndLedger(ctx, createdC.transactionId, 'PRIVATE_ARRANGE');
+}
+
+/** Let fire-and-forget void side-effects (maybeImmediatePayout etc.) flush. */
+export function settleTick(ms = 150): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** True if the error is a Prisma interactive-transaction timeout / expiry. */
+export function isTxTimeout(msg: string): boolean {
+  return /expired transaction|cannot be executed on an expired|interactive transaction timeout/i.test(msg);
+}
+
+/** Run one step as a reported check that never throws; returns pass + error. */
+async function safeStep(
+  rep: Reporter,
+  desc: string,
+  fn: () => Promise<void>,
+): Promise<{ ok: boolean; err?: string }> {
+  try {
+    await fn();
+    rep.pass(desc);
+    return { ok: true };
+  } catch (e) {
+    const err = (e as Error).message;
+    rep.fail(desc, err.split('\n')[0]);
+    return { ok: false, err };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Firearm DEALER_TRANSFER (release gated on SAPS-534 dealer approval)
+// ─────────────────────────────────────────────────────────────────────────
+export async function moduleFirearm(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { seller, dealerbuyer: buyer } = ctx.actors;
+  const T = tsvc(ctx);
+  const dv = svc(ctx, DealerVerificationService);
+
+  const listing = await makeListing(ctx.prisma, {
+    seller,
+    categoryId: ctx.cats.firearm,
+    listingType: 'BUY_NOW',
+    price: 1_200_000,
+    title: 'Firearm dealer-transfer rifle',
+    isFirearm: true,
+    extra: { shippingMethods: ['DEALER_TRANSFER'] },
+  });
+  const created: any = await T.create(
+    buyer.clerkId,
+    { listingId: listing.id, shippingMethod: 'DEALER_TRANSFER', firearmAttestation18Plus: true } as any,
+    'http://localhost',
+  );
+  await T.confirmManualPayment(created.transactionId);
+  let row = await tx(ctx, created.transactionId);
+  check(rep, 'DEALER_TRANSFER: paid → HELD, no shipping/handling', () => {
+    eq(row.paymentStatus, 'HELD', 'paymentStatus');
+    eq(row.shippingCost, 0, 'shippingCost');
+    eq(row.shippingHandlingCents, 0, 'handling');
+  });
+
+  // Buyer cannot confirm delivery before dealer verification is APPROVED.
+  let blocked = false;
+  try {
+    await T.confirmDelivery(created.transactionId, buyer.clerkId);
+  } catch {
+    blocked = true;
+  }
+  check(rep, 'DEALER_TRANSFER: confirm-delivery blocked until dealer verify APPROVED', () =>
+    assert(blocked, 'confirmDelivery should have thrown pre-approval'),
+  );
+
+  // Admin approves the SAPS-534 dealer stock-in → auto-releases (fire-and-forget).
+  await dv.adminOverride(created.transactionId, 'APPROVE', 'dummy-run-admin', 'stock-in verified (dummy run)');
+  row = await waitFor(
+    () => tx(ctx, created.transactionId),
+    (r) => r.paymentStatus === 'RELEASED',
+  );
+  check(rep, 'DEALER_TRANSFER: admin APPROVE released funds (HELD→RELEASED)', () => {
+    eq(row.dealerVerificationStatus, 'APPROVED', 'dealerVerificationStatus');
+    eq(row.paymentStatus, 'RELEASED', 'paymentStatus');
+    assert(row.releasedAt, 'releasedAt not set');
+  });
+  check(rep, 'DEALER_TRANSFER: money conserved', () => assertConserves(row));
+  await drivePayoutAndLedger(ctx, created.transactionId, 'DEALER_TRANSFER');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Auctions (bid → finalize → winner pays → settle; + no-bids EXPIRED)
+// ─────────────────────────────────────────────────────────────────────────
+export async function moduleAuctions(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { seller, bidderA, bidderB } = ctx.actors;
+  const T = tsvc(ctx);
+  const auctions = svc(ctx, AuctionsService);
+  const future = new Date(Date.now() + 3_600_000);
+  const past = new Date(Date.now() - 3_600_000);
+
+  // Winning auction: 2 bidders, no reserve (always met).
+  const winAuction = await makeListing(ctx.prisma, {
+    seller,
+    categoryId: ctx.cats.normal,
+    listingType: 'AUCTION',
+    price: 10_000, // starting bid
+    title: 'Auction with bids',
+    extra: { startTime: past, endTime: future, durationDays: 3, reservePrice: null },
+  });
+  await auctions.placeBid(bidderA.clerkId, winAuction.id, { maxAmount: 15_000, isOneShot: true } as any);
+  const afterA = await P(ctx).listing.findUnique({ where: { id: winAuction.id } });
+  await auctions.placeBid(bidderB.clerkId, winAuction.id, { maxAmount: 25_000, isOneShot: true } as any);
+  const afterB = await P(ctx).listing.findUnique({ where: { id: winAuction.id } });
+  check(rep, 'AUCTION: two bids registered, high bidder + bidCount tracked', () => {
+    eq(afterA.currentBidderId, bidderA.id, 'currentBidderId after A');
+    eq(afterB.currentBidderId, bidderB.id, 'currentBidderId after B');
+    assert(afterB.currentBid >= 25_000, `currentBid ${afterB.currentBid} < 25000`);
+    assert(afterB.bidCount >= 2, `bidCount ${afterB.bidCount} < 2`);
+  });
+
+  // No-bids auction → should EXPIRE on finalize.
+  const deadAuction = await makeListing(ctx.prisma, {
+    seller,
+    categoryId: ctx.cats.normal,
+    listingType: 'AUCTION',
+    price: 50_000,
+    title: 'Auction with no bids',
+    extra: { startTime: past, endTime: future, durationDays: 3, reservePrice: null },
+  });
+
+  // Force both auctions past their end, then run the real end-cron entrypoint.
+  await P(ctx).listing.updateMany({
+    where: { id: { in: [winAuction.id, deadAuction.id] } },
+    data: { endTime: past },
+  });
+  await auctions.endStale();
+
+  const winFinal = await P(ctx).listing.findUnique({ where: { id: winAuction.id } });
+  check(rep, 'AUCTION: winning auction finalised → PAYMENT_PENDING for high bidder', () => {
+    eq(winFinal.status, 'PAYMENT_PENDING', 'status');
+    eq(winFinal.currentBidderId, bidderB.id, 'winner');
+    assert(winFinal.endedAt, 'endedAt not set');
+    assert(winFinal.expiresAt, 'expiresAt (pay window) not set');
+  });
+  const deadFinal = await P(ctx).listing.findUnique({ where: { id: deadAuction.id } });
+  check(rep, 'AUCTION: no-bids auction → EXPIRED', () => {
+    eq(deadFinal.status, 'EXPIRED', 'status');
+    assert(deadFinal.endedAt, 'endedAt not set');
+  });
+
+  // Winner checkout (auction-win branch) → full goods lifecycle → payout.
+  const created: any = await T.create(
+    bidderB.clerkId,
+    { listingId: winAuction.id, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-002' } as any,
+    'http://localhost',
+  );
+  const row0 = await tx(ctx, created.transactionId);
+  check(rep, 'AUCTION: winner checkout priced at winning bid', () =>
+    eq(row0.listingPrice, winFinal.currentBid, 'listingPrice == winning bid'),
+  );
+  await drivePaidGoodsSale(ctx, created.transactionId, seller, bidderB, 'AUCTION');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Take-a-Shot offers (submit → counter → accept → checkout → settle)
+// ─────────────────────────────────────────────────────────────────────────
+export async function moduleOffers(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { seller, buyer, dealerbuyer: rival } = ctx.actors;
+  const T = tsvc(ctx);
+  const offers = svc(ctx, OffersService);
+
+  const listing = await makeListing(ctx.prisma, {
+    seller,
+    categoryId: ctx.cats.normal,
+    listingType: 'TAKE_A_SHOT',
+    price: null,
+    title: 'Take-a-Shot item',
+    extra: { autoAcceptThreshold: null },
+  });
+
+  const { offer } = (await offers.submit(buyer.clerkId, {
+    listingId: listing.id,
+    offerAmount: 200_000,
+  } as any)) as any;
+  check(rep, 'OFFER: buyer offer submitted → PENDING', () => eq(offer.status, 'PENDING', 'status'));
+
+  // A rival offer that must be auto-rejected once the winner pays.
+  const rivalOffer = (await offers.submit(rival.clerkId, {
+    listingId: listing.id,
+    offerAmount: 190_000,
+  } as any)) as any;
+
+  const countered = (await offers.counter(seller.clerkId, offer.id, {
+    counterAmount: 230_000,
+  } as any)) as any;
+  check(rep, 'OFFER: seller countered → COUNTERED w/ counterAmount', () => {
+    eq(countered.status, 'COUNTERED', 'status');
+    eq(countered.counterAmount, 230_000, 'counterAmount');
+  });
+
+  const accepted = (await offers.acceptCounter(buyer.clerkId, offer.id)) as any;
+  check(rep, 'OFFER: buyer accepted counter → ACCEPTED', () => eq(accepted.status, 'ACCEPTED', 'status'));
+
+  // Checkout the accepted offer (offerId branch): pays the counter amount.
+  const created: any = await T.create(
+    buyer.clerkId,
+    {
+      listingId: listing.id,
+      offerId: offer.id,
+      shippingMethod: 'PUDO',
+      pudoPickupLockerId: 'L-TEST-003',
+    } as any,
+    'http://localhost',
+  );
+  const row0 = await tx(ctx, created.transactionId);
+  const convertedOffer = await P(ctx).offer.findUnique({ where: { id: offer.id } });
+  check(rep, 'OFFER: checkout priced at counter + offer → CONVERTED', () => {
+    eq(row0.listingPrice, 230_000, 'listingPrice == counterAmount');
+    eq(convertedOffer.status, 'CONVERTED', 'offer.status');
+  });
+
+  await T.confirmManualPayment(created.transactionId);
+  await settleTick();
+  const rival2 = await P(ctx).offer.findUnique({ where: { id: rivalOffer.offer.id } });
+  check(rep, 'OFFER: sibling offer auto-rejected on sale (markPaid)', () =>
+    eq(rival2.status, 'REJECTED', 'rival offer status'),
+  );
+
+  // Finish the goods lifecycle from the accept step onward.
+  await T.acceptTransaction(created.transactionId, seller.clerkId);
+  await T.confirmDispatch(created.transactionId, seller.clerkId, {});
+  await T.confirmDelivery(created.transactionId, buyer.clerkId);
+  const settled = await tx(ctx, created.transactionId);
+  check(rep, 'OFFER: released after delivery + money conserved', () => {
+    eq(settled.paymentStatus, 'RELEASED', 'paymentStatus');
+    assertConserves(settled);
+  });
+  await drivePayoutAndLedger(ctx, created.transactionId, 'OFFER (Take-a-Shot)');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Cart / Orders (multi-seller fan-out → rollup → settle)
+// ─────────────────────────────────────────────────────────────────────────
+export async function moduleOrders(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { seller, seller2, buyer } = ctx.actors;
+  const T = tsvc(ctx);
+  const tasks = svc(ctx, TasksService);
+
+  const l1 = await makeListing(ctx.prisma, {
+    seller,
+    categoryId: ctx.cats.normal,
+    listingType: 'BUY_NOW',
+    price: 120_000,
+    title: 'Cart line — seller 1',
+  });
+  const l2 = await makeListing(ctx.prisma, {
+    seller: seller2,
+    categoryId: ctx.cats.normal,
+    listingType: 'BUY_NOW',
+    price: 90_000,
+    title: 'Cart line — seller 2',
+  });
+
+  const order: any = await T.createOrderCheckout(
+    buyer.clerkId,
+    {
+      lines: [
+        { listingId: l1.id, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-010' },
+        { listingId: l2.id, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-011' },
+      ],
+    } as any,
+    'http://localhost',
+  );
+  check(rep, 'ORDER: multi-seller checkout created (1 order, 2 lines)', () => {
+    assert(order.orderId, 'no orderId');
+    eq(order.itemCount, 2, 'itemCount');
+  });
+
+  await T.confirmManualOrder(order.orderId);
+  await settleTick();
+  const orderRow = await P(ctx).order.findUnique({
+    where: { id: order.orderId },
+    include: { transactions: true },
+  });
+  check(rep, 'ORDER: confirm → Order PAID, both children HELD', () => {
+    eq(orderRow.status, 'PAID', 'order.status');
+    assert(orderRow.paidAt, 'order.paidAt not set');
+    eq(orderRow.transactions.length, 2, 'child count');
+    assert(orderRow.transactions.every((t: any) => t.paymentStatus === 'HELD'), 'not all children HELD');
+    assert(orderRow.transactions.every((t: any) => t.paidAt), 'child paidAt missing');
+  });
+  check(rep, 'ORDER: order total equals sum of child buyerTotals', () =>
+    eq(orderRow.buyerTotal, orderRow.transactions.reduce((s: number, t: any) => s + t.buyerTotal, 0), 'order total'),
+  );
+
+  // Per-child accept → dispatch → confirm delivery (each by its own seller).
+  const sellerByChild: Record<string, Actor> = {};
+  for (const child of orderRow.transactions) {
+    sellerByChild[child.id] = child.sellerId === seller.id ? seller : seller2;
+  }
+  for (const child of orderRow.transactions) {
+    const s = sellerByChild[child.id];
+    await T.acceptTransaction(child.id, s.clerkId);
+    await T.confirmDispatch(child.id, s.clerkId, {});
+    await T.confirmDelivery(child.id, buyer.clerkId);
+  }
+  const childrenReleased = await P(ctx).transaction.findMany({ where: { orderId: order.orderId } });
+  check(rep, 'ORDER: all children RELEASED after delivery + conserved', () => {
+    assert(childrenReleased.every((t: any) => t.paymentStatus === 'RELEASED'), 'not all RELEASED');
+    childrenReleased.forEach((t: any) => assertConserves(t));
+  });
+
+  // Order rollup sweep → Order COMPLETED.
+  await tasks.orderStatusRollupSweep();
+  const rolled = await P(ctx).order.findUnique({ where: { id: order.orderId } });
+  check(rep, 'ORDER: rollup sweep advanced Order → COMPLETED', () => eq(rolled.status, 'COMPLETED', 'order.status'));
+
+  // Settle both sellers' payouts.
+  const before = await P(ctx).transaction.findMany({ where: { orderId: order.orderId } });
+  await drainPayouts(ctx);
+  const after = await P(ctx).transaction.findMany({ where: { orderId: order.orderId } });
+  check(rep, 'ORDER: both children paid out', () =>
+    assert(after.every((t: any) => t.paidOutAt && t.payoutBatchId), 'not all children paid out'),
+  );
+  for (const t of before) {
+    rep.money({
+      label: `ORDER child ${t.sellerId === seller.id ? 'seller1' : 'seller2'}`,
+      buyerPaid: t.buyerTotal,
+      sellerPaid: t.sellerPayout,
+      ggRevenue: ggRevenueOf(t),
+      carrier: t.shippingCost,
+      refunded: 0,
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Experiences (ON_SITE_SERVICE — held until post-event confirm)
+// ─────────────────────────────────────────────────────────────────────────
+export async function moduleExperiences(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { outfitter, buyer } = ctx.actors;
+  const T = tsvc(ctx);
+  const now = Date.now();
+
+  const listing = await makeListing(ctx.prisma, {
+    seller: outfitter,
+    categoryId: ctx.cats.experience,
+    listingType: 'BUY_NOW',
+    price: 350_000,
+    title: 'Guided plains-game hunt',
+    isExperience: true,
+    extra: {
+      experienceType: 'PLAINS_GAME_HUNT',
+      eventStartDate: new Date(now - 3_600_000),
+      eventEndDate: new Date(now + 2 * 24 * 3_600_000),
+      capacitySlots: 5,
+      eventProvince: 'LIMPOPO',
+    },
+  });
+  const created: any = await T.create(
+    buyer.clerkId,
+    {
+      listingId: listing.id,
+      shippingMethod: 'ON_SITE_SERVICE',
+      eventDate: new Date(now + 3_600_000).toISOString(),
+      partySize: 2,
+      experienceBuyerAttested18Plus: true,
+      experienceHuntingLicenceOrSupervisionAccepted: true,
+      experienceIntermediaryAcknowledged: true,
+      experienceCancellationPolicyAccepted: true,
+      experienceRisksAccepted: true,
+    } as any,
+    'http://localhost',
+  );
+  await T.confirmManualPayment(created.transactionId);
+  let row = await tx(ctx, created.transactionId);
+  check(rep, 'EXPERIENCE: booked + paid → HELD, ON_SITE_SERVICE, no shipping', () => {
+    eq(row.paymentStatus, 'HELD', 'paymentStatus');
+    eq(row.shippingMethod, 'ON_SITE_SERVICE', 'shippingMethod');
+    eq(row.shippingCost, 0, 'shippingCost');
+    assert(row.eventDate, 'eventDate not persisted');
+  });
+
+  // Cannot settle through the goods delivery path.
+  let blocked = false;
+  try {
+    await T.confirmDelivery(created.transactionId, buyer.clerkId);
+  } catch {
+    blocked = true;
+  }
+  check(rep, 'EXPERIENCE: goods confirm-delivery refused for on-site service', () =>
+    assert(blocked, 'confirmDelivery should throw for ON_SITE_SERVICE'),
+  );
+
+  await T.acceptExperienceBooking(created.transactionId, outfitter.clerkId);
+  row = await tx(ctx, created.transactionId);
+  check(rep, 'EXPERIENCE: outfitter accepted booking (bookingConfirmedAt)', () =>
+    assert(row.bookingConfirmedAt, 'bookingConfirmedAt not set'),
+  );
+
+  // Cannot confirm completion before the event date.
+  let earlyBlocked = false;
+  try {
+    await T.confirmExperienceCompleted(created.transactionId, buyer.clerkId);
+  } catch {
+    earlyBlocked = true;
+  }
+  check(rep, 'EXPERIENCE: completion refused before the event date', () =>
+    assert(earlyBlocked, 'confirmExperienceCompleted should throw pre-event'),
+  );
+
+  // Backdate the event so completion is now valid (mirrors "event just past").
+  await P(ctx).transaction.update({
+    where: { id: created.transactionId },
+    data: { eventDate: new Date(now - 60_000) },
+  });
+  await T.confirmExperienceCompleted(created.transactionId, buyer.clerkId);
+  row = await tx(ctx, created.transactionId);
+  check(rep, 'EXPERIENCE: post-event confirm → RELEASED + conserved', () => {
+    eq(row.paymentStatus, 'RELEASED', 'paymentStatus');
+    assert(row.eventCompletedConfirmedAt, 'eventCompletedConfirmedAt not set');
+    assertConserves(row);
+  });
+  await drivePayoutAndLedger(ctx, created.transactionId, 'EXPERIENCE');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Subscriptions (checkout → confirm → ACTIVE + tier set)
+// ─────────────────────────────────────────────────────────────────────────
+export async function moduleSubscriptions(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { buyer } = ctx.actors; // buyer starts FREE
+  const subs = svc(ctx, SubscriptionsService);
+
+  await subs.checkout(buyer.clerkId, 'MEMBER');
+  const sub = await P(ctx).subscription.findUnique({ where: { userId: buyer.id } });
+  check(rep, 'SUBSCRIPTION: checkout created a subscription (SUSPENDED) + PENDING charge', () => {
+    assert(sub, 'no subscription row');
+    eq(sub.status, 'SUSPENDED', 'status');
+  });
+  const charge = await P(ctx).subscriptionCharge.findFirst({
+    where: { subscriptionId: sub.id, status: 'PENDING' },
+    orderBy: { chargedAt: 'desc' },
+  });
+  check(rep, 'SUBSCRIPTION: a PENDING EFT charge was allocated', () => assert(charge, 'no PENDING charge'));
+
+  await subs.confirmPayment(charge.id);
+  const subActive = await P(ctx).subscription.findUnique({ where: { userId: buyer.id } });
+  const userAfter = await P(ctx).user.findUnique({ where: { id: buyer.id } });
+  const chargeAfter = await P(ctx).subscriptionCharge.findUnique({ where: { id: charge.id } });
+  check(rep, 'SUBSCRIPTION: confirm → ACTIVE, tier MEMBER on subscription + user', () => {
+    eq(subActive.status, 'ACTIVE', 'subscription.status');
+    eq(subActive.tier, 'MEMBER', 'subscription.tier');
+    eq(userAfter.subscriptionTier, 'MEMBER', 'user.subscriptionTier');
+    eq(chargeAfter.status, 'SUCCEEDED', 'charge.status');
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Featured slots (open → bid → close → bind → pay → OCCUPIED)
+// ─────────────────────────────────────────────────────────────────────────
+export async function moduleFeatured(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { seller } = ctx.actors;
+  const featured = svc(ctx, FeaturedService);
+
+  // Let earlier modules' fire-and-forget side-effects flush + pre-warm the
+  // lazily-created config row, so the money-critical bind transaction (5s
+  // interactive-tx budget) isn't fighting a starved connection pool.
+  await settleTick(800);
+  await (featured as any).getConfig();
+
+  const slot = await P(ctx).featuredSlot.create({ data: { slotNumber: 1, status: 'VACANT' } });
+  const listing = await makeListing(ctx.prisma, {
+    seller,
+    categoryId: ctx.cats.normal,
+    listingType: 'BUY_NOW',
+    price: 500_000,
+    title: 'Listing to feature',
+  });
+
+  await featured.openAuction(slot.id);
+  let slotRow = await P(ctx).featuredSlot.findUnique({ where: { id: slot.id } });
+  check(rep, 'FEATURED: auction opened → slot AUCTION_RUNNING', () => {
+    eq(slotRow.status, 'AUCTION_RUNNING', 'slot.status');
+    assert(slotRow.currentAuctionId, 'no currentAuctionId');
+  });
+
+  await featured.placeBid(seller.clerkId, slot.id, 20_000);
+  const bidsAfter = await P(ctx).featuredSlotBid.findMany({ where: { auctionId: slotRow.currentAuctionId } });
+  check(rep, 'FEATURED: bid registered (ACTIVE)', () => {
+    assert(bidsAfter.length >= 1, 'no bid');
+    eq(bidsAfter[0].status, 'ACTIVE', 'bid.status');
+  });
+
+  await featured.closeAuction(slotRow.currentAuctionId);
+  const auctionClosed = await P(ctx).featuredAuction.findUnique({ where: { id: slotRow.currentAuctionId } });
+  slotRow = await P(ctx).featuredSlot.findUnique({ where: { id: slot.id } });
+  check(rep, 'FEATURED: auction closed → CLOSED_AWARDED, slot BIND_WINDOW', () => {
+    eq(auctionClosed.status, 'CLOSED_AWARDED', 'auction.status');
+    assert(auctionClosed.winningBidId, 'no winningBidId');
+    eq(slotRow.status, 'BIND_WINDOW', 'slot.status');
+  });
+
+  const bindRes: any = await featured.bindListingToSlot(seller.clerkId, slot.id, listing.id);
+  check(rep, 'FEATURED: bind on manual rail → awaiting payment (bid WON)', () =>
+    assert(bindRes.awaitingPayment === true, 'expected awaitingPayment'),
+  );
+
+  const payRes: any = await featured.confirmSlotPayment(auctionClosed.winningBidId);
+  slotRow = await P(ctx).featuredSlot.findUnique({ where: { id: slot.id } });
+  const bidFinal = await P(ctx).featuredSlotBid.findUnique({ where: { id: auctionClosed.winningBidId } });
+
+  if (slotRow.status === 'OCCUPIED') {
+    check(rep, 'FEATURED: payment confirmed → slot OCCUPIED + featuredUntil', () => {
+      eq(slotRow.currentListingId, listing.id, 'currentListingId');
+      assert(slotRow.featuredUntil, 'featuredUntil not set');
+      assert(bidFinal.paidAt, 'bid.paidAt not set');
+    });
+  } else {
+    // PRODUCT BUG surfaced by the harness — see rep.bug below.
+    rep.fail(
+      'FEATURED: payment confirmed → slot OCCUPIED',
+      `slot stuck at ${slotRow.status}; confirmSlotPayment returned bound=${payRes?.bound}. bid.paidAt=${!!bidFinal?.paidAt} (money captured, slot NOT bound)`,
+    );
+    check(rep, 'FEATURED: (impact) money was captured despite the failed bind', () =>
+      assert(bidFinal.paidAt, 'bid.paidAt should be set — money captured'),
+    );
+    rep.bug(
+      'src/featured/featured.service.ts:683 (tx.featuredSlot.update) + :693/:698 (this.recordEvent) inside bindListingToSlot occupy $transaction',
+      'On the MANUAL EFT rail (production rail), confirmSlotPayment captures the slot fee (bid.paidAt set) but the occupy step self-deadlocks and never binds the slot. Inside the interactive $transaction, bindListingToSlot first runs tx.featuredSlot.update({ status: OCCUPIED, currentListingId, ... }) — updating the @unique currentListingId column takes a key-level row lock on the slot — and then awaits this.recordEvent() (LISTING_BOUND / FEATURED_LIVE, lines 693/698), which writes FeaturedSlotAuditEvent via the BASE this.prisma client on a SEPARATE connection, FK-referencing that same locked slot row. The audit INSERT blocks on the key lock while the outer transaction awaits it → self-deadlock resolved only when the 5000ms interactive-transaction timeout fires, rolling the whole bind back. Net effect: the winning bidder is charged but their slot never reaches OCCUPIED (reproduced deterministically at ~5009ms); a manual re-bind hits the same path. PrismaService uses the same @prisma/adapter-pg driver adapter in production. Same class as the raffles createPostalEntry bug. Fix: write the audit rows with the tx client (inside the transaction), or move recordEvent outside it.',
+      'slot.status expected OCCUPIED, got BIND_WINDOW — Prisma "A query/commit cannot be executed on an expired transaction (5000 ms)"',
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Content smoke (AI-off read paths must not throw)
+// ─────────────────────────────────────────────────────────────────────────
+export async function moduleContentSmoke(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { buyer } = ctx.actors;
+  const askGg = svc(ctx, AskGgService);
+  const loads = svc(ctx, RecommendedLoadsService);
+  const priceEst = svc(ctx, PriceEstimateService);
+
+  await checkAsync(rep, 'CONTENT: Ask-GG quota read returns without AI', async () => {
+    const q: any = await askGg.getQuota(buyer.clerkId);
+    assert(q, 'no quota response');
+  });
+  await checkAsync(rep, 'CONTENT: Load-Lab recommended-loads returns gracefully', async () => {
+    const r: any = await loads.recommend('.308 Winchester', 150);
+    assert(r, 'no loads response');
+  });
+  await checkAsync(rep, 'CONTENT: price-estimate returns gracefully (no Anthropic)', async () => {
+    const e: any = await priceEst.estimate({ title: 'Test scope', condition: 'GOOD' } as any);
+    assert(e, 'no estimate response');
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Swop / Trade (propose → fund → lock → deliver → release cash child)
+// ─────────────────────────────────────────────────────────────────────────
+const SWAP_ADDR = {
+  street: '5 Trade Street',
+  suburb: 'Central',
+  city: 'Pretoria',
+  postalCode: '0002',
+  province: 'GAUTENG',
+  lat: -25.75,
+  lng: 28.19,
+};
+
+export async function moduleSwap(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { swapA, swapB } = ctx.actors;
+  const proposals = svc(ctx, SwapProposalsService);
+  const funding = svc(ctx, SwapFundingService);
+  const shipping = svc(ctx, ShippingService);
+  const fc = svc(ctx, FeeCalculator);
+  const CASH = 150_000; // initiator pays R1,500 cash top-up (excess over R1,000 allowance → commission)
+
+  const offered = await makeListing(ctx.prisma, {
+    seller: swapA,
+    categoryId: ctx.cats.normal,
+    listingType: 'SWOP',
+    price: null,
+    title: 'Swap item A (initiator gives)',
+  });
+  const wanted = await makeListing(ctx.prisma, {
+    seller: swapB,
+    categoryId: ctx.cats.normal,
+    listingType: 'SWOP',
+    price: null,
+    title: 'Swap item B (owner gives)',
+  });
+
+  const proposal: any = await proposals.propose(swapA.clerkId, {
+    listingId: wanted.id,
+    offeredListingId: offered.id,
+    cashAmount: CASH,
+    cashDirection: 'INITIATOR_GIVES',
+  } as any);
+  check(rep, 'SWAP: proposal created → PENDING', () => eq(proposal.status, 'PENDING', 'status'));
+
+  await proposals.acceptProposal(swapB.clerkId, proposal.id);
+  const swap = await P(ctx).swap.findFirst({ where: { initiatorId: swapA.id, ownerId: swapB.id } });
+  check(rep, 'SWAP: accepted → Swap parent (AWAITING_FUNDING) + 2 legs', () => {
+    assert(swap, 'no swap');
+    eq(swap.status, 'AWAITING_FUNDING', 'swap.status');
+    eq(swap.cashAmount, CASH, 'cashAmount');
+    eq(swap.cashPayerId, swapA.id, 'cashPayerId (initiator)');
+  });
+  const legs = await P(ctx).transaction.findMany({ where: { swapId: swap.id, swapRole: { not: null } } });
+  check(rep, 'SWAP: two zero-money proof legs created', () => {
+    eq(legs.length, 2, 'leg count');
+    assert(legs.every((l: any) => l.buyerTotal === 0 && l.sellerPayout === 0), 'legs not zero-money');
+    assert(legs.every((l: any) => l.swapProofCode), 'legs missing proof code');
+  });
+
+  // Stub the Proof-of-Possession gate (Anthropic off): APPROVE both legs.
+  await P(ctx).transaction.updateMany({
+    where: { swapId: swap.id, swapRole: { not: null } },
+    data: { swapProofStatus: 'APPROVED', swapProofVerifiedAt: new Date() },
+  });
+
+  // Both parties submit the delivery address for the leg they receive; the
+  // second submit triggers funding setup (proof APPROVED + both addresses).
+  await funding.submitDeliveryAddress(swapA.clerkId, swap.id, SWAP_ADDR as any);
+  await funding.submitDeliveryAddress(swapB.clerkId, swap.id, SWAP_ADDR as any);
+  const funded = await P(ctx).swap.findUnique({ where: { id: swap.id } });
+  check(rep, 'SWAP: funding set up — per-party amounts priced', () => {
+    assert(funded.fundingSetUpAt, 'fundingSetUpAt not set');
+    const expInit = fc.breakdownSwapLeg(funded.initiatorCourierCents, CASH, false, 'manual').partyTotal;
+    const expOwner = fc.breakdownSwapLeg(funded.ownerCourierCents, 0, false, 'manual').partyTotal;
+    eq(funded.initiatorFundingAmount, expInit, 'initiatorFundingAmount');
+    eq(funded.ownerFundingAmount, expOwner, 'ownerFundingAmount');
+  });
+
+  // Both parties fund → LOCKED → onSwapLocked → IN_TRANSIT.
+  await funding.confirmSwapFunding(swap.id, 'INITIATOR');
+  await funding.confirmSwapFunding(swap.id, 'OWNER');
+  const locked = await waitFor(
+    () => P(ctx).swap.findUnique({ where: { id: swap.id } }),
+    (s: any) => s.status === 'IN_TRANSIT' || s.status === 'LOCKED',
+  );
+  check(rep, 'SWAP: both funded → LOCKED (both verified stamped)', () => {
+    assert(locked.initiatorVerifiedAt, 'initiatorVerifiedAt not set');
+    assert(locked.ownerVerifiedAt, 'ownerVerifiedAt not set');
+    assert(locked.lockedAt, 'lockedAt not set');
+    assert(['LOCKED', 'IN_TRANSIT'].includes(locked.status), `status ${locked.status}`);
+  });
+  const inTransit = await waitFor(
+    () => P(ctx).swap.findUnique({ where: { id: swap.id } }),
+    (s: any) => s.status === 'IN_TRANSIT',
+  );
+  check(rep, 'SWAP: onSwapLocked advanced LOCKED → IN_TRANSIT', () => eq(inTransit.status, 'IN_TRANSIT', 'status'));
+
+  // Mark both legs delivered; the second delivery rolls up to AWAITING_VERIFICATION.
+  await shipping.applyShippingUpdate(legs[0].id, 'DELIVERED' as any);
+  await shipping.applyShippingUpdate(legs[1].id, 'DELIVERED' as any);
+  const awaiting = await P(ctx).swap.findUnique({ where: { id: swap.id } });
+  check(rep, 'SWAP: both legs delivered → AWAITING_VERIFICATION + 48h window', () => {
+    eq(awaiting.status, 'AWAITING_VERIFICATION', 'status');
+    assert(awaiting.verificationDeadlineAt, 'verificationDeadlineAt not set');
+  });
+
+  // Backdate the verification window, then run the real release sweep.
+  await P(ctx).swap.update({
+    where: { id: swap.id },
+    data: { verificationDeadlineAt: new Date(Date.now() - 60_000) },
+  });
+  await funding.sweepSwapVerification();
+  const completed = await P(ctx).swap.findUnique({ where: { id: swap.id } });
+  check(rep, 'SWAP: verification sweep → COMPLETED + cashReleasedAt (exactly once)', () => {
+    eq(completed.status, 'COMPLETED', 'status');
+    assert(completed.cashReleasedAt, 'cashReleasedAt not set');
+    assert(completed.settlementTxId, 'settlementTxId not set');
+  });
+
+  const settlement = await tx(ctx, completed.settlementTxId);
+  const cashCommission = fc.swapCashCommission(CASH);
+  check(rep, 'SWAP: RELEASED cash child pays the recipient net of cash commission', () => {
+    eq(settlement.paymentStatus, 'RELEASED', 'settlement.paymentStatus');
+    eq(settlement.sellerId, swapB.id, 'cash recipient = owner');
+    eq(settlement.sellerPayout, CASH - cashCommission, 'sellerPayout');
+    eq(settlement.commissionZar, cashCommission, 'commissionZar');
+  });
+
+  // Swap money conservation (funding EFTs live on the Swap, not tx rows):
+  //   initiatorFunding + ownerFunding == recipientCash + carriers + 2×flatFee + cashCommission
+  check(rep, 'SWAP: money conserved across both funding EFTs', () => {
+    const totalIn = completed.initiatorFundingAmount + completed.ownerFundingAmount;
+    const carriers = completed.initiatorCourierCents + completed.ownerCourierCents;
+    const rhs = settlement.sellerPayout + carriers + 2 * SWAP_SHIPPING_FEE_CENTS + cashCommission;
+    eq(totalIn, rhs, 'funding total vs recipient+carriers+fees+commission');
+  });
+
+  // Settle the cash recipient via the FNB batch.
+  await drainPayouts(ctx);
+  const settledChild = await tx(ctx, completed.settlementTxId);
+  check(rep, 'SWAP: cash recipient settled via payout batch', () =>
+    assert(settledChild.paidOutAt && settledChild.payoutBatchId, 'cash child not paid out'),
+  );
+  rep.money({
+    label: 'SWAP (cash top-up)',
+    buyerPaid: completed.initiatorFundingAmount + completed.ownerFundingAmount,
+    sellerPaid: settlement.sellerPayout,
+    ggRevenue: 2 * SWAP_SHIPPING_FEE_CENTS + cashCommission,
+    carrier: completed.initiatorCourierCents + completed.ownerCourierCents,
+    refunded: 0,
+    note: 'two funding legs; cash child pays recipient',
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Raffles (free entries only — subscriber auto-enter + postal)
+// ─────────────────────────────────────────────────────────────────────────
+export async function moduleRaffles(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { member } = ctx.actors;
+  const raffles = svc(ctx, RafflesService);
+  const adminId = 'dummy-run-admin';
+
+  const startFuture = new Date(Date.now() + 3_600_000).toISOString();
+  const { raffle }: any = await raffles.create(adminId, {
+    title: 'Dummy subscriber raffle',
+    description: 'A free subscriber raffle seeded for the dummy run end-to-end test.',
+    itemValueCents: 500_000,
+    itemCostCents: 0,
+    ticketPriceCents: 100,
+    question: 'What calibre is a .308?',
+    optionA: '9mm',
+    optionB: '.308',
+    optionC: '.223',
+    optionD: '.22LR',
+    startTime: startFuture,
+    subscriberTierRestriction: 'MEMBER',
+    prizeIsFirearm: false,
+    prizeIsExperience: false,
+  } as any);
+  check(rep, 'RAFFLE: created (DRAFT, subscriber-restricted)', () => {
+    assert(raffle, 'no raffle');
+    eq(raffle.status, 'DRAFT', 'status');
+  });
+
+  // Open → flips ACTIVE + auto-enters subscribers (MEMBER/PRO) with free tickets.
+  await raffles.open(adminId, raffle.id);
+  const opened = await P(ctx).raffle.findUnique({ where: { id: raffle.id } });
+  const memberTicket = await P(ctx).ticket.findFirst({ where: { raffleId: raffle.id, buyerId: member.id } });
+  check(rep, 'RAFFLE: opened → ACTIVE + subscribers auto-entered (free CONFIRMED tickets)', () => {
+    eq(opened.status, 'ACTIVE', 'status');
+    assert(opened.ticketsSoldPaid >= 1, `ticketsSoldPaid ${opened.ticketsSoldPaid}`);
+    assert(memberTicket, 'member has no auto-entry ticket');
+    eq(memberTicket.status, 'CONFIRMED', 'ticket.status');
+    eq(memberTicket.amountCents, 0, 'ticket is free');
+  });
+
+  // A free postal entry (no payment rail). NOTE: createPostalEntry runs an
+  // interactive $transaction that SELECT ... FOR UPDATE-locks the Raffle row,
+  // then awaits this.recordEvent() on the BASE prisma client — which FK-writes
+  // the locked row on a second connection → self-deadlock → 5s timeout. Guarded
+  // so we can record the bug and still exercise the draw via subscriber tickets.
+  const postal = await safeStep(rep, 'RAFFLE: postal entry creates free POSTAL tickets', async () => {
+    const { tickets }: any = await raffles.createPostalEntry(adminId, {
+      raffleId: raffle.id,
+      referenceCode: 'DRPOST01',
+      firstName: 'Postal',
+      lastName: 'Entrant',
+      ticketCount: 3,
+    } as any);
+    assert(tickets.length === 3 && tickets.every((t: any) => t.status === 'POSTAL'), 'postal tickets wrong');
+  });
+  if (!postal.ok && isTxTimeout(postal.err ?? '')) {
+    rep.bug(
+      'src/raffles/raffles.service.ts:1006 + 1039/1058 (recordEvent inside createPostalEntry $transaction)',
+      'createPostalEntry ALWAYS fails: its interactive $transaction runs `SELECT id FROM "Raffle" ... FOR UPDATE` (line 1006) to lock the raffle row, then awaits this.recordEvent() (lines 1039/1058) which writes RaffleAuditEvent via the BASE this.prisma client on a SEPARATE connection, FK-referencing the FOR UPDATE-locked raffle row. The audit INSERT blocks on that lock while the outer transaction awaits it → self-deadlock resolved only when the 5000ms interactive-transaction timeout fires, aborting the whole postal entry (reproduced at ~5010ms). PrismaService uses the same @prisma/adapter-pg (PrismaPg) driver adapter in production, so free postal raffle entries are broken on prod. Same recordEvent-inside-tx anti-pattern as the featured-slot bind. Fix: pass the tx client to recordEvent (write the audit row inside the transaction) or move recordEvent outside it.',
+      'createPostalEntry threw "A query cannot be executed on an expired transaction (5000 ms)"',
+    );
+  }
+
+  // Draw uses the eligible pool (CONFIRMED subscriber + any POSTAL tickets).
+  await P(ctx).raffle.update({ where: { id: raffle.id }, data: { status: 'CLOSED_AWAITING_DRAW' } });
+  const draw = await safeStep(rep, 'RAFFLE: draw ran → DRAWN with a position-1 winner', async () => {
+    const drawRes: any = await raffles.runDraw(raffle.id);
+    const drawn = await P(ctx).raffle.findUnique({ where: { id: raffle.id } });
+    eq(drawRes.outcome, 'DRAWN', 'outcome');
+    eq(drawn.status, 'DRAWN', 'status');
+  });
+  if (!draw.ok) return; // can't continue without a winner
+
+  const winner = await P(ctx).raffleWinner.findFirst({ where: { raffleId: raffle.id, position: 1 } });
+  check(rep, 'RAFFLE: a position-1 winner row exists', () => assert(winner, 'no winner'));
+  if (!winner) return;
+
+  // Claim: subscriber winners claim explicitly; postal winners auto-claim.
+  const winnerActorEntry = Object.values(ctx.actors).find((a) => a.id === winner.userId);
+  if (winner.userId && winnerActorEntry) {
+    await safeStep(rep, 'RAFFLE: subscriber winner claimed the prize', async () => {
+      await raffles.claimPrize(winnerActorEntry.clerkId, winner.id);
+      const claimed = await P(ctx).raffleWinner.findUnique({ where: { id: winner.id } });
+      assert(claimed.claimedAt, 'claimedAt not set');
+    });
+  } else {
+    check(rep, 'RAFFLE: postal winner auto-claimed (no user to claim)', () => assert(winner.claimedAt, 'postal winner not auto-claimed'));
+  }
+
+  // Dispatch the (non-firearm, non-experience) prize — no money movement.
+  await safeStep(rep, 'RAFFLE: prize dispatched (tracking stamped, no money moved)', async () => {
+    await raffles.markWinnerPrizeDispatched(winner.id, adminId, {
+      trackingRef: 'DR-TRACK-0001',
+      carrierLabel: 'Test Courier',
+    });
+    const dispatched = await P(ctx).raffleWinner.findUnique({ where: { id: winner.id } });
+    assert(dispatched.prizeDispatchedAt, 'prizeDispatchedAt not set');
+    eq(dispatched.prizeTrackingRef, 'DR-TRACK-0001', 'trackingRef');
+  });
+  rep.money({
+    label: 'RAFFLE (free entries)',
+    buyerPaid: 0,
+    sellerPaid: 0,
+    ggRevenue: 0,
+    carrier: 0,
+    refunded: 0,
+    note: 'paid tickets are gateway-rail only (SKIPPED); postal + subscriber entries are free',
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// FINAL: held-funds ledger must balance (everything settled → 0 client funds)
+// ─────────────────────────────────────────────────────────────────────────
+export async function moduleFinalLedger(ctx: Ctx) {
+  const rep = ctx.rep;
+  const mp = svc(ctx, ManualPaymentsService);
+
+  // Drain anything still due, then assert the held-funds report balances.
+  await settleTick(400);
+  await drainPayouts(ctx);
+  await settleTick(200);
+  const report: any = await mp.getHeldFundsReport();
+  console.log(
+    `  [held-funds] held=${report.heldAwaitingRelease.cents} owedSellers=${report.owedToSellers.cents} ` +
+      `owedRefunds=${report.owedToBuyerRefunds.cents} swapCash=${report.swapCashHeld.cents} ` +
+      `swapFunding=${report.swapFundingInFlight.cents} TOTAL=${report.totalClientFundsCents}`,
+  );
+  check(rep, 'HELD-FUNDS: no funds left owed to sellers after settlement', () =>
+    eq(report.owedToSellers.cents, 0, 'owedToSellers'),
+  );
+  check(rep, 'HELD-FUNDS: no swap cash / funding left in flight', () => {
+    eq(report.swapCashHeld.cents, 0, 'swapCashHeld');
+    eq(report.swapFundingInFlight.cents, 0, 'swapFundingInFlight');
+  });
+  check(rep, 'HELD-FUNDS: total client funds fully settled to 0', () =>
+    eq(report.totalClientFundsCents, 0, 'totalClientFundsCents'),
+  );
+  rep.money({
+    label: 'HELD-FUNDS closing balance',
+    buyerPaid: 0,
+    sellerPaid: 0,
+    ggRevenue: 0,
+    carrier: 0,
+    refunded: 0,
+    note: `getHeldFundsReport totalClientFundsCents = ${report.totalClientFundsCents}`,
+  });
+}

@@ -13,10 +13,35 @@
  * no-op/stub. See scripts/dummy-run-setup.ts + backend/.env.dummyrun.
  */
 import 'reflect-metadata';
+import * as path from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import type { INestApplicationContext } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma/prisma.service';
+import { Reporter } from './dummy-run/harness';
+import {
+  Ctx,
+  cleanup,
+  installStubs,
+  seedActors,
+  resolveCategories,
+} from './dummy-run/seed';
+import { runModule } from './dummy-run/money';
+import {
+  moduleBuyNow,
+  moduleFirearm,
+  moduleAuctions,
+  moduleOffers,
+  moduleOrders,
+  moduleExperiences,
+  moduleSubscriptions,
+  moduleFeatured,
+  moduleContentSmoke,
+  moduleSwap,
+  moduleRaffles,
+  moduleFinalLedger,
+} from './dummy-run/modules';
 
 const REQUIRED_DB = 'gun_galore_dummyrun';
 // A representative set of keys that MUST be blank for the run to be safe.
@@ -115,8 +140,44 @@ async function main() {
   }
 
   console.log('[boot] application context is up. ✓');
-  console.log('[boot] (module drivers not wired yet — this is the boot smoke test.)');
 
+  // Neutralise the two outbound courier-rate calls (blank keys → null quote →
+  // dead-ended courier checkout). This stubs ONLY the external rate lookup; the
+  // whole transaction + fee code path under test still runs for real.
+  installStubs(app);
+
+  const prisma = app.get(PrismaService, { strict: false });
+  const rep = new Reporter();
+
+  console.log('[seed] wiping prior dummy-run data (idempotent) …');
+  await cleanup(prisma);
+  console.log('[seed] seeding actors + resolving categories …');
+  const actors = await seedActors(prisma);
+  const cats = await resolveCategories(prisma);
+  const ctx: Ctx = { app, prisma, rep, actors, cats };
+  console.log(`[seed] ${Object.keys(actors).length} actors ready.`);
+
+  // ── Module drivers ──────────────────────────────────────────────────
+  await runModule(ctx, 'Marketplace BUY_NOW', moduleBuyNow);
+  await runModule(ctx, 'Firearm DEALER_TRANSFER', moduleFirearm);
+  await runModule(ctx, 'Auctions', moduleAuctions);
+  await runModule(ctx, 'Take-a-Shot offers', moduleOffers);
+  await runModule(ctx, 'Cart / Orders (multi-seller)', moduleOrders);
+  await runModule(ctx, 'Experiences (on-site)', moduleExperiences);
+  await runModule(ctx, 'Subscriptions', moduleSubscriptions);
+  await runModule(ctx, 'Featured slots', moduleFeatured);
+  await runModule(ctx, 'Swop / Trade', moduleSwap);
+  await runModule(ctx, 'Raffles', moduleRaffles);
+  await runModule(ctx, 'Content smoke', moduleContentSmoke);
+  await runModule(ctx, 'Held-funds closing balance', moduleFinalLedger);
+
+  // ── Report ──────────────────────────────────────────────────────────
+  rep.printSummary();
+  const reportPath = path.resolve(__dirname, '..', '..', 'DUMMY-RUN-REPORT.md');
+  rep.writeMarkdown(reportPath);
+
+  // Let any trailing fire-and-forget side-effects flush before teardown.
+  await new Promise((r) => setTimeout(r, 400));
   await app.close();
   console.log('[done] context closed cleanly.');
   process.exit(0);
