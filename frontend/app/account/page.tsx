@@ -3,7 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { Me, SellerTier } from '@/lib/types';
-import { ACCOUNT_GROUPS } from '@/lib/account-menu';
+import { ACCOUNT_GROUPS } from '@/lib/account-menu-data';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { AccountWishlistCount } from './wishlist-count';
