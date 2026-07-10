@@ -22,20 +22,44 @@
 
 ---
 
-## 1. Phase 0 — Operator inputs (BLOCKING — collect before writing code)
+## 1. Phase 0 — Operator inputs → **PLACEHOLDER POLICY (adopted 2026-07-09)**
 
-Ask the operator for each of these at session start. Do not guess.
+**Operator instruction: "just add placeholders for everything for now."** Phase 0 is therefore NOT blocking. Build the ENTIRE migration against the placeholder values below — complete code paths, complete UI, complete tests — and keep it inert on prod (prod stays `PAYMENT_MODE=manual` until the real values are swapped in and the operator orders cutover). Do not stop to ask for any of these; do surface the swap-in checklist (§1c) when the build is done.
 
-| # | Input | Notes |
-|---|-------|-------|
-| 0.1 | **Confirm the role split.** Working assumption: **Peach = pay-in** (card checkout + refunds back to card) and **Ivori = pay-out** (bank disbursements to sellers via the Nedbank merchant relationship). Confirm, or correct. | The Nedbank TPPP onboarding (Nadia Geyer) is the Ivori/Nedbank leg. |
-| 0.2 | **Peach credentials** — sandbox first: entity ID(s), API key/secret, webhook signing secret, dashboard access. Which Peach product: hosted **Checkout** (recommended — least PCI scope, supports card + PayJustNow BNPL + EFT-alternatives as *gateway-managed* methods) vs Embedded. | PCI: stay SAQ-A — never touch PAN. |
-| 0.3 | **Ivori credentials + API documentation** — sandbox first: auth model, disbursement endpoint(s), status webhook/polling, settlement account details, per-payout and batch limits, name-check/CDV capabilities. | If Ivori has no payout API and is dashboard-only, STOP and surface that to the operator — Phase 4 then becomes "generate Ivori-format batch file + mark-paid", mirroring today's FNB flow. |
-| 0.4 | **Payment methods to enable** at checkout: card required; PayJustNow BNPL yes/no; any others Peach offers. | Config in Peach dashboard + checkout call. |
-| 0.5 | **Processing-fee policy on the card rail.** Today manual EFT charges 1.5% when `passFeeToBuyer`. Card acquiring costs more (typically ~2.5–3.5%). Operator must set the new % (or flat+%) for `fee.calculator.ts`, and whether it's buyer-paid, seller-paid, or absorbed. | Do NOT silently keep 1.5%. |
-| 0.6 | **Checkout reservation window.** EFT allowed 24h to pay; card checkouts complete in minutes. Recommend 60 min PAYMENT_PENDING reservation, then auto-release the listing. Operator to confirm. | |
-| 0.7 | **Cutover mode.** Recommended: hard cutover (current users are testers) with a 7-day EFT drain-down (§5.1). Confirm. | |
-| 0.8 | **Payout cadence** once payouts are API-driven: keep daily batch (operator-triggered), or auto-run on a schedule with a daily cap? Recommend: auto-draft + one-click operator approval to execute (keeps a human on the money button). | |
+| # | Input | **PLACEHOLDER to build with (provisional — confirm at cutover)** |
+|---|-------|------------------------------------------------------------------|
+| 0.1 | Role split | **Peach = pay-in** (card checkout + card refunds), **Ivori = pay-out** (bank disbursements, Nedbank TPPP leg). Keep the seam clean so swapping roles later is a config change, not a rewrite. |
+| 0.2 | Peach product + credentials | Hosted **Checkout** (SAQ-A, never touch PAN). Credentials = placeholder env keys (§1b). Build the client against Peach's public sandbox API shape; if any endpoint detail is unknowable without creds, isolate it behind one adapter method with a `// PLACEHOLDER-VERIFY` comment. |
+| 0.3 | Ivori API | Assume a REST disbursement API (create payout → poll/webhook status). Build the adapter against that assumed shape behind ONE interface (`PayoutProvider`), every assumption tagged `// PLACEHOLDER-VERIFY`. Also implement the fallback in the same interface: `IvoriFileProvider` that emits a generic bank-batch CSV + mark-paid (mirrors today's FNB flow) — so if Ivori turns out to be dashboard-only, cutover still works by flipping `PAYOUT_PROVIDER=file`. |
+| 0.4 | Payment methods | Card ON, PayJustNow BNPL ON behind flag `CHECKOUT_ENABLE_PAYJUSTNOW=true` (Settings-toggleable). |
+| 0.5 | Card processing fee | **3.0% `passFeeToBuyer` (PLACEHOLDER)** — wire it as a Settings key `GATEWAY_PROCESSING_FEE_PERCENT` (default 3.0) + `GATEWAY_FEE_PAYER=buyer`, NOT a hardcoded constant, so the operator's real number is a Settings edit. Keep the 1.5% manual constant untouched for historical rows. |
+| 0.6 | Checkout reservation window | **60 minutes** — Settings key `GATEWAY_RESERVATION_MINUTES` (default 60). |
+| 0.7 | Cutover mode | **Hard cutover + 7-day EFT drain-down** (§5.1). |
+| 0.8 | Payout cadence | **Auto-draft daily batch + one-click operator approval to execute** (human stays on the money button). Settings key `PAYOUT_AUTODRAFT_HOUR` (default 8). |
+
+### 1b. Placeholder env keys (add to `.env.example` + prod `.env` with these exact inert values)
+
+```
+# ── Peach Payments (pay-in) — PLACEHOLDERS, replace at cutover ──
+PEACH_BASE_URL=https://sandbox.peachpayments.example   # PLACEHOLDER
+PEACH_ENTITY_ID=PLACEHOLDER_NOT_SET
+PEACH_API_KEY=PLACEHOLDER_NOT_SET
+PEACH_WEBHOOK_SECRET=PLACEHOLDER_NOT_SET
+# ── Ivori (pay-out) — PLACEHOLDERS, replace at cutover ──
+IVORI_BASE_URL=https://sandbox.ivori.example           # PLACEHOLDER
+IVORI_API_KEY=PLACEHOLDER_NOT_SET
+IVORI_WEBHOOK_SECRET=PLACEHOLDER_NOT_SET
+PAYOUT_PROVIDER=ivori                                  # ivori | file
+```
+
+**Fail-closed rule (mirror FIX-4):** the gateway/payout services MUST detect `PLACEHOLDER_NOT_SET` / `.example` hosts and (a) refuse to make ANY outbound call, (b) log one clear `WARN gateway placeholder mode — inert`, (c) throw a clean 503 "payments temporarily unavailable" if a checkout is somehow attempted on the gateway lane. In `NODE_ENV=production` with `PAYMENT_MODE=peach`, placeholder values must **fail the boot assert** — it must be impossible to cut over on placeholders by accident. The dummy-run harness keeps these keys BLANK (not placeholder) per its existing safety model.
+
+### 1c. Swap-in checklist (run when the operator delivers real values — the ONLY remaining manual step)
+
+1. Replace the §1b placeholder keys with real **sandbox** creds → run the full sandbox test plan (§8.2–8.3) → fix any `PLACEHOLDER-VERIFY` mismatches against the real API docs.
+2. Operator confirms/corrects the §1 provisional decisions (role split, fee %, window, cadence) — each is a Settings/env edit by design.
+3. Replace sandbox creds with **production** creds (operator supplies; never committed).
+4. Execute the cutover runbook (§8.5). Only now does `PAYMENT_MODE=peach` go live on prod.
 
 ---
 
@@ -152,7 +176,7 @@ Work the ADM batches in their stated order, with these changes:
 
 | Order | Work | Depends on |
 |-------|------|-----------|
-| 1 | Phase 0 operator inputs | — |
+| 1 | Phase 0 placeholders (§1 — already adopted; nothing to collect) | — |
 | 2 | Phase 7.1 dummy-run harness gateway stub | — |
 | 3 | ADM-0 quick fixes (independent, warms up the admin surface) | — |
 | 4 | Phase 1 pay-in, lanes 1–3 | 1,2 |
@@ -160,8 +184,10 @@ Work the ADM batches in their stated order, with these changes:
 | 6 | Phase 1 remaining lanes 4–9 | 4 |
 | 7 | Phase 3 Ivori payouts (+manual-AVS gate) | 5 |
 | 8 | ADM-1 + ADM-2 (alert inbox + notify channel, incl. gateway events) | — (parallelisable) |
-| 9 | Cutover + drain-down (Phase 7.5) | 4–7 |
+| 9 | Swap-in checklist (§1c: real creds + confirm provisional decisions) then cutover + drain-down (Phase 7.5) | 4–7 + operator |
 | 10 | Phase 4 EFT rip-out | 9 + D+7 |
 | 11 | Remaining ADM batches per §6 table | 10 |
 
-**Definition of done:** a buyer pays by card (or PayJustNow), money is held, sellers are paid by Ivori with one operator click, refunds land back on cards automatically, no EFT screen/cron/copy remains, the dummy run passes 12/12 on the gateway rail, and every money action is centrally audited and alertable.
+**Definition of BUILD-done (achievable entirely on placeholders):** every gateway lane, refund path, Ivori payout path, and admin surface is fully coded and merged; prod still runs `PAYMENT_MODE=manual` with the gateway inert in placeholder mode; the dummy run passes 12/12 on the gateway rail via the stub; tsc clean; every money phase adversarially reviewed; the only outstanding work is the §1c swap-in checklist.
+
+**Definition of LIVE-done (after the operator supplies real values):** a buyer pays by card (or PayJustNow), money is held, sellers are paid by Ivori with one operator click, refunds land back on cards automatically, no EFT screen/cron/copy remains, and every money action is centrally audited and alertable.
