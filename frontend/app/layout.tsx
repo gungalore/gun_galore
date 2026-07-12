@@ -15,6 +15,7 @@ import { SwUpdateBanner } from '@/components/sw-update-banner';
 import { PushFirstLaunchPrompt } from '@/components/push-first-launch-prompt';
 import { WishlistProvider } from '@/lib/use-wishlist';
 import { AskGgProvider } from '@/lib/use-ask-gg-widget';
+import { AskGgHost } from '@/components/ask-gg/ask-gg-host';
 import './globals.css';
 
 // Inline script that runs BEFORE first paint and:
@@ -304,6 +305,11 @@ export default function RootLayout({
               condition. Matches the iOS/Android-native pattern where
               an installed app asks for notifications on first launch. */}
           <PushFirstLaunchPrompt />
+          {/* Ask GG Everywhere — site-wide launcher + lazy chat panel.
+              Self-gates off /admin, /checkout, /ask-gg, auth and other
+              focused routes; FAB in browser modes only (the PWA tab is
+              the standalone entry). The chat chunk loads on first open. */}
+          <AskGgHost />
           </AskGgProvider>
           </WishlistProvider>
         </body>

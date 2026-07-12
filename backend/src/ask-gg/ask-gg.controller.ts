@@ -303,3 +303,24 @@ export class AskGgController {
     return this.kb.markHelpful(id);
   }
 }
+
+/**
+ * Ask GG Everywhere (W3) — PUBLIC, read-only Help-Centre search.
+ *
+ * The site-wide panel shows signed-OUT visitors free instant answers
+ * (zero Claude spend) with a sign-in CTA. The main controller is
+ * class-level Clerk-guarded, so this tiny sibling exposes ONLY the
+ * verified-KB search — public platform FAQ content, bounded to 5 rows,
+ * throttled per IP. No user data, no writes ("This helped" stays on
+ * the authed route).
+ */
+@Controller('ask-gg/public')
+export class AskGgPublicController {
+  constructor(private readonly kb: AskGgKbService) {}
+
+  @Get('kb/search')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  searchKb(@Query('q') q?: string) {
+    return this.kb.searchVerified(q ?? '', 5);
+  }
+}

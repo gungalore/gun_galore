@@ -97,6 +97,19 @@ export function InstallPrompt() {
     !dismissed &&
     (canInstall || isIosSafari || isIosNonSafari || showFallbackHint);
 
+  // Ask GG Everywhere — the install card owns bottom-right (z60), the same
+  // corner as the Ask GG launcher (z52). Stamp a body attribute while the
+  // card is visible so globals.css can lift the launcher above it (same
+  // idiom as body[data-has-sticky-strip]).
+  useEffect(() => {
+    if (showFloating) {
+      document.body.setAttribute('data-install-prompt', 'true');
+    } else {
+      document.body.removeAttribute('data-install-prompt');
+    }
+    return () => document.body.removeAttribute('data-install-prompt');
+  }, [showFloating]);
+
   // Copy adapts to the path: native install / iOS-Safari steps / switch-to-
   // Safari / generic shortcut.
   const title = canInstall

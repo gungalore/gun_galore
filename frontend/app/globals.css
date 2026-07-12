@@ -260,3 +260,12 @@ html[data-standalone='true']::view-transition-new(root) {
     box-shadow: 0 0 10px rgba(200, 16, 46, 0.5);
   }
 }
+
+/* Ask GG Everywhere — the install-prompt card owns bottom-right
+   (fixed 16/16, z 60, ~96px tall). While it's visible (body attribute
+   stamped by install-prompt.tsx) lift the launcher clear of it. The id
+   selector outranks the launcher's Tailwind utilities at every
+   breakpoint, so one rule covers mobile + desktop. */
+body[data-install-prompt='true'] #askgg-fab {
+  bottom: calc(124px + env(safe-area-inset-bottom));
+}

@@ -4,7 +4,7 @@ import { AskGgService } from './ask-gg.service';
 import { AskGgClaudeService } from './ask-gg-claude.service';
 import { AskGgQuotaService } from './ask-gg-quota.service';
 import { AskGgKbService } from './ask-gg-kb.service';
-import { AskGgController } from './ask-gg.controller';
+import { AskGgController, AskGgPublicController } from './ask-gg.controller';
 import {
   AskGgKbAdminController,
   AskGgExpertAdminController,
@@ -43,6 +43,7 @@ import { AskGgPlatformToolsService } from './ask-gg-platform-tools.service';
   ],
   controllers: [
     AskGgController,
+    AskGgPublicController,
     AskGgKbAdminController,
     AskGgExpertAdminController,
   ],
