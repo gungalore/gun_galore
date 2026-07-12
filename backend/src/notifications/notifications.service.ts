@@ -19,7 +19,8 @@ export type NotificationLinkedType =
   | 'swapProposal'
   | 'swap'
   | 'subscription'
-  | 'featured';
+  | 'featured'
+  | 'wantedAd';
 
 interface PersistOpts {
   userId: string;

@@ -1985,6 +1985,18 @@ export default function NewListingPage() {
           Honest titles and crisp photos sell faster. Required fields marked{' '}
           <span style={{ color: 'var(--red)' }}>*</span>.
         </p>
+        <p
+          className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 rounded-full text-xs"
+          style={{
+            background: 'rgba(47, 158, 107, 0.12)',
+            border: '0.5px solid rgba(47, 158, 107, 0.5)',
+            color: '#2f9e6b',
+            fontWeight: 600,
+          }}
+        >
+          ✓ Free to advertise — no upfront fees. We only earn a small
+          commission when your item sells.
+        </p>
       </header>
 
       {/* Draft restored notice — appears when a previous session's

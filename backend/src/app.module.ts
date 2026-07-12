@@ -33,6 +33,7 @@ import { ReferenceNumberModule } from './common/reference-number.service';
 import { ZohoBooksModule } from './zoho/zoho-books.module';
 import { ActionTokensModule } from './actions/action-tokens.module';
 import { WishlistModule } from './wishlist/wishlist.module';
+import { WantedModule } from './wanted/wanted.module';
 import { SavedSearchesModule } from './saved-searches/saved-searches.module';
 import { ReportsModule } from './reports/reports.module';
 import { SupportModule } from './support/support.module';
@@ -89,6 +90,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     ZohoBooksModule,
     ActionTokensModule,
     WishlistModule,
+    WantedModule,
     SavedSearchesModule,
     ReportsModule,
     PushModule,

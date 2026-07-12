@@ -182,19 +182,47 @@ export function Hero() {
           </p>
 
           {/* Primary CTA — drops the user straight into the Marketplace
-              surface (BUY_NOW listings) since that's the largest catalogue. */}
-          <Link
-            href="/?listingType=BUY_NOW"
-            className="hero-reveal hero-reveal-4 inline-block px-6 py-3 rounded-[6px] text-sm transition-all"
+              surface (BUY_NOW listings) since that's the largest catalogue.
+              Secondary CTA sells the seller side: advertising costs nothing
+              upfront (commission only when an item actually sells). */}
+          <div className="hero-reveal hero-reveal-4 flex flex-wrap items-center gap-4">
+            <Link
+              href="/?listingType=BUY_NOW"
+              className="inline-block px-6 py-3 rounded-[6px] text-sm transition-all"
+              style={{
+                background: 'var(--red)',
+                color: '#fff',
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
+            >
+              Browse marketplace
+            </Link>
+            <Link
+              href="/listings/new"
+              className="inline-block px-6 py-3 rounded-[6px] text-sm transition-all"
+              style={{
+                background: 'rgba(0, 0, 0, 0.35)',
+                border: '0.5px solid rgba(245, 245, 245, 0.35)',
+                color: 'rgba(245, 245, 245, 0.92)',
+                fontWeight: 500,
+                textDecoration: 'none',
+                textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
+              }}
+            >
+              Sell your gear — free to advertise
+            </Link>
+          </div>
+          <p
+            className="hero-reveal hero-reveal-4 text-xs mt-3"
             style={{
-              background: 'var(--red)',
-              color: '#fff',
-              fontWeight: 500,
-              textDecoration: 'none',
+              color: 'rgba(245, 245, 245, 0.72)',
+              textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
             }}
           >
-            Browse marketplace
-          </Link>
+            No upfront fees to advertise — we only earn a small commission
+            when your item sells.
+          </p>
         </div>
       </div>
     </section>

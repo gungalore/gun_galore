@@ -817,3 +817,48 @@ export interface MyWin {
     prizeIsFirearm: boolean;
   };
 }
+
+// ─── Wanted ads (demand capture) ───────────────────────────────────
+// Buyers post what they're LOOKING FOR; sellers respond with one of
+// their own ACTIVE listings and/or a contact-filtered message. Never a
+// sellable object — transactions happen on the linked listing.
+
+export type WantedStatus = 'ACTIVE' | 'CLOSED' | 'EXPIRED';
+
+export interface WantedAdCard {
+  id: string;
+  title: string;
+  description: string;
+  categoryId: string | null;
+  categoryName: string | null;
+  categorySlug: string | null;
+  province: Province | null;
+  budgetMinCents: number | null;
+  budgetMaxCents: number | null;
+  status: WantedStatus;
+  expiresAt: string;
+  createdAt: string;
+  responseCount: number;
+  ownerUsername: string;
+}
+
+export interface WantedBrowseResult {
+  total: number;
+  page: number;
+  pageSize: number;
+  items: WantedAdCard[];
+}
+
+export interface WantedResponseView {
+  id: string;
+  message: string;
+  createdAt: string;
+  responderUsername: string;
+  listing: {
+    id: string;
+    title: string;
+    price: number | null;
+    status: string;
+    imageUrl: string | null;
+  } | null;
+}

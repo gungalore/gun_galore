@@ -716,6 +716,30 @@ function ShopSheet({
       icon: <IconTrophy />,
       isActive: pathname.startsWith('/competitions'),
     },
+    {
+      key: 'wanted',
+      href: '/wanted',
+      title: 'Wanted',
+      tagline: 'Post what you’re looking for — sellers come to you, free',
+      icon: (
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.35-4.35" />
+          <path d="M11 8v3l2 2" />
+        </svg>
+      ),
+      isActive: pathname.startsWith('/wanted'),
+    },
   ];
 
   return (
@@ -897,6 +921,7 @@ function MoreSheet({
     { href: '/wishlist', label: 'Wishlist' },
     { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
     { href: '/competitions', label: 'Competitions' },
+    { href: '/wanted', label: 'Wanted' },
   ];
   // Account destinations now come from the shared ACCOUNT_GROUPS (rendered via
   // <AccountMenuList/>) so this sheet stays in lockstep with the desktop
