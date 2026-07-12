@@ -295,7 +295,31 @@ interface QuotaExhaustedBody {
   retryAfterSec?: number;
 }
 
-export function useAskGg(): UseAskGg {
+// W4 flag — page context rides the send body only once the backend
+// accepts it (older backends must never see the field). Omit, not null.
+const CONTEXT_ENABLED = process.env.NEXT_PUBLIC_ASKGG_CONTEXT === 'true';
+
+/** Client-derived page context sent (flag-gated) with each message so the
+ *  assistant knows what the user is looking at. Server re-verifies and
+ *  enriches — this is a hint, never trusted data. */
+export interface AskGgPageContext {
+  path: string;
+  listingId?: string;
+  transactionId?: string;
+  orderId?: string;
+  categorySlug?: string;
+}
+
+export function useAskGg(
+  options: {
+    /** Ask GG Everywhere: the provider hosts ONE hook instance globally.
+     *  Until the user opens the panel (or is on /ask-gg), `enabled:false`
+     *  keeps the hook INERT — no mount-time quota/history fetches on
+     *  every page load site-wide. Defaults true (standalone page use). */
+    enabled?: boolean;
+  } = {},
+): UseAskGg {
+  const enabled = options.enabled !== false;
   const { getToken, isSignedIn, isLoaded } = useAuth();
   const [messages, setMessages] = useState<AskGgUiMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -345,10 +369,12 @@ export function useAskGg(): UseAskGg {
   }, [getToken, isSignedIn]);
 
   // Initial quota fetch once Clerk has loaded and the user is signed in.
+  // Gated on `enabled` so the globally-mounted provider instance stays
+  // silent until the widget is actually opened (fires on flip to true).
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!enabled || !isLoaded || !isSignedIn) return;
     void refreshQuota();
-  }, [isLoaded, isSignedIn, refreshQuota]);
+  }, [enabled, isLoaded, isSignedIn, refreshQuota]);
 
   // Fair-use cool-off countdown — automatically clears the cool-off
   // state when the window ends so the composer becomes usable again.
@@ -432,14 +458,15 @@ export function useAskGg(): UseAskGg {
     }
   }, [conversationId]);
 
-  // On mount (signed-in): open a FRESH thread every time — we intentionally
+  // On first ENABLE (signed-in): open a FRESH thread — we intentionally
   // do NOT auto-restore the last conversation. The last 10 conversations are
   // reachable via the history picker instead. Just prime the history list.
+  // hydratedRef makes this once-per-mount even as `enabled` toggles.
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || hydratedRef.current) return;
+    if (!enabled || !isLoaded || !isSignedIn || hydratedRef.current) return;
     hydratedRef.current = true;
     void refreshHistory();
-  }, [isLoaded, isSignedIn, refreshHistory]);
+  }, [enabled, isLoaded, isSignedIn, refreshHistory]);
 
   // Refresh the history list each time a send completes (a new conversation
   // may have been created, or an existing one bumped to the top).
@@ -451,7 +478,13 @@ export function useAskGg(): UseAskGg {
   const send = useCallback(
     async (
       content: string,
-      opts: { escalate?: boolean; imageUrls?: string[] } = {},
+      opts: {
+        escalate?: boolean;
+        imageUrls?: string[];
+        /** W4: what page the user is on — included in the POST body only
+         *  when NEXT_PUBLIC_ASKGG_CONTEXT is on AND a context is given. */
+        pageContext?: AskGgPageContext;
+      } = {},
     ) => {
       const trimmed = content.trim();
       const imageUrls = opts.imageUrls ?? [];
@@ -500,6 +533,11 @@ export function useAskGg(): UseAskGg {
             content: trimmed,
             escalate: opts.escalate ?? false,
             imageUrls,
+            // W4 flag-gated: older backends must never receive the field
+            // (omitted entirely when the flag is off or no context given).
+            ...(CONTEXT_ENABLED && opts.pageContext
+              ? { pageContext: opts.pageContext }
+              : {}),
           }),
         });
 

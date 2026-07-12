@@ -14,6 +14,7 @@ import { ConnectionStatusBanner } from '@/components/connection-status-banner';
 import { SwUpdateBanner } from '@/components/sw-update-banner';
 import { PushFirstLaunchPrompt } from '@/components/push-first-launch-prompt';
 import { WishlistProvider } from '@/lib/use-wishlist';
+import { AskGgProvider } from '@/lib/use-ask-gg-widget';
 import './globals.css';
 
 // Inline script that runs BEFORE first paint and:
@@ -234,6 +235,7 @@ export default function RootLayout({
         </head>
         <body className="antialiased">
           <WishlistProvider>
+          <AskGgProvider>
           {/* PublicNav + PublicFooter hide themselves on /admin/*
               (the admin layout owns its own chrome) so the public
               Nav and ECT § 43 footer only render on the buyer/
@@ -302,6 +304,7 @@ export default function RootLayout({
               condition. Matches the iOS/Android-native pattern where
               an installed app asks for notifications on first launch. */}
           <PushFirstLaunchPrompt />
+          </AskGgProvider>
           </WishlistProvider>
         </body>
       </html>

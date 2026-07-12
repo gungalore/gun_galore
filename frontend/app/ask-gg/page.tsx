@@ -31,10 +31,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useUser, SignInButton } from '@clerk/nextjs';
 import {
-  useAskGg,
   type AskGgQuota,
   type AskGgKbHit,
 } from '@/lib/use-ask-gg';
+import { useAskGgChat } from '@/lib/use-ask-gg-widget';
 import { SubscriberRaffleWidget } from '@/components/subscriber-raffle-widget';
 import { LoadLabPanel } from './load-lab/LoadLabPanel';
 import {
@@ -78,7 +78,9 @@ function relTime(iso: string): string {
 
 export default function AskGgPage() {
   const { isSignedIn, isLoaded } = useUser();
-  const ag = useAskGg();
+  // Shared instance from AskGgProvider — the SAME conversation state the
+  // site-wide panel (W3) uses, so a thread started anywhere continues here.
+  const ag = useAskGgChat();
   const [composerValue, setComposerValue] = useState('');
   // Phase C — KB hits surfaced as the user types in the composer.
   // Debounced 400ms after the last keystroke. Cleared when the user
@@ -102,6 +104,22 @@ export default function AskGgPage() {
   // before Ask GG is usable (localStorage-persisted; see useAskGgDisclaimer).
   const { accepted: disclaimerAccepted, accept: acceptDisclaimer } =
     useAskGgDisclaimer();
+
+  // Expand-from-panel deep link (?c=<conversationId>) — load that thread on
+  // mount when it isn't already the active one. Reads window.location.search
+  // directly (not useSearchParams) so this page needs no Suspense boundary.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    try {
+      const c = new URLSearchParams(window.location.search).get('c');
+      if (c && c !== ag.conversationId) void ag.loadConversation(c);
+    } catch {
+      // malformed URL — ignore, fresh thread stands
+    }
+    // Run once per signed-in mount; conversationId is deliberately not a
+    // dep (it changes as the user chats and must not re-trigger the load).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, isSignedIn]);
   function declineDisclaimer() {
     router.push('/');
   }
