@@ -249,7 +249,14 @@ export interface UseAskGg {
   error: string | null;
   send: (
     content: string,
-    opts?: { escalate?: boolean; imageUrls?: string[] },
+    opts?: {
+      escalate?: boolean;
+      imageUrls?: string[];
+      /** W4 — page context from the site-wide panel. Only leaves the
+       *  browser when NEXT_PUBLIC_ASKGG_CONTEXT is on; the backend
+       *  re-verifies everything server-side. */
+      pageContext?: AskGgPageContext;
+    },
   ) => Promise<void>;
   /** Phase B — upload 1-5 photos to Cloudinary via the backend. Used
    *  by the composer before calling send() with the returned URLs. */

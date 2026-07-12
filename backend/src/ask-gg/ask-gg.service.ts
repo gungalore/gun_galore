@@ -9,6 +9,10 @@ import { AskGgClaudeService, AskGgChatMessage } from './ask-gg-claude.service';
 import { AskGgQuotaService, maxPhotosPerRequest } from './ask-gg-quota.service';
 import { AskGgKbService } from './ask-gg-kb.service';
 import {
+  AskGgContextService,
+  AskGgClientPageContext,
+} from './ask-gg-context.service';
+import {
   AskGgConversationOutcome,
   AskGgMessage,
   SubscriptionTier,
@@ -33,6 +37,10 @@ export interface PreparedSend {
   imageUrls: string[];
   escalate: boolean;
   claudeHistory: AskGgChatMessage[];
+  /** W4 — server-verified page-context block for the uncached system
+   *  tail. Built by AskGgContextService from client-sent ids after
+   *  ownership checks; undefined when no (valid) context came in. */
+  contextBlock?: string;
 }
 
 // ─── History truncation (Ask GG Everywhere / B0) ─────────────────────
@@ -121,6 +129,7 @@ export class AskGgService {
     private readonly claude: AskGgClaudeService,
     private readonly quota: AskGgQuotaService,
     private readonly kb: AskGgKbService,
+    private readonly context: AskGgContextService,
   ) {}
 
   private async userIdFromClerk(clerkId: string): Promise<{
@@ -166,6 +175,10 @@ export class AskGgService {
       /** Cloudinary URLs from prior POST /ask-gg/uploads. Phase B —
        *  photo identification. Max 5 per message. */
       imageUrls?: string[];
+      /** W4 — raw page context from the panel. Treated as UNTRUSTED:
+       *  shape-validated then re-fetched server-side with ownership
+       *  checks. Malformed → silently dropped, never a 400. */
+      pageContext?: unknown;
     },
   ): Promise<PreparedSend> {
     const user = await this.userIdFromClerk(clerkId);
@@ -256,6 +269,12 @@ export class AskGgService {
       isNew = true;
     }
 
+    // W4 — page context. Sanitize the client value (drop, never 400),
+    // persist the sanitized shape on the message row for audit, and
+    // build the server-verified enrichment block for the system tail.
+    const pageContext: AskGgClientPageContext | undefined =
+      this.context.sanitize(input.pageContext);
+
     // Persist the user message immediately so the conversation history
     // exists even if Claude errors out later.
     const userMessage = await this.prisma.askGgMessage.create({
@@ -264,8 +283,16 @@ export class AskGgService {
         role: 'user',
         content: trimmed,
         imageUrls,
+        pageContext: pageContext
+          ? (pageContext as unknown as object)
+          : undefined,
       },
     });
+
+    const contextBlock = await this.context.buildContextBlock(
+      pageContext,
+      user.id,
+    );
 
     // Build history for Claude — prior messages in this conversation,
     // oldest first, including the message we just persisted (so Claude
@@ -293,6 +320,7 @@ export class AskGgService {
       imageUrls,
       escalate: input.escalate ?? false,
       claudeHistory,
+      contextBlock,
     };
   }
 
@@ -317,6 +345,9 @@ export class AskGgService {
       subscriptionTier: prep.user.subscriptionTier,
       // computeFees' Top Seller discount — server-derived, never model input.
       isTopSeller: prep.user.isTopSeller,
+      // W4 — server-verified page context, injected as the uncached
+      // system tail (block 1 stays byte-identical → cache intact).
+      contextBlock: prep.contextBlock,
       onText,
     });
 
@@ -389,6 +420,7 @@ export class AskGgService {
       content: string;
       escalate?: boolean;
       imageUrls?: string[];
+      pageContext?: unknown;
     },
   ) {
     const prep = await this.preflight(clerkId, input);

@@ -65,6 +65,9 @@ export class AskGgController {
       content: string;
       escalate?: boolean;
       imageUrls?: string[];
+      /** W4 — untrusted page-context hints; sanitized + re-fetched
+       *  server-side with ownership checks. Malformed → dropped. */
+      pageContext?: unknown;
     },
   ) {
     return this.askGg.sendMessage(clerkId, body);
@@ -96,6 +99,7 @@ export class AskGgController {
       content: string;
       escalate?: boolean;
       imageUrls?: string[];
+      pageContext?: unknown;
     },
     @Res() res: Response,
   ): Promise<void> {

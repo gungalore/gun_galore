@@ -17,6 +17,7 @@ import { LoadLabModule } from '../load-lab/load-lab.module';
 import { ListingsModule } from '../listings/listings.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { AskGgPlatformToolsService } from './ask-gg-platform-tools.service';
+import { AskGgContextService } from './ask-gg-context.service';
 
 @Module({
   // ReloadingModule exports ReloadingService so AskGgClaudeService can
@@ -53,6 +54,7 @@ import { AskGgPlatformToolsService } from './ask-gg-platform-tools.service';
     AskGgQuotaService,
     AskGgKbService,
     AskGgPlatformToolsService,
+    AskGgContextService,
     AdminAuditService,
   ],
   exports: [AskGgService, AskGgKbService],

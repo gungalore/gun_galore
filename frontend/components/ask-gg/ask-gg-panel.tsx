@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { useAskGgChat, useAskGgWidget } from '@/lib/use-ask-gg-widget';
@@ -15,6 +15,10 @@ import { QuotaPill, UpgradeInlineNudge, FairUseCard } from './quota-chrome';
 import { AskGgDisclaimer, useAskGgDisclaimer } from './disclaimer';
 import { GENERIC_STARTER_PROMPTS } from './starter-prompts';
 import { AskGgSignedOut } from './ask-gg-signed-out';
+import {
+  derivePageContext,
+  CONTEXTUAL_STARTER_PROMPTS,
+} from '@/lib/ask-gg-context';
 
 // Ask GG Everywhere — the site-wide chat panel (the LAZY chunk).
 //
@@ -116,6 +120,20 @@ export default function AskGgPanel() {
   }, [assistantCount]);
   const mascotMood = ag.sending ? 'think' : happyPulse ? 'happy' : 'idle';
 
+  // W4 — page context. Derived from the URL only; the backend treats
+  // the ids as untrusted hints and re-fetches with ownership checks.
+  // Attached to every send from the panel (the /ask-gg page keeps its
+  // context-free sends — the panel is suppressed there anyway).
+  const { kind: pageKind, ctx: pageCtx } = useMemo(
+    () => derivePageContext(pathname),
+    [pathname],
+  );
+  const send = useCallback<typeof ag.send>(
+    (content, opts) => ag.send(content, { ...opts, pageContext: pageCtx }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ag.send, pageCtx],
+  );
+
   function newChat() {
     ag.reset();
     setComposerValue('');
@@ -142,9 +160,11 @@ export default function AskGgPanel() {
     lastMsg?.role === 'assistant' &&
     lastMsg.content.length > 0;
 
-  // Compact starter chips (generic trio — page context makes these
-  // smarter in W4).
-  const starterChips = GENERIC_STARTER_PROMPTS.slice(0, 3);
+  // Compact starter chips — contextual by page kind (W4), generic trio
+  // everywhere else.
+  const starterChips = (
+    CONTEXTUAL_STARTER_PROMPTS[pageKind] ?? GENERIC_STARTER_PROMPTS
+  ).slice(0, 3);
 
   return (
     <>
@@ -244,7 +264,7 @@ export default function AskGgPanel() {
               messages={ag.messages}
               sending={ag.sending}
               error={ag.error}
-              onEscalate={(content) => void ag.send(content, { escalate: true })}
+              onEscalate={(content) => void send(content, { escalate: true })}
               emptySlot={
                 <div style={{ padding: '18px 4px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
@@ -316,7 +336,7 @@ export default function AskGgPanel() {
                     fairUseCoolOff={ag.fairUseCoolOff}
                     quota={ag.quota}
                     uploadPhotos={ag.uploadPhotos}
-                    send={ag.send}
+                    send={send}
                     onBeforeSend={() => {
                       setKbHits([]);
                       setKbDismissed(false);
