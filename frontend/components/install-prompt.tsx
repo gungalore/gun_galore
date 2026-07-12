@@ -67,19 +67,33 @@ export function InstallPrompt() {
   // "Add to home screen" shortcut hint.
   const [isMobile, setIsMobile] = useState(false);
   const [fallbackArmed, setFallbackArmed] = useState(false);
+  // Desktop Chrome/Edge (Chromium) can install a PWA, but Chrome often won't
+  // fire beforeinstallprompt on a passive visit — so, like mobile, desktop needs
+  // a fallback that still offers install guidance when the native event stays
+  // silent. Firefox/Safari desktop can't install PWAs, so they're excluded.
+  const [isChromiumDesktop, setIsChromiumDesktop] = useState(false);
+  const [desktopArmed, setDesktopArmed] = useState(false);
   // Delay-gate so the popup never appears on first paint.
   const [readyToShow, setReadyToShow] = useState(false);
 
   useEffect(() => {
     setDismissed(isDismissedRecently());
     setNeverState(isNever());
-    const mobile = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(
-      navigator.userAgent,
-    );
+    const ua = navigator.userAgent;
+    const mobile = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(ua);
     setIsMobile(mobile);
+    // Chromium desktop = has "Chrome/" in the UA and isn't mobile. Captures
+    // Chrome, Edge, Opera, Brave (all install PWAs); excludes Firefox/Safari
+    // desktop (UA has no "Chrome/") so we never nag browsers that can't install.
+    const chromiumDesktop = !mobile && /Chrome\//.test(ua);
+    setIsChromiumDesktop(chromiumDesktop);
     const showTimer = setTimeout(() => setReadyToShow(true), SHOW_DELAY_MS);
     let fbTimer: ReturnType<typeof setTimeout> | undefined;
     if (mobile) fbTimer = setTimeout(() => setFallbackArmed(true), 5000);
+    let dtTimer: ReturnType<typeof setTimeout> | undefined;
+    // Give Chrome a few seconds to fire the native event (preferred one-click
+    // path) before falling back to instruction-led install on desktop.
+    if (chromiumDesktop) dtTimer = setTimeout(() => setDesktopArmed(true), 5000);
     // The nav's "Install app" button (and any other surface) can ask us to
     // pop the instruction modal — e.g. iOS, or Android before Chrome has fired
     // the install event. This works even after "Don't show again".
@@ -91,6 +105,7 @@ export function InstallPrompt() {
       window.removeEventListener('gg:show-install-help', onShowHelp);
       clearTimeout(showTimer);
       if (fbTimer) clearTimeout(fbTimer);
+      if (dtTimer) clearTimeout(dtTimer);
     };
   }, []);
 
@@ -135,6 +150,13 @@ export function InstallPrompt() {
     !isIosNonSafari &&
     !isInstalled;
 
+  // Desktop Chrome/Edge fallback: once armed, if the one-tap install still
+  // isn't offered and the app isn't installed, show the popup anyway with a
+  // "How to install" path (address-bar install icon / browser menu). Upgrades
+  // to the native one-click button automatically if the event fires later.
+  const showDesktopHint =
+    desktopArmed && isChromiumDesktop && !canInstall && !isInstalled;
+
   // The popup shows when there's an actionable install path, the user hasn't
   // dismissed / permanently opted out / already installed, we're not on a
   // focused route, and the initial delay has elapsed.
@@ -145,7 +167,11 @@ export function InstallPrompt() {
     !never &&
     !helpOpen &&
     !isSuppressedRoute(pathname) &&
-    (canInstall || isIosSafari || isIosNonSafari || showFallbackHint);
+    (canInstall ||
+      isIosSafari ||
+      isIosNonSafari ||
+      showFallbackHint ||
+      showDesktopHint);
 
   // Ask GG Everywhere — keep the body attribute stamped while our popup is up
   // so the Sparkie daily-hello suppresses (it checks data-install-prompt) and
@@ -168,10 +194,14 @@ export function InstallPrompt() {
       ? 'Open in Safari'
       : isIosSafari
         ? 'Show me how'
-        : 'Add to home screen';
+        : isChromiumDesktop
+          ? 'How to install'
+          : 'Add to home screen';
   const subtitle = isIosNonSafari
     ? 'iPhone apps install through Safari — we’ll show you how.'
-    : 'Add it to your home screen for the full experience — free, no store needed.';
+    : isChromiumDesktop && !isMobile
+      ? 'Install it as an app — faster, fullscreen, one click from your desktop. Free, no store needed.'
+      : 'Add it to your home screen for the full experience — free, no store needed.';
 
   if (!showPopup && !helpOpen) return null;
 
@@ -406,6 +436,7 @@ export function InstallPrompt() {
         <InstallHelpModal
           isIos={isIosSafari}
           isIosNonSafari={isIosNonSafari}
+          isDesktop={isChromiumDesktop && !isMobile}
           canInstall={canInstall}
           onInstall={async () => {
             const outcome = await promptInstall();
@@ -424,12 +455,14 @@ export function InstallPrompt() {
 function InstallHelpModal({
   isIos,
   isIosNonSafari,
+  isDesktop,
   canInstall,
   onInstall,
   onClose,
 }: {
   isIos: boolean;
   isIosNonSafari: boolean;
+  isDesktop: boolean;
   canInstall: boolean;
   onInstall: () => void;
   onClose: () => void;
@@ -583,7 +616,7 @@ function InstallHelpModal({
         ) : (
           <div>
             <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
-              {canInstall
+              {canInstall || isDesktop
                 ? 'Install the Gun Galore app'
                 : 'Add Gun Galore to your home screen'}
             </p>
@@ -599,6 +632,44 @@ function InstallHelpModal({
                 Tap <strong>Install</strong> below to add Gun Galore to your home
                 screen.
               </p>
+            ) : isDesktop ? (
+              // Desktop Chrome/Edge, native prompt not (yet) offered — steps use
+              // the omnibox install icon, with the browser menu as the fallback.
+              <>
+                <ol
+                  style={{
+                    fontSize: 12.5,
+                    color: 'var(--text-secondary)',
+                    lineHeight: 1.6,
+                    margin: 0,
+                    paddingLeft: 18,
+                  }}
+                >
+                  <li>
+                    Look for the <strong>install icon</strong> — a small screen
+                    with a down-arrow (<strong>⊕</strong>) — at the right end of
+                    the address bar, and click it.
+                  </li>
+                  <li>
+                    Don&rsquo;t see it? Open the browser menu (<strong>⋮</strong>,
+                    top-right) → <strong>Install Gun Galore…</strong>.
+                  </li>
+                  <li>
+                    Click <strong>Install</strong> to confirm.
+                  </li>
+                </ol>
+                <p
+                  style={{
+                    fontSize: 11.5,
+                    color: 'var(--text-tertiary)',
+                    lineHeight: 1.5,
+                    margin: '8px 0 0',
+                  }}
+                >
+                  Gun Galore opens in its own window and lives in your taskbar /
+                  apps — no store needed.
+                </p>
+              </>
             ) : (
               <>
                 <ol
