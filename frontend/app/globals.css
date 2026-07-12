@@ -269,3 +269,155 @@ html[data-standalone='true']::view-transition-new(root) {
 body[data-install-prompt='true'] #askgg-fab {
   bottom: calc(124px + env(safe-area-inset-bottom));
 }
+/* The daily hello bubble rides just above the FAB — same lift. */
+body[data-install-prompt='true'] #askgg-hello {
+  bottom: calc(180px + env(safe-area-inset-bottom));
+}
+
+/* Sparkie — the Ask GG mascot (components/ask-gg/ask-gg-mascot.tsx).
+   Idle life (bob/blink/glance) is pure CSS; one-shot "moments"
+   (gg-sparkie-wiggle / gg-sparkie-pop) and moods (--think / --happy)
+   are class-driven. Everything animates the individual transform
+   properties (translate / rotate / scale) so effects COMPOSE instead
+   of overriding each other, and all motion sits behind
+   prefers-reduced-motion: no-preference (reduced = a still face). */
+.gg-sparkie,
+.gg-sparkie-eyes,
+.gg-sparkie-pupils {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.gg-sparkie-smile-big {
+  display: none;
+}
+svg.gg-sparkie--happy .gg-sparkie-smile {
+  display: none;
+}
+svg.gg-sparkie--happy .gg-sparkie-smile-big {
+  display: inline;
+}
+/* Thinking face: focused squint, eyes up — static, so it also reads
+   under reduced motion. */
+svg.gg-sparkie--think .gg-sparkie-eyes {
+  animation: none;
+  scale: 1 0.6;
+}
+svg.gg-sparkie--think .gg-sparkie-pupils {
+  animation: none;
+  translate: 0 -1.1px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gg-sparkie {
+    animation: gg-sparkie-bob 3.4s ease-in-out infinite alternate;
+  }
+  .gg-sparkie-eyes {
+    animation: gg-sparkie-blink 4.4s linear infinite;
+  }
+  .gg-sparkie-pupils {
+    animation: gg-sparkie-glance 9.5s ease-in-out infinite;
+  }
+  svg.gg-sparkie-wiggle {
+    animation: gg-sparkie-do-wiggle 0.9s ease-in-out;
+  }
+  svg.gg-sparkie-pop,
+  svg.gg-sparkie--happy {
+    animation: gg-sparkie-do-pop 0.7s ease-out;
+  }
+  svg.gg-sparkie--think {
+    animation: gg-sparkie-think-tilt 1.6s ease-in-out infinite;
+  }
+  .gg-hello {
+    animation: gg-hello-in 0.3s ease-out;
+  }
+}
+@keyframes gg-sparkie-bob {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 0 -0.7px;
+  }
+}
+@keyframes gg-sparkie-blink {
+  0%,
+  92.5%,
+  100% {
+    scale: 1 1;
+  }
+  95%,
+  97.5% {
+    scale: 1 0.08;
+  }
+}
+@keyframes gg-sparkie-glance {
+  0%,
+  26% {
+    translate: 0 0;
+  }
+  32%,
+  46% {
+    translate: -1.4px 0;
+  }
+  52%,
+  72% {
+    translate: 0 0;
+  }
+  78%,
+  90% {
+    translate: 1.4px 0;
+  }
+  96%,
+  100% {
+    translate: 0 0;
+  }
+}
+@keyframes gg-sparkie-do-wiggle {
+  0% {
+    rotate: 0deg;
+  }
+  25% {
+    rotate: -14deg;
+  }
+  55% {
+    rotate: 11deg;
+  }
+  80% {
+    rotate: -5deg;
+  }
+  100% {
+    rotate: 0deg;
+  }
+}
+@keyframes gg-sparkie-do-pop {
+  0% {
+    scale: 1;
+  }
+  35% {
+    scale: 1.22;
+  }
+  65% {
+    scale: 0.96;
+  }
+  100% {
+    scale: 1;
+  }
+}
+@keyframes gg-sparkie-think-tilt {
+  0%,
+  100% {
+    rotate: 0deg;
+  }
+  50% {
+    rotate: 8deg;
+  }
+}
+@keyframes gg-hello-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}

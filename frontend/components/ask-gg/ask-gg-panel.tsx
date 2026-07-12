@@ -5,7 +5,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { useAskGgChat, useAskGgWidget } from '@/lib/use-ask-gg-widget';
 import type { AskGgKbHit } from '@/lib/use-ask-gg';
-import { IconSparkles, IconPlus, IconX } from './icons';
+import { IconPlus, IconX } from './icons';
+import { AskGgMascot } from './ask-gg-mascot';
 import { ChatThread } from './chat-thread';
 import { Composer, type ComposerHandle } from './composer';
 import { KbHitsRow } from './kb-hits';
@@ -101,6 +102,20 @@ export default function AskGgPanel() {
     setResolvedThisTurn(false);
   }, [assistantCount]);
 
+  // Sparkie mood: 'think' while a reply streams, a 'happy' beat when a
+  // new answer lands, otherwise idle.
+  const [happyPulse, setHappyPulse] = useState(false);
+  const prevAssistantRef = useRef(0);
+  useEffect(() => {
+    const grew = assistantCount > prevAssistantRef.current;
+    prevAssistantRef.current = assistantCount;
+    if (!grew) return;
+    setHappyPulse(true);
+    const t = setTimeout(() => setHappyPulse(false), 1500);
+    return () => clearTimeout(t);
+  }, [assistantCount]);
+  const mascotMood = ag.sending ? 'think' : happyPulse ? 'happy' : 'idle';
+
   function newChat() {
     ag.reset();
     setComposerValue('');
@@ -176,7 +191,7 @@ export default function AskGgPanel() {
             style={{ color: 'var(--text-primary)', fontWeight: 600 }}
           >
             <span style={{ color: 'var(--red)', display: 'inline-flex' }}>
-              <IconSparkles />
+              <AskGgMascot size={22} mood={mascotMood} />
             </span>
             Ask GG
           </span>

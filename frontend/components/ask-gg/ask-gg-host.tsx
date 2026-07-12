@@ -82,6 +82,7 @@ export function AskGgHost() {
       {/* FAB — browser modes only; standalone PWA enters via the tab (W4). */}
       {!standalone && (
         <AskGgLauncher
+          panelArmed={armed}
           onOpen={() => {
             arm();
             setOpen(true);
