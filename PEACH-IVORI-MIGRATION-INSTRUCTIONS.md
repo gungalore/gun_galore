@@ -61,6 +61,73 @@ PAYOUT_PROVIDER=ivori                                  # ivori | file
 3. Replace sandbox creds with **production** creds (operator supplies; never committed).
 4. Execute the cutover runbook (§8.5). Only now does `PAYMENT_MODE=peach` go live on prod.
 
+### 1d. Information-required worksheet — fill in as each value arrives
+
+This is the single list of everything **we still need** before cutover. Until a value
+is supplied, the code runs on the §1b placeholder and the gateway stays inert — so the
+whole build can proceed now and these get filled in later.
+
+> ⚠️ **SECURITY — this file is committed to git. NEVER paste a real API key, secret, or
+> password here.** For secrets, only tick the status box and write where it now lives
+> (e.g. "in prod `.env`"). Non-secret config (URLs, entity IDs, account numbers, and the
+> decision values) is safe to write in the blanks. Secrets are handed over out-of-band
+> (operator pastes them straight into prod `.env` / the Peach/Ivori dashboards).
+
+Status key: ⬜ not yet provided · ✅ provided · 🔒 secret (received, stored in `.env`, NOT written here)
+
+#### A. Peach Payments — pay-in (from the Peach merchant dashboard / onboarding contact)
+- Peach contact / account manager name + email: `__________________________`
+- Which Peach product confirmed (Hosted Checkout recommended): `__________________________`
+- Sandbox base URL: `__________________________`
+- Sandbox Entity ID(s) (card / BNPL may differ): `__________________________`
+- Sandbox API key: 🔒 ⬜  (→ prod `.env` `PEACH_API_KEY`)
+- Sandbox webhook signing secret: 🔒 ⬜  (→ `PEACH_WEBHOOK_SECRET`)
+- Production base URL: `__________________________`
+- Production Entity ID(s): `__________________________`
+- Production API key: 🔒 ⬜
+- Production webhook signing secret: 🔒 ⬜
+- Webhook callback URL to register in Peach (we host it): `https://gungalore.co.za/api/transactions/webhook/peach`
+- Peach webhook signature scheme / header name (from their docs): `__________________________`
+- Test cards supplied for sandbox (success / decline / 3DS): `__________________________`
+
+#### B. Ivori — pay-out (from Ivori onboarding, tied to the Nedbank TPPP relationship)
+- Ivori contact name + email: `__________________________`
+- **Does Ivori expose a disbursement API, or dashboard-only?** (decides `PAYOUT_PROVIDER=ivori` vs `file`): `__________________________`
+- Sandbox base URL: `__________________________`
+- Auth model (API key header / OAuth / mTLS — from their docs): `__________________________`
+- Sandbox API key/secret: 🔒 ⬜  (→ `IVORI_API_KEY`)
+- Payout status webhook secret (if any): 🔒 ⬜  (→ `IVORI_WEBHOOK_SECRET`)
+- Production base URL: `__________________________`
+- Production API key/secret: 🔒 ⬜
+- Create-disbursement endpoint path: `__________________________`
+- Payout status endpoint / webhook path: `__________________________`
+- Per-payout limit / per-batch limit / daily cap: `__________________________`
+- Settlement / float account details Ivori pays from: `__________________________`
+- Does Ivori do account-name verification (CDV) on the payee? (affects the ADM-5 manual-AVS gate): `__________________________`
+
+#### C. Nedbank merchant (the acquiring side — from the TPPP onboarding, Nadia Geyer)
+- Merchant number / MID: `__________________________`
+- Settlement bank account (where Peach settles card takings): `__________________________`
+- Onboarding status / go-live date confirmed by Nedbank: `__________________________`
+
+#### D. Decisions to confirm (provisional defaults are already built in — see §1 table)
+- Role split — Peach pay-in + Ivori pay-out? (default assumed): `☐ confirmed  /  correction: __________`
+- Card processing fee % + who pays (default **3.0%, buyer**): `______ %  ·  payer: __________`
+- PayJustNow BNPL at checkout — enable? (default ON): `☐ yes  ☐ no`
+- Checkout reservation window (default **60 min**): `______ min`
+- Payout cadence (default **auto-draft daily + 1-click approval**): `__________________________`
+- Cutover mode (default **hard cutover + 7-day EFT drain**): `__________________________`
+- Any other Peach payment methods to enable: `__________________________`
+- Zoho deposit-account mapping change confirmed with bookkeeper? (§7): `☐ yes  ☐ n/a`
+
+#### E. Cutover logistics
+- Chosen cutover date/evening: `__________________________`
+- Operator card to run the live R10 test purchase + refund: `☐ ready`
+- One real seller row to test the first Ivori payout against: `__________________________`
+
+**When a section is complete**, run the matching part of the §1c swap-in checklist. Secrets marked 🔒 go
+directly into prod `.env` (fail-closed asserts at boot per §1b) — they are never written above.
+
 ---
 
 ## 2. Architecture — the gateway seam (build once, everything hangs off it)
