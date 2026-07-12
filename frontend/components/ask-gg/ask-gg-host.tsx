@@ -59,35 +59,30 @@ function isSuppressed(pathname: string | null): boolean {
 export function AskGgHost() {
   const pathname = usePathname();
   const standalone = useStandalone();
-  const { setOpen, armed, arm } = useAskGgWidget();
+  const { armed, openWith } = useAskGgWidget();
 
   const suppressed = useMemo(() => isSuppressed(pathname), [pathname]);
 
-  // Open-on-event — decoupled entry point for the PWA tab (W4) and any
-  // future "Ask GG about this" CTAs.
+  // Open-on-event — decoupled entry point for the PWA tab (W6) and any
+  // future "Ask GG about this" CTAs. detail.prefill stages a question
+  // in the composer (W5.5 nudge channel).
   useEffect(() => {
-    function onOpen() {
+    function onOpen(e: Event) {
       if (isSuppressed(window.location.pathname)) return;
-      arm();
-      setOpen(true);
+      const prefill = (e as CustomEvent<{ prefill?: string }>).detail?.prefill;
+      openWith(typeof prefill === 'string' ? prefill : undefined);
     }
     window.addEventListener('gg:ask-gg-open', onOpen);
     return () => window.removeEventListener('gg:ask-gg-open', onOpen);
-  }, [arm, setOpen]);
+  }, [openWith]);
 
   if (suppressed) return null;
 
   return (
     <>
-      {/* FAB — browser modes only; standalone PWA enters via the tab (W4). */}
+      {/* FAB — browser modes only; standalone PWA enters via the tab (W6). */}
       {!standalone && (
-        <AskGgLauncher
-          panelArmed={armed}
-          onOpen={() => {
-            arm();
-            setOpen(true);
-          }}
-        />
+        <AskGgLauncher panelArmed={armed} onOpen={openWith} />
       )}
       {/* Panel chunk downloads on first open, stays mounted after. */}
       {armed && <AskGgPanelLazy />}

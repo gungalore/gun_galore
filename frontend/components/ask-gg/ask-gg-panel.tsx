@@ -34,7 +34,7 @@ import {
 // below the offline banner (80) and the disclaimer modal (1000).
 
 export default function AskGgPanel() {
-  const { open, setOpen } = useAskGgWidget();
+  const { open, setOpen, takePrefill } = useAskGgWidget();
   const ag = useAskGgChat();
   const { isSignedIn, isLoaded } = useUser();
   const router = useRouter();
@@ -59,6 +59,18 @@ export default function AskGgPanel() {
     } else {
       setEntered(false);
     }
+  }, [open]);
+
+  // W5.5 — a nudge (or future CTA) staged a question: put it in the
+  // composer and focus, so the user just hits Send (or edits first).
+  useEffect(() => {
+    if (!open) return;
+    const prefill = takePrefill();
+    if (prefill) {
+      setComposerValue(prefill);
+      requestAnimationFrame(() => composerRef.current?.focus());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // Body-scroll lock + Escape while open (cart-drawer idiom).

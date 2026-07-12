@@ -19,7 +19,16 @@ import { useEffect, useRef } from 'react';
 
 export type SparkieMood = 'idle' | 'think' | 'happy';
 
-const MOMENTS = ['gg-sparkie-wiggle', 'gg-sparkie-pop'] as const;
+const MOMENTS = [
+  'gg-sparkie-wiggle',
+  'gg-sparkie-pop',
+  'gg-sparkie-peek',
+] as const;
+
+// Cursor proximity inside which Sparkie's eyes track the pointer (px).
+const TRACK_RADIUS = 340;
+// Max pupil offset while tracking (SVG units ≈ px at 32 viewBox).
+const TRACK_MAX = 1.6;
 
 export function AskGgMascot({
   size = 24,
@@ -53,6 +62,49 @@ export function AskGgMascot({
     return () => {
       clearTimeout(timer);
       clearTimeout(unclass);
+    };
+  }, [alive]);
+
+  // Eyes follow the cursor when it comes near (W5.5 "more alive").
+  // Pointer devices only, reduced-motion off. rAF-gated mousemove: the
+  // pupils' translate is driven by CSS vars set directly on the svg —
+  // zero React re-renders. Beyond the radius the idle glance resumes.
+  useEffect(() => {
+    if (!alive) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+    let raf = 0;
+    let lastX = 0;
+    let lastY = 0;
+    const onMove = (e: MouseEvent) => {
+      lastX = e.clientX;
+      lastY = e.clientY;
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const el = ref.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const dx = lastX - cx;
+        const dy = lastY - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < TRACK_RADIUS && dist > 1) {
+          const pull = Math.min(1, dist / 80) * TRACK_MAX;
+          el.classList.add('gg-sparkie-track');
+          el.style.setProperty('--sx', `${((dx / dist) * pull).toFixed(2)}px`);
+          el.style.setProperty('--sy', `${((dy / dist) * pull).toFixed(2)}px`);
+        } else {
+          el.classList.remove('gg-sparkie-track');
+        }
+      });
+    };
+    window.addEventListener('mousemove', onMove, { passive: true });
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      if (raf) cancelAnimationFrame(raf);
+      ref.current?.classList.remove('gg-sparkie-track');
     };
   }, [alive]);
 

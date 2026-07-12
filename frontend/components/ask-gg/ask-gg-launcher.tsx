@@ -1,43 +1,59 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { AskGgMascot } from './ask-gg-mascot';
+import {
+  pickNudge,
+  markNudgeShown,
+  type AskGgNudge,
+} from '@/lib/ask-gg-nudges';
 
-// Ask GG Everywhere — the floating launcher (FAB), now with Sparkie.
+// Ask GG Everywhere — the floating launcher (FAB) + Sparkie's voice.
 //
-// ALWAYS-LOADED: this file may import only react + './ask-gg-mascot'
-// (bundle rule — the panel chunk carries everything heavy). Rendered by
-// AskGgHost on every non-suppressed page in BROWSER modes only
-// (standalone PWA uses the bottom-tab entry instead — W6).
+// ALWAYS-LOADED: this file may import only react, next/navigation,
+// './ask-gg-mascot' and '@/lib/ask-gg-nudges' (bundle rule — the panel
+// chunk carries everything heavy). Rendered by AskGgHost on every
+// non-suppressed page in BROWSER modes only.
 //
-// Geometry (locked in the approved plan):
-//   desktop ≥md — pill with label, right/bottom 24px
-//   mobile  <md — 48px icon circle, right 16px,
-//                 bottom calc(16px + env(safe-area-inset-bottom))
-//   z-index 52 — above content/sticky-strip(50)/nav(50), below the
-//   PWA tab bar(55), sheets(56) and drawers(70+).
-// While the install-prompt card owns the corner, globals.css lifts
-// #askgg-fab (and #askgg-hello) via body[data-install-prompt].
+// ONE bubble, two brains:
+//   - Daily hello: one dismissible greeting per day, 6s after load.
+//   - Contextual nudges (W5.5): page-kind + dwell-time suggestions
+//     ("want a fair-price check on this?"). Tapping opens the panel
+//     with the question STAGED in the composer — never auto-sent.
+//     Frequency caps live in lib/ask-gg-nudges.ts (1/session, 4h gap,
+//     24h per kind). Hello and nudges never both fire on one page view,
+//     and neither shows over the install-prompt card.
 //
-// Daily hello (operator pick 2026-07-12, "idle life + daily hello"):
-// ONE dismissible speech bubble per day, 6s after page load — skipped
-// if the panel was already opened this session or the install card is
-// showing. The day is spent the moment the bubble shows, even if it's
-// ignored. It never opens the panel by itself.
+// Geometry unchanged from W3 (FAB z52; bubble rides above it; both
+// lift via body[data-install-prompt] rules in globals.css).
 
 const HELLO_KEY = 'gg_askgg_hello_on';
 const HELLO_TEXT =
   "Howzit! I'm Ask GG — ask me anything about gear, your orders or how the site works.";
 
+interface Bubble {
+  text: string;
+  /** Composer prefill when tapped (nudges); hello just opens. */
+  prefill?: string;
+  kind: 'hello' | AskGgNudge['kind'];
+}
+
 export function AskGgLauncher({
   onOpen,
   panelArmed,
 }: {
-  onOpen: () => void;
+  /** Opens the panel; optional prefill lands in the composer. */
+  onOpen: (prefill?: string) => void;
   panelArmed: boolean;
 }) {
-  const [hello, setHello] = useState(false);
+  const [bubble, setBubble] = useState<Bubble | null>(null);
+  // One bubble per page view — hello and nudge never stack.
+  const spentThisPageRef = useRef(false);
 
+  // Daily hello — 6s after load, skipped if the panel was already used
+  // this session or the install card owns the corner. The day is spent
+  // the moment it shows.
   useEffect(() => {
     if (panelArmed) return;
     let today: string;
@@ -45,39 +61,76 @@ export function AskGgLauncher({
       today = new Date().toDateString();
       if (localStorage.getItem(HELLO_KEY) === today) return;
     } catch {
-      return; // storage unavailable → never greet rather than greet every visit
+      return;
     }
     const t = window.setTimeout(() => {
+      if (spentThisPageRef.current) return;
+      if (document.visibilityState !== 'visible') return;
       if (document.body.hasAttribute('data-install-prompt')) return;
       try {
         localStorage.setItem(HELLO_KEY, today);
       } catch {
         /* still greet this once */
       }
-      setHello(true);
+      spentThisPageRef.current = true;
+      setBubble({ kind: 'hello', text: HELLO_TEXT });
     }, 6000);
     return () => clearTimeout(t);
   }, [panelArmed]);
 
-  // Auto-hide, and stand down if the panel opens through any entry.
+  // Contextual nudge — dwell-gated per page kind. pickNudge() owns all
+  // frequency caps; this effect owns the moment (dwell, visible tab,
+  // corner free, panel closed, nothing else shown this page view).
+  const pathname = usePathname();
+  useEffect(() => {
+    if (panelArmed) return;
+    const nudge = pickNudge(pathname);
+    if (!nudge) return;
+    const t = window.setTimeout(() => {
+      if (spentThisPageRef.current) return;
+      if (document.visibilityState !== 'visible') return;
+      if (document.body.hasAttribute('data-install-prompt')) return;
+      // Don't talk over someone mid-form (composer, search, checkout inputs).
+      const ae = document.activeElement;
+      if (
+        ae instanceof HTMLInputElement ||
+        ae instanceof HTMLTextAreaElement ||
+        (ae instanceof HTMLElement && ae.isContentEditable)
+      ) {
+        return;
+      }
+      markNudgeShown(nudge.kind);
+      spentThisPageRef.current = true;
+      setBubble({ kind: nudge.kind, text: nudge.text, prefill: nudge.prefill });
+    }, nudge.delayMs);
+    return () => clearTimeout(t);
+  }, [pathname, panelArmed]);
+
+  // Reset the per-page-view guard + drop any visible bubble on nav.
+  useEffect(() => {
+    spentThisPageRef.current = false;
+    setBubble(null);
+  }, [pathname]);
+
+  // Auto-hide after 14s; stand down when the panel opens via any entry.
   useEffect(() => {
     if (panelArmed) {
-      setHello(false);
+      setBubble(null);
       return;
     }
-    if (!hello) return;
-    const t = window.setTimeout(() => setHello(false), 12_000);
+    if (!bubble) return;
+    const t = window.setTimeout(() => setBubble(null), 14_000);
     return () => clearTimeout(t);
-  }, [hello, panelArmed]);
+  }, [bubble, panelArmed]);
 
-  const open = () => {
-    setHello(false);
-    onOpen();
+  const open = (prefill?: string) => {
+    setBubble(null);
+    onOpen(prefill);
   };
 
   return (
     <>
-      {hello && (
+      {bubble && (
         <div
           id="askgg-hello"
           role="status"
@@ -97,7 +150,7 @@ export function AskGgLauncher({
         >
           <button
             type="button"
-            onClick={open}
+            onClick={() => open(bubble.prefill)}
             style={{
               background: 'none',
               border: 'none',
@@ -109,12 +162,12 @@ export function AskGgLauncher({
               color: 'var(--text-primary)',
             }}
           >
-            {HELLO_TEXT}
+            {bubble.text}
           </button>
           <button
             type="button"
-            aria-label="Dismiss greeting"
-            onClick={() => setHello(false)}
+            aria-label="Dismiss suggestion"
+            onClick={() => setBubble(null)}
             style={{
               background: 'none',
               border: 'none',
@@ -132,7 +185,7 @@ export function AskGgLauncher({
       <button
         type="button"
         id="askgg-fab"
-        onClick={open}
+        onClick={() => open()}
         aria-label="Open Ask GG — your Gun Galore assistant"
         className={[
           'ask-gg-lure app-chrome fixed z-[52]',
@@ -152,7 +205,8 @@ export function AskGgLauncher({
           boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
         }}
       >
-        <AskGgMascot alive size={26} />
+        {/* Sparkie grins while he's talking. */}
+        <AskGgMascot alive size={26} mood={bubble ? 'happy' : 'idle'} />
         <span
           className="hidden md:inline"
           style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap' }}

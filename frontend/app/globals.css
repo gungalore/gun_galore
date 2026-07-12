@@ -323,6 +323,16 @@ svg.gg-sparkie--think .gg-sparkie-pupils {
   svg.gg-sparkie--happy {
     animation: gg-sparkie-do-pop 0.7s ease-out;
   }
+  svg.gg-sparkie-peek {
+    animation: gg-sparkie-do-peek 0.8s ease-in-out;
+  }
+  /* Cursor-tracking (W5.5): while the pointer is near, the pupils
+     follow it via CSS vars set from JS; the idle glance pauses. */
+  svg.gg-sparkie-track .gg-sparkie-pupils {
+    animation: none;
+    translate: var(--sx, 0) var(--sy, 0);
+    transition: translate 0.12s ease-out;
+  }
   svg.gg-sparkie--think {
     animation: gg-sparkie-think-tilt 1.6s ease-in-out infinite;
   }
@@ -409,6 +419,18 @@ svg.gg-sparkie--think .gg-sparkie-pupils {
   }
   50% {
     rotate: 8deg;
+  }
+}
+@keyframes gg-sparkie-do-peek {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  30% {
+    translate: 0 -3px;
+  }
+  55% {
+    translate: 0 0.5px;
   }
 }
 @keyframes gg-hello-in {

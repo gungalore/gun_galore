@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -37,6 +38,12 @@ interface AskGgUiValue {
    *  shared hook live and keeps the lazy panel mounted thereafter. */
   armed: boolean;
   arm: () => void;
+  /** W5.5 — open the panel with an optional composer prefill (Sparkie's
+   *  proactive nudges land here: the question is STAGED, never sent —
+   *  the user always pulls the trigger). */
+  openWith: (prefill?: string) => void;
+  /** One-shot consume of the staged prefill (panel calls this on open). */
+  takePrefill: () => string | null;
 }
 
 const AskGgUiContext = createContext<AskGgUiValue | null>(null);
@@ -52,10 +59,24 @@ export function AskGgProvider({ children }: { children: ReactNode }) {
 
   const arm = useCallback(() => setArmed(true), []);
 
+  // Staged composer prefill for openWith() — a ref (not state) so
+  // setting it never re-renders the cold subscribers.
+  const prefillRef = useRef<string | null>(null);
+  const openWith = useCallback((prefill?: string) => {
+    if (prefill) prefillRef.current = prefill;
+    setArmed(true);
+    setOpen(true);
+  }, []);
+  const takePrefill = useCallback(() => {
+    const v = prefillRef.current;
+    prefillRef.current = null;
+    return v;
+  }, []);
+
   // Cold value: stable identity except on open/armed flips.
   const uiValue = useMemo<AskGgUiValue>(
-    () => ({ open, setOpen, armed, arm }),
-    [open, armed, arm],
+    () => ({ open, setOpen, armed, arm, openWith, takePrefill }),
+    [open, armed, arm, openWith, takePrefill],
   );
 
   return (
