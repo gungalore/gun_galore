@@ -141,97 +141,9 @@ export class UsersController {
   @Get('me/urgent')
   @UseGuards(ClerkGuard)
   async urgent(@CurrentUser() clerkId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { clerkId },
-      select: { id: true, kycStatus: true, kycRequiredAt: true },
-    });
-    if (!user) return { notifications: [] };
-
-    const [winningBids, acceptedOffers, salesNeedingDispatch] =
-      await Promise.all([
-        this.prisma.bid.findMany({
-          where: {
-            bidderId: user.id,
-            isWinner: true,
-            listing: { status: 'PAYMENT_PENDING' },
-          },
-          select: {
-            listing: {
-              select: { id: true, title: true, expiresAt: true },
-            },
-          },
-        }),
-        this.prisma.offer.findMany({
-          where: {
-            buyerId: user.id,
-            status: 'ACCEPTED',
-          },
-          select: {
-            id: true,
-            expiresAt: true,
-            listing: { select: { id: true, title: true } },
-          },
-        }),
-        this.prisma.transaction.count({
-          where: {
-            sellerId: user.id,
-            paymentStatus: 'HELD',
-            shippingStatus: 'PENDING',
-          },
-        }),
-      ]);
-
-    const notifications: {
-      id: string;
-      label: string;
-      href: string;
-      severity: 'info' | 'warning' | 'critical';
-    }[] = [];
-
-    // 1. KYC first — it gates the seller's payout entirely.
-    if (user.kycRequiredAt && user.kycStatus !== 'VERIFIED') {
-      notifications.push({
-        id: 'kyc-required',
-        label: 'Verify identity to release payout',
-        href: '/kyc/verify',
-        severity: 'critical',
-      });
-    }
-
-    // 2. Auction wins awaiting payment.
-    for (const b of winningBids) {
-      if (!b.listing) continue;
-      const countdown = formatHoursLeft(b.listing.expiresAt);
-      notifications.push({
-        id: `auction-${b.listing.id}`,
-        label: `Auction won: ${truncate(b.listing.title, 28)}${countdown}`,
-        href: `/listings/${b.listing.id}`,
-        severity: 'critical',
-      });
-    }
-
-    // 3. Accepted offers awaiting payment.
-    for (const o of acceptedOffers) {
-      const countdown = formatHoursLeft(o.expiresAt);
-      notifications.push({
-        id: `offer-${o.id}`,
-        label: `Offer accepted: ${truncate(o.listing.title, 28)}${countdown}`,
-        href: '/my/offers',
-        severity: 'critical',
-      });
-    }
-
-    // 4. Sales paid + waiting on seller to confirm dispatch.
-    if (salesNeedingDispatch > 0) {
-      notifications.push({
-        id: 'dispatch-pending',
-        label: `${salesNeedingDispatch} sale${salesNeedingDispatch === 1 ? '' : 's'} need dispatch`,
-        href: '/my/sales',
-        severity: 'warning',
-      });
-    }
-
-    return { notifications };
+    // Aggregation extracted to UsersService.getUrgentSummary (Ask GG
+    // Everywhere W5) — shared with the getMyAccountOverview tool.
+    return this.users.getUrgentSummary(clerkId);
   }
 
   // ─────────────────── Edit /users/me ────────────────────────────────
@@ -454,25 +366,6 @@ export class UsersController {
 
     return { submitted: true, status: 'PENDING' };
   }
-}
-
-// ─────────────────── Urgent notifications helpers ─────────────────
-function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max - 1) + '…' : s;
-}
-
-function formatHoursLeft(deadline: Date | null): string {
-  if (!deadline) return '';
-  const ms = deadline.getTime() - Date.now();
-  if (ms <= 0) return ' — expired';
-  const hours = Math.floor(ms / 3_600_000);
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24);
-    return ` — ${days}d ${hours % 24}h left`;
-  }
-  if (hours >= 1) return ` — ${hours}h left`;
-  const mins = Math.floor(ms / 60_000);
-  return ` — ${mins}m left`;
 }
 
 // ─────────────────── Profile completeness ─────────────────────────

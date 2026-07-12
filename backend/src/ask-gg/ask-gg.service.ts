@@ -26,6 +26,9 @@ import {
 export interface PreparedSend {
   user: {
     id: string;
+    /** W5 — the Clerk id of the AUTHENTICATED caller; feeds the
+     *  account tools (they take no model-supplied identifiers). */
+    clerkId: string;
     subscriptionTier: SubscriptionTier;
     /** Feeds computeFees' Top Seller discount — derived from the
      *  AUTHENTICATED account, never from model input. */
@@ -313,7 +316,7 @@ export class AskGgService {
     );
 
     return {
-      user,
+      user: { ...user, clerkId },
       conversationId: conversationId!,
       isNew,
       userMessage,
@@ -348,6 +351,9 @@ export class AskGgService {
       // W4 — server-verified page context, injected as the uncached
       // system tail (block 1 stays byte-identical → cache intact).
       contextBlock: prep.contextBlock,
+      // W5 — the authenticated caller for the account tools. Resolved
+      // from the Clerk session in preflight; never model input.
+      account: { clerkId: prep.user.clerkId, userId: prep.user.id },
       onText,
     });
 

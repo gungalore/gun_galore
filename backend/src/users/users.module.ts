@@ -28,6 +28,8 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
     UsersController,
   ],
   providers: [UsersService, SellerToolsService],
-  exports: [UsersService],
+  // SellerToolsService exported for the Ask GG account tools (W5) —
+  // UsersModule is @Global, so both are injectable app-wide.
+  exports: [UsersService, SellerToolsService],
 })
 export class UsersModule {}

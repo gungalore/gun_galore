@@ -16,8 +16,13 @@ import { BallisticsModule } from '../ballistics/ballistics.module';
 import { LoadLabModule } from '../load-lab/load-lab.module';
 import { ListingsModule } from '../listings/listings.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { OffersModule } from '../offers/offers.module';
+import { AuctionsModule } from '../auctions/auctions.module';
+import { RafflesModule } from '../raffles/raffles.module';
+import { SwapsModule } from '../swaps/swaps.module';
 import { AskGgPlatformToolsService } from './ask-gg-platform-tools.service';
 import { AskGgContextService } from './ask-gg-context.service';
+import { AskGgAccountToolsService } from './ask-gg-account-tools.service';
 
 @Module({
   // ReloadingModule exports ReloadingService so AskGgClaudeService can
@@ -29,12 +34,21 @@ import { AskGgContextService } from './ask-gg-context.service';
   // PaymentsModule (Ask GG Everywhere) exports FeeCalculator for the
   // computeFees tool — exact same fee engine checkout uses. Payments
   // does not import AskGgModule, so no cycle.
+  // W5 account tools: OffersModule/AuctionsModule/RafflesModule/
+  // SwapsModule each export the read service the tools wrap; none of
+  // them imports AskGgModule (verified — no cycles). UsersModule is
+  // @Global (UsersService + SellerToolsService); orders are read via
+  // lean own selects in getOrderStatus, so no OrdersModule needed.
   imports: [
     ReloadingModule,
     BallisticsModule,
     LoadLabModule,
     ListingsModule,
     PaymentsModule,
+    OffersModule,
+    AuctionsModule,
+    RafflesModule,
+    SwapsModule,
     // For the admin KB-verification controller (uses AdminJwtGuard).
     // Same secret/config as AdminModule — kept local here so we
     // don't create a circular dep importing AdminModule.
@@ -55,6 +69,7 @@ import { AskGgContextService } from './ask-gg-context.service';
     AskGgKbService,
     AskGgPlatformToolsService,
     AskGgContextService,
+    AskGgAccountToolsService,
     AdminAuditService,
   ],
   exports: [AskGgService, AskGgKbService],
