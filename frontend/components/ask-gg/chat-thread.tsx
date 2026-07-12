@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { AskGgUiMessage } from '@/lib/use-ask-gg';
 import { MessageBubble, priorUserContent } from './message-bubble';
+import { AskGgMascot } from './ask-gg-mascot';
 
 /** The messages scroll region: message list, "Thinking…" indicator and
  *  error row. Owns the auto-scroll-to-bottom effect. `emptySlot` renders
@@ -54,32 +55,66 @@ export function ChatThread({
         />
       ))}
       {sending && !answerHasStarted && (
+        // Sparkie "typing" bubble — a proper assistant-style bubble (not
+        // a bare dot) so it reads as "Sparkie is composing", larger and
+        // never clipped. Left-aligned like an assistant message; the
+        // mascot's think squint + tilt come from its global CSS, the
+        // three dots bounce below. overflow:visible so the tilt/bob of
+        // the mascot never gets cut off inside the bubble.
         <div
           aria-live="polite"
+          aria-label="Ask GG is thinking"
           style={{
             display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '10px 14px',
-            marginBottom: 6,
-            color: 'var(--text-tertiary)',
-            fontSize: 13,
+            justifyContent: 'flex-start',
+            padding: '0 14px',
+            marginBottom: 8,
           }}
         >
           <span
             style={{
-              display: 'inline-block',
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: 'var(--red)',
-              animation: 'ag-pulse 1s ease-in-out infinite',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 9,
+              padding: '9px 14px',
+              borderRadius: 14,
+              background: 'var(--bg-card)',
+              border: '0.5px solid var(--border)',
+              overflow: 'visible',
             }}
-          />
-          <span>Thinking…</span>
+          >
+            <span style={{ color: 'var(--red)', display: 'inline-flex' }}>
+              <AskGgMascot size={26} mood="think" />
+            </span>
+            <span
+              style={{ display: 'inline-flex', gap: 4 }}
+              aria-hidden="true"
+            >
+              <i className="ag-typing-dot" />
+              <i className="ag-typing-dot" />
+              <i className="ag-typing-dot" />
+            </span>
+          </span>
           <style>{`
+            .ag-typing-dot {
+              width: 6px;
+              height: 6px;
+              border-radius: 50%;
+              background: var(--text-secondary);
+              display: inline-block;
+              animation: ag-typing-bounce 1.2s ease-in-out infinite;
+            }
+            .ag-typing-dot:nth-child(2) { animation-delay: 0.16s; }
+            .ag-typing-dot:nth-child(3) { animation-delay: 0.32s; }
+            @keyframes ag-typing-bounce {
+              0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+              40% { transform: translateY(-3px); opacity: 1; }
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .ag-typing-dot { animation: ag-pulse 1s ease-in-out infinite; }
+            }
             @keyframes ag-pulse {
-              0%, 100% { opacity: 0.3; }
+              0%, 100% { opacity: 0.35; }
               50% { opacity: 1; }
             }
           `}</style>
