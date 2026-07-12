@@ -15,6 +15,9 @@ const isPublicRoute = createRouteMatcher([
   '/welcome(.*)',
   '/sellers(.*)', // public seller profiles
   '/category(.*)', // public category landing/browse pages
+  '/wanted(.*)',   // Wanted board — public browse/detail (SEO + anonymous
+                   // browsing like /listings); posting/responding is gated
+                   // in-page + server-side on the API.
   '/brand(.*)',    // P5.7 — public brand index (/brands) + brand landing
                    // pages (/brand/[slug]); SEO surfaces, must be crawlable
                    // without auth (mirrors /category above).
