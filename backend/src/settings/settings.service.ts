@@ -93,6 +93,42 @@ export const FLAGS = {
       return Number.isFinite(n) && n > 0 ? n : 100;
     },
   } as FlagDefinition<number>,
+  // ── Ask GG quota caps (Ask GG Everywhere) ──────────────────────────
+  // Moved out of hardcoded consts in ask-gg-quota.service.ts so the
+  // operator can tune spend live from /admin/settings without a deploy.
+  // Defaults mirror the launch spec (OD3). All fail open to defaults.
+  askGgFreeMsgCapPer30d: {
+    key: 'ask_gg_free_msg_cap_per_30d',
+    default: 5,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? n : 5;
+    },
+  } as FlagDefinition<number>,
+  askGgMemberMsgCapPerHour: {
+    key: 'ask_gg_member_msg_cap_per_hour',
+    default: 20,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n > 0 ? n : 20;
+    },
+  } as FlagDefinition<number>,
+  askGgProMsgCapPerHour: {
+    key: 'ask_gg_pro_msg_cap_per_hour',
+    default: 60,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n > 0 ? n : 60;
+    },
+  } as FlagDefinition<number>,
+  askGgFreePhotoCapPer30d: {
+    key: 'ask_gg_free_photo_cap_per_30d',
+    default: 5,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? n : 5;
+    },
+  } as FlagDefinition<number>,
 } as const;
 
 @Injectable()

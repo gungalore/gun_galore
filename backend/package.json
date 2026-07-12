@@ -19,6 +19,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed": "ts-node --project tsconfig.json -e \"require('dotenv/config')\" prisma/seed.ts",
+    "seed:help": "ts-node --transpile-only --project tsconfig.json prisma/seed-help-centre.ts",
     "dummy-run:setup": "ts-node --transpile-only --project tsconfig.json scripts/dummy-run-setup.ts",
     "dummy-run": "ts-node --transpile-only -r ./scripts/dummy-run-preload.cjs --project tsconfig.json scripts/dummy-run.ts"
   },

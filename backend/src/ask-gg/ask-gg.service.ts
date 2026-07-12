@@ -20,13 +20,72 @@ import {
  *  these lets the SSE controller run preflight, surface any HTTP error,
  *  THEN open the stream. */
 export interface PreparedSend {
-  user: { id: string; subscriptionTier: SubscriptionTier };
+  user: {
+    id: string;
+    subscriptionTier: SubscriptionTier;
+    /** Feeds computeFees' Top Seller discount — derived from the
+     *  AUTHENTICATED account, never from model input. */
+    isTopSeller: boolean;
+  };
   conversationId: string;
   isNew: boolean;
   userMessage: AskGgMessage;
   imageUrls: string[];
   escalate: boolean;
   claudeHistory: AskGgChatMessage[];
+}
+
+// ─── History truncation (Ask GG Everywhere / B0) ─────────────────────
+// preflight used to replay EVERY prior message each turn — input tokens
+// grew unbounded with thread length. Cap by message count AND character
+// volume, walking backwards from the newest; keep the FIRST user message
+// as the topic anchor when anything is dropped, and mark the seam.
+export const HISTORY_MAX_MESSAGES = 20;
+export const HISTORY_MAX_CHARS = 24_000;
+
+export function truncateAskGgHistory(
+  history: AskGgChatMessage[],
+): AskGgChatMessage[] {
+  if (history.length <= 1) return history;
+
+  // Walk backwards keeping messages while both limits hold. The newest
+  // message (the current user turn) is always kept.
+  const kept: AskGgChatMessage[] = [];
+  let chars = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    const size = (m.content?.length ?? 0) + (m.imageUrls?.length ?? 0) * 100;
+    if (
+      kept.length > 0 &&
+      (kept.length >= HISTORY_MAX_MESSAGES || chars + size > HISTORY_MAX_CHARS)
+    ) {
+      break;
+    }
+    kept.unshift(m);
+    chars += size;
+  }
+  if (kept.length === history.length) return history;
+
+  // Something was dropped: re-anchor on the first USER message (topic
+  // opener) unless it's already retained, and mark the seam so the model
+  // knows the middle is elided.
+  const out: AskGgChatMessage[] = [];
+  const firstUser = history.find((m) => m.role === 'user');
+  if (firstUser && !kept.includes(firstUser)) {
+    out.push(firstUser);
+  }
+  // The trimmed window must START on a user turn — drop leading assistant
+  // turns inside the window (defensive; keeps role alternation sane).
+  while (kept.length > 0 && kept[0].role !== 'user') kept.shift();
+  if (kept.length > 0) {
+    const oldest = kept[0];
+    kept[0] = {
+      ...oldest,
+      content: `[Earlier part of this conversation trimmed]\n\n${oldest.content}`,
+    };
+  }
+  out.push(...kept);
+  return out;
 }
 
 /**
@@ -67,13 +126,19 @@ export class AskGgService {
   private async userIdFromClerk(clerkId: string): Promise<{
     id: string;
     subscriptionTier: SubscriptionTier;
+    isTopSeller: boolean;
   }> {
     const u = await this.prisma.user.findUnique({
       where: { clerkId },
-      select: { id: true, subscriptionTier: true },
+      select: { id: true, subscriptionTier: true, sellerTier: true },
     });
     if (!u) throw new NotFoundException('User not found');
-    return u;
+    return {
+      id: u.id,
+      subscriptionTier: u.subscriptionTier,
+      // Server-derived Top Seller flag for computeFees — never model input.
+      isTopSeller: u.sellerTier === 'TOP_SELLER',
+    };
   }
 
   /** Public tier accessor used by the controller's upload route so
@@ -202,19 +267,23 @@ export class AskGgService {
       },
     });
 
-    // Build history for Claude — every prior message in this
-    // conversation, oldest first. Includes the message we just
-    // persisted (so Claude sees it as the latest user turn).
+    // Build history for Claude — prior messages in this conversation,
+    // oldest first, including the message we just persisted (so Claude
+    // sees it as the latest user turn). TRUNCATED (B0): long threads are
+    // capped by message count + character volume, keeping the first user
+    // message as the topic anchor — input tokens no longer grow unbounded.
     const history = await this.prisma.askGgMessage.findMany({
       where: { conversationId: conversationId! },
       orderBy: { createdAt: 'asc' },
       select: { role: true, content: true, imageUrls: true },
     });
-    const claudeHistory: AskGgChatMessage[] = history.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-      imageUrls: m.imageUrls ?? [],
-    }));
+    const claudeHistory: AskGgChatMessage[] = truncateAskGgHistory(
+      history.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        imageUrls: m.imageUrls ?? [],
+      })),
+    );
 
     return {
       user,
@@ -246,6 +315,8 @@ export class AskGgService {
       // Phase D ballistics — pass user tier so the calculator tool
       // can refuse FREE users with a friendly upgrade nudge.
       subscriptionTier: prep.user.subscriptionTier,
+      // computeFees' Top Seller discount — server-derived, never model input.
+      isTopSeller: prep.user.isTopSeller,
       onText,
     });
 

@@ -2886,6 +2886,17 @@ model AskGgMessage {
   // ({ id, title, priceCents, imageUrl, categoryName, … }) rendered as
   // tappable listing cards below the assistant message.
   listingCards     Json?
+  // Ask GG Everywhere (site-wide widget) — the raw client-supplied page
+  // context sent with a USER turn ({ path, listingId?, transactionId?,
+  // orderId?, categorySlug? }). Stored for audit + so preflight can
+  // rebuild the server-verified context block for the latest message.
+  // Enrichment always re-runs fresh server-side; this is never trusted.
+  pageContext      Json?
+  // Support-ticket DRAFT surfaced on an ASSISTANT turn (draftSupportTicket
+  // tool). Writes nothing — the frontend renders it as a prefilled card
+  // and the ticket is only created when the USER taps "Create ticket"
+  // (their own session → POST /support).
+  ticketDraft      Json?
   createdAt        DateTime          @default(now())
 
   @@index([conversationId, createdAt])
@@ -2904,6 +2915,10 @@ model AskGgKbEntry {
   id                   String             @id @default(cuid())
   sourceConversationId String?            @unique
   sourceConversation   AskGgConversation? @relation(fields: [sourceConversationId], references: [id])
+  // Ask GG Everywhere — stable key for SEEDED platform Help-Centre entries
+  // (prisma/seed-data/help-centre.ts, upserted by `npm run seed:help`).
+  // Null = organic conversation-derived entry (never touched by the seeder).
+  sourceKey            String?            @unique
   authorId             String
   author               User               @relation("KbAuthor", fields: [authorId], references: [id])
   title                String

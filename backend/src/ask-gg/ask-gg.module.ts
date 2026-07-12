@@ -15,6 +15,8 @@ import { ReloadingModule } from '../reloading/reloading.module';
 import { BallisticsModule } from '../ballistics/ballistics.module';
 import { LoadLabModule } from '../load-lab/load-lab.module';
 import { ListingsModule } from '../listings/listings.module';
+import { PaymentsModule } from '../payments/payments.module';
+import { AskGgPlatformToolsService } from './ask-gg-platform-tools.service';
 
 @Module({
   // ReloadingModule exports ReloadingService so AskGgClaudeService can
@@ -23,11 +25,15 @@ import { ListingsModule } from '../listings/listings.module';
   // ListingsModule (P2.2) exports ListingsService for the marketplace
   // lever — searchMarketplace (browse) + getComplements (crossSell).
   // ListingsModule has no imports of its own, so no cycle.
+  // PaymentsModule (Ask GG Everywhere) exports FeeCalculator for the
+  // computeFees tool — exact same fee engine checkout uses. Payments
+  // does not import AskGgModule, so no cycle.
   imports: [
     ReloadingModule,
     BallisticsModule,
     LoadLabModule,
     ListingsModule,
+    PaymentsModule,
     // For the admin KB-verification controller (uses AdminJwtGuard).
     // Same secret/config as AdminModule — kept local here so we
     // don't create a circular dep importing AdminModule.
@@ -45,6 +51,7 @@ import { ListingsModule } from '../listings/listings.module';
     AskGgClaudeService,
     AskGgQuotaService,
     AskGgKbService,
+    AskGgPlatformToolsService,
     AdminAuditService,
   ],
   exports: [AskGgService, AskGgKbService],

@@ -6,12 +6,13 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService, FLAGS } from '../settings/settings.service';
 import { SubscriptionTier } from '@prisma/client';
 
 /**
  * Ask GG quota / fair-use enforcement.
  *
- * Per spec OD3 (locked 2026-05-25):
+ * Per spec OD3 (locked 2026-05-25), defaults:
  *   FREE   → 5 messages per rolling 30-day window
  *   MEMBER → 20 messages per hour fair-use cap
  *   PRO    → 60 messages per hour fair-use cap
@@ -20,20 +21,11 @@ import { SubscriptionTier } from '@prisma/client';
  * service assumes the caller is already authenticated and just gates
  * on tier + history.
  *
- * Defaults are hardcoded for Drop 1; a follow-up drop will move them
- * to SettingsService.FLAGS so the operator can tune live from
- * /admin/settings (per the plan's "Cost-control hooks" section).
+ * Ask GG Everywhere: caps now live in SettingsService.FLAGS
+ * (ask_gg_* keys) so the operator can tune spend live from
+ * /admin/settings without a deploy. Reads fail open to the OD3
+ * defaults above (SettingsService.get already fail-opens).
  */
-const FREE_MSG_CAP_PER_30_DAYS = 5;
-const MEMBER_MSG_CAP_PER_HOUR = 20;
-const PRO_MSG_CAP_PER_HOUR = 60;
-
-// Phase B — photo identification cap. FREE users get 5 photo-bearing
-// requests per rolling 30-day window (separate counter from the
-// message cap so they can use their 5 messages PLUS 5 photo-IDs).
-// MEMBER + PRO are unlimited on photo IDs — counts only toward the
-// hourly fair-use message cap. Spec OD3.
-const FREE_PHOTO_CAP_PER_30_DAYS = 5;
 
 // Phase E3 — per-request photo cap (how many photos in ONE upload).
 // Originally proposed 5→20 for Pro under the "bulk identification"
@@ -69,13 +61,17 @@ export interface QuotaSnapshot {
 export class AskGgQuotaService {
   private readonly logger = new Logger(AskGgQuotaService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {}
 
   /**
    * Compute the current quota snapshot. Cheap-ish: one COUNT + one
    * findFirst on AskGgMessage, both hitting the
    * (conversationId, createdAt) composite index via the user-scoped
-   * relation filter.
+   * relation filter. Caps come from admin-tunable Settings flags
+   * (fail-open to the OD3 defaults).
    */
   async snapshot(
     userId: string,
@@ -84,6 +80,7 @@ export class AskGgQuotaService {
     const now = Date.now();
 
     if (tier === 'FREE') {
+      const cap = await this.settings.get(FLAGS.askGgFreeMsgCapPer30d);
       const since = new Date(now - THIRTY_DAYS_MS);
       const used = await this.countUserMessagesSince(userId, since);
       const oldest = await this.firstUserMessageSince(userId, since);
@@ -95,15 +92,18 @@ export class AskGgQuotaService {
       return {
         tier,
         used,
-        cap: FREE_MSG_CAP_PER_30_DAYS,
-        remaining: Math.max(0, FREE_MSG_CAP_PER_30_DAYS - used),
+        cap,
+        remaining: Math.max(0, cap - used),
         windowResetsAt,
         windowLengthMs: THIRTY_DAYS_MS,
       };
     }
 
     // MEMBER + PRO — hourly fair-use.
-    const cap = tier === 'PRO' ? PRO_MSG_CAP_PER_HOUR : MEMBER_MSG_CAP_PER_HOUR;
+    const cap =
+      tier === 'PRO'
+        ? await this.settings.get(FLAGS.askGgProMsgCapPerHour)
+        : await this.settings.get(FLAGS.askGgMemberMsgCapPerHour);
     const since = new Date(now - ONE_HOUR_MS);
     const used = await this.countUserMessagesSince(userId, since);
     const oldest = await this.firstUserMessageSince(userId, since);
@@ -185,13 +185,14 @@ export class AskGgQuotaService {
     tier: SubscriptionTier,
   ): Promise<void> {
     if (tier !== 'FREE') return; // MEMBER + PRO have no photo cap
+    const cap = await this.settings.get(FLAGS.askGgFreePhotoCapPer30d);
     const since = new Date(Date.now() - THIRTY_DAYS_MS);
     const used = await this.countPhotoIdRequestsSince(userId, since);
-    if (used < FREE_PHOTO_CAP_PER_30_DAYS) return;
+    if (used < cap) return;
     throw new ForbiddenException({
-      message: `You've used your ${FREE_PHOTO_CAP_PER_30_DAYS} free photo identifications this month. Upgrade to Member or Pro for unlimited.`,
+      message: `You've used your ${cap} free photo identifications this month. Upgrade to Member or Pro for unlimited.`,
       code: 'free-photo-quota-exhausted',
-      cap: FREE_PHOTO_CAP_PER_30_DAYS,
+      cap,
       used,
       minTier: 'MEMBER',
     });
@@ -213,13 +214,14 @@ export class AskGgQuotaService {
     if (tier !== 'FREE') {
       return { tier, used: 0, cap: 0, remaining: 0, unlimited: true };
     }
+    const cap = await this.settings.get(FLAGS.askGgFreePhotoCapPer30d);
     const since = new Date(Date.now() - THIRTY_DAYS_MS);
     const used = await this.countPhotoIdRequestsSince(userId, since);
     return {
       tier,
       used,
-      cap: FREE_PHOTO_CAP_PER_30_DAYS,
-      remaining: Math.max(0, FREE_PHOTO_CAP_PER_30_DAYS - used),
+      cap,
+      remaining: Math.max(0, cap - used),
       unlimited: false,
     };
   }
