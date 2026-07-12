@@ -23,6 +23,7 @@ import { SwapsModule } from '../swaps/swaps.module';
 import { AskGgPlatformToolsService } from './ask-gg-platform-tools.service';
 import { AskGgContextService } from './ask-gg-context.service';
 import { AskGgAccountToolsService } from './ask-gg-account-tools.service';
+import { AskGgLaneService } from './ask-gg-lane.service';
 
 @Module({
   // ReloadingModule exports ReloadingService so AskGgClaudeService can
@@ -70,6 +71,7 @@ import { AskGgAccountToolsService } from './ask-gg-account-tools.service';
     AskGgPlatformToolsService,
     AskGgContextService,
     AskGgAccountToolsService,
+    AskGgLaneService,
     AdminAuditService,
   ],
   exports: [AskGgService, AskGgKbService],

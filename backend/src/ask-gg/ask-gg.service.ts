@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AskGgClaudeService, AskGgChatMessage } from './ask-gg-claude.service';
-import { AskGgQuotaService, maxPhotosPerRequest } from './ask-gg-quota.service';
+import {
+  AskGgQuotaService,
+  maxPhotosPerRequest,
+  type AskGgLane,
+} from './ask-gg-quota.service';
+import { AskGgLaneService } from './ask-gg-lane.service';
 import { AskGgKbService } from './ask-gg-kb.service';
 import {
   AskGgContextService,
@@ -44,6 +49,11 @@ export interface PreparedSend {
    *  tail. Built by AskGgContextService from client-sent ids after
    *  ownership checks; undefined when no (valid) context came in. */
   contextBlock?: string;
+  /** W6 — which meter this turn billed to (stamped on the user row). */
+  lane: AskGgLane;
+  /** W6 — advice quota exhausted, proceeding free on the support lane:
+   *  the reply must stick to platform/account help. */
+  restricted: boolean;
 }
 
 // ─── History truncation (Ask GG Everywhere / B0) ─────────────────────
@@ -133,6 +143,7 @@ export class AskGgService {
     private readonly quota: AskGgQuotaService,
     private readonly kb: AskGgKbService,
     private readonly context: AskGgContextService,
+    private readonly laneClassifier: AskGgLaneService,
   ) {}
 
   private async userIdFromClerk(clerkId: string): Promise<{
@@ -185,10 +196,6 @@ export class AskGgService {
     },
   ): Promise<PreparedSend> {
     const user = await this.userIdFromClerk(clerkId);
-    // Quota checks FIRST, before any DB writes for this turn. FREE
-    // over-cap throws 403, MEMBER/PRO over-cap throws 429 — both
-    // shaped so the frontend can pick the right card.
-    await this.quota.assertCanSend(user.id, user.subscriptionTier);
     const imageUrls = (input.imageUrls ?? []).filter(
       (u) => typeof u === 'string' && u.length > 0,
     );
@@ -241,6 +248,21 @@ export class AskGgService {
       );
     }
 
+    // W6 two-lane quota — classify the turn (Haiku, fail-safe null),
+    // then pick + enforce the meter. Throws the tier 403/429 ONLY when
+    // both lanes are exhausted; an empty advice meter degrades to the
+    // free support lane in restricted mode instead of blocking. Still
+    // BEFORE any DB writes for this turn.
+    const guess = await this.laneClassifier.classify(
+      trimmed,
+      imageUrls.length > 0,
+    );
+    const decision = await this.quota.decideLane(
+      user.id,
+      user.subscriptionTier,
+      guess,
+    );
+
     // Load or create the conversation. New conversations get a title
     // = the first user message, truncated. Existing ones must belong
     // to the requesting user.
@@ -289,6 +311,8 @@ export class AskGgService {
         pageContext: pageContext
           ? (pageContext as unknown as object)
           : undefined,
+        // W6 — bill the turn to the decided meter.
+        lane: decision.lane,
       },
     });
 
@@ -324,6 +348,8 @@ export class AskGgService {
       escalate: input.escalate ?? false,
       claudeHistory,
       contextBlock,
+      lane: decision.lane,
+      restricted: decision.restricted,
     };
   }
 
@@ -354,6 +380,8 @@ export class AskGgService {
       // W5 — the authenticated caller for the account tools. Resolved
       // from the Clerk session in preflight; never model input.
       account: { clerkId: prep.user.clerkId, userId: prep.user.id },
+      // W6 — advice quota exhausted: platform/account help only.
+      restricted: prep.restricted,
       onText,
     });
 
@@ -379,6 +407,11 @@ export class AskGgService {
           reply.listingCards.length > 0
             ? (reply.listingCards as unknown as object[])
             : undefined,
+        // W6 — support-ticket DRAFT card (draftSupportTicket tool).
+        // Nothing was written; the user must tap Create in the UI.
+        ticketDraft: reply.ticketDraft
+          ? (reply.ticketDraft as unknown as object)
+          : undefined,
       },
     });
 
@@ -542,11 +575,14 @@ export class AskGgService {
    */
   async getQuota(clerkId: string) {
     const user = await this.userIdFromClerk(clerkId);
-    const [messages, photos] = await Promise.all([
+    const [messages, photos, support] = await Promise.all([
       this.quota.snapshot(user.id, user.subscriptionTier),
       this.quota.photoSnapshot(user.id, user.subscriptionTier),
+      this.quota.supportSnapshot(user.id),
     ]);
-    return { ...messages, photos };
+    // W6: `...messages` stays the ADVICE meter (unchanged shape for the
+    // existing chrome); `support` is the free lane's abuse meter.
+    return { ...messages, photos, support };
   }
 
   /**

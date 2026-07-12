@@ -38,6 +38,24 @@ export function maxPhotosPerRequest(tier: SubscriptionTier): number {
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
+// W6 two-lane quota. Every user turn is billed to ONE lane:
+//   SUPPORT — site/account/platform help. FREE for every signed-in
+//             tier; only a per-day abuse cap applies.
+//   ADVICE  — outdoor/reloading/gear expertise. The original OD3 tier
+//             caps (FREE 5/30d, MEMBER 20/h, PRO 60/h).
+// Lane is stamped on AskGgMessage.lane; pre-W6 rows (null) count as
+// ADVICE so history keeps billing exactly as it always did.
+export type AskGgLane = 'SUPPORT' | 'ADVICE';
+export type AskGgLaneGuess = AskGgLane | 'MIXED' | null;
+
+export interface LaneDecision {
+  lane: AskGgLane;
+  /** True when the user's ADVICE quota is exhausted and the turn is
+   *  proceeding on the free SUPPORT lane — the reply must stick to
+   *  platform/account help (support-restricted mode). */
+  restricted: boolean;
+}
+
 export interface QuotaSnapshot {
   tier: SubscriptionTier;
   /** How many user messages were sent in the active window. */
@@ -137,7 +155,13 @@ export class AskGgQuotaService {
   ): Promise<void> {
     const snap = await this.snapshot(userId, tier);
     if (snap.remaining > 0) return;
+    this.throwAdviceExhausted(snap);
+  }
 
+  /** The tier-appropriate quota error (403 upgrade / 429 cool-off) —
+   *  shared by assertCanSend and decideLane so the frontend cards keep
+   *  working unchanged. */
+  private throwAdviceExhausted(snap: QuotaSnapshot): never {
     if (snap.tier === 'FREE') {
       throw new ForbiddenException({
         message: `You've used your ${snap.cap} free Ask GG messages this month. Upgrade to Member or Pro to keep going.`,
@@ -165,6 +189,68 @@ export class AskGgQuotaService {
       },
       HttpStatus.TOO_MANY_REQUESTS,
     );
+  }
+
+  /** W6 — the SUPPORT lane's per-day abuse meter (UTC day, matching
+   *  the AskGgUsage rollup). */
+  async supportSnapshot(userId: string): Promise<{
+    usedToday: number;
+    capPerDay: number;
+    remaining: number;
+  }> {
+    const capPerDay = await this.settings.get(FLAGS.askGgSupportMsgCapPerDay);
+    const dayStart = new Date();
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const usedToday = await this.prisma.askGgMessage.count({
+      where: {
+        role: 'user',
+        lane: 'SUPPORT',
+        createdAt: { gte: dayStart },
+        conversation: { userId },
+      },
+    });
+    return {
+      usedToday,
+      capPerDay,
+      remaining: Math.max(0, capPerDay - usedToday),
+    };
+  }
+
+  /**
+   * W6 — pick the lane for this turn and enforce both meters.
+   *
+   *   classifier SUPPORT  → support lane if the abuse cap has room,
+   *                         else bill the advice meter (unrestricted).
+   *   ADVICE/MIXED/null   → advice lane if the tier meter has room,
+   *                         else proceed FREE on the support lane in
+   *                         support-restricted mode (platform/account
+   *                         help only — the friendly alternative to a
+   *                         hard gate).
+   *   both meters empty   → the existing 403/429 (unchanged frontend
+   *                         cards).
+   *
+   * Classifier failure (null) lands in the advice-first branch — fail
+   * safe in both directions, never a new error path.
+   */
+  async decideLane(
+    userId: string,
+    tier: SubscriptionTier,
+    classified: AskGgLaneGuess,
+  ): Promise<LaneDecision> {
+    const [advice, support] = await Promise.all([
+      this.snapshot(userId, tier),
+      this.supportSnapshot(userId),
+    ]);
+
+    if (classified === 'SUPPORT') {
+      if (support.remaining > 0) return { lane: 'SUPPORT', restricted: false };
+      if (advice.remaining > 0) return { lane: 'ADVICE', restricted: false };
+      this.throwAdviceExhausted(advice);
+    }
+
+    if (advice.remaining > 0) return { lane: 'ADVICE', restricted: false };
+    if (support.remaining > 0) return { lane: 'SUPPORT', restricted: true };
+    this.throwAdviceExhausted(advice);
   }
 
   /**
@@ -244,6 +330,9 @@ export class AskGgQuotaService {
     });
   }
 
+  // W6: the ADVICE meters exclude SUPPORT-lane turns (support is free).
+  // Legacy rows (lane null) still count as advice — billing for pre-W6
+  // history is unchanged.
   private async countUserMessagesSince(
     userId: string,
     since: Date,
@@ -253,6 +342,7 @@ export class AskGgQuotaService {
         role: 'user',
         createdAt: { gte: since },
         conversation: { userId },
+        NOT: { lane: 'SUPPORT' },
       },
     });
   }
@@ -266,6 +356,7 @@ export class AskGgQuotaService {
         role: 'user',
         createdAt: { gte: since },
         conversation: { userId },
+        NOT: { lane: 'SUPPORT' },
       },
       orderBy: { createdAt: 'asc' },
       select: { createdAt: true },

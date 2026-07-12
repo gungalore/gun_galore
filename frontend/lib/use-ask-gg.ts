@@ -99,6 +99,9 @@ export interface AskGgUiMessage {
   /** P2.2 — live marketplace listings the answer surfaced. Rendered as
    *  tappable cards under the assistant bubble. */
   listingCards?: AskGgListingCard[];
+  /** W6 — support-ticket DRAFT staged by the assistant. Rendered as a
+   *  prefilled card; the ticket only exists once the user taps Create. */
+  ticketDraft?: AskGgTicketDraft;
   /** Phase B — Cloudinary URLs of photos the user attached to this
    *  message (always empty / undefined for assistant messages).
    *  Rendered as inline thumbnails inside the user bubble. */
@@ -107,6 +110,14 @@ export interface AskGgUiMessage {
    *  for the user's just-typed input. Rendered with a subtle muted
    *  state until the server confirms it. */
   pending?: boolean;
+}
+
+/** W6 — a support-ticket draft (never auto-sent). */
+export interface AskGgTicketDraft {
+  subject: string;
+  category: string;
+  body: string;
+  transactionId?: string;
 }
 
 export interface AskGgQuota {
@@ -123,6 +134,9 @@ export interface AskGgQuota {
   /** Phase B — separate photo-ID counter. FREE caps at 5/30d; MEMBER
    *  and PRO are unlimited (only the hourly message cap applies). */
   photos: AskGgPhotoQuota;
+  /** W6 two-lane quota — the FREE support lane's per-day abuse meter.
+   *  Optional so the UI degrades gracefully against an older backend. */
+  support?: { usedToday: number; capPerDay: number; remaining: number };
 }
 
 export interface AskGgPhotoQuota {
@@ -182,6 +196,7 @@ type StreamEvent =
         model: string | null;
         citations?: AskGgCitation[] | null;
         listingCards?: AskGgListingCard[] | null;
+        ticketDraft?: AskGgTicketDraft | null;
       };
     }
   | { type: 'error'; message?: string };
@@ -197,6 +212,7 @@ interface ConversationMessageRow {
   model?: string | null;
   citations?: AskGgCitation[] | null;
   listingCards?: AskGgListingCard[] | null;
+  ticketDraft?: AskGgTicketDraft | null;
   createdAt?: string;
 }
 
@@ -421,6 +437,7 @@ export function useAskGg(
           listingCards: Array.isArray(m.listingCards)
             ? m.listingCards
             : undefined,
+          ticketDraft: m.ticketDraft ?? undefined,
           imageUrls:
             m.imageUrls && m.imageUrls.length > 0 ? m.imageUrls : undefined,
         }));
@@ -658,6 +675,8 @@ export function useAskGg(
                       citations: evt.assistantMessage.citations ?? undefined,
                       listingCards:
                         evt.assistantMessage.listingCards ?? undefined,
+                      ticketDraft:
+                        evt.assistantMessage.ticketDraft ?? undefined,
                     }
                   : m,
               ),

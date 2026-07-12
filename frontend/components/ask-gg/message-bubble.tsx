@@ -8,6 +8,7 @@ import type {
 } from '@/lib/use-ask-gg';
 import { AssistantMarkdown } from './assistant-markdown';
 import { IconRefresh } from './icons';
+import { TicketDraftCard } from './ticket-draft-card';
 
 export function MessageBubble({
   message,
@@ -62,6 +63,9 @@ export function MessageBubble({
         )}
         {!isUser && message.listingCards && message.listingCards.length > 0 && (
           <ListingCardsRow cards={message.listingCards} />
+        )}
+        {!isUser && message.ticketDraft && (
+          <TicketDraftCard draft={message.ticketDraft} />
         )}
         {!isUser && priorUserContent && (
           <div

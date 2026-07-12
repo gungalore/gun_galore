@@ -2897,6 +2897,11 @@ model AskGgMessage {
   // and the ticket is only created when the USER taps "Create ticket"
   // (their own session → POST /support).
   ticketDraft      Json?
+  // W6 two-lane quota — which meter this USER turn was billed to:
+  // 'SUPPORT' (free site/account help, per-day abuse cap) or 'ADVICE'
+  // (outdoor/reloading, tier caps). Null = assistant rows + pre-W6
+  // history (counted as ADVICE by the meters).
+  lane             String?
   createdAt        DateTime          @default(now())
 
   @@index([conversationId, createdAt])

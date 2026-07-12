@@ -32,9 +32,16 @@ export function QuotaPill({ quota }: { quota: AskGgQuota }) {
           fontSize: 11,
           lineHeight: 1.2,
         }}
-        aria-label={`${quota.remaining} of ${quota.cap} free messages remaining this month`}
+        aria-label={
+          quota.support
+            ? `Site and account help is always free. ${quota.remaining} of ${quota.cap} advice messages remaining this month.`
+            : `${quota.remaining} of ${quota.cap} free messages remaining this month`
+        }
       >
-        {quota.remaining} / {quota.cap} free messages this month
+        {/* W6 two-lane copy: support questions never bill the meter. */}
+        {quota.support
+          ? `Site & account help: free · Advice: ${quota.remaining}/${quota.cap} this month`
+          : `${quota.remaining} / ${quota.cap} free messages this month`}
       </span>
     </div>
   );

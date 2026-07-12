@@ -42,13 +42,14 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
 import { useStandalone } from '@/lib/use-standalone';
 import { useScrollDirection } from '@/lib/use-scroll-direction';
 import { PushToggleRow } from '@/components/push-opt-in-banner';
 import { AccountMenuList } from '@/lib/account-menu';
+import { isSuppressed as isAskGgSuppressed } from '@/components/ask-gg/ask-gg-host';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -62,7 +63,7 @@ interface Tab {
   // circular-FAB treatment. Only works at 5 tabs (position 3 = 50%).
   prominent?: boolean;
   // 'shop' / 'more' open sheets instead of navigating.
-  action?: 'shop' | 'more';
+  action?: 'shop' | 'more' | 'ask';
 }
 
 // Inline SVG icons — no extra dep. 24×24 viewbox, currentColor stroke
@@ -253,6 +254,7 @@ function IconChevronRight() {
 export function BottomTabBar() {
   const isStandalone = useStandalone();
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { isSignedIn, user } = useUser();
   const { getToken } = useAuth();
@@ -368,12 +370,13 @@ export function BottomTabBar() {
     {
       key: 'ask-gg',
       label: 'Ask GG',
-      // Paid AI assistant. Page itself is open (no auth gate at the
-      // route level) so signed-out users see the marketing/upgrade
-      // surface; FREE tier sees an upgrade card; MEMBER + PRO get
-      // the live chat.
+      // W6 — the tab now opens the site-wide PANEL in place (context
+      // preserved: same conversation, same page). On routes where the
+      // panel is suppressed (checkout, admin, /ask-gg itself…) the
+      // click handler falls back to navigating to the full page.
       href: '/ask-gg',
       isActive: (p) => p.startsWith('/ask-gg'),
+      action: 'ask',
     },
     {
       key: 'more',
@@ -532,10 +535,25 @@ export function BottomTabBar() {
                     onClick={() => {
                       if (tab.action === 'shop') setShopOpen(true);
                       else if (tab.action === 'more') setMoreOpen(true);
+                      else if (tab.action === 'ask') {
+                        // Open the in-place panel; fall back to the
+                        // full page where the panel is suppressed.
+                        if (isAskGgSuppressed(pathname)) {
+                          router.push('/ask-gg');
+                        } else {
+                          window.dispatchEvent(
+                            new CustomEvent('gg:ask-gg-open'),
+                          );
+                        }
+                      }
                     }}
                     aria-label={tab.label}
                     aria-expanded={
-                      tab.action === 'shop' ? shopOpen : moreOpen
+                      tab.action === 'ask'
+                        ? undefined
+                        : tab.action === 'shop'
+                          ? shopOpen
+                          : moreOpen
                     }
                     style={{
                       width: '100%',

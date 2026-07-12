@@ -427,6 +427,87 @@ export class AskGgAccountToolsService {
     };
   }
 
+  /** W6 — validate + stage a support-ticket DRAFT. WRITES NOTHING:
+   *  the returned draft renders as a card and the ticket is only
+   *  created when the user taps Create (their session → POST
+   *  /support). Mirrors SupportService rules (category set, fallback
+   *  'general'); transactionId must belong to the caller or the draft
+   *  is refused. */
+  async prepareTicketDraft(
+    account: AskGgAccount,
+    input: {
+      subject?: string;
+      category?: string;
+      body?: string;
+      transactionId?: string;
+    },
+  ): Promise<{
+    ok: boolean;
+    draft?: {
+      subject: string;
+      category: string;
+      body: string;
+      transactionId?: string;
+    };
+    error?: string;
+  }> {
+    const subject = (input.subject ?? '').trim();
+    const body = (input.body ?? '').trim();
+    if (subject.length < 4) {
+      return { ok: false, error: 'Subject too short — give a clear summary.' };
+    }
+    if (body.length < 10) {
+      return {
+        ok: false,
+        error: 'Body too short — include what happened and when.',
+      };
+    }
+    const TICKET_CATEGORIES = [
+      'general',
+      'payment',
+      'shipping',
+      'account',
+      'listing',
+      'other',
+    ];
+    const category = TICKET_CATEGORIES.includes(input.category ?? '')
+      ? (input.category as string)
+      : 'general';
+
+    let transactionId: string | undefined;
+    if (input.transactionId) {
+      const ref = input.transactionId.trim();
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(ref)) {
+        return { ok: false, error: 'Invalid transaction reference.' };
+      }
+      const t = await this.prisma.transaction.findUnique({
+        where: { id: ref },
+        select: { buyerId: true, sellerId: true },
+      });
+      if (
+        !t ||
+        (t.buyerId !== account.userId && t.sellerId !== account.userId)
+      ) {
+        return {
+          ok: false,
+          error:
+            'That transaction is not on your account — draft without it or use one of your own.',
+        };
+      }
+      transactionId = ref;
+    }
+
+    return {
+      ok: true,
+      draft: {
+        subject: clip(subject, 120),
+        category,
+        body: clip(body, 2_000),
+        ...(transactionId ? { transactionId } : {}),
+      },
+    };
+  }
+
   /** 8. Seller earnings + payout blockers (KYC / profile gates). */
   async getSellerEarnings(account: AskGgAccount) {
     const statement = await this.sellerTools.payoutStatement(account.clerkId);

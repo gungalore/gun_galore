@@ -129,6 +129,16 @@ export const FLAGS = {
       return Number.isFinite(n) && n >= 0 ? n : 5;
     },
   } as FlagDefinition<number>,
+  // W6 two-lane quota — SUPPORT (site/account help) is FREE for every
+  // signed-in tier; this is only the per-day ABUSE cap on that lane.
+  askGgSupportMsgCapPerDay: {
+    key: 'ask_gg_support_msg_cap_per_day',
+    default: 20,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? n : 20;
+    },
+  } as FlagDefinition<number>,
 } as const;
 
 @Injectable()

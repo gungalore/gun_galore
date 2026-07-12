@@ -47,7 +47,7 @@ const SUPPRESS_PREFIXES = [
   '/kyc',
 ];
 
-function isSuppressed(pathname: string | null): boolean {
+export function isSuppressed(pathname: string | null): boolean {
   if (!pathname) return false;
   return SUPPRESS_PREFIXES.some((p) =>
     p.endsWith('/')
