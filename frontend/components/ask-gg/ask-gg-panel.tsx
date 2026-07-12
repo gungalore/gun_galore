@@ -53,12 +53,25 @@ export default function AskGgPanel() {
     useAskGgDisclaimer();
 
   // Enter/exit animation — two frames so the transform transitions.
+  // The rAF chain MUST be cancellable: if `open` flips back to false
+  // before the frames land (e.g. an immediate close), a stray
+  // setEntered(true) would strand a visible-but-inert ghost overlay —
+  // the "PWA freeze".
   useEffect(() => {
-    if (open) {
-      requestAnimationFrame(() => requestAnimationFrame(() => setEntered(true)));
-    } else {
+    if (!open) {
       setEntered(false);
+      return;
     }
+    let cancelled = false;
+    const raf = requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (!cancelled) setEntered(true);
+      }),
+    );
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
   }, [open]);
 
   // W5.5 — a nudge (or future CTA) staged a question: put it in the
@@ -87,11 +100,17 @@ export default function AskGgPanel() {
     };
   }, [open, setOpen]);
 
-  // Close (hide, never unmount) on navigation.
+  // Close (hide, never unmount) on navigation — but ONLY on a real
+  // route change. This effect used to run on FIRST MOUNT too, which
+  // cancelled the very first open (tab/FAB tap arms + opens → panel
+  // mounts → mount-run closed it again), leaving the enter-animation
+  // frames to strand the ghost overlay users saw as a frozen app.
+  const prevPathnameRef = useRef(pathname);
   useEffect(() => {
+    if (prevPathnameRef.current === pathname) return;
+    prevPathnameRef.current = pathname;
     setOpen(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
+  }, [pathname, setOpen]);
 
   // KB search-first: debounced lookup while the user types (Phase C UX,
   // mirrored from the /ask-gg page wiring).
