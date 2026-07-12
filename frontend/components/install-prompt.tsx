@@ -1,34 +1,63 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { InstallAnimation } from './install-animation';
 import { useInstallPrompt } from '@/lib/use-install-prompt';
 
-// Floating "Install Gun Galore" CTA + the shared install-help modal.
+// "Get the Gun Galore app" install popup + the shared install-help modal.
 //
 // Install state (native event capture, installed-detection, iOS) lives in
 // useInstallPrompt() so the nav drawer's manual "Install app" button shares it.
-// This component owns the proactive floating nudge and the instruction modal.
+// This component owns the proactive install popup and the instruction modal.
 //
 // We DON'T auto-fire the native prompt:
 //   1. Chrome's engagement heuristic will reject .prompt() right after landing.
-//   2. A surprise modal interrupts whatever the user came to do.
+//   2. A surprise dialog interrupts whatever the user came to do.
 //   3. The event is single-use; once consumed it won't re-fire this session.
+//
+// The popup is a proper, dismissible reminder card (app icon + benefits +
+// Install button) shown a few seconds after landing on the WEBSITE (never in
+// the installed app, never on focused/checkout/admin flows). It offers three
+// exits:
+//   • ✕ / "Maybe later" / backdrop  → hide for 14 days (gentle re-remind).
+//   • "Don't show this again"       → PERMANENT opt-out (localStorage).
 //
 // The instruction modal is also opened on demand from the nav via the
 // `gg:show-install-help` window event — for when Chrome hasn't fired
 // beforeinstallprompt yet (the only install path then is the browser's own
 // ⋮ menu, which we can only explain, not trigger) or on iOS Safari.
-//
-// Dismissing the floating CTA hides it for 14 days (localStorage).
 
 const DISMISSED_KEY = 'gg-install-prompt-dismissed-until';
+const NEVER_KEY = 'gg-install-prompt-never';
 const DISMISS_DAYS = 14;
+// Delay before the popup appears so it never slams in on first paint.
+const SHOW_DELAY_MS = 3500;
+
+// Routes where an install popup would interrupt a focused task — never show
+// there (matches the Ask GG suppression spirit).
+const SUPPRESS_PREFIXES = [
+  '/checkout',
+  '/admin',
+  '/kyc',
+  '/sign-in',
+  '/sign-up',
+  '/sso-callback',
+  '/a/',
+];
+function isSuppressedRoute(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return SUPPRESS_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`) || pathname.startsWith(p),
+  );
+}
 
 export function InstallPrompt() {
   const { canInstall, isInstalled, isIosSafari, isIosNonSafari, promptInstall } =
     useInstallPrompt();
+  const pathname = usePathname();
   const [dismissed, setDismissed] = useState(true); // assume dismissed until effect checks
+  const [never, setNeverState] = useState(true); // assume opted-out until effect checks
   const [helpOpen, setHelpOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   // Fallback nudge for phones where the one-tap install is never offered
@@ -38,25 +67,30 @@ export function InstallPrompt() {
   // "Add to home screen" shortcut hint.
   const [isMobile, setIsMobile] = useState(false);
   const [fallbackArmed, setFallbackArmed] = useState(false);
+  // Delay-gate so the popup never appears on first paint.
+  const [readyToShow, setReadyToShow] = useState(false);
 
   useEffect(() => {
     setDismissed(isDismissedRecently());
+    setNeverState(isNever());
     const mobile = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(
       navigator.userAgent,
     );
     setIsMobile(mobile);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    if (mobile) timer = setTimeout(() => setFallbackArmed(true), 5000);
+    const showTimer = setTimeout(() => setReadyToShow(true), SHOW_DELAY_MS);
+    let fbTimer: ReturnType<typeof setTimeout> | undefined;
+    if (mobile) fbTimer = setTimeout(() => setFallbackArmed(true), 5000);
     // The nav's "Install app" button (and any other surface) can ask us to
     // pop the instruction modal — e.g. iOS, or Android before Chrome has fired
-    // the install event.
+    // the install event. This works even after "Don't show again".
     function onShowHelp() {
       setHelpOpen(true);
     }
     window.addEventListener('gg:show-install-help', onShowHelp);
     return () => {
       window.removeEventListener('gg:show-install-help', onShowHelp);
-      if (timer) clearTimeout(timer);
+      clearTimeout(showTimer);
+      if (fbTimer) clearTimeout(fbTimer);
     };
   }, []);
 
@@ -64,6 +98,7 @@ export function InstallPrompt() {
     setBusy(true);
     try {
       const outcome = await promptInstall();
+      // 'accepted' → installed (isInstalled flips, popup won't show again).
       if (outcome === 'dismissed') dismissFor(DISMISS_DAYS);
       // If the native event wasn't ready, fall back to the steps modal.
       if (outcome === 'unavailable') setHelpOpen(true);
@@ -72,9 +107,21 @@ export function InstallPrompt() {
     }
   }
 
-  function dismissFloating() {
+  // ✕ / "Maybe later" / backdrop — hide for 14 days (gentle re-remind).
+  function dismissLater() {
     setDismissed(true);
     dismissFor(DISMISS_DAYS);
+  }
+  // "Don't show this again" — permanent opt-out.
+  function dismissForever() {
+    setNeverState(true);
+    setNever();
+  }
+  // Non-native paths (iOS / generic) open the instruction modal; treat that
+  // as engagement and stop nagging the popup for 14 days.
+  function openHelp() {
+    setHelpOpen(true);
+    dismissLater();
   }
 
   // Once armed, if the one-tap install still isn't available and it's neither
@@ -88,141 +135,270 @@ export function InstallPrompt() {
     !isIosNonSafari &&
     !isInstalled;
 
-  // The floating CTA shows when there's an actionable path and the user hasn't
-  // dismissed it / already installed. iOS-non-Safari shows immediately (not
-  // gated behind the 5s fallback delay) — those users have a real blocker to
-  // fix: they must switch to Safari before they can install at all.
-  const showFloating =
+  // The popup shows when there's an actionable install path, the user hasn't
+  // dismissed / permanently opted out / already installed, we're not on a
+  // focused route, and the initial delay has elapsed.
+  const showPopup =
+    readyToShow &&
     !isInstalled &&
     !dismissed &&
+    !never &&
+    !helpOpen &&
+    !isSuppressedRoute(pathname) &&
     (canInstall || isIosSafari || isIosNonSafari || showFallbackHint);
 
-  // Ask GG Everywhere — the install card owns bottom-right (z60), the same
-  // corner as the Ask GG launcher (z52). Stamp a body attribute while the
-  // card is visible so globals.css can lift the launcher above it (same
-  // idiom as body[data-has-sticky-strip]).
+  // Ask GG Everywhere — keep the body attribute stamped while our popup is up
+  // so the Sparkie daily-hello suppresses (it checks data-install-prompt) and
+  // the launcher lift rules stay coherent. Harmless behind our backdrop.
   useEffect(() => {
-    if (showFloating) {
+    if (showPopup) {
       document.body.setAttribute('data-install-prompt', 'true');
     } else {
       document.body.removeAttribute('data-install-prompt');
     }
     return () => document.body.removeAttribute('data-install-prompt');
-  }, [showFloating]);
+  }, [showPopup]);
 
-  // Copy adapts to the path: native install / iOS-Safari steps / switch-to-
-  // Safari / generic shortcut.
-  const title = canInstall
-    ? 'Install Gun Galore'
+  // Primary-button copy adapts to the path.
+  const primaryLabel = canInstall
+    ? busy
+      ? 'Opening…'
+      : 'Install app'
     : isIosNonSafari
-      ? 'Open in Safari to install'
-      : 'Add to home screen';
-  const subtitle = canInstall
-    ? 'Faster repeat visits, home-screen icon, fullscreen launch.'
-    : isIosNonSafari
-      ? 'iPhone apps install through Safari — tap to switch.'
-      : 'Get a Gun Galore icon on your home screen.';
+      ? 'Open in Safari'
+      : isIosSafari
+        ? 'Show me how'
+        : 'Add to home screen';
+  const subtitle = isIosNonSafari
+    ? 'iPhone apps install through Safari — we’ll show you how.'
+    : 'Add it to your home screen for the full experience — free, no store needed.';
 
-  if (!showFloating && !helpOpen) return null;
+  if (!showPopup && !helpOpen) return null;
 
   return (
     <>
-      {showFloating && (
+      {showPopup && (
         <div
-          role="dialog"
-          aria-label={title}
+          onClick={dismissLater}
           style={{
             position: 'fixed',
-            bottom: 16,
-            right: 16,
-            zIndex: 60,
-            maxWidth: 320,
-            padding: '12px 14px',
-            borderRadius: 8,
-            background: 'var(--bg-card)',
-            border: '0.5px solid var(--border)',
-            boxShadow:
-              '0 10px 32px rgba(0,0,0,0.45), 0 0 12px rgba(200,16,46,0.22)',
+            inset: 0,
+            zIndex: 1000,
+            background: 'rgba(0,0,0,0.62)',
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
+            justifyContent: 'center',
+            padding: 16,
+            paddingTop: 'max(16px, env(safe-area-inset-top))',
+            paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+            overflowY: 'auto',
+            animation: 'gg-install-fade 0.2s ease-out',
           }}
         >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p
-              style={{
-                fontSize: 13,
-                color: 'var(--text-primary)',
-                fontWeight: 500,
-                marginBottom: 2,
-              }}
-            >
-              {title}
-            </p>
-            <p
-              style={{
-                fontSize: 11,
-                color: 'var(--text-tertiary)',
-                lineHeight: 1.4,
-              }}
-            >
-              {subtitle}
-            </p>
-          </div>
-          {canInstall ? (
-            <button
-              type="button"
-              onClick={install}
-              disabled={busy}
-              style={{
-                background: 'var(--red)',
-                color: '#fff',
-                border: 'none',
-                padding: '8px 14px',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: busy ? 'wait' : 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {busy ? 'Opening…' : 'Install'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setHelpOpen(true)}
-              style={{
-                background: 'var(--red)',
-                color: '#fff',
-                border: 'none',
-                padding: '8px 14px',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {isIosSafari ? 'How' : isIosNonSafari ? 'Open' : 'Add'}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={dismissFloating}
-            aria-label="Dismiss"
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Get the Gun Galore app"
+            onClick={(e) => e.stopPropagation()}
             style={{
-              background: 'transparent',
-              color: 'var(--text-tertiary)',
-              border: 'none',
-              padding: 4,
-              fontSize: 16,
-              lineHeight: 1,
-              cursor: 'pointer',
+              position: 'relative',
+              width: '100%',
+              maxWidth: 380,
+              background: 'var(--bg-card)',
+              border: '0.5px solid var(--border)',
+              borderRadius: 16,
+              boxShadow:
+                '0 24px 60px rgba(0,0,0,0.55), 0 0 22px rgba(200,16,46,0.22)',
+              padding: '24px 22px 18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+              alignItems: 'center',
+              textAlign: 'center',
+              animation: 'gg-install-pop 0.24s cubic-bezier(0.2,0.8,0.3,1)',
             }}
           >
-            ×
-          </button>
+            <button
+              type="button"
+              onClick={dismissLater}
+              aria-label="Close"
+              style={{
+                position: 'absolute',
+                top: 12,
+                right: 12,
+                width: 28,
+                height: 28,
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--text-tertiary)',
+                fontSize: 19,
+                lineHeight: 1,
+                cursor: 'pointer',
+                borderRadius: 8,
+              }}
+            >
+              ×
+            </button>
+
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/icon-192.png"
+              alt="Gun Galore"
+              width={56}
+              height={56}
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 14,
+                boxShadow:
+                  '0 4px 14px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)',
+              }}
+            />
+
+            <div
+              style={{ display: 'flex', flexDirection: 'column', gap: 5 }}
+            >
+              <p
+                style={{
+                  fontSize: 17,
+                  fontWeight: 700,
+                  letterSpacing: '-0.2px',
+                  color: 'var(--text-primary)',
+                  margin: 0,
+                }}
+              >
+                Get the Gun&nbsp;Galore app
+              </p>
+              <p
+                style={{
+                  fontSize: 12.5,
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.45,
+                  margin: 0,
+                }}
+              >
+                {subtitle}
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 9,
+                width: '100%',
+                margin: '2px 0 0',
+              }}
+            >
+              {[
+                'One-tap launch from your home screen',
+                'Faster & fullscreen — no browser bars',
+                'Never miss an auction, offer or draw',
+              ].map((b) => (
+                <div
+                  key={b}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 9,
+                    fontSize: 13,
+                    color: 'var(--text-secondary)',
+                    textAlign: 'left',
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      flex: '0 0 auto',
+                      width: 18,
+                      height: 18,
+                      borderRadius: '50%',
+                      background: 'rgba(200,16,46,0.14)',
+                      color: 'var(--red)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 11,
+                      fontWeight: 800,
+                    }}
+                  >
+                    ✓
+                  </span>
+                  {b}
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={canInstall ? install : openHelp}
+              disabled={busy}
+              style={{
+                width: '100%',
+                background: 'var(--red)',
+                color: '#fff',
+                border: 'none',
+                padding: '12px 14px',
+                borderRadius: 10,
+                fontSize: 14.5,
+                fontWeight: 700,
+                cursor: busy ? 'wait' : 'pointer',
+              }}
+            >
+              {primaryLabel}
+            </button>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                marginTop: 2,
+              }}
+            >
+              <button
+                type="button"
+                onClick={dismissLater}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  fontSize: 12.5,
+                  cursor: 'pointer',
+                  padding: '6px 2px',
+                }}
+              >
+                Maybe later
+              </button>
+              <button
+                type="button"
+                onClick={dismissForever}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-tertiary)',
+                  fontSize: 11.5,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  textUnderlineOffset: 2,
+                  padding: '6px 2px',
+                }}
+              >
+                Don&rsquo;t show this again
+              </button>
+            </div>
+          </div>
+          <style>{`
+            @keyframes gg-install-fade { from { opacity: 0 } to { opacity: 1 } }
+            @keyframes gg-install-pop {
+              from { opacity: 0; transform: translateY(10px) scale(0.98); }
+              to { opacity: 1; transform: translateY(0) scale(1); }
+            }
+            @media (prefers-reduced-motion: reduce) {
+              [aria-label="Get the Gun Galore app"] { animation: none !important; }
+            }
+          `}</style>
         </div>
       )}
 
@@ -521,6 +697,24 @@ function isDismissedRecently(): boolean {
     if (!raw) return false;
     const until = Number(raw);
     return Number.isFinite(until) && until > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+// "Don't show this again" — permanent opt-out (never expires). The nav's
+// manual "Install app" button still works; this only silences the auto popup.
+function setNever() {
+  try {
+    localStorage.setItem(NEVER_KEY, '1');
+  } catch {
+    // localStorage blocked — accept the popup may re-show.
+  }
+}
+
+function isNever(): boolean {
+  try {
+    return localStorage.getItem(NEVER_KEY) === '1';
   } catch {
     return false;
   }
