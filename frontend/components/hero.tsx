@@ -195,16 +195,6 @@ export function Hero() {
           >
             Browse marketplace
           </Link>
-          <p
-            className="hero-reveal hero-reveal-4 text-xs mt-3"
-            style={{
-              color: 'rgba(245, 245, 245, 0.72)',
-              textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
-            }}
-          >
-            No upfront fees to advertise — we only earn a small commission
-            when your item sells.
-          </p>
         </div>
       </div>
     </section>

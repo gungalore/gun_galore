@@ -73,6 +73,7 @@ export function TrustBanner() {
                 'Payment held until delivery',
                 'ID-verified sellers',
                 'Couriered & tracked',
+                'No upfront fees to advertise',
               ].map((chip) => (
                 <span
                   key={chip}
