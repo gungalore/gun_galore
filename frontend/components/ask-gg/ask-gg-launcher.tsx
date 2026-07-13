@@ -139,7 +139,9 @@ export function AskGgLauncher({
           className={[
             'gg-hello app-chrome fixed z-[52] flex items-start gap-1',
             'right-4 bottom-[calc(100px+env(safe-area-inset-bottom))]',
-            'md:right-6 md:bottom-[108px]',
+            // Desktop FAB is 160px tall (md:h-40) sitting 20px off the bottom,
+            // so the bubble clears its top (180px) with an 8px gap.
+            'md:right-6 md:bottom-[188px]',
           ].join(' ')}
           style={{
             maxWidth: 250,
@@ -192,10 +194,10 @@ export function AskGgLauncher({
         className={[
           'app-chrome fixed z-[52]',
           'flex items-center justify-center',
-          // No button chrome — Sparkie IS the launcher. The 80px box is
-          // just his hit area; he floats inside it, same corner on mobile
-          // + desktop.
-          'right-4 w-20 h-20',
+          // No button chrome — Sparkie IS the launcher. The box is just his
+          // hit area; he floats inside it. Doubled on desktop (80px → 160px)
+          // per operator; mobile stays 80px.
+          'right-4 w-20 h-20 md:w-40 md:h-40',
           'bottom-[calc(12px+env(safe-area-inset-bottom))]',
           'md:right-6 md:bottom-5',
         ].join(' ')}
@@ -209,8 +211,9 @@ export function AskGgLauncher({
           filter: 'drop-shadow(0 3px 9px rgba(0,0,0,0.55))',
         }}
       >
-        {/* Just the character now. Grins while he's talking. */}
-        <AskGgMascot alive size={80} mood={bubble ? 'happy' : 'idle'} />
+        {/* Just the character now. Grins while he's talking. `fill` lets him
+            scale with the responsive box (80px mobile → 160px desktop). */}
+        <AskGgMascot alive fill mood={bubble ? 'happy' : 'idle'} />
       </button>
     </>
   );

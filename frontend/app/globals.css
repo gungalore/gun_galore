@@ -274,15 +274,17 @@ body[data-install-prompt='true'] #askgg-hello {
   bottom: calc(180px + env(safe-area-inset-bottom));
 }
 
-/* Sparkie v2 — the Ask GG mascot (components/ask-gg/ask-gg-mascot.tsx).
-   A little living ember: glowing gradient body, eyebrows, a mouth that
-   changes shape, two arms that gesture, orbiting sparkles + a halo. Idle
-   life (float/breathe/blink/glance/sway/orbit/glow) is pure CSS; moods
-   (--think / --happy) hold sustained poses; one-shot moments
-   (--wave / --celebrate / --point / --peek) are added from JS. Everything
-   animates individual transform props so effects COMPOSE, and all motion
-   sits behind prefers-reduced-motion: no-preference (reduced motion = a
-   calm Sparkie that still changes expression but never fidgets). */
+/* Sparkie — the Ask GG mascot (components/ask-gg/ask-gg-mascot.tsx).
+   A little safari ranger: khaki bush hat (GG-red band + neckerchief), a round
+   face with eyebrows and a mouth that changes shape, two arms that gesture, a
+   warm halo + a few orbiting adventure sparkles. Idle life (float/breathe/
+   blink/glance/sway/orbit/glow) is pure CSS; moods (--think / --happy) hold
+   sustained poses; one-shot moments (--wave / --celebrate / --point / --peek)
+   are added from JS. Everything animates individual transform props so effects
+   COMPOSE, and all motion sits behind prefers-reduced-motion: no-preference
+   (reduced motion = a calm Sparkie that still changes expression but never
+   fidgets). The safari edition reuses this rig unchanged — same gg-sk-* class
+   names + viewBox coordinates as the previous mascot. */
 .gg-sk-float,
 .gg-sk-body,
 .gg-sk-eyes,
