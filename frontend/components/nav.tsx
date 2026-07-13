@@ -110,16 +110,24 @@ export function Nav() {
           borderBottom: '0.5px solid var(--border)',
         }}
       >
-        <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center gap-6">
-          {/* Logo */}
-          <Link href="/" className="shrink-0 flex items-center" aria-label="Gun Galore">
+        <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center gap-3 sm:gap-6">
+          {/* Logo — smaller on mobile (the 220px-wide mark was crowding the
+              Sell/bell/cart/hamburger cluster on ≤375px phones and pushing the
+              row into horizontal overflow). Allowed to shrink (min-w-0 +
+              max-w-full object-contain) as a backstop so it always gives up
+              space to the fixed-size right cluster rather than overflowing. */}
+          <Link
+            href="/"
+            className="shrink min-w-0 flex items-center"
+            aria-label="Gun Galore"
+          >
             <Image
               src="/logo.svg"
               alt="Gun Galore"
               width={220}
               height={44}
               priority
-              style={{ height: 44, width: 'auto' }}
+              className="h-8 w-auto sm:h-11 max-w-full object-contain"
             />
           </Link>
 
@@ -147,7 +155,7 @@ export function Nav() {
 
           {/* Right side */}
           {isLoaded && (
-            <div className="flex items-center gap-2 sm:gap-3 ml-auto md:ml-0">
+            <div className="flex items-center gap-2 sm:gap-3 ml-auto md:ml-0 shrink-0">
               <Link
                 href="/listings/new"
                 className="text-sm px-3 py-1.5 rounded-[6px] transition-colors"
