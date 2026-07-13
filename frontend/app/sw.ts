@@ -133,8 +133,17 @@ const imageCaching: RuntimeCaching[] = [
 
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
-  skipWaiting: true,
-  clientsClaim: true,
+  // Controlled "prompt-to-update" — deliberately NOT auto-activating.
+  // With skipWaiting/clientsClaim TRUE, a freshly deployed SW seizes an
+  // already-open PWA mid-session; the old page then lazy-loads a chunk
+  // the new build replaced → 404 → dead shell (exactly what a redeploy
+  // did to installed apps). Instead the new SW WAITS: the old SW keeps
+  // serving the open session from its intact caches (no mid-session
+  // break), the update banner detects the waiting worker, and only when
+  // the user taps Reload do we post SKIP_WAITING (handler below) to
+  // activate it on their terms.
+  skipWaiting: false,
+  clientsClaim: false,
   navigationPreload: true,
   // Order matters — Serwist evaluates routes top-down, first match
   // wins. Network-only rules MUST come first so admin/api/auth always
@@ -181,6 +190,27 @@ const serwist = new Serwist({
 });
 
 serwist.addEventListeners();
+
+// Controlled-update handshake. The update banner posts this message to
+// the WAITING service worker when the user taps "Reload"; we then
+// activate (skipWaiting was false, so the worker was parked). Activation
+// fires `controllerchange` in the page, which the banner uses to reload
+// into the new bundle. Any other message is ignored.
+//
+// NOTE: Serwist v9 also registers its own SKIP_WAITING message handler
+// internally, so this listener is technically redundant on the current
+// version. It's kept as an explicit, self-documenting backstop that
+// stays correct if that internal behaviour changes across upgrades —
+// both call self.skipWaiting(), which is idempotent, so there is no
+// conflict or double-activation.
+self.addEventListener('message', (event) => {
+  const data = (event as ExtendableMessageEvent).data as
+    | { type?: string }
+    | undefined;
+  if (data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
 // ─── Web Push handlers ──────────────────────────────────────────────
 //

@@ -2,11 +2,14 @@
 
 // Service-worker update banner.
 //
-// Serwist (our SW build pipeline) uses `skipWaiting: true` +
-// `clientsClaim: true`, so a new service worker becomes the
-// controlling SW as soon as it installs. But the currently-running
-// page still has its OLD JS bundle loaded — refreshing is what
-// picks up the new code.
+// Serwist runs in "prompt-to-update" mode (`skipWaiting: false` +
+// `clientsClaim: false`) — a freshly deployed SW installs but PARKS in
+// the `waiting` state instead of seizing the open page. That's
+// deliberate: an auto-activating SW breaks an already-open PWA when the
+// old page then requests a chunk the new build replaced. So the old SW
+// keeps serving this session cleanly until the user opts in here.
+// Tapping Reload posts SKIP_WAITING to the waiting worker, waits for it
+// to take control (`controllerchange`), then reloads into the new bundle.
 //
 // Flow:
 //   1. On mount, ask `navigator.serviceWorker.getRegistration()`
@@ -19,7 +22,8 @@
 //   3. Once the new SW reaches the `installed` state AND there
 //      WAS a previous controller (i.e. this isn't a first-install
 //      situation), show the banner.
-//   4. Tapping the banner reloads the page so the new bundles load.
+//   4. Tapping the banner activates the waiting worker (SKIP_WAITING)
+//      and reloads once it takes control, so the new bundles load.
 //
 // Mounted ONCE in app/layout.tsx. Hidden until a real update is
 // detected; persists until the user taps reload or dismisses (the
@@ -27,14 +31,11 @@
 
 import { useEffect, useState } from 'react';
 
-// sessionStorage key — stamped right before `window.location.reload()`
-// in the Reload click handler. On the next page load, the SW activation
-// fires `controllerchange` immediately (Serwist runs skipWaiting +
-// clientsClaim), and without this gate the banner would pop back up
-// the moment the user lands. We suppress it for 60s after a click
-// so the user gets a clean reloaded view. We also remember the SW
-// "version" hash we activated, so a SECOND update landing within the
-// 60s window still shows the banner (rare but possible mid-deploy).
+// sessionStorage key — stamped when the user taps Reload (inside
+// applyUpdateAndReload). After the reload lands, the SW's
+// `controllerchange` fires again on the fresh page and, without this
+// gate, would immediately re-show the banner. We suppress it for 60s
+// after a tap so the reloaded view stays clean.
 const RELOAD_FLAG_KEY = 'gg-sw-reload-at';
 const SUPPRESS_MS = 60_000;
 
@@ -64,6 +65,49 @@ export function SwUpdateBanner() {
   const [updateReady, setUpdateReady] = useState(false);
   const [reloading, setReloading] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+
+  // Activate the parked (waiting) service worker, then reload into the
+  // new bundle. Because the SW ships with `skipWaiting: false`, a plain
+  // reload would NOT pick up the new code (the old worker still controls
+  // the page). We message the waiting worker to skipWaiting and reload
+  // the moment it takes control. A short timeout is a safety net in case
+  // `controllerchange` doesn't fire (or there's no waiting worker).
+  async function applyUpdateAndReload() {
+    // Suppress the banner on the freshly-reloaded page (see RELOAD_FLAG_KEY).
+    markReloading();
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const waiting = reg?.waiting;
+      if (waiting) {
+        let done = false;
+        const reloadOnce = () => {
+          if (done) return;
+          done = true;
+          window.location.reload();
+        };
+        // Reload on whichever signal lands first. `controllerchange` is
+        // the normal path; the waiting worker's `statechange → activated`
+        // is a more reliable trigger on iOS standalone (where
+        // controllerchange sometimes doesn't fire). The 3s timeout is a
+        // last-resort fallback if neither arrives.
+        navigator.serviceWorker.addEventListener(
+          'controllerchange',
+          reloadOnce,
+          { once: true },
+        );
+        waiting.addEventListener('statechange', () => {
+          if (waiting.state === 'activated') reloadOnce();
+        });
+        window.setTimeout(reloadOnce, 3000);
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+        return;
+      }
+    } catch {
+      /* fall through to a plain reload */
+    }
+    // No waiting worker (already active / unsupported) — just reload.
+    window.location.reload();
+  }
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
@@ -173,15 +217,12 @@ export function SwUpdateBanner() {
           setReloading(true);
           // Hide the banner immediately so the user gets visual
           // feedback even before the reload completes (network can
-          // take a second on flaky mobile). Pair it with the
-          // sessionStorage flag so the freshly-reloaded page also
+          // take a second on flaky mobile). applyUpdateAndReload stamps
+          // the sessionStorage flag so the freshly-reloaded page also
           // suppresses the banner for 60s — otherwise the
           // controllerchange that fires post-reload would re-show it.
           setDismissed(true);
-          markReloading();
-          // Hard reload — Service Worker has already activated; we
-          // just need the page to fetch the new bundles.
-          window.location.reload();
+          void applyUpdateAndReload();
         }}
         style={{
           padding: '6px 12px',
