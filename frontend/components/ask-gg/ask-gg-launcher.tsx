@@ -136,8 +136,8 @@ export function AskGgLauncher({
           role="status"
           className={[
             'gg-hello app-chrome fixed z-[52] flex items-start gap-1',
-            'right-4 bottom-[calc(72px+env(safe-area-inset-bottom))]',
-            'md:right-6 md:bottom-[76px]',
+            'right-4 bottom-[calc(80px+env(safe-area-inset-bottom))]',
+            'md:right-6 md:bottom-[86px]',
           ].join(' ')}
           style={{
             maxWidth: 250,
@@ -188,32 +188,27 @@ export function AskGgLauncher({
         onClick={() => open()}
         aria-label="Open Ask GG — your Gun Galore assistant"
         className={[
-          'ask-gg-lure app-chrome fixed z-[52]',
-          'flex items-center justify-center gap-2',
-          // Mobile: 48px circle hugging the safe area.
-          'right-4 w-12 h-12',
+          'app-chrome fixed z-[52]',
+          'flex items-center justify-center',
+          // No button chrome — Sparkie IS the launcher. The 56px box is
+          // just his hit area (a comfortable ≥44px tap target); he floats
+          // inside it, same corner on mobile + desktop.
+          'right-4 w-14 h-14',
           'bottom-[calc(16px+env(safe-area-inset-bottom))]',
-          // Desktop: labelled pill at 24/24.
-          'md:right-6 md:bottom-6 md:w-auto md:h-11 md:px-4',
+          'md:right-6 md:bottom-6',
         ].join(' ')}
         style={{
-          background: 'var(--red)',
-          color: '#fff',
+          background: 'none',
           border: 'none',
-          borderRadius: 999,
+          padding: 0,
           cursor: 'pointer',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+          // Soft shadow so the character reads as a floating spark against
+          // any page background, with nothing behind him.
+          filter: 'drop-shadow(0 3px 9px rgba(0,0,0,0.55))',
         }}
       >
-        {/* Sparkie grins while he's talking. Rendered at 1.5× (39px) so
-            the little ember reads as a character, not an icon. */}
-        <AskGgMascot alive size={39} mood={bubble ? 'happy' : 'idle'} />
-        <span
-          className="hidden md:inline"
-          style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap' }}
-        >
-          Ask GG
-        </span>
+        {/* Just the character now. Grins while he's talking. */}
+        <AskGgMascot alive size={56} mood={bubble ? 'happy' : 'idle'} />
       </button>
     </>
   );
