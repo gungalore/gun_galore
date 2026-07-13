@@ -4,6 +4,7 @@
 // + nav, just not the landing headline).
 
 import Link from 'next/link';
+import { TrustCard } from './trust-banner';
 
 export function Hero() {
   return (
@@ -11,9 +12,9 @@ export function Hero() {
       className="relative w-full overflow-hidden"
       style={{
         // The image is very wide (~5:1) so we let it crop top/bottom on
-        // narrow viewports. Min height keeps the hero feeling substantial
-        // on desktop without dominating mobile.
-        minHeight: 'clamp(360px, 50vh, 560px)',
+        // narrow viewports. Kept fairly short so the paid Featured strip
+        // below is visible when a visitor first lands.
+        minHeight: 'clamp(340px, 44vh, 460px)',
         background: 'var(--bg-deep)',
       }}
     >
@@ -126,8 +127,8 @@ export function Hero() {
         }
       `}</style>
 
-      <div className="relative max-w-[1280px] mx-auto px-4 sm:px-6 py-16 sm:py-20 lg:py-24 flex flex-col justify-center" style={{ minHeight: 'inherit' }}>
-        <div className="max-w-[640px]">
+      <div className="relative max-w-[1280px] mx-auto px-4 sm:px-6 py-12 sm:py-14 flex flex-col md:flex-row md:items-center md:justify-between gap-8 lg:gap-12" style={{ minHeight: 'inherit' }}>
+        <div className="max-w-[560px]">
           {/* Eyebrow */}
           <p
             className="hero-reveal hero-reveal-1 text-xs uppercase mb-4"
@@ -177,8 +178,7 @@ export function Hero() {
             }}
           >
             Optics, camping, fishing, knives and more. Verified sellers,
-            payment protection on every transaction. Run by South Africans,
-            for the outdoors.
+            payment protection on every transaction.
           </p>
 
           {/* Primary CTA — drops the user straight into the Marketplace
@@ -195,6 +195,12 @@ export function Hero() {
           >
             Browse marketplace
           </Link>
+        </div>
+
+        {/* Trust proof card — right on desktop, stacked under the copy on
+            mobile. Points reveal one after another. */}
+        <div className="hero-reveal hero-reveal-4 w-full md:w-auto">
+          <TrustCard />
         </div>
       </div>
     </section>

@@ -18,11 +18,6 @@
 import Link from 'next/link';
 import { GetTheAppCta } from '@/components/get-the-app-cta';
 
-// UX-1f — payment methods, driven by a config array so card-brand logos slot
-// in beside EFT at paygate go-live without touching layout. Manual EFT is the
-// only live rail today (funds held until the buyer confirms delivery).
-const PAYMENT_METHODS: string[] = ['Secure EFT — payment held'];
-
 export function SiteFooter() {
   const year = new Date().getFullYear();
 
@@ -160,8 +155,7 @@ export function SiteFooter() {
         </div>
       </div>
 
-      {/* Payment methods + "Get the app" band (UX-1f). Payment chips are
-          config-driven so card logos slot in beside EFT at paygate go-live. */}
+      {/* "Get the app" band. */}
       <div
         style={{
           maxWidth: 1280,
@@ -170,30 +164,12 @@ export function SiteFooter() {
           flexWrap: 'wrap',
           gap: 16,
           alignItems: 'center',
-          justifyContent: 'space-between',
+          justifyContent: 'flex-end',
           paddingTop: 20,
           borderTop: '0.5px solid var(--border)',
           marginBottom: 20,
         }}
       >
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-          <span style={{ color: 'var(--text-tertiary-on-card)', fontSize: 12 }}>Payment</span>
-          {PAYMENT_METHODS.map((label) => (
-            <span
-              key={label}
-              style={{
-                fontSize: 12,
-                color: 'var(--text-secondary)',
-                background: 'var(--bg-inset)',
-                border: '0.5px solid var(--border)',
-                borderRadius: 4,
-                padding: '3px 8px',
-              }}
-            >
-              {label}
-            </span>
-          ))}
-        </div>
         <GetTheAppCta />
       </div>
 
