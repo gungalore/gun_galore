@@ -17,8 +17,9 @@ import {
 // non-suppressed page in BROWSER modes only.
 //
 // ONE bubble, two brains:
-//   - Welcome greeting: Sparkie says hi and offers a hand once per visit
-//     (per browser session), ~3.5s after the user arrives.
+//   - Welcome greeting: Sparkie says hi and offers a hand ~3.5s after the user
+//     lands on EVERY page (operator: greet every visit). Copy rotates so
+//     repeat visits don't read robotically.
 //   - Contextual nudges (W5.5): page-kind + dwell-time suggestions
 //     ("want a fair-price check on this?"). Tapping opens the panel
 //     with the question STAGED in the composer — never auto-sent.
@@ -29,9 +30,15 @@ import {
 // Geometry unchanged from W3 (FAB z52; bubble rides above it; both
 // lift via body[data-install-prompt] rules in globals.css).
 
-const GREET_KEY = 'gg_askgg_greeted';
-const HELLO_TEXT =
-  "Hey there 👋 I'm Sparkie. Can I help you find something or answer a question?";
+// Sparkie greets on every page visit. Copy rotates so repeat visits don't read
+// robotically — the first line does the full intro, the rest are short hellos.
+const HELLO_TEXTS = [
+  "Hey there 👋 I'm Sparkie. Can I help you find something or answer a question?",
+  'Hi again 👋 Need a hand finding something?',
+  "👋 I'm right here if you need anything — just give me a tap.",
+  'Howzit! Looking for something specific? I can help.',
+  'Need a hand or some advice? Tap me and ask 👋',
+];
 
 interface Bubble {
   text: string;
@@ -51,39 +58,43 @@ export function AskGgLauncher({
   const [bubble, setBubble] = useState<Bubble | null>(null);
   // One bubble per page view — hello and nudge never stack.
   const spentThisPageRef = useRef(false);
+  // Advances through HELLO_TEXTS so each greeting varies.
+  const greetIdxRef = useRef(0);
+  const pathname = usePathname();
 
-  // Welcome greeting — ~3.5s after the user lands, Sparkie says hi and
-  // offers a hand. Once per visit (per browser session), so a returning
-  // visitor in a fresh session is welcomed again but we never re-greet on
-  // internal navigation. Skipped if the panel was already used this
-  // session or the install card owns the corner. The visit is "spent" the
-  // moment it shows.
+  // Welcome greeting — ~3.5s after landing on EVERY page (operator: greet each
+  // visit), so Sparkie always says hello and stays present. The 3.5s dwell means
+  // rapid click-throughs don't trigger it (the timer is cancelled on nav);
+  // it fires once the visitor settles on a page. Skipped only while the panel
+  // is open, the tab is hidden, the install card owns the screen, or the user
+  // is mid-form.
   useEffect(() => {
     if (panelArmed) return;
-    try {
-      if (sessionStorage.getItem(GREET_KEY)) return;
-    } catch {
-      return;
-    }
     const t = window.setTimeout(() => {
       if (spentThisPageRef.current) return;
       if (document.visibilityState !== 'visible') return;
       if (document.body.hasAttribute('data-install-prompt')) return;
-      try {
-        sessionStorage.setItem(GREET_KEY, '1');
-      } catch {
-        /* still greet this once */
+      const ae = document.activeElement;
+      if (
+        ae instanceof HTMLInputElement ||
+        ae instanceof HTMLTextAreaElement ||
+        (ae instanceof HTMLElement && ae.isContentEditable)
+      ) {
+        return;
       }
+      const text = HELLO_TEXTS[greetIdxRef.current % HELLO_TEXTS.length];
+      greetIdxRef.current += 1;
       spentThisPageRef.current = true;
-      setBubble({ kind: 'hello', text: HELLO_TEXT });
+      setBubble({ kind: 'hello', text });
     }, 3500);
     return () => clearTimeout(t);
-  }, [panelArmed]);
+  }, [pathname, panelArmed]);
 
   // Contextual nudge — dwell-gated per page kind. pickNudge() owns all
-  // frequency caps; this effect owns the moment (dwell, visible tab,
-  // corner free, panel closed, nothing else shown this page view).
-  const pathname = usePathname();
+  // frequency caps; this effect owns the moment (dwell, visible tab, corner
+  // free, panel closed, nothing else shown this page view). The greeting
+  // usually takes the slot first; a nudge fills in only when the greeting was
+  // skipped (install card up, or the user was typing at 3.5s).
   useEffect(() => {
     if (panelArmed) return;
     const nudge = pickNudge(pathname);
