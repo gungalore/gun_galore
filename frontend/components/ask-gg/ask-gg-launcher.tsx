@@ -205,8 +205,9 @@ export function AskGgLauncher({
           boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
         }}
       >
-        {/* Sparkie grins while he's talking. */}
-        <AskGgMascot alive size={26} mood={bubble ? 'happy' : 'idle'} />
+        {/* Sparkie grins while he's talking. Rendered at 1.5× (39px) so
+            the little ember reads as a character, not an icon. */}
+        <AskGgMascot alive size={39} mood={bubble ? 'happy' : 'idle'} />
         <span
           className="hidden md:inline"
           style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap' }}
