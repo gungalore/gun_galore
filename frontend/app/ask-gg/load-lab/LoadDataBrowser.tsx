@@ -530,11 +530,21 @@ function LoadDataPanel({
   if (!loads.found || loads.groups.length === 0) {
     return <CenterNote>No published loads for this calibre yet.</CenterNote>;
   }
-  return <LoadDataView data={loads} />;
+  // Key by cartridge so the bullet-weight selection resets when the calibre changes.
+  return <LoadDataView key={loads.cartridge} data={loads} />;
 }
 
 function LoadDataView({ data }: { data: CartridgeLoadsResponse }) {
   const otherLabels = data.variants.filter((v) => v !== data.cartridge);
+  // Second-level filter: pick a bullet weight → show only its powder charges.
+  // Defaults to the lightest available weight so charges show immediately.
+  const [weight, setWeight] = useState<number | 'all'>(
+    data.groups[0]?.bulletWeightGr ?? 'all',
+  );
+  const shownGroups =
+    weight === 'all'
+      ? data.groups
+      : data.groups.filter((g) => g.bulletWeightGr === weight);
   return (
     <section
       aria-label={`Published loads for ${data.cartridge}`}
@@ -619,8 +629,48 @@ function LoadDataView({ data }: { data: CartridgeLoadsResponse }) {
         </span>
       </div>
 
-      {/* One section per bullet weight */}
-      {data.groups.map((g) => (
+      {/* Bullet-weight selector — narrows to one weight's powder charges. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <label
+          htmlFor="llb-weight"
+          style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}
+        >
+          Bullet weight
+        </label>
+        <select
+          id="llb-weight"
+          value={String(weight)}
+          onChange={(e) =>
+            setWeight(e.target.value === 'all' ? 'all' : Number(e.target.value))
+          }
+          style={{
+            width: '100%',
+            padding: '8px 11px',
+            borderRadius: 8,
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--border)',
+            color: 'var(--text-primary)',
+            fontSize: 13,
+            outline: 'none',
+            fontFamily: 'inherit',
+            cursor: 'pointer',
+          }}
+        >
+          <option value="all">
+            All bullet weights ({int(data.totalLoads)} loads)
+          </option>
+          {data.groups.map((g) => (
+            <option key={g.bulletWeightGr} value={g.bulletWeightGr}>
+              {gr(g.bulletWeightGr)} gr — {int(g.loadCount)} load
+              {g.loadCount === 1 ? '' : 's'}
+              {g.bullets.length > 0 ? ` · ${g.bullets.join(', ')}` : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* One section per bullet weight (filtered by the selector above) */}
+      {shownGroups.map((g) => (
         <div
           key={g.bulletWeightGr}
           style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
