@@ -30,10 +30,11 @@ import {
 // Geometry unchanged from W3 (FAB z52; bubble rides above it; both
 // lift via body[data-install-prompt] rules in globals.css).
 
-// Sparkie greets on every page visit. Copy rotates so repeat visits don't read
-// robotically — the first line does the full intro, the rest are short hellos.
+// The assistant (GG) greets on every page visit. Copy rotates so repeat visits
+// don't read robotically — the first line does the full intro (name matches the
+// "Ask GG" branding), the rest are short hellos.
 const HELLO_TEXTS = [
-  "Hey there 👋 I'm Sparkie. Can I help you find something or answer a question?",
+  "Hey there 👋 I'm GG, your Gun Galore assistant. Can I help you find something?",
   'Hi again 👋 Need a hand finding something?',
   "👋 I'm right here if you need anything — just give me a tap.",
   'Howzit! Looking for something specific? I can help.',
