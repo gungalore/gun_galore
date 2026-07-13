@@ -1,24 +1,23 @@
 import { Module } from '@nestjs/common';
-import { BallisticsModule } from '../ballistics/ballistics.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { UsersModule } from '../users/users.module';
 import { ComponentDataService } from './component-data.service';
-import { LoadLabService } from './load-lab.service';
 import { RecommendedLoadsService } from './recommended-loads.service';
 import { BurnChartService } from './burn-chart.service';
+import { ManualBrowseService } from './manual-browse.service';
 import { LoadLabController } from './load-lab.controller';
 
 /**
- * Load Lab module — internal-ballistics engine + downrange chaining behind a
- * PRO-gated HTTP surface. Exports LoadLabService + ComponentDataService so
- * AskGgModule can wire the `computeLoadData` Claude tool. Imports
- * BallisticsModule (external solver), Prisma + Users (for ClerkGuard +
- * the tier lookup).
+ * Load Lab module — the PRO-gated manual-load browser + the free powder
+ * burn-rate chart, over a signed-in HTTP surface. The internal-ballistics
+ * calculator was removed 2026-07-13 (operator decision); Load Lab now serves
+ * published manual data only. Exports the read services AskGgModule wires into
+ * its `lookupPublishedLoads` / `lookupPowderInfo` tools.
  */
 @Module({
-  imports: [BallisticsModule, PrismaModule, UsersModule],
+  imports: [PrismaModule, UsersModule],
   controllers: [LoadLabController],
-  providers: [ComponentDataService, LoadLabService, RecommendedLoadsService, BurnChartService],
-  exports: [LoadLabService, ComponentDataService, RecommendedLoadsService, BurnChartService],
+  providers: [ComponentDataService, RecommendedLoadsService, BurnChartService, ManualBrowseService],
+  exports: [ComponentDataService, RecommendedLoadsService, BurnChartService],
 })
 export class LoadLabModule {}

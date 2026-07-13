@@ -14,8 +14,6 @@ import {
   BallisticsService,
   type BallisticsInput,
 } from '../ballistics/ballistics.service';
-import { LoadLabService, type LoadLabInput } from '../load-lab/load-lab.service';
-import { ComponentDataService } from '../load-lab/component-data.service';
 import { RecommendedLoadsService } from '../load-lab/recommended-loads.service';
 import { BurnChartService } from '../load-lab/burn-chart.service';
 import { ListingsService } from '../listings/listings.service';
@@ -160,53 +158,9 @@ const TOOLS: Tool[] = [
     },
   },
   {
-    name: 'computeLoadData',
-    description:
-      'Predict INTERNAL ballistics for a specific handload — muzzle velocity, peak chamber pressure, % powder burnt, barrel time — plus the chained downrange drop / retained velocity / energy. Use for load-development questions: "what velocity/pressure with X gr of Y powder behind a Z bullet in <cartridge>?". The engine is GRT-calibrated (~1% velocity; ~1-3% pressure for rifle powders in their normal cartridge). ESTIMATE ONLY: published data is authoritative for charge weights — ALSO call lookupPublishedLoads (the same structured dataset the Load Lab serves; fall back to searchReloadingManuals only if it has no row) to cross-check, keep the start-low / work-up / verify-against-the-published-data framing, and warn if peak pressure is near/over the cartridge maximum (the result carries a safety block with the over-pressure flag). Required: cartridge, bullet, powder, chargeGr, barrelLengthIn.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        cartridge: {
-          type: 'string',
-          description:
-            'CIP/SAAMI cartridge name, e.g. "6.5 Creedmoor", ".308 Winchester".',
-        },
-        bullet: {
-          type: 'string',
-          description:
-            'Bullet search text including weight, e.g. "Sierra 140 HPBT", "Hornady 140 ELD-M". Matched against the bullet database (diameter auto-filtered to the cartridge).',
-        },
-        powder: {
-          type: 'string',
-          description: 'Powder product name, e.g. "N540", "H4350", "Varget".',
-        },
-        powderMaker: {
-          type: 'string',
-          description:
-            'Powder manufacturer if known (e.g. "Vihtavuori", "Hodgdon", "ADI") — helps disambiguate same-named powders.',
-        },
-        chargeGr: { type: 'number', description: 'Powder charge in grains.' },
-        barrelLengthIn: {
-          type: 'number',
-          description: 'Barrel length in inches (e.g. 24).',
-        },
-        zeroM: {
-          type: 'number',
-          description: 'Zero range in metres for the downrange table. Default 100.',
-        },
-        caseVolGrH2O: {
-          type: 'number',
-          description:
-            'Measured case water capacity in grains H₂O, if the user gave one (overrides the cartridge default).',
-        },
-      },
-      required: ['cartridge', 'bullet', 'powder', 'chargeGr', 'barrelLengthIn'],
-    },
-  },
-  {
     name: 'lookupPublishedLoads',
     description:
-      'Look up PUBLISHED manual loads for a cartridge + bullet weight from Gun Galore’s structured load dataset — the SAME data the Load Lab "Recommended loads" panel uses. Returns one row per powder (within ±tolerance grains of the bullet weight): published start & max charge, velocities, case-fill %, the source manual + page, and a suggested work-up ladder. Use this FIRST for any "what load / what charge / which powder for <cartridge> + <bullet weight>" question — it is the authoritative, fast, structured source (Somchem, ADI, Hodgdon, IMR, Vihtavuori, Hornady, Nosler, Accurate, Ramshot, Alliant). Only fall back to searchReloadingManuals/fetchManualPages when this returns nothing for the cartridge, or when you need prose/context (COAL notes, primers, cautions) beyond the charge table. Charges are AUTHORITATIVE; keep the start-low / work-up / verify framing.',
+      'Look up PUBLISHED manual loads for a cartridge + bullet weight from Gun Galore’s structured load dataset — the SAME published load data the Load Lab shows. Returns one row per powder (within ±tolerance grains of the bullet weight): published start & max charge, velocities, case-fill %, the source manual + page, and a suggested work-up ladder. Use this FIRST for any "what load / what charge / which powder for <cartridge> + <bullet weight>" question — it is the authoritative, fast, structured source (Somchem, ADI, Hodgdon, IMR, Vihtavuori, Hornady, Nosler, Accurate, Ramshot, Alliant). Only fall back to searchReloadingManuals/fetchManualPages when this returns nothing for the cartridge, or when you need prose/context (COAL notes, primers, cautions) beyond the charge table. Charges are AUTHORITATIVE; keep the start-low / work-up / verify framing.',
     input_schema: {
       type: 'object',
       properties: {
@@ -755,17 +709,6 @@ For any question about a powder's BURN RATE, where it ranks, or SUBSTITUTES — 
 
 **SAFETY — say this every time you give an equivalent:** powders at a similar burn rate are NOT interchangeable — you cannot reuse a charge with a different powder. If the user then wants to actually load the substitute, call \`lookupPublishedLoads\` for THAT powder + their cartridge/bullet and give its own published start→max, start-low / work-up. Never carry a charge weight across from one powder to another.
 
-## LOAD LAB — INTERNAL-BALLISTICS PREDICTION (computeLoadData)
-
-For load-development questions — "what velocity / pressure will I get from N gr of <powder> behind a <bullet> in my <cartridge>?", "how does charge change pressure?", "is this load hot?" — call \`computeLoadData\`. It returns predicted muzzle velocity, peak chamber pressure, % burnt, barrel time, a charge ladder, the downrange table, and a \`safety\` block (\`pressureCeilingBar\`, \`pctOfCeiling\` = RAW estimate, \`pMaxConservativeBar\` / \`pctOfCeilingConservative\` = the conservative figure with a ~+30% safety pad, \`estimateUncertaintyPct\`, \`overPressure\`, \`nearMax\`).
-
-**This is a PREDICTION, never a load recommendation. Non-negotiable framing:**
-- Published data is AUTHORITATIVE for charge weights. ALSO call \`lookupPublishedLoads\` for the same cartridge + bullet weight and lead with that (the structured dataset, identical to the Load Lab Recommended-Loads panel; fall back to \`searchReloadingManuals\` only if the dataset has no row); present the computeLoadData numbers as a model estimate to compare against it, not as a load to use.
-- **The predicted pressure can read LOW (validated up to ~27% under GRT for some powders), so it is NOT a "safe" verdict.** State peak pressure as "≥ X bar (estimate, may read low)". Base any near/over-max judgement on \`pctOfCeilingConservative\` (the padded figure), and use \`overPressure\`/\`nearMax\` for the verdict — when set, warn clearly: near or over maximum permissible pressure, back off, this is not a load to fire. NEVER call a load "safe" or "well within limits" from this tool.
-- NEVER tell the user "load X grains". Show the prediction + always overlay start-low / work-up / verify-against-a-published-manual.
-- The engine is an APPROXIMATION calibrated to GRT: ~1% on velocity, but peak-pressure accuracy varies by powder and can under-state pressure — so velocity/trajectory are the trustworthy outputs and pressure is a conservative guide only, never a clearance.
-- **If \`computeLoadData\` returns an upgrade-required notice** (user not on PRO), DON'T retry — tell them the Load Lab is a Gun Galore PRO feature and offer published load data via \`lookupPublishedLoads\` instead (the same data as the Load Lab; fall back to \`searchReloadingManuals\` only if the dataset has nothing).
-
 ## SAFETY OVERLAY (always present for reloading)
 
 Every reloading answer also includes a short reminder:
@@ -1059,8 +1002,6 @@ export class AskGgClaudeService {
   constructor(
     private readonly reloading: ReloadingService,
     private readonly ballistics: BallisticsService,
-    private readonly loadLab: LoadLabService,
-    private readonly components: ComponentDataService,
     private readonly recommendedLoads: RecommendedLoadsService,
     private readonly burnChart: BurnChartService,
     // P2.2 — the marketplace lever: searchMarketplace + getComplements
@@ -1826,116 +1767,9 @@ export class AskGgClaudeService {
         }
       }
 
-      if (block.name === 'computeLoadData') {
-        // Load Lab — PRO-only (operator decision). FREE/MEMBER get a nudge.
-        if (subscriptionTier !== 'PRO') {
-          return [
-            {
-              type: 'tool_result',
-              tool_use_id: toolUseId,
-              content: JSON.stringify({
-                upgradeRequired: true,
-                reason:
-                  'The Load Lab is a Gun Galore PRO feature. The user is NOT on PRO — do NOT retry. Tell them it is a PRO feature, and offer published load data instead (call lookupPublishedLoads — the same data as the Load Lab; fall back to searchReloadingManuals only if it has nothing) with the start-low / work-up framing.',
-              }),
-              is_error: true,
-            },
-          ];
-        }
-        const input = block.input as {
-          cartridge?: string;
-          bullet?: string;
-          powder?: string;
-          powderMaker?: string;
-          chargeGr?: number;
-          barrelLengthIn?: number;
-          zeroM?: number;
-          caseVolGrH2O?: number;
-        };
-        if (
-          !input.cartridge ||
-          !input.bullet ||
-          !input.powder ||
-          typeof input.chargeGr !== 'number' ||
-          typeof input.barrelLengthIn !== 'number'
-        ) {
-          return [
-            {
-              type: 'tool_result',
-              tool_use_id: toolUseId,
-              content:
-                'Error: cartridge, bullet, powder, chargeGr and barrelLengthIn are all required. Ask the user for whatever is missing.',
-              is_error: true,
-            },
-          ];
-        }
-        try {
-          const cart =
-            this.components.getCartridge(input.cartridge) ??
-            (this.components.searchCartridges(input.cartridge, 1)[0]
-              ? this.components.getCartridge(
-                  this.components.searchCartridges(input.cartridge, 1)[0].name,
-                )
-              : undefined);
-          if (!cart) {
-            return [
-              {
-                type: 'tool_result',
-                tool_use_id: toolUseId,
-                content: `No cartridge in the database matches "${input.cartridge}". Ask the user to confirm the cartridge name.`,
-                is_error: true,
-              },
-            ];
-          }
-          const bullet =
-            this.components.searchBullets(input.bullet, 1, cart.c_Z)[0] ??
-            this.components.searchBullets(input.bullet, 1)[0];
-          if (!bullet) {
-            return [
-              {
-                type: 'tool_result',
-                tool_use_id: toolUseId,
-                content: `No bullet matches "${input.bullet}". Ask the user for the maker + weight.`,
-                is_error: true,
-              },
-            ];
-          }
-          const loadInput: LoadLabInput = {
-            cartridge: cart.cipname,
-            bulletId: bullet.id,
-            powderName: input.powder,
-            powderMaker: input.powderMaker,
-            chargeGr: input.chargeGr,
-            barrelLengthIn: input.barrelLengthIn,
-            zeroM: input.zeroM,
-            caseVolGrH2O: input.caseVolGrH2O,
-            ladder: { steps: 5, stepGr: 0.5 },
-          };
-          const result = this.loadLab.compute(loadInput);
-          return [
-            {
-              type: 'tool_result',
-              tool_use_id: toolUseId,
-              content: JSON.stringify(result),
-            },
-          ];
-        } catch (err) {
-          return [
-            {
-              type: 'tool_result',
-              tool_use_id: toolUseId,
-              content: `Load Lab calculation failed: ${
-                err instanceof Error ? err.message : String(err)
-              }`,
-              is_error: true,
-            },
-          ];
-        }
-      }
-
       if (block.name === 'lookupPublishedLoads') {
-        // SAME structured ManualLoad dataset the Load Lab Recommended-Loads
-        // panel serves, so chat + Load Lab always agree. Available to all
+        // SAME structured ManualLoad dataset the Load Lab load-data browser
+        // serves, so chat + Load Lab always agree. Available to all
         // tiers (published manual data, like the manual search).
         const input = block.input as {
           cartridge?: string;

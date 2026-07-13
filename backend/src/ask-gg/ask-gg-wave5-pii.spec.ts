@@ -467,8 +467,6 @@ describe('W5 fail-closed + budget gates (handleToolCall)', () => {
       {} as any,
       {} as any,
       {} as any,
-      {} as any,
-      {} as any,
       accountTools as any,
     );
     /* eslint-enable @typescript-eslint/no-explicit-any */

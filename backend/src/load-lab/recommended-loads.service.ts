@@ -16,7 +16,7 @@ import { ComponentDataService } from './component-data.service';
  * ".308 Win. (7.62x51)") matches the manual's (".308 Winchester").
  * Strips parentheticals, expands common abbreviations, drops punctuation.
  */
-const CART_ALIASES: Record<string, string> = {
+export const CART_ALIASES: Record<string, string> = {
   win: 'winchester',
   rem: 'remington',
   mag: 'magnum',

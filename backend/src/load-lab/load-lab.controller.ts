@@ -1,40 +1,31 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
-import { ComponentDataService } from './component-data.service';
-import { LoadLabService, LoadLabInput } from './load-lab.service';
 import { RecommendedLoadsService } from './recommended-loads.service';
 import { BurnChartService } from './burn-chart.service';
+import { ManualBrowseService } from './manual-browse.service';
 
 /**
- * Load Lab HTTP surface. The interactive panel calls /compute directly (no
- * LLM); the pickers call /search. PRO-gated to match the operator decision
- * (FREE/MEMBER get the upgrade nudge, like the ballistic calculator tool).
+ * Load Lab HTTP surface. Serves the PRO-gated published manual-load browser
+ * (calibre hierarchy → all loads for a cartridge) + the free powder burn-rate
+ * chart. The internal-ballistics calculator was removed 2026-07-13 (operator
+ * decision) — Load Lab is manual data only now.
  */
 @UseGuards(ClerkGuard)
 @Controller('load-lab')
 export class LoadLabController {
   constructor(
-    private readonly loadLab: LoadLabService,
-    private readonly components: ComponentDataService,
     private readonly recommended: RecommendedLoadsService,
     private readonly burnChart: BurnChartService,
+    private readonly manualBrowse: ManualBrowseService,
     private readonly prisma: PrismaService,
   ) {}
 
   /**
    * Powder burn-rate chart (cross-manufacturer ranking, fast → slow) with each
    * powder tagged for whether we hold published loads. Reference data — served
-   * to any signed-in reloader (not PRO-gated like the engine). Powers the
-   * "Powder Chart" surface on the Load Lab page.
+   * to any signed-in reloader (not PRO-gated). Powers the "Powder chart" tab.
    */
   @Get('burn-chart')
   async burnChartData() {
@@ -64,57 +55,45 @@ export class LoadLabController {
     return { hits: await this.burnChart.searchCartridges(q ?? '') };
   }
 
-  @Get('search')
-  async search(
-    @Query('kind') kind: string,
-    @Query('q') q?: string,
-    @Query('groove') groove?: string,
-  ) {
-    const query = q ?? '';
-    if (kind === 'cartridge') return this.components.searchCartridges(query);
-    if (kind === 'powder') return this.components.searchPowders(query);
-    if (kind === 'bullet')
-      return this.components.searchBullets(
-        query,
-        15,
-        groove ? parseFloat(groove) : undefined,
-      );
-    return [];
-  }
-
-  @Post('compute')
-  async compute(@CurrentUser() clerkId: string, @Body() body: LoadLabInput) {
+  /**
+   * The calibre hierarchy for the "Load data" browser — every cartridge we hold
+   * published manual data for, grouped into calibre families, with per-cartridge
+   * load counts. PRO-gated.
+   */
+  @Get('manual-cartridges')
+  async manualCartridges(@CurrentUser() clerkId: string) {
     const tier = await this.tierOf(clerkId);
     if (tier !== 'PRO') {
       return {
         upgradeRequired: true,
         reason:
-          'The Load Lab is a Gun Galore PRO feature. Upgrade to run load predictions.',
+          'The Load Lab manual load-data browser is a Gun Galore PRO feature. Upgrade to browse published loads by calibre.',
       };
     }
-    const result = this.loadLab.compute(body);
-    // SAFETY cross-check — compare the entered charge against our PUBLISHED
-    // manual-max data (authoritative), independent of the engine's pressure
-    // estimate. Attached so the panel can render a hard over-max warning. Never
-    // blocks the calculation itself.
-    const bullet = this.components.getBullet(body.bulletId);
-    const bulletWeightGr = bullet?.gmass ?? 0;
-    const maxChargeCheck =
-      bulletWeightGr > 0
-        ? await this.recommended.maxChargeCheck(
-            body.cartridge,
-            bulletWeightGr,
-            body.powderName,
-            body.chargeGr,
-          )
-        : null;
-    return { ...result, maxChargeCheck };
+    return this.manualBrowse.listCartridges();
+  }
+
+  /**
+   * All published manual loads for one cartridge (by canonical key), grouped by
+   * bullet weight → powder, each with a source manual + page citation. PRO-gated.
+   */
+  @Get('manual-loads')
+  async manualLoads(@CurrentUser() clerkId: string, @Query('cartridgeKey') cartridgeKey: string) {
+    const tier = await this.tierOf(clerkId);
+    if (tier !== 'PRO') {
+      return {
+        upgradeRequired: true,
+        reason:
+          'Published load data is a Gun Galore PRO feature. Upgrade to see manual loads for this calibre.',
+      };
+    }
+    return this.manualBrowse.loadsForCartridge(cartridgeKey ?? '');
   }
 
   /**
    * Recommended published loads for a cartridge + bullet weight (±tolerance,
-   * default 5gr), quoted from the manual library. PRO-gated like /compute.
-   * Powers the Load Lab right-hand "Recommended loads" panel.
+   * default 5gr), quoted from the manual library. PRO-gated. Still served for
+   * the Ask GG `lookupPublishedLoads` tool parity path.
    */
   @Get('recommended-loads')
   async recommendedLoads(
