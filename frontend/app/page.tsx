@@ -5,6 +5,7 @@ import { ListingCard } from '@/components/listing-card';
 import { FilterBar } from '@/components/filter-bar';
 import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
+import { TrustBanner } from '@/components/trust-banner';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
@@ -237,6 +238,10 @@ export default async function HomePage({
       )}
 
       {showHero && <Hero />}
+      {/* Competitive trust headline — turns the classifieds "swap numbers
+          and wire the money" model into our differentiator. Homepage-only,
+          directly under the hero for max reach. */}
+      {showHero && <TrustBanner />}
       {showHero && <SignedInWelcome />}
 
       {/* ─── Bare landing page: featured-only grid, no rail, no filter ───
