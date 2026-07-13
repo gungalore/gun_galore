@@ -17,7 +17,8 @@ import {
 // non-suppressed page in BROWSER modes only.
 //
 // ONE bubble, two brains:
-//   - Daily hello: one dismissible greeting per day, 6s after load.
+//   - Welcome greeting: Sparkie says hi and offers a hand once per visit
+//     (per browser session), ~3.5s after the user arrives.
 //   - Contextual nudges (W5.5): page-kind + dwell-time suggestions
 //     ("want a fair-price check on this?"). Tapping opens the panel
 //     with the question STAGED in the composer — never auto-sent.
@@ -28,9 +29,9 @@ import {
 // Geometry unchanged from W3 (FAB z52; bubble rides above it; both
 // lift via body[data-install-prompt] rules in globals.css).
 
-const HELLO_KEY = 'gg_askgg_hello_on';
+const GREET_KEY = 'gg_askgg_greeted';
 const HELLO_TEXT =
-  "Howzit! I'm Ask GG — ask me anything about gear, your orders or how the site works.";
+  "Hey there 👋 I'm Sparkie. Can I help you find something or answer a question?";
 
 interface Bubble {
   text: string;
@@ -51,15 +52,16 @@ export function AskGgLauncher({
   // One bubble per page view — hello and nudge never stack.
   const spentThisPageRef = useRef(false);
 
-  // Daily hello — 6s after load, skipped if the panel was already used
-  // this session or the install card owns the corner. The day is spent
-  // the moment it shows.
+  // Welcome greeting — ~3.5s after the user lands, Sparkie says hi and
+  // offers a hand. Once per visit (per browser session), so a returning
+  // visitor in a fresh session is welcomed again but we never re-greet on
+  // internal navigation. Skipped if the panel was already used this
+  // session or the install card owns the corner. The visit is "spent" the
+  // moment it shows.
   useEffect(() => {
     if (panelArmed) return;
-    let today: string;
     try {
-      today = new Date().toDateString();
-      if (localStorage.getItem(HELLO_KEY) === today) return;
+      if (sessionStorage.getItem(GREET_KEY)) return;
     } catch {
       return;
     }
@@ -68,13 +70,13 @@ export function AskGgLauncher({
       if (document.visibilityState !== 'visible') return;
       if (document.body.hasAttribute('data-install-prompt')) return;
       try {
-        localStorage.setItem(HELLO_KEY, today);
+        sessionStorage.setItem(GREET_KEY, '1');
       } catch {
         /* still greet this once */
       }
       spentThisPageRef.current = true;
       setBubble({ kind: 'hello', text: HELLO_TEXT });
-    }, 6000);
+    }, 3500);
     return () => clearTimeout(t);
   }, [panelArmed]);
 
@@ -136,8 +138,8 @@ export function AskGgLauncher({
           role="status"
           className={[
             'gg-hello app-chrome fixed z-[52] flex items-start gap-1',
-            'right-4 bottom-[calc(80px+env(safe-area-inset-bottom))]',
-            'md:right-6 md:bottom-[86px]',
+            'right-4 bottom-[calc(100px+env(safe-area-inset-bottom))]',
+            'md:right-6 md:bottom-[108px]',
           ].join(' ')}
           style={{
             maxWidth: 250,
@@ -190,12 +192,12 @@ export function AskGgLauncher({
         className={[
           'app-chrome fixed z-[52]',
           'flex items-center justify-center',
-          // No button chrome — Sparkie IS the launcher. The 56px box is
-          // just his hit area (a comfortable ≥44px tap target); he floats
-          // inside it, same corner on mobile + desktop.
-          'right-4 w-14 h-14',
-          'bottom-[calc(16px+env(safe-area-inset-bottom))]',
-          'md:right-6 md:bottom-6',
+          // No button chrome — Sparkie IS the launcher. The 80px box is
+          // just his hit area; he floats inside it, same corner on mobile
+          // + desktop.
+          'right-4 w-20 h-20',
+          'bottom-[calc(12px+env(safe-area-inset-bottom))]',
+          'md:right-6 md:bottom-5',
         ].join(' ')}
         style={{
           background: 'none',
@@ -208,7 +210,7 @@ export function AskGgLauncher({
         }}
       >
         {/* Just the character now. Grins while he's talking. */}
-        <AskGgMascot alive size={56} mood={bubble ? 'happy' : 'idle'} />
+        <AskGgMascot alive size={80} mood={bubble ? 'happy' : 'idle'} />
       </button>
     </>
   );
