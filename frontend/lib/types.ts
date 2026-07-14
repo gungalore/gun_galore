@@ -257,6 +257,11 @@ export interface Listing {
   // fill it in. Seller is not bound to this dealer — the actual
   // stocking dealer is captured later at dealer-verification time.
   plannedDealerLocation: string | null;
+  // Structured planned dealer-stock parts (mandatory for firearms since
+  // 2026-07-13). plannedDealerLocation above is the composed display string.
+  plannedDealerName: string | null;
+  plannedDealerProvince: string | null;
+  plannedDealerArea: string | null;
   status: ListingStatus;
   condition: Condition;
   province: Province;

@@ -406,10 +406,13 @@ export default function NewListingPage() {
   // Delivery + pickup-address state. Lives outside `form` because the
   // shipping-methods array doesn't fit the flat string-map.
   const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>([]);
-  // Phase M dealer-lock — optional hint of where the seller intends
-  // to dealer-stock this firearm. Only collected + sent when isFirearm.
-  // Buyers near that dealer see it on listing detail.
-  const [plannedDealerLocation, setPlannedDealerLocation] = useState('');
+  // Phase M dealer-lock — where the seller plans to dealer-stock this
+  // firearm/barrel. MANDATORY for firearms (2026-07-13): dealer name +
+  // province + area are all required. Only collected + sent when isFirearm.
+  // Buyers near that dealer see the composed location on listing detail.
+  const [plannedDealerName, setPlannedDealerName] = useState('');
+  const [plannedDealerProvince, setPlannedDealerProvince] = useState('');
+  const [plannedDealerArea, setPlannedDealerArea] = useState('');
   // Collection-only papers attestation — required for requiresPapers
   // categories (trailers / caravans). Seller confirms they hold valid
   // registration + roadworthy papers and will hand them over at
@@ -617,11 +620,12 @@ export default function NewListingPage() {
         pickupAddress?: ManualAddressValue;
         pickupLat?: number | null;
         pickupLng?: number | null;
-        // Phase M dealer-lock — persist shipping picks + the
-        // optional planned-dealer hint so a PWA reload doesn't
-        // make the seller re-do them.
+        // Phase M dealer-lock — persist shipping picks + the planned-dealer
+        // parts so a PWA reload doesn't make the seller re-do them.
         shippingMethods?: ShippingMethod[];
-        plannedDealerLocation?: string;
+        plannedDealerName?: string;
+        plannedDealerProvince?: string;
+        plannedDealerArea?: string;
       };
       if (d.form) setForm(d.form);
       if (d.parcel) setParcel(d.parcel);
@@ -629,8 +633,14 @@ export default function NewListingPage() {
       if (d.pickupLat !== undefined) setPickupLat(d.pickupLat);
       if (d.pickupLng !== undefined) setPickupLng(d.pickupLng);
       if (d.shippingMethods) setShippingMethods(d.shippingMethods);
-      if (d.plannedDealerLocation !== undefined) {
-        setPlannedDealerLocation(d.plannedDealerLocation);
+      if (d.plannedDealerName !== undefined) {
+        setPlannedDealerName(d.plannedDealerName);
+      }
+      if (d.plannedDealerProvince !== undefined) {
+        setPlannedDealerProvince(d.plannedDealerProvince);
+      }
+      if (d.plannedDealerArea !== undefined) {
+        setPlannedDealerArea(d.plannedDealerArea);
       }
       setDraftRestored(true);
     } catch {
@@ -653,7 +663,9 @@ export default function NewListingPage() {
           pickupLat,
           pickupLng,
           shippingMethods,
-          plannedDealerLocation,
+          plannedDealerName,
+          plannedDealerProvince,
+          plannedDealerArea,
         }),
       );
     } catch {
@@ -666,7 +678,9 @@ export default function NewListingPage() {
     pickupLat,
     pickupLng,
     shippingMethods,
-    plannedDealerLocation,
+    plannedDealerName,
+    plannedDealerProvince,
+    plannedDealerArea,
   ]);
 
   // Discard the draft (lets the seller force a clean slate).
@@ -1154,12 +1168,20 @@ export default function NewListingPage() {
         supplierPliAttested &&
         supplierAuthorityAttested &&
         supplierRiskAttested);
+    // Firearm/barrel dealer-lock — dealer name + province + area are all
+    // mandatory before publish (2026-07-13). Non-firearm listings skip it.
+    const plannedDealerOk =
+      !isFirearm ||
+      (plannedDealerName.trim().length > 0 &&
+        plannedDealerProvince.length > 0 &&
+        plannedDealerArea.trim().length > 0);
     const step4 =
       shippingMethods.length > 0 &&
       addressFilled &&
       parcelFilled &&
       papersOk &&
-      experienceOk;
+      experienceOk &&
+      plannedDealerOk;
 
     return { step1, step2, step3, step4 };
   }, [
@@ -1169,6 +1191,9 @@ export default function NewListingPage() {
     shippingMethods,
     parsedParcel,
     isFirearm,
+    plannedDealerName,
+    plannedDealerProvince,
+    plannedDealerArea,
     effectiveCollectionOnly,
     requiresPapers,
     papersAttested,
@@ -1407,12 +1432,16 @@ export default function NewListingPage() {
       // De-dupe defensively so a stale state can't ever send the API a
       // duplicate (which would fail @ArrayMaxSize(2) on the DTO).
       shippingMethods: Array.from(new Set(shippingMethods)),
-      // Phase M dealer-lock — only send when populated AND firearm.
-      // Non-firearm submissions never carry it (backend ignores it
-      // anyway, but no point sending stale state from a category
-      // switch).
-      ...(isFirearm && plannedDealerLocation.trim()
-        ? { plannedDealerLocation: plannedDealerLocation.trim() }
+      // Phase M dealer-lock — mandatory structured planned dealer-stock
+      // location for firearms (dealer name + province + area). The backend
+      // composes them into the display string. Non-firearm submissions
+      // carry none (backend forces null).
+      ...(isFirearm
+        ? {
+            plannedDealerName: plannedDealerName.trim(),
+            plannedDealerProvince,
+            plannedDealerArea: plannedDealerArea.trim(),
+          }
         : {}),
       // Collection papers attestation — only meaningful for requiresPapers
       // categories (trailers / caravans). The seller confirms they hold
@@ -1650,6 +1679,20 @@ export default function NewListingPage() {
     if (isFirearm && (!serialNumber.trim() || !serialPhoto || !licencePhoto)) {
       setPublishError(
         'Firearm listings need the serial number, a photo of the serial, and a photo of your licence. Add the missing items in the Delivery & address step.',
+      );
+      return;
+    }
+    // Planned dealer-stock guard — firearms/barrels must declare where the
+    // item will be dealer-stocked (dealer name + province + area). Mirrors
+    // the serial guard: abort with an instant message before the API.
+    if (
+      isFirearm &&
+      (!plannedDealerName.trim() ||
+        !plannedDealerProvince ||
+        !plannedDealerArea.trim())
+    ) {
+      setPublishError(
+        'Firearm listings need the planned dealer-stock location — a dealer name, province, and area — in the Delivery & address step.',
       );
       return;
     }
@@ -3672,12 +3715,11 @@ export default function NewListingPage() {
                       ]
                 }
               />
-              {/* Phase M dealer-lock — optional hint of where the
-                  seller plans to dealer-stock the firearm. Buyers
-                  near that dealer see it on listing detail so they
-                  can factor it into their decision (e.g. shorter
-                  collection drive). Only rendered for firearms;
-                  text input below the pills, never required. */}
+              {/* Phase M dealer-lock — MANDATORY planned dealer-stock
+                  location for firearms/barrels (2026-07-13): dealer name +
+                  province + area are all required. Buyers near that dealer
+                  see the composed location on listing detail so they can
+                  factor in a shorter collection drive. */}
               {isFirearm && (
                 <div className="mt-3">
                   <label
@@ -3687,33 +3729,95 @@ export default function NewListingPage() {
                       letterSpacing: '0.02em',
                     }}
                   >
-                    Where do you plan to dealer-stock this? <span style={{ color: 'var(--text-tertiary)' }}>(optional)</span>
+                    Where will you dealer-stock this?{' '}
+                    <span style={{ color: 'var(--red)' }}>*required</span>
                   </label>
-                  <input
-                    type="text"
-                    maxLength={200}
-                    value={plannedDealerLocation}
-                    onChange={(e) => setPlannedDealerLocation(e.target.value)}
-                    placeholder="e.g. Pretoria Arms, Centurion"
-                    style={{
-                      width: '100%',
-                      background: 'var(--bg-inset)',
-                      border: '0.5px solid var(--border)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      fontSize: '14px',
-                      outline: 'none',
-                    }}
-                  />
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      maxLength={120}
+                      value={plannedDealerName}
+                      onChange={(e) => setPlannedDealerName(e.target.value)}
+                      placeholder="Dealer name — e.g. Pretoria Arms"
+                      aria-label="Dealer name"
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-inset)',
+                        border: '0.5px solid var(--border)',
+                        color: 'var(--text-primary)',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        fontSize: '14px',
+                        outline: 'none',
+                      }}
+                    />
+                    <select
+                      value={plannedDealerProvince}
+                      onChange={(e) =>
+                        setPlannedDealerProvince(e.target.value)
+                      }
+                      aria-label="Dealer province"
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-inset)',
+                        border: '0.5px solid var(--border)',
+                        color: plannedDealerProvince
+                          ? 'var(--text-primary)'
+                          : 'var(--text-tertiary)',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        fontSize: '14px',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">Select province…</option>
+                      {[
+                        'Eastern Cape',
+                        'Free State',
+                        'Gauteng',
+                        'KwaZulu-Natal',
+                        'Limpopo',
+                        'Mpumalanga',
+                        'North West',
+                        'Northern Cape',
+                        'Western Cape',
+                      ].map((p) => (
+                        <option
+                          key={p}
+                          value={p}
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      maxLength={120}
+                      value={plannedDealerArea}
+                      onChange={(e) => setPlannedDealerArea(e.target.value)}
+                      placeholder="Area / town — e.g. Centurion"
+                      aria-label="Dealer area or town"
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-inset)',
+                        border: '0.5px solid var(--border)',
+                        color: 'var(--text-primary)',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        fontSize: '14px',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
                   <p
                     className="text-xs mt-1"
                     style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
                   >
-                    Shown on the listing so buyers near that dealer
-                    know their drive's shorter. You&apos;re not locked
-                    in — the actual dealer is captured later when you
-                    upload the stock-in proof.
+                    Required — buyers use this to see how far they&apos;d
+                    drive to collect. You&apos;re not locked in; the actual
+                    dealer is captured later when you upload the stock-in
+                    proof.
                   </p>
                 </div>
               )}

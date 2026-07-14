@@ -863,7 +863,15 @@ model Listing {
   // not validated against a dealer registry — purely informational.
   // Seller is NOT bound to this dealer (the actual stocking dealer is
   // captured at dealer-verification upload time).
+  //
+  // MANDATORY for firearm/barrel listings (2026-07-13): the three parts
+  // below are all required at create/edit; plannedDealerLocation is the
+  // server-composed display string ("<name> — <area>, <province>") that
+  // the listing detail page renders. Null for non-firearm listings.
   plannedDealerLocation String?
+  plannedDealerName     String?
+  plannedDealerProvince String?
+  plannedDealerArea     String?
 
   // Seller pickup address (where Pudo/TCG collect from, or where the
   // private/dealer-transfer hand-off originates). Captured at listing

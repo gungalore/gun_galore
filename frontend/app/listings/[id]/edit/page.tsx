@@ -62,8 +62,11 @@ export default function EditListingPage() {
     make: '',
     model: '',
     calibre: '',
-    // Phase M dealer-lock — optional firearm-only hint.
-    plannedDealerLocation: '',
+    // Phase M dealer-lock — mandatory firearm-only planned dealer-stock
+    // (dealer name + province + area).
+    plannedDealerName: '',
+    plannedDealerProvince: '',
+    plannedDealerArea: '',
     // Auction-specific
     reservePrice: '',
     buyNowPrice: '',
@@ -155,7 +158,9 @@ export default function EditListingPage() {
           make: l.make ?? '',
           model: l.model ?? '',
           calibre: l.calibre ?? '',
-          plannedDealerLocation: l.plannedDealerLocation ?? '',
+          plannedDealerName: l.plannedDealerName ?? '',
+          plannedDealerProvince: l.plannedDealerProvince ?? '',
+          plannedDealerArea: l.plannedDealerArea ?? '',
           reservePrice: l.reservePrice ? String(l.reservePrice / 100) : '',
           buyNowPrice: l.buyNowPrice ? String(l.buyNowPrice / 100) : '',
           autoAcceptThreshold: l.autoAcceptThreshold
@@ -177,6 +182,20 @@ export default function EditListingPage() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    // Firearm planned dealer-stock guard — dealer name + province + area
+    // are all mandatory. Abort with a clear message before the API 400.
+    if (
+      listing?.category.isFirearm &&
+      (!form.plannedDealerName.trim() ||
+        !form.plannedDealerProvince ||
+        !form.plannedDealerArea.trim())
+    ) {
+      setError(
+        'Firearm listings need the planned dealer-stock location — a dealer name, province, and area.',
+      );
+      setSubmitting(false);
+      return;
+    }
     try {
       const token = await getToken();
       const body: Record<string, unknown> = {
@@ -196,10 +215,12 @@ export default function EditListingPage() {
       if (form.make.trim()) body.make = form.make.trim();
       if (form.model.trim()) body.model = form.model.trim();
       if (form.calibre.trim()) body.calibre = form.calibre.trim();
-      // Phase M dealer-lock — always send for firearms (even when
-      // empty, so the seller can clear a previously-set value).
+      // Phase M dealer-lock — mandatory structured location for firearms
+      // (dealer name + province + area). The backend composes + validates.
       if (listing?.category.isFirearm) {
-        body.plannedDealerLocation = form.plannedDealerLocation.trim();
+        body.plannedDealerName = form.plannedDealerName.trim();
+        body.plannedDealerProvince = form.plannedDealerProvince;
+        body.plannedDealerArea = form.plannedDealerArea.trim();
       }
       // Auction + Take-a-Shot type-specific fields. We send them
       // regardless of listingType — backend ignores irrelevant ones.
@@ -511,23 +532,57 @@ export default function EditListingPage() {
             <Field label="Calibre">
               <input type="text" value={form.calibre} onChange={(e) => set('calibre', e.target.value)} style={inputStyle} placeholder="e.g. 9mm" />
             </Field>
-            <Field label="Planned dealer-stock location (optional)">
-              <input
-                type="text"
-                maxLength={200}
-                value={form.plannedDealerLocation}
-                onChange={(e) => set('plannedDealerLocation', e.target.value)}
-                style={inputStyle}
-                placeholder="e.g. Pretoria Arms, Centurion"
-              />
+            <Field label="Planned dealer-stock location (required)">
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  maxLength={120}
+                  value={form.plannedDealerName}
+                  onChange={(e) => set('plannedDealerName', e.target.value)}
+                  style={inputStyle}
+                  placeholder="Dealer name — e.g. Pretoria Arms"
+                  aria-label="Dealer name"
+                />
+                <select
+                  value={form.plannedDealerProvince}
+                  onChange={(e) => set('plannedDealerProvince', e.target.value)}
+                  style={inputStyle}
+                  aria-label="Dealer province"
+                >
+                  <option value="">Select province…</option>
+                  {[
+                    'Eastern Cape',
+                    'Free State',
+                    'Gauteng',
+                    'KwaZulu-Natal',
+                    'Limpopo',
+                    'Mpumalanga',
+                    'North West',
+                    'Northern Cape',
+                    'Western Cape',
+                  ].map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  maxLength={120}
+                  value={form.plannedDealerArea}
+                  onChange={(e) => set('plannedDealerArea', e.target.value)}
+                  style={inputStyle}
+                  placeholder="Area / town — e.g. Centurion"
+                  aria-label="Dealer area or town"
+                />
+              </div>
               <p
                 className="text-xs mt-1"
                 style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}
               >
-                Shown on the listing so buyers near that dealer know
-                their drive&apos;s shorter. You&apos;re not locked in —
-                the actual dealer is captured later when you upload the
-                stock-in proof.
+                Required for firearms — buyers use this to gauge their
+                collection drive. You&apos;re not locked in; the actual
+                dealer is captured later when you upload the stock-in proof.
               </p>
             </Field>
           </>

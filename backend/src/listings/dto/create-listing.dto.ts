@@ -134,9 +134,16 @@ export class CreateListingDto {
   @IsEnum(ShippingMethod, { each: true })
   shippingMethods?: ShippingMethod[];
 
-  // Optional seller-supplied hint of where they intend to dealer-stock
-  // this firearm. Free text, max 200 chars. Ignored for non-firearm
-  // listings. Shown to buyers on the listing detail page.
+  // Where the seller plans to dealer-stock a firearm/barrel. MANDATORY
+  // for firearm listings (2026-07-13) — the service requires all three
+  // parts for firearms and composes them into the display string
+  // `plannedDealerLocation`. Optional at the DTO layer (non-firearm
+  // listings send none); ListingsService enforces presence for firearms.
+  @IsOptional() @IsString() @MaxLength(120) plannedDealerName?: string;
+  @IsOptional() @IsString() @MaxLength(60) plannedDealerProvince?: string;
+  @IsOptional() @IsString() @MaxLength(120) plannedDealerArea?: string;
+  // Legacy/derived display string. Server-composed from the three parts
+  // above; accepted but ignored on input (kept for backward compat).
   @IsOptional() @IsString() @MaxLength(200) plannedDealerLocation?: string;
 
   // P3 — papers attestation for NaTIS-registered goods (trailers / off-road

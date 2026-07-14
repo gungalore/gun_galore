@@ -352,6 +352,48 @@ export class ListingsService {
     };
   }
 
+  // Firearm/barrel listings must declare where the seller plans to
+  // dealer-stock the item — dealer name, province, and area are all
+  // MANDATORY (2026-07-13). Returns the four columns to persist
+  // (plannedDealerLocation = the composed display string). Non-firearm
+  // listings get all-null. Throws BadRequest on a firearm missing any part.
+  private buildPlannedDealer(
+    dto: {
+      plannedDealerName?: string;
+      plannedDealerProvince?: string;
+      plannedDealerArea?: string;
+    },
+    isFirearm: boolean,
+  ): {
+    plannedDealerName: string | null;
+    plannedDealerProvince: string | null;
+    plannedDealerArea: string | null;
+    plannedDealerLocation: string | null;
+  } {
+    if (!isFirearm) {
+      return {
+        plannedDealerName: null,
+        plannedDealerProvince: null,
+        plannedDealerArea: null,
+        plannedDealerLocation: null,
+      };
+    }
+    const name = (dto.plannedDealerName ?? '').trim();
+    const province = (dto.plannedDealerProvince ?? '').trim();
+    const area = (dto.plannedDealerArea ?? '').trim();
+    if (!name || !province || !area) {
+      throw new BadRequestException(
+        'Firearm and barrel listings must say where you plan to dealer-stock the item: a dealer name, province, and area are all required.',
+      );
+    }
+    return {
+      plannedDealerName: name,
+      plannedDealerProvince: province,
+      plannedDealerArea: area,
+      plannedDealerLocation: `${name} — ${area}, ${province}`,
+    };
+  }
+
   async create(clerkId: string, dto: CreateListingDto): Promise<Listing> {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not synced — try again in a moment');
@@ -802,6 +844,10 @@ export class ListingsService {
     // (attributes were validated + the DG collection-only flag computed above,
     // before the collection gates — see cleanedAttributes / attributesForDb /
     // effectiveCollectionOnly.)
+    // Firearm/barrel planned dealer-stock — validated + composed here
+    // (throws if a firearm is missing any of name/province/area;
+    // all-null for non-firearm listings).
+    const plannedDealer = this.buildPlannedDealer(dto, category.isFirearm);
     const listing = await this.prisma.listing.create({
       data: {
         referenceNumber,
@@ -882,14 +928,10 @@ export class ListingsService {
           : effectiveCollectionOnly
             ? [ShippingMethod.COLLECTION]
             : (dto.shippingMethods ?? []),
-        // Phase M dealer-lock — optional planned-dealer hint shown
-        // to buyers near that dealer. Trimmed to spec-allowed 200
-        // chars at the DTO layer; we also defensively null out
-        // whitespace-only inputs here.
-        plannedDealerLocation:
-          (dto.plannedDealerLocation ?? '').trim().length > 0
-            ? dto.plannedDealerLocation!.trim()
-            : null,
+        // Firearm/barrel dealer-lock — mandatory structured location
+        // (dealer name + province + area) composed into the display
+        // string plannedDealerLocation. All-null for non-firearm listings.
+        ...plannedDealer,
         pickupBuilding: dto.pickupBuilding ?? null,
         pickupStreet: dto.pickupStreet ?? null,
         pickupAddress2: dto.pickupAddress2 ?? null,
@@ -1949,28 +1991,43 @@ export class ListingsService {
       }
     }
 
-    // Normalise the optional planned-dealer hint: trim, null out
-    // whitespace-only inputs (matches create()).
-    const normalisedPlanned =
-      dto.plannedDealerLocation === undefined
-        ? undefined
-        : (dto.plannedDealerLocation ?? '').trim().length > 0
-          ? dto.plannedDealerLocation!.trim()
-          : null;
+    // Planned dealer-stock — only touch the columns when the client sent
+    // at least one of the three structured parts (an edit that omits them
+    // leaves the existing values alone, so a price-only PATCH doesn't force
+    // it). For firearms all three are required + composed into the display
+    // string; for non-firearms they're forced null. Throws if a firearm is
+    // missing any part. isFirearm can't change on edit (FCA gate below), so
+    // the listing snapshot is authoritative.
+    const plannedDealerProvided =
+      dto.plannedDealerName !== undefined ||
+      dto.plannedDealerProvince !== undefined ||
+      dto.plannedDealerArea !== undefined;
+    const plannedDealerUpdate = plannedDealerProvided
+      ? this.buildPlannedDealer(dto, listing.isFirearm)
+      : undefined;
     // Strip fields from the ...dto spread at the TYPE level — a runtime `delete`
     // wouldn't change the type, so the spread would clash with Prisma's input:
     //   - collectionPapersAttested: a create-time attestation, not a Listing column.
     //   - attributes: a real Json column, but validated + set separately below
     //     (the raw, unvalidated client object must never reach Prisma).
+    //   - plannedDealer* : controlled + composed above, never passed raw.
     const {
       collectionPapersAttested: _omitPapers,
       attributes: _omitAttributes,
       testedWorkingAttested: _omitTested,
+      plannedDealerName: _omitPdName,
+      plannedDealerProvince: _omitPdProvince,
+      plannedDealerArea: _omitPdArea,
+      plannedDealerLocation: _omitPdLocation,
       ...listingUpdate
     } = dto;
     void _omitPapers;
     void _omitAttributes;
     void _omitTested;
+    void _omitPdName;
+    void _omitPdProvince;
+    void _omitPdArea;
+    void _omitPdLocation;
 
     // P4.2 — validate attributes against the EXISTING listing's category (a
     // category change can't cross the firearm/collection boundary, so the def
@@ -2016,9 +2073,7 @@ export class ListingsService {
       where: { id },
       data: {
         ...listingUpdate,
-        ...(normalisedPlanned !== undefined
-          ? { plannedDealerLocation: normalisedPlanned }
-          : {}),
+        ...(plannedDealerUpdate !== undefined ? plannedDealerUpdate : {}),
         ...(attributesUpdate !== undefined
           ? { attributes: attributesUpdate }
           : {}),
