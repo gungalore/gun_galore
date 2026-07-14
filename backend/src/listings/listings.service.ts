@@ -386,6 +386,25 @@ export class ListingsService {
         'Firearm and barrel listings must say where you plan to dealer-stock the item: a dealer name, province, and area are all required.',
       );
     }
+    // Province must be one of the 9 SA provinces. The frontend uses a
+    // controlled dropdown; this rejects arbitrary text from a crafted API
+    // call so the public composed display string stays clean.
+    const SA_PROVINCES = [
+      'Eastern Cape',
+      'Free State',
+      'Gauteng',
+      'KwaZulu-Natal',
+      'Limpopo',
+      'Mpumalanga',
+      'North West',
+      'Northern Cape',
+      'Western Cape',
+    ];
+    if (!SA_PROVINCES.includes(province)) {
+      throw new BadRequestException(
+        'Choose a valid South African province for the planned dealer-stock location.',
+      );
+    }
     return {
       plannedDealerName: name,
       plannedDealerProvince: province,
@@ -462,6 +481,12 @@ export class ListingsService {
         'Firearm listings must include "Dealer-stocked transfer" as a shipping option.',
       );
     }
+
+    // Firearm/barrel planned dealer-stock — validate + compose EARLY, before
+    // the paid firearm-licence vision check + moderation + reference-number
+    // allocation, so an invalid firearm payload fails fast without burning
+    // Claude spend or a reference-counter increment. All-null for non-firearms.
+    const plannedDealer = this.buildPlannedDealer(dto, category.isFirearm);
 
     // ---- Collection-only + papers attestation (P3) -----------------------
     // Collection-only categories (trailers, off-road caravans, oversized /
@@ -844,10 +869,6 @@ export class ListingsService {
     // (attributes were validated + the DG collection-only flag computed above,
     // before the collection gates — see cleanedAttributes / attributesForDb /
     // effectiveCollectionOnly.)
-    // Firearm/barrel planned dealer-stock — validated + composed here
-    // (throws if a firearm is missing any of name/province/area;
-    // all-null for non-firearm listings).
-    const plannedDealer = this.buildPlannedDealer(dto, category.isFirearm);
     const listing = await this.prisma.listing.create({
       data: {
         referenceNumber,
