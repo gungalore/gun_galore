@@ -79,7 +79,6 @@ interface ZohoFailedSwap {
 }
 interface ZohoFailed {
   transactions: ZohoFailedRow[];
-  raffleTickets: ZohoFailedRow[];
   featuredBids: ZohoFailedRow[];
   subscriptionCharges: ZohoFailedRow[];
   swaps: ZohoFailedSwap[];
@@ -547,7 +546,7 @@ export default function ManualPaymentsAdminPage() {
         ) : (
           <div className="overflow-x-auto">
             <p className="text-xs mb-2" style={{ color: 'var(--red)' }}>
-              {zohoFailed.totalFailed} entit{zohoFailed.totalFailed === 1 ? 'y' : 'ies'} failed their last Books sync. Transactions, raffles &amp; featured bids retry from their dossier; swap leg-fee receipts retry automatically each hour.
+              {zohoFailed.totalFailed} entit{zohoFailed.totalFailed === 1 ? 'y' : 'ies'} failed their last Books sync. Transactions &amp; featured bids retry from their dossier; swap leg-fee receipts retry automatically each hour.
             </p>
             <table className="w-full text-sm">
               <thead>
@@ -561,7 +560,6 @@ export default function ManualPaymentsAdminPage() {
                 {(
                   [
                     ['Transaction', zohoFailed.transactions],
-                    ['Raffle ticket', zohoFailed.raffleTickets],
                     ['Featured bid', zohoFailed.featuredBids],
                     ['Subscription', zohoFailed.subscriptionCharges],
                   ] as Array<[string, ZohoFailedRow[]]>

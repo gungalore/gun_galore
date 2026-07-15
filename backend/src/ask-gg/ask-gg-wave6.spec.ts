@@ -136,7 +136,6 @@ describe('W6 draftSupportTicket — draft-only invariant', () => {
       {} as any,
       {} as any,
       {} as any,
-      {} as any,
     );
     /* eslint-enable @typescript-eslint/no-explicit-any */
     return { svc, prisma };

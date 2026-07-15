@@ -25,7 +25,6 @@ import { AdminModule } from './admin/admin.module';
 import { OffersModule } from './offers/offers.module';
 import { SwapsModule } from './swaps/swaps.module';
 import { AuctionsModule } from './auctions/auctions.module';
-import { RafflesModule } from './raffles/raffles.module';
 import { FeaturedModule } from './featured/featured.module';
 import { TasksModule } from './tasks/tasks.module';
 import { KycModule } from './kyc/kyc.module';
@@ -82,7 +81,6 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     OffersModule,
     SwapsModule,
     AuctionsModule,
-    RafflesModule,
     FeaturedModule,
     TasksModule,
     KycModule,

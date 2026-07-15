@@ -60,8 +60,8 @@ export default function NotFound() {
             marginBottom: 28,
           }}
         >
-          The URL might be mistyped, the listing might have sold, or
-          the competition might have closed. Try one of these:
+          The URL might be mistyped, or the listing might have sold.
+          Try one of these:
         </p>
         <div
           style={{
@@ -98,20 +98,6 @@ export default function NotFound() {
             }}
           >
             Auctions
-          </Link>
-          <Link
-            href="/competitions"
-            style={{
-              background: 'var(--bg-card)',
-              color: 'var(--text-secondary)',
-              padding: '10px 20px',
-              borderRadius: 6,
-              fontSize: 13,
-              border: '0.5px solid var(--border)',
-              textDecoration: 'none',
-            }}
-          >
-            Competitions
           </Link>
         </div>
       </div>

@@ -101,8 +101,8 @@ export function TicketDraftCard({ draft }: { draft: AskGgTicketDraft }) {
       {state === 'done' ? (
         <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
           ✓ Ticket created — the team will get back to you. Track it under{' '}
-          <a href="/my/tickets" style={{ color: 'var(--red)' }}>
-            My tickets
+          <a href="/support" style={{ color: 'var(--red)' }}>
+            Support
           </a>
           .
         </div>

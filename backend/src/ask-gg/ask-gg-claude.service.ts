@@ -338,13 +338,13 @@ const TOOLS: Tool[] = [
   {
     name: 'searchHelpCentre',
     description:
-      'Search Gun Galore\'s verified Help-Centre answers about HOW THE PLATFORM WORKS — buying, selling, the four selling modes, fees, funds-held payment flow, shipping (PUDO / The Courier Guy / collection), firearm transfer rules and SAPS forms, KYC and payouts, competitions/raffles (including the free postal entry), swaps, GG+ tiers, refunds and disputes, account help. Call this FIRST for any platform/policy question, then ground your answer in the returned entries. If it returns nothing, answer from the HOW THE PLATFORM WORKS section of your instructions and link the user to the relevant page.',
+      'Search Gun Galore\'s verified Help-Centre answers about HOW THE PLATFORM WORKS — buying, selling, the four selling modes, fees, funds-held payment flow, shipping (PUDO / The Courier Guy / collection), firearm transfer rules and SAPS forms, KYC and payouts, swaps, GG+ tiers, refunds and disputes, account help. Call this FIRST for any platform/policy question, then ground your answer in the returned entries. If it returns nothing, answer from the HOW THE PLATFORM WORKS section of your instructions and link the user to the relevant page.',
     input_schema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'The user\'s platform question, rephrased as plain search terms, e.g. "seller fees commission", "firearm dealer transfer steps", "free raffle entry".',
+          description: 'The user\'s platform question, rephrased as plain search terms, e.g. "seller fees commission", "firearm dealer transfer steps", "how do swaps work".',
         },
       },
       required: ['query'],
@@ -404,12 +404,6 @@ const TOOLS: Tool[] = [
     name: 'getMyOffersAndBids',
     description:
       'The signed-in user\'s open OFFERS (made and received, with amounts/counters/expiry) and AUCTION BIDS (current bid, whether they\'re the high bidder, ends-at, wins). Call for "did the seller respond to my offer?", "am I still winning that auction?".',
-    input_schema: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'getMyRaffleEntries',
-    description:
-      'The signed-in user\'s competition/raffle tickets (numbers, status, draw dates) and any wins. Call for "did I win?", "when is the draw?", "how many tickets do I have?".',
     input_schema: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -554,16 +548,16 @@ You are the first stop for ANY question about using Gun Galore itself. Answer th
 
 **Shipping:** PUDO locker-to-locker and The Courier Guy door-to-door, live rates at checkout; some items are collection-only; firearms always dealer transfer.
 
-**Competitions/raffles:** every competition has a FREE postal entry route (no purchase needed — the entry page explains it) and winners are drawn with a published, verifiable draw proof. **Experiences** (guided hunts / range days) are on-site services with a CPA-based cancellation scale — point users to /experiences-cancellation-policy for the tiers.
+**Experiences** (guided hunts / range days) are on-site services with a CPA-based cancellation scale — point users to /experiences-cancellation-policy for the tiers.
 
-**GG+ (Member / Pro):** unlocks more Ask GG (including forum cross-referencing and the ballistic calculator; Load Lab is Pro), subscriber competitions and perks — /subscribe has current pricing.
+**GG+ (Member / Pro):** unlocks more Ask GG (including forum cross-referencing and the ballistic calculator; Load Lab is Pro), subscriber perks — /subscribe has current pricing.
 
 If a platform question is about the user's OWN specific order/account, and you cannot see that data, don't guess — send them to the exact page (e.g. /my/orders) and offer to help once they're looking at it. Never invent order statuses or account facts.
 
 ## INTERNAL LINKS — THE ONLY LINKS YOU MAY EMIT IN PROSE
 
 Link ONLY these relative paths (markdown, e.g. [your orders](/my/orders)). Never invent other paths; never link external sites in prose (web-search citations render separately):
-/my/orders /my/sales /my/offers /my/bids /my/swaps /my/earnings /my/tickets /my/listings /wishlist /saved-searches /sell /support /subscribe /faq /how-selling-works /firearms-compliance /refund-policy /experiences-cancellation-policy /terms /privacy /legal /competitions /cart /account — plus /listings/{id}, /transactions/{id}, /orders/{id} ONLY with an id that came from a tool result or the current page context, never one you guessed.
+/my/orders /my/sales /my/offers /my/bids /my/swaps /my/earnings /my/tickets /my/listings /wishlist /saved-searches /sell /support /subscribe /faq /how-selling-works /firearms-compliance /refund-policy /experiences-cancellation-policy /terms /privacy /legal /cart /account — plus /listings/{id}, /transactions/{id}, /orders/{id} ONLY with an id that came from a tool result or the current page context, never one you guessed.
 
 ## SHOP THE MARKETPLACE — END GEAR ANSWERS WITH LIVE STOCK
 
@@ -866,7 +860,6 @@ const ACCOUNT_TOOL_NAMES = new Set([
   'getMySales',
   'getOrderStatus',
   'getMyOffersAndBids',
-  'getMyRaffleEntries',
   'getMySwaps',
   'getSellerEarnings',
 ]);
@@ -1482,9 +1475,6 @@ export class AskGgClaudeService {
             break;
           case 'getMyOffersAndBids':
             result = await this.accountTools.getMyOffersAndBids(account);
-            break;
-          case 'getMyRaffleEntries':
-            result = await this.accountTools.getMyRaffleEntries(account);
             break;
           case 'getMySwaps':
             result = await this.accountTools.getMySwaps(account);

@@ -88,7 +88,7 @@ export default function AdminAuditPage() {
           href="/admin/audit"
           active={!resourceType}
         />
-        {['User', 'Transaction', 'Listing', 'Raffle', 'FeaturedSlot'].map(
+        {['User', 'Transaction', 'Listing', 'FeaturedSlot'].map(
           (rt) => (
             <FilterPill
               key={rt}

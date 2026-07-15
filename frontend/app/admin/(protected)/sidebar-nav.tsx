@@ -55,9 +55,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: '/admin/categories', label: 'Categories' },
       { href: '/admin/dealers', label: 'Dealers' },
-      { href: '/admin/competitions', label: 'Competitions' },
       { href: '/admin/featured', label: 'Featured Slots' },
-      { href: '/admin/postal-entries', label: 'Postal Entries' },
       { href: '/admin/credits', label: 'Credits' },
     ],
   },

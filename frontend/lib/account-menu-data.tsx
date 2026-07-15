@@ -83,17 +83,6 @@ const InboxIcon: IconC = () => (
     <path d="M4 13h5l1 2h4l1-2h5" />
   </Svg>
 );
-const TicketIcon: IconC = () => (
-  <Svg>
-    <path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4z" />
-    <path d="M14 6.5v11" strokeDasharray="1.5 2" />
-  </Svg>
-);
-const TrophyIcon: IconC = () => (
-  <Svg>
-    <path d="M7 4h10v4a5 5 0 0 1-10 0V4zM7 6H5a2 2 0 0 0 2 2m10-2h2a2 2 0 0 1-2 2M10 16h4l1 4H9l1-4z" />
-  </Svg>
-);
 const DashboardIcon: IconC = () => (
   <Svg>
     <path d="M4 4h7v9H4zM4 15h7v5H4zM13 4h7v5h-7zM13 11h7v9h-7z" />
@@ -153,13 +142,6 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
       { href: '/my/listings', label: 'Listings', Icon: StoreIcon },
       { href: '/my/sales', label: 'Sales', Icon: ReceiptIcon },
       { href: '/offers/received', label: 'Offers received', Icon: InboxIcon },
-    ],
-  },
-  {
-    title: 'Competitions',
-    items: [
-      { href: '/my/tickets', label: 'Tickets', Icon: TicketIcon },
-      { href: '/dashboard/raffle-wins', label: 'Wins', Icon: TrophyIcon },
     ],
   },
   {

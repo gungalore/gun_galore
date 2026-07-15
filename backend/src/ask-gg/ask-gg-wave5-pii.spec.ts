@@ -220,41 +220,6 @@ function makeSvc() {
       },
     ]),
   };
-  const raffles = {
-    getMyTickets: jest.fn().mockResolvedValue([
-      {
-        ticketNumber: 42,
-        status: 'CONFIRMED',
-        amountCents: 5_000,
-        paidAt: new Date('2026-07-05'),
-        // Real Ticket rows carry the gateway checkout id — must not lift.
-        peachCheckoutId: POISON.peachId,
-        raffle: {
-          id: 'rf1',
-          title: 'Rifle Raffle',
-          status: 'OPEN',
-          drawAt: new Date('2026-08-15'),
-        },
-      },
-    ]),
-    getMyWins: jest.fn().mockResolvedValue([
-      {
-        createdAt: new Date('2026-06-01'),
-        winnerLicenceRef: POISON.licenceRef,
-        dispatchAddress: POISON.street,
-        // Real getMyWins select: drawnAt lives on the RAFFLE, and the
-        // row carries experience-location fields — must not lift.
-        raffle: {
-          title: 'Old Raffle',
-          prizeIsFirearm: true,
-          drawnAt: new Date('2026-06-01'),
-          locationText: POISON.locationText,
-          eventProvince: 'LIMPOPO',
-          experienceType: 'HUNT',
-        },
-      },
-    ]),
-  };
   const swapFunding = {
     getMySwaps: jest.fn().mockResolvedValue({
       bankDetails: {
@@ -325,7 +290,6 @@ function makeSvc() {
     transactions as any,
     offers as any,
     auctions as any,
-    raffles as any,
     swapFunding as any,
     swapProposals as any,
     sellerTools as any,
@@ -428,13 +392,6 @@ describe('W5 PII gate — every tool output is clean under poisoned inputs', () 
     assertClean(s);
     expect(s).toContain('Leupold');
     expect(s).toContain('buyer_bob');
-  });
-
-  it('getMyRaffleEntries never lifts winnerLicenceRef or dispatch address', async () => {
-    const { svc } = makeSvc();
-    const s = JSON.stringify(await svc.getMyRaffleEntries(ACCOUNT));
-    assertClean(s);
-    expect(s).toContain('Rifle Raffle');
   });
 
   it('getMySwaps drops the banking block and EFT references entirely', async () => {

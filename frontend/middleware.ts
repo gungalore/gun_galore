@@ -8,7 +8,6 @@ const isPublicRoute = createRouteMatcher([
   '/sso-callback(.*)', // OAuth (Google) redirect target — finishes the flow client-side
   '/marketplace(.*)',
   '/listings(.*)',
-  '/competitions(.*)',
   '/auctions(.*)',
   '/about(.*)',
   '/buy-and-sell(.*)',

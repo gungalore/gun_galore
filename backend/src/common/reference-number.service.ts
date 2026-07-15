@@ -3,24 +3,24 @@ import { ListingType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Atomic allocator for the human-trackable reference numbers shown on
-// every listing + raffle (UM000123, AU000045, TS000007, RA000003).
-// Backed by the ReferenceCounter table — Prisma's atomic increment
-// inside an upsert means concurrent creates can't pick the same number.
+// every listing (UM000123, AU000045, TS000007). Backed by the
+// ReferenceCounter table — Prisma's atomic increment inside an upsert
+// means concurrent creates can't pick the same number.
 //
 // The prefix is derived from the listing type — keep the mapping in
 // one place so a future "Used New" or rename of TAKE_A_SHOT doesn't
 // silently produce wrong refs.
 
-// UM/AU/TS = listings, RA = raffles, FS = featured-slot orders, SB =
-// subscription purchases (P1.1), HP = hunting-package / experience ORDER
-// references (EXP-E1). Order references reuse these per-prefix counters, so
-// every issued number is globally unique within its prefix whether it labels
+// UM/AU/TS = listings, FS = featured-slot orders, SB = subscription
+// purchases (P1.1), HP = hunting-package / experience ORDER references
+// (EXP-E1). Order references reuse these per-prefix counters, so every
+// issued number is globally unique within its prefix whether it labels
 // a listing or an order (no two things ever share UM000042). NOTE: HP is an
 // ORDER-ref prefix only — an experience LISTING reuses the BUY_NOW (UM) /
 // AUCTION (AU) listing prefix, because an experience is still fundamentally a
 // BUY_NOW or AUCTION listing; HP only distinguishes the buyer's per-booking
 // EFT reference so hunting bookings reconcile / report separately.
-export type ReferencePrefix = 'UM' | 'AU' | 'TS' | 'RA' | 'FS' | 'SW' | 'SB' | 'HP';
+export type ReferencePrefix = 'UM' | 'AU' | 'TS' | 'FS' | 'SW' | 'SB' | 'HP';
 
 const LISTING_TYPE_TO_PREFIX: Record<ListingType, ReferencePrefix> = {
   BUY_NOW: 'UM',
@@ -36,7 +36,6 @@ const LISTING_TYPE_TO_PREFIX: Record<ListingType, ReferencePrefix> = {
 // even though the underlying listing is still BUY_NOW or AUCTION.
 export type OrderRefSource =
   | ListingType
-  | 'RAFFLE'
   | 'FEATURED'
   | 'SUBSCRIPTION'
   | 'EXPERIENCE';
@@ -46,7 +45,6 @@ const ORDER_SOURCE_TO_PREFIX: Record<OrderRefSource, ReferencePrefix> = {
   AUCTION: 'AU',
   TAKE_A_SHOT: 'TS',
   SWOP: 'SW',
-  RAFFLE: 'RA',
   FEATURED: 'FS',
   SUBSCRIPTION: 'SB',
   EXPERIENCE: 'HP',
@@ -74,7 +72,7 @@ export class ReferenceNumberService {
    * value.
    *
    * Returns the formatted string (e.g. "UM000123"). Callers should
-   * store this directly on the Listing/Raffle row.
+   * store this directly on the Listing row.
    */
   async allocate(prefix: ReferencePrefix): Promise<string> {
     const row = await this.prisma.referenceCounter.upsert({
@@ -88,11 +86,6 @@ export class ReferenceNumberService {
   /** Allocate for a Listing based on its listingType. */
   allocateForListing(type: ListingType): Promise<string> {
     return this.allocate(prefixForListingType(type));
-  }
-
-  /** Allocate for a Raffle (always RA). */
-  allocateForRaffle(): Promise<string> {
-    return this.allocate('RA');
   }
 
   /**

@@ -7,7 +7,6 @@ import { ZohoBooksService } from './zoho-books.service';
  *
  * Exports ZohoBooksService for injection into:
  *   - PaymentsModule (commission invoices, refund credit notes)
- *   - RafflesModule (ticket Sales Receipts)
  *   - FeaturedModule (featured-slot fee invoices)
  *   - AdminModule (health monitor, sync status panel)
  */

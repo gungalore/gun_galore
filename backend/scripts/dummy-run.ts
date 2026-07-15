@@ -39,7 +39,6 @@ import {
   moduleFeatured,
   moduleContentSmoke,
   moduleSwap,
-  moduleRaffles,
   moduleFinalLedger,
 } from './dummy-run/modules';
 
@@ -167,7 +166,6 @@ async function main() {
   await runModule(ctx, 'Subscriptions', moduleSubscriptions);
   await runModule(ctx, 'Featured slots', moduleFeatured);
   await runModule(ctx, 'Swop / Trade', moduleSwap);
-  await runModule(ctx, 'Raffles', moduleRaffles);
   await runModule(ctx, 'Content smoke', moduleContentSmoke);
   await runModule(ctx, 'Held-funds closing balance', moduleFinalLedger);
 

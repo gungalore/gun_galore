@@ -128,10 +128,6 @@ export default function RefundPolicyPage() {
 
       <h2>5. What is not refundable</h2>
       <ul>
-        <li><strong>Raffle tickets</strong> — once payment is confirmed, tickets are non-refundable unless GunGalore cancels the competition. See our{' '}
-          <a href="/aml-policy" style={{ color: 'var(--red)' }}>AML &amp; Competitions Policy</a>{' '}
-          for the cancellation provisions.
-        </li>
         <li><strong>Featured-slot bid wins</strong> — the cost of buying a featured-listing slot at auction is non-refundable except where the listing is removed by us for an admin-side error.</li>
         <li><strong>Shipping costs on cancelled orders</strong> where the cancellation is the buyer's choice and the parcel has already been collected by the courier.</li>
       </ul>

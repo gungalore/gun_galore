@@ -474,12 +474,8 @@ export class AskGgGuideService {
       return 'wanted';
     }
 
-    if (seg[0] === 'competitions') return 'competitions';
-
     // Account cluster.
-    if (seg[0] === 'dashboard') {
-      return seg[1] === 'raffle-wins' ? 'competitions' : 'dashboard';
-    }
+    if (seg[0] === 'dashboard') return 'dashboard';
     if (seg[0] === 'account' || seg[0] === 'profile') return 'profile';
     if (seg[0] === 'settings') return 'settings';
     if (seg[0] === 'subscribe') return 'subscribe';

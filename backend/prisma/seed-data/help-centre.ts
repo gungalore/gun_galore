@@ -181,10 +181,10 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   {
     sourceKey: 'buy-not-refundable',
     title: 'What is not refundable?',
-    question: 'Are raffle tickets or featured-slot purchases refundable?',
+    question: 'Are featured-slot purchases refundable?',
     answer:
-      'Three things: competition (raffle) tickets once payment is confirmed — unless Gun Galore cancels the competition, in which case everyone is refunded in full; featured-listing slot wins, except where we remove the listing for an admin-side error; and shipping costs on an order you cancel by choice after the courier has already collected the parcel. Everything else follows the normal [Refund & Dispute Policy](/refund-policy).',
-    tags: ['refunds', 'raffles', 'featured'],
+      'Two things: featured-listing slot wins, except where we remove the listing for an admin-side error; and shipping costs on an order you cancel by choice after the courier has already collected the parcel. Everything else follows the normal [Refund & Dispute Policy](/refund-policy).',
+    tags: ['refunds', 'featured'],
   },
   {
     sourceKey: 'buy-experience-cancellation',
@@ -353,47 +353,13 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     tags: ['payouts', 'selling', 'eft'],
   },
 
-  // ── Competitions & raffles ─────────────────────────────────────────
-  {
-    sourceKey: 'raffle-free-postal-entry',
-    title: 'Can I enter a competition for free?',
-    question: 'Is there a free way to enter Gun Galore raffles?',
-    answer:
-      'Yes — every paid competition accepts free entries by post, as required by section 36 of the Consumer Protection Act. Download the free-entry form (a PDF) from the competition page; it contains the postal address, the deadline (the same as the paid-entry deadline) and a reference code. There is no limit on the number of free entries per person, and free entries carry equal weight to paid entries in the draw.',
-    tags: ['raffles', 'competitions', 'free entry', 'cpa'],
-  },
-  {
-    sourceKey: 'raffle-draw-fairness',
-    title: 'How do I know the draw is fair?',
-    question: 'How are competition winners picked?',
-    answer:
-      'Draws are verifiably random. Before the draw, the SHA-256 hash of a secret 256-bit random seed is published on the competition draw-proof page. Winners are derived from that seed with cryptographically secure maths, and after the draw the raw seed itself is published — anyone can recompute the hash to confirm it matches and replay the derivation to verify the winning ticket. A 24-hour cooling window also runs between sell-out and the draw so postal entries still in transit can be captured.',
-    tags: ['raffles', 'draw', 'fairness'],
-  },
-  {
-    sourceKey: 'raffle-winner-claim',
-    title: 'How do winners claim their prize?',
-    question: 'What happens if I win a competition?',
-    answer:
-      'You are notified immediately by email and SMS to the contact details on your account, and you have 7 days to claim. Each draw also selects up to two backup winners using the same verifiable method: if the primary winner does not claim in time, the first backup is promoted, then the second. Keep your contact details current — after all three positions lapse, the prize goes unclaimed.',
-    tags: ['raffles', 'winners', 'claim'],
-  },
-  {
-    sourceKey: 'raffle-ticket-refunds',
-    title: 'Are raffle tickets refundable?',
-    question: 'Can I get a refund on a competition ticket?',
-    answer:
-      'Once your payment is confirmed, tickets are non-refundable — with one exception: if Gun Galore cancels the competition before the draw runs, every paid ticket holder is refunded in full via the original payment route. The full provisions are in the AML & Competitions Policy in our [legal hub](/legal).',
-    tags: ['raffles', 'refunds', 'tickets'],
-  },
-
   // ── GG+ subscription & Ask GG ──────────────────────────────────────
   {
     sourceKey: 'ggplus-tiers',
     title: 'What is GG+ and what does it include?',
     question: 'What do the GG+ Member and Pro subscriptions offer?',
     answer:
-      'GG+ Member (R49/month): Ask GG at 20 messages per hour, unlimited photo identification (5 photos per query), the ballistic calculator, a GG+ username badge, 25% off featured-listing bids and a weekly Member raffle entry. GG+ Pro (R149/month): Ask GG at 60 messages per hour, photo identification with 10 photos per query, ballistic calculator plus Load Lab, a verified-expert badge, 50% off featured-listing bids and a weekly Pro raffle entry. Compare and subscribe at [GG+](/subscribe).',
+      'GG+ Member (R49/month): Ask GG at 20 messages per hour, unlimited photo identification (5 photos per query), the ballistic calculator, a GG+ username badge and 25% off featured-listing bids. GG+ Pro (R149/month): Ask GG at 60 messages per hour, photo identification with 10 photos per query, ballistic calculator plus Load Lab, a GG+ Pro username badge and 50% off featured-listing bids. Compare and subscribe at [GG+](/subscribe).',
     tags: ['gg+', 'subscription', 'ask gg'],
   },
   {
@@ -477,7 +443,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How do I manage my notifications?',
     question: 'How do I change or stop the emails and SMSes?',
     answer:
-      "Your activity feed lives at [Notifications](/notifications) — offers, bids, dispatch and delivery updates, payout news, disputes and competition results. Important events also reach you by SMS and email. You can tune which channels you get in [Settings](/settings). Some messages tied to money or safety (like payment and dispute updates) are always sent so you never miss something that needs you.",
+      "Your activity feed lives at [Notifications](/notifications) — offers, bids, dispatch and delivery updates, payout news and disputes. Important events also reach you by SMS and email. You can tune which channels you get in [Settings](/settings). Some messages tied to money or safety (like payment and dispute updates) are always sent so you never miss something that needs you.",
     tags: ['notifications', 'settings', 'account'],
   },
 
@@ -503,16 +469,8 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How do hunting packages and experiences work?',
     question: 'How do I book a guided hunt or range day?',
     answer:
-      "Experiences — guided hunts, range days and the like — are booked on-site services, not shipped items, so there's no courier. You book and pay, and your payment is held until the experience has been honoured, so you're protected if plans change. Experiences can be sold at a fixed price, by auction, or offered as a raffle prize. Cancellation terms follow the Consumer Protection Act — see the [Experiences cancellation policy](/experiences-cancellation-policy) or ask me before you book.",
+      "Experiences — guided hunts, range days and the like — are booked on-site services, not shipped items, so there's no courier. You book and pay, and your payment is held until the experience has been honoured, so you're protected if plans change. Experiences can be sold at a fixed price or by auction. Cancellation terms follow the Consumer Protection Act — see the [Experiences cancellation policy](/experiences-cancellation-policy) or ask me before you book.",
     tags: ['experiences', 'hunting', 'booking'],
-  },
-  {
-    sourceKey: 'raffle-buy-tickets',
-    title: 'How do I buy raffle tickets?',
-    question: 'How do competition tickets work — price, how many, and odds?',
-    answer:
-      "Open a competition at [Competitions](/competitions), choose how many tickets you want and pay through checkout — the ticket price and any per-person cap are shown on the competition. More tickets means more entries in the draw and better odds, up to the cap. There's also a free postal entry route where offered (no purchase necessary). Winners are drawn by a verifiable random method and the draw can be independently checked. Raffle tickets aren't refundable unless the competition is cancelled.",
-    tags: ['raffles', 'competitions', 'tickets'],
   },
 
   // ── Operational rules (G4 gap-fill) ─────────────────────────────────

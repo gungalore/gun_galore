@@ -172,10 +172,6 @@ function build(opts: { userExists?: boolean; auctionListing?: boolean } = {}) {
       },
     ]),
   };
-  const raffles = {
-    getMyTickets: jest.fn().mockResolvedValue([]),
-    getMyWins: jest.fn().mockResolvedValue([]),
-  };
   const swapFunding = {
     getMySwaps: jest.fn().mockResolvedValue({
       bankDetails: { accountNumber: POISON.bankAccount, branchCode: POISON.branchCode },
@@ -219,7 +215,6 @@ function build(opts: { userExists?: boolean; auctionListing?: boolean } = {}) {
     transactions as any,
     offers as any,
     auctions as any,
-    raffles as any,
     swapFunding as any,
     swapProposals as any,
     sellerTools as any,
@@ -319,7 +314,6 @@ describe('G4 overlay discipline', () => {
 describe('G4 static coverage — new keys resolve for their paths', () => {
   const cases: [string, string][] = [
     ['/dashboard', 'dashboard'],
-    ['/dashboard/raffle-wins', 'competitions'],
     ['/account', 'profile'],
     ['/profile', 'profile'],
     ['/profile/edit', 'profile'],

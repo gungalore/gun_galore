@@ -44,24 +44,6 @@ export const FLAGS = {
       return Number.isFinite(n) ? n : 20000;
     },
   } as FlagDefinition<number>,
-  raffleSellerApplicationsEnabled: {
-    key: 'raffle_seller_applications_enabled',
-    default: false,
-    parse: (s) => s === 'true' || s === '1',
-  } as FlagDefinition<boolean>,
-  rafflePoBoxAddress: {
-    key: 'raffle_po_box_address',
-    default: '',
-    parse: (s) => s,
-  } as FlagDefinition<string>,
-  raffleMaxRelists: {
-    key: 'raffle_max_relists',
-    default: 5,
-    parse: (s) => {
-      const n = parseInt(s, 10);
-      return Number.isFinite(n) ? n : 5;
-    },
-  } as FlagDefinition<number>,
   // P1.1 — Ask GG subscription pricing, ZAR CENTS per 31-day period.
   // Admin-tunable via the marketplace settings editor without a deploy.
   // Launch defaults: MEMBER R49/mo, PRO R149/mo (operator can change).

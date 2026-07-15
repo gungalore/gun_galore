@@ -267,10 +267,7 @@ export class AdminHealthService {
       { key: 'auction-end', label: 'Auction end sweep', schedule: 'every 1 min', expectedIntervalSec: 60 },
       { key: 'offer-expire', label: 'Offer expiry sweep', schedule: 'every 5 min', expectedIntervalSec: 300 },
       { key: 'dispatch-sla', label: 'Dispatch SLA enforcer', schedule: 'every 10 min', expectedIntervalSec: 600 },
-      { key: 'raffle-draw', label: 'Raffle draw runner', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
-      { key: 'raffle-expire', label: 'Raffle claim expiry', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'verifynow-balance', label: 'VerifyNow balance refresh', schedule: 'every 5 min', expectedIntervalSec: 300 },
-      { key: 'pending-tickets-sweep', label: 'Pending raffle tickets sweep', schedule: 'every 5 min', expectedIntervalSec: 300 },
       { key: 'push-prune', label: 'Push subscription cleanup', schedule: 'every 1 week', expectedIntervalSec: 604800 },
       { key: 'saved-search-match', label: 'Saved-search alert matcher', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'stuck-held-funds', label: 'Stuck-held-funds admin alert', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
@@ -307,7 +304,7 @@ export class AdminHealthService {
   // -------------------------------------------------------------------
   async queueDepths(): Promise<QueueDepth[]> {
     const day = 24 * 3600 * 1000;
-    const [pendingListings, heldNoDispatch, kycPending, raffleTicketsPending, listingsAwaitingAnswer] =
+    const [pendingListings, heldNoDispatch, kycPending, listingsAwaitingAnswer] =
       await Promise.all([
         this.prisma.listing.count({ where: { status: 'PENDING_REVIEW' } }),
         this.prisma.transaction.count({
@@ -320,7 +317,6 @@ export class AdminHealthService {
         this.prisma.user.count({
           where: { kycRequiredAt: { not: null }, kycStatus: { not: 'VERIFIED' } },
         }),
-        this.prisma.ticket.count({ where: { status: 'PENDING_PAYMENT' } }),
         this.prisma.listingQuestion.count({
           where: { status: 'AWAITING_SELLER_ANSWER' },
         }),
@@ -330,7 +326,6 @@ export class AdminHealthService {
       { label: 'Listings pending admin review', count: pendingListings, thresholdWarn: 10, thresholdAlarm: 30 },
       { label: 'HELD payments past dispatch SLA (24h+)', count: heldNoDispatch, thresholdWarn: 5, thresholdAlarm: 20 },
       { label: 'Users with KYC outstanding', count: kycPending, thresholdWarn: 20, thresholdAlarm: 60 },
-      { label: 'Raffle tickets stuck PENDING_PAYMENT', count: raffleTicketsPending, thresholdWarn: 10, thresholdAlarm: 50 },
       { label: 'Listing questions awaiting seller answer', count: listingsAwaitingAnswer, thresholdWarn: 25, thresholdAlarm: 75 },
     ];
   }

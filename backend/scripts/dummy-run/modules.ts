@@ -20,7 +20,6 @@ import { PriceEstimateService } from '../../src/listings/price-estimate.service'
 import { SwapProposalsService } from '../../src/swaps/swap-proposals.service';
 import { SwapFundingService } from '../../src/swaps/swap-funding.service';
 import { ShippingService } from '../../src/shipping/shipping.service';
-import { RafflesService } from '../../src/raffles/raffles.service';
 import { ManualPaymentsService } from '../../src/manual-payments/manual-payments.service';
 import {
   SWAP_SHIPPING_FEE_CENTS,
@@ -748,7 +747,7 @@ export async function moduleFeatured(ctx: Ctx) {
     );
     rep.bug(
       'src/featured/featured.service.ts:683 (tx.featuredSlot.update) + :693/:698 (this.recordEvent) inside bindListingToSlot occupy $transaction',
-      'On the MANUAL EFT rail (production rail), confirmSlotPayment captures the slot fee (bid.paidAt set) but the occupy step self-deadlocks and never binds the slot. Inside the interactive $transaction, bindListingToSlot first runs tx.featuredSlot.update({ status: OCCUPIED, currentListingId, ... }) — updating the @unique currentListingId column takes a key-level row lock on the slot — and then awaits this.recordEvent() (LISTING_BOUND / FEATURED_LIVE, lines 693/698), which writes FeaturedSlotAuditEvent via the BASE this.prisma client on a SEPARATE connection, FK-referencing that same locked slot row. The audit INSERT blocks on the key lock while the outer transaction awaits it → self-deadlock resolved only when the 5000ms interactive-transaction timeout fires, rolling the whole bind back. Net effect: the winning bidder is charged but their slot never reaches OCCUPIED (reproduced deterministically at ~5009ms); a manual re-bind hits the same path. PrismaService uses the same @prisma/adapter-pg driver adapter in production. Same class as the raffles createPostalEntry bug. Fix: write the audit rows with the tx client (inside the transaction), or move recordEvent outside it.',
+      'On the MANUAL EFT rail (production rail), confirmSlotPayment captures the slot fee (bid.paidAt set) but the occupy step self-deadlocks and never binds the slot. Inside the interactive $transaction, bindListingToSlot first runs tx.featuredSlot.update({ status: OCCUPIED, currentListingId, ... }) — updating the @unique currentListingId column takes a key-level row lock on the slot — and then awaits this.recordEvent() (LISTING_BOUND / FEATURED_LIVE, lines 693/698), which writes FeaturedSlotAuditEvent via the BASE this.prisma client on a SEPARATE connection, FK-referencing that same locked slot row. The audit INSERT blocks on the key lock while the outer transaction awaits it → self-deadlock resolved only when the 5000ms interactive-transaction timeout fires, rolling the whole bind back. Net effect: the winning bidder is charged but their slot never reaches OCCUPIED (reproduced deterministically at ~5009ms); a manual re-bind hits the same path. PrismaService uses the same @prisma/adapter-pg driver adapter in production. Fix: write the audit rows with the tx client (inside the transaction), or move recordEvent outside it.',
       'slot.status expected OCCUPIED, got BIND_WINDOW — Prisma "A query/commit cannot be executed on an expired transaction (5000 ms)"',
     );
   }
@@ -930,119 +929,6 @@ export async function moduleSwap(ctx: Ctx) {
     carrier: completed.initiatorCourierCents + completed.ownerCourierCents,
     refunded: 0,
     note: 'two funding legs; cash child pays recipient',
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// MODULE: Raffles (free entries only — subscriber auto-enter + postal)
-// ─────────────────────────────────────────────────────────────────────────
-export async function moduleRaffles(ctx: Ctx) {
-  const rep = ctx.rep;
-  const { member } = ctx.actors;
-  const raffles = svc(ctx, RafflesService);
-  const adminId = 'dummy-run-admin';
-
-  const startFuture = new Date(Date.now() + 3_600_000).toISOString();
-  const { raffle }: any = await raffles.create(adminId, {
-    title: 'Dummy subscriber raffle',
-    description: 'A free subscriber raffle seeded for the dummy run end-to-end test.',
-    itemValueCents: 500_000,
-    itemCostCents: 0,
-    ticketPriceCents: 100,
-    question: 'What calibre is a .308?',
-    optionA: '9mm',
-    optionB: '.308',
-    optionC: '.223',
-    optionD: '.22LR',
-    startTime: startFuture,
-    subscriberTierRestriction: 'MEMBER',
-    prizeIsFirearm: false,
-    prizeIsExperience: false,
-  } as any);
-  check(rep, 'RAFFLE: created (DRAFT, subscriber-restricted)', () => {
-    assert(raffle, 'no raffle');
-    eq(raffle.status, 'DRAFT', 'status');
-  });
-
-  // Open → flips ACTIVE + auto-enters subscribers (MEMBER/PRO) with free tickets.
-  await raffles.open(adminId, raffle.id);
-  const opened = await P(ctx).raffle.findUnique({ where: { id: raffle.id } });
-  const memberTicket = await P(ctx).ticket.findFirst({ where: { raffleId: raffle.id, buyerId: member.id } });
-  check(rep, 'RAFFLE: opened → ACTIVE + subscribers auto-entered (free CONFIRMED tickets)', () => {
-    eq(opened.status, 'ACTIVE', 'status');
-    assert(opened.ticketsSoldPaid >= 1, `ticketsSoldPaid ${opened.ticketsSoldPaid}`);
-    assert(memberTicket, 'member has no auto-entry ticket');
-    eq(memberTicket.status, 'CONFIRMED', 'ticket.status');
-    eq(memberTicket.amountCents, 0, 'ticket is free');
-  });
-
-  // A free postal entry (no payment rail). NOTE: createPostalEntry runs an
-  // interactive $transaction that SELECT ... FOR UPDATE-locks the Raffle row,
-  // then awaits this.recordEvent() on the BASE prisma client — which FK-writes
-  // the locked row on a second connection → self-deadlock → 5s timeout. Guarded
-  // so we can record the bug and still exercise the draw via subscriber tickets.
-  const postal = await safeStep(rep, 'RAFFLE: postal entry creates free POSTAL tickets', async () => {
-    const { tickets }: any = await raffles.createPostalEntry(adminId, {
-      raffleId: raffle.id,
-      referenceCode: 'DRPOST01',
-      firstName: 'Postal',
-      lastName: 'Entrant',
-      ticketCount: 3,
-    } as any);
-    assert(tickets.length === 3 && tickets.every((t: any) => t.status === 'POSTAL'), 'postal tickets wrong');
-  });
-  if (!postal.ok && isTxTimeout(postal.err ?? '')) {
-    rep.bug(
-      'src/raffles/raffles.service.ts:1006 + 1039/1058 (recordEvent inside createPostalEntry $transaction)',
-      'createPostalEntry ALWAYS fails: its interactive $transaction runs `SELECT id FROM "Raffle" ... FOR UPDATE` (line 1006) to lock the raffle row, then awaits this.recordEvent() (lines 1039/1058) which writes RaffleAuditEvent via the BASE this.prisma client on a SEPARATE connection, FK-referencing the FOR UPDATE-locked raffle row. The audit INSERT blocks on that lock while the outer transaction awaits it → self-deadlock resolved only when the 5000ms interactive-transaction timeout fires, aborting the whole postal entry (reproduced at ~5010ms). PrismaService uses the same @prisma/adapter-pg (PrismaPg) driver adapter in production, so free postal raffle entries are broken on prod. Same recordEvent-inside-tx anti-pattern as the featured-slot bind. Fix: pass the tx client to recordEvent (write the audit row inside the transaction) or move recordEvent outside it.',
-      'createPostalEntry threw "A query cannot be executed on an expired transaction (5000 ms)"',
-    );
-  }
-
-  // Draw uses the eligible pool (CONFIRMED subscriber + any POSTAL tickets).
-  await P(ctx).raffle.update({ where: { id: raffle.id }, data: { status: 'CLOSED_AWAITING_DRAW' } });
-  const draw = await safeStep(rep, 'RAFFLE: draw ran → DRAWN with a position-1 winner', async () => {
-    const drawRes: any = await raffles.runDraw(raffle.id);
-    const drawn = await P(ctx).raffle.findUnique({ where: { id: raffle.id } });
-    eq(drawRes.outcome, 'DRAWN', 'outcome');
-    eq(drawn.status, 'DRAWN', 'status');
-  });
-  if (!draw.ok) return; // can't continue without a winner
-
-  const winner = await P(ctx).raffleWinner.findFirst({ where: { raffleId: raffle.id, position: 1 } });
-  check(rep, 'RAFFLE: a position-1 winner row exists', () => assert(winner, 'no winner'));
-  if (!winner) return;
-
-  // Claim: subscriber winners claim explicitly; postal winners auto-claim.
-  const winnerActorEntry = Object.values(ctx.actors).find((a) => a.id === winner.userId);
-  if (winner.userId && winnerActorEntry) {
-    await safeStep(rep, 'RAFFLE: subscriber winner claimed the prize', async () => {
-      await raffles.claimPrize(winnerActorEntry.clerkId, winner.id);
-      const claimed = await P(ctx).raffleWinner.findUnique({ where: { id: winner.id } });
-      assert(claimed.claimedAt, 'claimedAt not set');
-    });
-  } else {
-    check(rep, 'RAFFLE: postal winner auto-claimed (no user to claim)', () => assert(winner.claimedAt, 'postal winner not auto-claimed'));
-  }
-
-  // Dispatch the (non-firearm, non-experience) prize — no money movement.
-  await safeStep(rep, 'RAFFLE: prize dispatched (tracking stamped, no money moved)', async () => {
-    await raffles.markWinnerPrizeDispatched(winner.id, adminId, {
-      trackingRef: 'DR-TRACK-0001',
-      carrierLabel: 'Test Courier',
-    });
-    const dispatched = await P(ctx).raffleWinner.findUnique({ where: { id: winner.id } });
-    assert(dispatched.prizeDispatchedAt, 'prizeDispatchedAt not set');
-    eq(dispatched.prizeTrackingRef, 'DR-TRACK-0001', 'trackingRef');
-  });
-  rep.money({
-    label: 'RAFFLE (free entries)',
-    buyerPaid: 0,
-    sellerPaid: 0,
-    ggRevenue: 0,
-    carrier: 0,
-    refunded: 0,
-    note: 'paid tickets are gateway-rail only (SKIPPED); postal + subscriber entries are free',
   });
 }
 

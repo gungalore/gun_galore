@@ -9,7 +9,7 @@
 //
 //   2. Legal-doc discoverability — gives users a single, predictable
 //      place to find Terms, Privacy, AUP, Refund, Firearms, Cookies
-//      and the AML & Competitions policy.
+//      and the AML policy.
 //
 // Skipped on the admin panel (admin layout sits under a separate
 // route group with its own chrome) but rendered on every public
@@ -78,7 +78,6 @@ export function SiteFooter() {
             <li><Link href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Marketplace</Link></li>
             <li><Link href="/?listingType=AUCTION" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Auctions</Link></li>
             <li><Link href="/?listingType=TAKE_A_SHOT" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Take a Shot</Link></li>
-            <li><Link href="/competitions" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Competitions</Link></li>
             <li><Link href="/listings/new" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Sell</Link></li>
             <li><Link href="/faq" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Help &amp; FAQ</Link></li>
           </ul>
@@ -101,7 +100,7 @@ export function SiteFooter() {
             <li><Link href="/acceptable-use" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Acceptable Use</Link></li>
             <li><Link href="/refund-policy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Refund &amp; Disputes</Link></li>
             <li><Link href="/firearms-compliance" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Regulated Items &amp; Compliance</Link></li>
-            <li><Link href="/aml-policy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>AML &amp; Competitions</Link></li>
+            <li><Link href="/aml-policy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>AML Policy</Link></li>
             <li><Link href="/cookies" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Cookie Policy</Link></li>
             <li><Link href="/legal" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>All legal &amp; ECT § 43</Link></li>
           </ul>

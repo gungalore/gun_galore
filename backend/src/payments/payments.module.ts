@@ -33,8 +33,8 @@ import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module'
     FraudRiskService,
   ],
   controllers: [TransactionsController, PaymentsWebhookController],
-  // StitchService exported so admin / raffles / featured can issue
-  // refunds and the webhook controller can verify + confirm payments.
+  // StitchService exported so admin / featured can issue refunds and
+  // the webhook controller can verify + confirm payments.
   // DealerVerificationService exported so AdminModule can use it for
   // admin-side override / re-scan.
   exports: [

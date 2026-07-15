@@ -64,10 +64,6 @@ const NUDGES: Partial<Record<AskGgPageKind, Omit<AskGgNudge, 'kind'>>> = {
     text: 'Need an update on any of your orders? Just ask.',
     prefill: 'Give me an update on my recent orders.',
   },
-  competitions: {
-    text: 'Curious how the raffles work, or whether there is a free entry route? Ask me.',
-    prefill: 'How do the raffles and competitions work, and is there a free entry route?',
-  },
   wanted: {
     text: "Can't find it in the listings? I'll help you post a Wanted ad — it's free and sellers come to you.",
     prefill: 'Help me post a Wanted ad for the item I am looking for.',

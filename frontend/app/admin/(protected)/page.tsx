@@ -15,13 +15,6 @@ interface AttentionQueue {
   disputedPayments: number;
   unresolvedAlerts: number;
   feeBypassAttempts7d: number;
-  // Raffle winners whose prize has been claimed but not yet dispatched —
-  // alarm-grade, since the winner is actively waiting on us.
-  rafflesPendingDispatch: number;
-  // Newly-drawn raffles where the primary winner has not yet claimed.
-  // Info-grade for now; we surface it as a separate card on the
-  // dashboard so the operator can prep the parcel ahead of time.
-  rafflesNewlyDrawn: number;
   // External-service credits (SMSPortal, VerifyNow, Cloudinary,
   // Anthropic, Pudo) at/below the operator-configured alarm threshold.
   // Alarm-grade — a service running on empty silently breaks user flows.
@@ -200,32 +193,6 @@ export default function AdminCommandCenterPage() {
           tone: attention.unresolvedAlerts > 0 ? 'warn' : 'calm',
           hint: 'System-raised flags',
           group: 'Alerts',
-        },
-        // Raffle prize dispatch — primary winner has claimed but the
-        // operator has not stamped the parcel as shipped yet. Tone is
-        // 'urgent' when > 0 (spec calls it "alarm") because the user is
-        // refreshing /dashboard/raffle-wins waiting for tracking info.
-        // Deep-links into the competitions list with the
-        // Needs-dispatch tab pre-selected via a query string.
-        {
-          label: 'Raffle prizes to dispatch',
-          value: attention.rafflesPendingDispatch,
-          href: '/admin/competitions?tab=dispatch',
-          tone: attention.rafflesPendingDispatch > 0 ? 'urgent' : 'calm',
-          hint: 'Claimed but not shipped',
-          group: 'Fulfilment',
-        },
-        // Newly drawn raffles — primary winner has been picked but
-        // hasn't claimed yet. Calm/warn so it doesn't compete with the
-        // dispatch alarm card; same destination because the dossier
-        // shows BOTH states once the operator drills in.
-        {
-          label: 'Newly drawn raffles',
-          value: attention.rafflesNewlyDrawn,
-          href: '/admin/competitions?tab=drawn',
-          tone: attention.rafflesNewlyDrawn > 0 ? 'warn' : 'calm',
-          hint: 'Winner picked, awaiting claim',
-          group: 'Fulfilment',
         },
         // Service credits below alarm — silent-failure risk. SMS/email
         // alerts also fire from the cron, but this card keeps the

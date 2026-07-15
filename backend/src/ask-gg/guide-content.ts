@@ -260,20 +260,6 @@ export const GUIDES: Record<string, AskGgGuide> = {
     ],
   },
 
-  competitions: {
-    key: 'competitions',
-    title: 'Raffles & competitions',
-    points: [
-      'Enter to win with paid tickets — or use the free entry route where one is offered (no purchase necessary).',
-      'Winners are drawn fairly and the draw is verifiable.',
-      'Some competitions are perks for GG+ members.',
-    ],
-    ctas: [
-      { label: 'How do raffles work?', ask: 'How do the raffles and competitions work, including the free entry route and how winners are drawn?' },
-      { label: 'See GG+ perks', href: '/subscribe' },
-    ],
-  },
-
   help: {
     key: 'help',
     title: 'Getting help',
@@ -335,7 +321,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     key: 'subscribe',
     title: 'GG+ membership',
     points: [
-      'GG+ has two tiers — Member and Pro — with perks like more Ask GG advice, featured-slot discounts, bigger photo limits and subscriber-only competitions.',
+      'GG+ has two tiers — Member and Pro — with perks like more Ask GG advice, featured-slot discounts and bigger photo limits.',
       'It’s prepaid by EFT: no debit order, no auto-renew. You’re only ever charged when you choose to renew.',
       'Pro unlocks the most — including the reloading Load Lab and the deepest advice quota.',
       'Not sure it’s worth it? Ask me to compare the tiers against what you actually use.',
@@ -379,7 +365,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     key: 'notifications',
     title: 'Your notifications',
     points: [
-      'Your activity feed — offers, bids, dispatch updates, payout news, disputes and competition results all land here.',
+      'Your activity feed — offers, bids, dispatch updates, payout news and disputes all land here.',
       'Important events also reach you by SMS and email; you can tune which channels in Settings.',
       'Tap anything here to jump straight to the order, offer or listing it’s about.',
     ],

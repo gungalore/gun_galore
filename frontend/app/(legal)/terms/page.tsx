@@ -239,20 +239,7 @@ export default function TermsPage() {
         the Seller's response window where applicable.
       </p>
 
-      <h2>11. Competitions</h2>
-      <p>
-        From time to time GunGalore runs competitions (raffles).
-        Specific rules for each competition, including how entries can
-        be obtained (paid and free postal entry), the draw mechanism
-        and the claim window, are governed by our{' '}
-        <a href="/aml-policy" style={{ color: 'var(--red)' }}>AML &amp; Competitions Policy</a>{' '}
-        and the per-competition rules displayed on the relevant
-        competition page. Competitions comply with Section 36 of the
-        Consumer Protection Act, including the requirement to offer a
-        free postal-entry route.
-      </p>
-
-      <h2>12. Disputes and refunds</h2>
+      <h2>11. Disputes and refunds</h2>
       <p>
         If you believe a Buyer or Seller has not met their obligations
         — for example, an item arrived damaged or never arrived — you
@@ -267,7 +254,7 @@ export default function TermsPage() {
         return defective goods).
       </p>
 
-      <h2>13. Suspension and termination</h2>
+      <h2>12. Suspension and termination</h2>
       <p>
         We may suspend or terminate your account immediately, with or
         without notice, where we reasonably believe that you have:
@@ -288,7 +275,7 @@ export default function TermsPage() {
         transactions in progress, fees due or warranties given.
       </p>
 
-      <h2>14. Intellectual property</h2>
+      <h2>13. Intellectual property</h2>
       <p>
         The Platform (including its software, design, brand, written
         content and structure) is owned by GunGalore (or its licensors)
@@ -299,7 +286,7 @@ export default function TermsPage() {
         the Platform.
       </p>
 
-      <h2>15. Limitation of liability</h2>
+      <h2>14. Limitation of liability</h2>
       <p>
         To the maximum extent permitted by South African law, GunGalore
         will not be liable to you for any indirect, incidental,
@@ -320,7 +307,7 @@ export default function TermsPage() {
         misconduct, and liability under the Consumer Protection Act.
       </p>
 
-      <h2>16. Indemnity</h2>
+      <h2>15. Indemnity</h2>
       <p>
         You agree to indemnify, defend and hold harmless GunGalore,
         its directors, officers, employees and agents from and against
@@ -333,7 +320,7 @@ export default function TermsPage() {
         Platform, or (d) any content you submit to the Platform.
       </p>
 
-      <h2>17. Force majeure</h2>
+      <h2>16. Force majeure</h2>
       <p>
         Neither party will be liable for any failure or delay in
         performance caused by events beyond its reasonable control,
@@ -344,7 +331,7 @@ export default function TermsPage() {
         Clerk).
       </p>
 
-      <h2>18. Notices and communications</h2>
+      <h2>17. Notices and communications</h2>
       <p>
         Notices to you will be sent to the email address registered on
         your account and, where appropriate, by SMS to your verified
@@ -355,7 +342,7 @@ export default function TermsPage() {
         or by post to the registered address set out in paragraph 1.
       </p>
 
-      <h2>19. Severability</h2>
+      <h2>18. Severability</h2>
       <p>
         If any provision of these Terms is found by a competent court
         to be unenforceable, that provision will be severed and the
@@ -363,7 +350,7 @@ export default function TermsPage() {
         effect.
       </p>
 
-      <h2>20. Governing law and jurisdiction</h2>
+      <h2>19. Governing law and jurisdiction</h2>
       <p>
         These Terms are governed by and construed in accordance with
         the laws of the Republic of South Africa. You and GunGalore
@@ -372,7 +359,7 @@ export default function TermsPage() {
         any dispute arising out of or in connection with these Terms.
       </p>
 
-      <h2>21. Complaints and contact</h2>
+      <h2>20. Complaints and contact</h2>
       <p>
         We aim to acknowledge complaints within 2 business days and
         resolve them within 14 business days. To raise a complaint or
@@ -395,7 +382,7 @@ export default function TermsPage() {
         <strong>Postal:</strong> GunGalore (Pty) Ltd, 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570
       </p>
 
-      <h2>22. ECT Act § 43 disclosures</h2>
+      <h2>21. ECT Act § 43 disclosures</h2>
       <p>
         In compliance with Section 43 of the Electronic Communications
         and Transactions Act 25 of 2002:

@@ -4,8 +4,8 @@ import type { MetadataRoute } from 'next';
 // the sitemap. Lighthouse SEO audit flagged the missing file. The
 // values here mirror what we want public Google results to surface:
 //
-//   - Allow: marketplace, auctions, take-a-shot, competitions, listing
-//     detail pages, legal docs, the homepage. These are the SEO surface.
+//   - Allow: marketplace, auctions, take-a-shot, listing detail pages,
+//     legal docs, the homepage. These are the SEO surface.
 //   - Disallow: admin console (sensitive), the JSON API (no crawlable
 //     content), checkout (per-user prices/addresses, no SEO value),
 //     KYC + sign-in/up flows (auth-gated), the /offline PWA fallback

@@ -57,11 +57,6 @@ export async function cleanup(prisma: PrismaService) {
     'contactDetailRejection',
     'rating',
     'message',
-    'ticket',
-    'postalEntry',
-    'raffleWinner',
-    'raffleSellerApplication',
-    'raffleAuditEvent',
     'featuredSlotBid',
     'featuredSlotAuditEvent',
     'featuredSlotBidderBan',
@@ -75,7 +70,6 @@ export async function cleanup(prisma: PrismaService) {
     'order',
     'swap',
     'payoutBatch',
-    'raffle',
     'notification',
     'pushSubscription',
     'savedSearch',
@@ -189,7 +183,7 @@ export async function seedActors(prisma: PrismaService): Promise<Record<string, 
   actors.bidderB = await upsertUser(prisma, 'bidderB');
   actors.swapA = await upsertUser(prisma, 'swapA');
   actors.swapB = await upsertUser(prisma, 'swapB');
-  actors.member = await upsertUser(prisma, 'member', { subscriptionTier: 'MEMBER' }); // raffle auto-enter + subscription
+  actors.member = await upsertUser(prisma, 'member', { subscriptionTier: 'MEMBER' }); // subscription
   return actors;
 }
 

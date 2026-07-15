@@ -4,7 +4,6 @@ import { OffersService } from '../offers/offers.service';
 import { SwapProposalsService } from '../swaps/swap-proposals.service';
 import { SwapFundingService } from '../swaps/swap-funding.service';
 import { AuctionsService } from '../auctions/auctions.service';
-import { RafflesService } from '../raffles/raffles.service';
 import {
   FeaturedService,
   FEATURED_UNPAID_MAX_MS,
@@ -41,7 +40,6 @@ export class TasksService {
     private readonly swapProposals: SwapProposalsService,
     private readonly swapFunding: SwapFundingService,
     private readonly auctionsService: AuctionsService,
-    private readonly rafflesService: RafflesService,
     private readonly featured: FeaturedService,
     private readonly kycService: KycService,
     private readonly trackingService: TrackingService,
@@ -1027,93 +1025,6 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('auction-end');
-    }
-  }
-
-  // Raffles no longer have an endTime — the cooling window is started
-  // inline by RafflesService.confirmTickets / createPostalEntry the
-  // moment ticketsSoldPaid+ticketsSoldPostal hits targetTicketCount, so
-  // no time-based cron is required to roll ACTIVE → CLOSED_AWAITING_DRAW.
-
-  // Run every 5 minutes — run draws for raffles past their cooling window.
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async runRaffleDraws() {
-    try {
-      const result = await this.rafflesService.runReadyDraws();
-      if (result.processed > 0) {
-        this.logger.log(`Ran ${result.processed} raffle draw(s)`);
-      }
-    } catch (err) {
-      this.logger.error(
-        `runRaffleDraws failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('raffle-draw');
-    }
-  }
-
-  // Run every 5 minutes — reclaim stale PENDING_PAYMENT raffle reservations
-  // (older than 30 min, never paid). An abandoned reservation permanently
-  // subtracts from the sellable pool (the oversell count includes
-  // PENDING_PAYMENT), so without this a raffle can wedge short of sell-out.
-  // Never touches ticketsSoldPaid. Heartbeat resolves the pending-tickets-sweep
-  // health key.
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async sweepPendingRaffleTickets() {
-    try {
-      const result = await this.rafflesService.sweepStalePendingTickets();
-      if (result.swept > 0) {
-        this.logger.log(`Swept ${result.swept} stale pending raffle ticket(s)`);
-      }
-    } catch (err) {
-      this.logger.error(
-        `sweepPendingRaffleTickets failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('pending-tickets-sweep');
-    }
-  }
-
-  // Phase E3 — every 5 minutes, fire the 48h auto-draw for any
-  // subscriber raffle whose subscriberDrawAt has passed. Re-uses
-  // the same draw() pipeline so winners + DrawProof flow are
-  // identical to public raffles. Separate cron from runRaffleDraws
-  // so a public-raffle bug doesn't block subscriber-raffle draws
-  // and vice versa.
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async runSubscriberRaffleDraws() {
-    try {
-      const result = await this.rafflesService.runSubscriberRaffleDraws();
-      if (result.drawn > 0) {
-        this.logger.log(`Drew ${result.drawn} subscriber raffle(s)`);
-      }
-    } catch (err) {
-      this.logger.error(
-        `runSubscriberRaffleDraws failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('subscriber-raffle-draw');
-    }
-  }
-
-  // Run every hour — expire stale claim windows and promote backup winners.
-  @Cron(CronExpression.EVERY_HOUR)
-  async expireRaffleClaims() {
-    try {
-      const result = await this.rafflesService.expireClaims();
-      if (result.processed > 0) {
-        this.logger.log(`Expired ${result.processed} raffle claim(s)`);
-      }
-    } catch (err) {
-      this.logger.error(
-        `expireRaffleClaims failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('raffle-expire');
     }
   }
 

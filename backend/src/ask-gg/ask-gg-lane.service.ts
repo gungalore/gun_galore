@@ -11,7 +11,7 @@ import type { AskGgLaneGuess } from './ask-gg-quota.service';
  *
  *   SUPPORT — how the platform works, fees, payments/funds held,
  *             shipping, KYC/payouts, the user's own orders/sales/
- *             offers/raffles/swaps, account settings, problems with a
+ *             offers/swaps, account settings, problems with a
  *             transaction, tickets.
  *   ADVICE  — outdoor/hunting/fishing/camping expertise, gear choice
  *             and comparisons, reloading/ballistics, species ID,
@@ -26,7 +26,7 @@ const LANE_TIMEOUT_MS = 2_500;
 
 const LANE_SYSTEM = `You classify one Gun Galore chat message into exactly one token.
 
-SUPPORT = questions about the Gun Galore PLATFORM or the user's OWN account: how the site works, selling modes, fees/commission, payments and funds held, shipping/tracking, KYC/verification, payouts, their orders/sales/offers/bids/raffle entries/swaps, account settings, disputes/refunds, reporting problems, support tickets.
+SUPPORT = questions about the Gun Galore PLATFORM or the user's OWN account: how the site works, selling modes, fees/commission, payments and funds held, shipping/tracking, KYC/verification, payouts, their orders/sales/offers/bids/swaps, account settings, disputes/refunds, reporting problems, support tickets.
 ADVICE = outdoor/hunting/fishing/camping/shooting expertise: gear advice or comparisons, what to buy, calibres, reloading or ballistics, species/animal ID, technique, "is this a fair price for X" product judgement.
 MIXED = clearly both.
 

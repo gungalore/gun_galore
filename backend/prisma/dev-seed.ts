@@ -173,40 +173,6 @@ async function main() {
     },
   });
 
-  // Clear and recreate the test competition
-  await prisma.raffleAuditEvent.deleteMany({});
-  await prisma.ticket.deleteMany({});
-  await prisma.raffleWinner.deleteMany({});
-  await prisma.postalEntry.deleteMany({});
-  await prisma.raffleSellerApplication.deleteMany({});
-  await prisma.raffle.deleteMany({});
-
-  console.log('Creating test competition…');
-  const now = new Date();
-  const competition = await prisma.raffle.create({
-    data: {
-      title: 'Vortex Diamondback Tactical 4-16x44 FFP',
-      description:
-        'Brand new, in-box Vortex Diamondback Tactical 4-16x44 FFP scope with EBR-2C MOA reticle. Comes with original Vortex VIP lifetime warranty registration card, lens covers, sunshade, and the original box. The first-focal-plane Diamondback Tactical is a tournament favourite for tactical and long-range shooting on a budget.',
-      imageUrl: null,
-      itemValueCents: 1_250_000, // R12,500 — selling price
-      itemCostCents: 950_000,    // R9,500   — what the op paid
-      ticketPriceCents: 6_500,   // R65 each (op-set)
-      // ceil(itemValueCents / ticketPriceCents) = ceil(1_250_000 / 6_500) = 193
-      targetTicketCount: Math.ceil(1_250_000 / 6_500),
-      // Multiple choice — C is always the correct answer (hardcoded in
-      // RafflesService). Distractors only need to be plausible-wrong.
-      question: 'What does FFP stand for in rifle-scope terminology?',
-      optionA: 'Forward firing point',
-      optionB: 'Front field projection',
-      optionC: 'First focal plane',
-      optionD: 'Fixed factor parallax',
-      startTime: now,
-      status: 'ACTIVE',
-    },
-  });
-  console.log('  ✓ Competition:', competition.title);
-
   console.log('Done.');
 }
 

@@ -67,7 +67,6 @@ function Icon({ kind }: { kind: string | null }) {
           <circle cx="17" cy="18" r="1.6" {...stroke} />
         </svg>
       );
-    case 'raffle':
     case 'trophy':
       return (
         <svg {...props}>

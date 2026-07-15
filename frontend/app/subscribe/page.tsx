@@ -65,15 +65,13 @@ const TIER_PERKS: Record<'MEMBER' | 'PRO', string[]> = {
     'Ballistic calculator',
     'GG+ username badge',
     '25% off featured-listing bids',
-    'Weekly Member raffle entry',
   ],
   PRO: [
     'Ask GG: 60 messages / hour',
     'Unlimited photo identification (10/query)',
     'Ballistic calculator + Load Lab',
-    'Verified-expert badge',
+    'GG+ PRO username badge',
     '50% off featured-listing bids',
-    'Weekly Pro raffle entry',
   ],
 };
 

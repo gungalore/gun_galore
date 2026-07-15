@@ -4,7 +4,6 @@ import { UsersService } from '../users/users.service';
 import { TransactionsService } from '../payments/transactions.service';
 import { OffersService } from '../offers/offers.service';
 import { AuctionsService } from '../auctions/auctions.service';
-import { RafflesService } from '../raffles/raffles.service';
 import { SwapFundingService } from '../swaps/swap-funding.service';
 import { SwapProposalsService } from '../swaps/swap-proposals.service';
 import { SellerToolsService } from '../users/seller-tools.service';
@@ -81,7 +80,6 @@ export class AskGgAccountToolsService {
     private readonly transactions: TransactionsService,
     private readonly offers: OffersService,
     private readonly auctions: AuctionsService,
-    private readonly raffles: RafflesService,
     private readonly swapFunding: SwapFundingService,
     private readonly swapProposals: SwapProposalsService,
     private readonly sellerTools: SellerToolsService,
@@ -326,57 +324,6 @@ export class AskGgAccountToolsService {
         href: `/listings/${b.listingId}`,
       })),
       href: '/my/offers',
-    };
-  }
-
-  /** 6. Raffle / competition entries + wins. NEVER lifts
-   *  winnerLicenceRef or any claim paperwork fields. */
-  async getMyRaffleEntries(account: AskGgAccount) {
-    type TicketView = {
-      ticketNumber: number | string | null;
-      status: string;
-      amountCents: number | null;
-      paidAt: Date | null;
-      raffle: {
-        id: string;
-        title: string;
-        status: string;
-        drawAt: Date | null;
-      } | null;
-    };
-    type WinView = {
-      createdAt?: Date | null;
-      raffle: {
-        title: string;
-        prizeIsFirearm?: boolean;
-        // drawnAt lives on the RAFFLE (selected by getMyWins) — the
-        // RaffleWinner row itself has no drawnAt column.
-        drawnAt?: Date | null;
-      } | null;
-    };
-    const [tickets, wins] = await Promise.all([
-      this.raffles.getMyTickets(account.clerkId),
-      this.raffles.getMyWins(account.clerkId),
-    ]);
-    return {
-      tickets: (tickets as unknown as TicketView[]).slice(0, 12).map((tk) => ({
-        raffleTitle: clip(tk.raffle?.title),
-        ticketNumber: tk.ticketNumber ?? null,
-        status: tk.status,
-        amountRand: rand(tk.amountCents),
-        paidAt: day(tk.paidAt),
-        raffleStatus: tk.raffle?.status ?? null,
-        drawAt: day(tk.raffle?.drawAt),
-        href: tk.raffle ? `/competitions/${tk.raffle.id}` : '/competitions',
-      })),
-      wins: (wins as unknown as WinView[]).slice(0, 5).map((w) => ({
-        raffleTitle: clip(w.raffle?.title),
-        wonAt: day(w.raffle?.drawnAt ?? w.createdAt),
-        prizeIsFirearm: w.raffle?.prizeIsFirearm ?? false,
-        note: 'Prize claim details live on the competitions page.',
-        href: '/competitions',
-      })),
-      href: '/competitions',
     };
   }
 

@@ -34,15 +34,6 @@ export interface AttentionQueue {
   disputedPayments: number;
   unresolvedAlerts: number;
   feeBypassAttempts7d: number; // contact-detail filter would track this; placeholder until persisted
-  // Raffle prizes — primary winner has claimed but the admin hasn't
-  // marked the prize as dispatched yet. ALARM-grade: the user is
-  // refreshing their dashboard waiting for tracking info. Surfaced as
-  // its own card on the admin overview.
-  rafflesPendingDispatch: number;
-  // Raffle prizes — primary winner row exists but they haven't claimed
-  // it yet. INFO-grade: harmless until the claim window lapses, but
-  // useful so the admin can prep the parcel ahead of time.
-  rafflesNewlyDrawn: number;
   // External-service credits at or below the operator-configured
   // alarm threshold. Sourced from CreditSnapshot (most recent row per
   // service) compared to CreditThreshold.alarmThreshold. ALARM-grade
@@ -125,8 +116,6 @@ export class AdminCommandCenterService {
       disputedPayments,
       unresolvedAlerts,
       feeBypassAttempts7d,
-      rafflesPendingDispatch,
-      rafflesNewlyDrawn,
       creditsBelowAlarm,
       salesAwaitingAccept,
       dealerVerificationsPendingReview,
@@ -156,28 +145,6 @@ export class AdminCommandCenterService {
       // existed.
       this.prisma.contactDetailRejection.count({
         where: { createdAt: { gte: week } },
-      }),
-      // Raffle prizes the operator owes to a real human RIGHT NOW.
-      // position=1 (only the primary winner is a dispatch obligation —
-      // backups are not yet "the winner"); claimedAt set; not yet
-      // dispatched; not forfeited. Backed by @@index([prizeDispatchedAt]).
-      this.prisma.raffleWinner.count({
-        where: {
-          position: 1,
-          claimedAt: { not: null },
-          prizeDispatchedAt: null,
-          forfeitedAt: null,
-        },
-      }),
-      // Newly drawn raffles where the primary winner has not engaged
-      // yet — info-grade so the operator can prep the parcel in advance.
-      this.prisma.raffleWinner.count({
-        where: {
-          position: 1,
-          claimedAt: null,
-          forfeitedAt: null,
-          prizeDispatchedAt: null,
-        },
       }),
       // External services at/below their alarm threshold. Delegated to
       // AdminCreditsService so the per-service comparison logic lives
@@ -215,8 +182,6 @@ export class AdminCommandCenterService {
       disputedPayments,
       unresolvedAlerts,
       feeBypassAttempts7d,
-      rafflesPendingDispatch,
-      rafflesNewlyDrawn,
       creditsBelowAlarm,
       salesAwaitingAccept,
       dealerVerificationsPendingReview,

@@ -19,7 +19,6 @@ import { ListingsModule } from '../listings/listings.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { OffersModule } from '../offers/offers.module';
 import { AuctionsModule } from '../auctions/auctions.module';
-import { RafflesModule } from '../raffles/raffles.module';
 import { SwapsModule } from '../swaps/swaps.module';
 import { AskGgPlatformToolsService } from './ask-gg-platform-tools.service';
 import { AskGgContextService } from './ask-gg-context.service';
@@ -37,8 +36,8 @@ import { AskGgGuideService } from './ask-gg-guide.service';
   // PaymentsModule (Ask GG Everywhere) exports FeeCalculator for the
   // computeFees tool — exact same fee engine checkout uses. Payments
   // does not import AskGgModule, so no cycle.
-  // W5 account tools: OffersModule/AuctionsModule/RafflesModule/
-  // SwapsModule each export the read service the tools wrap; none of
+  // W5 account tools: OffersModule/AuctionsModule/SwapsModule each export
+  // the read service the tools wrap; none of
   // them imports AskGgModule (verified — no cycles). UsersModule is
   // @Global (UsersService + SellerToolsService); orders are read via
   // lean own selects in getOrderStatus, so no OrdersModule needed.
@@ -50,7 +49,6 @@ import { AskGgGuideService } from './ask-gg-guide.service';
     PaymentsModule,
     OffersModule,
     AuctionsModule,
-    RafflesModule,
     SwapsModule,
     // For the admin KB-verification controller (uses AdminJwtGuard).
     // Same secret/config as AdminModule — kept local here so we

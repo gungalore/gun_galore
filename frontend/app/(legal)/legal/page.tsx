@@ -45,9 +45,9 @@ const DOCS: { href: string; title: string; description: string }[] = [
   },
   {
     href: '/aml-policy',
-    title: 'AML & Competitions Policy',
+    title: 'AML Policy',
     description:
-      'Our anti-money-laundering posture and how our paid competitions comply with CPA Section 36.',
+      'Our anti-money-laundering posture and the FICA-aligned controls we apply across the marketplace.',
   },
   {
     href: '/cookies',

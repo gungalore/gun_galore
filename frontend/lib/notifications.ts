@@ -17,7 +17,7 @@ export interface NotificationItem {
   body: string;
   url: string | null;
   iconKey: string | null;
-  linkedType: 'offer' | 'transaction' | 'bid' | 'listing' | 'raffle' | null;
+  linkedType: 'offer' | 'transaction' | 'bid' | 'listing' | null;
   linkedId: string | null;
   dismissible: boolean;
   resolvedAt: string | null;

@@ -257,7 +257,7 @@ export default function PrivacyPage() {
       </p>
       <ul>
         <li><strong>Transactional</strong> — order updates, dispatch confirmations, dispute outcomes, account-security alerts. These are necessary to operate the Platform and are sent regardless of your marketing preferences.</li>
-        <li><strong>Marketing</strong> — newsletters, promotional offers, competition announcements. These are only sent if you have <strong>opted in</strong> at sign-up or in your profile settings. You may withdraw consent at any time by clicking the unsubscribe link in any marketing message or by changing your preferences in your account.</li>
+        <li><strong>Marketing</strong> — newsletters and promotional offers. These are only sent if you have <strong>opted in</strong> at sign-up or in your profile settings. You may withdraw consent at any time by clicking the unsubscribe link in any marketing message or by changing your preferences in your account.</li>
       </ul>
 
       <h2>12. Information about children</h2>

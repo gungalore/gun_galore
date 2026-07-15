@@ -3,7 +3,7 @@ import { PrismaClient, type ListingType } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 // One-shot backfill: assigns UM/AU/TS reference numbers to every
-// existing Listing row that lacks one, and RA numbers to every Raffle.
+// existing Listing row that lacks one.
 //
 // Order: createdAt ASC so the oldest listing gets UM000001 etc.
 // Counters land in ReferenceCounter at the highest number we wrote,
@@ -37,7 +37,7 @@ async function main() {
   });
   console.log(`Backfilling ${listings.length} listings…`);
 
-  const perPrefixCount: Record<string, number> = { UM: 0, AU: 0, TS: 0, RA: 0 };
+  const perPrefixCount: Record<string, number> = { UM: 0, AU: 0, TS: 0 };
 
   // Seed counters from existing referenceNumbers so we don't collide
   // with rows that DO have one (e.g. anything created via the live
@@ -54,17 +54,6 @@ async function main() {
       perPrefixCount[prefix] = n;
     }
   }
-  const existingRaffles = await prisma.raffle.findMany({
-    where: { referenceNumber: { not: null } },
-    select: { referenceNumber: true },
-  });
-  for (const row of existingRaffles) {
-    const ref = row.referenceNumber!;
-    const n = Number(ref.slice(2));
-    if (Number.isFinite(n) && perPrefixCount.RA < n) {
-      perPrefixCount.RA = n;
-    }
-  }
 
   for (const l of listings) {
     const prefix = LISTING_TYPE_TO_PREFIX[l.listingType];
@@ -77,25 +66,8 @@ async function main() {
     console.log(`  ${ref}  ←  ${l.id}`);
   }
 
-  // ─── Raffles ─────────────────────────────────────────────────────
-  const raffles = await prisma.raffle.findMany({
-    where: { referenceNumber: null },
-    orderBy: { createdAt: 'asc' },
-    select: { id: true },
-  });
-  console.log(`Backfilling ${raffles.length} raffles…`);
-  for (const r of raffles) {
-    perPrefixCount.RA++;
-    const ref = fmt('RA', perPrefixCount.RA);
-    await prisma.raffle.update({
-      where: { id: r.id },
-      data: { referenceNumber: ref },
-    });
-    console.log(`  ${ref}  ←  ${r.id}`);
-  }
-
   // ─── Sync counters ──────────────────────────────────────────────
-  for (const prefix of ['UM', 'AU', 'TS', 'RA'] as const) {
+  for (const prefix of ['UM', 'AU', 'TS'] as const) {
     await prisma.referenceCounter.upsert({
       where: { prefix },
       create: { prefix, count: perPrefixCount[prefix] },

@@ -4,7 +4,6 @@ import { TasksService } from './tasks.service';
 import { OffersModule } from '../offers/offers.module';
 import { SwapsModule } from '../swaps/swaps.module';
 import { AuctionsModule } from '../auctions/auctions.module';
-import { RafflesModule } from '../raffles/raffles.module';
 import { FeaturedModule } from '../featured/featured.module';
 import { KycModule } from '../kyc/kyc.module';
 import { ShippingModule } from '../shipping/shipping.module';
@@ -28,7 +27,6 @@ import { SavedSearchesModule } from '../saved-searches/saved-searches.module';
     OffersModule,
     SwapsModule,
     AuctionsModule,
-    RafflesModule,
     FeaturedModule,
     KycModule,
     ShippingModule,

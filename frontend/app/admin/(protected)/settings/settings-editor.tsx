@@ -26,7 +26,7 @@ interface Flag {
 }
 
 export default function SettingsEditor({ flags }: { flags: Flag[] }) {
-  // Group by `group` so the page renders sections (Moderation, Raffles, …).
+  // Group by `group` so the page renders sections (Moderation, …).
   const groups = new Map<string, Flag[]>();
   for (const f of flags) {
     const list = groups.get(f.group) ?? [];

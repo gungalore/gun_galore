@@ -247,8 +247,8 @@ export default async function HomePage({
           the rail on every other surface). No FilterBar, no
           pagination — the landing page is intentionally curated.
           The FeaturedRail sidebar is dropped from this surface only;
-          it stays on Marketplace / Auctions / Take a Shot / Competitions
-          / listing detail. */}
+          it stays on Marketplace / Auctions / Take a Shot / listing
+          detail. */}
       {showHero ? (
         <section
           data-featured-home-section

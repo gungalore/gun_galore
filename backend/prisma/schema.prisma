@@ -133,29 +133,6 @@ enum ExperienceType {
   PLAINS_GAME_HUNT
 }
 
-enum RaffleStatus {
-  DRAFT // admin building it
-  ACTIVE // tickets on sale
-  CLOSED_AWAITING_DRAW // timer ended, in 24h cooling window
-  DRAWN // winner picked, in claim window
-  CLAIMED // winner claimed prize
-  CANCELLED_MIN_NOT_MET // refunding all entrants
-  CANCELLED_BY_ADMIN // killed manually
-  EXPIRED_UNCLAIMED // all winners failed to claim in window
-}
-
-enum TicketStatus {
-  PENDING_PAYMENT // checkout started, awaiting Peach confirmation
-  CONFIRMED // payment captured, ticket in the draw
-  REFUNDED // returned to buyer (min-not-met)
-  POSTAL // free-entry route, no payment
-}
-
-enum ItemSource {
-  PLATFORM_OWNED // platform-supplied prize
-  SELLER_APPLICATION // seller wants the platform to raffle it
-}
-
 // Pre-purchase product-only Q&A on a listing. There is NO buyer/seller
 // messaging on Gun Galore — the only sanctioned pre-sale dialog is this
 // structured, Claude-moderated Q&A on the listing page itself.
@@ -349,11 +326,6 @@ model User {
   askedListingQuestions    ListingQuestion[] @relation("AskedQuestions")
   answeredListingQuestions ListingQuestion[] @relation("AnsweredQuestions")
 
-  // Raffles
-  raffleTickets            Ticket[]
-  raffleWinsAsWinner       RaffleWinner[]            @relation("WinnerUser")
-  raffleSellerApplications RaffleSellerApplication[]
-
   // Featured slot system — back-relations.
   // `featuredSlotBids` is every bid this user has ever placed on a
   // featured slot auction (active, won, or lost). `featuredSlots` is
@@ -519,7 +491,7 @@ model Notification {
   // Linkage to the underlying entity. resolveByEntity() in the service
   // looks up unresolved rows by (linkedType, linkedId) and stamps
   // resolvedAt on them when the entity transitions.
-  linkedType String? // 'offer' | 'transaction' | 'bid' | 'listing' | 'raffle'
+  linkedType String? // 'offer' | 'transaction' | 'bid' | 'listing'
   linkedId   String?
 
   // Resolution state.
@@ -1587,8 +1559,8 @@ model AdminUser {
 // Each row is one admin operation: who did it, when, on what, what
 // changed (oldValue → newValue), and the reason they typed at the
 // time. Read-only from the UI; only inserted by AdminAuditService.
-// Domain-specific audit tables (RaffleAuditEvent, FeaturedSlotAuditEvent)
-// stay as-is for module-specific event types; this table captures the
+// Domain-specific audit tables (FeaturedSlotAuditEvent) stay as-is for
+// module-specific event types; this table captures the
 // broad ops surface — user bans / tier changes / KYC overrides /
 // transaction refunds / etc.
 model AdminAuditEvent {
@@ -1602,7 +1574,7 @@ model AdminAuditEvent {
   action       String
   // Resource being acted upon — usually a User.id, Transaction.id,
   // Listing.id. Nullable for actions that don't have a single target.
-  resourceType String? // 'User' | 'Transaction' | 'Listing' | 'Raffle' | ...
+  resourceType String? // 'User' | 'Transaction' | 'Listing' | ...
   resourceId   String?
   // Snapshot of what changed. Both nullable so single-direction
   // events (e.g. force-hide a listing) can record just newValue.
@@ -1870,375 +1842,6 @@ model PushSubscription {
   @@index([userId])
 }
 
-// ---------------------------------------------------------------------------
-// Raffles / Competitions (M5)
-// ---------------------------------------------------------------------------
-
-model Raffle {
-  id              String  @id @default(cuid())
-  // Human-trackable reference shown alongside the prize (RAxxxxxx).
-  // Assigned at create-time the same way Listings are. Nullable for
-  // back-fill compatibility.
-  referenceNumber String? @unique
-
-  title       String
-  description String
-  // LEGACY single-image URL — kept for back-compat reads. The new
-  // multi-image flow writes to the RaffleImage relation below; the
-  // public detail page reads `images[0]` as the cover.
-  imageUrl    String?
-
-  // Item being raffled. Item is platform-owned by default — sellers can
-  // apply via RaffleSellerApplication, gated by the feature flag.
-  itemSource ItemSource @default(PLATFORM_OWNED)
-
-  // Pricing model — three operator inputs:
-  //   * itemValueCents   = the prize's selling price (what we'd list it at)
-  //   * itemCostCents    = what we paid to acquire the prize
-  //   * ticketPriceCents = per-ticket charge
-  // targetTicketCount is auto-derived on create as
-  //   ceil(itemValueCents / ticketPriceCents) — sell-out exactly covers
-  // the prize price, anything beyond that is operator margin (margin =
-  // itemValueCents - itemCostCents). Stored on the row so all the
-  // downstream code that reads target (progress bar, sold-out trigger,
-  // refund-all) keeps working without per-query division.
-  itemValueCents    Int // selling price of the prize (ZAR cents)
-  itemCostCents     Int @default(0) // what we paid for the prize
-  ticketPriceCents  Int
-  targetTicketCount Int // derived = ceil(itemValueCents / ticketPriceCents)
-
-  // Is the prize a firearm? Keystone flag for the firearm controls: when
-  // true, dispatch is BLOCKED on the bare-courier path (must route via the
-  // dealer-transfer / SAPS-534 workflow) and the winner must supply an
-  // 18+/licence attestation before they can claim. Dropped from an earlier
-  // spec and re-added — see RafflesService.markWinnerPrizeDispatched /
-  // claimPrize for the gates that key off it.
-  prizeIsFirearm Boolean @default(false)
-
-  // EXP-E5 — is the prize an outfitter-sponsored EXPERIENCE (guided hunt /
-  // range day)? Mirrors prizeIsFirearm exactly: the paid-ticket draw / CPA-s36
-  // postal / backup logic reads NEITHER flag, so this slots beside it with zero
-  // draw-logic change. When true, claimPrize enforces an experience attestation
-  // gate (18+, hunting risks, licence-or-supervised, contact + preferred date)
-  // and the prize is FULFILLED on-site (markWinnerExperienceFulfilled) rather
-  // than couriered — markWinnerPrizeDispatched hard-rejects it. A subscriber
-  // raffle never allows it (forced false in create, like prizeIsFirearm).
-  prizeIsExperience Boolean @default(false)
-
-  // Experience prize metadata — snapshot of the sponsored package, mirroring
-  // the Listing experience columns. Null for non-experience raffles.
-  experienceType ExperienceType?
-  eventStartDate DateTime?
-  eventEndDate   DateTime?
-  eventProvince  Province?
-  locationText   String?
-  durationText   String?
-  speciesList    String[]        @default([])
-  whatsIncluded  String?
-  rifleProvided  Boolean         @default(false)
-
-  // Sponsor settlement — the vetted outfitter GG pays out of ticket revenue
-  // after the draw. sponsorUserId is the recipient (bank read on the FNB batch
-  // via a synthetic RELEASED settlement tx); sponsorSettlementCents is the
-  // agreed EFT amount; sponsorSettledAt + sponsorSettlementRef stamp the one-
-  // time settlement (idempotent — settleSponsor refuses if already stamped).
-  sponsorUserId          String?
-  sponsorSettlementCents Int?
-  sponsorSettledAt       DateTime?
-  sponsorSettlementRef   String?
-
-  // Sold counts (cheap to read on the public detail page)
-  ticketsSoldPaid   Int @default(0) // CONFIRMED tickets only
-  ticketsSoldPostal Int @default(0) // POSTAL entries (free)
-
-  // Multiple-choice question gate (CPA Section 36 game-of-skill leg).
-  // Always 4 options; correct answer is ALWAYS C (operator decision —
-  // simpler than tracking per-raffle correct-answer state). Buyers
-  // can't progress to payment until they've answered, and the
-  // backend rejects ticket purchases with answer != 'C'. Frontend
-  // greys out the Pay button until any radio is picked.
-  question String
-  optionA  String
-  optionB  String
-  optionC  String // ALWAYS the correct answer (hardcoded — see RafflesService)
-  optionD  String
-
-  // Timeline. End-time was dropped per operator request — raffles
-  // run until all tickets sell out. Cooling-window draw still applies
-  // (drawAt = ticketsSoldPaid+ticketsSoldPostal hits targetTicketCount + 24h).
-  startTime     DateTime
-  // 24h cooling window between sell-out and drawAt
-  drawAt        DateTime?
-  drawnAt       DateTime?
-  // Claim window depends on tier — see /admin/competitions/create
-  claimDeadline DateTime?
-
-  // Status machine
-  status RaffleStatus @default(DRAFT)
-
-  // Draw verification
-  drawSeed        String? // hex of crypto.randomBytes(32)
-  drawSeedHash    String? // SHA-256 of drawSeed — published before draw if pre-commit used
-  winningTicketId String?
-
-  // Re-raffle lineage
-  parentRaffleId   String?
-  parent           Raffle?  @relation("ReRaffle", fields: [parentRaffleId], references: [id])
-  children         Raffle[] @relation("ReRaffle")
-  relistGeneration Int      @default(0) // 0 = original, 1 = first re-raffle, ...
-
-  createdByAdminId String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  // Phase E3 — Ask GG subscriber raffles. When set, this raffle is
-  // exclusive to subscribers of that tier (e.g. MEMBER raffle is for
-  // Members + Pros, PRO raffle is Pros only — the cron picks based
-  // on User.subscriptionTier).
-  //
-  //   null   → standard public raffle (existing behaviour)
-  //   MEMBER → Ask GG Member raffle: auto-entered free on create,
-  //            48h auto-draw, prize value hidden on public surfaces
-  //   PRO    → Ask GG Pro raffle: same but Pro-only
-  //
-  // itemValueCents + ticketPriceCents are conventionally set to 0
-  // for subscriber raffles (operator sizes prize off-platform as
-  // a % of subscription income). The hidePrizeValue flag is the
-  // belt-and-braces UI guard against accidentally exposing a stale
-  // value if the operator typed one. targetTicketCount is also 0
-  // (auto-entry doesn't have a sell-out trigger; the 48h timer
-  // drives draw scheduling instead).
-  subscriberTierRestriction SubscriptionTier?
-  // If true, every active subscriber of the matching tier gets a
-  // free ticket auto-issued the moment the raffle goes ACTIVE.
-  // Snapshot semantics: only users subscribed at that moment are
-  // entered (later sign-ups don't get in this week).
-  autoEnterSubscribers      Boolean           @default(false)
-  // 48h-after-publish target for the auto-draw cron. Set when the
-  // operator publishes a subscriber raffle. Standard public raffles
-  // use the existing drawAt (sell-out + 24h cooling) instead.
-  subscriberDrawAt          DateTime?
-  // Belt-and-braces: even if a value was typed by mistake, hiding
-  // it client-side keeps the "no fixed value" framing the operator
-  // wants for subscriber raffles. Defaults true when the raffle is
-  // a subscriber raffle.
-  hidePrizeValue            Boolean           @default(false)
-
-  tickets Ticket[]
-  winners RaffleWinner[]
-  events  RaffleAuditEvent[]
-  images  RaffleImage[]
-
-  @@index([status])
-  @@index([drawAt])
-  @@index([subscriberTierRestriction, subscriberDrawAt])
-}
-
-// Multi-image upload for raffles — mirrors ListingImage so the
-// frontend can reuse the same upload + gallery components. First
-// uploaded image becomes the cover (isPrimary). Cascade-deleted with
-// the raffle. Cloudinary handles the actual files (folder: raffles/).
-model RaffleImage {
-  id        String   @id @default(cuid())
-  raffleId  String
-  raffle    Raffle   @relation(fields: [raffleId], references: [id], onDelete: Cascade)
-  url       String
-  publicId  String
-  order     Int      @default(0)
-  isPrimary Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  @@index([raffleId])
-}
-
-model Ticket {
-  id String @id @default(cuid())
-
-  raffleId String
-  raffle   Raffle @relation(fields: [raffleId], references: [id], onDelete: Cascade)
-
-  // Paid tickets have buyerId + transactionId. Postal tickets have postalEntryId.
-  buyerId String?
-  buyer   User?   @relation(fields: [buyerId], references: [id])
-
-  ticketNumber  Int // sequential within a raffle (1, 2, 3, …)
-  referenceCode String @unique // 8-char alphanumeric reference, used on PDFs and postal forms
-
-  status TicketStatus @default(PENDING_PAYMENT)
-
-  // Payment reference (for refund/reconciliation)
-  amountCents     Int       @default(0) // 0 for postal
-  peachCheckoutId String?
-  peachPaymentId  String?
-  paidAt          DateTime?
-  refundedAt      DateTime?
-
-  // Postal-entry tie (set when status = POSTAL)
-  postalEntryId String?
-  postalEntry   PostalEntry? @relation(fields: [postalEntryId], references: [id])
-
-  // ── Zoho Books linkage ────────────────────────────────────────────
-  // When a buyer pays for N tickets in one Peach checkout, ONE Sales
-  // Receipt is created in Books covering the batch. All N tickets in
-  // that batch share the same zohoSalesReceiptId for traceability —
-  // the sync logic dedupes by peachCheckoutId so we don't issue
-  // multiple receipts for the same payment.
-  // Postal tickets (amountCents = 0) skip Books entirely — no money
-  // changed hands.
-  zohoSalesReceiptId    String?
-  zohoSyncStatus        String?
-  zohoSyncError         String?
-  zohoSyncLastAttemptAt DateTime?
-
-  createdAt DateTime @default(now())
-
-  // A raffle can never hold two tickets with the same number. This turns
-  // a concurrent-buy race into a thrown P2002 (retried on max+1) instead
-  // of a silent duplicate that would corrupt the draw pool + audit trail.
-  @@unique([raffleId, ticketNumber])
-  @@index([raffleId, status])
-  @@index([buyerId])
-}
-
-model RaffleWinner {
-  id String @id @default(cuid())
-
-  raffleId String
-  raffle   Raffle @relation(fields: [raffleId], references: [id], onDelete: Cascade)
-
-  // The user who won (or null for postal winner — we contact via the postal entry).
-  userId   String?
-  user     User?   @relation("WinnerUser", fields: [userId], references: [id])
-  ticketId String
-
-  // 1 = primary, 2 = first backup, 3 = second backup
-  position Int
-
-  // Per-tier claim window (snapshot at draw time)
-  claimDeadline DateTime
-  claimedAt     DateTime?
-  // FORFEITED when the claim window lapses without action
-  forfeitedAt   DateTime?
-
-  // Prize dispatch tracking. Set when an admin marks the prize as
-  // dispatched via /admin/competitions/[id]. NULL until dispatched.
-  // Order of events for the primary winner:
-  //   1. position=1 row created on draw     → notify user
-  //   2. user clicks Claim                   → claimedAt set
-  //   3. admin courier-bundles the prize, then marks it dispatched
-  //      via the admin dossier — this stamps all five fields below in
-  //      one shot + sends the buyer their tracking info.
-  // The Command-Center attention queue uses the index to surface
-  // "claimed but not dispatched yet" winners as a TO-DO for admins.
-  prizeDispatchedAt        DateTime?
-  prizeTrackingRef         String? // courier tracking number (Pudo / TCG / other)
-  prizeCarrierLabel        String? // 'Pudo' | 'The Courier Guy' | 'Aramex' | 'Other' (freeform)
-  prizeDispatchedByAdminId String? // AdminUser.id of who marked dispatched
-  prizeDispatchNote        String? // optional admin note (e.g. waybill #, condition)
-
-  // Firearm-prize winner attestation (captured at claim time when
-  // Raffle.prizeIsFirearm). NULL for non-firearm prizes. The dispatch gate
-  // can verify these before a firearm prize is released to a dealer.
-  winnerAttestedAdultAt DateTime? // 18+/rules/dealer-transfer consent confirmed
-  winnerLicenceRef      String? // firearm licence / competency reference supplied
-
-  // EXP-E5 — experience-prize winner claim evidence (captured at claim time
-  // when Raffle.prizeIsExperience). NULL for non-experience prizes. Mirrors the
-  // firearm attestation columns: the winner confirms 18+, accepts hunting
-  // risks, holds a licence/competency OR hunts under supervision, and confirms
-  // contact + a preferred date so the outfitter can schedule the on-site day.
-  winnerExperienceAttestedAt DateTime? // 18+/hunting-risk/licence-or-supervised confirmed
-  winnerContactConfirmedAt   DateTime? // winner confirmed their contact details
-  winnerPreferredDate        DateTime? // preferred date for the guided hunt / range day
-
-  // EXP-E5 — experience-prize fulfilment (the on-site equivalent of dispatch).
-  // Stamped by an admin via markWinnerExperienceFulfilled once the hunt / range
-  // day has been delivered. markWinnerPrizeDispatched (courier) hard-rejects an
-  // experience prize; experienceFulfilledAt is what closes the loop instead and
-  // is added to the expireClaims exclusion so a fulfilled winner is never
-  // force-forfeited.
-  experienceFulfilledAt        DateTime?
-  experienceFulfilledByAdminId String? // AdminUser.id of who marked it fulfilled
-  experienceFulfilmentNote     String? // optional admin note (e.g. hunt outcome)
-
-  createdAt DateTime @default(now())
-
-  @@unique([raffleId, position])
-  @@index([raffleId])
-  // Lets the Command Center attention queue fast-count "claimed but
-  // not dispatched" winners with a single covered index lookup.
-  @@index([prizeDispatchedAt])
-}
-
-model PostalEntry {
-  id String @id @default(cuid())
-
-  raffleId String
-
-  // Reference code on the posted PDF form
-  referenceCode String @unique
-
-  // Free-text postal contact captured by admin from the envelope
-  firstName String
-  lastName  String
-  phone     String?
-  email     String?
-  address   String?
-
-  // Admin who keyed the entry
-  enteredByAdminId String
-  enteredAt        DateTime @default(now())
-
-  tickets Ticket[]
-
-  @@index([raffleId])
-}
-
-model RaffleSellerApplication {
-  id String @id @default(cuid())
-
-  applicantId String
-  applicant   User   @relation(fields: [applicantId], references: [id])
-
-  title          String
-  description    String
-  itemValueCents Int
-  imageUrl       String?
-
-  status    String  @default("PENDING") // PENDING / APPROVED / REJECTED
-  adminNote String?
-
-  reviewedByAdminId String?
-  reviewedAt        DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([status])
-}
-
-model RaffleAuditEvent {
-  id       String @id @default(cuid())
-  raffleId String
-  raffle   Raffle @relation(fields: [raffleId], references: [id], onDelete: Cascade)
-
-  // e.g. CREATED, OPENED, TICKET_SOLD, POSTAL_ENTRY_ADDED, MIN_NOT_MET,
-  // DRAW_RUN, WINNER_CLAIMED, WINNER_FORFEIT, BACKUP_PROMOTED, RELISTED, CANCELLED
-  eventType String
-
-  // Free-form payload — JSON string for forward-compat (Prisma 7 native JSON
-  // varies per adapter; we keep a string to avoid surprises).
-  payloadJson String?
-
-  actorUserId  String?
-  actorAdminId String?
-
-  createdAt DateTime @default(now())
-
-  @@index([raffleId, createdAt])
-  @@index([eventType])
-}
-
 // Single-row settings table for feature flags + global config.
 // Looked up by key. Values are strings (parse as needed).
 // PAYMENT_MODE = 'manual' (FNB EFT) | 'paygate' (Stitch, dormant) lives here.
@@ -2309,9 +1912,9 @@ model StatementUpload {
   @@index([createdAt])
 }
 
-// Atomic counter for per-prefix reference numbers (UM / AU / TS / RA).
-// Used by ListingsService + RafflesService to allocate the next number
-// at create time. Increment is done via Prisma's atomic { increment: 1 }
+// Atomic counter for per-prefix reference numbers (UM / AU / TS).
+// Used by ListingsService to allocate the next number at create time.
+// Increment is done via Prisma's atomic { increment: 1 }
 // inside an upsert so concurrent creates don't collide on the same
 // number. One row per prefix; created on first allocation.
 model ReferenceCounter {

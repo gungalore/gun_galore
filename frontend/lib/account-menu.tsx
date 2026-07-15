@@ -33,9 +33,7 @@ export {
 function isActive(pathname: string | null, href: string): boolean {
   if (!pathname) return false;
   if (pathname === href) return true;
-  // Only match sub-routes for non-/dashboard entries so /dashboard doesn't
-  // light up while on /dashboard/raffle-wins.
-  return href !== '/dashboard' && pathname.startsWith(href + '/');
+  return pathname.startsWith(href + '/');
 }
 
 // ── Shared renderer used by all three surfaces ───────────────────────

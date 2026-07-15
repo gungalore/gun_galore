@@ -13,15 +13,13 @@ import { PrismaService } from '../prisma/prisma.service';
  *     spells out "Sold for R X - R Y (Platform Fee) = R Z Due to you".
  *   - When the seller payout fires, we mark the invoice paid in Books
  *     against the Client Funds Payable liability — closing the loop.
- *   - Raffle ticket purchases create Sales Receipts directly to buyer
- *     (raffles are NOT marketplace — Gun Galore is the actual seller).
  *   - Featured-slot bid wins create invoices to the winning seller.
  *
  * Failure handling:
  *   - Every public method is fire-and-forget from the caller's
  *     perspective. We never block the user-facing flow on a Books API
  *     call — Books going down can't delay payouts or break checkout.
- *   - Each Gun Galore record (Transaction, Ticket, FeaturedSlotBid)
+ *   - Each Gun Galore record (Transaction, FeaturedSlotBid)
  *     has zohoSyncStatus + zohoSyncError + zohoSyncLastAttemptAt
  *     fields. On failure we write FAILED + the error message; the
  *     admin panel shows these + a retry button.
@@ -225,8 +223,7 @@ export class ZohoBooksService {
    *   - Else create a new contact via API and save the returned ID
    *     onto the User record.
    *
-   * Used for both sellers (we invoice them for commission) and
-   * raffle-ticket buyers (we issue them Sales Receipts).
+   * Used for sellers (we invoice them for commission).
    *
    * Idempotent — concurrent calls for the same user are safe; the
    * unique constraint isn't enforced at DB level but the User row
@@ -870,292 +867,6 @@ export class ZohoBooksService {
   }
 
   /**
-   * Sales Receipt for a raffle ticket purchase.
-   *
-   * Raffles are NOT marketplace — Gun Galore IS the seller, the
-   * buyer is the customer. So the Books document is a Sales Receipt
-   * (paid invoice in one step), not the commission invoice flow we
-   * use for marketplace sales.
-   *
-   * Called from RafflesService.confirmTickets() with the list of
-   * Ticket.id values that were just confirmed in one batch (one
-   * Peach payment = one receipt covering N tickets).
-   *
-   * Idempotent — if ANY of the tickets in the batch already has a
-   * zohoSalesReceiptId we treat the batch as done (the batch was
-   * synced previously) and no-op.
-   *
-   * Never throws — failures persist as zohoSyncStatus=FAILED on
-   * each ticket so admin can retry from the dossier.
-   */
-  async createRaffleTicketSalesReceipt(
-    ticketIds: string[],
-  ): Promise<void> {
-    if (!this.isEnabled() || ticketIds.length === 0) return;
-
-    const tickets = await this.prisma.ticket.findMany({
-      where: { id: { in: ticketIds } },
-      include: {
-        buyer: { select: { id: true, email: true, username: true, firstName: true, lastName: true } },
-        raffle: { select: { id: true, title: true, referenceNumber: true } },
-      },
-    });
-    if (tickets.length === 0) return;
-
-    // Idempotency — if any ticket already has a receipt ID, the
-    // batch has already been synced. No-op.
-    if (tickets.some((t) => t.zohoSalesReceiptId)) return;
-
-    // Postal tickets (amountCents = 0) skip Books — no money changed
-    // hands, no accounting entry needed.
-    const paidTickets = tickets.filter((t) => t.amountCents > 0);
-    if (paidTickets.length === 0) return;
-
-    // Sanity — all tickets in the batch should share the same buyer
-    // and raffle (set by confirmTickets() — one peachPaymentId batch
-    // = one buyer + one raffle).
-    const buyer = paidTickets[0].buyer;
-    const raffle = paidTickets[0].raffle;
-    if (!buyer || !raffle) return;
-    const totalCents = paidTickets.reduce((s, t) => s + t.amountCents, 0);
-    const totalRand = totalCents / 100;
-    const unitRand = paidTickets[0].amountCents / 100;
-    const raffleRef = raffle.referenceNumber ?? raffle.id.slice(-8).toUpperCase();
-
-    try {
-      const contactId = await this.ensureContact(buyer.id, buyer.email);
-      if (!contactId) {
-        throw new Error('Could not resolve Books contact for buyer');
-      }
-      const raffleAccountId = await this.getAccountIdByName(
-        'Raffle Ticket Revenue',
-      );
-      if (!raffleAccountId) {
-        throw new Error(
-          'Raffle Ticket Revenue account not found in Books chart-of-accounts',
-        );
-      }
-      // P1.3 — manual-EFT money lands straight in FNB, so the bank
-      // account comes FIRST; "Peach Pending" stays only as a fallback
-      // for CoAs that predate the manual rail.
-      const depositAccountId =
-        (await this.getAccountIdByName('Bank — FNB Business')) ??
-        (await this.getAccountIdByName('Bank — Peach Pending'));
-      if (!depositAccountId) {
-        throw new Error(
-          'No deposit account found in Books (need "Bank — Peach Pending" or "Bank — FNB Business")',
-        );
-      }
-
-      const today = new Date().toISOString().slice(0, 10);
-      const reference = `Raffle ticket purchase — ${raffleRef} (${paidTickets.length} ${paidTickets.length === 1 ? 'ticket' : 'tickets'})`;
-
-      type CreateSalesReceiptResp = {
-        salesreceipt?: { salesreceipt_id?: string; salesreceipt_number?: string };
-        message?: string;
-      };
-      const payload = {
-        customer_id: contactId,
-        reference_number: reference,
-        date: today,
-        line_items: [
-          {
-            name: 'Raffle Ticket',
-            description: `${raffleRef} — ${raffle.title} (x${paidTickets.length})`,
-            rate: unitRand,
-            quantity: paidTickets.length,
-            account_id: raffleAccountId,
-          },
-        ],
-        // Sales Receipts are paid-at-issue — deposit_to is the
-        // account that holds the cash.
-        payment_mode: 'Other',
-        deposit_to_account_id: depositAccountId,
-        notes: `${reference}.\nTotal: R${totalRand.toFixed(2)} (${paidTickets.length} x R${unitRand.toFixed(2)})`,
-      };
-
-      const resp = await this.request<CreateSalesReceiptResp>(
-        'POST',
-        '/salesreceipts',
-        payload,
-      );
-
-      const receiptId = resp.salesreceipt?.salesreceipt_id;
-      if (!receiptId) {
-        throw new Error(
-          `Books sales-receipt create returned no salesreceipt_id: ${resp.message ?? 'unknown'}`,
-        );
-      }
-
-      // Stamp the receipt ID on every ticket in the batch so we
-      // can look up the receipt from any one of them.
-      await this.prisma.ticket.updateMany({
-        where: { id: { in: paidTickets.map((t) => t.id) } },
-        data: {
-          zohoSalesReceiptId: receiptId,
-          zohoSyncStatus: 'OK',
-          zohoSyncError: null,
-          zohoSyncLastAttemptAt: new Date(),
-        },
-      });
-      this.logger.log(
-        `Created raffle sales receipt ${resp.salesreceipt?.salesreceipt_number ?? receiptId} (R${totalRand.toFixed(2)}, ${paidTickets.length} tickets, raffle ${raffleRef})`,
-      );
-    } catch (err) {
-      await this.markRaffleTicketsFailed(
-        paidTickets.map((t) => t.id),
-        err as Error,
-      );
-    }
-  }
-
-  /**
-   * FLOW-F7 — Credit Note reversing a raffle ticket Sales Receipt when the
-   * operator cancels a raffle and refunds buyers. Since a Sales Receipt
-   * (not an Invoice) was issued at confirm time, the correct Books
-   * instrument is a standalone credit note / refund-receipt — do NOT
-   * attempt apply-to-invoice.
-   *
-   * Called fire-and-forget from RafflesService.refundAllAndCancel with the
-   * ticket ids being refunded (settled on paygate, or owed by EFT on the
-   * manual rail — either way the revenue must be reversed in Books).
-   *
-   * Idempotent — a ticket already stamped zohoSyncStatus='REVERSED' is
-   * skipped. No-ops if the feature flag is off or the batch never got a
-   * Sales Receipt (e.g. postal-only / unsynced). Never throws.
-   */
-  async createRaffleTicketRefundCreditNote(
-    ticketIds: string[],
-  ): Promise<void> {
-    if (!this.isEnabled() || ticketIds.length === 0) return;
-
-    const tickets = await this.prisma.ticket.findMany({
-      where: { id: { in: ticketIds } },
-      include: {
-        buyer: { select: { id: true, email: true } },
-        raffle: { select: { id: true, title: true, referenceNumber: true } },
-      },
-    });
-    if (tickets.length === 0) return;
-
-    // Only reverse tickets that were actually booked to revenue and not
-    // already reversed. Postal tickets (amountCents = 0) never hit Books.
-    const toReverse = tickets.filter(
-      (t) =>
-        t.amountCents > 0 &&
-        t.zohoSalesReceiptId &&
-        t.zohoSyncStatus !== 'REVERSED',
-    );
-    if (toReverse.length === 0) return;
-
-    const raffle = toReverse[0].raffle;
-    if (!raffle) return;
-    const raffleRef =
-      raffle.referenceNumber ?? raffle.id.slice(-8).toUpperCase();
-
-    // A raffle can have MANY buyers. A single credit note against buyer[0]
-    // with everyone's totals both mis-attributes the reversal in Books AND —
-    // because the REVERSED stamp is shared — permanently skips buyers 2..N.
-    // Group by buyer and post ONE credit note per buyer against THEIR contact,
-    // stamping only their ticket ids on success so a re-run reprocesses any
-    // un-reversed buyer.
-    const byBuyer = new Map<string, typeof toReverse>();
-    for (const t of toReverse) {
-      if (!t.buyer) continue; // no contact to bill against — skip defensively
-      const list = byBuyer.get(t.buyer.id);
-      if (list) list.push(t);
-      else byBuyer.set(t.buyer.id, [t]);
-    }
-    if (byBuyer.size === 0) return;
-
-    const raffleAccountId = await this.getAccountIdByName(
-      'Raffle Ticket Revenue',
-    );
-    if (!raffleAccountId) {
-      // Whole batch fails for the same structural reason — mark all FAILED so
-      // a re-run retries once the account exists.
-      await this.markRaffleTicketsFailed(
-        toReverse.map((t) => t.id),
-        new Error(
-          'Raffle Ticket Revenue account not found in Books chart-of-accounts',
-        ),
-      );
-      return;
-    }
-
-    const today = new Date().toISOString().slice(0, 10);
-    type CreateCreditNoteResp = {
-      creditnote?: { creditnote_id?: string; creditnote_number?: string };
-      message?: string;
-    };
-
-    for (const [buyerId, buyerTickets] of byBuyer) {
-      const buyer = buyerTickets[0].buyer!;
-      const count = buyerTickets.length;
-      const totalCents = buyerTickets.reduce((s, t) => s + t.amountCents, 0);
-      const totalRand = totalCents / 100;
-      const unitRand = buyerTickets[0].amountCents / 100;
-      const reference = `Raffle refund — ${raffleRef} (${count} ${count === 1 ? 'ticket' : 'tickets'})`;
-
-      try {
-        const contactId = await this.ensureContact(buyerId, buyer.email);
-        if (!contactId) {
-          throw new Error('Could not resolve Books contact for buyer');
-        }
-
-        const payload = {
-          customer_id: contactId,
-          reference_number: reference,
-          date: today,
-          line_items: [
-            {
-              name: 'Raffle Ticket — refund',
-              description: `${raffleRef} — ${raffle.title} (x${count})`,
-              rate: unitRand,
-              quantity: count,
-              account_id: raffleAccountId,
-            },
-          ],
-          notes: `${reference}.\nRaffle cancelled by admin — reversing R${totalRand.toFixed(2)} of ticket revenue.`,
-        };
-
-        const resp = await this.request<CreateCreditNoteResp>(
-          'POST',
-          '/creditnotes',
-          payload,
-        );
-
-        const creditNoteId = resp.creditnote?.creditnote_id;
-        if (!creditNoteId) {
-          throw new Error(
-            `Books credit-note create returned no creditnote_id: ${resp.message ?? 'unknown'}`,
-          );
-        }
-
-        // Stamp ONLY this buyer's tickets REVERSED on success.
-        await this.prisma.ticket.updateMany({
-          where: { id: { in: buyerTickets.map((t) => t.id) } },
-          data: {
-            zohoSyncStatus: 'REVERSED',
-            zohoSyncError: null,
-            zohoSyncLastAttemptAt: new Date(),
-          },
-        });
-        this.logger.log(
-          `Created raffle refund credit note ${resp.creditnote?.creditnote_number ?? creditNoteId} (R${totalRand.toFixed(2)}, ${count} tickets, buyer ${buyerId}, raffle ${raffleRef})`,
-        );
-      } catch (err) {
-        // Mark only THIS buyer's ids FAILED — the others still post / stay
-        // eligible for a re-run.
-        await this.markRaffleTicketsFailed(
-          buyerTickets.map((t) => t.id),
-          err as Error,
-        );
-      }
-    }
-  }
-
-  /**
    * P1.1 — Sales Receipt for a paid subscription period (manual EFT).
    * Fired by SubscriptionsService.confirmPayment. Idempotent via
    * SubscriptionCharge.zohoReceiptId. Never throws.
@@ -1426,30 +1137,6 @@ export class ZohoBooksService {
     }
   }
 
-  private async markRaffleTicketsFailed(
-    ticketIds: string[],
-    err: Error,
-  ): Promise<void> {
-    const message = err.message.slice(0, 1000);
-    this.logger.error(
-      `Zoho Books raffle sync FAILED for tickets [${ticketIds.length}]: ${message}`,
-    );
-    try {
-      await this.prisma.ticket.updateMany({
-        where: { id: { in: ticketIds } },
-        data: {
-          zohoSyncStatus: 'FAILED',
-          zohoSyncError: message,
-          zohoSyncLastAttemptAt: new Date(),
-        },
-      });
-    } catch (writeErr) {
-      this.logger.error(
-        `Could not write FAILED status to tickets: ${(writeErr as Error).message}`,
-      );
-    }
-  }
-
   /**
    * Invoice for a featured-slot fee.
    *
@@ -1515,9 +1202,8 @@ export class ZohoBooksService {
 
       // Featured-slot fees are paid at the moment the bid commits
       // (the seller's card was already charged by Peach). So we use
-      // a Sales Receipt (paid-at-issue) — same pattern as raffle
-      // tickets, not the marketplace commission-invoice + mark-paid
-      // two-step.
+      // a Sales Receipt (paid-at-issue), not the marketplace
+      // commission-invoice + mark-paid two-step.
       type CreateSalesReceiptResp = {
         salesreceipt?: { salesreceipt_id?: string; salesreceipt_number?: string };
         message?: string;

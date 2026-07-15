@@ -35,7 +35,6 @@ import {
   type AskGgKbHit,
 } from '@/lib/use-ask-gg';
 import { useAskGgChat } from '@/lib/use-ask-gg-widget';
-import { SubscriberRaffleWidget } from '@/components/subscriber-raffle-widget';
 import { LoadLabPanel } from './load-lab/LoadLabPanel';
 import {
   IconSparkles,
@@ -436,15 +435,6 @@ export default function AskGgPage() {
 
           {mode === 'chat' && (
             <>
-          {/* Phase E3 — subscriber raffle widget. Sits above the
-              messages scroll so subscribers see their auto-entered
-              raffle on every visit. FREE users see an upsell card
-              here; non-signed-in users see nothing (handled inside
-              the widget). */}
-          <div style={{ padding: '4px 0 0' }}>
-            <SubscriberRaffleWidget />
-          </div>
-
           {/* Messages scroll. flex: 1 → fills the space between
               header + composer. */}
           <ChatThread
@@ -783,15 +773,11 @@ function TierPerksTable({
     },
     {
       label: 'Username badge',
-      perk: { free: '—', member: 'GG+ pill', pro: 'Verified-expert' },
+      perk: { free: '—', member: 'GG+ pill', pro: 'GG+ PRO pill' },
     },
     {
       label: 'Featured-listing bid discount',
       perk: { free: '—', member: '25% off', pro: '50% off' },
-    },
-    {
-      label: 'Weekly Ask GG raffle entry',
-      perk: { free: '—', member: 'Member raffle', pro: 'Pro raffle' },
     },
   ];
 

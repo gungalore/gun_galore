@@ -281,7 +281,7 @@ export default function SignUpForm() {
           className="text-sm mb-6"
           style={{ color: 'var(--text-tertiary)' }}
         >
-          South Africa&apos;s firearms marketplace — sign up to buy, sell, or enter competitions.
+          South Africa&apos;s firearms marketplace — sign up to buy or sell.
         </p>
 
         {/* Google SSO */}
@@ -443,7 +443,7 @@ export default function SignUpForm() {
               className="text-xs mt-1"
               style={{ color: 'var(--text-tertiary)' }}
             >
-              Shown publicly on listings and competition entries. Lowercase letters, numbers, and underscores.
+              Shown publicly on your listings. Lowercase letters, numbers, and underscores.
             </p>
           </div>
 

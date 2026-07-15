@@ -61,9 +61,9 @@ export function AskGgSignedOut() {
         </p>
       </div>
       <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-        Instant answers about buying, selling, fees, shipping, firearms rules
-        and competitions — try a question below. Sign in to chat with Ask GG
-        about anything outdoors: gear advice, reloading data, live stock and
+        Instant answers about buying, selling, fees, shipping and firearms
+        rules — try a question below. Sign in to chat with Ask GG about
+        anything outdoors: gear advice, reloading data, live stock and
         your own orders.
       </p>
 

@@ -560,7 +560,7 @@ export class ManualPaymentsService {
   // operator doesn't have to trawl individual dossiers. Retry stays on
   // the per-transaction admin surface (ZB-10); this is the radar.
   async getZohoFailedSyncs() {
-    const [transactions, raffleTickets, featuredBids, subscriptionCharges, swaps] =
+    const [transactions, featuredBids, subscriptionCharges, swaps] =
       await Promise.all([
         this.prisma.transaction.findMany({
           where: { zohoSyncStatus: 'FAILED' },
@@ -569,16 +569,6 @@ export class ManualPaymentsService {
           select: {
             id: true,
             orderReference: true,
-            zohoSyncError: true,
-            zohoSyncLastAttemptAt: true,
-          },
-        }),
-        this.prisma.ticket.findMany({
-          where: { zohoSyncStatus: 'FAILED' },
-          orderBy: { zohoSyncLastAttemptAt: 'desc' },
-          take: 50,
-          select: {
-            id: true,
             zohoSyncError: true,
             zohoSyncLastAttemptAt: true,
           },
@@ -639,13 +629,11 @@ export class ManualPaymentsService {
       ]);
     return {
       transactions,
-      raffleTickets,
       featuredBids,
       subscriptionCharges,
       swaps,
       totalFailed:
         transactions.length +
-        raffleTickets.length +
         featuredBids.length +
         subscriptionCharges.length +
         swaps.length,

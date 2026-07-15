@@ -8,7 +8,6 @@
 //   * /?listingType=BUY_NOW             (Marketplace)
 //   * /?listingType=AUCTION             (Auctions)
 //   * /?listingType=TAKE_A_SHOT         (Take a Shot)
-//   * /competitions                     (Competitions)
 //
 // Mirrors the existing FeaturedRail data source (GET /api/featured/rail)
 // but renders ~30% smaller cards in a horizontally-auto-scrolling strip
@@ -82,7 +81,6 @@ function listingHeadline(l: NonNullable<RailSlot['currentListing']>): string {
 // variant since they all live on the same route).
 function shouldShow(pathname: string): boolean {
   if (pathname === '/') return true;
-  if (pathname === '/competitions') return true;
   return false;
 }
 

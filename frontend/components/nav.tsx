@@ -93,7 +93,6 @@ export function Nav() {
     { href: '/?listingType=AUCTION', label: 'Auctions' },
     { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
     { href: '/?listingType=SWOP', label: 'Swop / Trade' },
-    { href: '/competitions', label: 'Competitions' },
     { href: '/wanted', label: 'Wanted' },
   ];
 
@@ -402,9 +401,9 @@ export function Nav() {
         </div>
 
         {/* Second tier — selling-mode links + Ask GG. Desktop only; keeps
-            the four selling modes + Competitions fully visible on their own
-            slim strip instead of crushing the search on the top row. Mobile
-            reaches these via the hamburger drawer's Shop / Assistant sections. */}
+            the selling modes fully visible on their own slim strip instead
+            of crushing the search on the top row. Mobile reaches these via
+            the hamburger drawer's Shop / Assistant sections. */}
         <div
           className="hidden md:block"
           style={{ borderTop: '0.5px solid var(--border)' }}

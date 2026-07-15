@@ -61,32 +61,6 @@ const FLAGS: SettingFlag[] = [
     default: '20000',
   },
 
-  // ─── Raffles ──────────────────────────────────────────────────
-  {
-    key: 'raffle_seller_applications_enabled',
-    label: 'Raffle seller applications enabled',
-    hint: 'When true, sellers can submit raffle prize applications from /sell. Default off until the application flow is built.',
-    group: 'Raffles',
-    type: 'boolean',
-    default: 'false',
-  },
-  {
-    key: 'raffle_po_box_address',
-    label: 'Raffle PO Box address',
-    hint: 'Free-entry postal address shown on every competition\'s free-entry PDF. CPA Section 36 requires this.',
-    group: 'Raffles',
-    type: 'text',
-    default: '',
-  },
-  {
-    key: 'raffle_max_relists',
-    label: 'Raffle max relists',
-    hint: 'How many times a raffle prize can be re-listed after a previous draw was cancelled. Default 5.',
-    group: 'Raffles',
-    type: 'number',
-    default: '5',
-  },
-
   // ─── Shipping ─────────────────────────────────────────────────
   {
     key: 'dg_lithium_wh_threshold',

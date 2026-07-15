@@ -13,9 +13,9 @@
 //
 // Five tabs — Sell sits dead-centre (position 3) so the raised FAB
 // styling reads symmetric:
-//   1. Shop     → opens a bottom sheet with 5 shopping surfaces:
+//   1. Shop     → opens a bottom sheet with the shopping surfaces:
 //                 All listings / Marketplace / Auctions / Take a Shot /
-//                 Competitions.
+//                 Swop / Wanted.
 //   2. Alerts   → routes to /notifications. Bell icon. When there are
 //                 unresolved notifications, shows a red active-count
 //                 badge in the top-right corner of the bell.
@@ -134,19 +134,6 @@ function IconTarget() {
       <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.6" />
       <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.6" />
       <circle cx="12" cy="12" r="1.4" fill="currentColor" />
-    </svg>
-  );
-}
-function IconTrophy() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M7 4h10v4a5 5 0 0 1-10 0V4zM7 6H5a2 2 0 0 0 2 2m10-2h2a2 2 0 0 1-2 2M10 16h4l1 4H9l1-4z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
     </svg>
   );
 }
@@ -340,10 +327,9 @@ export function BottomTabBar() {
   // still applies regardless so the layout is consistent.
   if (!isStandalone) return null;
 
-  // "Shop" tab is active on any of the 4 shopping surfaces + the
-  // competitions route (i.e. anywhere the picker would point to).
-  const isShopSurface =
-    pathname === '/' || pathname.startsWith('/competitions');
+  // "Shop" tab is active on the shopping surfaces (i.e. anywhere the
+  // picker would point to).
+  const isShopSurface = pathname === '/';
 
   const tabs: Tab[] = [
     {
@@ -709,14 +695,6 @@ function ShopSheet({
         pathname === '/' && searchParams.get('listingType') === 'SWOP',
     },
     {
-      key: 'competitions',
-      href: '/competitions',
-      title: 'Competitions',
-      tagline: 'Win prizes via raffle tickets — paid or free postal entry',
-      icon: <IconTrophy />,
-      isActive: pathname.startsWith('/competitions'),
-    },
-    {
       key: 'wanted',
       href: '/wanted',
       title: 'Wanted',
@@ -883,7 +861,7 @@ function ShopSheet({
 //   3. My account section — Dashboard, Profile, all /my/* destinations.
 //      Folded into the sheet because the "My" tab was replaced by
 //      Wishlist; the My destinations still need a permanent home.
-//   4. Shop section — secondary shop surfaces (Take a Shot, Competitions).
+//   4. Shop section — secondary shop surfaces (Take a Shot, Wanted).
 //      Wishlist is intentionally NOT here because it's a primary tab.
 //   5. Legal section — terms / privacy / refund / legal index.
 //   6. Sign out (signed-in only) — destructive-styled button below.
@@ -920,7 +898,6 @@ function MoreSheet({
   const shopLinks = [
     { href: '/wishlist', label: 'Wishlist' },
     { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
-    { href: '/competitions', label: 'Competitions' },
     { href: '/wanted', label: 'Wanted' },
   ];
   // Account destinations now come from the shared ACCOUNT_GROUPS (rendered via
@@ -1101,7 +1078,7 @@ function MoreSheet({
 
         {isSignedIn && (
           <div style={{ marginTop: 8 }}>
-            {/* Grouped account list (Buying / Selling / Competitions / Account)
+            {/* Grouped account list (Buying / Selling / Account)
                 from the shared source of truth — same on every surface. */}
             <AccountMenuList
               pathname={pathname}

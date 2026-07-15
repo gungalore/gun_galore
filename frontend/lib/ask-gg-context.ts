@@ -17,7 +17,6 @@ export type AskGgPageKind =
   | 'orders'
   | 'transaction'
   | 'cart'
-  | 'competitions'
   | 'wanted'
   | 'wishlist'
   | 'subscribe'
@@ -69,7 +68,6 @@ export function derivePageContext(pathname: string | null): {
     return { kind: 'earnings', ctx };
   }
   if (seg[0] === 'cart' || seg[0] === 'checkout') return { kind: 'cart', ctx };
-  if (seg[0] === 'competitions') return { kind: 'competitions', ctx };
   if (seg[0] === 'wanted') return { kind: 'wanted', ctx };
   if (seg[0] === 'wishlist') return { kind: 'wishlist', ctx };
   if (seg[0] === 'subscribe') return { kind: 'subscribe', ctx };
@@ -183,20 +181,6 @@ export const CONTEXTUAL_STARTER_PROMPTS: Partial<
     {
       title: 'Show me good options',
       prompt: 'What are some good options for sale in this category right now?',
-    },
-  ],
-  competitions: [
-    {
-      title: 'How do raffles work?',
-      prompt: 'How do the raffles and competitions on Gun Galore work?',
-    },
-    {
-      title: 'Free entry route?',
-      prompt: 'Is there a free way to enter the competitions?',
-    },
-    {
-      title: 'How are winners drawn?',
-      prompt: 'How are competition winners drawn and verified?',
     },
   ],
 };
