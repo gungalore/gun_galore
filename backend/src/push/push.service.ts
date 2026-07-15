@@ -168,50 +168,86 @@ export class PushService implements OnModuleInit {
         category: { has: category },
       },
     });
-    if (subs.length === 0) return 0;
+    return this._deliver(subs, payload);
+  }
 
+  /** DD-4 — fan a push out to EVERY device opted-in for the given category,
+   * across all users (used for Daily Deal drop announcements). Same per-sub
+   * error handling + 410-prune as sendToUser. VAPID-degrades to a no-op.
+   * Chunked so a large audience doesn't fire thousands of concurrent
+   * requests at the push gateways at once. Returns the successful-send count.
+   */
+  async broadcast(
+    category: NotificationCategory,
+    payload: { title: string; body: string; url?: string; tag?: string },
+  ): Promise<number> {
+    if (!this.vapidConfigured) return 0;
+    const subs = await this.prisma.pushSubscription.findMany({
+      where: { category: { has: category } },
+    });
+    return this._deliver(subs, payload);
+  }
+
+  /** Shared fan-out for sendToUser + broadcast. Fires web-push per
+   * subscription; a 410/404 prunes the dead row; other errors are logged
+   * and skipped. Batched to bound concurrency. */
+  private async _deliver(
+    subs: {
+      id: string;
+      userId: string;
+      endpoint: string;
+      p256dh: string;
+      auth: string;
+    }[],
+    payload: { title: string; body: string; url?: string; tag?: string },
+  ): Promise<number> {
+    if (subs.length === 0) return 0;
     const json = JSON.stringify(payload);
     let sent = 0;
-    await Promise.all(
-      subs.map(async (sub) => {
-        try {
-          await webpush.sendNotification(
-            {
-              endpoint: sub.endpoint,
-              keys: { p256dh: sub.p256dh, auth: sub.auth },
-            },
-            json,
-            { TTL: 60 * 60 * 24 }, // 24h — drop if undelivered
-          );
-          sent += 1;
-          // Bump lastUsedAt asynchronously — don't block on this.
-          void this.prisma.pushSubscription
-            .update({
-              where: { id: sub.id },
-              data: { lastUsedAt: new Date() },
-            })
-            .catch(() => undefined);
-        } catch (err) {
-          const status = (err as { statusCode?: number })?.statusCode;
-          if (status === 410 || status === 404) {
-            // Endpoint is gone — the browser unsubscribed / PWA was
-            // uninstalled. Drop the row so we don't keep trying.
-            await this.prisma.pushSubscription
-              .delete({ where: { id: sub.id } })
+    const CHUNK = 100;
+    for (let i = 0; i < subs.length; i += CHUNK) {
+      const batch = subs.slice(i, i + CHUNK);
+      await Promise.all(
+        batch.map(async (sub) => {
+          try {
+            await webpush.sendNotification(
+              {
+                endpoint: sub.endpoint,
+                keys: { p256dh: sub.p256dh, auth: sub.auth },
+              },
+              json,
+              { TTL: 60 * 60 * 24 }, // 24h — drop if undelivered
+            );
+            sent += 1;
+            // Bump lastUsedAt asynchronously — don't block on this.
+            void this.prisma.pushSubscription
+              .update({
+                where: { id: sub.id },
+                data: { lastUsedAt: new Date() },
+              })
               .catch(() => undefined);
-            this.logger.debug(
-              `Pruned dead push subscription (${status}) for user ${userId}`,
-            );
-          } else {
-            this.logger.warn(
-              `push to ${sub.endpoint.slice(0, 40)}… failed: ${
-                err instanceof Error ? err.message : String(err)
-              }`,
-            );
+          } catch (err) {
+            const status = (err as { statusCode?: number })?.statusCode;
+            if (status === 410 || status === 404) {
+              // Endpoint is gone — the browser unsubscribed / PWA was
+              // uninstalled. Drop the row so we don't keep trying.
+              await this.prisma.pushSubscription
+                .delete({ where: { id: sub.id } })
+                .catch(() => undefined);
+              this.logger.debug(
+                `Pruned dead push subscription (${status}) for user ${sub.userId}`,
+              );
+            } else {
+              this.logger.warn(
+                `push to ${sub.endpoint.slice(0, 40)}… failed: ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              );
+            }
           }
-        }
-      }),
-    );
+        }),
+      );
+    }
     return sent;
   }
 

@@ -619,6 +619,245 @@ export class DealsService {
     return this.shape(updated);
   }
 
+  // ─── DD-4 — scheduled drop automation (cron-driven) ─────────────────
+  // Called every minute by TasksService. Automates the OneDayOnly lifecycle:
+  //   • auto go-live SCHEDULED deals when their startsAt arrives (gated on
+  //     the dealsEnabled killswitch, so nothing goes live while off),
+  //   • auto-END LIVE deals at endsAt and EXTENDED deals at extendedUntil —
+  //     this is the hard time-gate that closes the DD-3 "buyable past the
+  //     advertised end" gap (the buy path only checks Listing ACTIVE),
+  //   • "Extra Time": a LIVE deal that reaches endsAt with stock left is
+  //     extended once (LIVE → EXTENDED) when deal_extra_time_hours > 0,
+  //   • KILLSWITCH ENFORCEMENT: while dealsEnabled is OFF, end any lingering
+  //     LIVE/EXTENDED deal so the flag is a true killswitch (this supersedes
+  //     the DD-3 operator caution — no more "end deals before flipping off").
+  // These transitions mirror the admin goLive/end/extend cores but write NO
+  // admin-audit event (the actor is the system, not an AdminUser — the Deal's
+  // own liveAt/endedAt/extendedUntil timestamps are the record). Each deal is
+  // isolated in its own try/catch so one bad row can't abort the sweep. Push
+  // announcements are fired by TasksService from the returned `dropped` list.
+  async runScheduledDrops(): Promise<{
+    dropped: { id: string; title: string; dealPriceCents: number; savePct: number }[];
+    ended: number;
+    extended: number;
+  }> {
+    const now = new Date();
+    const dropped: { id: string; title: string; dealPriceCents: number; savePct: number }[] = [];
+    let ended = 0;
+    let extended = 0;
+
+    const enabled = await this.settings.get(FLAGS.dealsEnabled);
+
+    // Killswitch OFF → nothing may be buyable. End every live/extended deal
+    // and go nothing live. (Resolves the DD-3 flag-off-while-live dead-end.)
+    if (!enabled) {
+      const live = await this.prisma.deal.findMany({
+        where: { status: { in: [DealStatus.LIVE, DealStatus.EXTENDED] } },
+        select: { id: true, listingId: true },
+      });
+      for (const d of live) {
+        try {
+          await this._endSystem(d.id, d.listingId);
+          ended += 1;
+        } catch (err) {
+          this.logger.warn(
+            `drop-cron: killswitch end of deal ${d.id} failed: ${(err as Error).message}`,
+          );
+        }
+      }
+      if (ended > 0) {
+        this.logger.log(`drop-cron: killswitch ended ${ended} live deal(s)`);
+      }
+      return { dropped, ended, extended };
+    }
+
+    // 1. Auto go-live: SCHEDULED deals whose start time has arrived.
+    const toGoLive = await this.prisma.deal.findMany({
+      where: { status: DealStatus.SCHEDULED, startsAt: { not: null, lte: now } },
+      select: {
+        id: true,
+        listingId: true,
+        wasPriceCents: true,
+        endsAt: true,
+        listing: {
+          select: {
+            trackInventory: true,
+            quantityAvailable: true,
+            title: true,
+            price: true,
+          },
+        },
+      },
+    });
+    for (const d of toGoLive) {
+      try {
+        const wentLive = await this._goLiveSystem(d);
+        if (!wentLive) continue; // raced (cancelled/sold under us) — don't announce
+        // Don't announce a deal whose whole [startsAt, endsAt] window already
+        // elapsed (e.g. the cron missed ticks over a deploy, or a sub-minute
+        // window): it will be auto-ended in the pass below in THIS same run,
+        // so a "New Daily Deal" push would deep-link to a dead/ended PDP.
+        if (d.endsAt && d.endsAt <= now) continue;
+        const dealPriceCents = d.listing.price ?? 0;
+        const savePct =
+          d.wasPriceCents > 0
+            ? Math.round(((d.wasPriceCents - dealPriceCents) / d.wasPriceCents) * 100)
+            : 0;
+        dropped.push({ id: d.id, title: d.listing.title, dealPriceCents, savePct });
+      } catch (err) {
+        this.logger.warn(
+          `drop-cron: go-live of deal ${d.id} failed: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // 2. Auto-end / Extra Time.
+    const extraHours = await this.settings.get(FLAGS.dealExtraTimeHours);
+    // 2a. LIVE deals past their scheduled end.
+    const liveExpired = await this.prisma.deal.findMany({
+      where: { status: DealStatus.LIVE, endsAt: { not: null, lte: now } },
+      select: {
+        id: true,
+        listingId: true,
+        listing: {
+          select: { status: true, trackInventory: true, quantityAvailable: true },
+        },
+      },
+    });
+    for (const d of liveExpired) {
+      try {
+        const listingActive = d.listing.status === ListingStatus.ACTIVE;
+        const hasStock = d.listing.trackInventory
+          ? d.listing.quantityAvailable > 0
+          : listingActive; // single-item: still ACTIVE = still available
+        if (extraHours > 0 && listingActive && hasStock) {
+          // Extra Time — extend ONCE into a bounded EXTENDED window.
+          const extendedUntil = new Date(now.getTime() + extraHours * 3600_000);
+          await this._extraTimeSystem(d.id, d.listingId, extendedUntil);
+          extended += 1;
+        } else {
+          await this._endSystem(d.id, d.listingId);
+          ended += 1;
+        }
+      } catch (err) {
+        this.logger.warn(
+          `drop-cron: end/extend of deal ${d.id} failed: ${(err as Error).message}`,
+        );
+      }
+    }
+    // 2b. EXTENDED deals (Extra Time or admin-extended) past extendedUntil.
+    const extendedExpired = await this.prisma.deal.findMany({
+      where: { status: DealStatus.EXTENDED, extendedUntil: { not: null, lte: now } },
+      select: { id: true, listingId: true },
+    });
+    for (const d of extendedExpired) {
+      try {
+        await this._endSystem(d.id, d.listingId);
+        ended += 1;
+      } catch (err) {
+        this.logger.warn(
+          `drop-cron: end of extended deal ${d.id} failed: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    if (dropped.length || ended || extended) {
+      this.logger.log(
+        `drop-cron: ${dropped.length} went live, ${ended} ended, ${extended} extended`,
+      );
+    }
+    return { dropped, ended, extended };
+  }
+
+  // System go-live core — mirrors goLive()'s $transaction but is actor-less
+  // (no admin-audit). Flips the listing DRAFT→ACTIVE (still isDealListing, so
+  // still off every public discovery surface) and the Deal→LIVE, re-snapshot-
+  // ing the go-live stock baseline exactly as the admin path does.
+  private async _goLiveSystem(deal: {
+    id: string;
+    listingId: string;
+    listing: { trackInventory: boolean; quantityAvailable: number };
+  }): Promise<boolean> {
+    const initialStock = deal.listing.trackInventory
+      ? deal.listing.quantityAvailable
+      : 1;
+    // COMPARE-AND-SET (mirrors the guarded _endSystem / _extraTimeSystem):
+    // only take a deal live from its exact expected state — a SCHEDULED deal
+    // whose listing is still DRAFT. If either moved on under us between the
+    // batch read and this write — a racing admin cancel() (→CANCELLED), or an
+    // overlapping cron pass that already sold/ended it — the updateMany matches
+    // nothing and we ABORT without blind-writing a CANCELLED/SOLD listing back
+    // to ACTIVE. (The admin goLive() is shielded by requireStatus + being
+    // human-paced; the cron replaces that shield with this CAS.) Returns
+    // whether the deal actually went live, so the caller only pushes real drops.
+    return this.prisma
+      .$transaction(async (tx) => {
+        const listingRes = await tx.listing.updateMany({
+          where: { id: deal.listingId, status: ListingStatus.DRAFT },
+          data: {
+            status: ListingStatus.ACTIVE,
+            isDealListing: true,
+            listedAt: new Date(),
+          },
+        });
+        if (listingRes.count === 0) return false; // listing no longer DRAFT
+        const dealRes = await tx.deal.updateMany({
+          where: { id: deal.id, status: DealStatus.SCHEDULED },
+          data: { status: DealStatus.LIVE, liveAt: new Date(), initialStock },
+        });
+        if (dealRes.count === 0) {
+          // Deal moved on after the listing flip — roll the whole tx back.
+          throw new Error('deal no longer SCHEDULED at go-live');
+        }
+        return true;
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `drop-cron: go-live CAS for deal ${deal.id} aborted: ${(err as Error).message}`,
+        );
+        return false;
+      });
+  }
+
+  // System end core — mirrors end()'s $transaction. Flips the listing to
+  // EXPIRED (never resurrecting a SOLD/CANCELLED one) so the checkout ACTIVE-
+  // gate rejects new purchases, and the Deal→ENDED.
+  private async _endSystem(dealId: string, listingId: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.listing.updateMany({
+        where: {
+          id: listingId,
+          status: { notIn: [ListingStatus.SOLD, ListingStatus.CANCELLED] },
+        },
+        data: { status: ListingStatus.EXPIRED },
+      });
+      await tx.deal.update({
+        where: { id: dealId },
+        data: { status: DealStatus.ENDED, endedAt: new Date() },
+      });
+    });
+  }
+
+  // System Extra-Time core — mirrors extend()'s $transaction. From LIVE the
+  // listing is already ACTIVE (the EXPIRED→ACTIVE updateMany is a no-op); the
+  // Deal→EXTENDED with the bounded extendedUntil.
+  private async _extraTimeSystem(
+    dealId: string,
+    listingId: string,
+    extendedUntil: Date,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.listing.updateMany({
+        where: { id: listingId, status: ListingStatus.EXPIRED },
+        data: { status: ListingStatus.ACTIVE },
+      });
+      await tx.deal.update({
+        where: { id: dealId },
+        data: { status: DealStatus.EXTENDED, extendedUntil },
+      });
+    });
+  }
+
   // Duplicate a deal into a fresh DRAFT ("run it again"). Copies the
   // product + deal fields; photos are NOT copied (admin re-uploads) so two
   // deals never share a Cloudinary asset that a delete on one would

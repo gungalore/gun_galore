@@ -23,6 +23,9 @@ import { ManualPaymentsService } from '../manual-payments/manual-payments.servic
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { SavedSearchesService } from '../saved-searches/saved-searches.service';
+import { DealsService } from '../deals/deals.service';
+import { SettingsService, FLAGS } from '../settings/settings.service';
+import { NotificationCategory } from '@prisma/client';
 
 // Threshold-alert dedup window. Once we've fired an alert at any
 // severity for a given service, we won't fire ANOTHER alert at the
@@ -34,6 +37,11 @@ const CREDIT_ALERT_DEDUP_MS = 6 * 60 * 60 * 1000; // 6 hours
 @Injectable()
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
+  // DD-4 — re-entrancy guard: @Cron(EVERY_MINUTE) re-fires on tick even if the
+  // previous invocation is still running, so a >60s sweep could overlap itself.
+  // The go-live transitions are CAS-guarded (idempotent), but this also avoids
+  // redundant work + duplicate drop pushes.
+  private dealDropRunning = false;
 
   constructor(
     private readonly offersService: OffersService,
@@ -55,6 +63,8 @@ export class TasksService {
     private readonly subscriptions: SubscriptionsService,
     private readonly zohoBooks: ZohoBooksService,
     private readonly savedSearches: SavedSearchesService,
+    private readonly deals: DealsService,
+    private readonly settings: SettingsService,
   ) {}
 
   // ─── Manual EFT — inContact inbox scan ───────────────────────────
@@ -716,6 +726,58 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('featured-tick');
+    }
+  }
+
+  // ─── DD-4 — Daily Deals scheduled drops ──────────────────────────
+  // Every minute: auto go-live SCHEDULED deals whose start has arrived,
+  // auto-END deals at their endsAt / extendedUntil (the hard time-gate the
+  // buy path lacks — closes the DD-3 "buyable past the advertised end" gap),
+  // run "Extra Time", and enforce the deals_enabled killswitch. INERT while
+  // there are no scheduled/live deals (the queries return empty → no-op, so
+  // this ships safely with the flag off + zero deals). Each newly-live deal
+  // is announced via web-push to opted-in BUYER devices when
+  // deal_push_enabled. Outer try/catch + recordCronRun('deal-drops') so one
+  // bad deal can't stall the sweep and the health dashboard sees a heartbeat.
+  @Cron(CronExpression.EVERY_MINUTE)
+  async dailyDealDrops() {
+    if (this.dealDropRunning) return; // a previous sweep is still running
+    this.dealDropRunning = true;
+    try {
+      const { dropped } = await this.deals.runScheduledDrops();
+      if (dropped.length === 0) return;
+      const pushOn = await this.settings.get(FLAGS.dealPushEnabled);
+      if (!pushOn) return;
+      for (const d of dropped) {
+        // Match the storefront/PDP whole-rand display for whole-rand deals (the
+        // norm); show cents only when the price actually has cents so the push
+        // never advertises a price BELOW what checkout charges (CPA).
+        const rands = d.dealPriceCents / 100;
+        const price = `R${Number.isInteger(rands) ? rands : rands.toFixed(2)}`;
+        await this.push
+          .broadcast(NotificationCategory.BUYER, {
+            title: '🔥 New Daily Deal',
+            body:
+              d.savePct > 0
+                ? `${d.title} — save ${d.savePct}%, now ${price}`
+                : `${d.title} — now ${price}`,
+            url: `/deals/${d.id}`,
+            tag: `deal-${d.id}`, // dedup: one notification per deal
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `deal-drop push for ${d.id} failed: ${(err as Error).message}`,
+            ),
+          );
+      }
+    } catch (err) {
+      this.logger.error(
+        `dailyDealDrops failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      this.dealDropRunning = false;
+      await this.recordCronRun('deal-drops');
     }
   }
 

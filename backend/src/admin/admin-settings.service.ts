@@ -107,6 +107,14 @@ const FLAGS: SettingFlag[] = [
     type: 'boolean',
     default: 'true',
   },
+  {
+    key: 'deal_extra_time_hours',
+    label: 'Extra Time hours',
+    hint: 'Auto-extend a live deal that reaches its end while stock remains, by this many hours (the "Extra Time" second-chance slot). 0 = off; a deal is extended at most once. Clamped 0–48.',
+    group: 'Deals',
+    type: 'number',
+    default: '0',
+  },
 ];
 
 @Injectable()

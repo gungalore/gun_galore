@@ -165,6 +165,19 @@ export const FLAGS = {
     default: true,
     parse: (s) => s === 'true' || s === '1',
   } as FlagDefinition<boolean>,
+  // DD-4 — "Extra Time": hours to auto-extend a LIVE deal that reaches its
+  // scheduled end while it still has stock (the OneDayOnly evening second-
+  // chance slot). 0 = disabled (the deal just ends at endsAt). A deal is
+  // extended at most ONCE (the EXTENDED window then ends at extendedUntil).
+  dealExtraTimeHours: {
+    key: 'deal_extra_time_hours',
+    default: 0,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      if (!Number.isFinite(n) || n < 0) return 0;
+      return Math.min(48, n);
+    },
+  } as FlagDefinition<number>,
 } as const;
 
 @Injectable()
