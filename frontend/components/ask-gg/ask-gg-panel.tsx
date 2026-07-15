@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useUser } from '@clerk/nextjs';
+import { useUser, useAuth } from '@clerk/nextjs';
 import { useAskGgChat, useAskGgWidget } from '@/lib/use-ask-gg-widget';
 import type { AskGgKbHit } from '@/lib/use-ask-gg';
 import { IconPlus, IconX } from './icons';
@@ -38,6 +38,9 @@ export default function AskGgPanel() {
   const { open, setOpen, takePrefill } = useAskGgWidget();
   const ag = useAskGgChat();
   const { isSignedIn, isLoaded } = useUser();
+  // G4 — the Guide tab uses the authed guide endpoint when signed in, which
+  // adds the personal overlay. getToken is Clerk's stable bearer-token getter.
+  const { getToken } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -339,6 +342,8 @@ export default function AskGgPanel() {
             path={pathname}
             listingId={pageCtx.listingId}
             active={open}
+            signedIn={isSignedIn === true}
+            getToken={getToken}
             onAsk={guideAsk}
             onNavigate={guideNavigate}
           />

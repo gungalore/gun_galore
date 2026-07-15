@@ -68,6 +68,34 @@ const NUDGES: Partial<Record<AskGgPageKind, Omit<AskGgNudge, 'kind'>>> = {
     text: 'Curious how the raffles work, or whether there is a free entry route? Ask me.',
     prefill: 'How do the raffles and competitions work, and is there a free entry route?',
   },
+  wanted: {
+    text: "Can't find it in the listings? I'll help you post a Wanted ad — it's free and sellers come to you.",
+    prefill: 'Help me post a Wanted ad for the item I am looking for.',
+  },
+  wishlist: {
+    text: 'Want me to compare your saved items and help you pick the best buy?',
+    prefill: 'Help me compare the items on my wishlist and decide which is the best buy.',
+  },
+  subscribe: {
+    text: 'Not sure GG+ is worth it? I can compare the tiers against what you actually use.',
+    prefill: 'Compare the GG+ Member and Pro tiers and their perks — which suits me?',
+  },
+  dashboard: {
+    text: 'Want to know exactly what lifts your seller tier and trust score? Ask me.',
+    prefill: 'What do I need to do to reach the next seller tier?',
+  },
+  swaps: {
+    text: 'New to swaps? I can walk you through how a trade completes safely, step by step.',
+    prefill: 'Walk me through how a Swop works from proposal to completion.',
+  },
+  earnings: {
+    text: 'Want me to check whether anything is holding up a payout, and how to clear it?',
+    prefill: 'Is anything blocking my payouts right now, and how do I fix it?',
+  },
+  'saved-searches': {
+    text: "I can set you up to be alerted the moment a matching item is listed. Want to?",
+    prefill: 'How do saved-search alerts work, and how do I set one up?',
+  },
 };
 
 // Per-KIND, per-SESSION — once shown, that kind is quiet until a new session.

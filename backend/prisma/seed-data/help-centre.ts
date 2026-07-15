@@ -438,4 +438,154 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
       'No — one account per person. You must be 18 or older, keep your credentials confidential (never share access), and notify us immediately at support@gungalore.co.za of any unauthorised use. You are responsible for all activity on your account, including listings, bids, offers and payments. You can close your account at any time; the [Terms](/terms) carry the full rules.',
     tags: ['account', 'rules', 'terms'],
   },
+
+  // ── Discovery features (G4 gap-fill) ────────────────────────────────
+  {
+    sourceKey: 'wanted-how-it-works',
+    title: 'How do Wanted ads work?',
+    question: "How do I post that I'm looking for something, and what happens?",
+    answer:
+      "Can't find what you want? Post a Wanted ad describing it — make, model, condition, budget — and sellers who have a match come to you. It's completely free to post: no upfront fees to advertise. A seller responds by linking one of their own active listings; you then buy it through the normal protected checkout, with your payment held until you receive the item. Only usernames are shared, so your deal stays on-platform. Post one at [Wanted](/wanted/new).",
+    tags: ['wanted', 'buying', 'demand'],
+  },
+  {
+    sourceKey: 'featured-listings',
+    title: 'How do featured listings work?',
+    question: 'How do I get my listing featured, and what does it cost?',
+    answer:
+      'Featured slots put your listing in prime spots (like the homepage) for a set run. You bid for a slot in a tiered auction — the top bid wins the slot for its duration, and there is a minimum bid per slot tier. GG+ members get a discount on featured bids (Pro more than Member). Featured-slot fees are not refundable once the slot has run, so bid what a burst of extra exposure is worth to you. Manage bids at [Featured](/featured/bid).',
+    tags: ['featured', 'selling', 'promotion'],
+  },
+  {
+    sourceKey: 'saved-searches',
+    title: 'How do saved searches work?',
+    question: 'Can I be told when a matching item is listed?',
+    answer:
+      "Yes. Save any search and Gun Galore watches the marketplace for you — when a new listing matches, you get an alert. It's the fastest way to be first on hard-to-find items without checking back every day. You can turn alerts on or off per saved search. Manage them at [Saved searches](/saved-searches). Still nothing? Post a free Wanted ad and let sellers come to you.",
+    tags: ['saved searches', 'alerts', 'buying'],
+  },
+  {
+    sourceKey: 'wishlist',
+    title: 'What does the wishlist do?',
+    question: 'How do I save an item, and will I be told if the price drops?',
+    answer:
+      'Tap the heart on any listing to add it to your wishlist — your shortlist for comparing before you commit. Everything you save sits together at [Wishlist](/wishlist). Prices and availability can change and popular items sell, so a wishlist is a reminder to act rather than a price-lock — grab a good deal before it goes. Want a hand deciding between saved items? Just ask me to compare them.',
+    tags: ['wishlist', 'saved', 'buying'],
+  },
+  {
+    sourceKey: 'notifications-manage',
+    title: 'How do I manage my notifications?',
+    question: 'How do I change or stop the emails and SMSes?',
+    answer:
+      "Your activity feed lives at [Notifications](/notifications) — offers, bids, dispatch and delivery updates, payout news, disputes and competition results. Important events also reach you by SMS and email. You can tune which channels you get in [Settings](/settings). Some messages tied to money or safety (like payment and dispute updates) are always sent so you never miss something that needs you.",
+    tags: ['notifications', 'settings', 'account'],
+  },
+
+  // ── Buyer-side flows (G4 gap-fill) ──────────────────────────────────
+  {
+    sourceKey: 'auction-bidder-guide',
+    title: 'How do I bid, and what happens if I win?',
+    question: 'How does bidding work and what must I do when I win an auction?',
+    answer:
+      "Enter any amount at or above the next minimum — you can bid again any time before the auction ends. Better: set an auto-bid (your maximum) and Gun Galore bids the smallest amount needed to keep you in front, up to your max, so you don't have to watch the clock. A bid in the final moments extends the deadline (no last-second snipes). Your bid is binding. When you win, you pay through normal checkout within the payment window, with your payment held until delivery; firearms complete via a licensed-dealer transfer.",
+    tags: ['auction', 'bidding', 'buying'],
+  },
+  {
+    sourceKey: 'cart-multi-buy',
+    title: 'Can I buy several items in one order?',
+    question: 'How do I buy multiple items at once and combine shipping?',
+    answer:
+      'Yes — you can add several items from the same seller to your cart and check out in one go. Shipping is consolidated per parcel, so the flat R15 handling fee applies per courier parcel rather than per item. A cart is single-seller: to buy from more than one seller you check out with each separately, and your payment is protected on every order. Your cart is at [Cart](/cart).',
+    tags: ['cart', 'buying', 'shipping'],
+  },
+  {
+    sourceKey: 'experiences-booking',
+    title: 'How do hunting packages and experiences work?',
+    question: 'How do I book a guided hunt or range day?',
+    answer:
+      "Experiences — guided hunts, range days and the like — are booked on-site services, not shipped items, so there's no courier. You book and pay, and your payment is held until the experience has been honoured, so you're protected if plans change. Experiences can be sold at a fixed price, by auction, or offered as a raffle prize. Cancellation terms follow the Consumer Protection Act — see the [Experiences cancellation policy](/experiences-cancellation-policy) or ask me before you book.",
+    tags: ['experiences', 'hunting', 'booking'],
+  },
+  {
+    sourceKey: 'raffle-buy-tickets',
+    title: 'How do I buy raffle tickets?',
+    question: 'How do competition tickets work — price, how many, and odds?',
+    answer:
+      "Open a competition at [Competitions](/competitions), choose how many tickets you want and pay through checkout — the ticket price and any per-person cap are shown on the competition. More tickets means more entries in the draw and better odds, up to the cap. There's also a free postal entry route where offered (no purchase necessary). Winners are drawn by a verifiable random method and the draw can be independently checked. Raffle tickets aren't refundable unless the competition is cancelled.",
+    tags: ['raffles', 'competitions', 'tickets'],
+  },
+
+  // ── Operational rules (G4 gap-fill) ─────────────────────────────────
+  {
+    sourceKey: 'firearm-dealer-stock-required',
+    title: 'Why must I add a dealer when listing a firearm?',
+    question: "Why can't I save my firearm listing without dealer details?",
+    answer:
+      'When you list a firearm or barrel you must say where you plan to dealer-stock it — the dealer name, province and area — and it is required before the listing can go live. This is because every firearm sale completes through a licensed-dealer transfer, so buyers need to know where the item will move through. It also applies to older firearm listings, which are asked to fill it in when next edited. You still add the serial and a licence photo too, all verified.',
+    tags: ['firearms', 'selling', 'dealer'],
+  },
+  {
+    sourceKey: 'swap-proof-of-possession',
+    title: 'Why am I asked to photograph my item with a code?',
+    question: 'What is the swap proof-of-possession step?',
+    answer:
+      "Before anything ships in a swap, each side photographs their item next to a unique code we give you for that leg. It proves the item genuinely exists and is in hand — an anti-fraud check that protects both traders. Both sides must also fund their leg before either item moves; if only one side funds, that person is fully reimbursed, so no one is left out of pocket. Track each step at [My swaps](/my/swaps).",
+    tags: ['swap', 'trade', 'safety'],
+  },
+  {
+    sourceKey: 'payment-window-reference',
+    title: 'What if I pay late or use the wrong reference?',
+    question: 'I paid by EFT but my order is not confirmed — what now?',
+    answer:
+      'Always pay using the exact unique reference shown at checkout — that is how your EFT is matched to your order automatically. If you leave it out or use the wrong one, the payment can sit unmatched and your order stays pending until it is reconciled, which can take longer or need a hand. If your reference was wrong or the order looks stuck, contact support@gungalore.co.za with your proof of payment and I can help you draft a ticket. Orders have a pay-by window; pay within it so the item is held for you.',
+    tags: ['payments', 'eft', 'reference'],
+  },
+  {
+    sourceKey: 'seller-strikes',
+    title: 'What happens if I do not dispatch on time?',
+    question: 'What is a seller strike and what does it lead to?',
+    answer:
+      "Sellers have a 5-day window from accepting a sale to dispatch it. Miss it and the order is auto-refunded to the buyer and you receive a strike. Strikes count against your seller standing and trust score; repeat non-dispatch is reviewed and can lead to selling being restricted or the account suspended. The fix is simple: only accept sales you can ship, add tracking when you dispatch, and keep your KYC and banking current so nothing stalls. Your standing shows on your [Dashboard](/dashboard).",
+    tags: ['selling', 'dispatch', 'standing'],
+  },
+  {
+    sourceKey: 'top-seller-criteria',
+    title: 'How do I become a Top Seller?',
+    question: 'What do I need to do to qualify for Top Seller status?',
+    answer:
+      'Top Seller is earned, not bought — it reflects a track record of completed sales and strong buyer ratings, with your KYC and profile complete and no recent strikes for late dispatch. Keep delivering on time and keeping buyers happy and you climb toward it. The reward is real: Top Sellers pay less commission (0.5% of the sale off) and it signals trust to buyers. Track your progress on your [Dashboard](/dashboard).',
+    tags: ['top seller', 'selling', 'tiers'],
+  },
+  {
+    sourceKey: 'verified-expert-badge',
+    title: 'What is the Verified Expert badge?',
+    question: 'How do I earn the Verified Expert badge?',
+    answer:
+      "Verified Expert is a badge shown on your profile for members who have contributed genuinely helpful, accurate knowledge to the Gun Galore community — verified answers that our team has reviewed and approved. Reach the contribution threshold and the badge appears on your public profile and listings, signalling to buyers that you know your gear. It's a GG+ perk-adjacent recognition of expertise, not something you can buy.",
+    tags: ['badge', 'expert', 'community'],
+  },
+  {
+    sourceKey: 'prohibited-items',
+    title: 'What can I not list or ship?',
+    question: 'Are there items I am not allowed to sell?',
+    answer:
+      'Every listing is checked before it goes live to keep prohibited items off the platform. You may not list anything illegal to sell in South Africa, counterfeit goods, or items you are not entitled to sell. Some items are dealer-only or restricted (for example suppressors are not normally listable), and firearms and ammunition have their own rules — firearms complete through a licensed dealer and are never couriered to a door, and person-to-person ammunition sales are not allowed. See the [Acceptable Use Policy](/acceptable-use) and [Firearms Compliance](/firearms-compliance), or ask me before you list.',
+    tags: ['listing', 'prohibited', 'rules'],
+  },
+  {
+    sourceKey: 'account-deletion-data',
+    title: 'How do I delete my account or request my data?',
+    question: 'Can I have my data erased, and what is kept?',
+    answer:
+      "You can close your account at any time and request access to or deletion of your personal information under POPIA — email support@gungalore.co.za. Some records must be kept even after closure: transaction and financial records for legal and tax reasons, and — where you have bought or sold a firearm — the encrypted copy of your SA ID is retained for firearm-transfer (SAP 534) compliance rather than being purged. The [Privacy Policy](/privacy) sets out exactly what we hold, why, and for how long.",
+    tags: ['account', 'privacy', 'popia'],
+  },
+  {
+    sourceKey: 'about-ask-gg',
+    title: 'What is Ask GG and can I trust its answers?',
+    question: 'Is Ask GG giving me official or legal advice?',
+    answer:
+      "I'm GG, the Gun Galore assistant — I help you use the site, understand fees and rules, track your own orders and offers, and give outdoor and gear guidance. Site and account help is free for signed-in members; in-depth outdoor and reloading advice uses your GG+ advice quota. I aim to be accurate and grounded in how the platform actually works, but I'm a guide, not a lawyer, financial adviser or Designated Firearms Officer — for firearm law, tax or legal decisions, confirm with a dealer (DFO) or professional. If you need a person, I can draft a support ticket for you to send.",
+    tags: ['ask gg', 'support', 'help'],
+  },
 ];

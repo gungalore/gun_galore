@@ -50,7 +50,26 @@ export class AskGgController {
     private readonly askGg: AskGgService,
     private readonly kb: AskGgKbService,
     private readonly cloudinary: CloudinaryService,
+    private readonly guide: AskGgGuideService,
   ) {}
+
+  /**
+   * GG site-guide (G4) — the AUTHED guide: the public page guide PLUS the
+   * signed-in caller's OWN top-of-mind state for this page (KYC/payout gates,
+   * auction win/outbid, offers awaiting action…), composed server-side from
+   * the read-only, PII-gated account shapers. ZERO Claude spend. The clerkId
+   * comes from ClerkGuard — the model/client can never name another user.
+   * Signed-out visitors keep using /ask-gg/public/guide (no overlay).
+   */
+  @Get('guide')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  getGuide(
+    @CurrentUser() clerkId: string,
+    @Query('path') path?: string,
+    @Query('listingId') listingId?: string,
+  ) {
+    return this.guide.getPersonalGuide(clerkId, { path, listingId });
+  }
 
   // 30 messages per minute per IP cap. Belt-and-braces alongside the
   // future per-user fair-use cap — even if a single Clerk session is

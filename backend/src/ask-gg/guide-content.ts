@@ -16,6 +16,27 @@ export interface GuideCta {
   ask?: string;
 }
 
+/** G4 personal overlay — how urgent/important a personal item is. Drives the
+ *  chip colour in the Guide tab; NOT a security boundary. */
+export type GuidePersonalTone = 'action' | 'info' | 'good';
+
+export interface GuidePersonalItem {
+  /** Already-shaped, PII-safe one-liner (usernames only, no bank/PIN/address —
+   *  produced by the whitelist-by-construction account shapers). */
+  label: string;
+  /** Deep-link to the real page where any sensitive detail legitimately lives. */
+  href?: string;
+  tone?: GuidePersonalTone;
+}
+
+/** G4 — a signed-in user's own top-of-mind state for THIS page, composed
+ *  server-side from the read-only, PII-gated account shapers. $0 AI. Omitted
+ *  entirely when there is nothing worth showing (guide, not nag). */
+export interface GuidePersonal {
+  headline: string;
+  items: GuidePersonalItem[];
+}
+
 export interface AskGgGuide {
   /** Resolved guide key (page-kind + sub-state). */
   key: string;
@@ -25,6 +46,9 @@ export interface AskGgGuide {
   /** The tips / steps — the meat of the guide. */
   points: string[];
   ctas?: GuideCta[];
+  /** G4 — the authed personal overlay (only on /ask-gg/guide, never the
+   *  public endpoint). Filled by AskGgGuideService.getPersonalGuide. */
+  personal?: GuidePersonal;
 }
 
 // Keyed by resolved guide key. The service picks the key from the page kind +
@@ -259,6 +283,266 @@ export const GUIDES: Record<string, AskGgGuide> = {
     ],
     ctas: [
       { label: 'Ask a question', ask: '' },
+    ],
+  },
+
+  // ── Account & personal surfaces (G4) ────────────────────────────────
+  dashboard: {
+    key: 'dashboard',
+    title: 'Your seller dashboard',
+    points: [
+      'This is your seller standing — your tier, trust score and what’s left to reach the next level.',
+      'A higher tier earns real perks: lower commission at Top Seller, featured-slot discounts, and more trust with buyers.',
+      'Keep deliveries on time, your ratings up, and KYC + banking complete — that’s what moves the score.',
+      'Buyers can ask questions on your listings; answering quickly builds trust and sales.',
+    ],
+    ctas: [
+      { label: 'How do I level up my tier?', ask: 'How do the seller tiers work and what do I need to do to reach the next one?' },
+      { label: 'My earnings', href: '/my/earnings' },
+    ],
+  },
+
+  profile: {
+    key: 'profile',
+    title: 'Your account',
+    points: [
+      'Everything about your account lives here — your profile, GG+ tier, identity check and account tasks.',
+      'Completing your profile (including banking) and passing the live ID check unlocks selling payouts.',
+      'Your username is all other members ever see — never your real name or contact details.',
+      'Ask me any time to check your orders, sales, offers or what needs your attention.',
+    ],
+    ctas: [
+      { label: 'What needs my attention?', ask: 'What on my account needs my attention right now?' },
+      { label: 'Settings', href: '/settings' },
+    ],
+  },
+
+  settings: {
+    key: 'settings',
+    title: 'Settings & details',
+    points: [
+      'Manage your saved delivery addresses, banking for payouts, and notification preferences here.',
+      'Sellers: your payout banking must be in your own name — we check the name matches your ID before the first payout.',
+      'Set a default address to speed up checkout.',
+      'Your banking details are only ever shown to you — I never handle or repeat them.',
+    ],
+    ctas: [
+      { label: 'Why do you need my banking?', ask: 'Why does Gun Galore need my banking details, and how are they kept safe?' },
+    ],
+  },
+
+  subscribe: {
+    key: 'subscribe',
+    title: 'GG+ membership',
+    points: [
+      'GG+ has two tiers — Member and Pro — with perks like more Ask GG advice, featured-slot discounts, bigger photo limits and subscriber-only competitions.',
+      'It’s prepaid by EFT: no debit order, no auto-renew. You’re only ever charged when you choose to renew.',
+      'Pro unlocks the most — including the reloading Load Lab and the deepest advice quota.',
+      'Not sure it’s worth it? Ask me to compare the tiers against what you actually use.',
+    ],
+    ctas: [
+      { label: 'Compare the tiers', ask: 'Compare the GG+ Member and Pro tiers and their perks — which suits me?' },
+      { label: 'How does billing work?', ask: 'How does GG+ billing work — is it a subscription that auto-renews?' },
+    ],
+  },
+
+  wishlist: {
+    key: 'wishlist',
+    title: 'Your wishlist',
+    points: [
+      'Items you’ve saved live here. Tap the heart on any listing to add it.',
+      'It’s your shortlist for comparing before you commit — ask me to weigh two saved items against each other.',
+      'Prices and availability can change, so grab a deal before it’s gone.',
+    ],
+    ctas: [
+      { label: 'Compare my saved items', ask: 'Help me compare the items on my wishlist and decide which is the best buy.' },
+      { label: 'Browse the marketplace', href: '/' },
+    ],
+  },
+
+  'saved-searches': {
+    key: 'saved-searches',
+    title: 'Saved searches',
+    points: [
+      'Save any search and we’ll watch the marketplace for you — you get an alert when a new matching item is listed.',
+      'It’s the fastest way to be first on a hard-to-find item without checking back every day.',
+      'Toggle alerts on or off per search whenever you like.',
+      'Still not finding it? Post a Wanted ad and sellers come to you — it’s free.',
+    ],
+    ctas: [
+      { label: 'Post a Wanted ad', href: '/wanted/new' },
+      { label: 'How do alerts work?', ask: 'How do saved-search alerts work — when and how do I get notified?' },
+    ],
+  },
+
+  notifications: {
+    key: 'notifications',
+    title: 'Your notifications',
+    points: [
+      'Your activity feed — offers, bids, dispatch updates, payout news, disputes and competition results all land here.',
+      'Important events also reach you by SMS and email; you can tune which channels in Settings.',
+      'Tap anything here to jump straight to the order, offer or listing it’s about.',
+    ],
+    ctas: [
+      { label: 'Manage my alerts', href: '/settings' },
+      { label: 'What needs my attention?', ask: 'What on my account needs my attention right now?' },
+    ],
+  },
+
+  offers: {
+    key: 'offers',
+    title: 'Your offers & bids',
+    points: [
+      'Track offers you’ve made or received and your auction bids in one place.',
+      'When an offer is accepted, pay through the normal protected checkout to lock it in before it expires.',
+      'On auctions, set your maximum (auto-bid) and I’ll keep you in front up to that amount — no clock-watching.',
+      'Received an offer as a seller? You can accept, decline or counter.',
+    ],
+    ctas: [
+      { label: 'Update me on my offers', ask: 'Give me an update on my offers and bids and anything that needs my response.' },
+      { label: 'How does auto-bidding work?', ask: 'How does setting a maximum auto-bid work, and how does it help me win?' },
+    ],
+  },
+
+  'my-listings': {
+    key: 'my-listings',
+    title: 'Your listings',
+    points: [
+      'Manage everything you’re selling — live, sold and drafts — from here.',
+      'Listing is free; you only pay commission when an item sells. Ask me what you’ll take home after fees.',
+      'Better photos and an honest, specific description sell faster and for more — I can rewrite yours.',
+      'Firearms need a serial, a licence photo and where you’ll dealer-stock it (dealer, province, area) before they go live.',
+    ],
+    ctas: [
+      { label: 'List a new item', href: '/listings/new' },
+      { label: 'What will I take home?', ask: 'For an item I’m selling, what fees apply and what will I take home?' },
+    ],
+  },
+
+  swaps: {
+    key: 'swaps',
+    title: 'Your swaps',
+    points: [
+      'Follow each two-way trade here: proposal, both sides funding, proof-of-possession, shipping and completion.',
+      'Both sides fund before anything ships — if only one side pays, that person is fully reimbursed, so no one is left out of pocket.',
+      'You’ll be asked to photograph your item next to a unique code — that proves it exists before either item moves.',
+      'Payment references and banking for a swap show on this page; I never handle those directly.',
+    ],
+    ctas: [
+      { label: 'Walk me through a swop', ask: 'Walk me through how a Swop works from proposal to completion, including the photo step.' },
+      { label: 'Update me on my swaps', ask: 'Give me an update on my swaps and what each one is waiting on.' },
+    ],
+  },
+
+  earnings: {
+    key: 'earnings',
+    title: 'Your earnings & payouts',
+    points: [
+      'See your sales, commission, fees and net payout over any period here.',
+      'Held funds release after the buyer confirms delivery, then pay out in the next business-day batch.',
+      'Payouts need your identity check (KYC) done and your seller profile — including banking — complete.',
+      'Ask me if anything is holding a payout back and exactly how to clear it.',
+    ],
+    ctas: [
+      { label: 'Is anything blocking my payout?', ask: 'Is anything blocking my payouts right now, and how do I fix it?' },
+      { label: 'When do I get paid?', ask: 'When does money release to me after a sale, and how does the payout timing work?' },
+    ],
+  },
+
+  tickets: {
+    key: 'tickets',
+    title: 'Your support tickets',
+    points: [
+      'Your conversations with the Gun Galore team live here, with their replies and status.',
+      'Most questions I can answer instantly — try me first, it’s faster.',
+      'Need a human? I can draft a ticket for you to send with one tap, pre-filled with the details.',
+    ],
+    ctas: [
+      { label: 'Draft a support ticket', ask: 'Help me draft a support ticket about ' },
+    ],
+  },
+
+  sellers: {
+    key: 'sellers',
+    title: 'About this seller',
+    points: [
+      'This is a seller’s storefront — their tier, ratings, badges and everything they have for sale.',
+      'Higher tiers and a Top Seller or Verified-Expert badge reflect a track record of good deals.',
+      'Every purchase from them is still protected: your payment is held until you’ve got the item.',
+      'Ask me to check whether an item of theirs is fairly priced.',
+    ],
+    ctas: [
+      { label: 'What do the badges mean?', ask: 'What do the seller tier and badges (Top Seller, Verified Expert) mean?' },
+    ],
+  },
+
+  featured: {
+    key: 'featured',
+    title: 'Featuring your listing',
+    points: [
+      'Featured slots put your listing on prime real estate (like the homepage) for a set run.',
+      'You bid for a slot — the top bid wins it for the slot’s duration. There’s a minimum bid per slot tier.',
+      'GG+ members get a discount on featured bids — Pro more than Member.',
+      'Featured-slot fees aren’t refundable once the slot runs, so bid what a burst of exposure is worth to you.',
+    ],
+    ctas: [
+      { label: 'Is featuring worth it for me?', ask: 'How do featured slots work and is it worth featuring my listing?' },
+    ],
+  },
+
+  'dealer-verification': {
+    key: 'dealer-verification',
+    title: 'Firearm stock-in verification',
+    points: [
+      'Every firearm sale completes through a licensed dealer. Here you upload the proof so payout can be released.',
+      'Photograph the documents clearly — the SAP 534, the dealer’s stock register entry, and the firearm serial as asked.',
+      'Blurry or partial photos get sent back; a clear, well-lit shot of the whole page passes first time.',
+      'Once it’s approved, the buyer is notified and your payout is released.',
+    ],
+    ctas: [
+      { label: 'What exactly do I upload?', ask: 'What documents and photos do I need to upload for firearm dealer-stock verification?' },
+      { label: 'Why is this needed?', ask: 'Why does a firearm sale need dealer stock-in verification before payout?' },
+    ],
+  },
+
+  'wanted-new': {
+    key: 'wanted-new',
+    title: 'Posting a Wanted ad',
+    points: [
+      'Describe what you’re after and sellers with a match come to you — no more endless searching.',
+      'It’s completely free to post: no upfront fees to advertise.',
+      'Be specific (make, model, condition, budget) so the right sellers respond.',
+      'When a seller responds with a matching item, you buy it through the normal protected checkout.',
+    ],
+    ctas: [
+      { label: 'Help me word it', ask: 'Help me write a clear Wanted ad for the item I’m looking for.' },
+    ],
+  },
+
+  'wanted-detail': {
+    key: 'wanted-detail',
+    title: 'This Wanted ad',
+    points: [
+      'A buyer is looking for this. If you’re a seller with a match, respond by linking one of your active listings.',
+      'Only your username is shared — contact details are kept off-platform so your deal stays protected.',
+      'If it’s your own ad, sellers who respond will show up for you to review.',
+      'It’s free to respond — no upfront fees.',
+    ],
+    ctas: [
+      { label: 'How do I respond?', ask: 'How do I respond to a Wanted ad as a seller, and what happens next?' },
+    ],
+  },
+
+  legal: {
+    key: 'legal',
+    title: 'Policies & the fine print',
+    points: [
+      'All the official documents — Terms, Privacy, refunds, firearms compliance and more — are gathered here.',
+      'Rather get the short version? Ask me and I’ll explain any policy in plain language.',
+      'For firearm law or tax specifics I’ll point you to a dealer (DFO) or professional — I’m a guide, not legal advice.',
+    ],
+    ctas: [
+      { label: 'Explain a policy for me', ask: 'Explain in plain language how ' },
     ],
   },
 

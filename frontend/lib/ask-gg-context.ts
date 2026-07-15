@@ -18,6 +18,13 @@ export type AskGgPageKind =
   | 'transaction'
   | 'cart'
   | 'competitions'
+  | 'wanted'
+  | 'wishlist'
+  | 'subscribe'
+  | 'dashboard'
+  | 'swaps'
+  | 'earnings'
+  | 'saved-searches'
   | 'help'
   | 'home'
   | 'other';
@@ -57,8 +64,17 @@ export function derivePageContext(pathname: string | null): {
   ) {
     return { kind: 'orders', ctx };
   }
+  if (seg[0] === 'my' && seg[1] === 'swaps') return { kind: 'swaps', ctx };
+  if (seg[0] === 'my' && seg[1] === 'earnings') {
+    return { kind: 'earnings', ctx };
+  }
   if (seg[0] === 'cart' || seg[0] === 'checkout') return { kind: 'cart', ctx };
   if (seg[0] === 'competitions') return { kind: 'competitions', ctx };
+  if (seg[0] === 'wanted') return { kind: 'wanted', ctx };
+  if (seg[0] === 'wishlist') return { kind: 'wishlist', ctx };
+  if (seg[0] === 'subscribe') return { kind: 'subscribe', ctx };
+  if (seg[0] === 'dashboard') return { kind: 'dashboard', ctx };
+  if (seg[0] === 'saved-searches') return { kind: 'saved-searches', ctx };
   if (seg[0] === 'faq' || seg[0] === 'how-selling-works') {
     return { kind: 'help', ctx };
   }
