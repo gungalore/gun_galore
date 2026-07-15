@@ -196,38 +196,57 @@ export class DispatchSlaService {
             listing: { select: { trackInventory: true, listingType: true } },
           },
         });
-        await this.prisma.$transaction([
-          this.prisma.listing.update({
-            where: { id: tx.listingId },
-            // Ended auctions land EXPIRED, never back to ACTIVE (zombie fix).
-            data: reversalListingData(
-              fresh?.listing?.trackInventory ?? false,
-              fresh?.quantity ?? 1,
-              fresh?.listing?.listingType,
-            ),
-          }),
-          this.prisma.user.update({
-            where: { id: tx.sellerId },
-            data: {
-              dispatchStrikes: { increment: 1 },
-              lastStrikeAt: new Date(),
-            },
-          }),
-        ]);
-
-        const sellerAfter = await this.prisma.user.findUnique({
-          where: { id: tx.sellerId },
-          select: { dispatchStrikes: true },
+        // Ended auctions land EXPIRED, never back to ACTIVE (zombie fix).
+        const restock = this.prisma.listing.update({
+          where: { id: tx.listingId },
+          data: reversalListingData(
+            fresh?.listing?.trackInventory ?? false,
+            fresh?.quantity ?? 1,
+            fresh?.listing?.listingType,
+          ),
         });
-        if ((sellerAfter?.dispatchStrikes ?? 0) >= 3) {
-          await this.prisma.adminAlert.create({
-            data: {
-              type: 'SELLER_DISPATCH_STRIKES_THRESHOLD',
-              referenceId: tx.sellerId,
-              urgent: true,
-              context: `Seller hit ${sellerAfter?.dispatchStrikes} dispatch strikes — review for suspension`,
-            },
+        // DD-2 — a Daily Deals house deal is sold BY Gun Galore. If GG fails
+        // to dispatch in time the buyer is STILL auto-refunded above (payment
+        // protection is unconditional), but we must NOT strike / threshold-
+        // suspend GG's own house-seller account. Restock only for a house
+        // deal; strike + threshold-alert only for a real seller.
+        if (tx.listing.isDealListing) {
+          await this.prisma.$transaction([restock]);
+          // DD-2 — the single unit is back in stock (listing → ACTIVE), so
+          // un-sold-out the Deal to keep its status consistent with the
+          // now-buyable listing. Money-neutral state resync.
+          await this.prisma.deal
+            .updateMany({
+              where: { listingId: tx.listingId, status: 'SOLD_OUT' },
+              data: { status: 'LIVE', soldOutAt: null },
+            })
+            .catch(() => undefined);
+        } else {
+          await this.prisma.$transaction([
+            restock,
+            this.prisma.user.update({
+              where: { id: tx.sellerId },
+              data: {
+                dispatchStrikes: { increment: 1 },
+                lastStrikeAt: new Date(),
+              },
+            }),
+          ]);
+
+          const sellerAfter = await this.prisma.user.findUnique({
+            where: { id: tx.sellerId },
+            select: { dispatchStrikes: true },
           });
+          if ((sellerAfter?.dispatchStrikes ?? 0) >= 3) {
+            await this.prisma.adminAlert.create({
+              data: {
+                type: 'SELLER_DISPATCH_STRIKES_THRESHOLD',
+                referenceId: tx.sellerId,
+                urgent: true,
+                context: `Seller hit ${sellerAfter?.dispatchStrikes} dispatch strikes — review for suspension`,
+              },
+            });
+          }
         }
 
         void this.tracking.recordInternal(tx.id, 'AUTO_REFUNDED_NO_DISPATCH', {
@@ -262,7 +281,11 @@ export class DispatchSlaService {
 
         refunded++;
         this.logger.log(
-          `Auto-refunded transaction ${tx.id} — seller ${tx.sellerId} struck (${sellerAfter?.dispatchStrikes})`,
+          `Auto-refunded transaction ${tx.id} — ${
+            tx.listing.isDealListing
+              ? 'house deal (no seller strike)'
+              : `seller ${tx.sellerId} struck`
+          }`,
         );
       } catch (err) {
         this.logger.error(

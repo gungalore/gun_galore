@@ -192,6 +192,12 @@ export class DealsService {
           model: dto.model ?? null,
           calibre: dto.calibre ?? null,
           shippingMethods,
+          // Parcel dimensions for the courier rate API — defaulted so a deal
+          // is always quotable/shippable even if the admin didn't set them.
+          weightGrams: dto.weightGrams ?? 1000,
+          lengthCm: dto.lengthCm ?? 20,
+          widthCm: dto.widthCm ?? 20,
+          heightCm: dto.heightCm ?? 15,
           // The Daily Deals flag — the single cheap key every public
           // listing query filters on.
           isDealListing: true,
@@ -303,6 +309,10 @@ export class DealsService {
           ...(dto.shippingMethods !== undefined
             ? { shippingMethods: dto.shippingMethods }
             : {}),
+          ...(dto.weightGrams !== undefined ? { weightGrams: dto.weightGrams } : {}),
+          ...(dto.lengthCm !== undefined ? { lengthCm: dto.lengthCm } : {}),
+          ...(dto.widthCm !== undefined ? { widthCm: dto.widthCm } : {}),
+          ...(dto.heightCm !== undefined ? { heightCm: dto.heightCm } : {}),
           ...(dto.dealPriceCents !== undefined
             ? { price: dto.dealPriceCents }
             : {}),
@@ -415,18 +425,43 @@ export class DealsService {
       DealStatus.DRAFT,
       DealStatus.SCHEDULED,
     ]);
-    const updated = await this.prisma.deal.update({
-      where: { id },
-      data: {
-        status: DealStatus.LIVE,
-        liveAt: new Date(),
-        // Re-snapshot the go-live stock baseline from the current listing
-        // quantity (the sell-through denominator).
-        initialStock: deal.listing.trackInventory
-          ? deal.listing.quantityAvailable
-          : 1,
-      },
-      include: { listing: { include: { images: true } } },
+    // DD-2 — dealsEnabled is the master "arm the money path" killswitch. A deal
+    // only becomes BUYABLE (its Listing flips DRAFT → ACTIVE) once the operator
+    // turns Daily Deals ON in Settings, so nothing can be sold before the
+    // storefront + operator sign-offs are ready. Deals can still be drafted /
+    // scheduled while the switch is off; only go-live is gated.
+    const enabled = await this.settings.get(FLAGS.dealsEnabled);
+    if (!enabled) {
+      throw new BadRequestException(
+        'Daily Deals is turned off. Enable it in Settings before taking a deal live.',
+      );
+    }
+    // Re-snapshot the go-live stock baseline (the sell-through denominator).
+    const initialStock = deal.listing.trackInventory
+      ? deal.listing.quantityAvailable
+      : 1;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Make the deal listing PURCHASABLE: DRAFT → ACTIVE. It stays
+      // isDealListing:true, so it remains excluded from every public discovery
+      // surface (browse / search / comps / wanted / saved-searches) — only
+      // reachable via the /deals storefront (DD-3) + the direct PDP.
+      await tx.listing.update({
+        where: { id: deal.listingId },
+        data: {
+          status: ListingStatus.ACTIVE,
+          isDealListing: true,
+          listedAt: new Date(),
+        },
+      });
+      return tx.deal.update({
+        where: { id },
+        data: {
+          status: DealStatus.LIVE,
+          liveAt: new Date(),
+          initialStock,
+        },
+        include: { listing: { include: { images: true } } },
+      });
     });
     await this.recordTransition(adminId, id, deal.status, DealStatus.LIVE, reason);
     return this.shape(updated);
@@ -438,10 +473,22 @@ export class DealsService {
       DealStatus.ENDED,
     ]);
     const extendedUntil = new Date(dto.extendedUntil);
-    const updated = await this.prisma.deal.update({
-      where: { id },
-      data: { status: DealStatus.EXTENDED, extendedUntil },
-      include: { listing: { include: { images: true } } },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Extra Time makes the deal buyable again: if it had ENDED (listing
+      // EXPIRED), re-activate it. From LIVE it's already ACTIVE (no-op).
+      // Never resurrect a SOLD/CANCELLED listing.
+      await tx.listing.updateMany({
+        where: {
+          id: deal.listingId,
+          status: ListingStatus.EXPIRED,
+        },
+        data: { status: ListingStatus.ACTIVE },
+      });
+      return tx.deal.update({
+        where: { id },
+        data: { status: DealStatus.EXTENDED, extendedUntil },
+        include: { listing: { include: { images: true } } },
+      });
     });
     await this.recordTransition(adminId, id, deal.status, DealStatus.EXTENDED, dto.reason);
     return this.shape(updated);
@@ -452,10 +499,22 @@ export class DealsService {
       DealStatus.LIVE,
       DealStatus.EXTENDED,
     ]);
-    const updated = await this.prisma.deal.update({
-      where: { id },
-      data: { status: DealStatus.ENDED, endedAt: new Date() },
-      include: { listing: { include: { images: true } } },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // End = no longer buyable. Flip the listing ACTIVE/PENDING → EXPIRED so
+      // the checkout ACTIVE-gate rejects new purchases (the PDP still renders
+      // it as an ended deal). Never resurrect a SOLD/CANCELLED listing.
+      await tx.listing.updateMany({
+        where: {
+          id: deal.listingId,
+          status: { notIn: [ListingStatus.SOLD, ListingStatus.CANCELLED] },
+        },
+        data: { status: ListingStatus.EXPIRED },
+      });
+      return tx.deal.update({
+        where: { id },
+        data: { status: DealStatus.ENDED, endedAt: new Date() },
+        include: { listing: { include: { images: true } } },
+      });
     });
     await this.recordTransition(adminId, id, deal.status, DealStatus.ENDED, reason);
     return this.shape(updated);
@@ -725,6 +784,10 @@ export class DealsService {
       model: string | null;
       calibre: string | null;
       shippingMethods: string[];
+      weightGrams: number | null;
+      lengthCm: number | null;
+      widthCm: number | null;
+      heightCm: number | null;
       trackInventory: boolean;
       quantityAvailable: number;
       status: string;
@@ -732,7 +795,15 @@ export class DealsService {
     };
   }) {
     const dealPriceCents = deal.listing.price ?? 0;
-    const soldUnits = Math.max(0, deal.initialStock - deal.listing.quantityAvailable);
+    // Sold-units: a stock-tracked deal decrements quantityAvailable per sale;
+    // a single-item (non-tracked) deal signals its one sale by flipping the
+    // listing to SOLD (quantityAvailable stays 1), so derive from status there
+    // — otherwise a sold single-item deal would report 0 sold / R0 revenue.
+    const soldUnits = deal.listing.trackInventory
+      ? Math.max(0, deal.initialStock - deal.listing.quantityAvailable)
+      : deal.listing.status === 'SOLD'
+        ? deal.initialStock
+        : 0;
     const marginPct =
       dealPriceCents > 0
         ? Math.round(((dealPriceCents - deal.costPriceCents) / dealPriceCents) * 100)
@@ -755,6 +826,10 @@ export class DealsService {
       model: deal.listing.model,
       calibre: deal.listing.calibre,
       shippingMethods: deal.listing.shippingMethods,
+      weightGrams: deal.listing.weightGrams,
+      lengthCm: deal.listing.lengthCm,
+      widthCm: deal.listing.widthCm,
+      heightCm: deal.listing.heightCm,
       listingStatus: deal.listing.status,
       images: deal.listing.images ?? [],
       // Money (cents)

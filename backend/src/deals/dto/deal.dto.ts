@@ -62,6 +62,29 @@ export class CreateDealDto {
   @IsEnum(ShippingMethod, { each: true })
   shippingMethods?: ShippingMethod[];
 
+  // Parcel dimensions for the courier rate API (Pudo / TCG). Required for a
+  // shippable deal; the service applies sensible defaults if omitted so a
+  // deal is never un-quotable.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  weightGrams?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  lengthCm?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  widthCm?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  heightCm?: number;
+
   // ── Deal half ─────────────────────────────────────────────────────
   // The deal SELL price. Stored on Listing.price (single source of truth
   // for checkout); Deal carries only cost + was.
@@ -172,6 +195,26 @@ export class UpdateDealDto {
   @IsArray()
   @IsEnum(ShippingMethod, { each: true })
   shippingMethods?: ShippingMethod[];
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  weightGrams?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  lengthCm?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  widthCm?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  heightCm?: number;
 
   @IsOptional()
   @IsInt()

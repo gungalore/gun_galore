@@ -66,6 +66,7 @@ export async function cleanup(prisma: PrismaService) {
     'transaction', // self-refs (refundOf / shipsWith) resolve within one delete
     'featuredAuction',
     'featuredSlot',
+    'deal', // DD-2 — cascade-deletes with listing anyway, but explicit is safer
     'listing',
     'order',
     'swap',
@@ -185,6 +186,44 @@ export async function seedActors(prisma: PrismaService): Promise<Record<string, 
   actors.swapB = await upsertUser(prisma, 'swapB');
   actors.member = await upsertUser(prisma, 'member', { subscriptionTier: 'MEMBER' }); // subscription
   return actors;
+}
+
+/**
+ * DD-2 — seed the Daily Deals house seller (mirrors prisma/seed-house-seller.ts)
+ * + the Setting the DealsService resolves it from. Seeded on the STABLE clerkId
+ * 'system_house_seller' (NOT dr_-prefixed) so it survives cleanup()'s user wipe
+ * and its Setting stays valid across runs; its prior listings/deals/transactions
+ * are still wiped by the table sweep. Carries a real phone + email so the
+ * auto-accept courier booking (bookForTransaction) doesn't fail-safe.
+ */
+export async function seedHouseSeller(prisma: PrismaService): Promise<Actor> {
+  const clerkId = 'system_house_seller';
+  const email = 'deals@dummyrun.local';
+  const username = 'gungalore_official';
+  const now = new Date();
+  const user = await (prisma as any).user.upsert({
+    where: { clerkId },
+    create: {
+      clerkId,
+      email,
+      username,
+      firstName: 'Gun Galore',
+      phone: '+27820000001',
+      phoneVerified: true,
+      sellerTier: 'DEALER',
+      kycStatus: 'VERIFIED',
+      kycVerifiedAt: now,
+      profileCompletedAt: now,
+    },
+    // Keep contactability valid across re-runs; don't clobber email/username.
+    update: { phone: '+27820000001', phoneVerified: true },
+  });
+  await (prisma as any).setting.upsert({
+    where: { key: 'house_seller_user_id' },
+    create: { key: 'house_seller_user_id', value: user.id },
+    update: { value: user.id },
+  });
+  return { id: user.id, clerkId, email: user.email, username: user.username };
 }
 
 /** Resolve category ids for each behaviour class from the base seed. */

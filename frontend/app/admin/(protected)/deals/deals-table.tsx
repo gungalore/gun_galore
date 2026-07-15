@@ -31,6 +31,10 @@ export interface Deal {
   model: string | null;
   calibre: string | null;
   shippingMethods: string[];
+  weightGrams?: number | null;
+  lengthCm?: number | null;
+  widthCm?: number | null;
+  heightCm?: number | null;
   listingStatus: string;
   images: DealImage[];
   dealPriceCents: number;
@@ -453,6 +457,10 @@ function DealFormModal({
     supplierName: deal?.supplierName ?? '',
     supplierRef: deal?.supplierRef ?? '',
     dropDate: deal?.dropDate ? deal.dropDate.slice(0, 10) : '',
+    weightGrams: deal ? String(deal.weightGrams ?? 1000) : '1000',
+    lengthCm: deal ? String(deal.lengthCm ?? 20) : '20',
+    widthCm: deal ? String(deal.widthCm ?? 20) : '20',
+    heightCm: deal ? String(deal.heightCm ?? 15) : '15',
   });
   const [shipping, setShipping] = useState<string[]>(
     deal?.shippingMethods?.length ? deal.shippingMethods : ['PUDO', 'TCG'],
@@ -489,6 +497,10 @@ function DealFormModal({
         model: form.model.trim() || undefined,
         calibre: form.calibre.trim() || undefined,
         shippingMethods: shipping,
+        weightGrams: parseInt(form.weightGrams, 10) || 1000,
+        lengthCm: parseInt(form.lengthCm, 10) || 20,
+        widthCm: parseInt(form.widthCm, 10) || 20,
+        heightCm: parseInt(form.heightCm, 10) || 15,
         dealPriceCents: dealCents,
         wasPriceCents: wasCents,
         costPriceCents: costCents,
@@ -598,6 +610,46 @@ function DealFormModal({
                 <span>{s.label}</span>
               </label>
             ))}
+          </div>
+        </Field>
+        <Field label="Parcel size (for courier quotes)">
+          <div className="grid grid-cols-4 gap-2">
+            <input
+              type="number"
+              min="1"
+              value={form.weightGrams}
+              onChange={(e) => set('weightGrams', e.target.value)}
+              style={inputStyle}
+              placeholder="grams"
+              aria-label="Weight (grams)"
+            />
+            <input
+              type="number"
+              min="1"
+              value={form.lengthCm}
+              onChange={(e) => set('lengthCm', e.target.value)}
+              style={inputStyle}
+              placeholder="L cm"
+              aria-label="Length (cm)"
+            />
+            <input
+              type="number"
+              min="1"
+              value={form.widthCm}
+              onChange={(e) => set('widthCm', e.target.value)}
+              style={inputStyle}
+              placeholder="W cm"
+              aria-label="Width (cm)"
+            />
+            <input
+              type="number"
+              min="1"
+              value={form.heightCm}
+              onChange={(e) => set('heightCm', e.target.value)}
+              style={inputStyle}
+              placeholder="H cm"
+              aria-label="Height (cm)"
+            />
           </div>
         </Field>
 

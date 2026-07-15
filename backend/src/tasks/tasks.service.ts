@@ -213,14 +213,23 @@ export class TasksService {
 
   // Recover PRIVATE_ARRANGE sales stranded paid+HELD (crash between markPaid
   // and the immediate-payout fire-and-forget). Small, idempotent, cheap.
+  // DD-2 — the SAME sweep also re-drives Daily Deals house-deal auto-accept
+  // for any house sale stranded paid+HELD+unaccepted (identical crash window).
   @Cron(CronExpression.EVERY_5_MINUTES)
   async reconcileStrandedPrivateArrange() {
-    this.logger.debug('Running PRIVATE_ARRANGE payout reconcile');
+    this.logger.debug('Running PRIVATE_ARRANGE + house-deal reconcile');
     try {
       await this.transactions.reconcileStrandedPrivateArrange();
     } catch (err) {
       this.logger.error(
         `reconcileStrandedPrivateArrange failed: ${(err as Error).message}`,
+      );
+    }
+    try {
+      await this.transactions.reconcileStrandedHouseDeals();
+    } catch (err) {
+      this.logger.error(
+        `reconcileStrandedHouseDeals failed: ${(err as Error).message}`,
       );
     } finally {
       await this.recordCronRun('pa-payout-reconcile');

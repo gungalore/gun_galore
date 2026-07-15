@@ -1425,6 +1425,16 @@ model Transaction {
   zohoCommissionInvoiceId String?
   zohoCommissionPaymentId String?
   zohoCreditNoteId        String?
+  // ── Daily Deals first-party Zoho (DD-2) ─────────────────────────────
+  // A house deal (Listing.isDealListing) is a FIRST-PARTY sale: GG is the
+  // seller, so there is no commission invoice + payout. Instead a
+  // full-amount Sales Receipt is posted to the BUYER at RELEASED, and a
+  // Credit Note against it on a post-release refund. These IDs are kept
+  // SEPARATE from zohoCommissionInvoiceId/zohoCreditNoteId on purpose — a
+  // Sales Receipt is a different Books object type, so mixing the ids
+  // would make markCommissionInvoicePaid do a wrong-type /invoices lookup.
+  zohoDealReceiptId       String?
+  zohoDealCreditNoteId    String?
   zohoSyncStatus          String?
   zohoSyncError           String?
   zohoSyncLastAttemptAt   DateTime?

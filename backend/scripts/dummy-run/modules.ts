@@ -21,6 +21,8 @@ import { SwapProposalsService } from '../../src/swaps/swap-proposals.service';
 import { SwapFundingService } from '../../src/swaps/swap-funding.service';
 import { ShippingService } from '../../src/shipping/shipping.service';
 import { ManualPaymentsService } from '../../src/manual-payments/manual-payments.service';
+import { DealsService } from '../../src/deals/deals.service';
+import { AdminService } from '../../src/admin/admin.service';
 import {
   SWAP_SHIPPING_FEE_CENTS,
 } from '../../src/payments/fee.calculator';
@@ -929,6 +931,248 @@ export async function moduleSwap(ctx: Ctx) {
     carrier: completed.initiatorCourierCents + completed.ownerCourierCents,
     refunded: 0,
     note: 'two funding legs; cash child pays recipient',
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MODULE: Daily Deals (DD-2) — first-party house money path
+// ─────────────────────────────────────────────────────────────────────────
+// GG is the seller. Asserts: (1) full cycle pay → AUTO-ACCEPT (no seller
+// tap) → dispatch → deliver → RELEASED with sellerPayout=0 + commissionZar=0
+// and the payout batch SKIPPING the house row; (2) the per-customer cap
+// rejects an over-limit second buy; (3) SOLD_OUT sync when stock exhausts;
+// (4) a refund mints the buyer's synthetic child + conserves. Money is
+// conserved on a house-aware basis (buyerTotal = carrier + GG-retained).
+
+/** House-deal conservation: no seller cut, GG keeps everything bar the carrier. */
+function assertHouseConserves(tx: {
+  buyerTotal: number;
+  sellerPayout: number;
+  commissionZar: number;
+  shippingCost: number;
+}) {
+  assert(tx.sellerPayout === 0, `house deal sellerPayout must be 0, got ${tx.sellerPayout}`);
+  assert(tx.commissionZar === 0, `house deal commissionZar must be 0, got ${tx.commissionZar}`);
+  const ggRetained = tx.buyerTotal - tx.shippingCost;
+  assert(ggRetained >= 0, `house GG-retained went negative: buyerTotal ${tx.buyerTotal} - carrier ${tx.shippingCost}`);
+}
+
+/** Create a Daily Deal via the REAL DealsService (create + go-live). */
+async function makeDeal(
+  ctx: Ctx,
+  opts: {
+    dealPriceCents: number;
+    wasPriceCents: number;
+    costPriceCents: number;
+    initialStock: number;
+    perCustomerCap: number;
+    categoryId?: string;
+  },
+): Promise<{ dealId: string; listingId: string }> {
+  const deals = svc(ctx, DealsService);
+  const admin = await P(ctx).adminUser.findFirst();
+  assert(admin, 'no seeded AdminUser for the dummy run');
+  const created: any = await deals.create(admin.id, {
+    title: 'Dummy Daily Deal',
+    categoryId: opts.categoryId ?? ctx.cats.normal,
+    description: 'Auto-seeded Daily Deal for the dummy run.',
+    province: 'GAUTENG',
+    shippingMethods: ['PUDO', 'TCG'],
+    dealPriceCents: opts.dealPriceCents,
+    wasPriceCents: opts.wasPriceCents,
+    costPriceCents: opts.costPriceCents,
+    initialStock: opts.initialStock,
+    perCustomerCap: opts.perCustomerCap,
+  } as any);
+  await deals.goLive(admin.id, created.id);
+  return { dealId: created.id, listingId: created.listingId };
+}
+
+export async function moduleDailyDeals(ctx: Ctx) {
+  const rep = ctx.rep;
+  const { buyer, house } = ctx.actors;
+  const T = tsvc(ctx);
+
+  // DD-2 — go-live is gated on the master dealsEnabled killswitch. Arm it.
+  await P(ctx).setting.upsert({
+    where: { key: 'deals_enabled' },
+    create: { key: 'deals_enabled', value: 'true' },
+    update: { value: 'true' },
+  });
+
+  // ── (1) Full released cycle ──────────────────────────────────────────
+  const d1 = await makeDeal(ctx, {
+    dealPriceCents: 250_000,
+    wasPriceCents: 400_000,
+    costPriceCents: 150_000,
+    initialStock: 5,
+    perCustomerCap: 10,
+  });
+  const listing1 = await P(ctx).listing.findUnique({ where: { id: d1.listingId } });
+  check(rep, 'go-live: deal listing is ACTIVE + isDealListing (buyable, still browse-excluded)', () => {
+    eq(listing1.status, 'ACTIVE', 'listing.status');
+    assert(listing1.isDealListing === true, 'isDealListing not true');
+    assert(listing1.sellerId === house.id, 'listing not filed under house seller');
+  });
+
+  const created1: any = await T.create(
+    buyer.clerkId,
+    { listingId: d1.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
+    'http://localhost',
+  );
+  const row1a = await tx(ctx, created1.transactionId);
+  check(rep, 'house deal: sellerPayout=0 + commissionZar=0 at checkout', () => {
+    eq(row1a.sellerPayout, 0, 'sellerPayout');
+    eq(row1a.commissionZar, 0, 'commissionZar');
+    assert(row1a.buyerTotal > 0, 'buyerTotal should be > 0');
+  });
+
+  await T.confirmManualPayment(created1.transactionId);
+  // Auto-accept fires fire-and-forget inside markPaid — wait for acceptedAt.
+  const row1 = await waitFor(
+    () => tx(ctx, created1.transactionId),
+    (r) => !!r?.acceptedAt,
+    { tries: 60, gap: 50 },
+  );
+  check(rep, 'house deal: AUTO-ACCEPTED at payment (no acceptTransaction call)', () => {
+    assert(row1.acceptedAt, 'acceptedAt not set — auto-accept did not fire');
+    assert(row1.dispatchDeadlineAt, 'dispatchDeadlineAt not set');
+    eq(row1.paymentStatus, 'HELD', 'paymentStatus');
+  });
+
+  // GG (the house seller) dispatches + buyer confirms delivery → RELEASED.
+  await T.confirmDispatch(created1.transactionId, house.clerkId, {});
+  await T.confirmDelivery(created1.transactionId, buyer.clerkId);
+  const row1r = await tx(ctx, created1.transactionId);
+  check(rep, 'house deal: released after delivery', () => {
+    eq(row1r.paymentStatus, 'RELEASED', 'paymentStatus');
+    assert(row1r.releasedAt, 'releasedAt not set');
+  });
+  check(rep, 'house deal: money conserved (GG keeps all bar carrier; no seller cut)', () =>
+    assertHouseConserves(row1r),
+  );
+
+  // Payout batch MUST skip the house row (sellerPayout=0 → excluded).
+  await drainPayouts(ctx);
+  const row1p = await tx(ctx, created1.transactionId);
+  check(rep, 'house deal: payout SKIPPED (GG never pays itself)', () => {
+    assert(row1p.paidOutAt === null, 'paidOutAt should stay null for a house deal');
+    assert(row1p.payoutBatchId === null, 'payoutBatchId should stay null for a house deal');
+  });
+  rep.money({
+    label: 'Daily Deal (released)',
+    buyerPaid: row1r.buyerTotal,
+    sellerPaid: 0,
+    ggRevenue: row1r.buyerTotal - row1r.shippingCost,
+    carrier: row1r.shippingCost,
+    refunded: 0,
+  });
+
+  // ── (2) Per-customer cap rejection ───────────────────────────────────
+  const d2 = await makeDeal(ctx, {
+    dealPriceCents: 120_000,
+    wasPriceCents: 200_000,
+    costPriceCents: 80_000,
+    initialStock: 5, // ample stock — the CAP, not inventory, must reject
+    perCustomerCap: 1,
+  });
+  await T.create(
+    buyer.clerkId,
+    { listingId: d2.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
+    'http://localhost',
+  );
+  const cap = await safeStep(rep, 'per-customer cap: 2nd purchase over the cap is rejected', async () => {
+    let threw = false;
+    try {
+      await T.create(
+        buyer.clerkId,
+        { listingId: d2.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
+        'http://localhost',
+      );
+    } catch {
+      threw = true;
+    }
+    assert(threw, 'second over-cap purchase should have thrown');
+  });
+  void cap;
+
+  // ── (3) SOLD_OUT sync when stock exhausts ────────────────────────────
+  const d3 = await makeDeal(ctx, {
+    dealPriceCents: 90_000,
+    wasPriceCents: 150_000,
+    costPriceCents: 50_000,
+    initialStock: 1, // single unit → sells out on the first sale
+    perCustomerCap: 10,
+  });
+  const created3: any = await T.create(
+    buyer.clerkId,
+    { listingId: d3.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
+    'http://localhost',
+  );
+  await T.confirmManualPayment(created3.transactionId);
+  await settleTick(); // syncDealSoldOut fires fire-and-forget in markPaid
+  const listing3 = await P(ctx).listing.findUnique({ where: { id: d3.listingId } });
+  const deal3 = await P(ctx).deal.findUnique({ where: { id: d3.dealId } });
+  check(rep, 'sold-out sync: last unit → listing SOLD + Deal SOLD_OUT', () => {
+    eq(listing3.status, 'SOLD', 'listing.status');
+    eq(deal3.status, 'SOLD_OUT', 'deal.status');
+    assert(deal3.soldOutAt, 'soldOutAt not stamped');
+  });
+  // Close out the sold-out sale (it auto-accepted at payment) so it settles
+  // and doesn't linger as held client funds in the final ledger.
+  await waitFor(() => tx(ctx, created3.transactionId), (r) => !!r?.acceptedAt, { tries: 60, gap: 50 });
+  await T.confirmDispatch(created3.transactionId, house.clerkId, {});
+  await T.confirmDelivery(created3.transactionId, buyer.clerkId);
+  const row3r = await tx(ctx, created3.transactionId);
+  await drainPayouts(ctx);
+  rep.money({
+    label: 'Daily Deal (sold-out unit)',
+    buyerPaid: row3r.buyerTotal,
+    sellerPaid: 0,
+    ggRevenue: row3r.buyerTotal - row3r.shippingCost,
+    carrier: row3r.shippingCost,
+    refunded: 0,
+  });
+
+  // ── (4) Refund → synthetic child + conservation (Zoho credit-note no-op) ──
+  const d4 = await makeDeal(ctx, {
+    dealPriceCents: 130_000,
+    wasPriceCents: 220_000,
+    costPriceCents: 90_000,
+    initialStock: 5,
+    perCustomerCap: 10,
+  });
+  const created4: any = await T.create(
+    buyer.clerkId,
+    { listingId: d4.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
+    'http://localhost',
+  );
+  await T.confirmManualPayment(created4.transactionId);
+  await settleTick();
+  const admin = await P(ctx).adminUser.findFirst();
+  const parent4 = await tx(ctx, created4.transactionId);
+  await svc(ctx, AdminService).refundTransaction(
+    created4.transactionId,
+    admin.id,
+    'Daily Deal dummy-run refund',
+  );
+  const parent4r = await tx(ctx, created4.transactionId);
+  const children4 = await P(ctx).transaction.findMany({ where: { refundOfId: created4.transactionId } });
+  check(rep, 'house-deal refund: parent REFUNDED + synthetic child minted for the buyer', () => {
+    eq(parent4r.paymentStatus, 'REFUNDED', 'parent paymentStatus');
+    assert(children4.length === 1, `expected 1 refund child, got ${children4.length}`);
+    eq(children4[0].buyerTotal, parent4.buyerTotal, 'child buyerTotal');
+    eq(children4[0].sellerPayout, 0, 'child sellerPayout');
+  });
+  // Settle the refund so the buyer is paid exactly once + no lingering liability.
+  await drainPayouts(ctx);
+  rep.money({
+    label: 'Daily Deal (refunded)',
+    buyerPaid: parent4.buyerTotal,
+    sellerPaid: 0,
+    ggRevenue: 0,
+    carrier: 0,
+    refunded: parent4.buyerTotal,
   });
 }
 

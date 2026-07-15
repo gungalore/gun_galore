@@ -394,6 +394,7 @@ export class ZohoBooksService {
           select: {
             title: true,
             referenceNumber: true,
+            isDealListing: true,
           },
         },
       },
@@ -401,6 +402,17 @@ export class ZohoBooksService {
     if (!tx) return;
     // Idempotency — if we've already created the invoice, no-op.
     if (tx.zohoCommissionInvoiceId) return;
+    // DD-2 — Daily Deals house deal: GG is the SELLER (first-party), so there
+    // is no commission invoice + payout. Post a full-amount Sales Receipt to
+    // the BUYER instead, then return before the commission-invoice path. This
+    // branch sits at the single release chokepoint (every non-firearm RELEASED
+    // path funnels through createCommissionInvoice), so no release call-site
+    // needs to change. zohoCommissionInvoiceId stays null → markCommission-
+    // InvoicePaid self-skips for house rows.
+    if (tx.listing.isDealListing) {
+      await this.createDealSalesReceipt(transactionId);
+      return;
+    }
     // FLOW-F4 (H21) — PRIVATE_ARRANGE was skipped here on the false premise
     // that "we don't hold funds / take commission on that flow". We DO:
     // fee.calculator charges the same commission on PA sales, so skipping the
@@ -523,6 +535,114 @@ export class ZohoBooksService {
       });
       this.logger.log(
         `Created commission invoice ${resp.invoice?.invoice_number ?? invoiceId} for tx ${transactionId} (R${commissionRand.toFixed(2)})`,
+      );
+    } catch (err) {
+      await this.markFailed(transactionId, err as Error);
+    }
+  }
+
+  // DD-2 — Daily Deals first-party Sales Receipt. A house deal is sold BY Gun
+  // Galore, so at RELEASED the WHOLE sale is GG revenue (there is no seller
+  // commission). Post a paid-at-issue Sales Receipt to the BUYER for the full
+  // buyerTotal (mirrors the featured-slot receipt shape). Idempotent on the
+  // dedicated zohoDealReceiptId column — never reuse zohoCommissionInvoiceId
+  // (a Sales Receipt is a different Books object; markCommissionInvoicePaid
+  // would then do a wrong-type /invoices lookup). Never throws.
+  //
+  // Accountant note: posts ONE gross line = buyerTotal. For a first-party
+  // sale the revenue IS what the customer paid GG; the courier cost is a
+  // separate expense recorded when GG pays the carrier. The accountant may
+  // later choose to split goods vs shipping/handling into separate accounts.
+  async createDealSalesReceipt(transactionId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        buyer: { select: { id: true, email: true } },
+        listing: {
+          select: { title: true, referenceNumber: true, isDealListing: true },
+        },
+      },
+    });
+    if (!tx) return;
+    if (!tx.listing.isDealListing) return; // guard: house deals only
+    if (tx.zohoDealReceiptId) return; // idempotent
+    if (tx.buyerTotal <= 0) return;
+
+    await this.markPending(transactionId);
+    try {
+      const contactId = await this.ensureContact(tx.buyer.id, tx.buyer.email);
+      if (!contactId) {
+        throw new Error('Could not resolve Books contact for buyer');
+      }
+      const revenueAccountId =
+        (await this.getAccountIdByName('Daily Deals Revenue')) ??
+        (await this.getAccountIdByName('Commission Revenue'));
+      if (!revenueAccountId) {
+        throw new Error(
+          'No revenue account (Daily Deals Revenue / Commission Revenue) found in Books chart-of-accounts',
+        );
+      }
+      // EFT-paid deals land in FNB; bank account first.
+      const depositAccountId =
+        (await this.getAccountIdByName('Bank — FNB Business')) ??
+        (await this.getAccountIdByName('Bank — Peach Pending'));
+
+      const orderRef =
+        tx.listing.referenceNumber ?? tx.id.slice(-8).toUpperCase();
+      const totalRand = tx.buyerTotal / 100;
+      const today = new Date().toISOString().slice(0, 10);
+      const reference = `Daily Deal — ${orderRef} — ${tx.listing.title}`;
+
+      type CreateSalesReceiptResp = {
+        salesreceipt?: {
+          salesreceipt_id?: string;
+          salesreceipt_number?: string;
+        };
+        message?: string;
+      };
+      const payload: Record<string, unknown> = {
+        customer_id: contactId,
+        reference_number: reference,
+        date: today,
+        line_items: [
+          {
+            name: 'Daily Deal',
+            description: `${orderRef} — ${tx.listing.title}`,
+            rate: totalRand,
+            quantity: 1,
+            account_id: revenueAccountId,
+          },
+        ],
+        payment_mode: 'Other',
+        notes: `${reference}.\nGun Galore first-party sale — full amount is GG revenue.`,
+      };
+      if (depositAccountId) {
+        payload.deposit_to_account_id = depositAccountId;
+      }
+
+      const resp = await this.request<CreateSalesReceiptResp>(
+        'POST',
+        '/salesreceipts',
+        payload,
+      );
+      const receiptId = resp.salesreceipt?.salesreceipt_id;
+      if (!receiptId) {
+        throw new Error(
+          `Books deal receipt create returned no id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: {
+          zohoDealReceiptId: receiptId,
+          zohoSyncStatus: 'OK',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Created Daily Deal sales receipt ${resp.salesreceipt?.salesreceipt_number ?? receiptId} for tx ${transactionId} (R${totalRand.toFixed(2)})`,
       );
     } catch (err) {
       await this.markFailed(transactionId, err as Error);
@@ -757,11 +877,22 @@ export class ZohoBooksService {
       where: { id: transactionId },
       include: {
         seller: { select: { id: true, email: true } },
-        listing: { select: { title: true, referenceNumber: true } },
+        listing: {
+          select: { title: true, referenceNumber: true, isDealListing: true },
+        },
       },
     });
     if (!tx) return;
     if (tx.zohoCreditNoteId) return; // already credited
+    // DD-2 — Daily Deals house-deal refund: reverse the deal Sales Receipt
+    // with a Credit Note to the BUYER (not a seller commission credit).
+    // Refunds normally happen pre-release, when no receipt exists yet →
+    // createDealCreditNote no-ops. Return so house rows never hit the
+    // commission-credit path below.
+    if (tx.listing.isDealListing) {
+      await this.createDealCreditNote(transactionId, refundReason);
+      return;
+    }
     if (!tx.zohoCommissionInvoiceId) {
       await this.markSkipped(
         transactionId,
@@ -860,6 +991,104 @@ export class ZohoBooksService {
       });
       this.logger.log(
         `Created refund credit note ${resp.creditnote?.creditnote_number ?? creditNoteId} for tx ${transactionId} (R${commissionRand.toFixed(2)})`,
+      );
+    } catch (err) {
+      await this.markFailed(transactionId, err as Error);
+    }
+  }
+
+  // DD-2 — Daily Deals house-deal Credit Note. Reverses a deal Sales Receipt
+  // when a RELEASED house deal is refunded. If no receipt exists yet (the
+  // normal case — refunds happen PRE-release, before revenue is booked),
+  // no-op via markSkipped: there is nothing to reverse. Standalone credit note
+  // to the BUYER (a Sales Receipt has no invoice to apply against). Idempotent
+  // on zohoDealCreditNoteId. Never throws.
+  async createDealCreditNote(
+    transactionId: string,
+    refundReason?: string,
+  ): Promise<void> {
+    if (!this.isEnabled()) return;
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        buyer: { select: { id: true, email: true } },
+        listing: {
+          select: { title: true, referenceNumber: true, isDealListing: true },
+        },
+      },
+    });
+    if (!tx) return;
+    if (!tx.listing.isDealListing) return;
+    if (tx.zohoDealCreditNoteId) return; // idempotent
+    if (!tx.zohoDealReceiptId) {
+      // Pre-release refund: no Sales Receipt was ever posted, so there is no
+      // revenue to reverse. This is the normal path (refunds happen HELD).
+      await this.markSkipped(
+        transactionId,
+        'No deal sales receipt to credit (refund pre-release)',
+      );
+      return;
+    }
+    try {
+      const contactId = await this.ensureContact(tx.buyer.id, tx.buyer.email);
+      if (!contactId) {
+        throw new Error('Could not resolve Books contact for buyer');
+      }
+      const revenueAccountId =
+        (await this.getAccountIdByName('Daily Deals Revenue')) ??
+        (await this.getAccountIdByName('Commission Revenue'));
+      if (!revenueAccountId) {
+        throw new Error('No revenue account found in Books chart-of-accounts');
+      }
+
+      const orderRef =
+        tx.listing.referenceNumber ?? tx.id.slice(-8).toUpperCase();
+      const totalRand = tx.buyerTotal / 100;
+      const reason = (refundReason ?? 'Daily Deal refunded').slice(0, 200);
+      const today = new Date().toISOString().slice(0, 10);
+      const reference = `Daily Deal refund — ${orderRef} (reversing ${this.formatRand(totalRand)})`;
+
+      type CreateCreditNoteResp = {
+        creditnote?: { creditnote_id?: string; creditnote_number?: string };
+        message?: string;
+      };
+      const payload = {
+        customer_id: contactId,
+        reference_number: reference,
+        date: today,
+        line_items: [
+          {
+            name: 'Daily Deal — refund',
+            description: `${orderRef} — ${tx.listing.title} (${reason})`,
+            rate: totalRand,
+            quantity: 1,
+            account_id: revenueAccountId,
+          },
+        ],
+        notes: `${reference}.\nGun Galore transaction reference: ${orderRef}\nReason: ${reason}`,
+      };
+      const resp = await this.request<CreateCreditNoteResp>(
+        'POST',
+        '/creditnotes',
+        payload,
+      );
+      const creditNoteId = resp.creditnote?.creditnote_id;
+      if (!creditNoteId) {
+        throw new Error(
+          `Books deal credit-note create returned no id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: {
+          zohoDealCreditNoteId: creditNoteId,
+          zohoSyncStatus: 'OK',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Created Daily Deal credit note ${resp.creditnote?.creditnote_number ?? creditNoteId} for tx ${transactionId} (R${totalRand.toFixed(2)})`,
       );
     } catch (err) {
       await this.markFailed(transactionId, err as Error);

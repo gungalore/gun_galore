@@ -1562,6 +1562,18 @@ export class AdminService {
         })
         .catch(() => undefined);
 
+      // DD-2 — if this was a sold-out Daily Deal, the reversal above put the
+      // listing back to ACTIVE, so un-sold-out the Deal to keep its status
+      // consistent with the now-buyable listing (money-neutral state resync).
+      if (tx.listing.isDealListing) {
+        void this.prisma.deal
+          .updateMany({
+            where: { listingId: tx.listingId, status: 'SOLD_OUT' },
+            data: { status: 'LIVE', soldOutAt: null },
+          })
+          .catch(() => undefined);
+      }
+
       // M3 — notify the seller their item was refunded + relisted, mirroring
       // the buyer notification above and the buyer-cancel seller email. The
       // seller took no wrongdoing here (admin decision) so no strike copy.
