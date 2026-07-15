@@ -9,21 +9,25 @@ import {
   type AskGgNudge,
 } from '@/lib/ask-gg-nudges';
 import { useGgMuted } from '@/lib/ask-gg-mute';
+import { derivePageContext } from '@/lib/ask-gg-context';
 
 // Ask GG Everywhere — the floating launcher (mascot) + GG's proactive voice.
 //
 // ALWAYS-LOADED: this file may import only react, next/navigation,
-// './ask-gg-mascot', '@/lib/ask-gg-nudges' and '@/lib/ask-gg-mute' (bundle
-// rule — the panel chunk carries everything heavy). Rendered by AskGgHost on
-// every non-suppressed page in BROWSER modes only.
+// './ask-gg-mascot', '@/lib/ask-gg-nudges', '@/lib/ask-gg-mute' and
+// '@/lib/ask-gg-context' (all lean — the panel chunk carries everything
+// heavy). Rendered by AskGgHost on every non-suppressed page in BROWSER modes.
 //
-// ONE proactive bubble per page — useful-first (site-guide G1):
-//   - If this page-kind has a contextual coaching tip we haven't shown this
-//     session, GG shows THAT ("want a fair-price check on this?"). Tapping it
-//     opens the panel with the question STAGED in the composer — never
-//     auto-sent, so no AI quota is spent until the user chooses to ask.
-//   - Otherwise GG shows a short rotating hello, so he still greets on generic
-//     pages. Frequency lives in lib/ask-gg-nudges.ts (once per kind/session).
+// ONE proactive bubble per page — useful-first (site-guide G1 + G3):
+//   - G3 (state-aware): on a listing page GG fetches the server Guide's LIVE
+//     intro ($0 AI) — e.g. an auction's "Current bid R… · reserve met · ends
+//     in Xh" — and leads with THAT, tapping opens the Guide tab. The fetch
+//     runs in parallel with the dwell so it's ready in time; misses fall back.
+//   - Otherwise this page-kind's static coaching tip ("want a fair-price
+//     check?"), tapping stages the question in the composer — never auto-sent,
+//     so no AI quota is spent until the user chooses to ask.
+//   - Otherwise a short rotating hello, so he still greets on generic pages.
+//     Frequency lives in lib/ask-gg-nudges.ts (once per kind/session).
 //   - MUTE (lib/ask-gg-mute, permanent): while muted GG says nothing at all —
 //     no coaching, no hello — but stays fully tappable. Toggled by the small
 //     speaker button at his ~4 o'clock.
@@ -32,6 +36,9 @@ import { useGgMuted } from '@/lib/ask-gg-mute';
 // Geometry: a fixed #askgg-dock wraps the mascot (#askgg-fab) + mute button;
 // the bubble rides above it; dock + bubble lift via body[data-install-prompt]
 // rules in globals.css.
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // The assistant (GG) greets on every page visit. Copy rotates so repeat visits
 // don't read robotically — the first line does the full intro (name matches the
@@ -77,6 +84,28 @@ export function AskGgLauncher({
   useEffect(() => {
     if (panelArmed || muted) return;
     const coach = pickNudge(pathname);
+    const { kind, ctx } = derivePageContext(pathname);
+
+    // G3 — on a listing page whose kind slot is still free, fetch the server
+    // Guide's LIVE intro ($0 AI) in parallel with the dwell. Only auctions (and
+    // other state-aware guides) return an intro; everything else stays null and
+    // falls back to the static tip. At most one fetch per session (the kind
+    // cap closes after the first listing bubble). Resolves into a dead closure
+    // harmlessly if the user navigates first.
+    let liveIntro: string | null = null;
+    if (coach && kind === 'listing' && ctx.listingId) {
+      const qs = new URLSearchParams({ path: pathname ?? '/' });
+      qs.set('listingId', ctx.listingId);
+      fetch(`${API_URL}/ask-gg/public/guide?${qs.toString()}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((g: { intro?: string } | null) => {
+          liveIntro = typeof g?.intro === 'string' ? g.intro : null;
+        })
+        .catch(() => {
+          /* offline / throttled — fall back to the static tip */
+        });
+    }
+
     const t = window.setTimeout(
       () => {
         if (spentThisPageRef.current) return;
@@ -91,7 +120,11 @@ export function AskGgLauncher({
           return;
         }
         spentThisPageRef.current = true;
-        if (coach) {
+        if (liveIntro) {
+          // Live, state-aware tip → tapping (no prefill) opens the Guide tab.
+          markNudgeShown(kind);
+          setBubble({ kind, text: `${liveIntro} Tap me for the guide 👇` });
+        } else if (coach) {
           markNudgeShown(coach.kind);
           setBubble({
             kind: coach.kind,
