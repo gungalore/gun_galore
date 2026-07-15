@@ -29,6 +29,147 @@ import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.servic
 import { validateAndCleanAttributes } from './attribute-validation';
 import { Prisma } from '@prisma/client';
 
+// Public-safe projection for the unauthenticated GET /listings/:id detail
+// endpoint. This is an explicit ALLOWLIST: every field named here is safe to
+// hand to an anonymous caller, and — crucially — any Listing column NOT named
+// here is withheld by construction, so a newly-added column is private by
+// default until someone deliberately exposes it.
+//
+// NEVER add to this list (they are leaked to the world otherwise):
+//   • reservePrice / autoAcceptThreshold — hidden seller thresholds; the app
+//     only ever exposes the derived `reserveMet` boolean.
+//   • currentBidderId — reveals the identity of the current high bidder.
+//   • serialNumber / serialPhotoUrl / licencePhotoUrl / licenceHolderName
+//     (the seller's real name!) / licenceExpiresAt / licenceExpiryWarnedAt /
+//     firearmType — SAP-534 firearm serial + licence capture.
+//   • pickup* (building/street/address2/suburb/city/postalCode/lat/lng) +
+//     pickupPudoLockerId — the seller's private pickup address & geolocation.
+//   • adminReviewedById / adminReviewedAt / adminOverrideReason — internal
+//     admin moderation notes.
+//   • claudeConfidence / claudeReviewedAt / claudeOriginalDescription — model
+//     moderation internals (the original, pre-auto-fix description especially).
+//   • supplierRegistrationNumber / supplierRegistrationDocUrl /
+//     supplierInsuranceUrl / supplierAttestedAt / supplierDocReview* — supplier
+//     document URLs + internal review outcome.
+//   • priceDropNotifiedAt — internal notification throttle bookkeeping.
+// The owner (see findById) additionally receives reservePrice,
+// autoAcceptThreshold, and the three claude* fields the moderation banner
+// needs — via a separate, token-gated select.
+export const PUBLIC_LISTING_SELECT = {
+  id: true,
+  referenceNumber: true,
+  sellerId: true,
+  categoryId: true,
+  title: true,
+  description: true,
+  price: true,
+  compareAtPriceZarCents: true,
+  listingType: true,
+  status: true,
+  condition: true,
+  province: true,
+  isFirearm: true,
+  collectionOnly: true,
+  requiresPapers: true,
+  papersAttestedAt: true,
+  testedWorkingAttestedAt: true,
+  // Experiences (on-site service metadata — all public).
+  isExperience: true,
+  experienceType: true,
+  eventStartDate: true,
+  eventEndDate: true,
+  eventProvince: true,
+  locationText: true, // property/area free text (never an exact address)
+  capacitySlots: true,
+  durationText: true,
+  speciesList: true,
+  whatsIncluded: true,
+  rifleProvided: true,
+  make: true,
+  model: true,
+  calibre: true,
+  attributes: true,
+  weightGrams: true,
+  lengthCm: true,
+  widthCm: true,
+  heightCm: true,
+  trackInventory: true,
+  quantityAvailable: true,
+  quantityReserved: true,
+  // Auction — the PUBLIC auction fields only (reservePrice/currentBidderId
+  // are deliberately absent; reserveMet is the safe derived signal).
+  buyNowPrice: true,
+  isFeatured: true,
+  currentBid: true,
+  bidCount: true,
+  reserveMet: true,
+  startTime: true,
+  endTime: true,
+  durationDays: true,
+  endedAt: true,
+  // Legacy fee flag — checkout reads it to render the (locked-off) fee line.
+  passFeeToBuyer: true,
+  shippingMethods: true,
+  // Planned dealer-stock hint — intentionally shown to buyers on the PDP.
+  plannedDealerLocation: true,
+  plannedDealerName: true,
+  plannedDealerProvince: true,
+  plannedDealerArea: true,
+  expiresAt: true,
+  soldAt: true,
+  listedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  images: { orderBy: { order: 'asc' } },
+  category: true,
+  seller: {
+    select: {
+      id: true,
+      clerkId: true,
+      // Public-facing handle only. firstName/lastName are explicitly NOT
+      // selected — listing detail must not leak the seller's real identity.
+      username: true,
+      avatarUrl: true,
+      sellerTier: true,
+      totalSales: true,
+      createdAt: true,
+      subscriptionTier: true,
+      isVerifiedExpert: true,
+      expertBadgeReason: true,
+      averageRating: true,
+      _count: { select: { ratingsReceived: true } },
+    },
+  },
+  // Social-proof: how many people saved this listing (names never exposed).
+  _count: { select: { wishlistedBy: true } },
+} satisfies Prisma.ListingSelect;
+
+// The extra fields the OWNER of a listing is allowed to see on top of the
+// public projection: their own hidden reserve + auto-accept threshold (needed
+// to pre-fill the edit form) and the three moderation-banner fields (so the
+// seller sees "pending review" / "rejected" / "description edited" on their
+// own listing). Kept as a separate token-gated select so these never reach a
+// non-owner. claudeConfidence / claudeOriginalDescription stay admin-only.
+const OWNER_LISTING_EXTRAS_SELECT = {
+  reservePrice: true,
+  autoAcceptThreshold: true,
+  claudeDecision: true,
+  claudeReasons: true,
+  claudeAutoFixApplied: true,
+} satisfies Prisma.ListingSelect;
+
+// Statuses whose detail page is visible to the public. DRAFT /
+// PENDING_REVIEW / CANCELLED are visible ONLY to the owner (below); this stops
+// anonymous callers probing not-yet-approved or withdrawn listings by id.
+// PAYMENT_PENDING is public: a single-item listing sits here while a buyer
+// completes checkout and the "sale pending" PDP must still load.
+const PUBLICLY_VISIBLE_STATUSES: ListingStatus[] = [
+  ListingStatus.ACTIVE,
+  ListingStatus.PAYMENT_PENDING,
+  ListingStatus.SOLD,
+  ListingStatus.EXPIRED,
+];
+
 // Listing types that carry NO listed sale price — buyers name a price
 // (TAKE_A_SHOT) or trade an item (SWOP). The price guards below treat both
 // the same: price must be omitted, not required.
@@ -1784,49 +1925,42 @@ export class ListingsService {
     return { listings, total, page, limit };
   }
 
-  async findById(id: string) {
+  // Public listing detail (GET /listings/:id). This endpoint is unguarded by
+  // design — it powers the server-rendered PDP — so it MUST NOT hand out the
+  // seller's private fields (see PUBLIC_LISTING_SELECT for the full block-list
+  // and why). It IS, however, owner-aware: when the caller presents a valid
+  // Clerk token for the seller (via OptionalClerkGuard → clerkId), they also
+  // get their hidden reserve / auto-accept threshold (to pre-fill the edit
+  // form) and the moderation-banner fields, and may see the listing at any
+  // status. Anonymous / non-owner callers get the public projection and only
+  // for publicly-visible statuses.
+  async findById(id: string, clerkId?: string) {
     const listing = await this.prisma.listing.findUnique({
       where: { id },
-      include: {
-        images: { orderBy: { order: 'asc' } },
-        category: true,
-        seller: {
-          select: {
-            id: true,
-            clerkId: true,
-            // Public-facing handle only. firstName/lastName are
-            // explicitly NOT selected here — listing detail must not
-            // leak the seller's real identity.
-            username: true,
-            avatarUrl: true,
-            sellerTier: true,
-            totalSales: true,
-            createdAt: true,
-            // Phase E1 badges (OD1 + OD2 locked).
-            subscriptionTier: true,
-            isVerifiedExpert: true,
-            // Public rationale — only shown on the seller profile,
-            // never on browse cards. Visible to everyone because
-            // the badge is a public award; private rationale lives
-            // in AdminAuditEvent only.
-            expertBadgeReason: true,
-            // UX-1b — seller rating shown near the PDP title (links to
-            // the seller profile). Cached average + cheap joined count.
-            averageRating: true,
-            _count: { select: { ratingsReceived: true } },
-          },
-        },
-        // Social-proof signals: how many people have saved this
-        // listing. Surfaced as "X people saved this" on the listing
-        // detail page (only when ≥ 3 — "1 person saved this" reads
-        // sadder than no signal). Cheap aggregate query via Prisma's
-        // _count. Counts are public — names never are.
-        _count: {
-          select: { wishlistedBy: true },
-        },
-      },
+      select: PUBLIC_LISTING_SELECT,
     });
     if (!listing) throw new NotFoundException('Listing not found');
+
+    const isOwner = !!clerkId && listing.seller?.clerkId === clerkId;
+
+    if (isOwner) {
+      // Owner sees their own listing at any status, plus the private extras.
+      // Second (tiny) query keeps the hot public path to a single round-trip
+      // and keeps the private columns out of the shared public select.
+      const extras = await this.prisma.listing.findUnique({
+        where: { id },
+        select: OWNER_LISTING_EXTRAS_SELECT,
+      });
+      return { ...listing, ...extras };
+    }
+
+    // Non-owner: don't let DRAFT / PENDING_REVIEW / CANCELLED listings be
+    // probed by id. Throw the same NotFound as a missing row so existence
+    // isn't revealed.
+    if (!PUBLICLY_VISIBLE_STATUSES.includes(listing.status)) {
+      throw new NotFoundException('Listing not found');
+    }
+
     return listing;
   }
 

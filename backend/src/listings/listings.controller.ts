@@ -28,6 +28,7 @@ import { BrowseListingsDto } from './dto/browse-listings.dto';
 import { CrossSellDto } from './dto/cross-sell.dto';
 import { PreviewListingDto } from './dto/preview-listing.dto';
 import { ClerkGuard } from '../auth/clerk.guard';
+import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('listings')
@@ -136,10 +137,17 @@ export class ListingsController {
     return this.listingsService.findMine(clerkId);
   }
 
+  // Public listing detail. OptionalClerkGuard makes this owner-aware without
+  // rejecting anonymous callers: if the seller's Clerk token is present,
+  // @CurrentUser() resolves their id and findById adds the owner-only fields
+  // (hidden reserve, auto-accept threshold, moderation-banner data) and lifts
+  // the public-status gate for their own listing. Everyone else gets the
+  // public projection. See ListingsService.PUBLIC_LISTING_SELECT.
   @Get(':id')
   @SkipThrottle()
-  findOne(@Param('id') id: string) {
-    return this.listingsService.findById(id);
+  @UseGuards(OptionalClerkGuard)
+  findOne(@Param('id') id: string, @CurrentUser() clerkId?: string) {
+    return this.listingsService.findById(id, clerkId);
   }
 
   @Post()

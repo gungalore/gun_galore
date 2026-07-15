@@ -312,25 +312,33 @@ export interface Listing {
   // units to render the specifications table.
   attributes?: Record<string, unknown> | null;
   passFeeToBuyer: boolean;
-  autoAcceptThreshold: number | null;
-  // Claude moderation fields
-  claudeDecision:
+  // Owner-only: the hidden auto-accept threshold is returned by
+  // GET /listings/:id ONLY to the seller (edit-form prefill), so it's
+  // optional on the shared type — absent from the public/anonymous payload.
+  autoAcceptThreshold?: number | null;
+  // Claude moderation fields. decision/reasons/autoFixApplied come back ONLY
+  // to the owner (their moderation banner); confidence/reviewedAt/
+  // originalDescription are admin-only and never on this endpoint. All
+  // optional — absent from the public payload.
+  claudeDecision?:
     | 'APPROVE'
     | 'AUTO_FIX_AND_APPROVE'
     | 'REJECT'
     | 'HUMAN_REVIEW'
     | null;
-  claudeConfidence: number | null;
-  claudeReasons: string[];
-  claudeReviewedAt: string | null;
-  claudeAutoFixApplied: boolean;
-  claudeOriginalDescription: string | null;
+  claudeConfidence?: number | null;
+  claudeReasons?: string[];
+  claudeReviewedAt?: string | null;
+  claudeAutoFixApplied?: boolean;
+  claudeOriginalDescription?: string | null;
   // Auction fields
-  reservePrice: number | null;
+  // Owner-only hidden reserve (edit-form prefill); never in the public payload.
+  reservePrice?: number | null;
   buyNowPrice: number | null;
   isFeatured: boolean;
   currentBid: number | null;
-  currentBidderId: string | null;
+  // Never exposed publicly (reveals the current high bidder's identity).
+  currentBidderId?: string | null;
   bidCount: number;
   reserveMet: boolean;
   startTime: string | null;

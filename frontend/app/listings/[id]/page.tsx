@@ -46,8 +46,14 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Forward the seller's token so their own not-yet-public listing still
+  // resolves a real title (the owner-aware endpoint 404s non-public statuses
+  // for everyone else). Anonymous callers send no token → public projection.
+  const { getToken } = await auth();
+  const token = await getToken().catch(() => null);
   const listing = await apiFetch<Listing>(`/listings/${id}`, {
     cache: 'no-store',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   }).catch(() => null);
   if (!listing) return { title: 'Listing not found — Gun Galore' };
   const url = `/listings/${id}`;
@@ -76,8 +82,16 @@ export default async function ListingDetailPage({
 }) {
   const { id } = await params;
 
+  // Forward the caller's Clerk session token to the (owner-aware) detail
+  // endpoint. The seller viewing their own listing gets the extra fields the
+  // moderation banner needs + access to their own non-active listing; every
+  // other viewer gets the public projection. Anonymous → no token → public.
+  const { userId, getToken } = await auth();
+  const token = await getToken().catch(() => null);
+
   const listing = await apiFetch<Listing>(`/listings/${id}`, {
     cache: 'no-store',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   }).catch(() => null);
 
   if (!listing) return notFound();
@@ -86,7 +100,6 @@ export default async function ListingDetailPage({
   // Buy Now CTA can swap to a non-purchase state. The backend
   // already rejects self-purchase, but the button shouldn't even
   // appear — it's confusing UX and was triggering a 400 round-trip.
-  const { userId } = await auth();
   const isOwnListing = !!userId && userId === listing.seller.clerkId;
 
   // UX-1a — sellable units for the low-stock urgency chip beside the price.
@@ -352,9 +365,12 @@ export default async function ListingDetailPage({
             listingId={listing.id}
             sellerClerkId={listing.seller.clerkId}
             status={listing.status}
-            decision={listing.claudeDecision}
-            reasons={listing.claudeReasons}
-            autoFixApplied={listing.claudeAutoFixApplied}
+            // These moderation fields only come back from the owner-aware
+            // endpoint for the seller themselves; coalesce for the public
+            // payload (the banner also self-hides for non-sellers).
+            decision={listing.claudeDecision ?? null}
+            reasons={listing.claudeReasons ?? []}
+            autoFixApplied={listing.claudeAutoFixApplied ?? false}
           />
 
           {/* For AUCTIONS, the AuctionPanel renders current bid + countdown,
