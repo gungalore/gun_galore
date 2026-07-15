@@ -244,12 +244,11 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
                     href={`/category/${c.slug}`}
                     role="menuitem"
                     onClick={() => setOpen(false)}
-                    className="flex items-center justify-between hover:text-[#f5f5f5]"
+                    className="cat-submenu-item flex items-center justify-between"
                     style={{
                       padding: '7px 16px',
                       fontSize: 13,
                       textDecoration: 'none',
-                      color: 'var(--text-secondary)',
                     }}
                   >
                     <span>{c.name}</span>

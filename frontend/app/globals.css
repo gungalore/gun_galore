@@ -449,3 +449,17 @@ body[data-install-prompt='true'] #askgg-hello {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
   }
 }
+
+/* Category flyout sub-menu items — red hover/focus highlight matching the
+   root category list (rgba red tint + red left border + white text). */
+.cat-submenu-item {
+  color: var(--text-secondary);
+  border-left: 2px solid transparent;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.cat-submenu-item:hover,
+.cat-submenu-item:focus-visible {
+  background: rgba(200, 16, 46, 0.12);
+  border-left-color: var(--red);
+  color: #fff;
+}
