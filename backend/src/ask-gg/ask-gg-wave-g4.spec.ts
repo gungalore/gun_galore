@@ -325,7 +325,6 @@ describe('G4 static coverage — new keys resolve for their paths', () => {
     ['/my/listings', 'my-listings'],
     ['/my/swaps', 'swaps'],
     ['/my/earnings', 'earnings'],
-    ['/my/tickets', 'tickets'],
     ['/my/offers', 'offers'],
     ['/my/bids', 'offers'],
     ['/offers/received', 'offers'],

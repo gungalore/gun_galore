@@ -460,7 +460,6 @@ export class AskGgGuideService {
       if (seg[1] === 'listings') return 'my-listings';
       if (seg[1] === 'swaps') return 'swaps';
       if (seg[1] === 'earnings') return 'earnings';
-      if (seg[1] === 'tickets') return 'tickets';
       return 'orders';
     }
     if (seg[0] === 'orders' || seg[0] === 'offers') return 'offers';

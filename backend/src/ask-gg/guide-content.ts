@@ -435,19 +435,6 @@ export const GUIDES: Record<string, AskGgGuide> = {
     ],
   },
 
-  tickets: {
-    key: 'tickets',
-    title: 'Your support tickets',
-    points: [
-      'Your conversations with the Gun Galore team live here, with their replies and status.',
-      'Most questions I can answer instantly — try me first, it’s faster.',
-      'Need a human? I can draft a ticket for you to send with one tap, pre-filled with the details.',
-    ],
-    ctas: [
-      { label: 'Draft a support ticket', ask: 'Help me draft a support ticket about ' },
-    ],
-  },
-
   sellers: {
     key: 'sellers',
     title: 'About this seller',

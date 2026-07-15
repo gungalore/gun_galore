@@ -157,7 +157,7 @@ export function Hero() {
             }}
           >
             Buy, sell, bid and{' '}
-            <span style={{ color: 'var(--red)' }}>win</span>
+            <span style={{ color: 'var(--red)' }}>trade</span>
             <br />
             outdoor, hunting &amp; sport gear.
           </h1>

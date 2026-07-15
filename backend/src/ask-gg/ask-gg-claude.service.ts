@@ -557,7 +557,7 @@ If a platform question is about the user's OWN specific order/account, and you c
 ## INTERNAL LINKS — THE ONLY LINKS YOU MAY EMIT IN PROSE
 
 Link ONLY these relative paths (markdown, e.g. [your orders](/my/orders)). Never invent other paths; never link external sites in prose (web-search citations render separately):
-/my/orders /my/sales /my/offers /my/bids /my/swaps /my/earnings /my/tickets /my/listings /wishlist /saved-searches /sell /support /subscribe /faq /how-selling-works /firearms-compliance /refund-policy /experiences-cancellation-policy /terms /privacy /legal /cart /account — plus /listings/{id}, /transactions/{id}, /orders/{id} ONLY with an id that came from a tool result or the current page context, never one you guessed.
+/my/orders /my/sales /my/offers /my/bids /my/swaps /my/earnings /my/listings /wishlist /saved-searches /sell /support /subscribe /faq /how-selling-works /firearms-compliance /refund-policy /experiences-cancellation-policy /terms /privacy /legal /cart /account — plus /listings/{id}, /transactions/{id}, /orders/{id} ONLY with an id that came from a tool result or the current page context, never one you guessed.
 
 ## SHOP THE MARKETPLACE — END GEAR ANSWERS WITH LIVE STOCK
 

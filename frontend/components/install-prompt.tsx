@@ -323,7 +323,7 @@ export function InstallPrompt() {
               {[
                 'One-tap launch from your home screen',
                 'Faster & fullscreen — no browser bars',
-                'Never miss an auction, offer or draw',
+                'Never miss an auction, offer or sale',
               ].map((b) => (
                 <div
                   key={b}
