@@ -108,6 +108,7 @@ export class AskGgGuideAdminController {
   async reset(
     @CurrentAdmin() admin: { sub: string },
     @Param('key') key: string,
+    @Body() body: { reason?: string },
   ) {
     // Record BEFORE the delete so the audit row survives.
     await this.audit.record({
@@ -115,7 +116,9 @@ export class AskGgGuideAdminController {
       action: 'ASKGG_GUIDE_RESET',
       resourceType: 'AskGgGuideOverride',
       resourceId: key,
-      reason: `Discarded the "${key}" guide override (back to shipped default).`,
+      reason:
+        body?.reason?.trim() ||
+        `Discarded the "${key}" guide override (back to shipped default).`,
     });
     return this.guide.adminResetGuide(key);
   }

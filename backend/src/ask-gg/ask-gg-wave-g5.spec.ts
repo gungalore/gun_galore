@@ -175,6 +175,26 @@ describe('G5 admin editor validation (house rules + caps)', () => {
     ).rejects.toThrow();
   });
 
+  it('rejects inflected forms of "escrow" (escrows / escrowed)', async () => {
+    const { guide } = build();
+    await expect(
+      guide.adminSaveGuide('home', { title: 'Ok', points: ['We use escrows for funds.'] }, 'admin_1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      guide.adminSaveGuide('home', { title: 'Funds are escrowed', points: ['x'] }, 'admin_1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects prototype-chain keys (__proto__ / constructor / toString)', async () => {
+    const { guide } = build();
+    for (const k of ['__proto__', 'constructor', 'toString']) {
+      await expect(
+        guide.adminSaveGuide(k, { title: 'Ok', points: ['x'] }, 'admin_1'),
+      ).rejects.toThrow();
+      await expect(guide.adminGetGuide(k)).rejects.toThrow();
+    }
+  });
+
   it('accepts a clean edit and upserts as DRAFT (not auto-published)', async () => {
     const { guide, prisma } = build();
     const res = await guide.adminSaveGuide(

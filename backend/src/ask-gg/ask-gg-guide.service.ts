@@ -38,8 +38,13 @@ import {
 
 const ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
-/** House rule enforced on admin-authored guide copy. */
-const ESCROW_RE = /\bescrow\b/i;
+/** House rule enforced on admin-authored guide copy (incl. inflections:
+ *  escrow / escrows / escrowed / escrowing). */
+const ESCROW_RE = /\bescrow(s|ed|ing)?\b/i;
+
+/** The set of real guide keys. An own-key membership test (NOT `GUIDES[key]`)
+ *  so prototype-chain names like `__proto__` / `constructor` are rejected. */
+const KNOWN_GUIDE_KEYS = new Set(Object.keys(GUIDES));
 
 /** The shape a PUBLISHED override contributes to a guide. */
 interface GuideOverrideView {
@@ -225,7 +230,11 @@ export class AskGgGuideService {
       return map;
     } catch (e) {
       this.logger.warn(`guide overrides load failed, using defaults: ${String(e)}`);
-      return this.overrideCache?.map ?? new Map();
+      // Negative-cache the fallback briefly so a sustained DB outage doesn't
+      // add a failing query to EVERY guide request (short backoff, not a full TTL).
+      const fallback = this.overrideCache?.map ?? new Map<string, GuideOverrideView>();
+      this.overrideCache = { at: now - this.OVERRIDE_TTL_MS + 5_000, map: fallback };
+      return fallback;
     }
   }
 
@@ -607,8 +616,8 @@ export class AskGgGuideService {
 
   /** One key: the shipped default + the current override (if any). */
   async adminGetGuide(key: string) {
+    if (!KNOWN_GUIDE_KEYS.has(key)) throw new NotFoundException('Unknown guide key.');
     const base = GUIDES[key];
-    if (!base) throw new NotFoundException('Unknown guide key.');
     const ov = await this.prisma.askGgGuideOverride.findUnique({
       where: { key },
     });
@@ -643,7 +652,7 @@ export class AskGgGuideService {
     input: { title?: unknown; intro?: unknown; points?: unknown; ctas?: unknown },
     adminSub: string,
   ) {
-    if (!GUIDES[key]) throw new NotFoundException('Unknown guide key.');
+    if (!KNOWN_GUIDE_KEYS.has(key)) throw new NotFoundException('Unknown guide key.');
     const clean = validateGuidePayload(input);
     const row = await this.prisma.askGgGuideOverride.upsert({
       where: { key },
@@ -670,7 +679,7 @@ export class AskGgGuideService {
 
   /** Take the saved draft live. Requires an existing override row. */
   async adminPublishGuide(key: string, adminSub: string) {
-    if (!GUIDES[key]) throw new NotFoundException('Unknown guide key.');
+    if (!KNOWN_GUIDE_KEYS.has(key)) throw new NotFoundException('Unknown guide key.');
     const existing = await this.prisma.askGgGuideOverride.findUnique({
       where: { key },
       select: { id: true },
@@ -689,7 +698,7 @@ export class AskGgGuideService {
   /** Pull a published guide back to DRAFT — users revert to the shipped
    *  default, but the draft is kept for further editing. */
   async adminUnpublishGuide(key: string, adminSub: string) {
-    if (!GUIDES[key]) throw new NotFoundException('Unknown guide key.');
+    if (!KNOWN_GUIDE_KEYS.has(key)) throw new NotFoundException('Unknown guide key.');
     const existing = await this.prisma.askGgGuideOverride.findUnique({
       where: { key },
       select: { id: true },
@@ -705,7 +714,7 @@ export class AskGgGuideService {
 
   /** Discard the override entirely — revert to the shipped default. */
   async adminResetGuide(key: string) {
-    if (!GUIDES[key]) throw new NotFoundException('Unknown guide key.');
+    if (!KNOWN_GUIDE_KEYS.has(key)) throw new NotFoundException('Unknown guide key.');
     await this.prisma.askGgGuideOverride
       .delete({ where: { key } })
       .catch(() => undefined); // already default → no-op

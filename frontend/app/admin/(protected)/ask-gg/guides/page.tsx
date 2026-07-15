@@ -80,7 +80,10 @@ function formToPayload(f: Form) {
     intro: f.intro.trim(),
     points: f.points.map((p) => p.trim()).filter(Boolean),
     ctas: f.ctas
-      .filter((c) => c.label.trim() && c.value.trim())
+      // Keep a half-filled CTA (label OR value) so the backend returns its
+      // specific "needs a link or a question" error instead of silently
+      // dropping the operator's button. Only fully-empty rows are discarded.
+      .filter((c) => c.label.trim() || c.value.trim())
       .map((c) =>
         c.kind === 'link'
           ? { label: c.label.trim(), href: c.value.trim() }
@@ -142,6 +145,8 @@ export default function GuideAdminPage() {
 
   async function save(): Promise<boolean> {
     if (!selected || !form) return false;
+    // Editing a PUBLISHED guide keeps it published → the save goes live.
+    const wasLive = detail?.override?.status === 'PUBLISHED';
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -158,7 +163,7 @@ export default function GuideAdminPage() {
       }
       await refresh();
       await openKey(selected);
-      setNotice('Saved.');
+      setNotice(wasLive ? 'Updated — live for users now.' : 'Saved as a draft (not live yet).');
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error.');
@@ -364,6 +369,25 @@ function Editor({
         </span>
       </div>
 
+      {status === 'PUBLISHED' && (
+        <p
+          role="note"
+          style={{
+            margin: 0,
+            padding: '8px 10px',
+            fontSize: 12.5,
+            lineHeight: 1.4,
+            color: '#c9a050',
+            background: 'rgba(200,160,80,0.10)',
+            border: '0.5px solid rgba(200,160,80,0.45)',
+            borderRadius: 6,
+          }}
+        >
+          This guide is <strong>live for users</strong> — saving updates what they
+          see right away. To draft changes privately, Unpublish first.
+        </p>
+      )}
+
       {notice && (
         <p style={{ ...alertStyle, color: 'var(--text-secondary)', background: 'var(--bg-inset)', borderColor: 'var(--border)' }}>
           {notice}
@@ -394,7 +418,7 @@ function Editor({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
               {form.points.map((p, i) => (
                 <div key={i} style={{ display: 'flex', gap: 6 }}>
-                  <textarea value={p} rows={2} maxLength={300} onChange={(e) => setPoint(i, e.target.value)} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', flex: 1 }} />
+                  <textarea aria-label={`Point ${i + 1}`} value={p} rows={2} maxLength={300} onChange={(e) => setPoint(i, e.target.value)} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', flex: 1 }} />
                   <button type="button" aria-label="Remove point" onClick={() => setForm({ ...form, points: form.points.filter((_, idx) => idx !== i) })} style={miniBtn}>
                     ✕
                   </button>
@@ -414,8 +438,8 @@ function Editor({
               {form.ctas.map((c, i) => (
                 <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: 8, background: 'var(--bg-deep)', border: '0.5px solid var(--border)', borderRadius: 6 }}>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <input type="text" placeholder="Label" value={c.label} maxLength={60} onChange={(e) => setCta(i, { label: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
-                    <select value={c.kind} onChange={(e) => setCta(i, { kind: e.target.value as EditCta['kind'] })} style={{ ...inputStyle, width: 'auto' }}>
+                    <input type="text" aria-label={`Button ${i + 1} label`} placeholder="Label" value={c.label} maxLength={60} onChange={(e) => setCta(i, { label: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+                    <select aria-label={`Button ${i + 1} type`} value={c.kind} onChange={(e) => setCta(i, { kind: e.target.value as EditCta['kind'] })} style={{ ...inputStyle, width: 'auto' }}>
                       <option value="link">Link</option>
                       <option value="ask">Ask GG</option>
                     </select>
@@ -425,6 +449,7 @@ function Editor({
                   </div>
                   <input
                     type="text"
+                    aria-label={`Button ${i + 1} ${c.kind === 'link' ? 'link' : 'question'}`}
                     placeholder={c.kind === 'link' ? 'Internal path e.g. /listings/new' : 'Question staged into the chat'}
                     value={c.value}
                     maxLength={300}
@@ -470,8 +495,13 @@ function Editor({
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" onClick={onSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>
-          {saving ? 'Saving…' : 'Save'}
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          style={{ ...(status === 'PUBLISHED' ? btnLive : btnPrimary), opacity: saving ? 0.6 : 1 }}
+        >
+          {saving ? 'Saving…' : status === 'PUBLISHED' ? 'Save & update live' : 'Save draft'}
         </button>
         {status !== 'PUBLISHED' ? (
           <button type="button" onClick={onPublish} disabled={saving} style={btnPublish}>
@@ -569,6 +599,12 @@ const btnPrimary: React.CSSProperties = {
 const btnPublish: React.CSSProperties = {
   ...btnPrimary,
   background: '#1a9e4b',
+};
+
+// Amber — signals "this write goes live to users right now".
+const btnLive: React.CSSProperties = {
+  ...btnPrimary,
+  background: '#b8860b',
 };
 
 const miniBtn: React.CSSProperties = {
