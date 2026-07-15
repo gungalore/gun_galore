@@ -1195,7 +1195,7 @@ export class ListingsService {
   async listBrands(limit = 60): Promise<string[]> {
     const rows = await this.prisma.listing.groupBy({
       by: ['make'],
-      where: { status: 'ACTIVE', make: { not: null } },
+      where: { status: 'ACTIVE', isDealListing: false, make: { not: null } },
       _count: { make: true },
       orderBy: { _count: { make: 'desc' } },
       take: limit,
@@ -1218,7 +1218,7 @@ export class ListingsService {
   ): Promise<{ slug: string; label: string; count: number }[]> {
     const rows = await this.prisma.listing.groupBy({
       by: ['make'],
-      where: { status: 'ACTIVE', make: { not: null } },
+      where: { status: 'ACTIVE', isDealListing: false, make: { not: null } },
       _count: { make: true },
     });
     const folded = new Map<
@@ -1268,7 +1268,7 @@ export class ListingsService {
     if (!target) return null;
     const rows = await this.prisma.listing.groupBy({
       by: ['make'],
-      where: { status: 'ACTIVE', make: { not: null } },
+      where: { status: 'ACTIVE', isDealListing: false, make: { not: null } },
       _count: { make: true },
     });
     let count = 0;
@@ -1311,7 +1311,9 @@ export class ListingsService {
       where: {
         paymentStatus: { in: ['HELD', 'RELEASED'] },
         refundOfId: null,
-        listing: { status: 'SOLD', category: categoryFilter },
+        // Exclude first-party Daily Deals — deep house-deal discounts must not
+        // drag the public comp range down.
+        listing: { status: 'SOLD', isDealListing: false, category: categoryFilter },
       },
       select: { listingPrice: true, quantity: true },
       orderBy: { paidAt: 'desc' },
@@ -1364,7 +1366,7 @@ export class ListingsService {
     limit = 5000,
   ): Promise<{ id: string; updatedAt: Date }[]> {
     return this.prisma.listing.findMany({
-      where: { status: 'ACTIVE' },
+      where: { status: 'ACTIVE', isDealListing: false },
       select: { id: true, updatedAt: true },
       orderBy: { updatedAt: 'desc' },
       take: limit,
@@ -1569,7 +1571,9 @@ export class ListingsService {
       return { listings: [], total: 0, page: 1, limit: ids.length };
     }
     const rows = await this.prisma.listing.findMany({
-      where: { id: { in: ids }, status: 'ACTIVE' },
+      // isDealListing:false — a viewed deal PDP must not resurface as a normal
+      // recently-viewed card in the public rail.
+      where: { id: { in: ids }, status: 'ACTIVE', isDealListing: false },
       include: {
         images: { where: { isPrimary: true }, take: 1 },
         category: { select: { id: true, name: true, slug: true } },
@@ -1614,7 +1618,10 @@ export class ListingsService {
       maxPrice,
     } = dto;
 
-    const filterParts: string[] = ['status = "ACTIVE"'];
+    // isDealListing = false — first-party Daily Deals never appear in public
+    // search/facets (they live only on /deals). Requires 'isDealListing' in
+    // STATIC_LISTING_FILTERABLE_ATTRIBUTES (search.service.ts) + on the Meili doc.
+    const filterParts: string[] = ['status = "ACTIVE"', 'isDealListing = false'];
     // Parent-category rollup (mirrors browseViaPrisma): a parent id/slug
     // must match its own leaf listings OR any child's, via the indexed
     // parentId/parentSlug. Wrapped in parens so the outer AND-join stays
@@ -1840,7 +1847,11 @@ export class ListingsService {
       brandSlug,
     } = dto;
 
-    const where: Record<string, unknown> = { status: 'ACTIVE' };
+    // isDealListing:false — THE public-discovery chokepoint. GET /listings,
+    // category pages, /brand/[slug], seller grids, cross-sell and Ask GG's
+    // searchMarketplace/getComplements all flow through here; excluding Daily
+    // Deals once keeps them off every public grid. They surface only on /deals.
+    const where: Record<string, unknown> = { status: 'ACTIVE', isDealListing: false };
     // P5.7 — brand landing page. Fold the slug back to its stored `make`
     // variants and filter to all of them. An unknown/too-thin slug resolves
     // to null → match nothing (the page 404s before it ever calls browse, but
@@ -2520,7 +2531,8 @@ export class ListingsService {
   // re-running just overwrites each doc with the same shape.
   async reindexAllActiveListings(): Promise<{ reindexed: number }> {
     const rows = await this.prisma.listing.findMany({
-      where: { status: 'ACTIVE' },
+      // Daily Deals are never indexed for search (see indexListing skip).
+      where: { status: 'ACTIVE', isDealListing: false },
       include: { category: true },
     });
     for (const row of rows) {
@@ -2546,6 +2558,15 @@ export class ListingsService {
       category: { slug: string; name: string; parentId: string | null } | null;
     },
   ) {
+    // Daily Deals never enter the search index — they live only on /deals.
+    // Actively evict any stale doc (defensive; the create path already skips
+    // indexing house deals). Every doc that IS indexed therefore carries
+    // isDealListing:false, so the browse/facets filter `isDealListing = false`
+    // matches the whole index (the clause needs the attribute to exist).
+    if (listing.isDealListing) {
+      await this.removeFromIndex(listing.id);
+      return;
+    }
     try {
       // Parent-category rollup: index the parent's id + slug so a parent
       // browse can filter down to this leaf listing. Both null for
@@ -2572,6 +2593,9 @@ export class ListingsService {
         categoryName: listing.category?.name,
         parentId,
         parentSlug,
+        // Always present on indexed docs (deals are skipped above), so the
+        // browse/facets `isDealListing = false` filter has an attribute to match.
+        isDealListing: listing.isDealListing,
         status: listing.status,
         listingType: listing.listingType,
         condition: listing.condition,

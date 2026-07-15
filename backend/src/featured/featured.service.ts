@@ -518,12 +518,18 @@ export class FeaturedService {
           id: true,
           sellerId: true,
           status: true,
+          isDealListing: true,
           featuredInSlot: { select: { id: true } },
         },
       });
       if (!listing) throw new NotFoundException('Listing not found');
       if (listing.sellerId !== user.id) {
         throw new ForbiddenException('Listing is not yours');
+      }
+      // First-party Daily Deals live only on /deals — never on the homepage
+      // featured rail (defense-in-depth; the house seller never bids).
+      if (listing.isDealListing) {
+        throw new BadRequestException('Daily Deals cannot be featured');
       }
       if (listing.status !== 'ACTIVE') {
         throw new BadRequestException(
@@ -1196,15 +1202,18 @@ export class FeaturedService {
     const trimmed = listingIdOrRef.trim();
     let listing = await this.prisma.listing.findUnique({
       where: { id: trimmed },
-      select: { id: true, sellerId: true, status: true },
+      select: { id: true, sellerId: true, status: true, isDealListing: true },
     });
     if (!listing) {
       listing = await this.prisma.listing.findUnique({
         where: { referenceNumber: trimmed.toUpperCase() },
-        select: { id: true, sellerId: true, status: true },
+        select: { id: true, sellerId: true, status: true, isDealListing: true },
       });
     }
     if (!listing) throw new NotFoundException('Listing not found');
+    if (listing.isDealListing) {
+      throw new BadRequestException('Daily Deals cannot be featured');
+    }
     if (listing.status !== 'ACTIVE') {
       throw new BadRequestException('Listing must be ACTIVE');
     }

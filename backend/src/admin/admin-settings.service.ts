@@ -70,6 +70,43 @@ const FLAGS: SettingFlag[] = [
     type: 'number',
     default: '100',
   },
+
+  // ─── Deals ────────────────────────────────────────────────────
+  // First-party "OneDayOnly-style" Daily Deals. house_seller_user_id is
+  // deliberately NOT surfaced here — it's a system-seeded id with no
+  // text validation and must not be hand-edited.
+  {
+    key: 'deals_enabled',
+    label: 'Daily Deals enabled',
+    hint: 'Master switch for the public Daily Deals surface. Leave OFF until the storefront ships — the admin deal builder works regardless.',
+    group: 'Deals',
+    type: 'boolean',
+    default: 'false',
+  },
+  {
+    key: 'deal_drop_hour',
+    label: 'Daily drop hour (SAST, 0–23)',
+    hint: 'Hour of day the daily deal drop goes live, in SAST. 6 = 06:00. Values outside 0–23 are clamped.',
+    group: 'Deals',
+    type: 'number',
+    default: '6',
+  },
+  {
+    key: 'deal_default_per_customer_cap',
+    label: 'Default per-customer cap',
+    hint: 'Default maximum units one customer can buy of a new deal. Overridable per-deal in the builder. Default 10.',
+    group: 'Deals',
+    type: 'number',
+    default: '10',
+  },
+  {
+    key: 'deal_push_enabled',
+    label: 'Deal drop push enabled',
+    hint: 'Whether the daily drop sends a push/notification to subscribers. Default ON.',
+    group: 'Deals',
+    type: 'boolean',
+    default: 'true',
+  },
 ];
 
 @Injectable()

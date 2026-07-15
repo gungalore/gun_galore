@@ -343,7 +343,9 @@ export class WantedService {
     // that's what makes the response actionable through the normal rails.
     if (dto.listingId) {
       const listing = await this.prisma.listing.findFirst({
-        where: { id: dto.listingId, sellerId: me.id, status: 'ACTIVE' },
+        // isDealListing:false — a first-party house deal can never be linked as
+        // a wanted-ad response (defense-in-depth; sellerId would never match).
+        where: { id: dto.listingId, sellerId: me.id, status: 'ACTIVE', isDealListing: false },
         select: { id: true },
       });
       if (!listing) {

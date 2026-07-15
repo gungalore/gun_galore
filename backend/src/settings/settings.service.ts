@@ -121,6 +121,50 @@ export const FLAGS = {
       return Number.isFinite(n) && n >= 0 ? n : 20;
     },
   } as FlagDefinition<number>,
+  // ── Daily Deals (DD-1) ─────────────────────────────────────────────
+  // First-party "OneDayOnly-style" house deals. The house-seller User row
+  // that every Deal listing is filed under; seeded by seed-house-seller.ts
+  // and stored here so the DealsService can resolve it without a hardcoded
+  // id. Empty string = not yet seeded (DealsService fails closed on create).
+  // NOT exposed in the admin settings editor (free-text, no validation).
+  houseSellerUserId: {
+    key: 'house_seller_user_id',
+    default: '',
+    parse: (s) => s,
+  } as FlagDefinition<string>,
+  // Master on/off for the public Daily Deals surface. Inert until DD-2
+  // ships the storefront; DD-1 builds everything behind this OFF.
+  dealsEnabled: {
+    key: 'deals_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  // Hour of day (SAST, 0–23) the daily drop goes live. Default 06:00.
+  dealDropHour: {
+    key: 'deal_drop_hour',
+    default: 6,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      if (!Number.isFinite(n)) return 6;
+      return Math.min(23, Math.max(0, n));
+    },
+  } as FlagDefinition<number>,
+  // Default per-customer purchase cap applied to a new Deal (admin can
+  // override per-deal in the builder).
+  dealDefaultPerCustomerCap: {
+    key: 'deal_default_per_customer_cap',
+    default: 10,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n > 0 ? n : 10;
+    },
+  } as FlagDefinition<number>,
+  // Whether the daily drop fires a push/notification to subscribers.
+  dealPushEnabled: {
+    key: 'deal_push_enabled',
+    default: true,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
 } as const;
 
 @Injectable()

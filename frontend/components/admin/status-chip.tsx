@@ -45,6 +45,12 @@ export const ADMIN_STATUS_COLOR: Record<string, string> = {
   DELIVERED: '#22c55e',
   COLLECTED: '#22c55e',
   FAILED_DELIVERY: 'var(--red)',
+  // Daily Deals (DD-1) — DRAFT / CANCELLED reuse the listing colours above.
+  SCHEDULED: '#6366f1',
+  LIVE: '#22c55e',
+  EXTENDED: '#f59e0b',
+  ENDED: 'var(--text-tertiary)',
+  SOLD_OUT: '#3b82f6',
 };
 
 /**

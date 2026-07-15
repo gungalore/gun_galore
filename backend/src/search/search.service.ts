@@ -26,6 +26,10 @@ const STATIC_LISTING_FILTERABLE_ATTRIBUTES = [
   'sellerId',
   'priceRange',
   'make',
+  // Daily Deals — public browse/facets filter `isDealListing = false` so
+  // first-party house deals never appear in search. Must be filterable or
+  // Meili rejects the clause.
+  'isDealListing',
 ];
 
 @Injectable()

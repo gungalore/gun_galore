@@ -892,6 +892,14 @@ model Listing {
   // window so a seller nudging the price down can't spam every watcher's inbox.
   priceDropNotifiedAt DateTime?
 
+  // Daily Deals (DD-1) — true when this listing is a first-party house DEAL
+  // (owned by the "Gun Galore" house seller, overlaid by a Deal row). Deal
+  // listings are DELIBERATELY EXCLUDED from every public marketplace surface
+  // (browse, search, brands, category counts, sitemap, price comps,
+  // saved-search alerts) via `isDealListing: false` on those queries — they
+  // only appear on the dedicated /deals surface. See DAILY-DEALS-PLAN.md.
+  isDealListing Boolean @default(false)
+
   images               ListingImage[]
   transactions         Transaction[]
   orderLineItems       OrderLineItem[]
@@ -916,6 +924,10 @@ model Listing {
   // ≤1 slot at a time, a slot has ≤1 listing).
   featuredInSlot FeaturedSlot? @relation("FeaturedSlotListing")
 
+  // Daily Deals (DD-1) — 1:1 overlay carrying the deal economics + schedule.
+  // Present only when isDealListing = true.
+  deal Deal? @relation("DealListing")
+
   @@index([status, listingType])
   @@index([categoryId])
   @@index([sellerId])
@@ -923,6 +935,8 @@ model Listing {
   // P5.1 saved-search matcher hot path: ACTIVE listings newly listed since a
   // cursor (WHERE status='ACTIVE' AND listedAt > cursor).
   @@index([status, listedAt])
+  // Daily Deals — every public listing query filters `isDealListing: false`.
+  @@index([isDealListing])
 }
 
 model ListingImage {
@@ -936,6 +950,69 @@ model ListingImage {
   createdAt DateTime @default(now())
 
   @@index([listingId])
+}
+
+// ---------------------------------------------------------------------------
+// Daily Deals (OneDayOnly-style first-party deals) — DD-1
+// ---------------------------------------------------------------------------
+// Lifecycle of a single deal. DD-1 stops at DRAFT/SCHEDULED authoring; the
+// LIVE/EXTENDED/ENDED/SOLD_OUT transitions are driven by the DD-4 drop cron.
+enum DealStatus {
+  DRAFT // admin building it
+  SCHEDULED // queued for a future drop (startsAt set)
+  LIVE // on sale now (in the current drop)
+  EXTENDED // ran past its window — surfaces in "Extra Time"
+  ENDED // window closed, not sold out
+  SOLD_OUT // stock hit 0
+  CANCELLED // pulled by admin
+}
+
+// A first-party Daily Deal — a thin economics + schedule overlay on top of a
+// BUY_NOW Listing owned by the house seller (isDealListing = true). The
+// Listing is the single source of truth for checkout (price, stock, images,
+// shipping); the Deal row carries the internal cost, the "was" anchor, the
+// drop schedule, and the fair-share cap. Buyers ride the normal cart / EFT /
+// courier rails; DD-2 adds the first-party money branches. See
+// DAILY-DEALS-PLAN.md §2.2.
+model Deal {
+  id        String  @id @default(cuid())
+  listingId String  @unique
+  listing   Listing @relation("DealListing", fields: [listingId], references: [id], onDelete: Cascade)
+
+  status DealStatus @default(DRAFT)
+
+  // Economics (ZAR cents). The deal SELL price lives on Listing.price (the
+  // checkout source of truth); these are the overlay's own fields.
+  costPriceCents Int // internal — per-unit supplier cost (never public)
+  wasPriceCents  Int // RRP anchor, shown struck-through (also mirrored to Listing.compareAtPriceZarCents)
+
+  // Schedule. A drop = every deal sharing a dropDate/startsAt going live together.
+  startsAt      DateTime?
+  endsAt        DateTime?
+  extendedUntil DateTime? // set when a winner is pushed into Extra Time
+  dropDate      DateTime? // groups deals into one drop (calendar / pipeline)
+  liveAt        DateTime? // stamped when it actually went LIVE
+  endedAt       DateTime?
+  soldOutAt     DateTime?
+
+  heroRank     Int @default(0) // ordering within the drop grid (higher = more prominent)
+  initialStock Int // snapshot of stock at go-live → sell-through %
+  perCustomerCap Int @default(10) // fair-share cap (units per buyer per deal)
+
+  // Per-deal delivery promise (the JIT supply model makes this honest).
+  shipsInDaysMin Int @default(3)
+  shipsInDaysMax Int @default(7)
+
+  // Supplier bookkeeping (internal — never public).
+  supplierName String?
+  supplierRef  String?
+
+  createdByAdminId String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status, startsAt])
+  @@index([dropDate])
 }
 
 model Dealer {

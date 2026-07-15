@@ -37,7 +37,9 @@ export class CategoriesService {
       }),
       this.prisma.listing.groupBy({
         by: ['categoryId'],
-        where: { status: 'ACTIVE' },
+        // Exclude Daily Deals so house deals don't inflate the public
+        // per-category counts on the homepage tiles + filter facets.
+        where: { status: 'ACTIVE', isDealListing: false },
         _count: { _all: true },
       }),
     ]);
