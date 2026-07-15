@@ -133,8 +133,12 @@ export class AskGgGuideService {
         this.logger.debug(`overview overlay skipped: ${String(e)}`);
       }
 
-      // Page-targeted enrichment (cheap, one extra read at most).
-      await this.enrichForPage(base.key, input.listingId, account, items);
+      // Page-targeted enrichment (cheap, one extra read at most). Resolve the
+      // listing id the SAME way getGuide does (path segment OR the hint), so an
+      // /ask-gg/guide?path=/listings/:id request with no listingId param still
+      // gets its auction overlay — the two derivations must not diverge.
+      const listingId = this.effectiveListingId(input);
+      await this.enrichForPage(base.key, listingId, account, items);
 
       if (items.length === 0) return base;
 
@@ -226,6 +230,26 @@ export class AskGgGuideService {
         this.logger.debug(`earnings overlay skipped: ${String(e)}`);
       }
     }
+  }
+
+  /** The listing id getGuide resolved the base guide from: the /listings/:id
+   *  path segment, else the query hint. Kept in lockstep with getGuide's own
+   *  derivation so the personal overlay never diverges from the base guide. */
+  private effectiveListingId(input: {
+    path?: string;
+    listingId?: string;
+  }): string | undefined {
+    const path =
+      typeof input.path === 'string' && input.path.startsWith('/')
+        ? input.path
+        : '/';
+    const seg = path.split('/').filter(Boolean);
+    if (seg[0] === 'listings' && seg.length === 2 && ID_RE.test(seg[1])) {
+      return seg[1];
+    }
+    return typeof input.listingId === 'string' && ID_RE.test(input.listingId)
+      ? input.listingId
+      : undefined;
   }
 
   private keyForPath(path: string, seg: string[]): string {

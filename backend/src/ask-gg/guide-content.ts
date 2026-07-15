@@ -292,7 +292,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     title: 'Your seller dashboard',
     points: [
       'This is your seller standing — your tier, trust score and what’s left to reach the next level.',
-      'A higher tier earns real perks: lower commission at Top Seller, featured-slot discounts, and more trust with buyers.',
+      'A higher seller tier earns real perks: lower commission once you reach Top Seller, and more trust with buyers. (Featured-slot discounts are a separate GG+ membership perk.)',
       'Keep deliveries on time, your ratings up, and KYC + banking complete — that’s what moves the score.',
       'Buyers can ask questions on your listings; answering quickly builds trust and sales.',
     ],
@@ -467,7 +467,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     title: 'About this seller',
     points: [
       'This is a seller’s storefront — their tier, ratings, badges and everything they have for sale.',
-      'Higher tiers and a Top Seller or Verified-Expert badge reflect a track record of good deals.',
+      'A Top Seller badge reflects a track record of good deals; a Verified Expert badge marks a recognised knowledge contributor.',
       'Every purchase from them is still protected: your payment is held until you’ve got the item.',
       'Ask me to check whether an item of theirs is fairly priced.',
     ],

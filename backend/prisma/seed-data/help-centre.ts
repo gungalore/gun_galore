@@ -561,7 +561,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What is the Verified Expert badge?',
     question: 'How do I earn the Verified Expert badge?',
     answer:
-      "Verified Expert is a badge shown on your profile for members who have contributed genuinely helpful, accurate knowledge to the Gun Galore community — verified answers that our team has reviewed and approved. Reach the contribution threshold and the badge appears on your public profile and listings, signalling to buyers that you know your gear. It's a GG+ perk-adjacent recognition of expertise, not something you can buy.",
+      "Verified Expert is a badge shown on your profile for members recognised for genuinely helpful, accurate contributions to the Gun Galore community — knowledge our team has reviewed and verified. Once you've contributed enough verified answers, the badge appears on your public profile and listings, signalling to buyers that you know your gear. It recognises expertise and knowledge-sharing rather than sales volume.",
     tags: ['badge', 'expert', 'community'],
   },
   {

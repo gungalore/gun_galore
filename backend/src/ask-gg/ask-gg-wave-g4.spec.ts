@@ -246,6 +246,16 @@ describe('G4 personal overlay — PII gate under poisoned inputs', () => {
     expect(s).toContain('/kyc/verify'); // backbone landed
   });
 
+  it('auction overlay lands even when the id is only in the path (no listingId param)', async () => {
+    const { guide } = build({ auctionListing: true });
+    // No listingId query param — the id comes from /listings/:id only.
+    const out = await guide.getPersonalGuide('clerk_me', { path: '/listings/l1' });
+    const s = JSON.stringify(out);
+    assertClean(s);
+    expect(out.key).toBe('listing-auction');
+    expect(s).toContain('top bidder');
+  });
+
   it('earnings overlay surfaces payout blockers without any account numbers', async () => {
     const { guide } = build();
     const out = await guide.getPersonalGuide('clerk_me', { path: '/my/earnings' });
