@@ -47,6 +47,11 @@ export class AskGgGuideService {
         : '/';
     const seg = path.split('/').filter(Boolean);
 
+    // Exact-path specials must win over the generic /listings/:id lookup —
+    // otherwise ID_RE matches 'new' and the seller's sell form resolves to a
+    // bogus listing id (→ the buyer guide). Keep this ahead of the extraction.
+    if (path === '/listings/new') return clone(GUIDES['sell-form']);
+
     // Listing detail resolves by listing TYPE + live state.
     const listingId =
       seg[0] === 'listings' && seg.length === 2 && ID_RE.test(seg[1])
@@ -98,26 +103,28 @@ export class AskGgGuideService {
         reservePrice: true, // compared server-side; NEVER emitted
       },
     });
-    if (!l) return clone(GUIDES['listing-buy-now']);
+    // Non-public / terminal / missing → the plain generic guide with NO live
+    // state and NO status note, so the public endpoint can't be used to probe
+    // the existence or state of unpublished (DRAFT / PENDING_REVIEW) listings.
+    if (!l || l.status !== 'ACTIVE') return clone(GUIDES['listing-buy-now']);
 
-    const key = l.isExperience
-      ? 'listing-experience'
-      : l.listingType === 'AUCTION'
+    // AUCTION wins the guide (the "how to win" playbook is what a bidder needs)
+    // even when the item is an experience; otherwise experiences get the
+    // booking guide, then swop / take-a-shot / buy-now.
+    const key =
+      l.listingType === 'AUCTION'
         ? 'listing-auction'
-        : l.listingType === 'SWOP'
-          ? 'listing-swop'
-          : l.listingType === 'TAKE_A_SHOT'
-            ? 'listing-take-a-shot'
-            : 'listing-buy-now';
+        : l.isExperience
+          ? 'listing-experience'
+          : l.listingType === 'SWOP'
+            ? 'listing-swop'
+            : l.listingType === 'TAKE_A_SHOT'
+              ? 'listing-take-a-shot'
+              : 'listing-buy-now';
 
     const guide = clone(GUIDES[key] ?? GUIDES['listing-buy-now']);
-
-    if (l.listingType === 'AUCTION' && !l.isExperience) {
+    if (l.listingType === 'AUCTION') {
       guide.intro = this.auctionStateLine(l);
-    }
-    if (l.status && l.status !== 'ACTIVE') {
-      const note = `Heads up: this listing is ${String(l.status).toLowerCase()} — not currently buyable.`;
-      guide.intro = guide.intro ? `${note} ${guide.intro}` : note;
     }
     return guide;
   }

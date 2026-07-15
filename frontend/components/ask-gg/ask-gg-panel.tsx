@@ -200,9 +200,12 @@ export default function AskGgPanel() {
     requestAnimationFrame(() => composerRef.current?.focus());
   }
 
-  // Guide-tab deep-link → close the panel and navigate. Internal paths only.
+  // Guide-tab deep-link → close the panel and navigate. Internal paths only:
+  // must start with a single '/' (block protocol-relative '//host' + '\').
   function guideNavigate(href: string) {
-    if (!href.startsWith('/')) return;
+    if (!href.startsWith('/') || href.startsWith('//') || href.includes('\\')) {
+      return;
+    }
     setOpen(false);
     router.push(href);
   }
