@@ -45,6 +45,10 @@ const isPublicRoute = createRouteMatcher([
                          // a Clerk session.
   '/coming-soon',        // pre-launch holding page
   '/preview',            // bypass-cookie setter for the coming-soon gate
+  '/competitions(.*)',   // RETIRED route (feature removed). Kept public so
+                         // dead / previously-indexed competition URLs serve a
+                         // clean 404 instead of being 307-redirected to sign-in
+                         // by Clerk.
 ]);
 
 // Routes that ALWAYS pass through the coming-soon gate, even without
