@@ -23,6 +23,7 @@ import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AskGgService } from './ask-gg.service';
 import { AskGgKbService } from './ask-gg-kb.service';
+import { AskGgGuideService } from './ask-gg-guide.service';
 import { maxPhotosPerRequest } from './ask-gg-quota.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { AskGgConversationOutcome } from '@prisma/client';
@@ -320,11 +321,26 @@ export class AskGgController {
  */
 @Controller('ask-gg/public')
 export class AskGgPublicController {
-  constructor(private readonly kb: AskGgKbService) {}
+  constructor(
+    private readonly kb: AskGgKbService,
+    private readonly guide: AskGgGuideService,
+  ) {}
 
   @Get('kb/search')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   searchKb(@Query('q') q?: string) {
     return this.kb.searchVerified(q ?? '', 5);
+  }
+
+  /**
+   * GG site-guide (G2) — the curated "how this page works / how to do well
+   * here" playbook for the given page, with LIVE public state injected (an
+   * auction's current bid / reserve-met / time-left). PUBLIC + zero Claude
+   * spend, so it works signed-out and is safe to hit on every page open.
+   */
+  @Get('guide')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  getGuide(@Query('path') path?: string, @Query('listingId') listingId?: string) {
+    return this.guide.getGuide({ path, listingId });
   }
 }

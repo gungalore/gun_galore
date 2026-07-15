@@ -15,6 +15,7 @@ import { QuotaPill, UpgradeInlineNudge, FairUseCard } from './quota-chrome';
 import { AskGgDisclaimer, useAskGgDisclaimer } from './disclaimer';
 import { GENERIC_STARTER_PROMPTS } from './starter-prompts';
 import { AskGgSignedOut } from './ask-gg-signed-out';
+import { GuideView } from './guide-view';
 import {
   derivePageContext,
   CONTEXTUAL_STARTER_PROMPTS,
@@ -41,6 +42,9 @@ export default function AskGgPanel() {
   const pathname = usePathname();
 
   const [entered, setEntered] = useState(false);
+  // G2 — 'guide' shows the server-driven page playbook ($0 AI); 'chat' is the
+  // Claude conversation. Opening picks the sensible default (guide-first).
+  const [tab, setTab] = useState<'chat' | 'guide'>('guide');
   const [composerValue, setComposerValue] = useState('');
   const [kbHits, setKbHits] = useState<AskGgKbHit[]>([]);
   const [kbDismissed, setKbDismissed] = useState(false);
@@ -75,13 +79,18 @@ export default function AskGgPanel() {
   }, [open]);
 
   // W5.5 — a nudge (or future CTA) staged a question: put it in the
-  // composer and focus, so the user just hits Send (or edits first).
+  // composer and focus, so the user just hits Send (or edits first). Also
+  // picks the opening tab (G2): a staged question or an in-progress chat opens
+  // to Chat; a fresh open lands on the Guide (guide-first).
   useEffect(() => {
     if (!open) return;
     const prefill = takePrefill();
     if (prefill) {
+      setTab('chat');
       setComposerValue(prefill);
       requestAnimationFrame(() => composerRef.current?.focus());
+    } else {
+      setTab(ag.messages.length > 0 ? 'chat' : 'guide');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -183,6 +192,21 @@ export default function AskGgPanel() {
     router.push(target);
   }
 
+  // Guide-tab CTA → stage the question in the composer and switch to Chat
+  // (nothing sends until the user does). Empty prompt = just open the chat.
+  function guideAsk(prompt: string) {
+    setTab('chat');
+    if (prompt) setComposerValue(prompt);
+    requestAnimationFrame(() => composerRef.current?.focus());
+  }
+
+  // Guide-tab deep-link → close the panel and navigate. Internal paths only.
+  function guideNavigate(href: string) {
+    if (!href.startsWith('/')) return;
+    setOpen(false);
+    router.push(href);
+  }
+
   const lastMsg = ag.messages[ag.messages.length - 1];
   const showResolvePrompt =
     isSignedIn === true &&
@@ -278,8 +302,48 @@ export default function AskGgPanel() {
           </span>
         </div>
 
-        {/* Body */}
-        {!isLoaded ? null : !isSignedIn ? (
+        {/* Tab bar — Guide (server-driven, $0 AI) vs Chat */}
+        <div
+          className="app-chrome flex"
+          style={{ borderBottom: '0.5px solid var(--border)', flexShrink: 0 }}
+        >
+          {(['guide', 'chat'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              aria-selected={tab === t}
+              style={{
+                flex: 1,
+                padding: '9px 0',
+                background: 'none',
+                border: 'none',
+                borderBottom:
+                  tab === t ? '2px solid var(--red)' : '2px solid transparent',
+                color: tab === t ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                fontWeight: tab === t ? 600 : 500,
+                fontSize: 13,
+                cursor: 'pointer',
+              }}
+            >
+              {t === 'guide' ? 'Guide' : 'Chat'}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'guide' && (
+          <GuideView
+            path={pathname}
+            listingId={pageCtx.listingId}
+            active={open}
+            onAsk={guideAsk}
+            onNavigate={guideNavigate}
+          />
+        )}
+
+        {/* Body — Chat tab */}
+        {tab === 'chat' &&
+          (!isLoaded ? null : !isSignedIn ? (
           <div style={{ overflowY: 'auto' }}>
             <AskGgSignedOut />
           </div>
@@ -377,7 +441,7 @@ export default function AskGgPanel() {
               )}
             </div>
           </>
-        )}
+          ))}
         {/* Safe-area spacer for the mobile sheet */}
         <div style={{ height: 'env(safe-area-inset-bottom)', flexShrink: 0 }} />
       </aside>

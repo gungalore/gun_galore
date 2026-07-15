@@ -24,6 +24,7 @@ import { AskGgPlatformToolsService } from './ask-gg-platform-tools.service';
 import { AskGgContextService } from './ask-gg-context.service';
 import { AskGgAccountToolsService } from './ask-gg-account-tools.service';
 import { AskGgLaneService } from './ask-gg-lane.service';
+import { AskGgGuideService } from './ask-gg-guide.service';
 
 @Module({
   // ReloadingModule exports ReloadingService so AskGgClaudeService can
@@ -72,6 +73,7 @@ import { AskGgLaneService } from './ask-gg-lane.service';
     AskGgContextService,
     AskGgAccountToolsService,
     AskGgLaneService,
+    AskGgGuideService,
     AdminAuditService,
   ],
   exports: [AskGgService, AskGgKbService],
