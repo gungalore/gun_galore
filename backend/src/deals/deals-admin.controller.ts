@@ -60,6 +60,19 @@ export class DealsAdminController {
     return this.deals.list(status);
   }
 
+  // DD-5 — first-party P&L. MUST be declared before @Get(':id') or the
+  // literal 'pnl' segment is captured as an :id. Optional ISO from/to filters
+  // the deals by their go-live date.
+  @Get('pnl')
+  pnl(@Query('from') from?: string, @Query('to') to?: string) {
+    const parse = (s?: string) => {
+      if (!s) return undefined;
+      const d = new Date(s);
+      return Number.isNaN(d.getTime()) ? undefined : d;
+    };
+    return this.deals.pnlReport({ from: parse(from), to: parse(to) });
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.deals.findOne(id);

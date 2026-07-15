@@ -7,6 +7,7 @@
 // no money path, no drop cron yet (see DAILY-DEALS-PLAN.md DD-2/DD-4).
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import DealsTable, { Deal, CategoryOption } from './deals-table';
@@ -76,6 +77,11 @@ export default function DealsPage() {
           <>
             {deals.length} {deals.length === 1 ? 'deal' : 'deals'} · {liveCount} live
           </>
+        }
+        actions={
+          <Link href="/admin/deals/pnl" className="text-sm" style={{ color: 'var(--red)' }}>
+            P&amp;L →
+          </Link>
         }
         description={
           <>

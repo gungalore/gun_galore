@@ -4,7 +4,12 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { DealStatus, ListingStatus, ShippingMethod } from '@prisma/client';
+import {
+  DealStatus,
+  ListingStatus,
+  ShippingMethod,
+  PaymentStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
@@ -401,6 +406,156 @@ export class DealsService {
     });
     if (!deal) throw new NotFoundException('Deal not found.');
     return this.shape(deal);
+  }
+
+  // ─── DD-5 — Daily Deals P&L (admin) ─────────────────────────────────
+  // Financial performance of the first-party programme. ADMIN-ONLY (exposes
+  // cost + margin). Revenue/units are measured from the Transaction table (the
+  // money source of truth), NOT stock depletion: a sale counts only when it is
+  // paid and not refunded / cancelled / rejected (the SAME filter as the DD-2
+  // per-customer cap), partial refunds (refundedAmount on a still-kept item)
+  // are netted off revenue, and COGS = costPrice × units. Only deals that
+  // actually went live (liveAt set) enter the P&L; an optional [from,to]
+  // window filters by liveAt (the drop date).
+  async pnlReport(opts?: { from?: Date; to?: Date }) {
+    const windowed = !!(opts?.from || opts?.to);
+    const deals = await this.prisma.deal.findMany({
+      where: {
+        liveAt: windowed ? { gte: opts?.from, lte: opts?.to } : { not: null },
+      },
+      select: {
+        id: true,
+        status: true,
+        costPriceCents: true,
+        wasPriceCents: true,
+        initialStock: true,
+        dropDate: true,
+        liveAt: true,
+        listingId: true,
+        listing: { select: { title: true, price: true } },
+      },
+    });
+    if (deals.length === 0) {
+      return { totals: this.emptyPnlTotals(), deals: [] };
+    }
+
+    // One grouped aggregate over the COUNTED (paid, not refunded/cancelled/
+    // rejected) sales across all the deal listings.
+    const grouped = await this.prisma.transaction.groupBy({
+      by: ['listingId'],
+      where: {
+        listingId: { in: deals.map((d) => d.listingId) },
+        paidAt: { not: null },
+        refundOfId: null, // exclude synthetic refund children
+        paymentStatus: { not: PaymentStatus.REFUNDED }, // exclude fully-refunded
+        rejectedAt: null,
+        cancelledByBuyerAt: null,
+        manualCancelledAt: null,
+      },
+      _sum: { quantity: true, listingPrice: true, refundedAmount: true },
+    });
+    const byListing = new Map(grouped.map((g) => [g.listingId, g._sum]));
+
+    const rows = deals.map((d) => {
+      const s = byListing.get(d.listingId);
+      const unitsSold = s?.quantity ?? 0;
+      // listingPrice is already the line total (unit price × quantity) and is
+      // PRODUCT-only (shipping / handling / fees live in separate columns).
+      const grossSalesCents = s?.listingPrice ?? 0;
+      const refundsCents = s?.refundedAmount ?? 0;
+      const cogsCents = d.costPriceCents * unitsSold;
+      // Product margin is refund-INDEPENDENT. refundedAmount is measured against
+      // buyerTotal (product + shipping + fees), so netting it into a product-only
+      // gross would wrongly charge a shipping / goodwill refund to product margin
+      // — it can even show a profitable, kept sale as a loss. Refunds are reported
+      // as their own line (cash returned to buyers), NOT deducted from margin.
+      const grossProfitCents = grossSalesCents - cogsCents;
+      const grossMarginPct =
+        grossSalesCents > 0
+          ? Math.round((grossProfitCents / grossSalesCents) * 100)
+          : 0;
+      const sellThroughPct =
+        d.initialStock > 0
+          ? Math.round((unitsSold / d.initialStock) * 100)
+          : 0;
+      return {
+        id: d.id,
+        title: d.listing.title,
+        status: d.status,
+        dropDate: d.dropDate,
+        liveAt: d.liveAt,
+        costPriceCents: d.costPriceCents,
+        dealPriceCents: d.listing.price ?? 0,
+        wasPriceCents: d.wasPriceCents,
+        initialStock: d.initialStock,
+        unitsSold,
+        sellThroughPct,
+        grossSalesCents,
+        refundsCents,
+        cogsCents,
+        grossProfitCents,
+        grossMarginPct,
+      };
+    });
+    // Best performers first (by gross profit).
+    rows.sort((a, b) => b.grossProfitCents - a.grossProfitCents);
+
+    const agg = rows.reduce(
+      (acc, r) => {
+        acc.unitsSold += r.unitsSold;
+        acc.grossSalesCents += r.grossSalesCents;
+        acc.refundsCents += r.refundsCents;
+        acc.cogsCents += r.cogsCents;
+        acc.grossProfitCents += r.grossProfitCents;
+        return acc;
+      },
+      {
+        unitsSold: 0,
+        grossSalesCents: 0,
+        refundsCents: 0,
+        cogsCents: 0,
+        grossProfitCents: 0,
+      },
+    );
+    // Sell-through as a POOLED, stock-weighted ratio (Σ units ÷ Σ go-live
+    // stock) — matches "units sold ÷ go-live stock" and stops one tiny
+    // sold-out deal skewing the headline the way an unweighted mean would.
+    const withStock = rows.filter((r) => r.initialStock > 0);
+    const stockDenom = withStock.reduce((s, r) => s + r.initialStock, 0);
+    const stockUnits = withStock.reduce((s, r) => s + r.unitsSold, 0);
+    const avgSellThroughPct =
+      stockDenom > 0 ? Math.round((stockUnits / stockDenom) * 100) : 0;
+    const totals = {
+      dealsRun: rows.length,
+      dealsLive: rows.filter(
+        (r) => r.status === DealStatus.LIVE || r.status === DealStatus.EXTENDED,
+      ).length,
+      unitsSold: agg.unitsSold,
+      grossSalesCents: agg.grossSalesCents,
+      refundsCents: agg.refundsCents,
+      cogsCents: agg.cogsCents,
+      grossProfitCents: agg.grossProfitCents,
+      grossMarginPct:
+        agg.grossSalesCents > 0
+          ? Math.round((agg.grossProfitCents / agg.grossSalesCents) * 100)
+          : 0,
+      avgSellThroughPct,
+    };
+    return { totals, deals: rows };
+  }
+
+  private emptyPnlTotals() {
+    return {
+      dealsRun: 0,
+      dealsLive: 0,
+      unitsSold: 0,
+      grossSalesCents: 0,
+      refundsCents: 0,
+      cogsCents: 0,
+      grossProfitCents: 0,
+      grossMarginPct: 0,
+      avgSellThroughPct: 0,
+    };
   }
 
   // ─── Public storefront read path (DD-3) ──────────────────────────────
