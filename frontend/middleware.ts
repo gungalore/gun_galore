@@ -8,6 +8,11 @@ const isPublicRoute = createRouteMatcher([
   '/sso-callback(.*)', // OAuth (Google) redirect target — finishes the flow client-side
   '/marketplace(.*)',
   '/listings(.*)',
+  '/deals(.*)',    // DD-3 — public Daily Deals storefront (/deals) + deal PDPs
+                   // (/deals/[id]). Both the pages AND their backing API gate
+                   // server-side on the `deals_enabled` Setting, so this ships
+                   // INERT (empty storefront / 404 PDP) until the operator
+                   // flips the flag. Public like /listings for anon browsing.
   '/auctions(.*)',
   '/about(.*)',
   '/buy-and-sell(.*)',

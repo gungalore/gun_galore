@@ -23,7 +23,7 @@ export default function RefundPolicyPage() {
     <>
       <LegalDocHeader
         title="Refund & Dispute Policy"
-        lastUpdated="Effective 24 June 2026"
+        lastUpdated="Effective 24 June 2026 · Updated 15 July 2026"
       />
 
       <h2>Quick reference</h2>
@@ -151,7 +151,52 @@ export default function RefundPolicyPage() {
         them on request.
       </p>
 
-      <h2>7. Chargebacks</h2>
+      <h2>7. Items sold directly by Gun Galore (Daily Deals)</h2>
+      <p>
+        Most listings on the platform are sold by independent sellers, with
+        GunGalore acting as facilitator. <strong>Daily Deals are
+        different</strong>: these are first-party sales where{' '}
+        <strong>Gun Galore is the seller</strong> and supplier. Because we are
+        the supplier for a Daily Deal, the following apply to us directly:
+      </p>
+      <ul>
+        <li>
+          <strong>6-month CPA warranty (Sections 55 &amp; 56)</strong> — the
+          implied warranty of quality runs against Gun Galore as supplier. If a
+          Daily Deal item fails to be of good quality, in good working order and
+          free of defects within 6 months of delivery, you may return it to us
+          for repair, replacement or refund, at your election, at no charge.
+        </li>
+        <li>
+          <strong>7-day right to return (ECT Act Section 44 cooling-off)</strong>{' '}
+          — a Daily Deal is a distance sale of goods, so you have{' '}
+          <strong>7 days from delivery</strong> to cancel and return the item
+          for any reason for a full refund of the purchase price. The item must
+          be returned complete and undamaged; you are responsible for the return
+          shipping cost of a change-of-mind return, and we refund the purchase
+          price once we receive it. (This cooling-off right does not apply where
+          the ECT Act excludes it — for example goods made to your
+          specification, or which by their nature cannot be returned.)
+        </li>
+        <li>
+          <strong>Damaged, faulty or not-as-described</strong> — you are covered
+          by the same held-payment and dispute process as the rest of the site
+          (paragraphs 1–3 above): raise it before confirming delivery and we
+          make it right at our cost.
+        </li>
+      </ul>
+      <p>
+        To exercise a Daily Deal return, email{' '}
+        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
+          support@gungalore.co.za
+        </a>{' '}
+        with your order reference within the applicable window and we will
+        arrange the return and refund. Your payment for a Daily Deal is held in
+        the same way as any other order and only released once the item has
+        shipped.
+      </p>
+
+      <h2>8. Chargebacks</h2>
       <p>
         If you initiate a chargeback through your bank or card
         provider without first raising a dispute with GunGalore, your
@@ -161,7 +206,7 @@ export default function RefundPolicyPage() {
         fees, and the outcome is generally the same.
       </p>
 
-      <h2>8. Contact</h2>
+      <h2>9. Contact</h2>
       <p>
         For any refund or dispute enquiry that you cannot resolve via
         the in-product flows, email{' '}

@@ -69,6 +69,11 @@ export const PUBLIC_LISTING_SELECT = {
   condition: true,
   province: true,
   isFirearm: true,
+  // DD-3 — non-sensitive boolean flag. A first-party Daily Deal listing is
+  // reachable by id on the generic PDP endpoint once ACTIVE; the frontend PDP
+  // reads this to redirect to the deal-chrome /deals/:id page (canonical). Safe
+  // to expose (it reveals nothing about cost/margin/reserve).
+  isDealListing: true,
   collectionOnly: true,
   requiresPapers: true,
   papersAttestedAt: true,

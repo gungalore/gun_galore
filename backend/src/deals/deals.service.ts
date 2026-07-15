@@ -403,6 +403,81 @@ export class DealsService {
     return this.shape(deal);
   }
 
+  // ─── Public storefront read path (DD-3) ──────────────────────────────
+  // The ONLY buyer-facing surface. Everything here is gated on the
+  // FLAGS.dealsEnabled master killswitch (the same read goLive uses), so the
+  // /deals storefront + deal PDP ship INERT — with the switch off the API
+  // returns `{enabled:false, deals:[]}` / 404 and nothing leaks. publicShape()
+  // STRIPS the six internal fields the admin card carries (cost, margin,
+  // revenue, sell-through, supplier) — buyers must NEVER see our cost/margin —
+  // and surfaces the seller by username only (house rule). Deal listings are
+  // swept out of every normal discovery query (isDealListing), so this reads
+  // the Deal table directly rather than the browse rails.
+
+  private static readonly PUBLIC_INCLUDE = {
+    listing: {
+      include: {
+        images: { orderBy: { order: 'asc' as const } },
+        seller: { select: { clerkId: true, username: true } },
+        category: { select: { name: true, slug: true } },
+      },
+    },
+  };
+
+  // Buyable = Listing ACTIVE + a LIVE/EXTENDED deal. The storefront grid shows
+  // only these. The PDP additionally renders ENDED / SOLD_OUT deals (clearly
+  // labelled) so a shared or bookmarked deal link doesn't just 404 the instant
+  // the deal closes.
+  private static readonly PUBLIC_STOREFRONT_STATUSES: DealStatus[] = [
+    DealStatus.LIVE,
+    DealStatus.EXTENDED,
+  ];
+  private static readonly PUBLIC_PDP_STATUSES: DealStatus[] = [
+    DealStatus.LIVE,
+    DealStatus.EXTENDED,
+    DealStatus.ENDED,
+    DealStatus.SOLD_OUT,
+  ];
+
+  async listLivePublic() {
+    const enabled = await this.settings.get(FLAGS.dealsEnabled);
+    if (!enabled) return { enabled: false, deals: [] };
+    const deals = await this.prisma.deal.findMany({
+      where: {
+        status: { in: DealsService.PUBLIC_STOREFRONT_STATUSES },
+        // Belt-and-braces: only a deal whose Listing is genuinely ACTIVE is
+        // buyable, so never surface one whose listing has moved on (SOLD /
+        // EXPIRED / CANCELLED) even if the Deal.status lags.
+        listing: { status: ListingStatus.ACTIVE },
+      },
+      orderBy: [{ heroRank: 'asc' }, { liveAt: 'desc' }, { createdAt: 'desc' }],
+      include: DealsService.PUBLIC_INCLUDE,
+    });
+    return { enabled: true, deals: deals.map((d) => this.publicShape(d)) };
+  }
+
+  // Resolve by deal id, listing id, OR listing referenceNumber — the storefront
+  // links by deal id; the /listings/:id → /deals redirect (DD-3) hands us a
+  // listing id; a shared reference code resolves too. Fails closed when the
+  // switch is off or the deal isn't in a publicly-renderable status.
+  async findOnePublic(idOrRef: string) {
+    const enabled = await this.settings.get(FLAGS.dealsEnabled);
+    if (!enabled) throw new NotFoundException('Deal not found.');
+    const deal = await this.prisma.deal.findFirst({
+      where: {
+        status: { in: DealsService.PUBLIC_PDP_STATUSES },
+        OR: [
+          { id: idOrRef },
+          { listingId: idOrRef },
+          { listing: { referenceNumber: idOrRef } },
+        ],
+      },
+      include: DealsService.PUBLIC_INCLUDE,
+    });
+    if (!deal) throw new NotFoundException('Deal not found.');
+    return this.publicShape(deal);
+  }
+
   // ── Lifecycle transitions (INERT — status bookkeeping only) ───────
   async schedule(adminId: string, id: string, dto: ScheduleDealDto) {
     const deal = await this.requireStatus(id, [DealStatus.DRAFT]);
@@ -863,6 +938,114 @@ export class DealsService {
       soldOutAt: deal.soldOutAt,
       createdAt: deal.createdAt,
       updatedAt: deal.updatedAt,
+    };
+  }
+
+  // Buyer-safe projection (DD-3). An ALLOWLIST — mirrors the PUBLIC_LISTING_
+  // SELECT philosophy: we deliberately OMIT costPriceCents, marginPct,
+  // revenueCents, sellThroughPct, supplierName, supplierRef, parcel dims,
+  // heroRank and every admin/audit field. Seller is username-only. What stays
+  // is exactly the deal chrome a buyer needs: was/now price + save%, live
+  // stock/scarcity, ships-in window, per-customer cap, and the lifecycle
+  // flags (buyable / soldOut / ended) + countdown timestamp.
+  private publicShape(deal: {
+    id: string;
+    status: DealStatus;
+    wasPriceCents: number;
+    startsAt: Date | null;
+    endsAt: Date | null;
+    extendedUntil: Date | null;
+    liveAt: Date | null;
+    soldOutAt: Date | null;
+    initialStock: number;
+    perCustomerCap: number;
+    shipsInDaysMin: number;
+    shipsInDaysMax: number;
+    listing: {
+      id: string;
+      referenceNumber: string | null;
+      title: string;
+      description: string;
+      price: number | null;
+      condition: string;
+      province: string;
+      make: string | null;
+      model: string | null;
+      calibre: string | null;
+      shippingMethods: string[];
+      trackInventory: boolean;
+      quantityAvailable: number;
+      status: string;
+      images?: { id: string; url: string; order: number; isPrimary: boolean }[];
+      seller?: { clerkId: string; username: string | null } | null;
+      category?: { name: string; slug: string } | null;
+    };
+  }) {
+    const dealPriceCents = deal.listing.price ?? 0;
+    const savePct =
+      deal.wasPriceCents > 0
+        ? Math.round(((deal.wasPriceCents - dealPriceCents) / deal.wasPriceCents) * 100)
+        : 0;
+    // Sold out: a stock-tracked deal hits 0 available; a single-item deal
+    // signals its one sale by flipping the Listing to SOLD.
+    const soldOut =
+      deal.status === DealStatus.SOLD_OUT ||
+      (deal.listing.trackInventory
+        ? deal.listing.quantityAvailable <= 0
+        : deal.listing.status === 'SOLD');
+    const ended =
+      deal.status === DealStatus.ENDED || deal.listing.status === 'EXPIRED';
+    // Buyable is the checkout truth: Listing ACTIVE + a live/extended deal that
+    // still has stock. The frontend uses this to switch the buy CTA to an
+    // ended/sold-out state.
+    const buyable =
+      deal.listing.status === 'ACTIVE' &&
+      !soldOut &&
+      (deal.status === DealStatus.LIVE || deal.status === DealStatus.EXTENDED);
+    // Extra Time overrides the base window for the "ends in" countdown.
+    const endsAt = deal.extendedUntil ?? deal.endsAt;
+    return {
+      id: deal.id,
+      status: deal.status,
+      listingId: deal.listing.id,
+      referenceNumber: deal.listing.referenceNumber,
+      title: deal.listing.title,
+      description: deal.listing.description,
+      condition: deal.listing.condition,
+      province: deal.listing.province,
+      make: deal.listing.make,
+      model: deal.listing.model,
+      calibre: deal.listing.calibre,
+      shippingMethods: deal.listing.shippingMethods,
+      images: deal.listing.images ?? [],
+      category: deal.listing.category ?? null,
+      // Username only — never the house seller's real identity.
+      seller: deal.listing.seller
+        ? {
+            clerkId: deal.listing.seller.clerkId,
+            username: deal.listing.seller.username,
+          }
+        : null,
+      // Money (cents) — was/now + derived save%. NO cost / margin / revenue.
+      dealPriceCents,
+      wasPriceCents: deal.wasPriceCents,
+      savePct,
+      // Scarcity (buyer-safe): units left + go-live baseline for "X sold".
+      trackInventory: deal.listing.trackInventory,
+      quantityAvailable: deal.listing.quantityAvailable,
+      initialStock: deal.initialStock,
+      perCustomerCap: deal.perCustomerCap,
+      shipsInDaysMin: deal.shipsInDaysMin,
+      shipsInDaysMax: deal.shipsInDaysMax,
+      // Lifecycle + countdown
+      listingStatus: deal.listing.status,
+      buyable,
+      soldOut,
+      ended,
+      startsAt: deal.startsAt,
+      endsAt,
+      liveAt: deal.liveAt,
+      soldOutAt: deal.soldOutAt,
     };
   }
 }

@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@clerk/nextjs/server';
 import { apiFetch } from '@/lib/api';
@@ -95,6 +95,16 @@ export default async function ListingDetailPage({
   }).catch(() => null);
 
   if (!listing) return notFound();
+
+  // DD-3 — a first-party Daily Deal listing has its own deal-chrome page at
+  // /deals/[id] (countdown, was/save, per-customer limit, "sold by Gun
+  // Galore"). Send buyers + crawlers to that canonical page instead of the
+  // plain listing view. Only reachable once a deal is live (ACTIVE); while
+  // Daily Deals is inert the underlying listing is DRAFT and 404s above. The
+  // house-seller account is the only "owner", so this never traps a buyer.
+  if (listing.isDealListing) {
+    redirect(`/deals/${listing.id}`);
+  }
 
   // Detect "this is the seller viewing their own listing" so the
   // Buy Now CTA can swap to a non-purchase state. The backend

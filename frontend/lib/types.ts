@@ -266,6 +266,10 @@ export interface Listing {
   condition: Condition;
   province: Province;
   isFirearm: boolean;
+  // DD-3 — true for a first-party Daily Deal listing. Present on the public
+  // GET /listings/:id payload so the generic PDP can redirect to the
+  // deal-chrome /deals/[id] page. Absent (undefined) on browse payloads.
+  isDealListing?: boolean;
   // Collection-only — this item is collected in person from the seller
   // (no courier). Mirrors the category flag; forces shippingMethods to
   // ['COLLECTION']. Payment is held until the buyer confirms collection.
@@ -364,6 +368,65 @@ export interface BrowseResponse {
   total: number;
   page: number;
   limit: number;
+}
+
+// ── Daily Deals (DD-3) ────────────────────────────────────────────────
+// The buyer-facing projection returned by the public GET /deals[/:id] API
+// (DealsService.publicShape). Deliberately carries NO cost / margin / revenue
+// / supplier fields — those are admin-only. Money in ZAR cents. `seller` is
+// username-only (the house account). `buyable` is the checkout truth the PDP
+// uses to switch the CTA to an ended / sold-out state.
+export interface DealPublic {
+  id: string;
+  status:
+    | 'LIVE'
+    | 'EXTENDED'
+    | 'ENDED'
+    | 'SOLD_OUT'
+    | 'DRAFT'
+    | 'SCHEDULED'
+    | 'CANCELLED';
+  listingId: string;
+  referenceNumber: string | null;
+  title: string;
+  description: string;
+  condition: Condition;
+  province: Province;
+  make: string | null;
+  model: string | null;
+  calibre: string | null;
+  shippingMethods: ShippingMethod[];
+  images: ListingImage[];
+  category: { name: string; slug: string } | null;
+  seller: { clerkId: string; username: string | null } | null;
+  // Money (cents)
+  dealPriceCents: number;
+  wasPriceCents: number;
+  savePct: number;
+  // Scarcity
+  trackInventory: boolean;
+  quantityAvailable: number;
+  initialStock: number;
+  perCustomerCap: number;
+  shipsInDaysMin: number;
+  shipsInDaysMax: number;
+  // Lifecycle + countdown (ISO strings from the API)
+  listingStatus: ListingStatus;
+  buyable: boolean;
+  soldOut: boolean;
+  ended: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  liveAt: string | null;
+  soldOutAt: string | null;
+}
+
+// Public storefront index response. `enabled:false` (with an empty list) is
+// what the API returns while the `deals_enabled` killswitch is off — the
+// storefront renders its "no live deals" state, keeping DD-3 inert.
+export interface DealsResponse {
+  enabled: boolean;
+  deals: DealPublic[];
 }
 
 // P5.6 — sold-price comps for a category. Only `count` is guaranteed; the
