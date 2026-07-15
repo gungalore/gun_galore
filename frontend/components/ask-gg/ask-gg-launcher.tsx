@@ -8,27 +8,30 @@ import {
   markNudgeShown,
   type AskGgNudge,
 } from '@/lib/ask-gg-nudges';
+import { useGgMuted } from '@/lib/ask-gg-mute';
 
-// Ask GG Everywhere — the floating launcher (FAB) + Sparkie's voice.
+// Ask GG Everywhere — the floating launcher (mascot) + GG's proactive voice.
 //
 // ALWAYS-LOADED: this file may import only react, next/navigation,
-// './ask-gg-mascot' and '@/lib/ask-gg-nudges' (bundle rule — the panel
-// chunk carries everything heavy). Rendered by AskGgHost on every
-// non-suppressed page in BROWSER modes only.
+// './ask-gg-mascot', '@/lib/ask-gg-nudges' and '@/lib/ask-gg-mute' (bundle
+// rule — the panel chunk carries everything heavy). Rendered by AskGgHost on
+// every non-suppressed page in BROWSER modes only.
 //
-// ONE bubble, two brains:
-//   - Welcome greeting: Sparkie says hi and offers a hand ~3.5s after the user
-//     lands on EVERY page (operator: greet every visit). Copy rotates so
-//     repeat visits don't read robotically.
-//   - Contextual nudges (W5.5): page-kind + dwell-time suggestions
-//     ("want a fair-price check on this?"). Tapping opens the panel
-//     with the question STAGED in the composer — never auto-sent.
-//     Frequency caps live in lib/ask-gg-nudges.ts (1/session, 4h gap,
-//     24h per kind). Hello and nudges never both fire on one page view,
-//     and neither shows over the install-prompt card.
+// ONE proactive bubble per page — useful-first (site-guide G1):
+//   - If this page-kind has a contextual coaching tip we haven't shown this
+//     session, GG shows THAT ("want a fair-price check on this?"). Tapping it
+//     opens the panel with the question STAGED in the composer — never
+//     auto-sent, so no AI quota is spent until the user chooses to ask.
+//   - Otherwise GG shows a short rotating hello, so he still greets on generic
+//     pages. Frequency lives in lib/ask-gg-nudges.ts (once per kind/session).
+//   - MUTE (lib/ask-gg-mute, permanent): while muted GG says nothing at all —
+//     no coaching, no hello — but stays fully tappable. Toggled by the small
+//     speaker button at his ~4 o'clock.
+//   - Never over the install-prompt card, tab hidden, panel open, or mid-form.
 //
-// Geometry unchanged from W3 (FAB z52; bubble rides above it; both
-// lift via body[data-install-prompt] rules in globals.css).
+// Geometry: a fixed #askgg-dock wraps the mascot (#askgg-fab) + mute button;
+// the bubble rides above it; dock + bubble lift via body[data-install-prompt]
+// rules in globals.css.
 
 // The assistant (GG) greets on every page visit. Copy rotates so repeat visits
 // don't read robotically — the first line does the full intro (name matches the
@@ -62,63 +65,49 @@ export function AskGgLauncher({
   // Advances through HELLO_TEXTS so each greeting varies.
   const greetIdxRef = useRef(0);
   const pathname = usePathname();
+  // Permanent mute (localStorage). While muted GG says nothing proactively.
+  const [muted, setMuted] = useGgMuted();
 
-  // Welcome greeting — ~3.5s after landing on EVERY page (operator: greet each
-  // visit), so Sparkie always says hello and stays present. The 3.5s dwell means
-  // rapid click-throughs don't trigger it (the timer is cancelled on nav);
-  // it fires once the visitor settles on a page. Skipped only while the panel
-  // is open, the tab is hidden, the install card owns the screen, or the user
-  // is mid-form.
+  // ONE proactive "speak" per page — useful-first. After a short dwell GG
+  // shows this page-kind's contextual coaching tip (if there is one and it
+  // hasn't been shown this session); otherwise a rotating hello, so he still
+  // greets on generic pages. Muted → silent. Guards: panel closed, tab
+  // visible, install card down, not mid-form. The 3.5–4.2s dwell means rapid
+  // click-throughs (timer cancelled on nav) never trigger it.
   useEffect(() => {
-    if (panelArmed) return;
-    const t = window.setTimeout(() => {
-      if (spentThisPageRef.current) return;
-      if (document.visibilityState !== 'visible') return;
-      if (document.body.hasAttribute('data-install-prompt')) return;
-      const ae = document.activeElement;
-      if (
-        ae instanceof HTMLInputElement ||
-        ae instanceof HTMLTextAreaElement ||
-        (ae instanceof HTMLElement && ae.isContentEditable)
-      ) {
-        return;
-      }
-      const text = HELLO_TEXTS[greetIdxRef.current % HELLO_TEXTS.length];
-      greetIdxRef.current += 1;
-      spentThisPageRef.current = true;
-      setBubble({ kind: 'hello', text });
-    }, 3500);
+    if (panelArmed || muted) return;
+    const coach = pickNudge(pathname);
+    const t = window.setTimeout(
+      () => {
+        if (spentThisPageRef.current) return;
+        if (document.visibilityState !== 'visible') return;
+        if (document.body.hasAttribute('data-install-prompt')) return;
+        const ae = document.activeElement;
+        if (
+          ae instanceof HTMLInputElement ||
+          ae instanceof HTMLTextAreaElement ||
+          (ae instanceof HTMLElement && ae.isContentEditable)
+        ) {
+          return;
+        }
+        spentThisPageRef.current = true;
+        if (coach) {
+          markNudgeShown(coach.kind);
+          setBubble({
+            kind: coach.kind,
+            text: coach.text,
+            prefill: coach.prefill,
+          });
+        } else {
+          const text = HELLO_TEXTS[greetIdxRef.current % HELLO_TEXTS.length];
+          greetIdxRef.current += 1;
+          setBubble({ kind: 'hello', text });
+        }
+      },
+      coach ? 4200 : 3500,
+    );
     return () => clearTimeout(t);
-  }, [pathname, panelArmed]);
-
-  // Contextual nudge — dwell-gated per page kind. pickNudge() owns all
-  // frequency caps; this effect owns the moment (dwell, visible tab, corner
-  // free, panel closed, nothing else shown this page view). The greeting
-  // usually takes the slot first; a nudge fills in only when the greeting was
-  // skipped (install card up, or the user was typing at 3.5s).
-  useEffect(() => {
-    if (panelArmed) return;
-    const nudge = pickNudge(pathname);
-    if (!nudge) return;
-    const t = window.setTimeout(() => {
-      if (spentThisPageRef.current) return;
-      if (document.visibilityState !== 'visible') return;
-      if (document.body.hasAttribute('data-install-prompt')) return;
-      // Don't talk over someone mid-form (composer, search, checkout inputs).
-      const ae = document.activeElement;
-      if (
-        ae instanceof HTMLInputElement ||
-        ae instanceof HTMLTextAreaElement ||
-        (ae instanceof HTMLElement && ae.isContentEditable)
-      ) {
-        return;
-      }
-      markNudgeShown(nudge.kind);
-      spentThisPageRef.current = true;
-      setBubble({ kind: nudge.kind, text: nudge.text, prefill: nudge.prefill });
-    }, nudge.delayMs);
-    return () => clearTimeout(t);
-  }, [pathname, panelArmed]);
+  }, [pathname, panelArmed, muted]);
 
   // Reset the per-page-view guard + drop any visible bubble on nav.
   useEffect(() => {
@@ -126,16 +115,16 @@ export function AskGgLauncher({
     setBubble(null);
   }, [pathname]);
 
-  // Auto-hide after 14s; stand down when the panel opens via any entry.
+  // Auto-hide after 14s; stand down when the panel opens or GG is muted.
   useEffect(() => {
-    if (panelArmed) {
+    if (panelArmed || muted) {
       setBubble(null);
       return;
     }
     if (!bubble) return;
     const t = window.setTimeout(() => setBubble(null), 14_000);
     return () => clearTimeout(t);
-  }, [bubble, panelArmed]);
+  }, [bubble, panelArmed, muted]);
 
   const open = (prefill?: string) => {
     setBubble(null);
@@ -198,35 +187,106 @@ export function AskGgLauncher({
           </button>
         </div>
       )}
-      <button
-        type="button"
-        id="askgg-fab"
-        onClick={() => open()}
-        aria-label="Open Ask GG — your Gun Galore assistant"
+      <div
+        id="askgg-dock"
         className={[
           'app-chrome fixed z-[52]',
-          'flex items-center justify-center',
-          // No button chrome — Sparkie IS the launcher. The box is just his
-          // hit area; he floats inside it. Doubled on desktop (80px → 160px)
-          // per operator; mobile stays 80px.
+          // No button chrome — GG IS the launcher. This box is his hit area;
+          // he floats inside it. Doubled on desktop (80px → 160px) per
+          // operator; mobile stays 80px. The mute button rides his ~4 o'clock.
           'right-4 w-20 h-20 md:w-40 md:h-40',
           'bottom-[calc(12px+env(safe-area-inset-bottom))]',
           'md:right-6 md:bottom-5',
         ].join(' ')}
-        style={{
-          background: 'none',
-          border: 'none',
-          padding: 0,
-          cursor: 'pointer',
-          // Soft shadow so the character reads as a floating spark against
-          // any page background, with nothing behind him.
-          filter: 'drop-shadow(0 3px 9px rgba(0,0,0,0.55))',
-        }}
       >
-        {/* Just the character now. Grins while he's talking. `fill` lets him
-            scale with the responsive box (80px mobile → 160px desktop). */}
-        <AskGgMascot alive fill mood={bubble ? 'happy' : 'idle'} />
-      </button>
+        <button
+          type="button"
+          id="askgg-fab"
+          onClick={() => open()}
+          aria-label="Open Ask GG — your Gun Galore assistant"
+          className="absolute inset-0 flex items-center justify-center"
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            // Soft shadow so the character reads as a floating spark against
+            // any page background, with nothing behind him.
+            filter: 'drop-shadow(0 3px 9px rgba(0,0,0,0.55))',
+            // Calm + slightly dimmed while muted.
+            opacity: muted ? 0.9 : 1,
+          }}
+        >
+          {/* Just the character. Grins while he's talking; still + calm (no
+              idle wiggles) while muted. `fill` scales him to the responsive
+              box (80px mobile → 160px desktop). */}
+          <AskGgMascot alive={!muted} fill mood={bubble ? 'happy' : 'idle'} />
+        </button>
+        {/* Mute toggle at GG's ~4 o'clock — the clear way to shut him up.
+            Permanent (localStorage) until unmuted. stopPropagation so tapping
+            it never opens the panel. */}
+        <button
+          type="button"
+          id="askgg-mute"
+          onClick={(e) => {
+            e.stopPropagation();
+            const next = !muted;
+            setMuted(next);
+            if (next) setBubble(null);
+          }}
+          aria-label={muted ? 'Unmute GG' : 'Mute GG'}
+          aria-pressed={muted}
+          title={muted ? 'Unmute GG' : 'Mute GG'}
+          className={[
+            'absolute flex items-center justify-center rounded-full',
+            'w-6 h-6 md:w-8 md:h-8',
+            'right-[2px] bottom-[10px] md:right-[6px] md:bottom-[24px]',
+          ].join(' ')}
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            boxShadow: '0 1px 5px rgba(0,0,0,0.45)',
+            color: muted ? 'var(--red)' : 'var(--text-secondary)',
+            cursor: 'pointer',
+            padding: 0,
+            lineHeight: 0,
+          }}
+        >
+          {muted ? (
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M11 5 6 9H2v6h4l5 4V5z" />
+              <line x1="23" y1="9" x2="17" y2="15" />
+              <line x1="17" y1="9" x2="23" y2="15" />
+            </svg>
+          ) : (
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M11 5 6 9H2v6h4l5 4V5z" />
+              <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+              <path d="M19 5a9 9 0 0 1 0 14" />
+            </svg>
+          )}
+        </button>
+      </div>
     </>
   );
 }

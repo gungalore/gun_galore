@@ -263,10 +263,11 @@ html[data-standalone='true']::view-transition-new(root) {
 
 /* Ask GG Everywhere — the install-prompt card owns bottom-right
    (fixed 16/16, z 60, ~96px tall). While it's visible (body attribute
-   stamped by install-prompt.tsx) lift the launcher clear of it. The id
-   selector outranks the launcher's Tailwind utilities at every
-   breakpoint, so one rule covers mobile + desktop. */
-body[data-install-prompt='true'] #askgg-fab {
+   stamped by install-prompt.tsx) lift the launcher clear of it. Targets
+   the dock (the fixed wrapper holding the mascot + mute button) so both
+   lift together. The id selector outranks the launcher's Tailwind
+   utilities at every breakpoint, so one rule covers mobile + desktop. */
+body[data-install-prompt='true'] #askgg-dock {
   bottom: calc(124px + env(safe-area-inset-bottom));
 }
 /* The daily hello bubble rides just above the FAB — same lift. */
