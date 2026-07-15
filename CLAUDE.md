@@ -7,14 +7,13 @@ marketplace. This is a fresh rebuild — clean codebase, new GitHub
 repository, built locally and deployed to the server only once
 end-to-end testing begins.
 
-The platform is delivered as five modules, built in order. Each
+The platform is delivered as four modules, built in order. Each
 module must be fully stable before the next begins:
 
 - **M1 — Secondhand Marketplace** (build first)
 - **M2 — Auctions**
 - **M3 — New Store**
 - **M4 — Swap**
-- **M5 — Raffle / Competitions**
 
 This document is the single source of truth for Claude Code. It
 records decisions and rules — not session history. When a decision
@@ -276,7 +275,7 @@ never printed.
 
 ---
 
-## The Five Modules
+## The Four Modules
 
 | Module | Name | Notes |
 |--------|------|-------|
@@ -284,7 +283,6 @@ never printed.
 | M2 | Auctions | Full proxy-bid auction system. |
 | M3 | New Store | New-goods retail store. |
 | M4 | Swap | Item-for-item swap module. |
-| M5 | Raffle / Competitions | Skill-based competitions ("Gun Galore Competitions"). |
 
 Listing types across the platform: `BUY_NOW`, `AUCTION`,
 `TAKE_A_SHOT`.
@@ -318,16 +316,14 @@ stabilised before the next.
 10. **M2 Auctions** — proxy bidding, increments, snipe protection,
     Buy Now, reserve, strikes.
 11. **Take a Shot** — confidential offers flow.
-12. **M5 Raffles / Competitions** — skill-gated competitions, draws,
-    claims, postal free-entry, re-raffle.
-13. **Claude AI Listing Moderation** — every new listing reviewed
+12. **Claude AI Listing Moderation** — every new listing reviewed
     by Claude before going live.
-14. **Webhooks** — TCG + Pudo shipping webhooks.
-15. **PWA Phases A–C** — installability + icons + conservative SW
+13. **Webhooks** — TCG + Pudo shipping webhooks.
+14. **PWA Phases A–C** — installability + icons + conservative SW
     with offline fallback (done; see PWA section for state).
-16. **SEO**.
-17. **Odoo accounting integration**.
-18. **M3 New Store**, then **M4 Swap** — after M1/M2/M5 are live and
+15. **SEO**.
+16. **Odoo accounting integration**.
+17. **M3 New Store**, then **M4 Swap** — after M1/M2 are live and
     stable.
 
 PWA Phase D (web push notifications) and Phase E (install-prompt
@@ -368,9 +364,9 @@ handoff; mirror into `/docs/design/`):
 badge top-right, price in red, seller tier badge + rating.
 
 **Navigation:** sticky top bar — logo + primary nav (Home, Sell,
-and when signed in: My comps, Your bids, Transactions, Messages
+and when signed in: Your bids, Transactions, Messages
 icon with unread badge, avatar → dashboard). A module launcher
-offers Marketplace / Auctions / Raffle. Primary nav is always
+offers Marketplace / Auctions. Primary nav is always
 visible, never hidden in a hamburger on desktop.
 
 **Routes from the mockup that are NOT built:** `wallet`, `seller`,
@@ -380,7 +376,7 @@ feature in this document.
 ### Page background + reveal animation (HOUSE STANDARD)
 
 Every signed-in page (Sell, Profile, Edit Profile, surface views like
-Marketplace/Auctions/Take a Shot/Competitions, Dashboard, all
+Marketplace/Auctions/Take a Shot, Dashboard, all
 sub-pages we add later) wraps its `<main>` with these two components:
 
 ```tsx
@@ -413,7 +409,7 @@ sub-pages we add later) wraps its `<main>` with these two components:
   height (preserve the 5:1 ratio).
 - In the nav bar: 44px tall, top-left.
 - Module marks (`marketplace-logo.svg`, `auction-logo.svg`,
-  `raffle-logo.svg`, `used-marketplace-logo.svg`) are used as-is.
+  `used-marketplace-logo.svg`) are used as-is.
 
 ---
 
@@ -488,10 +484,6 @@ KYC is a **seller-only gate**.
   equivalent gate for Take a Shot is in `offers.service.ts` →
   `acceptOffer()`. **Not** at listing submission.
 - Bank-account verification happens at first payout.
-- Raffles: ticket buyers and winners need NO KYC anywhere. A
-  non-firearm prize claim needs shipping details only; a firearm
-  prize claim needs a competency certificate only. Seller
-  competition applications DO need KYC (commercial activity).
 - Never use the word "KYC" in user-facing text — use "Verified" /
   "Verification".
 
@@ -589,7 +581,7 @@ them to enter it themselves on the Stitch hosted page.
   `listing-expired` fires at expiry. Both SMS + email per the
   notification rule.
 - The seller can relist from an expired listing.
-- Auctions and competitions are NOT subject to this — they have
+- Auctions are NOT subject to this — they have
   their own fixed end times. The 60-day rule applies only to
   `BUY_NOW` and `TAKE_A_SHOT` listings.
 
@@ -722,49 +714,6 @@ admin can paste the visible chip from the listing detail page.
 
 ---
 
-## Raffle / Competition System (M5)
-
-Branding: **"Gun Galore Competitions"** — slogan *"Small shot, BIG
-target."*
-
-- **Legal model:** game of skill (a Claude-generated skill question
-  gates entry) plus a free-entry route under CPA Section 36.
-- **Launch scope:** admin-run competitions only. Seller-application
-  intake is built but disabled via
-  `raffle_seller_applications_enabled = false`.
-- **Ticket price:** derived from admin inputs — target ticket count
-  + margin% + commission%.
-- **Duration** (tiered by item value): ≤R10k = 5 days,
-  R10k–R50k = 10 days, R50k+ = 14 days.
-- **Cooling window:** 24 hours after the timer ends before the
-  draw.
-- **Draw:** `crypto.randomBytes(32)` + SHA-256 + mod. `drawSeed` is
-  published after the draw for public verification. 1 winner + 2
-  backups. 7-day claim window per tier.
-- **Minimum not reached** → status `CANCELLED_MIN_NOT_MET`:
-  auto-refund every ticket via Stitch (per-ticket, so partial
-  failures are isolated; failed refunds logged for admin retry),
-  notify all entrants, return the item to the platform — admin may
-  re-raffle, convert to auction, or convert to Buy Now.
-- **Firearm raffles** require a competency certificate (admin
-  verifies). Winners need NO KYC.
-- **Free entry:** a pdfkit A4 form with an 8-char reference code,
-  posted to a PO Box; admin enters postal entries manually at
-  `/admin/postal-entries`. The free-entry button stays DISABLED
-  until `raffle_po_box_address` is set to a real address.
-- **Re-raffle:** `parentRaffleId` lineage; max 5 relists
-  (`raffle_max_relists`).
-- `RaffleAuditEvent` logs all state changes; CSV export is
-  superadmin-only.
-- Admin pages: `/admin/competitions`, `/admin/competitions/create`
-  (live revenue calculator + Claude-generated skill questions),
-  `/admin/competitions/[raffleId]/audit`,
-  `/admin/competitions/applications`, `/admin/postal-entries`.
-- Public competition detail: `/competitions/[raffleId]`.
-- Winner claim flow: `/dashboard/raffle-wins/[winnerId]` (no KYC).
-
----
-
 ## Claude AI Listing Moderation
 
 Every new listing is reviewed by Claude via the Anthropic API
@@ -860,7 +809,7 @@ Schema (`Notification` model in `backend/prisma/schema.prisma`):
 - `category: NotificationCategory` — `BUYER | SELLER | ACCOUNT`. Drives
   the tab the row appears in.
 - `linkedType` + `linkedId` — pointer to the underlying entity
-  (`offer | transaction | bid | listing | raffle`).
+  (`offer | transaction | bid | listing`).
 - `dismissible: Boolean` — `true` for informational rows (× button
   shows in the inbox), `false` for action-required rows (can ONLY
   clear via the server-side resolve hook).
@@ -906,7 +855,6 @@ All Clerk-guarded. Throttle: 120/min/user (bell badge polls every
 | `offerCountered` | BUYER | offer | no | Buyer accepts/rejects/counters back |
 | `offerRejected` | BUYER | offer | yes | Manual dismiss |
 | `itemDispatched` | BUYER | transaction | no | Buyer confirms delivery |
-| `raffleWinnerPicked` | BUYER | raffle | yes | Manual dismiss (admin dispatch is out-of-band) |
 | `offerReceived` | SELLER | offer | no | Seller accepts/rejects/counters |
 | `newSaleSeller` | SELLER | transaction | no | Seller marks dispatched |
 | `paymentReleasedSeller` | SELLER | transaction | yes | Manual dismiss |
@@ -944,8 +892,7 @@ acceptCounter,rejectCounter}`, `AuctionsService.placeBid`,
 Email + SMS fire as before, but no inbox row yet for:
 `bidPlaced`, `counterAccepted`, `counterRejected`,
 `auctionEndedForSeller`, `shippingDispatched`/`Out`/`Delivered`,
-`orderConfirmedBuyer`, `refundIssuedBuyer`, `raffleEntryConfirmed`,
-`raffleBackupPromoted`, `raffleWinnerPrizeDispatched`,
+`orderConfirmedBuyer`, `refundIssuedBuyer`,
 `dealerVerificationApproved`/`Rejected`, `shippingFailed`,
 `firearmStockedAtDealerBuyer`, `dispatchNudgeSeller`,
 `listingRemovedByAdmin`. Each is a one-line `persistByEmail` away
@@ -956,9 +903,9 @@ when prioritised.
 ## Email Templates
 
 The Claude Design handoff ships **63 finished HTML email
-templates**, one per platform event, in 12 groups (Account,
+templates**, one per platform event, in 11 groups (Account,
 Verification, Listings, Auctions, Offers, Payments, Fulfillment,
-Disputes, Competitions, Engagement, Penalties, Platform).
+Disputes, Engagement, Penalties, Platform).
 
 **Rules:**
 
@@ -1082,8 +1029,8 @@ opened fullscreen" from "native iOS app":
   5-tab nav (**Shop / Alerts / Sell / Wishlist / More**) anchored to
   the bottom with `env(safe-area-inset-bottom)` padding for the home
   indicator. Sell is the raised circular FAB in the centre.
-  - **Shop** opens a bottom-sheet picker with five rows: All listings,
-    Marketplace, Auctions, Take a Shot, Competitions. Active row
+  - **Shop** opens a bottom-sheet picker with four rows: All listings,
+    Marketplace, Auctions, Take a Shot. Active row
     highlighted in brand red.
   - **Alerts** routes to `/notifications` with a red active-count
     badge (see "Notifications inbox" section above).
@@ -1093,8 +1040,8 @@ opened fullscreen" from "native iOS app":
   - **More** sheet is headed by a Profile card (avatar + username +
     "View profile" chevron pulled from Clerk's `useUser()`), then
     sections: **My account** (Dashboard, Profile, My listings/orders/
-    sales/offers/bids/tickets/raffle wins, Received offers, Sign out),
-    **Shop** (Take a Shot, Competitions), **Legal** (Terms, Privacy,
+    sales/offers/bids, Received offers, Sign out),
+    **Shop** (Take a Shot), **Legal** (Terms, Privacy,
     Refund, legal index). Sections are separated by thin dividers and
     every row has a trailing chevron so it reads as iOS-Settings-style
     navigation.
@@ -1105,7 +1052,7 @@ opened fullscreen" from "native iOS app":
     in when they scroll up. Sheet-open state overrides the hide.
 - **Sticky featured strip** — `frontend/components/sticky-featured-
   strip.tsx`, mounted in the layout and visible only in standalone
-  on the shopping surface pages (`/` and `/competitions`). Sits
+  on the shopping surface (`/`). Sits
   above the bottom tab bar; hides on scroll-down in sync with it.
   140×64pt cards by default; latest spec is 30% larger (182×83pt).
 - **Sticky search bar** — `frontend/components/mobile-search-bar.tsx`
@@ -1200,16 +1147,15 @@ opened fullscreen" from "native iOS app":
 **Live accounting: Zoho Books** (not Odoo). The Zoho Books
 integration shipped in Phase ZB-1 through ZB-11 — commission
 invoices on dealer-verification APPROVED, paid-marker on payout
-fired, credit notes on refund, sales receipts on raffle tickets,
-invoices on featured-slot bids won, admin retry button per row, and
-queue-depth health monitoring. See `backend/src/zoho-books/`. Odoo
+fired, credit notes on refund, invoices on featured-slot bids won,
+admin retry button per row, and queue-depth health monitoring. See
+`backend/src/zoho-books/`. Odoo
 was the earlier plan and is archived — do not build new code
 against it.
 
 Stitch payment fees → expenses; users → contacts (FICA records);
-deferred revenue for raffle tickets recognised at draw completion;
-prize costs → COGS; featured fees → revenue; SMS / email costs →
-expenses. VAT201, monthly P&L, balance sheet, cash flow all run
+featured fees → revenue; SMS / email costs → expenses. VAT201,
+monthly P&L, balance sheet, cash flow all run
 out of Books once VAT registration crosses R1M turnover (see
 Feature Flags `VAT_REGISTERED`).
 
@@ -1221,8 +1167,7 @@ Feature Flags `VAT_REGISTERED`).
   (`JWT_ADMIN_SECRET`), separate from Clerk.
 - Verification working hours: Mon–Thu 08:00–17:00, Fri 08:00–14:00.
 - Queues: seller verification, listing moderation (Claude outcomes),
-  competition applications, postal entries, penalty approvals,
-  disputes.
+  penalty approvals, disputes.
 - Superadmin-only: audit CSV exports.
 
 ---
@@ -1231,7 +1176,7 @@ Feature Flags `VAT_REGISTERED`).
 
 All feature flags default to `false` and flip to `true` only when a
 module is fully ready. Examples: per-module launch flags,
-`raffle_seller_applications_enabled`, `claude_moderation_enabled`.
+`claude_moderation_enabled`.
 
 `VAT_REGISTERED` flag defaults `false`; flip it at R1,000,000
 turnover.
@@ -1264,7 +1209,7 @@ firearm listings.
   "retail stores", "other SA auction sites". WhatsApp and Facebook
   groups MAY be named directly.
 - Marketing pages planned: `/buy-and-sell`, `/auctions`,
-  `/competitions`, `/about`, plus homepage cards and footer nav.
+  `/about`, plus homepage cards and footer nav.
 - A temporary welcome page may be served at `/welcome`.
 
 ---
@@ -1463,11 +1408,9 @@ LAUNCH-CHECKLIST.md for the authoritative list):
 - Stitch live merchant + payout-bank account fully configured
   (sandbox→production cutover, redirect URL registered via
   `scripts/stitch-redirect-setup.cjs`).
-- SA Post Office PO Box for "Gun Galore Competitions" → set
-  `raffle_po_box_address` in admin settings.
 - Attorney review of `/terms`, `/privacy`, `/aml-policy`,
-  `/refund-policy`, `/firearms-compliance`, `/competitions/terms`.
-- Email forwarding for `competitions@` / `sellers@` / `support@`
+  `/refund-policy`, `/firearms-compliance`.
+- Email forwarding for `sellers@` / `support@`
   at gungalore.co.za.
 - Register the `gg.co.za` short-link domain (used in SMS action
   links).
