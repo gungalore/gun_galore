@@ -66,6 +66,7 @@ const GROUPS: NavGroup[] = [
     label: 'Ask GG',
     items: [
       { href: '/admin/ask-gg/kb', label: 'Knowledge Base' },
+      { href: '/admin/ask-gg/guides', label: 'Page Guides' },
       { href: '/admin/ask-gg/experts', label: 'Experts' },
       { href: '/admin/reloading', label: 'Reloading Library' },
     ],

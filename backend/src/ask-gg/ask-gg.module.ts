@@ -9,6 +9,7 @@ import {
   AskGgKbAdminController,
   AskGgExpertAdminController,
 } from './ask-gg-kb-admin.controller';
+import { AskGgGuideAdminController } from './ask-gg-guide-admin.controller';
 import { AdminAuditService } from '../admin/admin-audit.service';
 import { adminJwtSecret } from '../admin/admin-jwt-secret';
 import { ReloadingModule } from '../reloading/reloading.module';
@@ -63,6 +64,7 @@ import { AskGgGuideService } from './ask-gg-guide.service';
     AskGgPublicController,
     AskGgKbAdminController,
     AskGgExpertAdminController,
+    AskGgGuideAdminController,
   ],
   providers: [
     AskGgService,

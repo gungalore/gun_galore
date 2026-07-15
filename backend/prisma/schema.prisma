@@ -2965,6 +2965,35 @@ model AskGgKbEntry {
   @@index([category])
 }
 
+// GG site-guide (G5) — admin-editable OVERRIDE of a curated page-guide
+// playbook. The static GUIDES catalog (backend/src/ask-gg/guide-content.ts)
+// stays the shipped baseline/fallback; a row here OVERLAYS it for one guide
+// `key`. Only PUBLISHED rows are served to users; DRAFT is admin preview only.
+// Delete the row to revert to the shipped default. `updatedBy` is the admin's
+// JWT sub (a plain id, mirroring AdminAuditEvent.adminUserId — no FK so the
+// User model stays untouched). Live state (auction bid line) and the personal
+// overlay are computed at serve time and are NOT overridable here.
+model AskGgGuideOverride {
+  id          String            @id @default(cuid())
+  key         String            @unique // matches a GUIDES key (home, listing-auction, dashboard, …)
+  title       String
+  intro       String?
+  points      String[] // the bullet-point playbook
+  ctas        Json? // GuideCta[] { label, href?, ask? }
+  status      AskGgGuideStatus  @default(DRAFT)
+  updatedBy   String? // admin JWT sub
+  publishedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([status])
+}
+
+enum AskGgGuideStatus {
+  DRAFT
+  PUBLISHED
+}
+
 // Per-user-per-day usage rollup. Powers free-tier caps (5 photo
 // IDs + 5 messages per rolling 30 days) and Member/Pro fair-use
 // rate caps (admin-configurable via SettingsService).
