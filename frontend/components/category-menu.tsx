@@ -201,12 +201,17 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
             border: '0.5px solid var(--border)',
             display: 'grid',
             gridTemplateColumns: '220px 260px',
+            // Cap the single grid row at 72vh. Without this the row auto-sizes to
+            // max-content, the columns stretch to fit ALL children, their own
+            // overflowY never engages, and the container's max-height silently
+            // CLIPS the last sub-menu items (incl. "View all") with no scrollbar.
+            gridTemplateRows: 'minmax(0, 72vh)',
             minWidth: 480,
             maxHeight: '72vh',
           }}
         >
           {/* Left column — root categories */}
-          <div style={{ borderRight: '0.5px solid var(--border)', overflowY: 'auto', padding: '6px 0' }}>
+          <div style={{ borderRight: '0.5px solid var(--border)', overflowY: 'auto', minHeight: 0, padding: '6px 0' }}>
             {roots.map((r) => {
               const active = activeRootObj?.id === r.id;
               return (
@@ -235,7 +240,7 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
             })}
           </div>
           {/* Right column — children of the active root */}
-          <div style={{ overflowY: 'auto', padding: '8px 0' }}>
+          <div style={{ overflowY: 'auto', minHeight: 0, padding: '8px 0' }}>
             {activeRootObj && (
               <>
                 {children.map((c) => (
