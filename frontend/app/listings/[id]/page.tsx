@@ -561,8 +561,7 @@ export default async function ListingDetailPage({
                 )}
                 <div className="mb-5">
                   <HelpText>
-                    Takes you to secure checkout. You&apos;ll get bank-transfer
-                    (EFT) details and 24 hours to pay; funds are held until the
+                    Takes you to secure checkout. Your payment is held until the
                     sale completes, then released to the seller.
                   </HelpText>
                 </div>

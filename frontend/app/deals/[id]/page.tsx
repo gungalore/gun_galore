@@ -216,8 +216,7 @@ export default async function DealDetailPage({
                   </p>
                 )}
                 <p className="text-xs" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Secure checkout — you&apos;ll get bank-transfer (EFT) details and
-                  24 hours to pay. Your payment is held until the item ships.
+                  Secure checkout — your payment is held until the item ships.
                 </p>
               </>
             ) : (

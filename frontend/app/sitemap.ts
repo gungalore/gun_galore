@@ -19,9 +19,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
   }> = [
     { url: '/', priority: 1.0, changeFrequency: 'daily' },
+    { url: '/about', priority: 0.5, changeFrequency: 'monthly' },
     { url: '/faq', priority: 0.5, changeFrequency: 'monthly' },
-    { url: '/wishlist', priority: 0.4, changeFrequency: 'weekly' },
+    { url: '/how-selling-works', priority: 0.5, changeFrequency: 'monthly' },
+    { url: '/how-payments-work', priority: 0.5, changeFrequency: 'monthly' },
+    { url: '/fees', priority: 0.5, changeFrequency: 'monthly' },
     { url: '/brands', priority: 0.5, changeFrequency: 'weekly' },
+    { url: '/contact', priority: 0.4, changeFrequency: 'monthly' },
+    { url: '/support', priority: 0.4, changeFrequency: 'monthly' },
+    { url: '/complaints', priority: 0.4, changeFrequency: 'monthly' },
   ];
 
   const legal = [
@@ -32,6 +38,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     '/acceptable-use',
     '/firearms-compliance',
     '/cookies',
+    '/paia',
     '/legal',
   ].map((u) => ({ url: u, priority: 0.3, changeFrequency: 'yearly' as const }));
 

@@ -121,8 +121,8 @@ function CheckoutCompleteInner() {
           <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
             Your payment isn&apos;t confirmed yet, so your order isn&apos;t
             complete. If you cancelled, you can start the checkout again from
-            the listing. If you just paid by instant EFT, it may take a
-            moment — check your orders shortly.
+            the listing. If you completed payment, it may take a moment to
+            reflect — check your orders shortly.
           </p>
           <button
             onClick={() => router.replace('/my/orders')}

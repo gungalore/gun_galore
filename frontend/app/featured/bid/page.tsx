@@ -6,6 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { HelpTip } from '@/components/help-tip';
 import { HelpText } from '@/components/help-text';
+import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -1092,22 +1093,11 @@ function BindModal({
   const [listings, setListings] = useState<MyListing[] | null>(null);
   const [picking, setPicking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // P1.2 — manual-EFT lane: bind returns payment instructions instead
-  // of occupying the slot. The slot goes live once the EFT is matched.
-  const [eft, setEft] = useState<null | {
-    amountCents: number;
-    orderReference: string;
-    payByAt: string;
-    // Manual-EFT bank details were removed with the manual rail; a future
-    // card paygate supplies the payment path, so this is now always null.
-    bankDetails: {
-      accountName: string;
-      bank: string;
-      accountNumber: string;
-      branchCode: string;
-      accountType?: string;
-    } | null;
-  }>(null);
+  // Phase-1 payment gate — the manual-EFT slot-fee lane is retired and the
+  // card paygate isn't live yet, so binding a listing returns the shared
+  // "card payments are launching soon" state (HTTP 503) instead of payment
+  // instructions. True once the backend gate is hit.
+  const [comingSoon, setComingSoon] = useState(false);
 
   // Load the seller's ACTIVE listings on mount.
   useEffect(() => {
@@ -1146,17 +1136,17 @@ function BindModal({
         },
         body: JSON.stringify({ slotId: slot.id, listingId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
-      if (data.awaitingPayment) {
-        // Manual-EFT lane: show the banking instructions in-modal.
-        setEft({
-          amountCents: data.amountCents,
-          orderReference: data.orderReference,
-          payByAt: data.payByAt,
-          bankDetails: data.bankDetails,
-        });
-        return;
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        // Phase-1 payment gate: the slot fee can't be collected until card
+        // checkout is live, so the backend returns 503 "card payments are
+        // launching soon". Show the shared coming-soon surface instead of a
+        // red error banner.
+        if (res.status === 503 || /launching soon/i.test(data?.message ?? '')) {
+          setComingSoon(true);
+          return;
+        }
+        throw new Error(data?.message ?? `Error ${res.status}`);
       }
       onBound();
     } catch (err) {
@@ -1177,83 +1167,25 @@ function BindModal({
         style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {eft ? (
-          // ── P1.2 — EFT payment instructions ──────────────────────────
+        {comingSoon ? (
+          // ── Phase-1 payment gate — card checkout isn't live yet ──────
+          // The manual-EFT slot-fee lane is retired, so binding can't
+          // collect the fee. Show the shared coming-soon surface instead of
+          // banking instructions for a rail that no longer exists.
           <div>
-            <h3
-              className="text-lg mb-1"
-              style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-            >
-              Pay your slot fee by EFT
-            </h3>
-            <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
-              Your listing is locked in for Slot #{slot.slotNumber}. It goes
-              live the moment your payment is picked up (usually within
-              minutes). Pay within 24 hours to keep the slot.
-            </p>
-            <div
-              className="rounded-[8px] p-3 mb-3 text-sm"
-              style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--red)' }}
-            >
-              <div className="flex justify-between py-1.5">
-                <span style={{ color: 'var(--text-tertiary)' }}>Amount (exact)</span>
-                <strong style={{ color: 'var(--red)', fontVariantNumeric: 'tabular-nums' }}>
-                  R{(eft.amountCents / 100).toFixed(2)}
-                </strong>
-              </div>
-              <div
-                className="flex justify-between py-1.5"
-                style={{ borderTop: '0.5px solid var(--border)' }}
-              >
-                <span style={{ color: 'var(--text-tertiary)' }}>Reference (use EXACTLY this)</span>
-                <strong style={{ color: 'var(--red)' }}>{eft.orderReference}</strong>
-              </div>
-            </div>
-            {eft.bankDetails ? (
-              <div
-                className="rounded-[8px] p-3 mb-3 text-sm"
-                style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)' }}
-              >
-                <p
-                  className="text-[10px] uppercase mb-1"
-                  style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}
-                >
-                  Pay into
-                </p>
-                {[
-                  ['Account name', eft.bankDetails.accountName],
-                  ['Bank', eft.bankDetails.bank],
-                  ['Account number', eft.bankDetails.accountNumber],
-                  ['Branch code', eft.bankDetails.branchCode],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="flex justify-between py-1.5"
-                    style={{ borderTop: '0.5px solid var(--border)' }}
-                  >
-                    <span style={{ color: 'var(--text-tertiary)' }}>{label}</span>
-                    <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                      {value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-                Card payments are launching soon — your slot is reserved and we&apos;ll
-                let you know the moment you can pay for it.
-              </p>
-            )}
+            <PaymentsComingSoon />
             <button
               type="button"
-              onClick={() => {
-                onBound();
-                onClose();
-              }}
+              onClick={onClose}
               className="w-full py-2.5 mt-4 rounded-[6px] text-sm"
-              style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+              style={{
+                background: 'var(--bg-inset)',
+                color: 'var(--text-secondary)',
+                border: '0.5px solid var(--border)',
+                cursor: 'pointer',
+              }}
             >
-              Done — I&apos;ll make the payment
+              Close
             </button>
           </div>
         ) : (

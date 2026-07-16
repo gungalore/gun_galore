@@ -55,12 +55,42 @@ const DOCS: { href: string; title: string; description: string }[] = [
     description:
       'What cookies we set, why, and how to manage them.',
   },
+  {
+    href: '/paia',
+    title: 'PAIA Manual',
+    description:
+      'Our manual under the Promotion of Access to Information Act 2 of 2000, and how to request records we hold.',
+  },
+  {
+    href: '/fees',
+    title: 'Fees & Charges',
+    description:
+      'The fees we charge buyers and sellers, when they apply, and how they are calculated.',
+  },
+  {
+    href: '/how-payments-work',
+    title: 'How Payments Work',
+    description:
+      'How your money moves from checkout to payout, including funds held until delivery is confirmed.',
+  },
+  {
+    href: '/contact',
+    title: 'Contact',
+    description:
+      'How to reach us for support, complaints and legal notices.',
+  },
+  {
+    href: '/complaints',
+    title: 'Complaints',
+    description:
+      'How to raise a complaint, what to expect from us, and how to escalate it externally.',
+  },
 ];
 
 export default function LegalIndexPage() {
   return (
     <>
-      <LegalDocHeader title="Legal & compliance" lastUpdated="Effective 24 June 2026" />
+      <LegalDocHeader title="Legal & compliance" lastUpdated="Effective 16 July 2026" />
 
       <p>
         This page collects every legal document and statutory
@@ -136,7 +166,7 @@ export default function LegalIndexPage() {
             support@gungalore.co.za
           </a>
           <br />
-          <strong>Phone:</strong> To be added before public launch
+          <strong>Phone:</strong> +27 74 303 9999
           <br />
           <strong>VAT registration:</strong> Not yet registered for VAT
           <br />
@@ -164,7 +194,11 @@ export default function LegalIndexPage() {
           </a>
         </li>
         <li>Consumer dispute (CPA): the National Consumer Commission or the Consumer Goods and Services Ombud</li>
-        <li>Payment-related: the Payment Association of South Africa (PASA) or your card issuer's dispute process</li>
+        <li>Payment-related: the{' '}
+          <a href="https://www.nfosa.co.za/" target="_blank" rel="noopener" style={{ color: 'var(--red)' }}>
+            National Financial Ombud
+          </a>{' '}
+          or your card issuer's dispute process</li>
         <li>Firearms-related: the South African Police Service (SAPS)</li>
       </ul>
     </>

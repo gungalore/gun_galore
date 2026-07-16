@@ -75,7 +75,7 @@ export const metadata: Metadata = {
     template: '%s — Gun Galore',
   },
   description:
-    "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Every seller verified, every transaction protected.",
+    "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Seller identity verified before payout; every payment held until delivery is confirmed.",
   // AUDIT M29 — Open Graph + Twitter Card metadata. Without this,
   // every link shared on WhatsApp / Facebook / X unfurls blank, which
   // for a share-driven SA marketplace suppresses organic referral.
@@ -87,7 +87,7 @@ export const metadata: Metadata = {
     siteName: 'Gun Galore',
     title: 'Gun Galore — Outdoor, Hunting & Sport Marketplace',
     description:
-      "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Every seller verified, every transaction protected.",
+      "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Seller identity verified before payout; every payment held until delivery is confirmed.",
     url: SITE_URL,
     images: [
       {
@@ -102,7 +102,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Gun Galore — Outdoor, Hunting & Sport Marketplace',
     description:
-      "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Every seller verified, every transaction protected.",
+      "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Seller identity verified before payout; every payment held until delivery is confirmed.",
     images: ['/icon-512.png'],
   },
   alternates: {

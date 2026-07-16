@@ -23,7 +23,7 @@ export default function RefundPolicyPage() {
     <>
       <LegalDocHeader
         title="Refund & Dispute Policy"
-        lastUpdated="Effective 24 June 2026 · Updated 15 July 2026"
+        lastUpdated="Effective 24 June 2026 · Updated 16 July 2026"
       />
 
       <h2>Quick reference</h2>
@@ -49,12 +49,15 @@ export default function RefundPolicyPage() {
       </div>
 
       <h2>1. How payment held works</h2>
+      {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
         For most transactions, GunGalore holds the buyer's payment
-        through Stitch Express until delivery is confirmed:
+        through our appointed third-party payment service provider (a
+        licensed South African payment service provider) until delivery
+        is confirmed:
       </p>
       <ol>
-        <li><strong>You pay</strong> — Stitch captures the amount from your card or EFT and the transaction moves to <strong>Payment held</strong>.</li>
+        <li><strong>You pay</strong> — the payment service provider captures the amount from your chosen payment method and the transaction moves to <strong>Payment held</strong>.</li>
         <li><strong>Seller dispatches</strong> — they confirm dispatch on the platform, which starts your delivery clock.</li>
         <li><strong>You receive the parcel</strong> — inspect it before doing anything else.</li>
         <li><strong>You confirm delivery</strong> — the funds release to the seller and the transaction completes.</li>
@@ -106,7 +109,7 @@ export default function RefundPolicyPage() {
         <li>The admin team gathers evidence from you, the seller and (where relevant) the courier's tracking record.</li>
         <li>One of four outcomes is recorded, with a written reason in the audit log:
           <ul>
-            <li><strong>Full refund to you</strong> — payment is reversed via Stitch; you receive the full amount including shipping back to your original payment method (typically 3–7 business days).</li>
+            <li><strong>Full refund to you</strong> — payment is reversed to your original payment method; you receive the full amount including shipping (typically 3–7 business days).</li>
             <li><strong>Partial refund</strong> — for cases where the item is usable but not as-described; agreed split is refunded to you, the balance released to the seller.</li>
             <li><strong>Release to seller</strong> — where the dispute is not upheld; payment releases as normal. You will be told why.</li>
             <li><strong>Escalation</strong> — where there is suspected fraud or criminal conduct, the matter is referred to SAPS and may be paused indefinitely.</li>
@@ -147,9 +150,37 @@ export default function RefundPolicyPage() {
         Where a dispute cannot be resolved by GunGalore and falls
         within the jurisdiction of the National Consumer Commission or
         the Consumer Goods and Services Ombud, you may escalate it
-        there. Contact details are publicly available; we will provide
-        them on request.
+        directly to them:
       </p>
+      <ul>
+        <li>
+          <strong>National Consumer Commission (NCC)</strong> —{' '}
+          <a href="mailto:complaints@thencc.org.za" style={{ color: 'var(--red)' }}>
+            complaints@thencc.org.za
+          </a>
+          .
+        </li>
+        <li>
+          <strong>Consumer Goods &amp; Services Ombud (CGSO)</strong> —{' '}
+          <a href="https://www.cgso.org.za" style={{ color: 'var(--red)' }}>
+            www.cgso.org.za
+          </a>
+          , 011 781 2607,{' '}
+          <a href="mailto:complaints@cgso.org.za" style={{ color: 'var(--red)' }}>
+            complaints@cgso.org.za
+          </a>
+          .
+        </li>
+        <li>
+          <strong>Payment-related complaints</strong> — a dispute about how
+          your payment itself was handled can be taken to the National
+          Financial Ombud Scheme South Africa (NFO),{' '}
+          <a href="https://www.nfosa.co.za" style={{ color: 'var(--red)' }}>
+            www.nfosa.co.za
+          </a>
+          .
+        </li>
+      </ul>
 
       <h2>7. Items sold directly by Gun Galore (Daily Deals)</h2>
       <p>

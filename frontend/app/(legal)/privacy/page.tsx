@@ -26,7 +26,7 @@ export const metadata = {
 export default function PrivacyPage() {
   return (
     <>
-      <LegalDocHeader title="Privacy Policy" lastUpdated="Effective 24 June 2026" />
+      <LegalDocHeader title="Privacy Policy" lastUpdated="Effective 16 July 2026" />
 
       <h2>1. Who we are</h2>
       <p>
@@ -132,10 +132,11 @@ export default function PrivacyPage() {
         register, complete your profile, create a listing, make a
         purchase or use any other feature of the Platform. We also
         collect information from our service providers (for example,
-        VerifyNow returns your name, ID status and face-match score;
-        Stitch Express returns payment confirmation results) and
-        automatically when you interact with the Platform (session,
-        device, activity).
+        VerifyNow returns your name, ID status and face-match score)
+        and automatically when you interact with the Platform (session,
+        device, activity). Payment-instrument and transaction data
+        will be processed by our appointed licensed South African
+        payment service provider once card payments launch.
       </p>
 
       <h2>5. Why we collect it (purposes)</h2>
@@ -170,6 +171,7 @@ export default function PrivacyPage() {
         only as instructed and to maintain POPIA-equivalent
         safeguards.
       </p>
+      {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 16 }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--border)' }}>
@@ -181,7 +183,6 @@ export default function PrivacyPage() {
         <tbody>
           {[
             ['Clerk', 'United States', 'Email, name, sessions, login activity'],
-            ['Stitch Express', 'South Africa', 'Payment instrument, transaction amount (pay-in and seller payout)'],
             ['VerifyNow', 'South Africa', 'ID number, name, selfie image (KYC face-match)'],
             ['Pudo', 'South Africa', 'Buyer address, parcel size + weight, shipping reference'],
             ['The Courier Guy', 'South Africa', 'Buyer address, parcel size + weight, waybill reference'],

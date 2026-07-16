@@ -24,7 +24,7 @@ export const metadata = {
 export default function TermsPage() {
   return (
     <>
-      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026" />
+      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 16 July 2026" />
 
       <h2>1. About us</h2>
       <p>
@@ -139,23 +139,27 @@ export default function TermsPage() {
       </p>
 
       <h2>7. Payments and the funds-held mechanism</h2>
+      {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
         All payments on GunGalore are processed by{' '}
-        <strong>Stitch Express</strong>, a licensed South African
-        payment service provider. By making a payment you authorise
-        Stitch Express to capture funds from your chosen payment
-        instrument, and you authorise GunGalore to instruct release of
-        the seller payout in accordance with these Terms.
+        <strong>our appointed third-party payment service provider</strong>{' '}
+        (a licensed South African payment service provider). By making a
+        payment you authorise the payment service provider to capture
+        funds from your chosen payment instrument, and you authorise
+        GunGalore to instruct release of the seller payout in accordance
+        with these Terms. All prices are quoted and charged in South
+        African Rand (ZAR).
       </p>
       <p>
         For most transactions, GunGalore operates a{' '}
         <strong>funds-held mechanism</strong>: the Buyer's payment is
-        captured by Stitch Express at checkout and the resulting
-        amount (less commission and processing fees) is held until the
-        Buyer confirms delivery of the item, the Buyer's confirmation
-        window elapses, or a dispute is resolved. Once one of these
-        triggers occurs, GunGalore instructs Stitch Express to release
-        the seller payout to the Seller's verified bank account.
+        captured by the payment service provider at checkout and the
+        resulting amount (less commission and processing fees) is held
+        until the Buyer confirms delivery of the item, the Buyer's
+        confirmation window elapses, or a dispute is resolved. Once one
+        of these triggers occurs, GunGalore instructs the payment
+        service provider to release the seller payout to the Seller's
+        verified bank account.
       </p>
       <p>
         For the avoidance of doubt: the funds-held mechanism is a{' '}
@@ -164,7 +168,7 @@ export default function TermsPage() {
         not a bank and does not provide deposit-taking or fund-custody
         financial services. GunGalore does not pay interest on funds held, does not
         guarantee the availability of those funds against the
-        insolvency of Stitch Express, and is not a registered financial
+        insolvency of the payment service provider, and is not a registered financial
         services provider.
       </p>
       <p>
@@ -181,13 +185,15 @@ export default function TermsPage() {
       <p>
         GunGalore charges Sellers a <strong>banded commission</strong>{' '}
         on the listing price of each completed sale, plus a{' '}
-        <strong>processing fee</strong> charged by Stitch Express
-        (passed through to the Seller in full). The exact commission
-        bands and processing-fee structure are displayed to the Seller
-        on the Sell form before publishing a listing and snapshotted
-        onto each Transaction record at the point of sale. Sellers may
-        review the current fee schedule at any time via the in-product
-        fee explainer.
+        <strong>processing fee</strong> charged by the payment service
+        provider (passed through to the Seller in full). The exact
+        commission bands and processing-fee structure are displayed to
+        the Seller on the Sell form before publishing a listing and
+        snapshotted onto each Transaction record at the point of sale.
+        Sellers may review the current fee schedule at any time via the
+        in-product fee explainer. Our current commission bands and
+        processing fee are published at{' '}
+        <a href="/fees" style={{ color: 'var(--red)' }}>gungalore.co.za/fees</a>.
       </p>
       <p>
         Where the Platform offers paid placement features (for example,
@@ -326,9 +332,9 @@ export default function TermsPage() {
         performance caused by events beyond its reasonable control,
         including natural disasters, war, civil unrest, government
         action, power or internet outages, or acts or omissions of
-        third-party service providers (including Stitch Express,
-        VerifyNow, Pudo, The Courier Guy, Cloudinary, Resend or
-        Clerk).
+        third-party service providers (including our payment service
+        provider, VerifyNow, Pudo, The Courier Guy, Cloudinary, Resend
+        or Clerk).
       </p>
 
       <h2>17. Notices and communications</h2>
@@ -379,6 +385,8 @@ export default function TermsPage() {
           support@gungalore.co.za
         </a>
         <br />
+        <strong>Telephone:</strong> +27 74 303 9999
+        <br />
         <strong>Postal:</strong> GunGalore (Pty) Ltd, 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570
       </p>
 
@@ -394,6 +402,7 @@ export default function TermsPage() {
         <li><strong>Director:</strong> Gerhard Johan Petrus Fourie</li>
         <li><strong>Physical address:</strong> 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa</li>
         <li><strong>Email:</strong> support@gungalore.co.za</li>
+        <li><strong>Telephone:</strong> +27 74 303 9999</li>
         <li><strong>VAT registration:</strong> Not yet registered for VAT</li>
         <li><strong>Membership of self-regulatory bodies:</strong> None at this time</li>
       </ul>

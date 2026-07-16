@@ -27,8 +27,17 @@ const isPublicRoute = createRouteMatcher([
                    // without auth (mirrors /category above).
   '/faq',          // public help/FAQ page
   '/how-selling-works', // public "how selling works" explainer (linked from sell flow)
+  '/how-payments-work', // public "how payments work" explainer
+  '/contact',      // public contact page
+  '/support',      // public support page
+  '/complaints',   // public complaints-handling page
+  '/paia',         // public PAIA manual / access-to-information page
+  '/fees',         // public fees schedule
   '/sitemap.xml',  // SEO — must be crawlable without auth (.xml isn't
   '/robots.txt',   // excluded by the matcher, so it hits this middleware)
+  '/.well-known/(.*)', // static well-known files (e.g. security.txt) — must
+                       // be reachable without auth for crawlers/researchers
+  '/security.txt', // security-contact file at the site root
   '/admin(.*)',   // admin uses its own JWT auth, not Clerk
   '/offline',     // PWA offline fallback — must be reachable without auth
                   // because the service worker serves it whenever the

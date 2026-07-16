@@ -380,7 +380,7 @@ export default function UserDossierPage() {
                   ? `••••${u.bankAccountNumber.slice(-4)}`
                   : '—',
               ],
-              ['AVS verified', formatDateTime(u.bankVerifiedAt)],
+              ['Bank details reviewed (manual)', formatDateTime(u.bankVerifiedAt)],
             ]}
           />
         </Section>

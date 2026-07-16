@@ -16,7 +16,7 @@ export default function AcceptableUsePage() {
     <>
       <LegalDocHeader
         title="Acceptable Use Policy"
-        lastUpdated="Effective 24 June 2026"
+        lastUpdated="Effective 16 July 2026"
       />
 
       <h2>1. Who this applies to</h2>
@@ -55,7 +55,7 @@ export default function AcceptableUsePage() {
         <li><strong>Stolen goods</strong> — including goods you cannot prove ownership of, or goods whose serial numbers have been removed or altered.</li>
         <li><strong>Counterfeit or replica regulated items / accessories</strong> (including replica firearms) sold as genuine.</li>
         <li><strong>Fully automatic firearms</strong> or any firearm component prohibited under the Firearms Control Act for civilian possession.</li>
-        <li><strong>Loose live ammunition</strong> traded peer-to-peer between private individuals — these may be listed only by SAPS-licensed dealers operating on our New Store surface where supported.</li>
+        <li><strong>Loose live ammunition</strong> traded peer-to-peer between private individuals — these may only be sold by SAPS-licensed dealers through dealer storefronts, where that capability is enabled.</li>
         <li><strong>Explosives, suppressors, silencers, prohibited large-capacity magazines</strong> or any other item explicitly restricted under SA law.</li>
         <li><strong>Goods that infringe</strong> any third-party intellectual property right (trademark, copyright, design).</li>
         <li><strong>Hate symbols, extremist memorabilia</strong> or any item primarily associated with promoting violence against a protected group.</li>

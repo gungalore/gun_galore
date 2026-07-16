@@ -130,7 +130,7 @@ export function ForceEvictButton({
                 checked={refund}
                 onChange={(e) => setRefund(e.target.checked)}
               />
-              Refund occupant via Peach
+              Refund occupant via payment provider
             </label>
 
             {error && (

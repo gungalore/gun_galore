@@ -49,7 +49,7 @@ import { StitchService } from '../payments/stitch.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
-import { PAYMENT_MODE } from '../payments/transactions.service';
+import { PAYMENT_MODE, assertPaymentsLive } from '../payments/transactions.service';
 
 // P1.2 — how long the winner has to pay the slot fee by EFT once they
 // pick a listing (manual rail). Mirrors the subscription pay window.
@@ -90,8 +90,12 @@ export class FeaturedService {
     // (the SwapsModule boot-crash lesson). Posts the slot-fee Sales
     // Receipt; feature-flagged no-op until ZOHO_BOOKS_ENABLED=true.
     private readonly zohoBooks: ZohoBooksService,
-    // Both @Global (NotificationsModule / ReferenceNumberModule) — used
-    // by the P1.2 manual-EFT slot-fee lane.
+    // Both @Global (NotificationsModule / ReferenceNumberModule).
+    // `notifications` fires the slot-fee-received message from the
+    // confirmSlotPayment reconciler. `referenceNumbers` allocated the FS
+    // pay-in reference for the now-retired manual-EFT slot-fee lane; the
+    // binding no longer issues one (kept injected as a rail-agnostic seam
+    // for when the card paygate wires real slot-fee capture in).
     private readonly notifications: NotificationsService,
     private readonly referenceNumbers: ReferenceNumberService,
   ) {}
@@ -547,95 +551,29 @@ export class FeaturedService {
       // P1.2 — slot-fee collection depends on the payment rail.
       if (PAYMENT_MODE === 'manual') {
         if (!winningBid.paidAt) {
-          // Manual-EFT prepay lane: issue (or resume) payment
-          // instructions and STOP — the slot is not occupied until the
-          // reconciler confirms the money (confirmSlotPayment). The
-          // featured cron holds the bind window open while
-          // paymentPayByAt is live, so the winner can't be cascaded
-          // mid-payment.
-          const now = new Date();
-          const chargedAmountCents = applyFeaturedDiscount(
-            winningBid.amountCents,
-            winningBid.discountPercent ?? 0,
+          // Manual-EFT slot-fee pay-in has been RETIRED. There is no rail to
+          // collect the slot fee until the card paygate is live, so an unpaid
+          // winner binding a listing lands on the shared "card payments are
+          // launching soon" gate — exactly how every checkout entry point
+          // gates itself (assertPaymentsLive). No orderReference / pay-by
+          // deadline / bank-deposit instructions are issued, and the
+          // historical AWAITING_EFT_PAYMENT audit event is no longer written.
+          //
+          // Nothing is persisted here: assertPaymentsLive() throws before any
+          // write, so the interactive transaction rolls back cleanly — the
+          // winning bid stays as-is and the slot stays in BIND_WINDOW for the
+          // cron to cascade/reopen. The booking + money-state logic further
+          // down is unchanged and rail-agnostic; only the manual-EFT
+          // instructions behaviour has been removed here.
+          assertPaymentsLive();
+          // Defensive: assertPaymentsLive() throws while PAYMENTS_LIVE is
+          // false (the current state), so nothing below runs. If payments are
+          // ever flipped live while STILL on the manual rail, refuse the bind
+          // rather than hand out free featuring — real slot-fee capture is
+          // owned by the card paygate rail (PAYMENT_MODE=paygate) below.
+          throw new BadRequestException(
+            'Featured-slot payment collection is not available yet — card checkout is launching soon.',
           );
-          const stillLive =
-            winningBid.paymentPayByAt !== null &&
-            winningBid.paymentPayByAt > now;
-
-          let orderReference = winningBid.orderReference;
-          let paymentPayByAt = stillLive
-            ? (winningBid.paymentPayByAt as Date)
-            : new Date(now.getTime() + FEATURED_PAY_WINDOW_MS);
-
-          if (!orderReference) {
-            // FIRST issue — allocate a reference race-safely. A CAS on
-            // orderReference IS null guarantees that two concurrent
-            // first-binds (bind opened on two devices) can't each hand
-            // the member a different reference; the loser re-reads the
-            // winner's committed values so the banking instructions and
-            // the stored reference always agree (review fix: orphan-ref
-            // payment stranding UNMATCHED).
-            const allocated = await this.referenceNumbers.allocate('FS');
-            const claim = await tx.featuredSlotBid.updateMany({
-              where: { id: winningBid.id, orderReference: null },
-              data: {
-                status: 'WON',
-                orderReference: allocated,
-                pendingListingId: listing.id,
-                paymentPayByAt,
-                chargedAmountCents,
-              },
-            });
-            if (claim.count === 1) {
-              orderReference = allocated;
-            } else {
-              const fresh = await tx.featuredSlotBid.findUnique({
-                where: { id: winningBid.id },
-                select: {
-                  orderReference: true,
-                  paymentPayByAt: true,
-                  chargedAmountCents: true,
-                },
-              });
-              orderReference = fresh?.orderReference ?? allocated;
-              paymentPayByAt = fresh?.paymentPayByAt ?? paymentPayByAt;
-            }
-          } else {
-            // Resume (same ref) or re-arm a lapsed window: keep the
-            // reference, refresh pending listing + deadline + charge.
-            await tx.featuredSlotBid.update({
-              where: { id: winningBid.id },
-              data: {
-                status: 'WON',
-                pendingListingId: listing.id,
-                paymentPayByAt,
-                chargedAmountCents,
-              },
-            });
-          }
-          await this.recordEvent(
-            slot.id,
-            'AWAITING_EFT_PAYMENT',
-            {
-              bidId: winningBid.id,
-              orderReference,
-              amountCents: chargedAmountCents,
-              payByAt: paymentPayByAt.toISOString(),
-              pendingListingId: listing.id,
-            },
-            user.id,
-            undefined,
-            tx,
-          );
-          return {
-            awaitingPayment: true as const,
-            amountCents: chargedAmountCents,
-            orderReference,
-            payByAt: paymentPayByAt,
-            // Manual-EFT bank-deposit details removed with the manual rail; a
-            // future paygate supplies the payment path for the slot fee.
-            bankDetails: null,
-          };
         }
         // Already paid (reconciler confirmed the EFT) — complete the
         // bind WITHOUT touching payment fields. Covers the auto-bind

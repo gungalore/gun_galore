@@ -443,12 +443,12 @@ export default function TransactionDossierPage() {
             ['Shipping cost', `${formatRand(t.shippingCost)}${t.shippingServiceCode ? ` (${t.shippingServiceCode})` : ''}`],
             ['Buyer total', formatRand(t.buyerTotal)],
             ['Commission', formatRand(t.commissionZar)],
-            ['Processing fee (Peach)', formatRand(t.processingFee)],
+            ['Processing fee', formatRand(t.processingFee)],
             ['Seller payout', formatRand(t.sellerPayout)],
             ['Pass fee to buyer', t.passFeeToBuyer ? 'Yes' : 'No'],
-            ['Peach checkout ID', t.peachCheckoutId ?? '—'],
-            ['Peach payment ID', t.peachPaymentId ?? '—'],
-            ['Peach result code', t.peachResultCode ?? '—'],
+            ['Provider checkout ID', t.peachCheckoutId ?? '—'],
+            ['Provider payment ID', t.peachPaymentId ?? '—'],
+            ['Provider result code', t.peachResultCode ?? '—'],
           ]}
         />
       </Section>

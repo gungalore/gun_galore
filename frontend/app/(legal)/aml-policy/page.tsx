@@ -18,7 +18,7 @@ export default function AmlPolicyPage() {
     <>
       <LegalDocHeader
         title="AML Policy"
-        lastUpdated="Effective 24 June 2026"
+        lastUpdated="Updated 16 July 2026"
       />
 
       <h2>1. Why this policy exists</h2>
@@ -33,14 +33,16 @@ export default function AmlPolicyPage() {
       </p>
 
       <h2>2. AML posture</h2>
+      {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
         GunGalore is <strong>not a designated accountable institution</strong>{' '}
         under the Financial Intelligence Centre Act 38 of 2001 ("FICA")
         and is not licensed as a financial services provider. We
-        process payments through Stitch Express, which is licensed.
-        Nevertheless, we voluntarily implement a number of controls
-        that mirror accountable-institution practice, because doing so
-        protects our buyers, sellers and the integrity of the
+        process payments through our appointed third-party payment
+        service provider (a licensed South African payment service
+        provider). Nevertheless, we voluntarily implement a number of
+        controls that mirror accountable-institution practice, because
+        doing so protects our buyers, sellers and the integrity of the
         marketplace.
       </p>
 
@@ -105,6 +107,17 @@ export default function AmlPolicyPage() {
           support@gungalore.co.za
         </a>
         . We investigate every report.
+      </p>
+
+      <h3>2.6 Sanctions screening</h3>
+      <p>
+        As part of the manual review carried out before a Seller's
+        first payout, we screen the Seller's verified identity against
+        the Financial Intelligence Centre's Targeted Financial
+        Sanctions list and apply adverse-media judgement. Where a
+        potential match is identified, the payout is held and the
+        matter is handled in line with Financial Intelligence Centre
+        guidance before any funds are released.
       </p>
 
       <h2>3. Contact</h2>

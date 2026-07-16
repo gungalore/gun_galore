@@ -65,9 +65,8 @@ export default function ExperiencesCancellationPolicyPage() {
         the outfitter yet. It stays held until, after the event date, you
         confirm the experience took place. Only then is it released to the
         outfitter. If the outfitter never confirms your booking, cancels, or
-        fails to deliver, you are refunded (see section 4). We never use the
-        word "escrow" — this is a payment-protection hold on the manual EFT
-        rail.
+        fails to deliver, you are refunded (see section 4). This is a
+        buyer-protection hold, not a deposit or investment product.
       </p>
 
       <h2>3. Cancellation by you (the hunter)</h2>

@@ -21,7 +21,7 @@ export function TrustBullets({
 }) {
   const bullets = [
     'Payment held until you confirm delivery',
-    'Every seller ID-verified',
+    "Sellers ID-verified before they're paid",
     'Dispute protection on every order',
   ];
 

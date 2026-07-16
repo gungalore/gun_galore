@@ -57,9 +57,9 @@ export function SiteFooter() {
             Gun Galore
           </p>
           <p style={{ color: 'var(--text-tertiary-on-card)', lineHeight: 1.6, margin: 0 }}>
-            South Africa&apos;s verified outdoor, hunting and sport
-            marketplace. Every seller verified. Every transaction
-            protected.
+            South Africa&apos;s outdoor, hunting and sport marketplace.
+            Seller identity verified before payout · every payment held
+            until delivery is confirmed.
           </p>
         </div>
 
@@ -102,6 +102,7 @@ export function SiteFooter() {
             <li><Link href="/firearms-compliance" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Regulated Items &amp; Compliance</Link></li>
             <li><Link href="/aml-policy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>AML Policy</Link></li>
             <li><Link href="/cookies" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Cookie Policy</Link></li>
+            <li><Link href="/paia" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>PAIA Manual</Link></li>
             <li><Link href="/legal" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>All legal &amp; ECT § 43</Link></li>
           </ul>
         </div>
@@ -129,6 +130,25 @@ export function SiteFooter() {
             <li style={{ color: 'var(--text-tertiary-on-card)', fontSize: 12 }}>
               We aim to respond within 2 business days
             </li>
+          </ul>
+        </div>
+
+        {/* Company */}
+        <div>
+          <p
+            style={{
+              color: 'var(--text-primary)',
+              fontWeight: 500,
+              marginBottom: 8,
+            }}
+          >
+            Company
+          </p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, lineHeight: 1.9 }}>
+            <li><Link href="/contact" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Contact</Link></li>
+            <li><Link href="/complaints" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Complaints</Link></li>
+            <li><Link href="/fees" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Fees</Link></li>
+            <li><Link href="/how-payments-work" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>How payments work</Link></li>
           </ul>
         </div>
 
@@ -191,7 +211,7 @@ export function SiteFooter() {
           <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--text-tertiary-on-card)', textDecoration: 'underline' }}>
             support@gungalore.co.za
           </a>
-          {' · '}
+          {' · +27 74 303 9999 · '}
           <Link href="/legal" style={{ color: 'var(--text-tertiary-on-card)', textDecoration: 'underline' }}>
             Full disclosures &amp; legal index
           </Link>

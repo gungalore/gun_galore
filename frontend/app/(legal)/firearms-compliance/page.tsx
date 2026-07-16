@@ -23,7 +23,7 @@ export default function FirearmsCompliancePage() {
     <>
       <LegalDocHeader
         title="Regulated Items & Compliance"
-        lastUpdated="Effective 24 June 2026"
+        lastUpdated="Effective 16 July 2026"
       />
 
       <h2>1. About this policy</h2>
@@ -102,8 +102,8 @@ export default function FirearmsCompliancePage() {
       <p>
         Loose live ammunition may <strong>not</strong> be sold
         peer-to-peer between private individuals on GunGalore. This
-        category is restricted to SAPS-licensed dealer Sellers
-        operating on the GunGalore New Store surface where supported.
+        category may only be sold by SAPS-licensed dealers through
+        dealer storefronts, where that capability is enabled.
         Listings of live ammunition by private Sellers will be
         removed.
       </p>
@@ -119,7 +119,7 @@ export default function FirearmsCompliancePage() {
         <li><strong>Seller dispatches</strong> the firearm to the chosen dealer using a courier service approved for such consignment, with full insurance and tracking.</li>
         <li><strong>Dealer receives, verifies and holds</strong> the item pending the buyer's appointment.</li>
         <li><strong>Buyer presents</strong> their Competency Certificate, Possession Licence (or proof of pending application, if the buyer is purchasing on the basis of an open application), and ID at the dealer's premises.</li>
-        <li><strong>Dealer completes the SAPS transfer paperwork</strong> (SAPS 271 / Section 17 forms as applicable) and hands the item to the buyer.</li>
+        <li><strong>Dealer completes the SAPS transfer paperwork</strong> (SAPS 534 / Section 17 forms as applicable) and hands the item to the buyer.</li>
         <li><strong>Buyer confirms delivery</strong> on the GunGalore transaction page, which releases the seller payout.</li>
       </ol>
       <p>
@@ -166,7 +166,7 @@ export default function FirearmsCompliancePage() {
         <li>hold (or have a pending application for) the relevant Possession Licence and a current Competency Certificate;</li>
         <li>present those documents in person at the receiving dealer;</li>
         <li>not attempt to take possession of a firearm except through a SAPS-licensed dealer (or in person under the Private Arrangement option);</li>
-        <li>retain a copy of the SAPS Possession Acquisition Notification (SAPS 271) for at least 5 years.</li>
+        <li>retain a copy of the SAPS Possession Acquisition Notification (SAPS 534) for at least 5 years.</li>
       </ul>
 
       <h2>9. False declarations</h2>
