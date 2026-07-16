@@ -10,10 +10,7 @@ import { SettingsService, FLAGS } from '../settings/settings.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
-import {
-  PAYMENT_MODE,
-  GG_BANK_DETAILS,
-} from '../payments/transactions.service';
+import { assertPaymentsLive } from '../payments/transactions.service';
 
 /**
  * P1.1 — MEMBER/PRO subscription billing on the manual-EFT rail.
@@ -123,7 +120,7 @@ export class SubscriptionsService {
           }
         : null,
       pricing: await this.pricing(),
-      bankDetails: GG_BANK_DETAILS,
+      bankDetails: null,
     };
   }
 
@@ -133,11 +130,7 @@ export class SubscriptionsService {
    * reference instead of allocating a fresh one.
    */
   async checkout(clerkId: string, tierRaw: string) {
-    if (PAYMENT_MODE !== 'manual') {
-      throw new BadRequestException(
-        'Subscriptions are currently available via EFT only.',
-      );
-    }
+    assertPaymentsLive();
     const tier = tierRaw as SubscriptionTier;
     if (!PAID_TIERS.includes(tier)) {
       throw new BadRequestException('Choose MEMBER or PRO.');
@@ -254,7 +247,7 @@ export class SubscriptionsService {
       payByAt: payByAt.toISOString(),
       tier,
       periodDays: PERIOD_DAYS,
-      bankDetails: GG_BANK_DETAILS,
+      bankDetails: null,
     };
   }
 

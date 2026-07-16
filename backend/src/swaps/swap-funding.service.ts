@@ -16,7 +16,11 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { FeeCalculator } from '../payments/fee.calculator';
-import { PAYMENT_MODE, GG_BANK_DETAILS } from '../payments/transactions.service';
+import {
+  PAYMENT_MODE,
+  PAYMENTS_LIVE,
+  assertPaymentsLive,
+} from '../payments/transactions.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
@@ -75,9 +79,9 @@ export class SwapFundingService {
     swapId: string,
     dto: SwapDeliveryDto,
   ) {
-    if (PAYMENT_MODE !== 'manual') {
-      throw new BadRequestException('Swap funding is not available right now.');
-    }
+    // Saving the delivery address is harmless while payments are off; the EFT
+    // funding chokepoint (ensureFundingSetUp) is what's gated, so this step
+    // stays graceful and never issues bank details / a "pay by EFT" notice.
     const { swap, side } = await this.loadForParty(clerkId, swapId);
     if (swap.status !== SwapStatus.AWAITING_FUNDING) {
       throw new BadRequestException('This swap is not awaiting funding.');
@@ -131,7 +135,9 @@ export class SwapFundingService {
   // all-firearm swap, which has no address step, still gets set up). No-ops
   // until ready / if already set up — safe to call repeatedly.
   async maybeSetUpFunding(swapId: string) {
-    if (PAYMENT_MODE !== 'manual') return;
+    // Phase 1 — no EFT funding while the card paygate is off. No-op (not throw)
+    // so convertToSwap / proof-approval flows that call this still succeed.
+    if (PAYMENT_MODE !== 'manual' || !PAYMENTS_LIVE) return;
     const swap = await this.prisma.swap.findUnique({
       where: { id: swapId },
       select: {
@@ -174,6 +180,10 @@ export class SwapFundingService {
   // the claim back if a live carrier quote fails so it can be retried.
   // ----------------------------------------------------------------
   async ensureFundingSetUp(swapId: string) {
+    // Phase 1 — card paygate not live: block the swap-funding chokepoint (this
+    // is also what POST /funding/retry calls directly) so no EFT reference or
+    // "pay by EFT" email/SMS is ever issued while payments are off.
+    assertPaymentsLive();
     // Proof-of-possession gate — enforced HERE (the single chokepoint every
     // path reaches, including the /funding/retry endpoint that calls this
     // directly) so funding can never be set up — and nothing paid or shipped —
@@ -500,7 +510,7 @@ export class SwapFundingService {
       where: { clerkId },
       select: { id: true },
     });
-    if (!user) return { bankDetails: GG_BANK_DETAILS, swaps: [] };
+    if (!user) return { bankDetails: null, swaps: [] };
     const swaps = await this.prisma.swap.findMany({
       where: {
         OR: [{ initiatorId: user.id }, { ownerId: user.id }],
@@ -603,7 +613,7 @@ export class SwapFundingService {
         },
       };
     });
-    return { bankDetails: GG_BANK_DETAILS, swaps: mapped };
+    return { bankDetails: null, swaps: mapped };
   }
 
   // ----------------------------------------------------------------

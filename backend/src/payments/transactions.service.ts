@@ -3,6 +3,7 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -63,6 +64,23 @@ export const GG_BANK_DETAILS = {
   branchCode: '250655',
   accountType: 'Gold Business Account',
 };
+
+// ── Phase-1 payment gate (manual EFT retired) ──────────────────────────
+// Buyer manual-EFT pay-in has been removed. The card paygate is not live
+// until it is integrated + TPPP-approved, so until PAYMENTS_LIVE=true every
+// checkout entry point returns "card payments launching soon" instead of a
+// payment path. The money-state / accounting engine below is unchanged and
+// rail-agnostic — only the entry gate changes. (Env PAYMENTS_LIVE=true flips
+// it on at paygate cutover.)
+export const PAYMENTS_LIVE = process.env.PAYMENTS_LIVE === 'true';
+
+export function assertPaymentsLive(): void {
+  if (!PAYMENTS_LIVE) {
+    throw new ServiceUnavailableException(
+      'Card payments are launching soon — you can browse and list in the meantime.',
+    );
+  }
+}
 
 // TOK-7 — accept→dispatch state machine deadlines.
 // Spec (operator-confirmed 2026-05-27):
@@ -717,6 +735,9 @@ export class TransactionsService {
     dto: CreateTransactionDto,
     frontendUrl: string,
   ) {
+    // Phase 1 — manual EFT retired; card paygate not live yet. Gate BEFORE any
+    // listing reservation so a blocked checkout leaves no orphaned hold.
+    assertPaymentsLive();
     const {
       tx,
       listing,
@@ -770,7 +791,7 @@ export class TransactionsService {
         orderReference,
         amountCents: buyerTotal,
         payByAt: manualPayByAt.toISOString(),
-        bankDetails: GG_BANK_DETAILS,
+        bankDetails: null,
         breakdown: {
           listingPrice,
           shippingCost,
@@ -870,13 +891,10 @@ export class TransactionsService {
     dto: CreateOrderDto,
     _frontendUrl: string,
   ) {
-    // Cart is EFT-only for now; the gateway-neutral seam lands with the new
-    // paygate (Phase 8e). Refuse loudly rather than silently mis-charging.
-    if (PAYMENT_MODE !== 'manual') {
-      throw new BadRequestException(
-        'Cart checkout is currently available via EFT only.',
-      );
-    }
+    // Phase 1 — manual EFT retired; card paygate not live yet. Gate BEFORE any
+    // reservation. The Order/reservation logic below is rail-agnostic and is
+    // reused by the paygate cart when it lands.
+    assertPaymentsLive();
     const lines = dto.lines ?? [];
     if (lines.length === 0) throw new BadRequestException('Your cart is empty');
     assertNoDuplicateListings(lines.map((l) => l.listingId));
@@ -1180,7 +1198,7 @@ export class TransactionsService {
         orderReference,
         amountCents: totals.buyerTotal,
         payByAt: manualPayByAt.toISOString(),
-        bankDetails: GG_BANK_DETAILS,
+        bankDetails: null,
         itemCount: created.length,
         breakdown: {
           listingPrice: totals.itemsSubtotal,
@@ -2744,23 +2762,12 @@ export class TransactionsService {
         null;
     }
 
-    // FLOW-F3 — re-viewable EFT instructions. The GG banking details used to
-    // exist ONLY in the one-shot checkout response; a buyer who navigated away
-    // could never see them (or the reference/amount) again, dead-ending an
-    // unpaid order. While THIS BUYER's single-item manual order is still
-    // awaiting payment (has a reference + open window, unpaid, not cancelled,
-    // not an order child — those pay at the ORDER level), attach the bank
-    // details so the page can re-render the full payment instructions.
-    const awaitingEft =
-      tx.buyerId === user.id &&
-      !tx.paidAt &&
-      !tx.manualCancelledAt &&
-      !tx.orderId &&
-      !!tx.orderReference &&
-      !!tx.manualPayByAt;
+    // Manual EFT retired (Phase 1) — GG bank details are never exposed to
+    // buyers. The field is kept (always null) for response-shape stability
+    // until the full plumbing purge.
     return {
       ...tx,
-      bankDetails: awaitingEft ? GG_BANK_DETAILS : null,
+      bankDetails: null,
     };
   }
 

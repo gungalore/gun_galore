@@ -2,19 +2,17 @@
 
 // /subscribe — GG+ MEMBER / PRO subscription purchase (P1.1).
 //
-// Prepaid monthly EFT on the manual rail (no auto-renew, CPA-clean):
-// pick a tier → backend allocates an SB reference on a PENDING charge
-// (24h pay-by window) → member EFTs → reconciler activates the tier.
-// Renewing the same tier before expiry STACKS days from the current
-// period end, so paying early never loses days.
-//
-// When the card paygate lands (Ivori/Peach), this page swaps its
-// checkout call for the gateway flow — the tier cards stay.
+// Phase 1 (manual-EFT retirement): card payments are launching soon and the
+// manual bank-transfer purchase rail is retired, so picking a tier now shows
+// the "card payments launching soon" state instead of EFT bank-details.
+// The tier cards + perks stay. When the card paygate lands (Ivori/Peach),
+// this page swaps its checkout call for the gateway flow.
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@clerk/nextjs';
 import { PageReveal } from '@/components/page-reveal';
+import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { formatPrice } from '@/lib/utils';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -25,37 +23,10 @@ interface Pricing {
   periodDays: number;
 }
 
-interface BankDetails {
-  accountName: string;
-  bank: string;
-  accountNumber: string;
-  branchCode: string;
-  accountType?: string;
-}
-
 interface Mine {
   tier: 'FREE' | 'MEMBER' | 'PRO';
   isComp: boolean;
   periodEnd: string | null;
-  pending: {
-    reference: string | null;
-    amountCents: number;
-    payByAt: string | null;
-    tier: 'MEMBER' | 'PRO' | null;
-    detected: boolean;
-  } | null;
-  pricing: Pricing;
-  bankDetails: BankDetails;
-}
-
-interface CheckoutResponse {
-  manual: true;
-  reference: string;
-  amountCents: number;
-  payByAt: string;
-  tier: 'MEMBER' | 'PRO';
-  periodDays: number;
-  bankDetails: BankDetails;
 }
 
 const TIER_PERKS: Record<'MEMBER' | 'PRO', string[]> = {
@@ -75,224 +46,13 @@ const TIER_PERKS: Record<'MEMBER' | 'PRO', string[]> = {
   ],
 };
 
-function Copyable({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      aria-label={`Copy ${label}`}
-      onClick={() => {
-        navigator.clipboard?.writeText(value).then(
-          () => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          },
-          () => undefined,
-        );
-      }}
-      className="text-xs px-2 py-1 rounded-[4px]"
-      style={{ border: '0.5px solid var(--border)', color: 'var(--text-tertiary)' }}
-    >
-      {copied ? 'Copied ✓' : 'Copy'}
-    </button>
-  );
-}
-
-function Row({
-  label,
-  value,
-  copyLabel,
-  emphasize,
-}: {
-  label: string;
-  value: string;
-  copyLabel?: string;
-  emphasize?: boolean;
-}) {
-  return (
-    <div
-      className="flex items-center justify-between gap-3 py-2"
-      style={{ borderTop: '0.5px solid var(--border)' }}
-    >
-      <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-        {label}
-      </span>
-      <span className="flex items-center gap-2">
-        <span
-          className="text-sm"
-          style={{
-            color: emphasize ? 'var(--red)' : 'var(--text-primary)',
-            fontWeight: emphasize ? 600 : 500,
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {value}
-        </span>
-        {copyLabel && <Copyable value={value} label={copyLabel} />}
-      </span>
-    </div>
-  );
-}
-
-/** EFT payment instructions for an open subscription charge. */
-function EftInstructions({
-  reference,
-  amountCents,
-  payByAt,
-  tier,
-  bank,
-  detected,
-}: {
-  reference: string;
-  amountCents: number;
-  payByAt: string | null;
-  tier: string;
-  bank: BankDetails;
-  detected: boolean;
-}) {
-  const [remaining, setRemaining] = useState<number>(() =>
-    payByAt ? Math.max(0, new Date(payByAt).getTime() - Date.now()) : 0,
-  );
-  useEffect(() => {
-    if (!payByAt) return;
-    const t = setInterval(() => {
-      setRemaining(Math.max(0, new Date(payByAt).getTime() - Date.now()));
-    }, 1000);
-    return () => clearInterval(t);
-  }, [payByAt]);
-
-  const expired = payByAt !== null && remaining <= 0;
-  const totalMin = Math.floor(remaining / 60000);
-  const hrs = Math.floor(totalMin / 60);
-  const mins = totalMin % 60;
-  const countdownLabel = `${hrs}h ${mins}m`;
-
-  return (
-    <div className="mt-6">
-      <h2 className="text-base font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-        Pay for GG+ {tier} by bank transfer (EFT)
-      </h2>
-      <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
-        Card payments are coming soon — for now, activate your subscription
-        with a quick bank transfer. Your perks switch on as soon as the
-        payment is picked up (usually within minutes of paying).
-      </p>
-
-      {detected && (
-        <div
-          className="rounded-[6px] px-4 py-3 mb-4 text-sm"
-          style={{
-            background: 'rgba(22,163,74,0.08)',
-            border: '0.5px solid rgba(22,163,74,0.35)',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          Payment detected — we&apos;re activating your subscription. Refresh in a
-          minute if your tier hasn&apos;t updated yet.
-        </div>
-      )}
-
-      {!detected && payByAt && (
-        <div
-          className="rounded-[6px] px-4 py-3 mb-4 text-sm"
-          style={{
-            background: expired ? 'rgba(200,16,46,0.10)' : 'var(--bg-card)',
-            border: '0.5px solid var(--border)',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          {expired ? (
-            <span style={{ color: 'var(--red)' }}>
-              This payment window has passed. If you&apos;ve already paid, don&apos;t
-              pay again — contact support with your reference. Otherwise just
-              pick your tier again for a fresh reference.
-            </span>
-          ) : (
-            <>
-              Pay within{' '}
-              <strong style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                {countdownLabel}
-              </strong>{' '}
-              using the reference below.
-            </>
-          )}
-        </div>
-      )}
-
-      <div
-        className="rounded-[8px] p-4 mb-4"
-        style={{ background: 'var(--bg-card)', border: '0.5px solid var(--red)' }}
-      >
-        <Row
-          label="Amount (pay this exact amount)"
-          value={`R${(amountCents / 100).toFixed(2)}`}
-          copyLabel="amount"
-          emphasize
-        />
-        <Row
-          label="Reference (use EXACTLY this)"
-          value={reference}
-          copyLabel="reference"
-          emphasize
-        />
-      </div>
-
-      <div
-        className="rounded-[8px] p-4 mb-4"
-        style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
-      >
-        <p
-          className="text-xs uppercase mb-1"
-          style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}
-        >
-          Pay into
-        </p>
-        <Row label="Account name" value={bank.accountName} />
-        <Row label="Bank" value={bank.bank} />
-        <Row label="Account number" value={bank.accountNumber} copyLabel="account number" />
-        <Row label="Branch code" value={bank.branchCode} copyLabel="branch code" />
-        {bank.accountType && <Row label="Account type" value={bank.accountType} />}
-      </div>
-
-      <div
-        className="rounded-[6px] p-4 text-sm"
-        style={{
-          background: 'var(--bg-inset, var(--bg-card))',
-          border: '0.5px solid var(--border)',
-          color: 'var(--text-secondary)',
-          lineHeight: 1.6,
-        }}
-      >
-        <p style={{ color: 'var(--text-primary)', fontWeight: 500, marginBottom: 6 }}>
-          How it works
-        </p>
-        <ol style={{ paddingLeft: 18, listStyle: 'decimal' }}>
-          <li>
-            EFT the <strong>exact amount</strong> above into the Gun Galore account.
-          </li>
-          <li>
-            Use <strong style={{ color: 'var(--red)' }}>{reference}</strong> as
-            the payment reference — nothing else.
-          </li>
-          <li>
-            We verify payments automatically — you&apos;ll get an SMS and your
-            perks activate the moment it&apos;s confirmed.
-          </li>
-        </ol>
-        <p style={{ marginTop: 8, color: 'var(--text-tertiary)' }}>
-          No auto-renew, no debit order: your subscription is prepaid for 31
-          days and we&apos;ll remind you before it ends.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 export default function SubscribePage() {
   const { getToken, isSignedIn, isLoaded } = useAuth();
   const [mine, setMine] = useState<Mine | null>(null);
   const [pricing, setPricing] = useState<Pricing | null>(null);
-  const [instructions, setInstructions] = useState<CheckoutResponse | null>(null);
+  // Phase-1 payment gate — subscriptions checkout returns 503 "launching
+  // soon". True once we've detected that (or the user taps a tier).
+  const [comingSoon, setComingSoon] = useState(false);
   const [busyTier, setBusyTier] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -330,17 +90,6 @@ export default function SubscribePage() {
     void loadMine();
   }, [isLoaded, isSignedIn, loadMine]);
 
-  // Review fix (page never self-updates after payment): while an EFT is
-  // outstanding, poll /me every 20s so the tier flips + instructions clear
-  // as soon as the reconciler activates it — the member isn't left staring
-  // at stale banking details.
-  useEffect(() => {
-    if (!isSignedIn) return;
-    if (!mine?.pending) return;
-    const t = setInterval(() => void loadMine(), 20_000);
-    return () => clearInterval(t);
-  }, [isSignedIn, mine?.pending, loadMine]);
-
   const checkout = useCallback(
     async (tier: 'MEMBER' | 'PRO') => {
       setError(null);
@@ -358,10 +107,19 @@ export default function SubscribePage() {
         });
         if (!r.ok) {
           const body = (await r.json().catch(() => null)) as { message?: string } | null;
+          // Phase-1 payment gate: subscriptions checkout returns 503 "card
+          // payments are launching soon". Show the coming-soon state rather
+          // than a red error banner.
+          if (r.status === 503 || /launching soon/i.test(body?.message ?? '')) {
+            setComingSoon(true);
+            return;
+          }
           setError(body?.message ?? 'Something went wrong — please try again.');
           return;
         }
-        setInstructions((await r.json()) as CheckoutResponse);
+        // Manual EFT is retired, so no payment instructions come back. Until
+        // the card paygate is wired up, land on the launching-soon state.
+        setComingSoon(true);
       } catch {
         setError('Something went wrong — please try again.');
       } finally {
@@ -379,23 +137,6 @@ export default function SubscribePage() {
         year: 'numeric',
       })
     : null;
-
-  // An open charge from a previous visit (or another device) takes
-  // precedence over freshly-returned instructions when both exist for
-  // the same reference — they're the same thing.
-  const open =
-    instructions ??
-    (mine?.pending?.reference
-      ? {
-          manual: true as const,
-          reference: mine.pending.reference,
-          amountCents: mine.pending.amountCents,
-          payByAt: mine.pending.payByAt ?? '',
-          tier: (mine.pending.tier ?? 'MEMBER') as 'MEMBER' | 'PRO',
-          periodDays: mine.pricing.periodDays,
-          bankDetails: mine.bankDetails,
-        }
-      : null);
 
   const tiers: Array<{ key: 'MEMBER' | 'PRO'; cents: number | null; accent: boolean }> = [
     { key: 'MEMBER', cents: pricing?.memberCents ?? null, accent: false },
@@ -566,15 +307,11 @@ export default function SubscribePage() {
           </div>
         )}
 
-        {open && (
-          <EftInstructions
-            reference={open.reference}
-            amountCents={open.amountCents}
-            payByAt={open.payByAt || null}
-            tier={open.tier}
-            bank={open.bankDetails}
-            detected={!instructions && !!mine?.pending?.detected}
-          />
+        {/* Phase-1 payment gate — card payments aren't live yet. */}
+        {comingSoon && (
+          <div className="mt-6">
+            <PaymentsComingSoon />
+          </div>
         )}
 
         <p className="text-xs mt-8" style={{ color: 'var(--text-tertiary)', lineHeight: 1.6 }}>

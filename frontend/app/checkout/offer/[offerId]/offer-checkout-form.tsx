@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
 import { formatPrice } from '@/lib/utils';
-import { ManualEftInstructions } from '@/components/manual-eft-instructions';
+import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { FeeBreakdown, ShippingMethod, Address } from '@/lib/types';
 import { LockerPicker, PudoLocker } from '@/components/locker-picker';
@@ -20,24 +19,12 @@ const PENDING_TX_KEY = 'gg:pendingTx';
 
 interface CreateTxResponse {
   transactionId: string;
-  // Stitch payment id; `mock-` prefix in dev (gateway unconfigured).
+  // Paygate payment id; `mock-` prefix in dev (gateway unconfigured).
   paymentId?: string;
-  // Hosted Stitch checkout URL to redirect to. Empty in mock mode.
+  // Hosted paygate checkout URL to redirect to.
   redirectUrl?: string;
   provider?: string;
   breakdown: FeeBreakdown;
-  // Manual EFT mode — bank-deposit instructions + order reference.
-  manual?: boolean;
-  orderReference?: string;
-  amountCents?: number;
-  payByAt?: string;
-  bankDetails?: {
-    accountName: string;
-    bank: string;
-    accountNumber: string;
-    branchCode: string;
-    accountType?: string;
-  };
 }
 
 const inputStyle: React.CSSProperties = {
@@ -90,7 +77,6 @@ export function OfferCheckoutForm({
   isFirearm: boolean;
 }) {
   const { getToken } = useAuth();
-  const router = useRouter();
 
   const [method, setMethod] = useState<ShippingMethod>(isFirearm ? 'DEALER_TRANSFER' : 'PUDO');
   const [selectedLocker, setSelectedLocker] = useState<PudoLocker | null>(null);
@@ -116,7 +102,9 @@ export function OfferCheckoutForm({
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [checkout, setCheckout] = useState<CreateTxResponse | null>(null);
+  // Phase-1 payment gate — card payments aren't live yet, so a checkout POST
+  // returns 503 "launching soon". True once we've detected that.
+  const [comingSoon, setComingSoon] = useState(false);
 
   const allowedMethods: ShippingMethod[] = isFirearm ? ['DEALER_TRANSFER'] : ['PUDO', 'TCG'];
 
@@ -168,91 +156,42 @@ export function OfferCheckoutForm({
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         const msg = Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? `Error ${res.status}`);
+        // Phase-1 payment gate: the API returns 503 "card payments are
+        // launching soon" until PAYMENTS_LIVE. Show the launching-soon state.
+        if (res.status === 503 || /launching soon/i.test(msg)) {
+          setComingSoon(true);
+          setSubmitting(false);
+          return;
+        }
         throw new Error(msg);
       }
       const data: CreateTxResponse = await res.json();
 
-      // Manual EFT mode → bank-deposit instructions + order reference.
-      if (data.manual && data.orderReference && data.bankDetails && data.payByAt) {
-        setCheckout(data);
+      // Live: stash the txId for the return page, then hand off to the
+      // paygate's hosted checkout. Keep `submitting` true — navigating away.
+      if (data.redirectUrl && !data.paymentId?.startsWith('mock-')) {
+        try {
+          localStorage.setItem(PENDING_TX_KEY, data.transactionId);
+        } catch {
+          // Storage disabled — the (deferred) webhook still settles it.
+        }
+        window.location.href = data.redirectUrl;
         return;
       }
 
-      // Mock mode (gateway unconfigured) → show the test card.
-      if (!data.redirectUrl || data.paymentId?.startsWith('mock-')) {
-        setCheckout(data);
-        return;
-      }
-
-      // Live: stash the txId for the return page, then hand off to
-      // Stitch's hosted checkout. Keep `submitting` true — navigating away.
-      try {
-        localStorage.setItem(PENDING_TX_KEY, data.transactionId);
-      } catch {
-        // Storage disabled — the (deferred) webhook still settles it.
-      }
-      window.location.href = data.redirectUrl;
+      // No live gateway to hand off to (not configured yet) → card payments
+      // aren't live. Show the launching-soon state.
+      setComingSoon(true);
+      setSubmitting(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
       setSubmitting(false);
     }
   }
 
-  // Manual EFT mode — bank-deposit instructions + order reference.
-  if (checkout?.manual && checkout.orderReference && checkout.bankDetails && checkout.payByAt) {
-    return (
-      <ManualEftInstructions
-        data={{
-          transactionId: checkout.transactionId,
-          orderReference: checkout.orderReference,
-          amountCents: checkout.amountCents ?? checkout.breakdown.buyerTotal,
-          payByAt: checkout.payByAt,
-          bankDetails: checkout.bankDetails,
-        }}
-      />
-    );
-  }
-
-  // Mock mode only — live checkout redirects away to Stitch above.
-  if (checkout) {
-    return (
-      <div>
-        <h2 className="text-base font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
-          Complete payment
-        </h2>
-        <div
-          className="rounded-[6px] p-4 mb-6 text-sm"
-          style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
-        >
-          <div className="flex justify-between py-1">
-            <span style={{ color: 'var(--text-secondary)' }}>Agreed price</span>
-            <span style={{ color: 'var(--text-primary)' }}>{formatPrice(checkout.breakdown.listingPrice)}</span>
-          </div>
-          <div
-            className="my-2"
-            style={{ borderTop: '0.5px solid var(--border)' }}
-          />
-          <div className="flex justify-between py-1 font-medium">
-            <span style={{ color: 'var(--text-primary)' }}>Total charged</span>
-            <span style={{ color: 'var(--red)' }}>{formatPrice(checkout.breakdown.buyerTotal)}</span>
-          </div>
-        </div>
-        <div
-          className="rounded-[8px] p-6 text-center text-sm"
-          style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
-        >
-          <p className="mb-2 font-medium" style={{ color: 'var(--text-primary)' }}>Test mode</p>
-          <p>The payment gateway is not configured.</p>
-          <button
-            onClick={() => router.push(`/transactions/${checkout.transactionId}`)}
-            className="mt-4 px-4 py-2 rounded-[6px] text-sm"
-            style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer' }}
-          >
-            View order (mock)
-          </button>
-        </div>
-      </div>
-    );
+  // Phase-1 payment gate — card payments aren't live yet.
+  if (comingSoon) {
+    return <PaymentsComingSoon backHref={`/listings/${listingId}`} />;
   }
 
   return (

@@ -115,9 +115,6 @@ export default function OrderDetailPage() {
       </div>
       <p className="text-xs mb-5" style={{ color: 'var(--text-tertiary)' }}>
         {order.lineItems.length} item{order.lineItems.length === 1 ? '' : 's'}
-        {order.status === 'AWAITING_PAYMENT' && order.orderReference && (
-          <> · pay by EFT using reference <strong style={{ color: 'var(--red)' }}>{order.orderReference}</strong></>
-        )}
       </p>
 
       {/* Line items — each links into its own transaction (dispatch/tracking) */}

@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@clerk/nextjs';
-import { useCart, removeFromCart, clearCart } from '@/lib/cart-store';
+import { useCart, removeFromCart } from '@/lib/cart-store';
 import { formatPrice } from '@/lib/utils';
-import { ManualEftInstructions, type ManualEftData } from '@/components/manual-eft-instructions';
+import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { LockerPicker, type PudoLocker } from '@/components/locker-picker';
 import {
@@ -24,13 +24,6 @@ import type { Address } from '@/lib/types';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
-
-interface OrderCheckoutResponse extends ManualEftData {
-  orderId: string;
-  manual: boolean;
-  itemCount: number;
-  breakdown?: { listingPrice: number; shippingCost: number; buyerTotal: number };
-}
 
 type ShipMethod = 'PUDO' | 'TCG';
 type FirearmRoute = 'DEALER_TRANSFER' | 'PRIVATE_ARRANGE';
@@ -55,7 +48,9 @@ export default function CartPage() {
   const [firearmState, setFirearmState] = useState<Record<string, FirearmState>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<OrderCheckoutResponse | null>(null);
+  // Phase-1 payment gate — card payments aren't live yet, so the cart
+  // checkout POST returns 503 "launching soon". True once we've detected that.
+  const [comingSoon, setComingSoon] = useState(false);
 
   const itemsSubtotal = items.reduce((s, i) => s + i.price, 0);
 
@@ -173,16 +168,19 @@ export default function CartPage() {
         },
         body: JSON.stringify({ lines }),
       });
-      const data = await res.json();
-      if (!res.ok || !data?.manual) {
-        setError(
-          data?.message ||
-            'Checkout failed. An item may no longer be available — refresh and try again.',
-        );
+      const data = await res.json().catch(() => ({}));
+      // Phase-1 payment gate: the API returns 503 "card payments are
+      // launching soon" until PAYMENTS_LIVE. Show the launching-soon state.
+      if (res.status === 503 || /launching soon/i.test(data?.message ?? '')) {
+        setComingSoon(true);
         return;
       }
-      setDone(data as OrderCheckoutResponse);
-      clearCart();
+      // No successful checkout is possible while the gate is closed, so any
+      // other non-ok response is a genuine failure (item gone, etc.).
+      setError(
+        data?.message ||
+          'Checkout failed. An item may no longer be available — refresh and try again.',
+      );
     } catch {
       setError('Something went wrong reaching checkout. Please try again.');
     } finally {
@@ -190,15 +188,11 @@ export default function CartPage() {
     }
   }
 
-  // ── Success → the shared EFT banking screen, linked to the order ──
-  if (done) {
+  // ── Phase-1 payment gate — card payments aren't live yet ──
+  if (comingSoon) {
     return (
       <main className="max-w-xl mx-auto px-4 py-8">
-        <ManualEftInstructions
-          data={done}
-          viewHref={`/orders/${done.orderId}`}
-          viewLabel="View my order"
-        />
+        <PaymentsComingSoon />
       </main>
     );
   }
@@ -562,8 +556,7 @@ export default function CartPage() {
                 : 'Enter a delivery address to continue'}
       </button>
       <p className="text-xs mt-2 text-center" style={{ color: 'var(--text-tertiary)' }}>
-        You&apos;ll pay by EFT on the next screen. Your money is held until you
-        confirm delivery.
+        Your payment is held until you confirm delivery.
       </p>
 
       {/* UX-1e — trust bullets under the cart summary CTA. Same component

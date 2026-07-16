@@ -38,7 +38,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'How can I pay?',
-    a: 'Checkout supports secure online payment and manual EFT (bank transfer with a unique reference). The available method is shown at checkout. Whichever you use, your payment is held until delivery is confirmed.',
+    a: 'Secure card payments are launching soon. You can browse, bid and list in the meantime — card checkout switches on as soon as it is ready. Whichever method you use, your payment is held until delivery is confirmed.',
   },
   {
     q: 'How is non-firearm gear delivered?',

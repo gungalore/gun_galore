@@ -1,9 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  TransactionsService,
-  GG_BANK_DETAILS,
-} from '../payments/transactions.service';
+import { TransactionsService } from '../payments/transactions.service';
 import { CreateOrderDto } from '../payments/dto/create-order.dto';
 
 // Phase 8b — multi-item single-seller cart. A thin facade: checkout delegates
@@ -90,13 +87,10 @@ export class OrdersService {
     // awaiting payment (unpaid, not cancelled, window open) the detail payload
     // carries the GG bank details so the page can re-render the full
     // ManualEftInstructions block (reference + amount + account).
-    const awaitingPayment =
-      !order.paidAt &&
-      !order.manualCancelledAt &&
-      order.status === 'AWAITING_PAYMENT';
+    // Manual EFT retired (Phase 1) — GG bank details are never exposed.
     return {
       ...order,
-      bankDetails: awaitingPayment ? GG_BANK_DETAILS : null,
+      bankDetails: null,
     };
   }
 }

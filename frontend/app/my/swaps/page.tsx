@@ -8,7 +8,6 @@
 import { useEffect, useState, useCallback, FormEvent } from 'react';
 import { useUser, useAuth } from '@clerk/nextjs';
 import Link from 'next/link';
-import { formatPrice } from '@/lib/utils';
 
 const API_URL =
   process.env.INTERNAL_API_URL ??
@@ -27,13 +26,6 @@ const PROVINCES = [
   'WESTERN_CAPE',
 ];
 
-interface BankDetails {
-  accountName: string;
-  bank: string;
-  accountNumber: string;
-  branchCode: string;
-  accountType?: string;
-}
 interface Item {
   title: string;
   imageUrl: string | null;
@@ -75,7 +67,6 @@ const inputStyle: React.CSSProperties = {
 export default function MySwapsPage() {
   const { isLoaded, user } = useUser();
   const { getToken } = useAuth();
-  const [bank, setBank] = useState<BankDetails | null>(null);
   const [swaps, setSwaps] = useState<SwapRow[] | null>(null);
   const [error, setError] = useState('');
 
@@ -100,10 +91,8 @@ export default function MySwapsPage() {
   const load = useCallback(async () => {
     try {
       const data = (await authedFetch('/swaps/mine')) as {
-        bankDetails: BankDetails;
         swaps: SwapRow[];
       };
-      setBank(data.bankDetails);
       setSwaps(data.swaps);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your swaps');
@@ -131,8 +120,8 @@ export default function MySwapsPage() {
         My swaps
       </h1>
       <p className="text-sm mb-6" style={{ color: 'var(--text-tertiary)' }}>
-        Agreed Swop / Trade deals. Add your delivery address, then pay your
-        share by EFT — both sides must pay to lock the swap.
+        Agreed Swop / Trade deals. Add the delivery address for the item you
+        receive — card payments to fund your swap are launching soon.
       </p>
 
       {error && (
@@ -156,7 +145,7 @@ export default function MySwapsPage() {
 
       <div className="flex flex-col gap-4">
         {swaps?.map((s) => (
-          <SwapCard key={s.swapId} swap={s} bank={bank} authedFetch={authedFetch} onChange={load} />
+          <SwapCard key={s.swapId} swap={s} authedFetch={authedFetch} onChange={load} />
         ))}
       </div>
     </main>
@@ -165,12 +154,10 @@ export default function MySwapsPage() {
 
 function SwapCard({
   swap,
-  bank,
   authedFetch,
   onChange,
 }: {
   swap: SwapRow;
-  bank: BankDetails | null;
   authedFetch: (path: string, opts?: RequestInit) => Promise<unknown>;
   onChange: () => Promise<void>;
 }) {
@@ -196,7 +183,7 @@ function SwapCard({
         <ProofSection swap={swap} onChange={onChange} />
       )}
       {swap.status === 'AWAITING_FUNDING' && swap.giveProofStatus === 'APPROVED' && (
-        <FundingSection swap={swap} bank={bank} authedFetch={authedFetch} onChange={onChange} />
+        <FundingSection swap={swap} authedFetch={authedFetch} onChange={onChange} />
       )}
       {swap.status === 'LOCKED' && (
         <Note tone="success">
@@ -354,12 +341,10 @@ function VerificationSection({
 
 function FundingSection({
   swap,
-  bank,
   authedFetch,
   onChange,
 }: {
   swap: SwapRow;
-  bank: BankDetails | null;
   authedFetch: (path: string, opts?: RequestInit) => Promise<unknown>;
   onChange: () => Promise<void>;
 }) {
@@ -376,8 +361,9 @@ function FundingSection({
       </Note>
     );
   }
-  // Funding set up, not yet paid → show EFT instructions.
-  return <EftBlock swap={swap} bank={bank} />;
+  // Phase 1 — the manual-EFT funding rail is retired; card payments launch
+  // soon, so the "fund your swap" step shows the coming-soon state.
+  return <FundingComingSoon />;
 }
 
 function AddressForm({
@@ -452,39 +438,24 @@ function AddressForm({
   );
 }
 
-function EftBlock({ swap, bank }: { swap: SwapRow; bank: BankDetails | null }) {
+function FundingComingSoon() {
   return (
-    <div className="mt-1">
-      <div
-        className="rounded-[8px] p-3 mb-3"
-        style={{ background: 'var(--bg-inset, var(--bg-card))', border: '0.5px solid var(--red)' }}
-      >
-        <KV label="Pay this exact amount" value={formatPrice(swap.myAmountCents)} emphasize />
-        <KV label="Use this reference" value={swap.myReference ?? ''} emphasize />
-        {swap.payByAt && (
-          <KV label="Pay by" value={new Date(swap.payByAt).toLocaleString('en-ZA')} />
-        )}
-      </div>
-      {bank && (
-        <div
-          className="rounded-[8px] p-3 mb-2"
-          style={{ background: 'var(--bg-inset, var(--bg-card))', border: '0.5px solid var(--border)' }}
-        >
-          <p className="text-xs uppercase mb-1" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
-            Pay into
-          </p>
-          <KV label="Account name" value={bank.accountName} />
-          <KV label="Bank" value={bank.bank} />
-          <KV label="Account number" value={bank.accountNumber} />
-          <KV label="Branch code" value={bank.branchCode} />
-          {bank.accountType && <KV label="Account type" value={bank.accountType} />}
-        </div>
-      )}
-      <p className="text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
-        EFT the exact amount with the reference above. We confirm payments
-        automatically and SMS you once it clears. Both sides must pay to lock the
-        swap — if the other side doesn&apos;t, you&apos;re refunded in full. Your
-        funds are held until both parcels are delivered.
+    <div
+      className="mt-1 rounded-[8px] p-3 text-sm"
+      style={{
+        background: 'var(--bg-inset, var(--bg-card))',
+        border: '0.5px solid var(--border)',
+        color: 'var(--text-secondary)',
+        lineHeight: 1.6,
+      }}
+    >
+      <p style={{ color: 'var(--text-primary)', fontWeight: 500, marginBottom: 4 }}>
+        Card payments are launching soon
+      </p>
+      <p>
+        We&apos;re finalising our secure card checkout, so swap funding is paused
+        for now. We&apos;ll let you know the moment it&apos;s ready — your swap
+        stays exactly as it is in the meantime.
       </p>
     </div>
   );
@@ -597,20 +568,6 @@ function TrackingLine({
         {waybill ? <>Waybill <strong style={{ color: 'var(--text-primary)' }}>{waybill}</strong></> : 'Booking…'}
         {status ? ` · ${status.replace(/_/g, ' ').toLowerCase()}` : ''}
       </span>
-    </div>
-  );
-}
-
-function KV({ label, value, emphasize }: { label: string; value: string; emphasize?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-1.5"
-      style={{ borderTop: '0.5px solid var(--border)' }}>
-      <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>{label}</span>
-      <span className="text-sm" style={{
-        color: emphasize ? 'var(--red)' : 'var(--text-primary)',
-        fontWeight: emphasize ? 600 : 500,
-        fontVariantNumeric: 'tabular-nums',
-      }}>{value}</span>
     </div>
   );
 }
