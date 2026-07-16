@@ -981,6 +981,28 @@ export class DealsService {
       data: { stockReadyAt: new Date() },
     });
 
+    const { carriersBooked, carriersWaiting } = await this._bookReadyCollections(
+      deal.listingId,
+    );
+
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'DEAL_STOCK_READY',
+      resourceType: 'Deal',
+      resourceId: dealId,
+      newValue: { carriersBooked, carriersWaiting },
+      reason: 'Marked deal stock ready — booked supplier collections.',
+    });
+  }
+
+  // DD-F — the booking core shared by markStockReadyAndBook (admin tap) and
+  // sweepUnbookedStockReadyCollections (hourly cron re-attempt). Books the
+  // supplier-warehouse collection for every paid line of the deal's listing
+  // that is still unbooked, honouring consolidation: a parcel is booked only
+  // once EVERY contributing deal is stock-ready.
+  private async _bookReadyCollections(
+    listingId: string,
+  ): Promise<{ carriersBooked: number; carriersWaiting: number }> {
     // #3 — book the shared parcel correctly. Find every HELD + accepted +
     // not-yet-booked line of THIS deal, REGARDLESS of shipsWithId: this deal's
     // line may be a consolidation SIBLING of another deal's carrier (same
@@ -988,7 +1010,7 @@ export class DealsService {
     // entirely and never book the shared parcel.
     const myLines = await this.prisma.transaction.findMany({
       where: {
-        listingId: deal.listingId,
+        listingId,
         paymentStatus: PaymentStatus.HELD,
         acceptedAt: { not: null },
         shipmentBookedAt: null,
@@ -1046,31 +1068,64 @@ export class DealsService {
         carriersBooked += 1;
       } catch (err) {
         this.logger.warn(
-          `stock-ready: booking collection for carrier tx ${carrierId} (deal ${dealId}) failed: ${(err as Error).message}`,
+          `stock-ready: booking collection for carrier tx ${carrierId} (listing ${listingId}) failed: ${(err as Error).message}`,
         );
       }
     }
 
-    await this.audit.record({
-      adminUserId: adminId,
-      action: 'DEAL_STOCK_READY',
-      resourceType: 'Deal',
-      resourceId: dealId,
-      newValue: { carriersBooked, carriersWaiting },
-      reason: 'Marked deal stock ready — booked supplier collections.',
-    });
+    return { carriersBooked, carriersWaiting };
   }
 
-  // DD-F: raise the supplier purchase order for a deal that has just SOLD OUT.
-  // Plumbing seam for TransactionsService.syncDealSoldOut (spine agent) — the
-  // sold-out transition lives in TransactionsService, but the PO trigger is a
-  // deals concern, so it is routed through here rather than injecting
-  // ZohoBooksService into TransactionsService. Fire-and-forget: the Zoho method
-  // is idempotent, isEnabled-guarded and never rethrows. The caller decides
-  // whether to `void` it (fire-and-forget) or await it (tests). Call it ONLY
-  // when the sold-out updateMany count > 0 so the PO is raised exactly once.
-  raisePurchaseOrderForDeal(dealId: string): Promise<void> {
-    return this.zohoBooks.createDealPurchaseOrder(dealId);
+  // DD-F reliability sweep (hourly cron) — re-attempt supplier collections for
+  // stock-ready deals whose booking failed mid-flight (TCG error / crash inside
+  // markStockReadyAndBook). Fires ONLY for deals the operator ALREADY marked
+  // stock-ready, so the sweep never initiates a new spend decision — it only
+  // re-drives the one the admin tap already made. bookForTransaction is
+  // idempotent + HELD-gated, so a re-fire can only fill the gap. The relation
+  // filter keeps the scan bounded: completed deals (all lines booked) drop out
+  // of the WHERE naturally. Per-deal isolated; never throws.
+  async sweepUnbookedStockReadyCollections(): Promise<{
+    rebooked: number;
+    waiting: number;
+  }> {
+    let rebooked = 0;
+    let waiting = 0;
+    const due = await this.prisma.dealPurchaseOrder.findMany({
+      where: {
+        stockReadyAt: { not: null },
+        deal: {
+          listing: {
+            transactions: {
+              some: {
+                paymentStatus: PaymentStatus.HELD,
+                acceptedAt: { not: null },
+                shipmentBookedAt: null,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { stockReadyAt: 'asc' },
+      take: 50,
+      select: { dealId: true, deal: { select: { listingId: true } } },
+    });
+    for (const po of due) {
+      try {
+        const res = await this._bookReadyCollections(po.deal.listingId);
+        rebooked += res.carriersBooked;
+        waiting += res.carriersWaiting;
+      } catch (err) {
+        this.logger.warn(
+          `collection sweep: re-book for deal ${po.dealId} failed: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (rebooked > 0) {
+      this.logger.log(
+        `collection sweep: re-booked ${rebooked} stock-ready supplier collection(s)`,
+      );
+    }
+    return { rebooked, waiting };
   }
 
   // ─── DD-4 — scheduled drop automation (cron-driven) ─────────────────

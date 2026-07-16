@@ -45,6 +45,9 @@ export class TasksService {
   // must not overlap the next tick (retryMissingDealPurchaseOrders is bounded
   // + idempotent, but this avoids redundant work).
   private dealPoRetryRunning = false;
+  // DD-F — re-entrancy guard for the hourly stock-ready collection re-book
+  // sweep (courier calls can be slow; bookings are idempotent but sequential).
+  private dealCollectionSweepRunning = false;
 
   constructor(
     private readonly offersService: OffersService,
@@ -692,6 +695,30 @@ export class TasksService {
     } finally {
       this.dealPoRetryRunning = false;
       await this.recordCronRun('deal-po-retry');
+    }
+  }
+
+  // DD-F — hourly re-attempt for supplier collections still unbooked after the
+  // operator tapped "Stock ready" (a crash or TCG error inside
+  // markStockReadyAndBook would otherwise strand them until an admin notices
+  // the attention card). The sweep only re-drives bookings the admin tap
+  // already authorised — it can never initiate new courier spend on its own —
+  // and every booking is idempotent + HELD-gated in ShippingService. INERT
+  // until deals go live (no stock-ready POs with unbooked lines → no-op).
+  @Cron(CronExpression.EVERY_HOUR)
+  async sweepDealCollections() {
+    if (this.dealCollectionSweepRunning) return; // a previous run is still going
+    this.dealCollectionSweepRunning = true;
+    try {
+      await this.deals.sweepUnbookedStockReadyCollections();
+    } catch (err) {
+      this.logger.error(
+        `sweepDealCollections failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      this.dealCollectionSweepRunning = false;
+      await this.recordCronRun('deal-collection-sweep');
     }
   }
 

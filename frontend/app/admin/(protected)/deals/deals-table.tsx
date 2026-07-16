@@ -594,7 +594,10 @@ function DealFormModal({
         shipsInDaysMin: parseInt(form.shipsInDaysMin, 10),
         shipsInDaysMax: parseInt(form.shipsInDaysMax, 10),
         heroRank: parseInt(form.heroRank, 10) || 0,
-        supplierId: form.supplierId || undefined,
+        // Explicit null (not undefined) so picking "No supplier assigned" on
+        // EDIT actually clears the link — the backend only writes the column
+        // when the key is present (undefined = "leave unchanged").
+        supplierId: form.supplierId || null,
         dropDate: form.dropDate ? new Date(form.dropDate).toISOString() : undefined,
       };
       const url = mode === 'create' ? '/admin/deals' : `/admin/deals/${deal!.id}`;

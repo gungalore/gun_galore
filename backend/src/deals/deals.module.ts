@@ -20,8 +20,9 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
 //   • ShippingModule — markStockReadyAndBook() calls ShippingService.bookForTransaction.
 //   • ZohoBooksModule (NOT @Global) — the PO triggers call ZohoBooksService.
 // None of these import DealsModule, so there is no cycle (no forwardRef needed).
-// PaymentsModule imports DealsModule (spine agent) for the syncDealSoldOut PO
-// trigger; that edge is one-way (Payments → Deals), so it stays acyclic too.
+// The sold-out PO trigger lives in TransactionsService, which calls
+// ZohoBooksService DIRECTLY — there is deliberately NO Payments → Deals module
+// edge, so no cycle risk from that path either.
 @Module({
   imports: [
     JwtModule.register({}),

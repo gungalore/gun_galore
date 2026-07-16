@@ -19,6 +19,29 @@ All three graded ≥ MEDIUM are now fixed in the working tree and re-verified (b
 
 **Not fixed (low/nit, deferred by scope):** L1 (auto re-attempt sweep), L2 (can't unset a supplier), L3 (PO-units/exactly-once jest coverage), N1–N3 — see below.
 
+## Addendum — 2026-07-16 pre-deploy polish pass (all residuals closed)
+
+- **L1 ✅** — booking core extracted to `DealsService._bookReadyCollections`; new
+  `sweepUnbookedStockReadyCollections()` re-attempts stragglers hourly
+  (`TasksService.sweepDealCollections`, cron key `deal-collection-sweep`). Only
+  re-drives bookings the admin's Stock-ready tap already authorised; relation
+  filter keeps the scan bounded.
+- **L2 ✅** — deals-table.tsx now sends explicit `supplierId: null` so "No
+  supplier assigned" actually clears the link on edit (backend already handled null).
+- **L3 ✅** — `zoho/deal-po-units.spec.ts` (units = paid-non-refunded Σqty, zero-sale
+  terminal row, placement-keyed idempotency) + `payments/deal-po-exactly-once.spec.ts`
+  (sold-out PO trigger fires iff flip.count > 0). Jest 425 passed.
+- **N1 ✅** — dead `raisePurchaseOrderForDeal` seam removed.
+- **N3 ✅** — stale Payments→Deals module-edge comment corrected.
+- **N2 (accepted)** — dummy-run drives the PO via admin `end()`; the scheduled
+  auto-end path shares the same `_endSystem` core, so coverage is equivalent.
+- Re-verified after the pass: backend tsc + nest build ✅ · jest 425 ✅ ·
+  dummy-run Daily Deals 14/14 + held-funds R0 ✅ · frontend tsc + next build ✅.
+
+Remaining open item: the **deal-aware refund SLA** (design decision, v1.1) — no
+automatic buyer refund if stock is never sourced; surfaced operationally by the
+"Supplier collection overdue" card until v1.1 lands.
+
 ## Gates — all green
 
 | Gate | Result |
