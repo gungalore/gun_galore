@@ -1133,13 +1133,11 @@ model Transaction {
   paidAt          DateTime?
   releasedAt      DateTime?
 
-  // Payout settlement (P7.1). The outbound EFT to the seller (RELEASED) or
-  // buyer (REFUNDED) is made via a daily FNB bulk payment. payoutBatchId
-  // links the row to the frozen batch it was downloaded in; paidOutAt is set
-  // when the operator confirms that batch was paid. A row is "due" only when
-  // both are null (so it appears in exactly one batch and never re-lists).
-  payoutBatchId String?
-  payoutBatch   PayoutBatch? @relation(fields: [payoutBatchId], references: [id], onDelete: SetNull)
+  // Payout settlement. The outbound payout to the seller (RELEASED) or refund
+  // to the buyer (REFUNDED) is stamped paidOutAt when settled. A row is "due"
+  // while paidOutAt is null (and it isn't on a payout hold). The manual-EFT FNB
+  // bulk-payment batch (PayoutBatch) has been removed; a future paygate settles
+  // these rows directly via paidOutAt.
   paidOutAt     DateTime?
 
   // M26 (FLOW-F4) — admin payout-HOLD lever. A RELEASED (or otherwise-due) row
@@ -1478,7 +1476,6 @@ model Transaction {
   messages            Message[]
   trackingEvents      TrackingEvent[]
   rating              Rating?
-  manualPayments      ManualPayment[]
   confirmedDeliveryAt DateTime?
   // peachPaymentId now has a @unique on the field (creates its own index).
 
@@ -1487,8 +1484,8 @@ model Transaction {
   @@index([sellerId])
   @@index([paymentStatus])
   @@index([manualPayByAt])
-  // Payout due-queue: RELEASED/REFUNDED rows not yet batched or paid out.
-  @@index([paymentStatus, paidOutAt, payoutBatchId])
+  // Payout due-queue: RELEASED/REFUNDED rows not yet paid out.
+  @@index([paymentStatus, paidOutAt])
   // P0.3 — refund children lookup (parent → its synthetic refund slices).
   @@index([refundOfId])
   // P6.2 — consolidated-shipment group lookup (carrier → its sibling lines).
@@ -1938,66 +1935,10 @@ model Setting {
   updatedAt DateTime @updatedAt
 }
 
-// ── Manual EFT payments (no live card gateway) ────────────────────────
-// Every incoming-payment signal we observe — whether a fast FNB
-// inContact email alert (provisional) or a row from the daily FNB
-// statement CSV (authoritative) — is logged here, deduped by
-// externalId, and matched to a Transaction by orderReference + amount.
-// Unmatched rows form the admin investigation queue.
-enum ManualPaymentSource {
-  INCONTACT // parsed from an FNB inContact email alert
-  STATEMENT // parsed from an uploaded FNB statement CSV row
-}
-
-enum ManualPaymentStatus {
-  MATCHED // bound to exactly one Transaction by ref + amount
-  UNMATCHED // no order matched — needs admin allocation/refund
-  AMBIGUOUS // ref matched but amount differs, or >1 candidate — admin
-  REVERSED // a prior provisional match was undone (e.g. statement disproved it)
-}
-
-model ManualPayment {
-  id          String              @id @default(cuid())
-  source      ManualPaymentSource
-  // Dedupe key: the email Message-ID for inContact, or a stable hash of
-  // (statementUploadId + row) for statement rows, so re-scanning the
-  // inbox or re-uploading a statement never double-processes a payment.
-  externalId  String              @unique
-  rawText     String              @db.Text
-  amountCents Int
-  reference   String? // parsed buyer reference, trimmed/uppercased
-  paidAt      DateTime? // value date/time from the alert or statement
-  status      ManualPaymentStatus @default(UNMATCHED)
-
-  matchedTransactionId String?
-  matchedTransaction   Transaction? @relation(fields: [matchedTransactionId], references: [id])
-  // Phase 8b: when the reference resolved to a multi-item Order (not a single
-  // Transaction), the audit row points here instead. Exactly one of
-  // matchedTransactionId / matchedOrderId is set on a matched row.
-  matchedOrderId       String?
-  matchedOrder         Order?       @relation(fields: [matchedOrderId], references: [id])
-
-  note      String?
-  createdAt DateTime @default(now())
-
-  @@index([status, createdAt])
-  @@index([reference])
-}
-
-// One row per admin upload of an FNB statement CSV — an audit trail of
-// the daily reconciliation runs (who uploaded what, how much matched).
-model StatementUpload {
-  id             String   @id @default(cuid())
-  filename       String
-  uploadedById   String?
-  rowCount       Int      @default(0)
-  creditRowCount Int      @default(0)
-  matchedCount   Int      @default(0)
-  unmatchedCount Int      @default(0)
-  createdAt      DateTime @default(now())
-
-  @@index([createdAt])
-}
+// The manual-EFT reconciliation models (ManualPayment inContact/statement
+// audit rows, StatementUpload upload history) and their enums have been
+// removed with the manual-EFT payment rail. The money-state (Transaction /
+// Order / OrderLineItem) is rail-agnostic and unchanged.
 
 // Atomic counter for per-prefix reference numbers (UM / AU / TS).
 // Used by ListingsService to allocate the next number at create time.
@@ -3124,7 +3065,6 @@ model Order {
 
   transactions   Transaction[]
   lineItems      OrderLineItem[]
-  manualPayments ManualPayment[]
 
   @@index([buyerId, status])
   @@index([status, createdAt])
@@ -3153,44 +3093,12 @@ model OrderLineItem {
   @@index([listingId])
 }
 
-// ── Payout settlement (P7.1) ───────────────────────────────────────
-// A daily FNB bulk payment. "Freeze on download": creating a batch snapshots
-// exactly the payouts/refunds due at that moment (links those transactions +
-// stores the generated FNB CSV), so the operator pays in FNB and then marks
-// THAT batch paid — even if new payouts qualify in between, they're not in
-// this batch. Settling stamps each line's Transaction.paidOutAt + fires the
-// Zoho book entry; cancelling returns the lines to the due queue.
-enum PayoutBatchStatus {
-  PENDING // frozen + CSV generated; awaiting the operator's FNB payment
-  PAID // operator confirmed the FNB bulk payment was made
-  CANCELLED // abandoned; lines returned to the due queue
-}
-
-model PayoutBatch {
-  id     String            @id @default(cuid())
-  status PayoutBatchStatus @default(PENDING)
-
-  // Money snapshot (ZAR cents) at freeze time. grandTotal = what the FNB
-  // bulk payment should total (payouts to sellers + refunds to buyers).
-  payoutTotal Int
-  refundTotal Int
-  grandTotal  Int
-  itemCount   Int
-
-  // The exact FNB BInSol file the operator downloaded for this batch.
-  csv String @db.Text
-
-  createdById String? // admin (clerkId) who froze the batch
-  paidById    String? // admin (clerkId) who confirmed the FNB payment
-  paidAt      DateTime?
-  cancelledAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  transactions Transaction[]
-
-  @@index([status, createdAt])
-}
+// ── Payout settlement ──────────────────────────────────────────────
+// The manual-EFT FNB bulk-payment batch (PayoutBatch) and its status enum
+// have been removed with the manual-EFT rail. Seller payouts / buyer refunds
+// are now settled directly by stamping Transaction.paidOutAt; the owed-money
+// math still lives in ManualPaymentsService.getPayoutsDue / getHeldFundsReport
+// (kept, rail-agnostic). A future paygate settles the same rows.
 
 // ── Swop / Trade (fully-managed two-way swap) ───────────────────────
 // A swap = a SwapProposal negotiation (modelled on Offer) that, on accept,

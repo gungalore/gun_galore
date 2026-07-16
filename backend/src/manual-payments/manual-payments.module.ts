@@ -3,29 +3,16 @@ import { JwtModule } from '@nestjs/jwt';
 import { ManualPaymentsService } from './manual-payments.service';
 import { ManualPaymentsController } from './manual-payments.controller';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
-import { PaymentsModule } from '../payments/payments.module';
-import { ZohoBooksModule } from '../zoho/zoho-books.module';
-import { SwapsModule } from '../swaps/swaps.module';
-import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
-import { FeaturedModule } from '../featured/featured.module';
 
-// Manual-EFT reconciliation (no live card gateway). PaymentsModule is
-// imported for TransactionsService.confirmManualPayment; SwapsModule for
-// SwapFundingService (the reconciler routes SW-prefixed funding refs to
-// confirmSwapFunding); SubscriptionsModule (SB refs → confirmPayment) +
-// FeaturedModule (FS refs → confirmSlotPayment) for the P1 EFT lanes;
-// JwtModule + AdminJwtGuard secure the admin statement-upload + queue
-// endpoints. ManualPaymentsService is exported so the TasksService cron
-// can run the 10-minute inContact inbox scan.
+// Read-only money-state views (payouts-due preview, held-funds, Zoho
+// failed-sync radar). The manual-EFT reconciler + FNB payout-batch builder
+// have been removed with the manual-EFT rail, so the reconciler's provider
+// dependencies (PaymentsModule/SwapsModule/SubscriptionsModule/FeaturedModule/
+// ZohoBooksModule) are no longer imported. JwtModule + AdminJwtGuard secure the
+// admin read endpoints; PrismaService is provided globally. ManualPaymentsService
+// is exported for anything that reads the money-state views.
 @Module({
-  imports: [
-    JwtModule.register({}),
-    PaymentsModule,
-    ZohoBooksModule,
-    SwapsModule,
-    SubscriptionsModule,
-    FeaturedModule,
-  ],
+  imports: [JwtModule.register({})],
   controllers: [ManualPaymentsController],
   providers: [ManualPaymentsService, AdminJwtGuard],
   exports: [ManualPaymentsService],

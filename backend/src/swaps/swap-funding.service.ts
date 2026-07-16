@@ -281,8 +281,8 @@ export class SwapFundingService {
       );
 
       const [initiatorRef, ownerRef] = await Promise.all([
-        this.referenceNumbers.allocateOrderReference('SWOP'),
-        this.referenceNumbers.allocateOrderReference('SWOP'),
+        this.referenceNumbers.allocate('SW'),
+        this.referenceNumbers.allocate('SW'),
       ]);
 
       const payByAt = new Date(

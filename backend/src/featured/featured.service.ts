@@ -49,10 +49,7 @@ import { StitchService } from '../payments/stitch.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
-import {
-  GG_BANK_DETAILS,
-  PAYMENT_MODE,
-} from '../payments/transactions.service';
+import { PAYMENT_MODE } from '../payments/transactions.service';
 
 // P1.2 — how long the winner has to pay the slot fee by EFT once they
 // pick a listing (manual rail). Mirrors the subscription pay window.
@@ -578,8 +575,7 @@ export class FeaturedService {
             // winner's committed values so the banking instructions and
             // the stored reference always agree (review fix: orphan-ref
             // payment stranding UNMATCHED).
-            const allocated =
-              await this.referenceNumbers.allocateOrderReference('FEATURED');
+            const allocated = await this.referenceNumbers.allocate('FS');
             const claim = await tx.featuredSlotBid.updateMany({
               where: { id: winningBid.id, orderReference: null },
               data: {
@@ -636,7 +632,9 @@ export class FeaturedService {
             amountCents: chargedAmountCents,
             orderReference,
             payByAt: paymentPayByAt,
-            bankDetails: GG_BANK_DETAILS,
+            // Manual-EFT bank-deposit details removed with the manual rail; a
+            // future paygate supplies the payment path for the slot fee.
+            bankDetails: null,
           };
         }
         // Already paid (reconciler confirmed the EFT) — complete the

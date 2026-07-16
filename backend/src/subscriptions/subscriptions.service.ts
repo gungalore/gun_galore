@@ -214,8 +214,7 @@ export class SubscriptionsService {
       return this.instructions(open.orderReference!, open.amountCents, open.payByAt!, tier);
     }
 
-    const orderReference =
-      await this.referenceNumbers.allocateOrderReference('SUBSCRIPTION');
+    const orderReference = await this.referenceNumbers.allocate('SB');
     const payByAt = new Date(now.getTime() + PAY_WINDOW_MS);
     await this.prisma.subscriptionCharge.create({
       data: {

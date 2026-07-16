@@ -1,16 +1,74 @@
 /**
  * Shared money primitives for the module drivers:
- *   - drainPayouts(): getPayoutsDue → createPayoutBatch → markPayoutBatchPaid,
- *     i.e. the real daily FNB settlement, invoked directly.
+ *   - simulatePaid()/simulateOrderPaid(): drive a checkout to PAID. The
+ *     manual-EFT confirm methods were removed with the manual rail, so the
+ *     harness invokes the SAME internal markPaid the future paygate webhook
+ *     will (reached via as-any since it's private) — identical money-state.
+ *   - drainPayouts(): getPayoutsDue → settle by stamping Transaction.paidOutAt
+ *     + firing the Zoho commission-invoice-paid entry (what a paygate payout
+ *     run does now that the FNB bulk-payment batch is gone).
  *   - assertConserves(): the per-transaction money-conservation invariant.
  *   - runModule(): uniform per-module begin / try / end wrapper.
  */
 import { ManualPaymentsService } from '../../src/manual-payments/manual-payments.service';
+import { TransactionsService } from '../../src/payments/transactions.service';
+import { ZohoBooksService } from '../../src/zoho/zoho-books.service';
 import { Ctx } from './seed';
 import { assert } from './harness';
 
 export function svc<T>(ctx: Ctx, type: new (...a: any[]) => T): T {
   return ctx.app.get(type, { strict: false });
+}
+
+/**
+ * Mark a single-item transaction PAID via the real (private) markPaid — the
+ * exact path a card-paygate verify/webhook handler drives — producing the full
+ * money-state (paid + HELD + listing SOLD + PRIVATE_ARRANGE immediate release +
+ * notifications + Zoho). Idempotent.
+ */
+export async function simulatePaid(ctx: Ctx, txId: string) {
+  const P = ctx.prisma as any;
+  const row = await P.transaction.findUnique({
+    where: { id: txId },
+    include: { listing: true },
+  });
+  if (!row) throw new Error(`simulatePaid: transaction ${txId} not found`);
+  if (row.paidAt) return; // idempotent
+  const T = svc(ctx, TransactionsService) as any;
+  await T.markPaid(
+    txId,
+    {
+      paymentId: `SIM-${txId}`,
+      resultCode: 'SIM',
+      amount: row.buyerTotal,
+      currency: 'ZAR',
+      merchantTransactionId: txId,
+      isSuccess: true,
+    },
+    row.listing,
+    row.buyerTotal,
+  );
+}
+
+/**
+ * Mark a multi-item Order PAID: fan the per-child markPaid out then roll the
+ * Order up to PAID (the confirmManualOrder equivalent, rail-agnostic).
+ */
+export async function simulateOrderPaid(ctx: Ctx, orderId: string) {
+  const P = ctx.prisma as any;
+  const order = await P.order.findUnique({
+    where: { id: orderId },
+    include: { transactions: { select: { id: true } } },
+  });
+  if (!order) throw new Error(`simulateOrderPaid: order ${orderId} not found`);
+  if (order.paidAt) return; // idempotent
+  for (const child of order.transactions) {
+    await simulatePaid(ctx, child.id);
+  }
+  await P.order.updateMany({
+    where: { id: orderId, paidAt: null },
+    data: { status: 'PAID', paidAt: new Date() },
+  });
 }
 
 /**
@@ -58,25 +116,54 @@ export interface DrainResult {
   skipped?: number;
 }
 
-/** Run the full FNB payout settlement over everything currently due. */
+/**
+ * Settle everything currently due: seller payouts (RELEASED) + buyer refunds
+ * (REFUNDED). The FNB bulk-payment batch was removed with the manual rail, so
+ * settlement is now stamping Transaction.paidOutAt on the due rows + firing the
+ * Zoho commission-invoice-paid entry per seller payout (what a card-paygate
+ * payout run does). Zero-net payouts (fully consumed by refund slices) are
+ * stamped too so they leave the due queue.
+ */
 export async function drainPayouts(ctx: Ctx): Promise<DrainResult> {
   const mp = svc(ctx, ManualPaymentsService);
+  const zoho = svc(ctx, ZohoBooksService);
+  const P = ctx.prisma as any;
   const due = await mp.getPayoutsDue();
   if (due.payouts.length === 0 && due.refunds.length === 0) {
     return { batchId: null, included: 0, grandTotal: 0 };
   }
-  const res: any = await mp.createPayoutBatch(null);
-  if (res.batchId) {
-    const paid = await mp.markPayoutBatchPaid(res.batchId, null);
-    return {
-      batchId: res.batchId,
-      included: res.included,
-      grandTotal: res.grandTotal,
-      settledPayouts: paid.settledPayouts,
-      skipped: res.skipped,
-    };
+  const childrenSum = (c?: { buyerTotal: number }[] | null) =>
+    (c ?? []).reduce((s, x) => s + x.buyerTotal, 0);
+
+  let grandTotal = 0;
+  const payoutIds: string[] = [];
+  const refundIds: string[] = [];
+  for (const p of due.payouts) {
+    payoutIds.push(p.id);
+    grandTotal += Math.max(0, p.sellerPayout - childrenSum(p.refundChildren));
   }
-  return { batchId: null, included: 0, grandTotal: res.grandTotal ?? 0, skipped: res.skipped };
+  for (const r of due.refunds) {
+    refundIds.push(r.id);
+    grandTotal += r.refundOfId
+      ? r.buyerTotal
+      : Math.max(0, r.buyerTotal - childrenSum(r.refundChildren));
+  }
+  const allIds = [...payoutIds, ...refundIds];
+  const now = new Date();
+  await P.transaction.updateMany({
+    where: { id: { in: allIds }, paidOutAt: null },
+    data: { paidOutAt: now },
+  });
+  for (const id of payoutIds) {
+    await zoho.markCommissionInvoicePaid(id).catch(() => undefined);
+  }
+  return {
+    batchId: null,
+    included: allIds.length,
+    grandTotal,
+    settledPayouts: payoutIds.length,
+    skipped: 0,
+  };
 }
 
 /** Poll until fn() returns truthy (for fire-and-forget side effects). */

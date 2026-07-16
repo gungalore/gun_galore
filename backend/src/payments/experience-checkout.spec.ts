@@ -145,10 +145,10 @@ describe.skip('EXP-E1 experience checkout (reserveAndCreateLine via create, manu
     expect(created.data.experienceCancellationAcceptedAt).toBeInstanceOf(Date);
     expect(created.data.experienceRisksAcceptedAt).toBeInstanceOf(Date);
 
-    // HP order reference (buyer pays fee → buyerTotal = price + processingFee).
-    expect(referenceNumbers.allocateOrderReference).toHaveBeenCalledWith('EXPERIENCE');
-    expect(res).toMatchObject({ manual: true, orderReference: 'HP000001' });
-    expect(res.amountCents).toBe(2_500_000 + Math.round(2_500_000 * 0.015));
+    // The manual-EFT return (manual/orderReference/amountCents) was removed with
+    // the manual rail; a future card paygate supplies the payment path. The
+    // reservation + persisted breakdown assertions above still hold.
+    void res;
   });
 
   it.each([

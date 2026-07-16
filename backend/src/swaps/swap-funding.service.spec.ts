@@ -42,7 +42,7 @@ function make() {
     bookForTransaction: jest.fn().mockResolvedValue(null), // onSwapLocked (S4)
   };
   const fees = new FeeCalculator();
-  const referenceNumbers = { allocateOrderReference: jest.fn() };
+  const referenceNumbers = { allocate: jest.fn() };
   const notifications = {
     swapFundingReady: jest.fn().mockResolvedValue(undefined),
     swapLocked: jest.fn().mockResolvedValue(undefined),

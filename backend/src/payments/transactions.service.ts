@@ -30,10 +30,7 @@ import { ShippingService } from '../shipping/shipping.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { Inject, forwardRef } from '@nestjs/common';
 import { ActionTokensService } from '../actions/action-tokens.service';
-import {
-  ReferenceNumberService,
-  type OrderRefSource,
-} from '../common/reference-number.service';
+import { ReferenceNumberService } from '../common/reference-number.service';
 import {
   computeCpaCancellation,
   isExemptReason,
@@ -43,27 +40,14 @@ import {
   type CancellationTier,
 } from './cancellation-policy';
 
-// Manual EFT mode (no live card gateway). When PAYMENT_MODE=manual the
-// checkout issues bank-deposit instructions + an order reference instead
-// of a Stitch payment link; the FNB statement reconciliation confirms it.
-// Defaults to 'manual' since the gateway is dormant.
+// Payment mode. Retained as the seam that drives fee maths (flat EFT-style
+// fee vs card rate) and the refund-owed arms (a card gateway reverses on the
+// card; otherwise GG owes the money out of its account). The manual-EFT
+// buyer pay-in rail itself has been removed — checkout is gated by
+// assertPaymentsLive() until a card paygate is integrated. Defaults to
+// 'manual' so the fee/refund maths keep their pre-paygate shape.
 export const PAYMENT_MODE: 'manual' | 'paygate' =
   process.env.PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
-// How long a listing stays frozen awaiting the committed buyer's EFT.
-// 24h (operator decision): long enough that the daily FNB statement
-// reconciliation runs at least once while the item is still reserved for
-// THIS buyer — so a genuine payment is caught + confirmed before the
-// listing is ever released to other buyers. Fairer to the first buyer
-// than a short window, and the statement stays the source of truth.
-export const MANUAL_PAY_WINDOW_MS = 24 * 60 * 60 * 1000;
-// GG's FNB receiving account, shown to the buyer at manual checkout.
-export const GG_BANK_DETAILS = {
-  accountName: 'Gun Galore (Pty) Ltd',
-  bank: 'First National Bank (FNB)',
-  accountNumber: '63210989191',
-  branchCode: '250655',
-  accountType: 'Gold Business Account',
-};
 
 // ── Phase-1 payment gate (manual EFT retired) ──────────────────────────
 // Buyer manual-EFT pay-in has been removed. The card paygate is not live
@@ -753,56 +737,9 @@ export class TransactionsService {
       sellerPayout,
     } = await this.reserveAndCreateLine(buyerClerkId, dto);
 
-    // ── Manual EFT branch (PAYMENT_MODE=manual) ────────────────────────
-    // No card gateway: issue an order reference + GG bank-deposit
-    // instructions instead of a Stitch link. The buyer EFTs using the
-    // reference; the 10-min inContact scan detects it (provisional, stops
-    // the 1-hour freeze) and the daily FNB statement reconciliation
-    // confirms it (→ confirmManualPayment → SOLD → seller notified).
-    if (PAYMENT_MODE === 'manual') {
-      // EXP-E1 — an experience booking gets the HP order-ref prefix so hunting
-      // bookings reconcile / report separately, even though the underlying
-      // listing is still BUY_NOW or AUCTION. Offers → TS; else the listing type.
-      const orderRefSource: OrderRefSource = listing.isExperience
-        ? 'EXPERIENCE'
-        : offerRecord
-        ? 'TAKE_A_SHOT'
-        : (listing.listingType as OrderRefSource);
-      const orderReference =
-        await this.referenceNumbers.allocateOrderReference(orderRefSource);
-      const manualPayByAt = new Date(Date.now() + MANUAL_PAY_WINDOW_MS);
-      const [updatedManual] = await this.prisma.$transaction([
-        this.prisma.transaction.update({
-          where: { id: tx.id },
-          data: { orderReference, manualPayByAt },
-        }),
-        ...(offerRecord
-          ? [
-              this.prisma.offer.update({
-                where: { id: offerRecord.id },
-                data: { status: 'CONVERTED', transactionId: tx.id },
-              }),
-            ]
-          : []),
-      ]);
-      return {
-        transactionId: updatedManual.id,
-        manual: true as const,
-        orderReference,
-        amountCents: buyerTotal,
-        payByAt: manualPayByAt.toISOString(),
-        bankDetails: null,
-        breakdown: {
-          listingPrice,
-          shippingCost,
-          shippingHandlingCents, // P6.4 — R15/waybill margin (0 for firearm/collection)
-          commissionZar,
-          processingFee,
-          buyerTotal,
-          sellerPayout,
-        },
-      };
-    }
+    // The manual-EFT pay-in branch has been removed. checkout is gated by
+    // assertPaymentsLive() above, so this path only runs once a card paygate
+    // is live; it creates the gateway checkout below (rail-agnostic seam).
 
     // Create the Stitch Express checkout (hosted payment link). We pass
     // the BASE complete URL (no txId) because Stitch matches the
@@ -1127,24 +1064,23 @@ export class TransactionsService {
       // marketplace split). The single-seller guard is intentionally gone.
       const sellerCount = new Set(created.map((c) => c.listing.sellerId)).size;
       const totals = computeOrderTotals(created.map((c) => c.breakdown));
-      const orderReference =
-        await this.referenceNumbers.allocateOrderReference('BUY_NOW');
-      const manualPayByAt = new Date(Date.now() + MANUAL_PAY_WINDOW_MS);
       const buyerId = created[0].tx.buyerId;
 
+      // The Order-building + reservation scaffold below is rail-agnostic and
+      // kept for the future card paygate. The manual-EFT reference allocation +
+      // pay-by window have been removed with the manual rail; the paygate owns
+      // reference/capture (Order.gatewayCheckoutId/gatewayPaymentId seam).
       const order = await this.prisma.$transaction(async (txc) => {
         const o = await txc.order.create({
           data: {
             buyerId,
             status: 'AWAITING_PAYMENT',
-            paymentMethod: 'MANUAL_EFT',
-            orderReference,
+            paymentMethod: 'GATEWAY',
             itemsSubtotal: totals.itemsSubtotal,
             shippingSubtotal: totals.shippingSubtotal,
             handlingSubtotal: totals.handlingSubtotal, // P6.4 — GG margin (sum of line handling)
             processingFee: totals.processingFee,
             buyerTotal: totals.buyerTotal,
-            manualPayByAt,
             lineItems: {
               create: created.map((c) => ({
                 transactionId: c.tx.id,
@@ -1186,19 +1122,14 @@ export class TransactionsService {
       });
 
       this.logger.log(
-        `Order ${order.id} (${orderReference}) created — ${created.length} lines across ${sellerCount} seller(s), total ${totals.buyerTotal}c`,
+        `Order ${order.id} created — ${created.length} lines across ${sellerCount} seller(s), total ${totals.buyerTotal}c`,
       );
 
       return {
         orderId: order.id,
-        // The shared manual-EFT banking screen links on transactionId; the
-        // order-checkout UI maps this to /orders/[id].
+        // The order-checkout UI maps this to /orders/[id].
         transactionId: order.id,
-        manual: true as const,
-        orderReference,
         amountCents: totals.buyerTotal,
-        payByAt: manualPayByAt.toISOString(),
-        bankDetails: null,
         itemCount: created.length,
         breakdown: {
           listingPrice: totals.itemsSubtotal,
@@ -1257,120 +1188,11 @@ export class TransactionsService {
     }
   }
 
-  // Confirm a multi-item Order's EFT (called by the reconciler when the FNB
-  // statement matches Order.orderReference). Race-safe against the order
-  // freeze sweep via an atomic PRE-CLAIM (stamp manualDetectedAt so the sweep
-  // can no longer select/cancel this order before any child goes SOLD), then
-  // fans out the per-child markPaid (each re-binds its own amount + id, so the
-  // security checks hold and the per-child buyer notice is suppressed), then
-  // an atomic PAID-claim so the single consolidated buyer confirmation fires
-  // exactly once. Idempotent + resilient to a partial run (re-running heals
-  // because each child early-returns on its own paidAt; a partial failure
-  // raises an admin alert and never leaves the order swept).
-  async confirmManualOrder(orderId: string): Promise<void> {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      include: {
-        transactions: { select: { id: true, buyerTotal: true } },
-        buyer: {
-          select: { email: true, firstName: true, lastName: true, phone: true },
-        },
-      },
-    });
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.paidAt) {
-      this.logger.log(`confirmManualOrder: ${orderId} already paid — skipping`);
-      return;
-    }
-    // Defence-in-depth amount invariant: the order total MUST equal the sum of
-    // its children (the reconciler matched the lump EFT to order.buyerTotal).
-    const childSum = order.transactions.reduce((s, t) => s + t.buyerTotal, 0);
-    if (childSum !== order.buyerTotal) {
-      this.logger.error(
-        `confirmManualOrder ${orderId}: child sum ${childSum} != order total ${order.buyerTotal} — refusing`,
-      );
-      throw new BadRequestException('Order total does not match its line items');
-    }
-    // ATOMIC PRE-CLAIM — stamp manualDetectedAt. The order freeze sweep only
-    // selects orders with manualDetectedAt=null, so once this commits the
-    // sweep can never cancel/restock this order while we pay its children.
-    // count===0 ⇒ already paid or cancelled (e.g. swept first) ⇒ bail.
-    const preclaim = await this.prisma.order.updateMany({
-      where: {
-        id: orderId,
-        paidAt: null,
-        manualCancelledAt: null,
-        status: 'AWAITING_PAYMENT',
-      },
-      data: { manualDetectedAt: new Date() },
-    });
-    if (preclaim.count === 0) {
-      this.logger.warn(
-        `confirmManualOrder ${orderId}: not claimable (paid/cancelled) — skipping`,
-      );
-      return;
-    }
-    try {
-      for (const child of order.transactions) {
-        // Per-child: derives its own EFT-${childId} paymentId, binds
-        // amount = child.buyerTotal + merchantTransactionId = childId, and (via
-        // tx.orderId) suppresses the per-child buyer "order confirmed" notice.
-        await this.confirmManualPayment(child.id);
-      }
-    } catch (err) {
-      // Partial fan-out: some children are paid, some not. The order keeps
-      // manualDetectedAt set (so the sweep won't touch it) and stays
-      // AWAITING_PAYMENT; a re-uploaded statement re-runs and heals (paid
-      // children early-return). Surface it so an operator can investigate.
-      this.logger.error(
-        `confirmManualOrder ${orderId}: partial fan-out — ${(err as Error).message}`,
-      );
-      await this.prisma.adminAlert
-        .create({
-          data: {
-            type: 'ORDER_PARTIAL_CONFIRM',
-            referenceId: orderId,
-            urgent: true,
-            context: `Order ${order.orderReference ?? orderId} EFT confirm failed mid-fan-out: ${(err as Error).message}. Some line items may be paid and some not — re-upload the statement to heal, or investigate.`,
-          },
-        })
-        .catch(() => undefined);
-      throw err;
-    }
-    // ATOMIC PAID-CLAIM — only the winner sends the ONE buyer confirmation.
-    const paidClaim = await this.prisma.order.updateMany({
-      where: { id: orderId, paidAt: null },
-      data: { status: 'PAID', paidAt: new Date() },
-    });
-    if (paidClaim.count !== 1) return; // a concurrent pass already rolled up
-
-    // DD-2 — now that the WHOLE order is paid (every sibling HELD), re-drive
-    // the house-deal auto-accept: maybeAutoAcceptHouseDeal deferred each child
-    // above (order.paidAt was null), so the consolidated courier parcel is now
-    // booked once with the complete weight/dims/value. No-op for non-deal
-    // children (they auto-accepted per-line already or aren't house deals).
-    for (const child of order.transactions) {
-      void this.maybeAutoAcceptHouseDeal(child.id);
-    }
-
-    try {
-      await this.notifications.orderConfirmedBuyerMulti({
-        buyerEmail: order.buyer.email,
-        buyerName:
-          [order.buyer.firstName, order.buyer.lastName].filter(Boolean).join(' ') ||
-          'there',
-        buyerPhone: order.buyer.phone,
-        orderId,
-        orderReference: order.orderReference ?? orderId.slice(-8).toUpperCase(),
-        itemCount: order.transactions.length,
-        buyerTotal: order.buyerTotal,
-      });
-    } catch (e) {
-      this.logger.error(
-        `confirmManualOrder: buyer confirmation failed for ${orderId}: ${(e as Error).message}`,
-      );
-    }
-  }
+  // confirmManualOrder (the multi-item Order EFT reconciler-confirm) has been
+  // removed with the manual-EFT rail. A future card paygate will roll a paid
+  // Order up to PAID + fan the per-child capture out via markPaid; the
+  // rail-agnostic money-state (markPaid / HELD / RELEASED / paidOutAt) is
+  // unchanged and ready for that seam.
 
   // ------------------------------------------------------------------
   // Called from the result page — verify payment with Stitch
@@ -4192,46 +4014,10 @@ export class TransactionsService {
     return { disputed: true };
   }
 
-  // ------------------------------------------------------------------
-  // Manual EFT confirmation (PAYMENT_MODE=manual)
-  // ------------------------------------------------------------------
-  // Called by ManualPaymentsService when the AUTHORITATIVE FNB statement
-  // reconciliation confirms a buyer's EFT for `txId`. Reuses the full
-  // markPaid path (atomic claim → listing SOLD → sibling-offer cleanup →
-  // PAYMENT_RECEIVED timeline → sale notifications → immediate-payout for
-  // PRIVATE_ARRANGE), so a manual sale is indistinguishable downstream
-  // from a gateway sale. Idempotent: a no-op if already paid.
-  async confirmManualPayment(txId: string): Promise<void> {
-    const tx = await this.prisma.transaction.findUnique({
-      where: { id: txId },
-      include: { listing: true },
-    });
-    if (!tx) throw new NotFoundException('Transaction not found');
-    if (tx.paidAt) {
-      this.logger.log(`confirmManualPayment: ${txId} already paid — skipping`);
-      return;
-    }
-    // peachCheckoutId/peachPaymentId is @unique — give the manual EFT a
-    // stable unique id derived from the order reference.
-    const paymentId = `EFT-${tx.orderReference ?? txId}`;
-    await this.markPaid(
-      txId,
-      {
-        paymentId,
-        resultCode: 'MANUAL_EFT',
-        amount: tx.buyerTotal,
-        currency: 'ZAR',
-        merchantTransactionId: txId,
-        isSuccess: true,
-      },
-      tx.listing,
-      tx.buyerTotal,
-    );
-    await this.prisma.transaction.update({
-      where: { id: txId },
-      data: { manualVerifiedAt: new Date() },
-    });
-  }
+  // confirmManualPayment (the single-item EFT reconciler-confirm) has been
+  // removed with the manual-EFT rail. The shared markPaid() path it drove is
+  // kept intact and rail-agnostic — a future card paygate calls markPaid
+  // directly from its verify/webhook handler exactly as the gateway path does.
 
   // ------------------------------------------------------------------
   // Private helpers

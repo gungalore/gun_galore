@@ -37,7 +37,7 @@ const GROUPS: NavGroup[] = [
       { href: '/admin/orders', label: 'Orders' },
       { href: '/admin/swaps', label: 'Swaps' },
       { href: '/admin/users', label: 'Users' },
-      { href: '/admin/manual-payments', label: 'Manual Payments' },
+      { href: '/admin/manual-payments', label: 'Held Funds' },
     ],
   },
   {

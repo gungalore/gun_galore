@@ -29,27 +29,6 @@ const LISTING_TYPE_TO_PREFIX: Record<ListingType, ReferencePrefix> = {
   SWOP: 'SW', // Swop/Trade listing (SWOP) — used by the swap funding EFT memo
 };
 
-// Per-order reference source — the thing being paid for. Drives the
-// prefix the buyer sees as their EFT reference (e.g. UM000123). EXPERIENCE
-// is the hunting-package booking source (EXP-E1) — it maps to the HP prefix
-// so experience bookings reconcile / report separately from ordinary goods,
-// even though the underlying listing is still BUY_NOW or AUCTION.
-export type OrderRefSource =
-  | ListingType
-  | 'FEATURED'
-  | 'SUBSCRIPTION'
-  | 'EXPERIENCE';
-
-const ORDER_SOURCE_TO_PREFIX: Record<OrderRefSource, ReferencePrefix> = {
-  BUY_NOW: 'UM',
-  AUCTION: 'AU',
-  TAKE_A_SHOT: 'TS',
-  SWOP: 'SW',
-  FEATURED: 'FS',
-  SUBSCRIPTION: 'SB',
-  EXPERIENCE: 'HP',
-};
-
 const PAD_WIDTH = 6;
 
 export function prefixForListingType(type: ListingType): ReferencePrefix {
@@ -86,15 +65,6 @@ export class ReferenceNumberService {
   /** Allocate for a Listing based on its listingType. */
   allocateForListing(type: ListingType): Promise<string> {
     return this.allocate(prefixForListingType(type));
-  }
-
-  /**
-   * Allocate a per-ORDER reference the buyer uses as their manual-EFT
-   * bank reference (e.g. UM000123). Unique per order; matched against
-   * FNB inContact alerts + statement rows during reconciliation.
-   */
-  allocateOrderReference(source: OrderRefSource): Promise<string> {
-    return this.allocate(ORDER_SOURCE_TO_PREFIX[source]);
   }
 }
 

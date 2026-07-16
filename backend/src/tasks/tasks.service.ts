@@ -19,7 +19,6 @@ import { AdminCreditsService } from '../admin/admin-credits.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
 import { PushService } from '../push/push.service';
-import { ManualPaymentsService } from '../manual-payments/manual-payments.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { SavedSearchesService } from '../saved-searches/saved-searches.service';
@@ -59,7 +58,6 @@ export class TasksService {
     private readonly notifications: NotificationsService,
     private readonly sms: SmsService,
     private readonly push: PushService,
-    private readonly manualPayments: ManualPaymentsService,
     private readonly subscriptions: SubscriptionsService,
     private readonly zohoBooks: ZohoBooksService,
     private readonly savedSearches: SavedSearchesService,
@@ -67,63 +65,10 @@ export class TasksService {
     private readonly settings: SettingsService,
   ) {}
 
-  // ─── Manual EFT — inContact inbox scan ───────────────────────────
-  // Every 10 min: read pop@gungalore.co.za for new FNB inContact credit
-  // alerts, match them to awaiting orders by reference + amount, and set
-  // manualDetectedAt (PROVISIONAL — stops the 1-hour freeze timer). The
-  // seller is NOT notified here; the daily statement upload is the
-  // authoritative gate that confirms payment + triggers dispatch.
-  @Cron(CronExpression.EVERY_10_MINUTES)
-  async scanInContactInbox() {
-    try {
-      await this.manualPayments.scanInbox();
-    } catch (err) {
-      this.logger.error(
-        `scanInContactInbox failed: ${(err as Error).message}`,
-      );
-    } finally {
-      await this.recordCronRun('incontact-scan');
-    }
-  }
-
-  // ─── Payout reminder — 09:00 SAST daily ──────────────────────────
-  // If any seller payouts / buyer refunds are owed (not yet batched or paid
-  // out), raise a once-a-day admin alert so the operator runs the FNB bulk
-  // payment. Never pays automatically — the operator downloads + authorises.
-  @Cron('0 0 9 * * *', { timeZone: 'Africa/Johannesburg' }) // 09:00 SAST
-  async payoutDueReminder() {
-    try {
-      const { payouts, refunds } = await this.manualPayments.getPayoutsDue();
-      const count = payouts.length + refunds.length;
-      if (count === 0) return;
-      const totalCents =
-        payouts.reduce((s, p) => s + p.sellerPayout, 0) +
-        refunds.reduce((s, r) => s + r.buyerTotal, 0);
-      const rand = `R${(totalCents / 100).toFixed(2)}`;
-      // One alert per day (date-stamped ref) — skip if already raised today.
-      const referenceId = `payouts-${new Date().toISOString().slice(0, 10)}`;
-      const existing = await this.prisma.adminAlert.findFirst({
-        where: { referenceId },
-        select: { id: true },
-      });
-      if (existing) return;
-      await this.prisma.adminAlert.create({
-        data: {
-          type: 'PAYOUTS_DUE',
-          referenceId,
-          urgent: false,
-          context: `${count} seller payout${count === 1 ? '' : 's'}/refund${count === 1 ? '' : 's'} totalling ${rand} are due. Open Admin → Manual payments to freeze + download the FNB batch, pay it, then mark the batch paid.`,
-        },
-      });
-      this.logger.log(`Payout reminder raised: ${count} due, ${rand}`);
-    } catch (err) {
-      this.logger.error(
-        `payoutDueReminder failed: ${(err as Error).message}`,
-      );
-    } finally {
-      await this.recordCronRun('payout-reminder');
-    }
-  }
+  // The manual-EFT inContact inbox-scan cron and the 09:00 FNB payout-batch
+  // reminder cron have been removed with the manual-EFT rail (no reconciler,
+  // no FNB bulk-payment batch). Seller payouts / buyer refunds are still
+  // surfaced read-only via the admin payouts-due preview.
 
   // ─── Firearm licence expiry — auto-delist + warnings ─────────────
   // Daily: any ACTIVE firearm listing whose licence is ≤30 days from
@@ -246,206 +191,37 @@ export class TasksService {
     }
   }
 
-  // ─── Manual EFT — freeze expiry + payment reminders ──────────────
-  // Every 5 min: (1) release listings whose 24-hour pay-by window lapsed
-  // with no payment detected, SOFT-cancelling the stale order (the row
-  // is kept so a late statement payment is still recoverable); (2) fire
-  // the 12-hours-left and 1-hour-left "time to pay" SMS reminders.
+  // ─── Orphan reserve-tx reclaim ───────────────────────────────────
+  // The manual-EFT freeze-expiry + 12h/1h payment-reminder passes have been
+  // removed with the manual-EFT rail (checkout is gated by assertPaymentsLive
+  // so no unpaid manual reservations are created). This safety-net remains: a
+  // checkout that died between reserving a line and finishing (single-item or
+  // cart) can leave a never-paid HELD tx with no orderId / peachCheckoutId /
+  // swapId, its reserved listing stranded and invisible to every other sweep.
+  // Reclaim them (release the listing + delete the tx). Also picks up gateway/
+  // cart orphans once a paygate lands, since a gateway checkout that failed
+  // before persisting its checkout id matches the same shape.
+  //
+  // The filter is tight enough it can NEVER touch a live tx: a gateway tx has
+  // peachCheckoutId; an order child has orderId; a paid/refunded tx has paidAt;
+  // a SWOP leg has a swapId. The 15-min age floor protects an in-flight
+  // same-request tx.
+  //
+  // swapId: null is LOAD-BEARING. A swap creates two ZERO-money Transaction
+  // legs that carry NO orderId / peachCheckoutId / paidAt — they match every
+  // other orphan condition. Without this guard the sweep would delete both legs
+  // + un-reserve both listings ~15 min after every swap was agreed, orphaning
+  // the Swap parent. The legs' lifecycle is owned by the swap flow.
   @Cron(CronExpression.EVERY_5_MINUTES)
-  async manualPaymentFreezeSweep() {
+  async reclaimOrphanReservations() {
     const now = new Date();
     try {
-      // (1) Expire un-paid, un-detected orders past their pay-by time.
-      const expired = await this.prisma.transaction.findMany({
-        where: {
-          paymentStatus: 'HELD',
-          paidAt: null,
-          manualDetectedAt: null,
-          manualVerifiedAt: null,
-          manualCancelledAt: null,
-          manualPayByAt: { not: null, lte: now },
-        },
-        select: {
-          id: true,
-          listingId: true,
-          orderReference: true,
-          quantity: true,
-          listing: { select: { listingType: true, trackInventory: true } },
-        },
-        take: 100,
-      });
-      for (const tx of expired) {
-        try {
-          // Release the listing back to ACTIVE, but SOFT-CANCEL the order
-          // (keep the row) rather than deleting it. If the buyer actually
-          // paid and inContact just never fired, the later FNB statement
-          // still carries orderReference — the reconciler can then find
-          // this row and surface it as "paid after expiry" for a refund /
-          // re-fulfil decision instead of the payment being orphaned.
-          // P0.2 — an ENDED AUCTION must release to EXPIRED, not ACTIVE:
-          // finalizeAuction already ran (endedAt set), so an ACTIVE ended
-          // auction would be a zombie on browse that can never re-finalize.
-          // FLOW-F1 — mirror the (1b) order sweep: CAS-claim the tx FIRST
-          // (a concurrent reconciler confirm stamps paidAt and must win),
-          // then restock. Inventory-tracked listings get their reserved
-          // units BACK (quantityAvailable/quantityReserved) — previously
-          // only the legacy status flip ran, permanently leaking one unit
-          // of stock per abandoned tracked checkout.
-          await this.prisma.$transaction(async (txc) => {
-            const claim = await txc.transaction.updateMany({
-              where: {
-                id: tx.id,
-                paymentStatus: 'HELD',
-                paidAt: null,
-                manualDetectedAt: null,
-                manualCancelledAt: null,
-              },
-              data: { manualCancelledAt: now },
-            });
-            if (claim.count === 0) return; // concurrently detected/paid
-            if (tx.listing?.trackInventory) {
-              await txc.listing.update({
-                where: { id: tx.listingId },
-                data: {
-                  status: 'ACTIVE',
-                  quantityAvailable: { increment: tx.quantity },
-                  quantityReserved: { decrement: tx.quantity },
-                },
-              });
-            } else {
-              await txc.listing.updateMany({
-                where: { id: tx.listingId, status: 'PAYMENT_PENDING' },
-                data: {
-                  status:
-                    tx.listing?.listingType === 'AUCTION' ? 'EXPIRED' : 'ACTIVE',
-                },
-              });
-            }
-          });
-          this.logger.log(
-            `Manual EFT freeze expired for order ${tx.orderReference ?? tx.id} — listing ${tx.listingId} released, order soft-cancelled`,
-          );
-          // P0.2 review fix — an expired AUCTION win here means the winner
-          // STARTED checkout but never paid; tell the seller (the other
-          // unpaid-winner path notifies via sweepUnpaidWins).
-          if (tx.listing?.listingType === 'AUCTION') {
-            void this.auctionsService.notifyWinnerUnpaid(tx.listingId);
-          }
-        } catch (err) {
-          this.logger.warn(
-            `freeze-expire failed for ${tx.id}: ${(err as Error).message}`,
-          );
-        }
-      }
-
-      // (1b) Expire un-paid, un-detected multi-item ORDERS (Phase 8b) past
-      // their pay-by window. ALL-OR-NOTHING: release every line's listing and
-      // soft-cancel the whole order + all children in ONE transaction, so a
-      // cart can never be left half-released (some lines free, some frozen).
-      // Order children carry no manualPayByAt, so the per-tx sweep above never
-      // touches them — this is the only path that expires an order.
-      const expiredOrders = await this.prisma.order.findMany({
-        where: {
-          status: 'AWAITING_PAYMENT',
-          paidAt: null,
-          manualDetectedAt: null,
-          manualCancelledAt: null,
-          manualPayByAt: { not: null, lte: now },
-        },
-        select: {
-          id: true,
-          orderReference: true,
-          transactions: { select: { id: true } },
-          lineItems: {
-            select: {
-              listingId: true,
-              quantity: true,
-              listing: { select: { trackInventory: true } },
-            },
-          },
-        },
-        take: 50,
-      });
-      for (const order of expiredOrders) {
-        try {
-          await this.prisma.$transaction(async (txc) => {
-            // COMPARE-AND-SET the order cancel FIRST. confirmManualOrder
-            // stamps manualDetectedAt before paying any child, so if it has
-            // started (or finished) this claim matches 0 rows and we touch
-            // NOTHING — no racing restock of a SOLD listing, no reverting a
-            // PAID order.
-            const claim = await txc.order.updateMany({
-              where: {
-                id: order.id,
-                status: 'AWAITING_PAYMENT',
-                paidAt: null,
-                manualDetectedAt: null,
-                manualCancelledAt: null,
-              },
-              data: { manualCancelledAt: now, status: 'CANCELLED' },
-            });
-            if (claim.count === 0) return; // concurrently detected/paid
-            // We won the claim ⇒ no child can be paid ⇒ every listing is
-            // still reserved. Release each (legacy guarded on PAYMENT_PENDING,
-            // mirroring the per-tx sweep; tracked gives units back).
-            for (const li of order.lineItems) {
-              if (li.listing.trackInventory) {
-                await txc.listing.update({
-                  where: { id: li.listingId },
-                  data: {
-                    status: 'ACTIVE',
-                    quantityAvailable: { increment: li.quantity },
-                    quantityReserved: { decrement: li.quantity },
-                  },
-                });
-              } else {
-                await txc.listing.updateMany({
-                  where: { id: li.listingId, status: 'PAYMENT_PENDING' },
-                  data: { status: 'ACTIVE' },
-                });
-              }
-            }
-            await txc.transaction.updateMany({
-              where: { id: { in: order.transactions.map((t) => t.id) }, paidAt: null },
-              data: { manualCancelledAt: now },
-            });
-          });
-          this.logger.log(
-            `Manual EFT freeze swept ORDER ${order.orderReference ?? order.id} (${order.lineItems.length} lines) — cancelled if still unclaimed`,
-          );
-        } catch (err) {
-          this.logger.warn(
-            `order freeze-expire failed for ${order.id}: ${(err as Error).message}`,
-          );
-        }
-      }
-
-      // (1c) Orphan reclaim (Phase 8b safety net). A cart checkout that died
-      // between reserving a line and creating its Order — or a single-item
-      // checkout that died between tx.create and the orderReference update —
-      // leaves a never-paid HELD tx with NO orderId, NO orderReference, NO
-      // gateway session and NO pay-by window: invisible to every other sweep,
-      // its reserved listing stranded. Reclaim them (release listing + delete
-      // tx). The filter is tight enough it can NEVER touch a live tx: a real
-      // single-item manual tx has orderReference + manualPayByAt; a gateway tx
-      // has peachCheckoutId; an order child has orderId; a paid/refunded tx
-      // has paidAt; a SWOP leg has a swapId. The 15-min age floor protects an
-      // in-flight same-request tx.
-      //
-      // swapId: null is LOAD-BEARING. A swap creates two ZERO-money Transaction
-      // legs that carry NO orderId / orderReference / peachCheckoutId /
-      // manualPayByAt / paidAt — they match every other orphan condition. Without
-      // this guard the sweep would delete both legs + un-reserve both listings
-      // ~15 min after every swap was agreed, orphaning the Swap parent. The legs'
-      // lifecycle is owned by the swap flow (lock/book/ship in S3+), never here.
       const orphanCutoff = new Date(now.getTime() - 15 * 60 * 1000);
       const orphans = await this.prisma.transaction.findMany({
         where: {
           paidAt: null,
           orderId: null,
-          orderReference: null,
           peachCheckoutId: null,
-          manualPayByAt: null,
           swapId: null,
           createdAt: { lt: orphanCutoff },
         },
@@ -489,120 +265,12 @@ export class TasksService {
           );
         }
       }
-
-      // (2) Payment reminders across the 24h window: a nudge when ≤12h
-      // remain and a final one when ≤1h remains. Idempotent via the warn
-      // timestamps. (The first touchpoint is the checkout screen itself.)
-      const in12h = new Date(now.getTime() + 12 * 60 * 60 * 1000);
-      const in1h = new Date(now.getTime() + 60 * 60 * 1000);
-      await this.fireManualWarnings('manualWarn12hAt', in12h, '12 hours');
-      await this.fireManualWarnings('manualWarn1hAt', in1h, '1 hour');
-      // FLOW-F3 — multi-item ORDERS got NO pay reminders (children carry no
-      // manualPayByAt so the per-tx sweep above skips them entirely) and were
-      // swept to CANCELLED silently. Fire the same 12h/1h nudges at the order
-      // level, idempotent via the new Order.manualWarn*At stamps.
-      await this.fireOrderWarnings('manualWarn12hAt', in12h, '12 hours');
-      await this.fireOrderWarnings('manualWarn1hAt', in1h, '1 hour');
     } catch (err) {
       this.logger.error(
-        `manualPaymentFreezeSweep failed: ${(err as Error).message}`,
+        `reclaimOrphanReservations failed: ${(err as Error).message}`,
       );
     } finally {
-      await this.recordCronRun('manual-freeze-sweep');
-    }
-  }
-
-  // Fire a single payment-reminder tier. `field` is the idempotency
-  // stamp; `before` is the upper bound on manualPayByAt (≤12h / ≤1h
-  // out). Only un-detected, un-warned, still-pending orders qualify.
-  private async fireManualWarnings(
-    field: 'manualWarn12hAt' | 'manualWarn1hAt',
-    before: Date,
-    label: string,
-  ) {
-    const due = await this.prisma.transaction.findMany({
-      where: {
-        paymentStatus: 'HELD',
-        paidAt: null,
-        manualDetectedAt: null,
-        manualPayByAt: { not: null, lte: before, gt: new Date() },
-        [field]: null,
-      },
-      select: { id: true, buyerId: true, orderReference: true, buyerTotal: true },
-      take: 100,
-    });
-    for (const tx of due) {
-      try {
-        await this.prisma.transaction.update({
-          where: { id: tx.id },
-          data: { [field]: new Date() },
-        });
-        const buyer = await this.prisma.user.findUnique({
-          where: { id: tx.buyerId },
-          select: { phone: true },
-        });
-        if (buyer?.phone) {
-          await this.sms
-            .sendSms({
-              to: buyer.phone,
-              message: `Gun Galore: ${label} left to EFT R${(tx.buyerTotal / 100).toFixed(2)} for order ${tx.orderReference ?? ''}. Use the order number as your payment reference or your order is released.`,
-              reference: `manual-${field}-${tx.id}`,
-            })
-            .catch(() => undefined);
-        }
-      } catch (err) {
-        this.logger.warn(
-          `manual countdown (${label}) failed for ${tx.id}: ${(err as Error).message}`,
-        );
-      }
-    }
-  }
-
-  // FLOW-F3 — order-level twin of fireManualWarnings. Multi-item orders
-  // carry the pay-by window on the Order (not the children), so they need
-  // their own reminder sweep. Idempotent via Order.manualWarn*At.
-  private async fireOrderWarnings(
-    field: 'manualWarn12hAt' | 'manualWarn1hAt',
-    before: Date,
-    label: string,
-  ) {
-    const due = await this.prisma.order.findMany({
-      where: {
-        status: 'AWAITING_PAYMENT',
-        paidAt: null,
-        manualDetectedAt: null,
-        manualCancelledAt: null,
-        manualPayByAt: { not: null, lte: before, gt: new Date() },
-        [field]: null,
-      },
-      select: {
-        id: true,
-        orderReference: true,
-        buyerTotal: true,
-        buyer: { select: { phone: true } },
-      },
-      take: 100,
-    });
-    for (const order of due) {
-      try {
-        await this.prisma.order.update({
-          where: { id: order.id },
-          data: { [field]: new Date() },
-        });
-        if (order.buyer?.phone) {
-          await this.sms
-            .sendSms({
-              to: order.buyer.phone,
-              message: `Gun Galore: ${label} left to EFT R${(order.buyerTotal / 100).toFixed(2)} for order ${order.orderReference ?? ''}. Use the order number as your payment reference or your order is released.`,
-              reference: `order-${field}-${order.id}`,
-            })
-            .catch(() => undefined);
-        }
-      } catch (err) {
-        this.logger.warn(
-          `order countdown (${label}) failed for ${order.id}: ${(err as Error).message}`,
-        );
-      }
+      await this.recordCronRun('orphan-reclaim');
     }
   }
 

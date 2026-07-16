@@ -5,7 +5,15 @@
  */
 import { Ctx, Actor, makeListing, DELIVERY_ADDRESS } from './seed';
 import { check, checkAsync, assert, eq, Reporter } from './harness';
-import { svc, assertConserves, ggRevenueOf, drainPayouts, waitFor } from './money';
+import {
+  svc,
+  assertConserves,
+  ggRevenueOf,
+  drainPayouts,
+  waitFor,
+  simulatePaid,
+  simulateOrderPaid,
+} from './money';
 import { TransactionsService } from '../../src/payments/transactions.service';
 import { FeeCalculator } from '../../src/payments/fee.calculator';
 import { DealerVerificationService } from '../../src/payments/dealer-verification.service';
@@ -48,18 +56,17 @@ async function drivePaidGoodsSale(
   const rep = ctx.rep;
   const T = tsvc(ctx);
 
-  await T.confirmManualPayment(txId);
+  await simulatePaid(ctx, txId);
   let row = await tx(ctx, txId);
   check(rep, `${label}: payment confirmed → HELD + paidAt + listing SOLD`, () => {
     eq(row.paymentStatus, 'HELD', 'paymentStatus');
     assert(row.paidAt, 'paidAt not set');
-    assert(row.manualVerifiedAt, 'manualVerifiedAt not set');
   });
   const listingAfterPay = await P(ctx).listing.findUnique({ where: { id: row.listingId } });
   check(rep, `${label}: listing flipped SOLD`, () => eq(listingAfterPay.status, 'SOLD', 'listing.status'));
 
   // idempotent re-confirm is a no-op
-  await T.confirmManualPayment(txId);
+  await simulatePaid(ctx, txId);
   const reRow = await tx(ctx, txId);
   check(rep, `${label}: re-confirm payment is idempotent (paidAt unchanged)`, () =>
     eq(reRow.paidAt.getTime(), row.paidAt.getTime(), 'paidAt'),
@@ -113,9 +120,8 @@ async function drivePayoutAndLedger(ctx: Ctx, txId: string, label: string) {
   const before = await tx(ctx, txId);
   await drainPayouts(ctx);
   const row = await tx(ctx, txId);
-  check(rep, `${label}: payout batch settled the seller (paidOutAt + batch id)`, () => {
+  check(rep, `${label}: payout settled the seller (paidOutAt)`, () => {
     assert(row.paidOutAt, 'paidOutAt not set');
-    assert(row.payoutBatchId, 'payoutBatchId not set');
   });
   rep.money({
     label,
@@ -208,7 +214,7 @@ export async function moduleBuyNow(ctx: Ctx) {
     } as any,
     'http://localhost',
   );
-  await T.confirmManualPayment(createdC.transactionId);
+  await simulatePaid(ctx, createdC.transactionId);
   // maybeImmediatePayout fires fire-and-forget inside markPaid; give it a tick.
   await settleTick();
   let rowC = await tx(ctx, createdC.transactionId);
@@ -271,7 +277,7 @@ export async function moduleFirearm(ctx: Ctx) {
     { listingId: listing.id, shippingMethod: 'DEALER_TRANSFER', firearmAttestation18Plus: true } as any,
     'http://localhost',
   );
-  await T.confirmManualPayment(created.transactionId);
+  await simulatePaid(ctx, created.transactionId);
   let row = await tx(ctx, created.transactionId);
   check(rep, 'DEALER_TRANSFER: paid → HELD, no shipping/handling', () => {
     eq(row.paymentStatus, 'HELD', 'paymentStatus');
@@ -438,7 +444,7 @@ export async function moduleOffers(ctx: Ctx) {
     eq(convertedOffer.status, 'CONVERTED', 'offer.status');
   });
 
-  await T.confirmManualPayment(created.transactionId);
+  await simulatePaid(ctx, created.transactionId);
   await settleTick();
   const rival2 = await P(ctx).offer.findUnique({ where: { id: rivalOffer.offer.id } });
   check(rep, 'OFFER: sibling offer auto-rejected on sale (markPaid)', () =>
@@ -496,7 +502,7 @@ export async function moduleOrders(ctx: Ctx) {
     eq(order.itemCount, 2, 'itemCount');
   });
 
-  await T.confirmManualOrder(order.orderId);
+  await simulateOrderPaid(ctx, order.orderId);
   await settleTick();
   const orderRow = await P(ctx).order.findUnique({
     where: { id: order.orderId },
@@ -540,7 +546,7 @@ export async function moduleOrders(ctx: Ctx) {
   await drainPayouts(ctx);
   const after = await P(ctx).transaction.findMany({ where: { orderId: order.orderId } });
   check(rep, 'ORDER: both children paid out', () =>
-    assert(after.every((t: any) => t.paidOutAt && t.payoutBatchId), 'not all children paid out'),
+    assert(after.every((t: any) => t.paidOutAt), 'not all children paid out'),
   );
   for (const t of before) {
     rep.money({
@@ -593,7 +599,7 @@ export async function moduleExperiences(ctx: Ctx) {
     } as any,
     'http://localhost',
   );
-  await T.confirmManualPayment(created.transactionId);
+  await simulatePaid(ctx, created.transactionId);
   let row = await tx(ctx, created.transactionId);
   check(rep, 'EXPERIENCE: booked + paid → HELD, ON_SITE_SERVICE, no shipping', () => {
     eq(row.paymentStatus, 'HELD', 'paymentStatus');
@@ -920,8 +926,8 @@ export async function moduleSwap(ctx: Ctx) {
   // Settle the cash recipient via the FNB batch.
   await drainPayouts(ctx);
   const settledChild = await tx(ctx, completed.settlementTxId);
-  check(rep, 'SWAP: cash recipient settled via payout batch', () =>
-    assert(settledChild.paidOutAt && settledChild.payoutBatchId, 'cash child not paid out'),
+  check(rep, 'SWAP: cash recipient settled (paidOutAt)', () =>
+    assert(settledChild.paidOutAt, 'cash child not paid out'),
   );
   rep.money({
     label: 'SWAP (cash top-up)',
@@ -1027,7 +1033,7 @@ export async function moduleDailyDeals(ctx: Ctx) {
     assert(row1a.buyerTotal > 0, 'buyerTotal should be > 0');
   });
 
-  await T.confirmManualPayment(created1.transactionId);
+  await simulatePaid(ctx, created1.transactionId);
   // Auto-accept fires fire-and-forget inside markPaid — wait for acceptedAt.
   const row1 = await waitFor(
     () => tx(ctx, created1.transactionId),
@@ -1057,7 +1063,6 @@ export async function moduleDailyDeals(ctx: Ctx) {
   const row1p = await tx(ctx, created1.transactionId);
   check(rep, 'house deal: payout SKIPPED (GG never pays itself)', () => {
     assert(row1p.paidOutAt === null, 'paidOutAt should stay null for a house deal');
-    assert(row1p.payoutBatchId === null, 'payoutBatchId should stay null for a house deal');
   });
   rep.money({
     label: 'Daily Deal (released)',
@@ -1109,7 +1114,7 @@ export async function moduleDailyDeals(ctx: Ctx) {
     { listingId: d3.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
     'http://localhost',
   );
-  await T.confirmManualPayment(created3.transactionId);
+  await simulatePaid(ctx, created3.transactionId);
   await settleTick(); // syncDealSoldOut fires fire-and-forget in markPaid
   const listing3 = await P(ctx).listing.findUnique({ where: { id: d3.listingId } });
   const deal3 = await P(ctx).deal.findUnique({ where: { id: d3.dealId } });
@@ -1147,7 +1152,7 @@ export async function moduleDailyDeals(ctx: Ctx) {
     { listingId: d4.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
     'http://localhost',
   );
-  await T.confirmManualPayment(created4.transactionId);
+  await simulatePaid(ctx, created4.transactionId);
   await settleTick();
   const admin = await P(ctx).adminUser.findFirst();
   const parent4 = await tx(ctx, created4.transactionId);

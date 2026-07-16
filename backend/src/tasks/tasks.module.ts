@@ -10,7 +10,6 @@ import { ShippingModule } from '../shipping/shipping.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { AdminModule } from '../admin/admin.module';
 import { PushModule } from '../push/push.module';
-import { ManualPaymentsModule } from '../manual-payments/manual-payments.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
 import { SavedSearchesModule } from '../saved-searches/saved-searches.module';
@@ -34,7 +33,6 @@ import { DealsModule } from '../deals/deals.module';
     PaymentsModule,
     AdminModule,
     PushModule,
-    ManualPaymentsModule,
     SubscriptionsModule,
     ZohoBooksModule,
     SavedSearchesModule,

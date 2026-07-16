@@ -146,9 +146,6 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
       'https://x',
     );
 
-    expect(referenceNumbers.allocateOrderReference).toHaveBeenCalledTimes(1);
-    expect(res.manual).toBe(true);
-    expect(res.orderReference).toBe('GG-ORD-0001');
     expect(res.itemCount).toBe(2);
     // 2 lines × buyerTotal 15 000 = 30 000 cents
     expect(res.amountCents).toBe(30_000);
@@ -172,10 +169,8 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
       'https://x',
     );
 
-    expect(res.manual).toBe(true);
     expect(res.itemCount).toBe(2);
     expect(res.amountCents).toBe(30_000); // 2 lines × 15 000
-    expect(referenceNumbers.allocateOrderReference).toHaveBeenCalledTimes(1); // ONE EFT for the basket
     // happy path → no compensation
     expect(prisma.listing.update).not.toHaveBeenCalled();
     expect(prisma.transaction.delete).not.toHaveBeenCalled();
@@ -267,11 +262,9 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
 
     // Firearm line WAS reserved (no rejection), and the order was created.
     expect(spy).toHaveBeenCalledTimes(2);
-    expect(res.manual).toBe(true);
     // The firearm was excluded from grouping: with only one courier line left,
     // there is no 2+ group → quoteCombined never runs.
     expect(shipping.quoteCombined).not.toHaveBeenCalled();
-    expect(referenceNumbers.allocateOrderReference).toHaveBeenCalledTimes(1);
     // Firearm carries no handling; the courier line carries the R15 waybill fee.
     expect(res.breakdown.shippingHandlingCents).toBe(1_500);
     // items 10 000 + 10 000, shipping 0 + 5 000, handling 0 + 1 500 → buyerTotal 26 500
@@ -301,91 +294,6 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
   });
 });
 
-describe('TransactionsService.confirmManualOrder', () => {
-  const paidOrder = () => ({
-    id: 'O1',
-    paidAt: null,
-    orderReference: 'GG-ORD-0001',
-    buyerTotal: 30_000,
-    transactions: [
-      { id: 'TX1', buyerTotal: 15_000 },
-      { id: 'TX2', buyerTotal: 15_000 },
-    ],
-    buyer: { email: 'b@x.co', firstName: 'Bo', lastName: 'Z', phone: '+27' },
-  });
-
-  it('pre-claims, fans out, atomically rolls up PAID, sends ONE buyer confirmation', async () => {
-    const { service, prisma, notifications } = makeService({
-      orderFindUnique: jest.fn().mockResolvedValue(paidOrder()),
-    });
-    const confirmSpy = jest
-      .spyOn(service, 'confirmManualPayment')
-      .mockResolvedValue(undefined);
-
-    await service.confirmManualOrder('O1');
-
-    expect(confirmSpy).toHaveBeenCalledTimes(2);
-    // preclaim (manualDetectedAt) + paid-claim (PAID) = two atomic updateMany
-    expect(prisma.order.updateMany).toHaveBeenCalledTimes(2);
-    expect(prisma.order.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'PAID' }) }),
-    );
-    expect(notifications.orderConfirmedBuyerMulti).toHaveBeenCalledTimes(1);
-  });
-
-  it('is idempotent once the order is paid (early return)', async () => {
-    const { service, prisma, notifications } = makeService({
-      orderFindUnique: jest.fn().mockResolvedValue({ ...paidOrder(), paidAt: new Date() }),
-    });
-    const confirmSpy = jest
-      .spyOn(service, 'confirmManualPayment')
-      .mockResolvedValue(undefined);
-
-    await service.confirmManualOrder('O1');
-
-    expect(confirmSpy).not.toHaveBeenCalled();
-    expect(prisma.order.updateMany).not.toHaveBeenCalled();
-    expect(notifications.orderConfirmedBuyerMulti).not.toHaveBeenCalled();
-  });
-
-  it('refuses when child totals do not sum to the order total', async () => {
-    const { service } = makeService({
-      orderFindUnique: jest
-        .fn()
-        .mockResolvedValue({ ...paidOrder(), buyerTotal: 99_999 }),
-    });
-    await expect(service.confirmManualOrder('O1')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-  });
-
-  it('bails without paying when the pre-claim loses (order swept/paid concurrently)', async () => {
-    const { service, prisma, notifications } = makeService({
-      orderFindUnique: jest.fn().mockResolvedValue(paidOrder()),
-    });
-    prisma.order.updateMany.mockResolvedValueOnce({ count: 0 }); // preclaim loses
-    const confirmSpy = jest
-      .spyOn(service, 'confirmManualPayment')
-      .mockResolvedValue(undefined);
-
-    await service.confirmManualOrder('O1');
-
-    expect(confirmSpy).not.toHaveBeenCalled();
-    expect(notifications.orderConfirmedBuyerMulti).not.toHaveBeenCalled();
-  });
-
-  it('alerts + rethrows on a partial fan-out, never rolling up to PAID', async () => {
-    const { service, prisma } = makeService({
-      orderFindUnique: jest.fn().mockResolvedValue(paidOrder()),
-    });
-    jest
-      .spyOn(service, 'confirmManualPayment')
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error('boom'));
-
-    await expect(service.confirmManualOrder('O1')).rejects.toThrow('boom');
-    expect(prisma.adminAlert.create).toHaveBeenCalled();
-    // preclaim ran (count 1), but PAID-claim must NOT (only 1 updateMany call)
-    expect(prisma.order.updateMany).toHaveBeenCalledTimes(1);
-  });
-});
+// The TransactionsService.confirmManualOrder suite was removed with the
+// manual-EFT rail (the method no longer exists). A future card paygate will
+// roll a paid Order up to PAID via the rail-agnostic money-state (markPaid).

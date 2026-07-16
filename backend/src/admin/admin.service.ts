@@ -1729,7 +1729,6 @@ export class AdminService {
       select: {
         id: true,
         paymentStatus: true,
-        payoutBatchId: true,
         paidOutAt: true,
         payoutHeldAt: true,
       },
@@ -1737,17 +1736,12 @@ export class AdminService {
     if (!tx) throw new NotFoundException('Transaction not found');
     if (!['RELEASED', 'REFUNDED'].includes(tx.paymentStatus)) {
       throw new BadRequestException(
-        `Payout hold only applies to a RELEASED or REFUNDED payout awaiting the bank batch. Current state: ${tx.paymentStatus}.`,
+        `Payout hold only applies to a RELEASED or REFUNDED payout awaiting settlement. Current state: ${tx.paymentStatus}.`,
       );
     }
     if (tx.paidOutAt) {
       throw new BadRequestException(
         'This payout has already been paid out — it can no longer be held.',
-      );
-    }
-    if (tx.payoutBatchId) {
-      throw new BadRequestException(
-        'This payout is already frozen into a bank batch. Cancel that batch first, then hold this row.',
       );
     }
     if (tx.payoutHeldAt) {

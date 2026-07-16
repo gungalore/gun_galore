@@ -1098,13 +1098,15 @@ function BindModal({
     amountCents: number;
     orderReference: string;
     payByAt: string;
+    // Manual-EFT bank details were removed with the manual rail; a future
+    // card paygate supplies the payment path, so this is now always null.
     bankDetails: {
       accountName: string;
       bank: string;
       accountNumber: string;
       branchCode: string;
       accountType?: string;
-    };
+    } | null;
   }>(null);
 
   // Load the seller's ACTIVE listings on mount.
@@ -1207,38 +1209,41 @@ function BindModal({
                 <strong style={{ color: 'var(--red)' }}>{eft.orderReference}</strong>
               </div>
             </div>
-            <div
-              className="rounded-[8px] p-3 mb-3 text-sm"
-              style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)' }}
-            >
-              <p
-                className="text-[10px] uppercase mb-1"
-                style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}
+            {eft.bankDetails ? (
+              <div
+                className="rounded-[8px] p-3 mb-3 text-sm"
+                style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)' }}
               >
-                Pay into
-              </p>
-              {[
-                ['Account name', eft.bankDetails.accountName],
-                ['Bank', eft.bankDetails.bank],
-                ['Account number', eft.bankDetails.accountNumber],
-                ['Branch code', eft.bankDetails.branchCode],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="flex justify-between py-1.5"
-                  style={{ borderTop: '0.5px solid var(--border)' }}
+                <p
+                  className="text-[10px] uppercase mb-1"
+                  style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}
                 >
-                  <span style={{ color: 'var(--text-tertiary)' }}>{label}</span>
-                  <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                    {value}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-              We verify payments automatically — you&apos;ll get an SMS when your
-              listing goes live. A wrong reference will delay your feature.
-            </p>
+                  Pay into
+                </p>
+                {[
+                  ['Account name', eft.bankDetails.accountName],
+                  ['Bank', eft.bankDetails.bank],
+                  ['Account number', eft.bankDetails.accountNumber],
+                  ['Branch code', eft.bankDetails.branchCode],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="flex justify-between py-1.5"
+                    style={{ borderTop: '0.5px solid var(--border)' }}
+                  >
+                    <span style={{ color: 'var(--text-tertiary)' }}>{label}</span>
+                    <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                      {value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+                Card payments are launching soon — your slot is reserved and we&apos;ll
+                let you know the moment you can pay for it.
+              </p>
+            )}
             <button
               type="button"
               onClick={() => {
