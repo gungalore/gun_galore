@@ -2,8 +2,24 @@
 // PAYMENT_MODE), which pulls ESM-only meilisearch — stub it.
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
+// Phase-1 card-paygate gate (manual-EFT removal, commit df0ed50):
+// ensureFundingSetUp() now calls assertPaymentsLive() first. That reads a
+// module-load-time PAYMENTS_LIVE const (env PAYMENTS_LIVE unset in jest =>
+// OFF), so it can't be flipped with process.env at runtime — partial-mock
+// it instead. Default = the REAL implementation (payments OFF => throws the
+// coming-soon 503), which the closed-gate test asserts. The proof-of-
+// possession tests override it to a no-op per-call to simulate the paygate
+// being live, so they exercise the proof gate that sits just behind it.
+jest.mock('../payments/transactions.service', () => {
+  const actual = jest.requireActual('../payments/transactions.service');
+  return { ...actual, assertPaymentsLive: jest.fn(actual.assertPaymentsLive) };
+});
+
 import { SwapFundingService } from './swap-funding.service';
 import { FeeCalculator } from '../payments/fee.calculator';
+import { assertPaymentsLive } from '../payments/transactions.service';
+
+const assertPaymentsLiveMock = assertPaymentsLive as unknown as jest.Mock;
 
 function make() {
   // The inner interactive-transaction client used by the sweep + release.
@@ -47,6 +63,10 @@ function make() {
     swapFundingReady: jest.fn().mockResolvedValue(undefined),
     swapLocked: jest.fn().mockResolvedValue(undefined),
     swapFundingCancelled: jest.fn().mockResolvedValue(undefined),
+    // Fire-and-forget (void notifySwap*) — the S5 release/dispute paths call
+    // these; without them the notify helper logs a noisy "not a function".
+    swapCompleted: jest.fn().mockResolvedValue(undefined),
+    swapDisputed: jest.fn().mockResolvedValue(undefined),
   };
   const service = new SwapFundingService(
     prisma as never,
@@ -205,8 +225,23 @@ describe('SwapFundingService.sweepExpiredFunding', () => {
 });
 
 describe('SwapFundingService.ensureFundingSetUp — proof-of-possession gate', () => {
+  // Simulate the card paygate being live for one ensureFundingSetUp() call
+  // (it invokes assertPaymentsLive exactly once, so the -Once auto-reverts to
+  // the real, throwing default afterwards — no cross-test pollution).
+  const withPaymentsLive = () => assertPaymentsLiveMock.mockImplementationOnce(() => {});
+
+  it('blocks the whole chokepoint with a coming-soon 503 while the card paygate is off', async () => {
+    const { service, prisma } = make();
+    // Default (real) assertPaymentsLive throws because PAYMENTS_LIVE is unset.
+    await expect(service.ensureFundingSetUp('S1')).rejects.toThrow(/launching soon/i);
+    // Gate is FIRST: no proof query, no funding claim, no EFT ref ever issued.
+    expect(prisma.transaction.findMany).not.toHaveBeenCalled();
+    expect(prisma.swap.updateMany).not.toHaveBeenCalled();
+  });
+
   it('refuses to set up funding until BOTH legs are proof-APPROVED (chokepoint — covers /funding/retry)', async () => {
     const { service, prisma } = make();
+    withPaymentsLive();
     prisma.transaction.findMany.mockResolvedValueOnce([
       { swapProofStatus: 'APPROVED' },
       { swapProofStatus: 'PENDING_REVIEW' },
@@ -218,6 +253,7 @@ describe('SwapFundingService.ensureFundingSetUp — proof-of-possession gate', (
 
   it('proceeds past the proof gate once both legs are APPROVED', async () => {
     const { service, prisma } = make();
+    withPaymentsLive();
     prisma.transaction.findMany.mockResolvedValueOnce([
       { swapProofStatus: 'APPROVED' },
       { swapProofStatus: 'APPROVED' },

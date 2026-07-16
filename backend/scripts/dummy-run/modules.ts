@@ -3,7 +3,16 @@
  * end via the REAL services, asserting state after each transition and money
  * conservation at the end. Failures are recorded (non-fatal) by the harness.
  */
-import { Ctx, Actor, makeListing, DELIVERY_ADDRESS } from './seed';
+import {
+  Ctx,
+  Actor,
+  makeListing,
+  DELIVERY_ADDRESS,
+  seedSupplier,
+  capturedTcgShipments,
+  DUMMY_SUPPLIER_ID,
+  DUMMY_SUPPLIER_WAREHOUSE,
+} from './seed';
 import { check, checkAsync, assert, eq, Reporter } from './harness';
 import {
   svc,
@@ -155,10 +164,13 @@ export async function moduleBuyNow(ctx: Ctx) {
     { listingId: listingA.id, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
     'http://localhost',
   );
-  check(rep, 'PUDO: checkout created a manual-EFT transaction', () => {
+  // Post-EFT-strip: create() now returns the Stitch payload
+  // { transactionId, paymentId, redirectUrl, provider:'stitch', breakdown }
+  // (transactions.service.ts:804-813) — the old manual-EFT shape
+  // ({ manual:true, orderReference }) is retired.
+  check(rep, 'PUDO: checkout created a Stitch transaction', () => {
     assert(createdA.transactionId, 'no transactionId');
-    assert(createdA.manual === true, 'not manual mode');
-    assert(createdA.orderReference, 'no order reference');
+    eq(createdA.provider, 'stitch', 'provider');
   });
   // cross-check the fee breakdown the service persisted against FeeCalculator
   const rowA0 = await tx(ctx, createdA.transactionId);
@@ -729,9 +741,18 @@ export async function moduleFeatured(ctx: Ctx) {
     eq(slotRow.status, 'BIND_WINDOW', 'slot.status');
   });
 
-  const bindRes: any = await featured.bindListingToSlot(seller.clerkId, slot.id, listing.id);
-  check(rep, 'FEATURED: bind on manual rail → awaiting payment (bid WON)', () =>
-    assert(bindRes.awaitingPayment === true, 'expected awaitingPayment'),
+  // Post-EFT-strip: the manual-EFT slot-fee pay-in is retired. An unpaid
+  // winner binding now lands on the shared "card payments launching soon"
+  // gate (featured.service.ts:552-576) — bindListingToSlot THROWS instead of
+  // returning { awaitingPayment }. Assert the coming-soon refusal.
+  let bindThrew = false;
+  try {
+    await featured.bindListingToSlot(seller.clerkId, slot.id, listing.id);
+  } catch {
+    bindThrew = true;
+  }
+  check(rep, 'FEATURED: bind on manual rail → refused (card payments launching soon)', () =>
+    assert(bindThrew, 'expected bindListingToSlot to throw the coming-soon gate'),
   );
 
   const payRes: any = await featured.confirmSlotPayment(auctionClosed.winningBidId);
@@ -973,17 +994,26 @@ async function makeDeal(
     initialStock: number;
     perCustomerCap: number;
     categoryId?: string;
+    supplierId?: string;
   },
 ): Promise<{ dealId: string; listingId: string }> {
   const deals = svc(ctx, DealsService);
   const admin = await P(ctx).adminUser.findFirst();
   assert(admin, 'no seeded AdminUser for the dummy run');
+  // DD-F — Daily Deals are now The-Courier-Guy-only (the spine's assertTcgOnly),
+  // and a deal collects JIT stock from a SUPPLIER warehouse: the checkout TCG
+  // quote resolves its ORIGIN from the linked supplier (dealCollectionOrigin),
+  // so EVERY deal must link a supplier with a complete warehouse address or the
+  // quote throws. Ensure the seeded supplier exists (idempotent) and link it by
+  // default; a caller may override with its own supplierId.
+  await seedSupplier(ctx.prisma);
   const created: any = await deals.create(admin.id, {
     title: 'Dummy Daily Deal',
     categoryId: opts.categoryId ?? ctx.cats.normal,
     description: 'Auto-seeded Daily Deal for the dummy run.',
     province: 'GAUTENG',
-    shippingMethods: ['PUDO', 'TCG'],
+    shippingMethods: ['TCG'],
+    supplierId: opts.supplierId ?? DUMMY_SUPPLIER_ID,
     dealPriceCents: opts.dealPriceCents,
     wasPriceCents: opts.wasPriceCents,
     costPriceCents: opts.costPriceCents,
@@ -1023,7 +1053,7 @@ export async function moduleDailyDeals(ctx: Ctx) {
 
   const created1: any = await T.create(
     buyer.clerkId,
-    { listingId: d1.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
+    { listingId: d1.listingId, shippingMethod: 'TCG', deliveryAddress: DELIVERY_ADDRESS } as any,
     'http://localhost',
   );
   const row1a = await tx(ctx, created1.transactionId);
@@ -1083,7 +1113,7 @@ export async function moduleDailyDeals(ctx: Ctx) {
   });
   await T.create(
     buyer.clerkId,
-    { listingId: d2.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
+    { listingId: d2.listingId, shippingMethod: 'TCG', deliveryAddress: DELIVERY_ADDRESS } as any,
     'http://localhost',
   );
   const cap = await safeStep(rep, 'per-customer cap: 2nd purchase over the cap is rejected', async () => {
@@ -1091,7 +1121,7 @@ export async function moduleDailyDeals(ctx: Ctx) {
     try {
       await T.create(
         buyer.clerkId,
-        { listingId: d2.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
+        { listingId: d2.listingId, shippingMethod: 'TCG', deliveryAddress: DELIVERY_ADDRESS } as any,
         'http://localhost',
       );
     } catch {
@@ -1111,7 +1141,7 @@ export async function moduleDailyDeals(ctx: Ctx) {
   });
   const created3: any = await T.create(
     buyer.clerkId,
-    { listingId: d3.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
+    { listingId: d3.listingId, shippingMethod: 'TCG', deliveryAddress: DELIVERY_ADDRESS } as any,
     'http://localhost',
   );
   await simulatePaid(ctx, created3.transactionId);
@@ -1149,7 +1179,7 @@ export async function moduleDailyDeals(ctx: Ctx) {
   });
   const created4: any = await T.create(
     buyer.clerkId,
-    { listingId: d4.listingId, shippingMethod: 'PUDO', pudoPickupLockerId: 'L-TEST-001' } as any,
+    { listingId: d4.listingId, shippingMethod: 'TCG', deliveryAddress: DELIVERY_ADDRESS } as any,
     'http://localhost',
   );
   await simulatePaid(ctx, created4.transactionId);
@@ -1178,6 +1208,129 @@ export async function moduleDailyDeals(ctx: Ctx) {
     ggRevenue: 0,
     carrier: 0,
     refunded: parent4.buyerTotal,
+  });
+
+  // ── (5) DD-F — JIT supplier fulfilment (sell first, collect after) ───────
+  // A supplier-linked deal is "sell-first / buy-after": GG holds NO stock at
+  // sale time, so the courier collection is DEFERRED off the auto-accept and
+  // fired later by the operator's "Stock ready" tap. This drives that whole
+  // spine end to end and asserts, at each hop:
+  //   (a) buying + auto-accept books NO collection yet (deferred);
+  //   (b) ENDING the deal raises a DealPurchaseOrder for exactly the units sold
+  //       — DRAFT with no Zoho id, because Books is disabled in the dummy run;
+  //   (c) markStockReadyAndBook books The Courier Guy to collect FROM THE
+  //       SUPPLIER WAREHOUSE (its distinct Cape Town/8001 origin proves the
+  //       origin came from the supplier, not the buyer or a default pickup);
+  //   (d) money still conserves on the house basis (no seller cut).
+  // Each assertion is its own check() so a single failure marks the module
+  // PARTIAL rather than crashing the rest of the run.
+  const admin5 = await P(ctx).adminUser.findFirst();
+  assert(admin5, 'no seeded AdminUser for the dummy run');
+  const deals5 = svc(ctx, DealsService);
+  const tcgCaptures = capturedTcgShipments(ctx);
+  const bookedBefore = tcgCaptures.length; // baseline — earlier flows may have booked
+
+  const d5 = await makeDeal(ctx, {
+    dealPriceCents: 150_000,
+    wasPriceCents: 260_000,
+    costPriceCents: 90_000,
+    initialStock: 5,
+    perCustomerCap: 10,
+    supplierId: DUMMY_SUPPLIER_ID,
+  });
+  const dealRow5 = await P(ctx).deal.findUnique({ where: { id: d5.dealId } });
+  check(rep, 'JIT: deal linked to the supplier + TCG-only', () => {
+    eq(dealRow5.supplierId, DUMMY_SUPPLIER_ID, 'deal.supplierId');
+  });
+
+  // Buy 2 units in one TCG checkout (JIT collection origin resolves from the
+  // supplier warehouse), then confirm payment → house deal AUTO-ACCEPTS.
+  const created5: any = await T.create(
+    buyer.clerkId,
+    {
+      listingId: d5.listingId,
+      shippingMethod: 'TCG',
+      deliveryAddress: DELIVERY_ADDRESS,
+      quantity: 2,
+    } as any,
+    'http://localhost',
+  );
+  await simulatePaid(ctx, created5.transactionId);
+  const row5accepted = await waitFor(
+    () => tx(ctx, created5.transactionId),
+    (r) => !!r?.acceptedAt,
+    { tries: 60, gap: 50 },
+  );
+
+  // (a) No collection booked at accept — deferred until "Stock ready".
+  check(rep, 'JIT: house deal auto-accepted but NO collection booked at accept (deferred)', () => {
+    assert(row5accepted.acceptedAt, 'auto-accept did not fire');
+    assert(
+      row5accepted.shipmentBookedAt == null,
+      'shipmentBookedAt must be null before stock-ready (booking deferred)',
+    );
+    eq(tcgCaptures.length, bookedBefore, 'no tcg.createShipment fired before stock-ready');
+  });
+
+  // (b) End the deal (operator end path) → raises the supplier PO for units sold.
+  //     Fire-and-forget inside end(), so wait for the row to land.
+  await deals5.end(admin5.id, d5.dealId, 'dummy-run JIT end');
+  const po5 = (await waitFor(
+    () => P(ctx).dealPurchaseOrder.findUnique({ where: { dealId: d5.dealId } }),
+    (po) => !!po,
+    { tries: 60, gap: 50 },
+  )) as {
+    unitsOrdered: number;
+    status: string;
+    zohoPurchaseOrderId: string | null;
+  } | null;
+  check(rep, 'JIT: ended deal raised a DRAFT purchase order for the units sold', () => {
+    assert(po5, 'no DealPurchaseOrder row raised on end');
+    eq(po5.unitsOrdered, 2, 'PO unitsOrdered == units sold');
+    eq(po5.status, 'DRAFT', 'PO status DRAFT (Zoho Books disabled)');
+    assert(
+      po5.zohoPurchaseOrderId == null,
+      'zohoPurchaseOrderId must be null with Books off',
+    );
+  });
+
+  // (c) Stock ready → book TCG collection from the SUPPLIER warehouse.
+  //     markStockReadyAndBook accepts a DRAFT PO (the orchestrator's gate fix),
+  //     so an offline (Books-off) run can still book the collection.
+  await deals5.markStockReadyAndBook(d5.dealId, admin5.id);
+  const row5booked = await tx(ctx, created5.transactionId);
+  const newCaptures = tcgCaptures.slice(bookedBefore);
+  const collection = newCaptures.find(
+    (c) =>
+      c?.from?.city === DUMMY_SUPPLIER_WAREHOUSE.city &&
+      c?.from?.postalCode === DUMMY_SUPPLIER_WAREHOUSE.postalCode,
+  );
+  check(rep, 'JIT: stock-ready booked TCG to collect FROM the supplier warehouse', () => {
+    assert(newCaptures.length >= 1, 'no tcg.createShipment captured after stock-ready');
+    assert(
+      collection,
+      `no booking collecting from the supplier warehouse ` +
+        `(${DUMMY_SUPPLIER_WAREHOUSE.city}/${DUMMY_SUPPLIER_WAREHOUSE.postalCode})`,
+    );
+    assert(row5booked.shipmentBookedAt, 'shipmentBookedAt not stamped after booking');
+  });
+  check(rep, 'JIT: money conserved on the house basis (GG keeps all bar carrier)', () =>
+    assertHouseConserves(row5booked),
+  );
+
+  // Close the JIT sale out so it settles (mirrors §1) and leaves no held funds
+  // lingering for the final held-funds ledger.
+  await T.confirmDispatch(created5.transactionId, house.clerkId, {});
+  await T.confirmDelivery(created5.transactionId, buyer.clerkId);
+  const row5released = await tx(ctx, created5.transactionId);
+  await drainPayouts(ctx);
+  rep.money({
+    label: 'Daily Deal (JIT supplier fulfilment)',
+    buyerPaid: row5released.buyerTotal,
+    sellerPaid: 0,
+    ggRevenue: row5released.buyerTotal - row5released.shippingCost,
+    carrier: row5released.shippingCost,
+    refunded: 0,
   });
 }
 

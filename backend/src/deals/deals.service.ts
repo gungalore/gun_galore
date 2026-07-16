@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   DealStatus,
+  DealPoStatus,
   ListingStatus,
   ShippingMethod,
   PaymentStatus,
@@ -16,6 +17,9 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { AdminAuditService } from '../admin/admin-audit.service';
 import { inventoryEligible } from '../payments/inventory';
+import { SuppliersService } from '../suppliers/suppliers.service';
+import { ShippingService } from '../shipping/shipping.service';
+import { ZohoBooksService } from '../zoho/zoho-books.service';
 import {
   CreateDealDto,
   UpdateDealDto,
@@ -60,6 +64,10 @@ export class DealsService {
     private readonly cloudinary: CloudinaryService,
     private readonly settings: SettingsService,
     private readonly audit: AdminAuditService,
+    // DD-F — JIT supplier fulfilment.
+    private readonly suppliers: SuppliersService,
+    private readonly shipping: ShippingService,
+    private readonly zohoBooks: ZohoBooksService,
   ) {}
 
   // Resolve the seeded house-seller User id (Setting written by
@@ -102,6 +110,18 @@ export class DealsService {
     }
     if (!Number.isInteger(costPriceCents) || costPriceCents < 0) {
       throw new BadRequestException('Cost price must be zero or more.');
+    }
+  }
+
+  // DD-F: deal listings are The-Courier-Guy door-to-door ONLY. Reject any
+  // shipping method that isn't TCG (no Pudo, no collection) — the JIT stock is
+  // collected from the supplier warehouse by TCG.
+  private assertTcgOnly(methods: ShippingMethod[]) {
+    const offenders = methods.filter((m) => m !== ShippingMethod.TCG);
+    if (offenders.length > 0) {
+      throw new BadRequestException(
+        'Daily Deals ship by The Courier Guy (door-to-door) only — no other courier method can be selected.',
+      );
     }
   }
 
@@ -154,10 +174,21 @@ export class DealsService {
     );
     const perCustomerCap = dto.perCustomerCap ?? defaultCap;
 
+    // DD-F: deal listings are The-Courier-Guy door-to-door ONLY (JIT stock is
+    // collected from the supplier warehouse — no Pudo, no collection). Default
+    // to [TCG] and reject any explicitly-supplied non-TCG method.
+    if (dto.shippingMethods && dto.shippingMethods.length > 0) {
+      this.assertTcgOnly(dto.shippingMethods);
+    }
     const shippingMethods =
       dto.shippingMethods && dto.shippingMethods.length > 0
         ? dto.shippingMethods
-        : [ShippingMethod.PUDO, ShippingMethod.TCG];
+        : [ShippingMethod.TCG];
+
+    // DD-F: validate the structured supplier link (exists + active) up front.
+    if (dto.supplierId) {
+      await this.suppliers.requireActive(dto.supplierId);
+    }
 
     // Allocate the human ref BEFORE the transaction (same as
     // ListingsService.create) so the row lands with it populated.
@@ -225,9 +256,14 @@ export class DealsService {
           shipsInDaysMax: dto.shipsInDaysMax ?? 7,
           supplierName: dto.supplierName ?? null,
           supplierRef: dto.supplierRef ?? null,
+          supplierId: dto.supplierId ?? null,
           createdByAdminId: adminId,
         },
-        include: { listing: { include: { images: true } } },
+        include: {
+          listing: { include: { images: true } },
+          supplier: { select: { name: true } },
+          purchaseOrder: true,
+        },
       });
     });
 
@@ -257,13 +293,34 @@ export class DealsService {
       include: { listing: true },
     });
     if (!deal) throw new NotFoundException('Deal not found.');
-    if (
-      deal.status !== DealStatus.DRAFT &&
-      deal.status !== DealStatus.SCHEDULED
-    ) {
-      throw new BadRequestException(
-        'Only draft or scheduled deals can be edited. End or cancel it first.',
+    const editableStatus =
+      deal.status === DealStatus.DRAFT ||
+      deal.status === DealStatus.SCHEDULED;
+    if (!editableStatus) {
+      // DD-F edit-gate carve-out: a supplier-only re-link is allowed on a
+      // post-draft deal (LIVE/EXTENDED/ENDED/SOLD_OUT) up until a purchase
+      // order exists — nothing else may change. This routes through a minimal
+      // update that never rewrites the listing (so it can't reset sold-stock).
+      const changedKeys = Object.keys(dto).filter(
+        (k) => (dto as Record<string, unknown>)[k] !== undefined,
       );
+      const supplierOnly =
+        changedKeys.length > 0 && changedKeys.every((k) => k === 'supplierId');
+      if (!supplierOnly) {
+        throw new BadRequestException(
+          'Only draft or scheduled deals can be edited. End or cancel it first.',
+        );
+      }
+      return this.relinkSupplier(adminId, id, dto.supplierId ?? null);
+    }
+
+    // DD-F: validate the structured supplier link (exists + active) when set.
+    if (dto.supplierId) {
+      await this.suppliers.requireActive(dto.supplierId);
+    }
+    // DD-F: deal listings are TCG door-to-door ONLY — reject non-TCG methods.
+    if (dto.shippingMethods !== undefined) {
+      this.assertTcgOnly(dto.shippingMethods);
     }
 
     // Merge money values (incoming ?? existing) and re-validate.
@@ -364,12 +421,19 @@ export class DealsService {
           ...(dto.supplierRef !== undefined
             ? { supplierRef: dto.supplierRef }
             : {}),
+          ...(dto.supplierId !== undefined
+            ? { supplierId: dto.supplierId || null }
+            : {}),
           ...(dto.dropDate !== undefined
             ? { dropDate: dto.dropDate ? new Date(dto.dropDate) : null }
             : {}),
           initialStock,
         },
-        include: { listing: { include: { images: true } } },
+        include: {
+          listing: { include: { images: true } },
+          supplier: { select: { name: true } },
+          purchaseOrder: true,
+        },
       });
     });
 
@@ -385,6 +449,50 @@ export class DealsService {
     return this.shape(updated);
   }
 
+  // DD-F edit-gate carve-out core: re-link a post-draft deal to a different
+  // supplier (or clear it) WITHOUT touching the listing — so it can never
+  // reset a LIVE deal's sold-stock. Refused once a purchase order exists (the
+  // supplier is then locked into procurement). Audited as its own action.
+  private async relinkSupplier(
+    adminId: string,
+    id: string,
+    rawSupplierId: string | null,
+  ) {
+    // Coerce an empty string ("clear the supplier") to null so we never write a
+    // non-existent "" foreign key.
+    const supplierId = rawSupplierId || null;
+    const po = await this.prisma.dealPurchaseOrder.findUnique({
+      where: { dealId: id },
+      select: { id: true },
+    });
+    if (po) {
+      throw new BadRequestException(
+        'This deal already has a purchase order — the supplier can no longer be changed.',
+      );
+    }
+    if (supplierId) {
+      await this.suppliers.requireActive(supplierId);
+    }
+    const updated = await this.prisma.deal.update({
+      where: { id },
+      data: { supplierId },
+      include: {
+        listing: { include: { images: true } },
+        supplier: { select: { name: true } },
+        purchaseOrder: true,
+      },
+    });
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'DEAL_SUPPLIER_RELINK',
+      resourceType: 'Deal',
+      resourceId: id,
+      newValue: { supplierId },
+      reason: `Re-linked Daily Deal supplier: ${updated.listing.title}`,
+    });
+    return this.shape(updated);
+  }
+
   // ── Pipeline list ─────────────────────────────────────────────────
   async list(status?: string) {
     const statusFilter =
@@ -394,7 +502,11 @@ export class DealsService {
     const deals = await this.prisma.deal.findMany({
       where: statusFilter ? { status: statusFilter } : {},
       orderBy: [{ createdAt: 'desc' }],
-      include: { listing: { include: { images: { orderBy: { order: 'asc' } } } } },
+      include: {
+        listing: { include: { images: { orderBy: { order: 'asc' } } } },
+        supplier: { select: { name: true } },
+        purchaseOrder: true,
+      },
     });
     return deals.map((d) => this.shape(d));
   }
@@ -402,7 +514,11 @@ export class DealsService {
   async findOne(id: string) {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
-      include: { listing: { include: { images: { orderBy: { order: 'asc' } } } } },
+      include: {
+        listing: { include: { images: { orderBy: { order: 'asc' } } } },
+        supplier: { select: { name: true } },
+        purchaseOrder: true,
+      },
     });
     if (!deal) throw new NotFoundException('Deal not found.');
     return this.shape(deal);
@@ -636,6 +752,14 @@ export class DealsService {
   // ── Lifecycle transitions (INERT — status bookkeeping only) ───────
   async schedule(adminId: string, id: string, dto: ScheduleDealDto) {
     const deal = await this.requireStatus(id, [DealStatus.DRAFT]);
+    // DD-F (#4) — a SCHEDULED deal is auto-gone-live by the drop cron, so it
+    // must already have a linked supplier: the checkout TCG quote resolves its
+    // collection ORIGIN from the supplier warehouse, and a supplier-less deal
+    // hard-fails every buyer's shipping quote. Refuse the DRAFT→SCHEDULED
+    // transition without one (drafts may still be saved supplier-less).
+    if (!deal.supplierId) {
+      throw new BadRequestException('Link a supplier before taking a deal live');
+    }
     const startsAt = new Date(dto.startsAt);
     const endsAt = new Date(dto.endsAt);
     if (endsAt <= startsAt) {
@@ -655,6 +779,15 @@ export class DealsService {
       DealStatus.DRAFT,
       DealStatus.SCHEDULED,
     ]);
+    // DD-F (#4) — a deal must have a linked supplier before it can become
+    // buyable: the checkout TCG quote resolves its collection ORIGIN from the
+    // supplier warehouse, so a supplier-less LIVE deal hard-fails every buyer's
+    // shipping quote. Convert that customer-facing 400 into an admin-time
+    // config error here at the go-live gate. Drafts may still be saved without
+    // a supplier — only the go-live/schedule transition is gated.
+    if (!deal.supplierId) {
+      throw new BadRequestException('Link a supplier before taking a deal live');
+    }
     // DD-2 — dealsEnabled is the master "arm the money path" killswitch. A deal
     // only becomes BUYABLE (its Listing flips DRAFT → ACTIVE) once the operator
     // turns Daily Deals ON in Settings, so nothing can be sold before the
@@ -743,10 +876,19 @@ export class DealsService {
       return tx.deal.update({
         where: { id },
         data: { status: DealStatus.ENDED, endedAt: new Date() },
-        include: { listing: { include: { images: true } } },
+        include: {
+          listing: { include: { images: true } },
+          supplier: { select: { name: true } },
+          purchaseOrder: true,
+        },
       });
     });
     await this.recordTransition(adminId, id, deal.status, DealStatus.ENDED, reason);
+    // DD-F: an operator-ended deal raises the supplier purchase order for the
+    // units sold. Fire-and-forget AFTER the end-transaction commits; idempotent
+    // + isEnabled-guarded in the Zoho method (never rethrows). cancel() below
+    // deliberately does NOT trigger — a cancelled deal was pulled, not sold.
+    void this.zohoBooks.createDealPurchaseOrder(id);
     return this.shape(updated);
   }
 
@@ -772,6 +914,163 @@ export class DealsService {
     });
     await this.recordTransition(adminId, id, deal.status, DealStatus.CANCELLED, reason);
     return this.shape(updated);
+  }
+
+  // ─── DD-F — supplier purchase order + stock-ready collection ─────────
+
+  // Admin "Place PO" action (killswitch-ended deals + re-cut needs). Deliberate
+  // manual trigger — AWAITS the Zoho methods (unlike the fire-and-forget
+  // lifecycle triggers) so the admin sees the resulting PO status. Both Zoho
+  // methods are idempotent + isEnabled-guarded and never rethrow, so this is
+  // safe to await even when Zoho Books is disabled. Emailing is a further no-op
+  // unless FLAGS.dealPoEmailEnabled is on.
+  async placePurchaseOrder(adminId: string, id: string) {
+    const deal = await this.prisma.deal.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+    if (!deal) throw new NotFoundException('Deal not found.');
+    if (
+      deal.status !== DealStatus.ENDED &&
+      deal.status !== DealStatus.SOLD_OUT
+    ) {
+      throw new BadRequestException(
+        'A purchase order can only be placed once the deal has ended or sold out.',
+      );
+    }
+    await this.zohoBooks.createDealPurchaseOrder(id);
+    await this.zohoBooks.emailPurchaseOrder(id);
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'DEAL_PO_PLACE',
+      resourceType: 'Deal',
+      resourceId: id,
+      reason: 'Placed the Daily Deal supplier purchase order.',
+    });
+    return this.findOne(id);
+  }
+
+  // Admin "Stock ready" action: the operator confirms the supplier has the
+  // units picked + ready, then we book The Courier Guy to collect from the
+  // supplier warehouse for every paid line of the deal. Requires a purchase
+  // order to already exist (PLACED/EMAILED) — otherwise there is nothing to
+  // collect against. Booking is idempotent + HELD-gated + fail-safe in
+  // ShippingService, so this needs no extra safety plumbing.
+  async markStockReadyAndBook(dealId: string, adminId: string): Promise<void> {
+    const deal = await this.prisma.deal.findUnique({
+      where: { id: dealId },
+      select: { id: true, listingId: true, purchaseOrder: true },
+    });
+    if (!deal) throw new NotFoundException('Deal not found.');
+
+    const po = deal.purchaseOrder;
+    // Require a purchase order to EXIST and not be cancelled. We deliberately
+    // accept DRAFT here (not only PLACED/EMAILED): when Zoho Books is disabled
+    // (e.g. the offline dummy-run) createDealPurchaseOrder still writes the
+    // local PO row but leaves it DRAFT because no /purchaseorders API call is
+    // made. Stock-ready is about "the supplier has the stock" — it must not be
+    // blocked purely because Books is off. Only a missing or CANCELLED PO blocks.
+    if (!po || po.status === DealPoStatus.CANCELLED) {
+      throw new BadRequestException('Place the purchase order first.');
+    }
+
+    // Stamp stock-ready (idempotent — re-running just re-stamps + re-attempts
+    // any still-unbooked collections).
+    await this.prisma.dealPurchaseOrder.update({
+      where: { dealId },
+      data: { stockReadyAt: new Date() },
+    });
+
+    // #3 — book the shared parcel correctly. Find every HELD + accepted +
+    // not-yet-booked line of THIS deal, REGARDLESS of shipsWithId: this deal's
+    // line may be a consolidation SIBLING of another deal's carrier (same
+    // supplier → one waybill), so the old shipsWithId:null query would miss it
+    // entirely and never book the shared parcel.
+    const myLines = await this.prisma.transaction.findMany({
+      where: {
+        listingId: deal.listingId,
+        paymentStatus: PaymentStatus.HELD,
+        acceptedAt: { not: null },
+        shipmentBookedAt: null,
+      },
+      select: { id: true, shipsWithId: true },
+    });
+
+    // Resolve each line to its physical parcel's CARRIER line (a sibling ships
+    // WITH its carrier; a carrier is its own carrier), then dedupe — one booking
+    // per parcel.
+    const carrierIds = Array.from(
+      new Set(myLines.map((l) => l.shipsWithId ?? l.id)),
+    );
+
+    // Book each distinct parcel ONLY once every deal contributing a HELD line to
+    // it is itself stock-ready — so marking EITHER deal in a consolidated parcel
+    // ready eventually books it, but we NEVER collect before every item on the
+    // shared waybill is actually in stock at its supplier. Sequential (not
+    // parallel) so we never fan out concurrent courier-wallet bookings; each
+    // call is individually fail-safe — one bad parcel must not abort the rest.
+    let carriersBooked = 0;
+    let carriersWaiting = 0;
+    for (const carrierId of carrierIds) {
+      // The carrier line + all its HELD siblings = every item in this parcel.
+      const parcelLines = await this.prisma.transaction.findMany({
+        where: {
+          paymentStatus: PaymentStatus.HELD,
+          OR: [{ id: carrierId }, { shipsWithId: carrierId }],
+        },
+        select: {
+          id: true,
+          listing: {
+            select: {
+              deal: {
+                select: { purchaseOrder: { select: { stockReadyAt: true } } },
+              },
+            },
+          },
+        },
+      });
+      // Every contributing DEAL must have its stock ready. A non-deal line (no
+      // deal overlay) imposes no JIT stock gate; a deal with no PO / no
+      // stockReadyAt is not yet ready and holds the whole parcel back.
+      const allReady = parcelLines.every((l) => {
+        const contributingDeal = l.listing?.deal;
+        if (!contributingDeal) return true;
+        return contributingDeal.purchaseOrder?.stockReadyAt != null;
+      });
+      if (!allReady) {
+        carriersWaiting += 1;
+        continue; // books later, when the last contributing deal is readied
+      }
+      try {
+        await this.shipping.bookForTransaction(carrierId); // idempotent, HELD-gated
+        carriersBooked += 1;
+      } catch (err) {
+        this.logger.warn(
+          `stock-ready: booking collection for carrier tx ${carrierId} (deal ${dealId}) failed: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'DEAL_STOCK_READY',
+      resourceType: 'Deal',
+      resourceId: dealId,
+      newValue: { carriersBooked, carriersWaiting },
+      reason: 'Marked deal stock ready — booked supplier collections.',
+    });
+  }
+
+  // DD-F: raise the supplier purchase order for a deal that has just SOLD OUT.
+  // Plumbing seam for TransactionsService.syncDealSoldOut (spine agent) — the
+  // sold-out transition lives in TransactionsService, but the PO trigger is a
+  // deals concern, so it is routed through here rather than injecting
+  // ZohoBooksService into TransactionsService. Fire-and-forget: the Zoho method
+  // is idempotent, isEnabled-guarded and never rethrows. The caller decides
+  // whether to `void` it (fire-and-forget) or await it (tests). Call it ONLY
+  // when the sold-out updateMany count > 0 so the PO is raised exactly once.
+  raisePurchaseOrderForDeal(dealId: string): Promise<void> {
+    return this.zohoBooks.createDealPurchaseOrder(dealId);
   }
 
   // ─── DD-4 — scheduled drop automation (cron-driven) ─────────────────
@@ -832,6 +1131,7 @@ export class DealsService {
       select: {
         id: true,
         listingId: true,
+        supplierId: true,
         wasPriceCents: true,
         endsAt: true,
         listing: {
@@ -893,6 +1193,12 @@ export class DealsService {
         } else {
           await this._endSystem(d.id, d.listingId);
           ended += 1;
+          // DD-F: a deal that reached its window end (no Extra Time) raises the
+          // supplier purchase order for the units sold. Fire-and-forget AFTER
+          // the end-transaction commits; the Zoho method is idempotent + guards
+          // on isEnabled() and never rethrows. NOT fired on the killswitch-end
+          // path above (that ends deals because the programme was turned off).
+          void this.zohoBooks.createDealPurchaseOrder(d.id);
         }
       } catch (err) {
         this.logger.warn(
@@ -909,6 +1215,9 @@ export class DealsService {
       try {
         await this._endSystem(d.id, d.listingId);
         ended += 1;
+        // DD-F: an EXTENDED deal reaching its extra-time end also raises the
+        // supplier PO (same idempotent fire-and-forget as the live-expired path).
+        void this.zohoBooks.createDealPurchaseOrder(d.id);
       } catch (err) {
         this.logger.warn(
           `drop-cron: end of extended deal ${d.id} failed: ${(err as Error).message}`,
@@ -931,8 +1240,17 @@ export class DealsService {
   private async _goLiveSystem(deal: {
     id: string;
     listingId: string;
+    supplierId: string | null;
     listing: { trackInventory: boolean; quantityAvailable: number };
   }): Promise<boolean> {
+    // DD-F (#4) — belt-and-braces: never auto-go-live a supplier-less deal (its
+    // checkout TCG quote would hard-fail on the missing warehouse origin). A
+    // SCHEDULED deal normally already has one (schedule() gates it), but a
+    // supplier could have been cleared after scheduling. Throw so the existing
+    // .catch aborts the drop (logged) rather than making it buyable.
+    if (!deal.supplierId) {
+      throw new BadRequestException('Link a supplier before taking a deal live');
+    }
     const initialStock = deal.listing.trackInventory
       ? deal.listing.quantityAvailable
       : 1;
@@ -1044,6 +1362,9 @@ export class DealsService {
       heroRank: source.heroRank,
       supplierName: source.supplierName ?? undefined,
       supplierRef: source.supplierRef ?? undefined,
+      // DD-F: carry the structured supplier link onto the clone so a
+      // duplicated deal doesn't silently lose its supplier.
+      supplierId: source.supplierId ?? undefined,
     });
 
     await this.audit.record({
@@ -1237,6 +1558,16 @@ export class DealsService {
     shipsInDaysMax: number;
     supplierName: string | null;
     supplierRef: string | null;
+    // DD-F — structured supplier + purchase order (admin-only; supplier/PO
+    // relations are optional because not every fetch includes them).
+    supplierId: string | null;
+    supplier?: { name: string } | null;
+    purchaseOrder?: {
+      status: DealPoStatus;
+      unitsOrdered: number;
+      emailedAt: Date | null;
+      stockReadyAt: Date | null;
+    } | null;
     createdByAdminId: string;
     createdAt: Date;
     updatedAt: Date;
@@ -1322,6 +1653,18 @@ export class DealsService {
       heroRank: deal.heroRank,
       supplierName: deal.supplierName,
       supplierRef: deal.supplierRef,
+      // DD-F — structured supplier + purchase order (admin-only). `supplier`
+      // and `purchaseOrder` are null when the fetch didn't include them.
+      supplierId: deal.supplierId,
+      supplier: deal.supplier ? { name: deal.supplier.name } : null,
+      purchaseOrder: deal.purchaseOrder
+        ? {
+            status: deal.purchaseOrder.status,
+            unitsOrdered: deal.purchaseOrder.unitsOrdered,
+            emailedAt: deal.purchaseOrder.emailedAt,
+            stockReadyAt: deal.purchaseOrder.stockReadyAt,
+          }
+        : null,
       // Schedule
       startsAt: deal.startsAt,
       endsAt: deal.endsAt,

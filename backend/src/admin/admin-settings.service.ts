@@ -115,6 +115,14 @@ const FLAGS: SettingFlag[] = [
     type: 'number',
     default: '0',
   },
+  {
+    key: 'deal_po_email_enabled',
+    label: 'Email deal POs to suppliers',
+    hint: 'When ON, purchase orders are emailed to the supplier from Zoho at deal end. Keep OFF until real suppliers are live.',
+    group: 'Deals',
+    type: 'boolean',
+    default: 'false',
+  },
 ];
 
 @Injectable()

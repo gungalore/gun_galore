@@ -107,6 +107,59 @@ export class ShippingService {
     return ['PUDO', 'TCG'];
   }
 
+  // DD-F4 — collection origin for a Daily Deal (isDealListing) TCG shipment.
+  // A deal listing carries NO pickup* columns: The Courier Guy collects from
+  // the deal's SUPPLIER warehouse. We load the supplier in a SEPARATE query
+  // (supplier data must never ride a public/listing payload — leak-fix rule)
+  // and return it as a TCG business-type address. Throws a clear BadRequest —
+  // mirroring the seller pickup-incomplete failure — when the deal, its
+  // supplier, or a required warehouse field is missing, so a mis-configured
+  // deal fails loudly at quote/book time rather than shipping from nowhere.
+  private async dealCollectionOrigin(
+    listingId: string,
+  ): Promise<TcgResidentialAddress> {
+    const deal = await this.prisma.deal.findUnique({
+      where: { listingId },
+      select: {
+        supplier: {
+          select: {
+            name: true,
+            warehouseStreet: true,
+            warehouseSuburb: true,
+            warehouseCity: true,
+            warehouseProvince: true,
+            warehousePostalCode: true,
+            warehouseLat: true,
+            warehouseLng: true,
+          },
+        },
+      },
+    });
+    const s = deal?.supplier;
+    if (
+      !s ||
+      !s.warehouseStreet ||
+      !s.warehouseCity ||
+      !s.warehousePostalCode ||
+      !s.warehouseProvince
+    ) {
+      throw new BadRequestException(
+        'This deal has no complete supplier collection address yet.',
+      );
+    }
+    return {
+      streetAddress: s.warehouseStreet,
+      suburb: s.warehouseSuburb ?? '',
+      city: s.warehouseCity,
+      postalCode: s.warehousePostalCode,
+      province: PROVINCE_LONG[s.warehouseProvince],
+      lat: s.warehouseLat ?? undefined,
+      lng: s.warehouseLng ?? undefined,
+      type: 'business',
+      company: s.name,
+    };
+  }
+
   /**
    * Live rate quote for a listing. Resolves seller-side address /
    * locker from the listing row, then asks Pudo for an L2L or D2D
@@ -181,15 +234,33 @@ export class ShippingService {
     }
 
     if (body.shippingMethod === 'TCG') {
-      if (
-        !listing.pickupStreet ||
-        !listing.pickupCity ||
-        listing.pickupLat == null ||
-        listing.pickupLng == null
-      ) {
-        throw new BadRequestException(
-          'Seller hasn\'t provided a collection address yet.',
-        );
+      // DD-F4 — a Daily Deal listing has NO pickup* columns; the courier
+      // collects from the deal's SUPPLIER warehouse. Resolve the origin from
+      // the supplier for deals; ordinary listings keep the seller's pickup
+      // address (byte-identical).
+      let from: TcgResidentialAddress;
+      if (listing.isDealListing) {
+        from = await this.dealCollectionOrigin(listing.id);
+      } else {
+        if (
+          !listing.pickupStreet ||
+          !listing.pickupCity ||
+          listing.pickupLat == null ||
+          listing.pickupLng == null
+        ) {
+          throw new BadRequestException(
+            'Seller hasn\'t provided a collection address yet.',
+          );
+        }
+        from = {
+          streetAddress: listing.pickupStreet,
+          suburb: listing.pickupSuburb ?? '',
+          city: listing.pickupCity,
+          postalCode: listing.pickupPostalCode ?? '',
+          province: PROVINCE_LONG[listing.province],
+          lat: listing.pickupLat,
+          lng: listing.pickupLng,
+        };
       }
       if (!body.deliveryAddress) {
         throw new BadRequestException('Provide a delivery address first.');
@@ -200,15 +271,6 @@ export class ShippingService {
       // rates (~R200 minimum); TCG's retail API quotes ~R124 for the
       // same parcel because their flat-rate Economy tier isn't
       // exposed via Pudo. See tcg.service.ts.
-      const from: TcgResidentialAddress = {
-        streetAddress: listing.pickupStreet,
-        suburb: listing.pickupSuburb ?? '',
-        city: listing.pickupCity,
-        postalCode: listing.pickupPostalCode ?? '',
-        province: PROVINCE_LONG[listing.province],
-        lat: listing.pickupLat,
-        lng: listing.pickupLng,
-      };
       const to: TcgResidentialAddress = {
         streetAddress: body.deliveryAddress.streetAddress,
         suburb: body.deliveryAddress.suburb,
@@ -308,26 +370,39 @@ export class ShippingService {
     }
 
     // TCG door-to-door. Pickup is the (shared) seller's address — take it off
-    // the first listing (same seller, so same pickup).
+    // the first listing (same seller, so same pickup). DD-F4 — a consolidated
+    // DEAL group is same-supplier (checkout keys consolidation by supplierId
+    // for deals), so its origin is that supplier's warehouse, not a seller
+    // pickup address. Ordinary groups are byte-identical.
     const pickup = listings[0];
-    if (
-      !pickup?.pickupStreet ||
-      !pickup.pickupCity ||
-      pickup.pickupLat == null ||
-      pickup.pickupLng == null ||
-      !dest.deliveryAddress
-    ) {
-      return null;
+    let from: TcgResidentialAddress;
+    if (pickup?.isDealListing) {
+      // incomplete supplier address → null so the caller falls back to per-line
+      const dealFrom = await this.dealCollectionOrigin(pickup.id).catch(
+        () => null,
+      );
+      if (!dealFrom) return null;
+      from = dealFrom;
+    } else {
+      if (
+        !pickup?.pickupStreet ||
+        !pickup.pickupCity ||
+        pickup.pickupLat == null ||
+        pickup.pickupLng == null
+      ) {
+        return null;
+      }
+      from = {
+        streetAddress: pickup.pickupStreet,
+        suburb: pickup.pickupSuburb ?? '',
+        city: pickup.pickupCity,
+        postalCode: pickup.pickupPostalCode ?? '',
+        province: PROVINCE_LONG[pickup.province],
+        lat: pickup.pickupLat,
+        lng: pickup.pickupLng,
+      };
     }
-    const from: TcgResidentialAddress = {
-      streetAddress: pickup.pickupStreet,
-      suburb: pickup.pickupSuburb ?? '',
-      city: pickup.pickupCity,
-      postalCode: pickup.pickupPostalCode ?? '',
-      province: PROVINCE_LONG[pickup.province],
-      lat: pickup.pickupLat,
-      lng: pickup.pickupLng,
-    };
+    if (!dest.deliveryAddress) return null;
     const to: TcgResidentialAddress = {
       streetAddress: dest.deliveryAddress.streetAddress,
       suburb: dest.deliveryAddress.suburb,
@@ -446,6 +521,53 @@ export class ShippingService {
         await this.releaseBookingClaim(transactionId);
         return null;
       }
+
+      // DD-F4 — a Daily Deal collects from the SUPPLIER's warehouse (the house
+      // seller has no address/phone), so load the deal's supplier once up
+      // front. SEPARATE query — supplier data never rides a listing payload.
+      const isDeal = tx.listing.isDealListing === true;
+      let supplier: {
+        name: string;
+        contactPerson: string;
+        email: string;
+        phone: string;
+        warehouseStreet: string;
+        warehouseSuburb: string;
+        warehouseCity: string;
+        warehouseProvince: Province;
+        warehousePostalCode: string;
+        warehouseLat: number | null;
+        warehouseLng: number | null;
+      } | null = null;
+      let dealRef = '';
+      if (isDeal) {
+        const deal = await this.prisma.deal.findUnique({
+          where: { listingId: tx.listingId },
+          select: {
+            id: true,
+            supplierRef: true,
+            supplier: {
+              select: {
+                name: true,
+                contactPerson: true,
+                email: true,
+                phone: true,
+                warehouseStreet: true,
+                warehouseSuburb: true,
+                warehouseCity: true,
+                warehouseProvince: true,
+                warehousePostalCode: true,
+                warehouseLat: true,
+                warehouseLng: true,
+              },
+            },
+          },
+        });
+        supplier = deal?.supplier ?? null;
+        dealRef =
+          deal?.supplierRef ||
+          (deal?.id ? deal.id.slice(-8).toUpperCase() : '');
+      }
       if (!tx.shippingServiceCode) {
         throw new Error(
           `${tx.shippingMethod} order has no service code — the shipping quote may be stale`,
@@ -454,8 +576,16 @@ export class ShippingService {
       // The carrier SMSes the hand-over PIN (Pudo) / collection notice (TCG),
       // so a real mobile for BOTH parties is required. Missing → fail-safe to
       // the manual-dispatch fallback rather than book a contactless shipment
-      // the carrier can't coordinate.
-      if (!tx.seller.phone?.trim()) {
+      // the carrier can't coordinate. DD-F4 — a house deal collects from the
+      // SUPPLIER (the house seller has no phone), so validate the SUPPLIER's
+      // phone for deals; ordinary sales validate the seller's exactly as before.
+      if (isDeal) {
+        if (!supplier?.phone?.trim()) {
+          throw new Error(
+            'supplier has no phone on file — cannot book a deal courier collection',
+          );
+        }
+      } else if (!tx.seller.phone?.trim()) {
         throw new Error('seller has no phone on file — cannot book a courier shipment');
       }
       if (!tx.buyer.phone?.trim()) {
@@ -465,14 +595,24 @@ export class ShippingService {
       // Contacts go to the CARRIER (collection/delivery coordination + the
       // PIN SMS), never exposed to the other party — so real names + phones
       // are correct and required here.
-      const collectionContact: CarrierContact = {
-        name:
-          [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
-          tx.seller.username ||
-          'Seller',
-        email: tx.seller.email ?? undefined,
-        mobile: tx.seller.phone.trim(),
-      };
+      // DD-F4 — for a house deal the collection party is the SUPPLIER (the
+      // courier phones them at the warehouse), not the phantom house seller.
+      const collectionContact: CarrierContact = isDeal
+        ? {
+            name: supplier!.contactPerson || supplier!.name || 'Supplier',
+            email: supplier!.email ?? undefined,
+            mobile: supplier!.phone.trim(),
+          }
+        : {
+            name:
+              [tx.seller.firstName, tx.seller.lastName]
+                .filter(Boolean)
+                .join(' ') ||
+              tx.seller.username ||
+              'Seller',
+            email: tx.seller.email ?? undefined,
+            mobile: tx.seller.phone!.trim(),
+          };
       const deliveryContact: CarrierContact = {
         name:
           [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') ||
@@ -495,13 +635,47 @@ export class ShippingService {
         });
       } else {
         const L = tx.listing;
-        if (
-          !L.pickupStreet ||
-          !L.pickupCity ||
-          L.pickupLat == null ||
-          L.pickupLng == null
-        ) {
-          throw new Error('seller pickup address incomplete');
+        // DD-F4 — deals collect from the supplier warehouse (a business
+        // address); ordinary sales collect from the seller's pickup* columns.
+        let fromAddress: TcgResidentialAddress;
+        if (isDeal) {
+          if (
+            !supplier ||
+            !supplier.warehouseStreet ||
+            !supplier.warehouseCity ||
+            !supplier.warehousePostalCode
+          ) {
+            throw new Error('supplier warehouse address incomplete');
+          }
+          fromAddress = {
+            streetAddress: supplier.warehouseStreet,
+            suburb: supplier.warehouseSuburb ?? '',
+            city: supplier.warehouseCity,
+            postalCode: supplier.warehousePostalCode,
+            province: PROVINCE_LONG[supplier.warehouseProvince],
+            lat: supplier.warehouseLat ?? undefined,
+            lng: supplier.warehouseLng ?? undefined,
+            type: 'business',
+            company: supplier.name,
+          };
+        } else {
+          if (
+            !L.pickupStreet ||
+            !L.pickupCity ||
+            L.pickupLat == null ||
+            L.pickupLng == null
+          ) {
+            throw new Error('seller pickup address incomplete');
+          }
+          fromAddress = {
+            streetAddress: L.pickupStreet,
+            suburb: L.pickupSuburb ?? '',
+            city: L.pickupCity,
+            postalCode: L.pickupPostalCode ?? '',
+            province: PROVINCE_LONG[L.province],
+            lat: L.pickupLat,
+            lng: L.pickupLng,
+          };
         }
         const d = tx.deliveryAddress as {
           streetAddress: string;
@@ -542,15 +716,7 @@ export class ShippingService {
         }
         result = await this.tcg.createShipment({
           serviceCode: tx.shippingServiceCode,
-          from: {
-            streetAddress: L.pickupStreet,
-            suburb: L.pickupSuburb ?? '',
-            city: L.pickupCity,
-            postalCode: L.pickupPostalCode ?? '',
-            province: PROVINCE_LONG[L.province],
-            lat: L.pickupLat,
-            lng: L.pickupLng,
-          },
+          from: fromAddress,
           to: {
             streetAddress: d.streetAddress,
             suburb: d.suburb,
@@ -565,10 +731,22 @@ export class ShippingService {
             lengthCm,
             widthCm,
             heightCm,
+            // DD-F4 — give a Daily Deal collection a supplier-recognisable
+            // parcel label + reference so the warehouse knows what TCG is
+            // collecting; ordinary sales keep TCG's default description.
+            description: isDeal
+              ? `Gun Galore Daily Deal collection${dealRef ? ` (ref ${dealRef})` : ''}: ${L.title}`.slice(
+                  0,
+                  120,
+                )
+              : undefined,
           },
           declaredValueCents,
           collectionContact,
           deliveryContact,
+          specialInstructions: isDeal
+            ? `Collection for Gun Galore Daily Deal${dealRef ? ` — ref ${dealRef}` : ''}.`
+            : undefined,
         });
       }
 
@@ -594,17 +772,28 @@ export class ShippingService {
         [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
         tx.seller.username ||
         'Seller';
+      // DD-F3 — for a house deal this SMS/email goes to the operator (the house
+      // seller row's phone is set to the operator's number at deploy), and the
+      // copy should be collection-voiced ("Collection booked from <supplier> —
+      // The Courier Guy will collect. Waybill <ref>.") rather than the
+      // seller-voiced "Drop your parcel…". The copy literal lives in
+      // notifications.service.ts, which is OUTSIDE this wave's file set, so we
+      // forward the supplier name here (non-fresh payload → no excess-property
+      // error); Wave 3 branches shipmentBooked's copy on it. Until then the
+      // generic TCG "The Courier Guy will collect" copy is used.
+      const bookedPayload = {
+        sellerEmail: tx.seller.email,
+        sellerName,
+        sellerPhone: tx.seller.phone,
+        listingTitle: tx.listing.title,
+        transactionId,
+        carrier: result.carrier,
+        trackingReference: result.trackingReference,
+        dropoffPin: result.pin ?? null,
+        ...(isDeal && supplier ? { dealSupplierName: supplier.name } : {}),
+      };
       void this.notifications
-        .shipmentBooked({
-          sellerEmail: tx.seller.email,
-          sellerName,
-          sellerPhone: tx.seller.phone,
-          listingTitle: tx.listing.title,
-          transactionId,
-          carrier: result.carrier,
-          trackingReference: result.trackingReference,
-          dropoffPin: result.pin ?? null,
-        })
+        .shipmentBooked(bookedPayload)
         .catch((e) => {
           this.logger.warn(
             `shipmentBooked notify failed for ${transactionId}: ${(e as Error).message}`,

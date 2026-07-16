@@ -60,6 +60,10 @@ export class DispatchSlaService {
         dispatchNudgedAt: null,
         paymentStatus: 'HELD',
         shippingMethod: { in: ['PUDO', 'TCG'] },
+        // DD-F — deals defer their booking to "Stock ready"; nudging the house
+        // seller (the operator) to "dispatch within 5 days" is both wrong and
+        // confusing. Excluded here for the same reason as the auto-refund cron.
+        listing: { isDealListing: false },
       },
       include: {
         listing: true,
@@ -126,6 +130,15 @@ export class DispatchSlaService {
         rejectedAt: null,
         paymentStatus: 'HELD',
         shippingMethod: { in: ['PUDO', 'TCG'] },
+        // DD-F — a house deal (Listing.isDealListing) is sell-first / buy-after:
+        // its courier booking is DEFERRED to the operator's "Stock ready" tap, so
+        // it legitimately sits accepted+HELD+undispatched during its whole
+        // ships-in window (default 3–7d) — well past this cron's accept+5d
+        // deadline. Auto-refunding here would refund a paid, in-flight buyer
+        // (and orphan the supplier PO already cut at sold-out). Deal fulfilment
+        // is governed by its own lifecycle (stock-ready booking + the "Supplier
+        // collection overdue" attention card), not this generic dispatch clock.
+        listing: { isDealListing: false },
       },
       include: { listing: true, seller: true, buyer: true },
       take: 50,

@@ -51,8 +51,20 @@ export interface Deal {
   shipsInDaysMin: number;
   shipsInDaysMax: number;
   heroRank: number;
+  // Legacy free-text supplier fields (kept for display / back-compat); the
+  // builder now assigns a structured Supplier via supplierId instead.
   supplierName: string | null;
   supplierRef: string | null;
+  supplierId: string | null;
+  supplier?: { name: string } | null;
+  // JIT-fulfilment purchase order (DD-F). Present once a PO has been cut for
+  // the units sold; admin-only surface (never on publicShape).
+  purchaseOrder?: {
+    status: string;
+    unitsOrdered: number;
+    emailedAt: string | null;
+    stockReadyAt: string | null;
+  } | null;
   startsAt: string | null;
   endsAt: string | null;
   extendedUntil: string | null;
@@ -62,6 +74,11 @@ export interface CategoryOption {
   id: string;
   name: string;
   licensed: boolean;
+}
+export interface SupplierOption {
+  id: string;
+  name: string;
+  active: boolean;
 }
 
 const CONDITIONS = ['NEW', 'LIKE_NEW', 'GOOD', 'FAIR', 'POOR'];
@@ -76,11 +93,9 @@ const PROVINCES = [
   'NORTH_WEST',
   'WESTERN_CAPE',
 ];
-const SHIPPING = [
-  { value: 'PUDO', label: 'Pudo locker-to-locker' },
-  { value: 'TCG', label: 'The Courier Guy door-to-door' },
-  { value: 'COLLECTION', label: 'Collection in person' },
-];
+// Daily Deals are drop-shipped from a supplier warehouse and collected by The
+// Courier Guy only — no Pudo, no in-person collection. Shipping is forced to
+// TCG in the builder (and enforced server-side).
 
 const TABS: { key: string; label: string; statuses: string[] }[] = [
   { key: 'ALL', label: 'All', statuses: [] },
@@ -110,10 +125,12 @@ const rands = (cents: number) =>
 export default function DealsTable({
   initialDeals,
   categories,
+  suppliers,
   onChanged,
 }: {
   initialDeals: Deal[];
   categories: CategoryOption[];
+  suppliers: SupplierOption[];
   onChanged: () => void;
 }) {
   const [tab, setTab] = useState('ALL');
@@ -194,6 +211,7 @@ export default function DealsTable({
         <DealFormModal
           mode="create"
           categories={categories}
+          suppliers={suppliers}
           onClose={() => setCreateOpen(false)}
           onDone={() => {
             setCreateOpen(false);
@@ -206,6 +224,7 @@ export default function DealsTable({
           mode="edit"
           deal={editing}
           categories={categories}
+          suppliers={suppliers}
           onClose={() => setEditing(null)}
           onDone={() => {
             setEditing(null);
@@ -339,7 +358,10 @@ function DealRow({
                 {deal.dropDate && ` · drop ${new Date(deal.dropDate).toLocaleDateString('en-ZA')}`}
               </p>
             </div>
-            <AdminStatusChip status={deal.status} />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <AdminStatusChip status={deal.status} />
+              {deal.purchaseOrder && <PoChip status={deal.purchaseOrder.status} />}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -358,6 +380,25 @@ function DealRow({
               {deal.soldUnits}/{deal.initialStock} sold
             </span>
           </div>
+
+          {/* supplier + purchase-order fulfilment line (admin-only) */}
+          {(deal.supplier?.name || deal.purchaseOrder) && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              {deal.supplier?.name && <span>supplier {deal.supplier.name}</span>}
+              {deal.purchaseOrder && (
+                <span>
+                  PO {deal.purchaseOrder.unitsOrdered} unit{deal.purchaseOrder.unitsOrdered === 1 ? '' : 's'} ·{' '}
+                  {deal.purchaseOrder.status}
+                </span>
+              )}
+              {deal.purchaseOrder?.emailedAt && (
+                <span>emailed {new Date(deal.purchaseOrder.emailedAt).toLocaleDateString('en-ZA')}</span>
+              )}
+              {deal.purchaseOrder?.stockReadyAt && (
+                <span>stock ready {new Date(deal.purchaseOrder.stockReadyAt).toLocaleDateString('en-ZA')}</span>
+              )}
+            </div>
+          )}
 
           {/* sell-through bar */}
           <div className="mt-2" style={{ height: 4, background: 'var(--bg-inset)', borderRadius: 2, overflow: 'hidden' }}>
@@ -384,6 +425,30 @@ function DealRow({
             {(deal.status === 'LIVE' || deal.status === 'EXTENDED') && (
               <ActionBtn label="End now" onClick={() => action('end', 'End this deal now?')} />
             )}
+            {(deal.status === 'ENDED' || deal.status === 'SOLD_OUT') && !deal.purchaseOrder && (
+              <ActionBtn
+                label="Place PO"
+                onClick={() =>
+                  action(
+                    'place-po',
+                    'Cut a purchase order to the supplier for the units sold? Nothing is emailed until PO emailing is switched on.',
+                  )
+                }
+              />
+            )}
+            {deal.purchaseOrder &&
+              (deal.purchaseOrder.status === 'PLACED' || deal.purchaseOrder.status === 'EMAILED') &&
+              !deal.purchaseOrder.stockReadyAt && (
+                <ActionBtn
+                  label="Stock ready"
+                  onClick={() =>
+                    action(
+                      'stock-ready',
+                      "Mark the supplier's stock ready and book The Courier Guy to collect for every paid order?",
+                    )
+                  }
+                />
+              )}
             <ActionBtn label="Duplicate" onClick={() => action('duplicate', 'Duplicate this deal into a new draft?')} />
             {deal.status !== 'CANCELLED' && (
               <ActionBtn label="Cancel" danger onClick={() => action('cancel', 'Cancel this deal?')} />
@@ -423,17 +488,40 @@ function ActionBtn({
   );
 }
 
+// Purchase-order status pill, shown beside the deal status chip. Distinct
+// colour ramp from the deal lifecycle so the two chips never read as one:
+// DRAFT muted, PLACED blue, EMAILED green, CANCELLED red.
+const PO_COLOR: Record<string, string> = {
+  DRAFT: 'var(--text-tertiary)',
+  PLACED: '#3b82f6',
+  EMAILED: '#22c55e',
+  CANCELLED: 'var(--red)',
+};
+function PoChip({ status }: { status: string }) {
+  const c = PO_COLOR[status] ?? 'var(--text-tertiary)';
+  return (
+    <span
+      className="text-xs px-2 py-0.5 rounded-full inline-block whitespace-nowrap"
+      style={{ color: c, background: `${c}18` }}
+    >
+      PO {status.replace(/_/g, ' ')}
+    </span>
+  );
+}
+
 // ── Deal builder (create / edit) ───────────────────────────────────────
 function DealFormModal({
   mode,
   deal,
   categories,
+  suppliers,
   onClose,
   onDone,
 }: {
   mode: 'create' | 'edit';
   deal?: Deal;
   categories: CategoryOption[];
+  suppliers: SupplierOption[];
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -454,25 +542,22 @@ function DealFormModal({
     shipsInDaysMin: deal ? String(deal.shipsInDaysMin) : '3',
     shipsInDaysMax: deal ? String(deal.shipsInDaysMax) : '7',
     heroRank: deal ? String(deal.heroRank) : '0',
-    supplierName: deal?.supplierName ?? '',
-    supplierRef: deal?.supplierRef ?? '',
+    supplierId: deal?.supplierId ?? '',
     dropDate: deal?.dropDate ? deal.dropDate.slice(0, 10) : '',
     weightGrams: deal ? String(deal.weightGrams ?? 1000) : '1000',
     lengthCm: deal ? String(deal.lengthCm ?? 20) : '20',
     widthCm: deal ? String(deal.widthCm ?? 20) : '20',
     heightCm: deal ? String(deal.heightCm ?? 15) : '15',
   });
-  const [shipping, setShipping] = useState<string[]>(
-    deal?.shippingMethods?.length ? deal.shippingMethods : ['PUDO', 'TCG'],
-  );
+  // Deals are TCG-only (drop-shipped from the supplier warehouse, collected by
+  // The Courier Guy). Shipping is locked, not operator-editable, and enforced
+  // server-side too.
+  const shipping = ['TCG'];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function set(key: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
-  }
-  function toggleShip(v: string) {
-    setShipping((s) => (s.includes(v) ? s.filter((x) => x !== v) : [...s, v]));
   }
 
   const dealCents = Math.round(parseFloat(form.dealPriceRand || '0') * 100);
@@ -509,8 +594,7 @@ function DealFormModal({
         shipsInDaysMin: parseInt(form.shipsInDaysMin, 10),
         shipsInDaysMax: parseInt(form.shipsInDaysMax, 10),
         heroRank: parseInt(form.heroRank, 10) || 0,
-        supplierName: form.supplierName.trim() || undefined,
-        supplierRef: form.supplierRef.trim() || undefined,
+        supplierId: form.supplierId || undefined,
         dropDate: form.dropDate ? new Date(form.dropDate).toISOString() : undefined,
       };
       const url = mode === 'create' ? '/admin/deals' : `/admin/deals/${deal!.id}`;
@@ -597,19 +681,15 @@ function DealFormModal({
             <input value={form.calibre} onChange={(e) => set('calibre', e.target.value)} style={inputStyle} />
           </Field>
         </div>
-        <Field label="Shipping methods">
+        <Field label="Shipping method">
           <div className="flex flex-col gap-1.5 mt-1">
-            {SHIPPING.map((s) => (
-              <label key={s.value} className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                <input
-                  type="checkbox"
-                  checked={shipping.includes(s.value)}
-                  onChange={() => toggleShip(s.value)}
-                  style={{ accentColor: 'var(--red)' }}
-                />
-                <span>{s.label}</span>
-              </label>
-            ))}
+            <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+              <input type="checkbox" checked disabled style={{ accentColor: 'var(--red)' }} />
+              <span>The Courier Guy door-to-door</span>
+            </label>
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Daily Deals ship via The Courier Guy only — collected from the supplier&apos;s warehouse.
+            </p>
           </div>
         </Field>
         <Field label="Parcel size (for courier quotes)">
@@ -766,14 +846,29 @@ function DealFormModal({
             <input type="date" value={form.dropDate} onChange={(e) => set('dropDate', e.target.value)} style={inputStyle} />
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Supplier name (internal)">
-            <input value={form.supplierName} onChange={(e) => set('supplierName', e.target.value)} style={inputStyle} />
-          </Field>
-          <Field label="Supplier ref (internal)">
-            <input value={form.supplierRef} onChange={(e) => set('supplierRef', e.target.value)} style={inputStyle} />
-          </Field>
-        </div>
+        <SectionLabel>Supplier &amp; fulfilment</SectionLabel>
+        <Field label="Supplier (drop-ship warehouse — a purchase order is cut here on sell-out)">
+          <select value={form.supplierId} onChange={(e) => set('supplierId', e.target.value)} style={inputStyle}>
+            <option value="">No supplier assigned</option>
+            {suppliers.map((s) => (
+              <option
+                key={s.id}
+                value={s.id}
+                // Inactive suppliers stay pickable only if this deal is already
+                // pointed at them (so an edit doesn't silently drop the link).
+                disabled={!s.active && s.id !== deal?.supplierId}
+              >
+                {s.name}
+                {!s.active ? ' — inactive' : ''}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {suppliers.length === 0 && (
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            No suppliers yet — add one under Marketplace → Suppliers to enable purchase-order fulfilment.
+          </p>
+        )}
 
         {error && (
           <p className="text-xs" style={{ color: 'var(--red)' }}>

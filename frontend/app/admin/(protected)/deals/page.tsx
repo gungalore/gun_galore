@@ -10,11 +10,12 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminPageHeader } from '@/components/admin/page-header';
-import DealsTable, { Deal, CategoryOption } from './deals-table';
+import DealsTable, { Deal, CategoryOption, SupplierOption } from './deals-table';
 
 export default function DealsPage() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -23,12 +24,27 @@ export default function DealsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [dealsRes, catsRes] = await Promise.all([
+        const [dealsRes, catsRes, suppliersRes] = await Promise.all([
           adminFetch('/admin/deals'),
           adminFetch('/admin/categories'),
+          adminFetch('/admin/suppliers'),
         ]);
         if (cancelled) return;
         if (dealsRes.ok) setDeals(await dealsRes.json());
+        if (suppliersRes.ok) {
+          const raw = await suppliersRes.json();
+          // Tolerate either a plain array or a { rows, count } envelope.
+          const list = (Array.isArray(raw) ? raw : (raw.rows ?? [])) as Array<{
+            id: string;
+            name: string;
+            active: boolean;
+          }>;
+          const options: SupplierOption[] = list
+            .map((s) => ({ id: s.id, name: s.name, active: s.active }))
+            // Active first, then alphabetical, so live suppliers surface first.
+            .sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
+          setSuppliers(options);
+        }
         if (catsRes.ok) {
           const raw = (await catsRes.json()) as Array<{
             id: string;
@@ -96,6 +112,7 @@ export default function DealsPage() {
         <DealsTable
           initialDeals={deals}
           categories={categories}
+          suppliers={suppliers}
           onChanged={() => setReloadKey((k) => k + 1)}
         />
       )}

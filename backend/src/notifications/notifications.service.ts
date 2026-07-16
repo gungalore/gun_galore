@@ -860,15 +860,30 @@ export class NotificationsService {
     // COLLECTION accepts have no dispatch/tracking step — the buyer arranges
     // an in-person pickup and confirms collection to release the payment.
     isCollection?: boolean;
+    // DD-F (deal JIT fulfilment): a house-deal sale has no 5-day seller
+    // dispatch promise — GG ships JIT from the supplier — so the buyer
+    // hears the deal's own ships-in window (X–Y days) instead of "dispatch
+    // within 5 days". Present together only for deal sales; non-deal callers
+    // omit both and keep the exact original copy across every channel.
+    shipsInDaysMin?: number;
+    shipsInDaysMax?: number;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    // Non-null only for deal sales (both forwarded together). Drives the
+    // "ships in X–Y days" copy branch below.
+    const shipsWindow =
+      d.shipsInDaysMin != null && d.shipsInDaysMax != null
+        ? `${d.shipsInDaysMin}–${d.shipsInDaysMax}`
+        : null;
     await this.persistByEmail(d.buyerEmail, {
       category: 'BUYER',
       type: 'sale_accepted',
       title: 'Seller accepted your order',
       body: d.isCollection
         ? `${d.listingTitle} — arrange collection with the seller`
-        : `${d.listingTitle} — dispatch within 5 days`,
+        : shipsWindow
+          ? `${d.listingTitle} — ships in ${shipsWindow} days`
+          : `${d.listingTitle} — dispatch within 5 days`,
       url: `/transactions/${d.transactionId}`,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -885,7 +900,9 @@ export class NotificationsService {
       headline: 'Seller accepted your order',
       body: d.isCollection
         ? `Hi ${b(d.buyerName)}, the seller has accepted your order for ${b(d.listingTitle)}. This is a <strong>collection</strong> item — the seller's contact details are on your order page. Arrange a pickup, and tap <strong>Confirm collection</strong> once you have the item (that releases the seller's payment).`
-        : `Hi ${b(d.buyerName)}, the seller has accepted your order for ${b(d.listingTitle)} and has up to <strong>5 days</strong> to dispatch (by ${b(deadline)}). We'll SMS you the tracking reference as soon as it's on its way.`,
+        : shipsWindow
+          ? `Hi ${b(d.buyerName)}, your order for ${b(d.listingTitle)} is confirmed. It ships in <strong>${shipsWindow} days</strong> — we'll SMS you the tracking reference as soon as it's on its way.`
+          : `Hi ${b(d.buyerName)}, the seller has accepted your order for ${b(d.listingTitle)} and has up to <strong>5 days</strong> to dispatch (by ${b(deadline)}). We'll SMS you the tracking reference as soon as it's on its way.`,
       cta: { label: 'View order', url: txUrl },
       preheader: `Seller accepted — ${d.listingTitle}`,
     });
@@ -894,7 +911,9 @@ export class NotificationsService {
       d.buyerPhone,
       d.isCollection
         ? `Gun Galore: Seller accepted ${truncate(d.listingTitle, 40)}. Collection item — arrange pickup (seller contact is on your order page) and tap Confirm collection.`
-        : `Gun Galore: Seller accepted ${truncate(d.listingTitle, 40)}. Dispatch within 5 days — we'll SMS the tracking ref when it ships.`,
+        : shipsWindow
+          ? `Gun Galore: Order confirmed ${truncate(d.listingTitle, 40)}. Ships in ${shipsWindow} days — we'll SMS the tracking ref when it's on its way.`
+          : `Gun Galore: Seller accepted ${truncate(d.listingTitle, 40)}. Dispatch within 5 days — we'll SMS the tracking ref when it ships.`,
       `sale-accepted-${d.transactionId}`,
     );
   }
@@ -1263,9 +1282,19 @@ export class NotificationsService {
     carrier: 'PUDO' | 'TCG';
     trackingReference: string;
     dropoffPin?: string | null;
+    // DD-F (deal JIT fulfilment): present only for house-deal sales. When
+    // set, the shipment is a courier COLLECTION from the supplier (TCG
+    // door-to-door), not a seller drop-off, so the seller-facing copy is
+    // switched to collection-voiced wording. The recipient is unchanged —
+    // the house-seller phone/email resolves to the operator at deploy.
+    // Non-deal callers omit it and keep the exact original copy.
+    dealSupplierName?: string;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
     const isPudo = d.carrier === 'PUDO';
+    // Truthy only for deal sales; also narrows to `string` inside each
+    // `supplier ? … : …` branch below (no non-null assertions needed).
+    const supplier = d.dealSupplierName;
     const courier = isPudo
       ? 'Pudo (locker-to-locker)'
       : 'The Courier Guy (door-to-door)';
@@ -1276,8 +1305,10 @@ export class NotificationsService {
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
       type: 'shipment_booked',
-      title: 'Ship your sale',
-      body: `${d.listingTitle} — waybill ${d.trackingReference}${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}`,
+      title: supplier ? 'Deal collection booked' : 'Ship your sale',
+      body: supplier
+        ? `Collection booked from ${supplier} — The Courier Guy will collect. Waybill ${d.trackingReference}.`
+        : `${d.listingTitle} — waybill ${d.trackingReference}${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}`,
       url: `/transactions/${d.transactionId}`,
       iconKey: 'dispatch',
       linkedType: 'transaction',
@@ -1294,27 +1325,35 @@ export class NotificationsService {
     }
 
     const html = this.email({
-      status: { tone: 'success', label: 'Ready to ship' },
-      headline: 'Your sale is booked — ship it now',
-      body:
-        `Hi ${b(d.sellerName)}, great news — ${b(d.listingTitle)} is paid and we've booked the courier for you. ${handover}` +
-        `<br><br>Open your sale to <b>print the waybill</b> and tape it to the parcel. ` +
-        `<b>If you can't print it, write the waybill number ${b(d.trackingReference)} clearly on the package</b> so the courier can match it.` +
-        (d.dropoffPin
-          ? `<br><br>Your locker drop-off PIN is ${b(d.dropoffPin)} — you'll need it at the locker screen.`
-          : ''),
+      status: { tone: 'success', label: supplier ? 'Collection booked' : 'Ready to ship' },
+      headline: supplier ? 'Deal collection booked' : 'Your sale is booked — ship it now',
+      body: supplier
+        ? `Hi ${b(d.sellerName)}, a courier collection has been booked from ${b(supplier)} for ${b(d.listingTitle)}. The Courier Guy will collect the parcel — there's nothing to drop off on your side.` +
+          `<br><br>Waybill number ${b(d.trackingReference)}. Open the sale to print the label if the collection needs it.`
+        : `Hi ${b(d.sellerName)}, great news — ${b(d.listingTitle)} is paid and we've booked the courier for you. ${handover}` +
+          `<br><br>Open your sale to <b>print the waybill</b> and tape it to the parcel. ` +
+          `<b>If you can't print it, write the waybill number ${b(d.trackingReference)} clearly on the package</b> so the courier can match it.` +
+          (d.dropoffPin
+            ? `<br><br>Your locker drop-off PIN is ${b(d.dropoffPin)} — you'll need it at the locker screen.`
+            : ''),
       rows,
       cta: { label: 'Print waybill & view details', url: txUrl },
       preheader: `${d.listingTitle} is booked — waybill ${d.trackingReference}`,
     });
-    await this.send(d.sellerEmail, 'Ready to ship — ' + d.listingTitle, html);
+    await this.send(
+      d.sellerEmail,
+      (supplier ? 'Collection booked — ' : 'Ready to ship — ') + d.listingTitle,
+      html,
+    );
 
     const smsHandover = isPudo
       ? `Drop at any Pudo locker${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`
       : 'Courier Guy will collect.';
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
+      supplier
+        ? `Gun Galore: Collection booked from ${supplier} — The Courier Guy will collect. Waybill ${d.trackingReference}.`
+        : `Gun Galore: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
       `booked-${d.transactionId}`,
     );
   }

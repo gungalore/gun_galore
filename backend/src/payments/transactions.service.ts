@@ -396,6 +396,15 @@ export class TransactionsService {
     // a read-then-check, not an atomic counter) — it is not a money-safety
     // invariant, so a small overshoot is acceptable.
     if (listing.isDealListing) {
+      // DD-F4 — Daily Deals ship by courier (The Courier Guy door-to-door)
+      // ONLY. The deal listing's shippingMethods are already [TCG]-only from
+      // Wave 1, but enforce it server-authoritatively here too so a tampered or
+      // stale method can never route a deal via Pudo / collection / dealer. This
+      // fires BEFORE the atomic reserve below, so a rejected deal checkout
+      // leaves no orphaned hold.
+      if (dto.shippingMethod !== 'TCG') {
+        throw new BadRequestException('Daily Deals ship by courier only.');
+      }
       const deal = await this.prisma.deal.findUnique({
         where: { listingId: listing.id },
         select: { perCustomerCap: true },
@@ -857,6 +866,12 @@ export class TransactionsService {
         collectionOnly: true,
         title: true,
         shippingMethods: true,
+        // DD-F4 — deal lines all carry the ONE house sellerId; the consolidation
+        // key needs the deal's supplier so different-supplier deals don't merge
+        // into a single waybill. Supplier id stays server-side (grouping only,
+        // never returned on any listing payload).
+        isDealListing: true,
+        deal: { select: { supplierId: true } },
       },
     });
     if (lineListings.some((l) => l.listingType !== 'BUY_NOW')) {
@@ -911,6 +926,17 @@ export class TransactionsService {
     const sellerByListing = new Map(
       lineListings.map((l) => [l.id, l.sellerId]),
     );
+    // DD-F4 — map each DEAL line to its supplier. Deals all share the house
+    // sellerId, so keying consolidation by sellerId alone would wrongly merge
+    // two different suppliers' deals into one pickup/waybill. For a deal line
+    // the group owner becomes its supplier (same-supplier deals still
+    // consolidate); every ordinary line still owns by sellerId (unchanged).
+    const dealSupplierByListing = new Map<string, string>();
+    for (const l of lineListings) {
+      if (l.isDealListing && l.deal?.supplierId) {
+        dealSupplierByListing.set(l.id, l.deal.supplierId);
+      }
+    }
     const shipOverride = new Map<
       string,
       { costCents: number; serviceCode: string | null }
@@ -930,12 +956,15 @@ export class TransactionsService {
           continue;
         const sellerId = sellerByListing.get(line.listingId);
         if (!sellerId) continue;
+        // DD-F4 — a deal line is owned by its supplier for grouping; every
+        // ordinary line is owned by sellerId, so the key is unchanged for them.
+        const owner = dealSupplierByListing.get(line.listingId) ?? sellerId;
         const a = line.deliveryAddress;
         const destKey =
           line.shippingMethod === 'PUDO'
             ? `L:${line.pudoPickupLockerId ?? ''}`
             : `A:${a?.streetAddress ?? ''}|${a?.suburb ?? ''}|${a?.city ?? ''}|${a?.postalCode ?? ''}`;
-        const key = `${sellerId}|${line.shippingMethod}|${destKey}`;
+        const key = `${owner}|${line.shippingMethod}|${destKey}`;
         const arr = groups.get(key) ?? [];
         arr.push(line);
         groups.set(key, arr);
@@ -1519,7 +1548,8 @@ export class TransactionsService {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: {
-        listing: { select: { title: true } },
+        // DD-F3 — isDealListing lets _stampAcceptAndBook defer the deal booking.
+        listing: { select: { title: true, isDealListing: true } },
         buyer: {
           select: {
             email: true,
@@ -1575,9 +1605,12 @@ export class TransactionsService {
     transactionId: string,
     tx: {
       id: string;
+      // DD-F3 — needed to load the Deal (ships-in window) for a house deal.
+      listingId: string;
       shipsWithId: string | null;
       shippingMethod: string | null;
-      listing: { title: string };
+      // DD-F3 — isDealListing gates deferral of the immediate courier booking.
+      listing: { title: string; isDealListing: boolean };
       buyer: {
         email: string;
         firstName: string | null;
@@ -1615,25 +1648,68 @@ export class TransactionsService {
       return null;
     }
 
+    // DD-F3 — a house deal (Listing.isDealListing) is sell-first / buy-after:
+    // GG holds NO stock at accept time and the courier collects from the
+    // SUPPLIER's warehouse only once the operator taps "Stock ready". So for a
+    // deal we DEFER the courier booking here — it is fired later by
+    // DealsService.markStockReadyAndBook. A non-deal sale books immediately,
+    // byte-for-byte as before.
+    const isDeal = tx.listing.isDealListing === true;
+
     // P5.2: book the real carrier shipment on the CARRIER line, which combines
     // the whole group's parcel. Fire-and-forget + fully self-contained
     // (idempotent, courier-only, fail-safe). On success it SMSes/emails the
     // seller (the operator, for a house deal) the waybill + Pudo PIN + label.
-    void this.shipping.bookForTransaction(carrierId);
+    if (!isDeal) {
+      void this.shipping.bookForTransaction(carrierId);
+    }
 
-    // Timeline + notifications — fire-and-forget.
+    // Timeline + notifications — fire-and-forget. (Unchanged for every sale.)
     void this.tracking.recordInternal(transactionId, 'SELLER_ACCEPTED');
     void this.notifications.resolveByEntity('transaction', transactionId);
-    // Buyer notification — "Seller accepted, dispatch within 5d".
-    void this.notifications.saleAcceptedBuyer({
-      buyerEmail: tx.buyer.email,
-      buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
-      buyerPhone: tx.buyer.phone,
-      listingTitle: tx.listing.title,
-      transactionId: tx.id,
-      dispatchDeadlineAt,
-      isCollection: tx.shippingMethod === 'COLLECTION',
-    });
+
+    // Buyer notification. A non-deal sale keeps the "dispatch within 5 days"
+    // promise (byte-identical). A house deal has no 5-day dispatch promise —
+    // GG ships JIT from the supplier — so the buyer should hear the deal's own
+    // ships-in window (shipsInDaysMin–Max). We forward that window on the
+    // payload; the copy literal ("ships in 3–7 days" vs "dispatch within 5
+    // days") is authored in notifications.service.ts, which is outside this
+    // wave's file set — Wave 3 branches on the forwarded fields. Until then a
+    // deal buyer still reads the generic accepted copy.
+    if (isDeal) {
+      const deal = await this.prisma.deal
+        .findUnique({
+          where: { listingId: tx.listingId },
+          select: { shipsInDaysMin: true, shipsInDaysMax: true },
+        })
+        .catch(() => null);
+      // Non-fresh payload object: the forward-wired shipsIn* fields (not yet
+      // read by notifications.service.ts) must not trip the excess-property
+      // check on a fresh literal. Deals never ship COLLECTION (TCG-only).
+      const dealPayload = {
+        buyerEmail: tx.buyer.email,
+        buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
+        buyerPhone: tx.buyer.phone,
+        listingTitle: tx.listing.title,
+        transactionId: tx.id,
+        dispatchDeadlineAt,
+        isCollection: false,
+        shipsInDaysMin: deal?.shipsInDaysMin,
+        shipsInDaysMax: deal?.shipsInDaysMax,
+      };
+      void this.notifications.saleAcceptedBuyer(dealPayload);
+    } else {
+      // Non-deal — "Seller accepted, dispatch within 5d". Unchanged.
+      void this.notifications.saleAcceptedBuyer({
+        buyerEmail: tx.buyer.email,
+        buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
+        buyerPhone: tx.buyer.phone,
+        listingTitle: tx.listing.title,
+        transactionId: tx.id,
+        dispatchDeadlineAt,
+        isCollection: tx.shippingMethod === 'COLLECTION',
+      });
+    }
 
     return { acceptedAt, dispatchDeadlineAt };
   }
@@ -1706,13 +1782,27 @@ export class TransactionsService {
         select: { status: true, isDealListing: true },
       });
       if (!l?.isDealListing || l.status !== 'SOLD') return;
-      await this.prisma.deal.updateMany({
+      const flip = await this.prisma.deal.updateMany({
         where: {
           listingId,
           status: { in: ['DRAFT', 'SCHEDULED', 'LIVE', 'EXTENDED'] },
         },
         data: { status: 'SOLD_OUT', soldOutAt: new Date() },
       });
+      // DD-F2 — the deal just transitioned to SOLD_OUT exactly ONCE (the status
+      // filter makes the updateMany one-shot, so count>0 fires a single time).
+      // Raise the supplier Purchase Order in Zoho Books. ZohoBooksService is
+      // ALREADY injected here (see createDealSalesReceipt), so we call it
+      // directly — no DealsService/forwardRef, no Payments↔Deals cycle.
+      // createDealPurchaseOrder is idempotent, isEnabled-guarded and never
+      // throws; fire-and-forget after the flip commits.
+      if (flip.count > 0) {
+        const deal = await this.prisma.deal.findUnique({
+          where: { listingId },
+          select: { id: true },
+        });
+        if (deal) void this.zohoBooks.createDealPurchaseOrder(deal.id);
+      }
     } catch (err) {
       this.logger.warn(
         `syncDealSoldOut failed for listing ${listingId}: ${(err as Error).message}`,

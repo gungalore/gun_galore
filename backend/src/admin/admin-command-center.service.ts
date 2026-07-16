@@ -51,6 +51,12 @@ export interface AttentionQueue {
   // configured). URGENT-grade: the buyer's payment is HELD until a human
   // approves the SAPS 534 / stock-register / serial photos in the dossier.
   dealerVerificationsPendingReview: number;
+  // DD-F — Daily Deals JIT fulfilment needing an operator: (a) a stock-ready
+  // deal PO whose buyers' parcels are still HELD + unbooked past the deal's
+  // own shipsInDaysMax window (supplier collection overdue), OR (b) a deal PO
+  // row that FAILED at placement (never reached Zoho). INERT with deals off
+  // (0). Frontend renders a "Supplier fulfilment" card.
+  dealFulfilmentAttention: number;
 }
 
 export interface TodayPulse {
@@ -119,6 +125,7 @@ export class AdminCommandCenterService {
       creditsBelowAlarm,
       salesAwaitingAccept,
       dealerVerificationsPendingReview,
+      dealFulfilmentAttention,
     ] = await Promise.all([
       this.prisma.listing.count({ where: { status: 'PENDING_REVIEW' } }),
       this.prisma.transaction.count({
@@ -172,6 +179,60 @@ export class AdminCommandCenterService {
           paymentStatus: 'HELD',
         },
       }),
+      // DD-F — Daily Deals JIT fulfilment attention. Two failure modes summed
+      // into one card count: (a) a stock-ready deal PO whose buyers' parcels
+      // are still HELD + unbooked (shipmentBookedAt null; excludes
+      // consolidation siblings + refund children) past the deal's own
+      // shipsInDaysMax window — supplier collection is overdue; and (b) a deal
+      // PO row that FAILED at placement (zohoPurchaseOrderId null AND
+      // zohoSyncStatus FAILED — the same real failures the
+      // retryMissingDealPurchaseOrders cron chases). The per-deal overdue
+      // window (stockReadyAt + shipsInDaysMax) can't be compared to `now` in a
+      // single Prisma where, so (a) is filtered in JS. INERT with deals off —
+      // both queries return 0.
+      (async (): Promise<number> => {
+        const [failedPos, stockReadyPos] = await Promise.all([
+          // (b) Actual PO failures — a row that never reached Zoho
+          // (zohoPurchaseOrderId null) whose last sync FAILED. Keyed on the ROW,
+          // not on "an ENDED/SOLD_OUT deal with a null PO": killswitch-ended
+          // deals intentionally carry no PO and zero-sale deals carry a terminal
+          // CANCELLED/OK row — neither is a real failure to flag.
+          this.prisma.dealPurchaseOrder.count({
+            where: {
+              zohoPurchaseOrderId: null,
+              zohoSyncStatus: 'FAILED',
+            },
+          }),
+          this.prisma.dealPurchaseOrder.findMany({
+            where: {
+              stockReadyAt: { not: null },
+              deal: {
+                listing: {
+                  transactions: {
+                    some: {
+                      paymentStatus: 'HELD',
+                      shipmentBookedAt: null,
+                      shipsWithId: null,
+                      refundOfId: null,
+                    },
+                  },
+                },
+              },
+            },
+            select: {
+              stockReadyAt: true,
+              deal: { select: { shipsInDaysMax: true } },
+            },
+          }),
+        ]);
+        const nowMs = now.getTime();
+        const overdue = stockReadyPos.filter(
+          (po) =>
+            po.stockReadyAt != null &&
+            nowMs - po.stockReadyAt.getTime() > po.deal.shipsInDaysMax * day,
+        ).length;
+        return failedPos + overdue;
+      })(),
     ]);
 
     return {
@@ -185,6 +246,7 @@ export class AdminCommandCenterService {
       creditsBelowAlarm,
       salesAwaitingAccept,
       dealerVerificationsPendingReview,
+      dealFulfilmentAttention,
     };
   }
 

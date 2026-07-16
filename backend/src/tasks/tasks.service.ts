@@ -41,6 +41,10 @@ export class TasksService {
   // The go-live transitions are CAS-guarded (idempotent), but this also avoids
   // redundant work + duplicate drop pushes.
   private dealDropRunning = false;
+  // DD-F — re-entrancy guard for the hourly deal-PO retry: a slow Zoho batch
+  // must not overlap the next tick (retryMissingDealPurchaseOrders is bounded
+  // + idempotent, but this avoids redundant work).
+  private dealPoRetryRunning = false;
 
   constructor(
     private readonly offersService: OffersService,
@@ -665,6 +669,29 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('swap-fee-receipt-retry');
+    }
+  }
+
+  // DD-F — hourly retry for deal purchase orders that never reached Zoho (the
+  // DealPurchaseOrder row is missing) or failed at placement (zohoSyncStatus
+  // FAILED). createDealPurchaseOrder is idempotent (guarded by the row + its
+  // zohoPurchaseOrderId), so a re-fire can only fill the gap — keeps Books
+  // whole without an admin clicking retry. Mirrors retrySwapFeeReceipts.
+  // INERT until deals go live + POs exist (the query returns empty → no-op).
+  @Cron(CronExpression.EVERY_HOUR)
+  async retryDealPurchaseOrders() {
+    if (this.dealPoRetryRunning) return; // a previous run is still going
+    this.dealPoRetryRunning = true;
+    try {
+      await this.zohoBooks.retryMissingDealPurchaseOrders(25);
+    } catch (err) {
+      this.logger.error(
+        `retryDealPurchaseOrders failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      this.dealPoRetryRunning = false;
+      await this.recordCronRun('deal-po-retry');
     }
   }
 

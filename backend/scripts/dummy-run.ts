@@ -145,7 +145,7 @@ async function main() {
   // Neutralise the two outbound courier-rate calls (blank keys → null quote →
   // dead-ended courier checkout). This stubs ONLY the external rate lookup; the
   // whole transaction + fee code path under test still runs for real.
-  installStubs(app);
+  const tcgShipments = installStubs(app);
 
   const prisma = app.get(PrismaService, { strict: false });
   const rep = new Reporter();
@@ -157,7 +157,7 @@ async function main() {
   // DD-2 — the Daily Deals house seller (+ its Setting) for the house-money module.
   actors.house = await seedHouseSeller(prisma);
   const cats = await resolveCategories(prisma);
-  const ctx: Ctx = { app, prisma, rep, actors, cats };
+  const ctx: Ctx = { app, prisma, rep, actors, cats, tcgShipments };
   console.log(`[seed] ${Object.keys(actors).length} actors ready.`);
 
   // ── Module drivers ──────────────────────────────────────────────────

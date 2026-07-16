@@ -33,8 +33,13 @@ export class ManualPaymentsService {
   // operator doesn't have to trawl individual dossiers. Retry stays on
   // the per-transaction admin surface (ZB-10); this is the radar.
   async getZohoFailedSyncs() {
-    const [transactions, featuredBids, subscriptionCharges, swaps] =
-      await Promise.all([
+    const [
+      transactions,
+      featuredBids,
+      subscriptionCharges,
+      swaps,
+      dealPurchaseOrderRows,
+    ] = await Promise.all([
         this.prisma.transaction.findMany({
           where: { zohoSyncStatus: 'FAILED' },
           orderBy: { zohoSyncLastAttemptAt: 'desc' },
@@ -99,17 +104,49 @@ export class ManualPaymentsService {
             completedAt: true,
           },
         }),
+        // DD-F — deal purchase orders needing attention: a PO row that FAILED
+        // at placement (never reached Zoho — zohoPurchaseOrderId null AND
+        // zohoSyncStatus FAILED). Keyed on the ROW, not on "an ENDED/SOLD_OUT
+        // deal with a null PO": killswitch-ended deals intentionally carry no
+        // PO and zero-sale deals carry a terminal CANCELLED/OK row — neither is
+        // a real failure. Supplier / cost stay internal — only the deal title +
+        // sync error surface (admin-only).
+        this.prisma.dealPurchaseOrder.findMany({
+          where: {
+            zohoPurchaseOrderId: null,
+            zohoSyncStatus: 'FAILED',
+          },
+          orderBy: { zohoSyncLastAttemptAt: 'desc' },
+          take: 50,
+          select: {
+            dealId: true,
+            zohoSyncError: true,
+            deal: {
+              select: { status: true, listing: { select: { title: true } } },
+            },
+          },
+        }),
       ]);
+    // Shape the PO rows into the failed-sync radar record (never expose
+    // supplier / PO / cost — only the deal title + sync error).
+    const dealPurchaseOrders = dealPurchaseOrderRows.map((po) => ({
+      dealId: po.dealId,
+      dealTitle: po.deal.listing.title,
+      status: po.deal.status,
+      zohoSyncError: po.zohoSyncError ?? null,
+    }));
     return {
       transactions,
       featuredBids,
       subscriptionCharges,
       swaps,
+      dealPurchaseOrders,
       totalFailed:
         transactions.length +
         featuredBids.length +
         subscriptionCharges.length +
-        swaps.length,
+        swaps.length +
+        dealPurchaseOrders.length,
     };
   }
 

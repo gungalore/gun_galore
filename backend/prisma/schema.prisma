@@ -1007,12 +1007,94 @@ model Deal {
   supplierName String?
   supplierRef  String?
 
+  // JIT supplier-fulfilment (DD-F): the structured supplier + its purchase order.
+  // Kept alongside the legacy free-text supplierName/supplierRef above.
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+
+  purchaseOrder DealPurchaseOrder?
+
   createdByAdminId String
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   @@index([status, startsAt])
   @@index([dropDate])
+  @@index([supplierId])
+}
+
+// A JIT fulfilment supplier for Daily Deals (DD-F). GG is the first-party
+// seller; on a house-deal sale we raise a Zoho Purchase Order to the supplier
+// and The Courier Guy collects the stock from THIS warehouse. Supplier, cost,
+// and PO data are strictly internal — never exposed on any public surface.
+model Supplier {
+  id            String  @id @default(cuid())
+  name          String
+  contactPerson String
+  email         String
+  phone         String
+  vatNumber     String?
+  regNumber     String?
+
+  // Collection warehouse — where The Courier Guy collects from.
+  warehouseStreet     String
+  warehouseSuburb     String
+  warehouseCity       String
+  warehouseProvince   Province
+  warehousePostalCode String
+  warehouseLat        Float?
+  warehouseLng        Float?
+
+  notes String?
+
+  // Zoho Books vendor sync (one Books object = one dedicated id column).
+  zohoVendorId          String?
+  zohoSyncStatus        String?
+  zohoSyncError         String?
+  zohoSyncLastAttemptAt DateTime?
+
+  active           Boolean   @default(true)
+  createdByAdminId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  deals Deal[]
+}
+
+// The purchase order raised against a Supplier when a house deal sells. One
+// PO per Deal (dealId unique). Zoho Books PO id lives in its own column for
+// idempotency; email send is gated behind the deal_po_email_enabled flag.
+model DealPurchaseOrder {
+  id     String @id @default(cuid())
+  dealId String @unique
+  deal   Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  unitsOrdered  Int
+  unitCostCents Int
+  totalCents    Int
+
+  status DealPoStatus @default(DRAFT)
+
+  // Zoho Books purchase-order sync (one Books object = one dedicated id column).
+  zohoPurchaseOrderId   String?
+  zohoSyncStatus        String?
+  zohoSyncError         String?
+  zohoSyncLastAttemptAt DateTime?
+
+  placedAt     DateTime?
+  emailedAt    DateTime?
+  stockReadyAt DateTime?
+
+  createdByAdminId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+enum DealPoStatus {
+  DRAFT // row created, not yet placed with Zoho
+  PLACED // Zoho PO created
+  EMAILED // PO emailed to the supplier
+  CANCELLED // pulled
 }
 
 model Dealer {

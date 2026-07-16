@@ -135,6 +135,13 @@ export class CreateDealDto {
   @MaxLength(200)
   supplierRef?: string;
 
+  // DD-F: the structured JIT supplier the deal is fulfilled through. When set,
+  // the service validates the supplier exists + is active. Kept alongside the
+  // legacy free-text supplierName/supplierRef.
+  @IsOptional()
+  @IsString()
+  supplierId?: string;
+
   // Which drop this deal belongs to (grouping/calendar). Optional in DD-1.
   @IsOptional()
   @IsISO8601()
@@ -264,6 +271,13 @@ export class UpdateDealDto {
   @IsString()
   @MaxLength(200)
   supplierRef?: string;
+
+  // DD-F: re-link the deal to a different structured supplier. The service
+  // validates the supplier exists + is active, and only allows the change up
+  // until a purchase order exists for the deal.
+  @IsOptional()
+  @IsString()
+  supplierId?: string;
 
   @IsOptional()
   @IsISO8601()

@@ -22,6 +22,26 @@ export interface Actor {
   username: string;
 }
 
+/**
+ * DD-F5 — the args captured from a stubbed TcgService.createShipment() call.
+ * Loosely typed (only `from` is asserted on) so the stub can record the whole
+ * booking payload without coupling to the service's exact input shape.
+ */
+export interface TcgShipmentCapture {
+  serviceCode?: string;
+  from?: {
+    streetAddress?: string;
+    suburb?: string;
+    city?: string;
+    postalCode?: string;
+    province?: string;
+    company?: string;
+    [k: string]: unknown;
+  };
+  to?: Record<string, unknown>;
+  [k: string]: unknown;
+}
+
 export interface Ctx {
   app: INestApplicationContext;
   prisma: PrismaService;
@@ -33,6 +53,11 @@ export interface Ctx {
     experience: string;
     collection: string;
   };
+  // DD-F5 — optional: the captured JIT supplier collection bookings. installStubs
+  // both returns this array and stashes it on the TcgService instance, so the
+  // module can resolve it via capturedTcgShipments() even if the harness entry
+  // never hangs it here.
+  tcgShipments?: TcgShipmentCapture[];
 }
 
 const CLERK_PREFIX = 'dr_';
@@ -66,6 +91,12 @@ export async function cleanup(prisma: PrismaService) {
     'transaction', // self-refs (refundOf / shipsWith) resolve within one delete
     'featuredAuction',
     'featuredSlot',
+    // DD-F5 — Daily Deals JIT fulfilment. DealPurchaseOrder holds an FK to Deal
+    // (child → before deal). Supplier is pointed-to by Deal via the OPTIONAL
+    // Deal.supplierId (default ON DELETE SET NULL), so wiping it first just
+    // nulls any lingering deal link before the deal row itself is deleted below.
+    'dealPurchaseOrder',
+    'supplier',
     'deal', // DD-2 — cascade-deletes with listing anyway, but explicit is safer
     'listing',
     'order',
@@ -110,7 +141,7 @@ export async function cleanup(prisma: PrismaService) {
  * still runs. Booking (bookForTransaction) is left as its real fire-and-forget
  * no-op (it self-guards on the blank keys and only logs).
  */
-export function installStubs(app: INestApplicationContext) {
+export function installStubs(app: INestApplicationContext): TcgShipmentCapture[] {
   const pudo = app.get(PudoService, { strict: false }) as any;
   const tcg = app.get(TcgService, { strict: false }) as any;
   pudo.quoteL2L = async () => ({
@@ -130,6 +161,40 @@ export function installStubs(app: INestApplicationContext) {
     priceCents: 12400,
     estimatedDays: 3,
   });
+  // DD-F5 — capture (never fire) the JIT supplier collection booking. Unlike the
+  // rate lookups above, createShipment is the ONE booking call the deal
+  // stock-ready flow actually makes, and we need to assert it collects FROM the
+  // supplier warehouse. Record each createShipment() arg object, then return a
+  // deterministic booked result so bookForTransaction stamps shipmentBookedAt +
+  // trackingReference exactly as a real booking would. The array is stashed on
+  // the (singleton) TcgService instance so capturedTcgShipments() can resolve it
+  // from the Ctx, and also returned so the harness entry can hang it on the Ctx.
+  const capturedShipments: TcgShipmentCapture[] = [];
+  tcg.createShipment = async (input: TcgShipmentCapture) => {
+    capturedShipments.push(input);
+    return {
+      carrier: 'TCG',
+      shipmentId: 'STUB-1',
+      trackingReference: 'TCGSTUB001',
+    };
+  };
+  (tcg as { __capturedShipments?: TcgShipmentCapture[] }).__capturedShipments =
+    capturedShipments;
+  return capturedShipments;
+}
+
+/**
+ * DD-F5 — resolve the captured JIT supplier collection bookings. Prefers the
+ * array the harness entry hung on the Ctx; falls back to the copy installStubs
+ * stashed on the TcgService singleton, so the module's assertions work whether
+ * or not the (optional) Ctx wiring was applied.
+ */
+export function capturedTcgShipments(ctx: Ctx): TcgShipmentCapture[] {
+  if (ctx.tcgShipments) return ctx.tcgShipments;
+  const tcg = ctx.app.get(TcgService, { strict: false }) as unknown as {
+    __capturedShipments?: TcgShipmentCapture[];
+  };
+  return tcg.__capturedShipments ?? [];
 }
 
 const BANK = {
@@ -224,6 +289,65 @@ export async function seedHouseSeller(prisma: PrismaService): Promise<Actor> {
     update: { value: user.id },
   });
   return { id: user.id, clerkId, email: user.email, username: user.username };
+}
+
+/**
+ * DD-F5 — the Daily Deals JIT fulfilment supplier's warehouse. Deliberately a
+ * DISTINCT city + postal code from every buyer/seller address in the harness
+ * (buyers ship to Pretoria/0002, listings collect from Pretoria/0002) so that a
+ * booked deal collection whose origin is Cape Town/8001 UNAMBIGUOUSLY proves it
+ * was sourced from the SUPPLIER, not the buyer's delivery or a default pickup.
+ */
+export const DUMMY_SUPPLIER_ID = 'system_dummy_supplier';
+export const DUMMY_SUPPLIER_WAREHOUSE = {
+  street: '7 Warehouse Way',
+  suburb: 'Montague Gardens',
+  city: 'Cape Town',
+  province: 'WESTERN_CAPE' as const,
+  postalCode: '8001',
+  lat: -33.9249,
+  lng: 18.4241,
+};
+
+/**
+ * DD-F5 — seed the Daily Deals JIT fulfilment Supplier (mirrors seedHouseSeller).
+ * Carries a COMPLETE warehouse address (street/suburb/city/province/postalCode/
+ * lat/lng) + phone + email + contactPerson so The Courier Guy always has a
+ * collectable, phoneable origin (bookForTransaction fails-safe without them).
+ * Seeded on the STABLE id DUMMY_SUPPLIER_ID (idempotent upsert) so a deal can
+ * link to it deterministically; active:true so DealsService.requireActive
+ * passes. cleanup() wipes + this re-seeds it each run.
+ *
+ * Returns an Actor-shaped adaptor (only `.id` is meaningful — a Supplier is not
+ * a User) so the harness entry can wire it exactly like `actors.house`.
+ */
+export async function seedSupplier(prisma: PrismaService): Promise<Actor> {
+  const w = DUMMY_SUPPLIER_WAREHOUSE;
+  const data = {
+    name: 'Dummy Run Supplier Co',
+    contactPerson: 'Dummy Warehouse Manager',
+    email: 'supplier@dummyrun.local',
+    phone: '+27820000002',
+    warehouseStreet: w.street,
+    warehouseSuburb: w.suburb,
+    warehouseCity: w.city,
+    warehouseProvince: w.province,
+    warehousePostalCode: w.postalCode,
+    warehouseLat: w.lat,
+    warehouseLng: w.lng,
+    active: true,
+  };
+  const supplier = await (prisma as any).supplier.upsert({
+    where: { id: DUMMY_SUPPLIER_ID },
+    create: { id: DUMMY_SUPPLIER_ID, ...data },
+    update: data,
+  });
+  return {
+    id: supplier.id,
+    clerkId: DUMMY_SUPPLIER_ID,
+    email: supplier.email,
+    username: supplier.name,
+  };
 }
 
 /** Resolve category ids for each behaviour class from the base seed. */

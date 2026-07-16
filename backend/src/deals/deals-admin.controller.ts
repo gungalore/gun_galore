@@ -137,6 +137,21 @@ export class DealsAdminController {
     return this.deals.cancel(admin.sub, id, dto?.reason);
   }
 
+  // DD-F — raise (and email) the supplier purchase order. Used for the
+  // killswitch-ended case + re-cut needs; the lifecycle end/sold-out paths
+  // raise the PO automatically.
+  @Post(':id/place-po')
+  placePo(@CurrentAdmin() admin: { sub: string }, @Param('id') id: string) {
+    return this.deals.placePurchaseOrder(admin.sub, id);
+  }
+
+  // DD-F — operator confirms supplier stock is ready → book The Courier Guy
+  // to collect from the supplier warehouse for every paid line of the deal.
+  @Post(':id/stock-ready')
+  stockReady(@CurrentAdmin() admin: { sub: string }, @Param('id') id: string) {
+    return this.deals.markStockReadyAndBook(id, admin.sub);
+  }
+
   @Post(':id/duplicate')
   duplicate(
     @CurrentAdmin() admin: { sub: string },

@@ -112,6 +112,12 @@ async function main() {
       `DATABASE_URL=${dummyUrl.toString()}`,
       'NODE_ENV=development',
       'PAYMENT_MODE=manual',
+      // Post-EFT-strip: every checkout entry point now gates on
+      // assertPaymentsLive() (transactions.service.ts:61). Offline, Stitch is a
+      // safe mock (blank creds → `mock-` paymentId, stitch.service.ts:175-178),
+      // so flip the gate open here or every create()/checkout throws the
+      // "card payments launching soon" 503 and the whole run is unrunnable.
+      'PAYMENTS_LIVE=true',
       'VERIFYNOW_MODE=sandbox',
       'ZOHO_BOOKS_ENABLED=false',
       'JWT_ADMIN_SECRET=dummy-run-admin-secret-not-real',

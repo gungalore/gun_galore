@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService, FLAGS } from '../settings/settings.service';
 
 /**
  * Zoho Books integration — accounting backend for Gun Galore.
@@ -49,7 +51,10 @@ export class ZohoBooksService {
   private cachedAccessToken: string | null = null;
   private cachedAccessTokenExpiresAt = 0; // epoch ms
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {
     // Feature flag — leave OFF (false) by default until we're ready
     // to push real documents to Books. Set ZOHO_BOOKS_ENABLED=true
     // in .env when going live.
@@ -318,6 +323,121 @@ export class ZohoBooksService {
       `Created Books contact ${contactId} for user ${user.id} (${displayName})`,
     );
     return contactId;
+  }
+
+  // ─── Vendor (supplier) management ────────────────────────────────
+
+  /**
+   * DD-F — find-or-create the Books VENDOR contact for a Daily Deals supplier.
+   *
+   * Mirror of ensureContact but for the supply side: a supplier is a Books
+   * contact with contact_type 'vendor' (we raise purchase orders against it).
+   *
+   * Strategy:
+   *   - If supplier.zohoVendorId is set, return it (already created).
+   *   - Else create a vendor contact via API and save the returned ID onto
+   *     the Supplier row.
+   *
+   * Idempotent — the stored id short-circuits repeat calls. Unlike
+   * createDealPurchaseOrder this DOES catch its own errors: a failure stamps
+   * FAILED on the Supplier row (so the admin panel can show + retry it) and
+   * returns null; the caller treats null as "no vendor" and records its own
+   * failure on the PO. Never throws.
+   */
+  async ensureVendor(supplierId: string): Promise<string | null> {
+    if (!this.isEnabled()) return null;
+
+    const supplier = await this.prisma.supplier.findUnique({
+      where: { id: supplierId },
+    });
+    if (!supplier) return null;
+    if (supplier.zohoVendorId) return supplier.zohoVendorId;
+
+    try {
+      const payload = {
+        contact_name: supplier.name,
+        contact_type: 'vendor',
+        // The people Books can email a purchase order to.
+        contact_persons: [
+          {
+            first_name: supplier.contactPerson,
+            email: supplier.email,
+            phone: supplier.phone ?? '',
+            is_primary_contact: true,
+          },
+        ],
+        // Warehouse address — the collection point The Courier Guy picks up
+        // from, and the bill-from on the PO.
+        billing_address: {
+          address: supplier.warehouseStreet,
+          street2: supplier.warehouseSuburb,
+          city: supplier.warehouseCity,
+          state: supplier.warehouseProvince,
+          zip: supplier.warehousePostalCode,
+          country: 'South Africa',
+        },
+        notes: `Gun Galore supplier ID: ${supplier.id}${supplier.vatNumber ? ` / VAT: ${supplier.vatNumber}` : ''}`,
+      };
+
+      type CreateContactResp = {
+        contact?: { contact_id?: string };
+        code?: number;
+        message?: string;
+      };
+      const resp = await this.request<CreateContactResp>(
+        'POST',
+        '/contacts',
+        payload,
+      );
+
+      const vendorId = resp.contact?.contact_id;
+      if (!vendorId) {
+        throw new Error(
+          `Zoho Books vendor create returned no contact_id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+
+      await this.prisma.supplier.update({
+        where: { id: supplier.id },
+        data: {
+          zohoVendorId: vendorId,
+          zohoSyncStatus: 'OK',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Created Books vendor ${vendorId} for supplier ${supplier.id} (${supplier.name})`,
+      );
+      return vendorId;
+    } catch (err) {
+      await this.markSupplierFailed(supplier.id, err as Error);
+      return null;
+    }
+  }
+
+  private async markSupplierFailed(
+    supplierId: string,
+    err: Error,
+  ): Promise<void> {
+    const message = err.message.slice(0, 1000);
+    this.logger.error(
+      `Zoho Books vendor sync FAILED for supplier ${supplierId}: ${message}`,
+    );
+    try {
+      await this.prisma.supplier.update({
+        where: { id: supplierId },
+        data: {
+          zohoSyncStatus: 'FAILED',
+          zohoSyncError: message,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+    } catch (writeErr) {
+      this.logger.error(
+        `Could not write FAILED status to supplier ${supplierId}: ${(writeErr as Error).message}`,
+      );
+    }
   }
 
   // ─── Account ID lookup ───────────────────────────────────────────
@@ -646,6 +766,334 @@ export class ZohoBooksService {
       );
     } catch (err) {
       await this.markFailed(transactionId, err as Error);
+    }
+  }
+
+  // ─── Daily Deals supplier purchase orders (DD-F) ─────────────────
+
+  /**
+   * DD-F — raise a Zoho Books PURCHASE ORDER to a house deal's supplier for
+   * the units the deal actually sold, so The Courier Guy can collect that
+   * stock from the supplier warehouse (JIT supplier fulfilment).
+   *
+   * A Books PURCHASE ORDER is a NON-POSTING document — it does not hit the
+   * chart of accounts — so unlike the sales receipts above there is NO
+   * getAccountIdByName lookup here.
+   *
+   * Idempotent on the dedicated DealPurchaseOrder row (dealId is unique) plus
+   * its zohoPurchaseOrderId column: an existing PO that is live (non-CANCELLED)
+   * or already carries a Zoho id is left untouched; a CANCELLED row with no
+   * Zoho id may be re-raised.
+   *
+   * The local DealPurchaseOrder row is written BEFORE the Zoho call (and even
+   * when Books is OFF) so the operator always has a record; only the API call
+   * is gated on isEnabled(). Never throws — a Zoho failure stamps FAILED on
+   * the PO row.
+   */
+  async createDealPurchaseOrder(dealId: string): Promise<void> {
+    const deal = await this.prisma.deal.findUnique({
+      where: { id: dealId },
+      include: {
+        listing: { select: { title: true, referenceNumber: true } },
+        supplier: true,
+        purchaseOrder: true,
+      },
+    });
+    if (!deal) return;
+
+    const existingPo = deal.purchaseOrder;
+    const unitCostCents = deal.costPriceCents;
+
+    // Units to order = units actually sold (paid, not refunded / cancelled /
+    // rejected) — mirrors the P&L counting filter in deals.service.
+    const agg = await this.prisma.transaction.aggregate({
+      where: {
+        listingId: deal.listingId,
+        paidAt: { not: null },
+        refundOfId: null,
+        paymentStatus: { not: PaymentStatus.REFUNDED },
+        rejectedAt: null,
+        cancelledByBuyerAt: null,
+        manualCancelledAt: null,
+      },
+      _sum: { quantity: true },
+    });
+    const unitsSold = agg._sum.quantity ?? 0;
+
+    // #5 — zero-sale deals get a TERMINAL, non-flagged row instead of no row.
+    // A killswitch-ended deal has no PO at all (operator decision); a deal that
+    // ended with nothing sold gets a CANCELLED/OK row so the radar + retry
+    // never churn on it (they key on FAILED, never on this). No supplier order
+    // is required — there is nothing to collect.
+    if (unitsSold <= 0) {
+      await this.prisma.dealPurchaseOrder.upsert({
+        where: { dealId },
+        create: {
+          dealId,
+          unitsOrdered: 0,
+          unitCostCents,
+          totalCents: 0,
+          status: 'CANCELLED',
+          zohoSyncStatus: 'OK',
+          zohoSyncError: 'No units sold — no supplier order required',
+        },
+        update: {
+          unitsOrdered: 0,
+          totalCents: 0,
+          status: 'CANCELLED',
+          zohoSyncStatus: 'OK',
+          zohoSyncError: 'No units sold — no supplier order required',
+        },
+      });
+      return;
+    }
+
+    // #1 — placement-keyed idempotency. Once a Zoho PO id is stamped the order
+    // is really placed, whatever the local status — never place a second one.
+    // (The old "CANCELLED escape-hatch" guard was dead code and, worse, blocked
+    // a FAILED row from ever retrying; keying on the Zoho id fixes both.)
+    if (existingPo?.zohoPurchaseOrderId) return;
+
+    const totalCents = unitsSold * unitCostCents;
+
+    // Write the local PO record first so we hold it even if Books is off or the
+    // API call below fails. Leaves zohoSync* untouched on update, so a prior
+    // FAILED row stays FAILED until the claim below re-fires it.
+    await this.prisma.dealPurchaseOrder.upsert({
+      where: { dealId },
+      create: {
+        dealId,
+        unitsOrdered: unitsSold,
+        unitCostCents,
+        totalCents,
+        status: 'DRAFT',
+      },
+      update: {
+        unitsOrdered: unitsSold,
+        unitCostCents,
+        totalCents,
+        status: 'DRAFT',
+      },
+    });
+
+    // Books off → keep the local DRAFT row and stop; nothing to place.
+    if (!this.isEnabled()) return;
+
+    // #2 — atomic placement CLAIM (compare-and-set). Only ONE caller may hold
+    // the PENDING claim at a time, so two concurrent triggers can never both
+    // POST /purchaseorders (which would double-order from the supplier). A fresh
+    // (null), OK, FAILED or SKIPPED row is claimable; a PENDING row is claimable
+    // ONLY once it is stale (>15 min — a crash stranded it mid-POST). Written
+    // null-safely (explicit null branch) so a brand-new DRAFT row is claimed.
+    const staleBefore = new Date(Date.now() - 15 * 60 * 1000);
+    const claim = await this.prisma.dealPurchaseOrder.updateMany({
+      where: {
+        dealId,
+        zohoPurchaseOrderId: null,
+        OR: [
+          { zohoSyncStatus: null },
+          { zohoSyncStatus: { in: ['OK', 'FAILED', 'SKIPPED'] } },
+          { zohoSyncStatus: 'PENDING', zohoSyncLastAttemptAt: { lt: staleBefore } },
+        ],
+      },
+      data: { zohoSyncStatus: 'PENDING', zohoSyncLastAttemptAt: new Date() },
+    });
+    // Lost the race (a concurrent caller is placing, or it's already placed) —
+    // stand down without POSTing. The winner (or a later retry) completes it.
+    if (claim.count === 0) return;
+
+    try {
+      const supplier = deal.supplier;
+      if (!supplier) {
+        throw new Error('Deal has no supplier — cannot raise a purchase order');
+      }
+      const vendorId = await this.ensureVendor(supplier.id);
+      if (!vendorId) {
+        throw new Error('Could not resolve Books vendor for supplier');
+      }
+
+      const orderRef =
+        deal.listing.referenceNumber ?? deal.id.slice(-8).toUpperCase();
+      const unitCostRand = unitCostCents / 100;
+
+      type CreatePurchaseOrderResp = {
+        purchaseorder?: {
+          purchaseorder_id?: string;
+          purchaseorder_number?: string;
+        };
+        code?: number;
+        message?: string;
+      };
+      const resp = await this.request<CreatePurchaseOrderResp>(
+        'POST',
+        '/purchaseorders',
+        {
+          vendor_id: vendorId,
+          reference_number: orderRef,
+          line_items: [
+            {
+              name: deal.supplierRef ?? deal.listing.title,
+              description: `${orderRef} — ${deal.listing.title}`,
+              rate: unitCostRand,
+              quantity: unitsSold,
+            },
+          ],
+          notes:
+            'Collection by The Courier Guy from your warehouse — Gun Galore books the pickup.',
+        },
+      );
+
+      const poId = resp.purchaseorder?.purchaseorder_id;
+      if (!poId) {
+        throw new Error(
+          `Books purchase-order create returned no id: ${resp.message ?? 'unknown'}`,
+        );
+      }
+
+      await this.prisma.dealPurchaseOrder.update({
+        where: { dealId },
+        data: {
+          zohoPurchaseOrderId: poId,
+          status: 'PLACED',
+          placedAt: new Date(),
+          zohoSyncStatus: 'OK',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Created Books purchase order ${resp.purchaseorder?.purchaseorder_number ?? poId} for deal ${dealId} (${unitsSold} × R${unitCostRand.toFixed(2)})`,
+      );
+
+      // DD-F fix — the lifecycle PO triggers (deal ended / sold-out) only call
+      // createDealPurchaseOrder, so the supplier email has to fire from HERE or
+      // it never fires on the primary flow (the "Place PO" button is the only
+      // other caller and it's gone the moment a PO row exists). emailPurchaseOrder
+      // is self-guarded: no-op unless the deal_po_email_enabled flag is ON (so
+      // this stays inert until the operator flips it), idempotent on emailedAt,
+      // and it swallows its own errors — a placed PO is never rolled back by it.
+      await this.emailPurchaseOrder(dealId);
+    } catch (err) {
+      await this.markPoFailed(dealId, err as Error);
+    }
+  }
+
+  /**
+   * DD-F — email the placed Zoho purchase order to the supplier.
+   *
+   * HARD-gated on the deal_po_email_enabled flag: while the Daily Deals
+   * programme is inert this is a no-op so no supplier is ever contacted.
+   * Requires the PO to have been placed with Zoho first (zohoPurchaseOrderId
+   * set). Idempotent — skips once emailedAt is stamped, so a supplier is never
+   * emailed the same PO twice. Never throws.
+   */
+  async emailPurchaseOrder(dealId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    const po = await this.prisma.dealPurchaseOrder.findUnique({
+      where: { dealId },
+      include: { deal: { include: { supplier: true } } },
+    });
+    if (!po || !po.zohoPurchaseOrderId) return; // must be PLACED first
+    if (po.emailedAt) return; // already emailed — never spam the supplier
+    const supplier = po.deal.supplier;
+    if (!supplier) return;
+
+    const emailEnabled = await this.settings.get(FLAGS.dealPoEmailEnabled);
+    if (!emailEnabled) {
+      this.logger.log(
+        `Deal PO email skipped for deal ${dealId} — ${FLAGS.dealPoEmailEnabled.key} is off`,
+      );
+      return;
+    }
+
+    try {
+      await this.request<{ message?: string }>(
+        'POST',
+        `/purchaseorders/${po.zohoPurchaseOrderId}/email`,
+        { to_mail_ids: [supplier.email] },
+      );
+      await this.prisma.dealPurchaseOrder.update({
+        where: { dealId },
+        data: {
+          emailedAt: new Date(),
+          status: 'EMAILED',
+          zohoSyncStatus: 'OK',
+          zohoSyncError: null,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+      this.logger.log(
+        `Emailed purchase order for deal ${dealId} to supplier ${supplier.id} (${supplier.email})`,
+      );
+    } catch (err) {
+      await this.markPoFailed(dealId, err as Error);
+    }
+  }
+
+  /**
+   * DD-F — bounded retry for deal purchase orders that FAILED at placement, or
+   * were stranded mid-POST by a crash (a stale PENDING row). Keyed on the
+   * DealPurchaseOrder ROW, never on "an ENDED/SOLD_OUT deal with a null PO":
+   * killswitch-ended deals intentionally carry no PO, and zero-sale deals now
+   * carry a terminal CANCELLED/OK row — neither is a real failure. A row is an
+   * actual failure iff it never reached Zoho (zohoPurchaseOrderId still null)
+   * AND its last sync FAILED, or it is a PENDING row older than the ~15-min
+   * stale window (the CAS in createDealPurchaseOrder re-claims those).
+   * createDealPurchaseOrder is idempotent, so a re-fire can only fill the gap.
+   * Bounded per run; never throws.
+   */
+  async retryMissingDealPurchaseOrders(limit = 25): Promise<void> {
+    if (!this.isEnabled()) return;
+    try {
+      const staleBefore = new Date(Date.now() - 15 * 60 * 1000);
+      const due = await this.prisma.dealPurchaseOrder.findMany({
+        where: {
+          zohoPurchaseOrderId: null,
+          OR: [
+            { zohoSyncStatus: 'FAILED' },
+            {
+              zohoSyncStatus: 'PENDING',
+              zohoSyncLastAttemptAt: { lt: staleBefore },
+            },
+          ],
+        },
+        orderBy: { updatedAt: 'asc' },
+        take: limit,
+        select: { dealId: true },
+      });
+      for (const po of due) {
+        await this.createDealPurchaseOrder(po.dealId);
+      }
+      if (due.length > 0) {
+        this.logger.log(
+          `retryMissingDealPurchaseOrders: re-fired ${due.length} failed/stale deal PO(s)`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `retryMissingDealPurchaseOrders failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async markPoFailed(dealId: string, err: Error): Promise<void> {
+    const message = err.message.slice(0, 1000);
+    this.logger.error(
+      `Zoho Books purchase-order sync FAILED for deal ${dealId}: ${message}`,
+    );
+    try {
+      await this.prisma.dealPurchaseOrder.update({
+        where: { dealId },
+        data: {
+          zohoSyncStatus: 'FAILED',
+          zohoSyncError: message,
+          zohoSyncLastAttemptAt: new Date(),
+        },
+      });
+    } catch (writeErr) {
+      this.logger.error(
+        `Could not write FAILED status to PO for deal ${dealId}: ${(writeErr as Error).message}`,
+      );
     }
   }
 

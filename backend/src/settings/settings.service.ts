@@ -178,6 +178,14 @@ export const FLAGS = {
       return Math.min(48, n);
     },
   } as FlagDefinition<number>,
+  // DD-F — JIT supplier fulfilment: when ON, a Zoho purchase order is
+  // emailed to the supplier from Zoho Books at deal end. Keep OFF until
+  // real suppliers are live so nothing is sent while the programme is inert.
+  dealPoEmailEnabled: {
+    key: 'deal_po_email_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
 } as const;
 
 @Injectable()
