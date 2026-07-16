@@ -134,7 +134,42 @@ export default function SupportPage() {
   }
 
   if (isLoaded && !isSignedIn) {
-    return <p className="p-6 text-[var(--text-secondary)]">Please sign in to contact support.</p>;
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-6">
+        <h1 className="text-xl font-semibold text-[var(--text-primary)]">Support</h1>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
+          We&apos;re here to help. The quickest ways to reach the Gun Galore team:
+        </p>
+        <ul className="mt-4 space-y-1.5 text-sm text-[var(--text-secondary)]">
+          <li>
+            Email{' '}
+            <a href="mailto:support@gungalore.co.za" className="text-[var(--red)]">
+              support@gungalore.co.za
+            </a>
+          </li>
+          <li>
+            Phone{' '}
+            <a href="tel:+27743039999" className="text-[var(--red)]">
+              +27&nbsp;74&nbsp;303&nbsp;9999
+            </a>
+          </li>
+          <li>We aim to respond within 2 business days.</li>
+        </ul>
+        <p className="mt-4 text-sm text-[var(--text-secondary)]">
+          You can also browse the{' '}
+          <a href="/faq" className="text-[var(--red)]">FAQ</a>, lodge a formal{' '}
+          <a href="/complaints" className="text-[var(--red)]">complaint</a>, or see our full{' '}
+          <a href="/contact" className="text-[var(--red)]">contact &amp; company details</a>.
+        </p>
+        <a
+          href="/sign-in?redirect_url=/support"
+          className="mt-5 inline-block rounded-md px-4 py-2 text-sm font-medium text-white"
+          style={{ background: 'var(--accent, #2563eb)' }}
+        >
+          Sign in to open a support ticket
+        </a>
+      </div>
+    );
   }
 
   // ── Thread view ──
