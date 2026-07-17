@@ -1195,21 +1195,18 @@ export default function EditProfilePage() {
           </form>
         </SectionCard>
 
-        {/* ── Email + avatar + password ─────────────────────────────── */}
+        {/* ── Photo, password & 2FA ─────────────────────────────────────
+            Email now lives in the Verification section above; this card is
+            just the remaining identity-provider settings (profile photo,
+            password, two-factor). */}
         <SectionCard
-          title="Email, photo & security"
-          subtitle="Email address, profile photo, password and two-factor are managed by our identity provider. Opens in a modal — close it to come back here."
+          title="Photo, password & security"
+          subtitle="Your profile photo, password and two-factor are managed by our identity provider. Opens in a modal — close it to come back here."
         >
           <div className="flex items-center gap-3">
             <PrimaryButton onClick={() => openUserProfile()}>
               Open identity settings
             </PrimaryButton>
-            <p
-              className="text-xs"
-              style={{ color: 'var(--text-tertiary)' }}
-            >
-              {me?.email}
-            </p>
           </div>
           {/* Hide the embedded UserProfile component — we use the modal
               opened above instead so the dark theme stays consistent. The
