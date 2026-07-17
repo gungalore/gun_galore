@@ -1,9 +1,11 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@clerk/nextjs/server';
-import { TrustDashboard, SellerTier } from '@/lib/types';
+import { TrustDashboard, SellerTier, Me } from '@/lib/types';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
+import { DashboardProfileProgress } from '@/components/dashboard-profile-progress';
+import { safeJson } from '@/lib/safe-json';
 import { SellerQuestionsCard } from './seller-questions-card';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -45,22 +47,22 @@ export default async function DashboardPage() {
   if (!userId) redirect('/sign-in?redirect_url=/dashboard');
 
   const token = await getToken();
-  // Guard BOTH the fetch (backend unreachable) and the json() parse (a 200 with
-  // an empty/partial body → "Unexpected end of JSON input") so a transient blip
-  // or a zero-data brand-new account never 500s this post-sign-up landing page.
-  let data: TrustDashboard | null = null;
-  try {
-    const res = await fetch(`${API_URL}/ratings/dashboard`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (res.ok) {
-      const text = await res.text();
-      data = text ? (JSON.parse(text) as TrustDashboard) : null;
-    }
-  } catch {
-    data = null;
-  }
+  const headers = { Authorization: `Bearer ${token}` };
+  // Fetch the trust dashboard AND the user (name + profileCompleteness for
+  // the header progress bar) in parallel. safeJson guards the parse against
+  // an empty/partial body so a transient blip or a zero-data brand-new
+  // account never 500s this post-sign-up landing page.
+  const [dRes, mRes] = await Promise.all([
+    fetch(`${API_URL}/ratings/dashboard`, { headers, cache: 'no-store' }).catch(
+      () => null,
+    ),
+    fetch(`${API_URL}/users/me`, { headers, cache: 'no-store' }).catch(
+      () => null,
+    ),
+  ]);
+  const data =
+    dRes && dRes.ok ? await safeJson<TrustDashboard | null>(dRes, null) : null;
+  const me = mRes && mRes.ok ? await safeJson<Me | null>(mRes, null) : null;
 
   return (
     <main
@@ -80,10 +82,10 @@ export default async function DashboardPage() {
 
       {/* Page header — OUTSIDE PageReveal so it renders at full opacity
           immediately (per house standard: only body cards animate). */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>
-          My Dashboard
-        </h1>
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
+        {/* Greets by name + a clickable completeness bar that opens the
+            unified profile form (/profile/edit). Hides the bar at 100%. */}
+        <DashboardProfileProgress me={me} />
         {/* /transactions doesn't exist as an index page — the user-
             facing list pages are /my/orders + /my/sales. Link to
             /my/orders by default since the dashboard's CTA reads
@@ -91,7 +93,7 @@ export default async function DashboardPage() {
         <Link
           href="/my/orders"
           className="text-sm"
-          style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }}
+          style={{ color: 'var(--text-tertiary)', textDecoration: 'none', paddingTop: 4 }}
         >
           View orders →
         </Link>
