@@ -123,6 +123,32 @@ const FLAGS: SettingFlag[] = [
     type: 'boolean',
     default: 'false',
   },
+
+  // ─── Verification ─────────────────────────────────────────────
+  // The cheap Claude-vision ID flow: ~R3/seller (1-credit VerifyNow SA
+  // ID Basic + Claude vision doc+selfie match) vs the legacy ~R59.80
+  // Home Affairs photo pull + facematch. OFF = legacy flow runs
+  // unchanged; flipping ON routes every new /kyc/verify session (whether
+  // proactive from the profile page or forced at first payout) through
+  // the wizard. Reversible — flip OFF and any mid-flow seller resumes the
+  // legacy flow at the consent step. Keep VerifyNow credits funded before
+  // turning ON for real seller volume.
+  {
+    key: 'kyc_claude_flow_enabled',
+    label: 'Cheap Claude-vision ID verification',
+    hint: 'ON = the ~R3/seller Claude-vision ID flow (1-credit SA ID Basic + selfie/document match, human review for borderline matches). OFF = the legacy ~R59.80 Home Affairs photo + facematch. Ensure VerifyNow credits are topped up before enabling for seller volume.',
+    group: 'Verification',
+    type: 'boolean',
+    default: 'false',
+  },
+  {
+    key: 'kyc_anchored_threshold_cents',
+    label: 'Anchored KYC value threshold (cents)',
+    hint: 'Sellers whose highest listing or pending payout is at/above this (in CENTS — 1000000 = R10,000) also get the official Home Affairs photo pulled (+10 credits) as a stronger high-value gate. Invisible to the seller; only applies while the Claude-vision flow is ON.',
+    group: 'Verification',
+    type: 'number',
+    default: '1000000',
+  },
 ];
 
 @Injectable()
