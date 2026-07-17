@@ -27,9 +27,11 @@ import type { CrossCheckResult } from './kyc-cross-check';
  *   anything between / soft fails / Claude unavailable → UNDER_REVIEW
  */
 
-// Same model the listing moderator + dealer verification use.
-const MODEL_VISION =
-  process.env.ANTHROPIC_MODEL_JUDGE ?? 'claude-sonnet-4-6';
+// Sonnet 5 — the current-generation vision model. Dedicated to KYC (its own
+// ANTHROPIC_MODEL_KYC env var) so the identity face-match / document-
+// authenticity judgement is decoupled from the dealer-verification model
+// (ANTHROPIC_MODEL_JUDGE) and can be tuned independently.
+const MODEL_VISION = process.env.ANTHROPIC_MODEL_KYC ?? 'claude-sonnet-5';
 
 const AUTO_APPROVE_FLOOR = 80;
 const AUTO_REJECT_CEILING = 50;
