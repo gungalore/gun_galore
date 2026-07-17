@@ -186,22 +186,34 @@ export class VerifyNowService {
   }
 
   /**
-   * Claude-flow cheap check — VerifyNow "SA ID (Basic)": 1 credit (R2.99)
-   * vs 10 for the home_affairs_id_photo pull. Returns the Home Affairs
-   * record WITHOUT the official photo — the Claude flow matches the selfie
-   * against the seller's uploaded ID document instead, and this call only
-   * proves the ID number is real + supplies name/DOB for the server-side
-   * cross-check.
+   * Claude-flow cheap check — VerifyNow "SAID Verification" (SA ID Basic):
+   * 1 credit (R2.99) vs 10 for the home_affairs_id_photo pull. Returns the
+   * Home Affairs core identity record WITHOUT the official photo — the
+   * Claude flow matches the selfie against the seller's uploaded ID
+   * document instead, and this call only proves the ID number is real +
+   * supplies name/DOB for the server-side cross-check.
    *
-   * reportType: VerifyNow's dashboard names the product "SA ID (Basic)" but
-   * the API string is not published on the pricing page — pin it in sandbox
-   * before flipping kyc_claude_flow_enabled in prod. VERIFYNOW_BASIC_REPORT_TYPE
-   * overrides the default guess without a redeploy.
+   * reportType CONFIRMED against the live API docs (verifynow.co.za/api-docs,
+   * 2026-07-17): "said_verification". VERIFYNOW_BASIC_REPORT_TYPE overrides
+   * it without a redeploy if VerifyNow ever renames it.
    *
-   * Response parsing mirrors verifyIdNumber (same /verify envelope). Basic
-   * may omit fields the photo product returns (esp. dob) — parse everything
-   * defensively and let absent fields degrade to '' rather than erroring;
-   * the DOB↔ID-digit cross-check works even when HA dob is absent.
+   * IMPORTANT — the said_verification response envelope DIFFERS from the
+   * home_affairs_id_photo one (which nests under a singular `result`).
+   * The production SAID response nests under `results.said_verification`:
+   *   { success, requestId, remainingCredits, mode, reportType,
+   *     results: { said_verification: {
+   *       Status: "Success",
+   *       realTimeResults: {
+   *         Status: "ID Number Valid",
+   *         Verification: { Firstnames, Lastname, Dob (YYYY-MM-DD), Age,
+   *                         Gender, Citizenship, DateIssued },
+   *         transaction_id },
+   *       transaction_id } } }
+   * It does NOT return alive/deceased status (per the docs). We also accept
+   * the Enterprise-bundle flat shape (results.said_verification.{Names,
+   * Surname,DateOfBirth,IDValid}) and the legacy singular `result` shape as
+   * fallbacks, so a sandbox / future variant still parses. Missing fields
+   * degrade to '' — the DOB↔ID-digit cross-check works even without HA data.
    */
   async verifyIdBasic(idNumber: string): Promise<IdBasicResult> {
     try {
@@ -239,34 +251,75 @@ export class VerifyNowService {
         );
       }
 
-      const r = (data.result ?? {}) as Record<string, string | undefined>;
+      type Rec = Record<string, unknown>;
+      const asRec = (v: unknown): Rec =>
+        v && typeof v === 'object' ? (v as Rec) : {};
+      const str = (v: unknown): string =>
+        typeof v === 'string' ? v : v == null ? '' : String(v);
 
-      // Same up-front refusals as the photo product.
-      if (r.DeadIndicator && r.DeadIndicator !== 'No') {
+      // Standalone SAID envelope: results.said_verification.realTimeResults.
+      const results = asRec(data.results);
+      const sv = asRec(results[reportType] ?? results.said_verification);
+      const rtr = asRec(sv.realTimeResults);
+      const v = asRec(rtr.Verification);
+      // Fallbacks: legacy singular `result` (home_affairs style) OR the
+      // Enterprise-bundle flat shape carried directly on said_verification.
+      const flat = asRec(data.result);
+
+      // Explicit invalidity → refuse. Standalone reports realTimeResults.Status
+      // ("ID Number Valid" / "…Invalid"); the bundle shape uses IDValid.
+      // NB: test for the negative markers — "invalid" contains "valid", so a
+      // naive `.includes('valid')` would wave an invalid ID straight through.
+      const rtStatus = str(rtr.Status).toLowerCase();
+      if (
+        rtStatus &&
+        (rtStatus.includes('invalid') ||
+          rtStatus.includes('not valid') ||
+          rtStatus.includes('not found') ||
+          rtStatus.includes('fail'))
+      ) {
         throw new KycException('We could not verify this ID number.');
       }
-      if (r.IDNBlocked && r.IDNBlocked !== 'No') {
+      if (sv.IDValid === false || flat.IDValid === false) {
+        throw new KycException('We could not verify this ID number.');
+      }
+      // said_verification omits deceased status, but the fallback shapes may
+      // carry it — refuse if present and flagged.
+      const dead = str(flat.DeadIndicator || sv.DeadIndicator);
+      if (dead && dead !== 'No') {
+        throw new KycException('We could not verify this ID number.');
+      }
+      const blocked = str(flat.IDNBlocked || sv.IDNBlocked);
+      if (blocked && blocked !== 'No') {
         throw new KycException(
           'This ID number has been flagged. Please contact support.',
         );
       }
-      if (r.IDN && idNumber && r.IDN !== idNumber) {
-        throw new KycException(
-          'The provided ID number does not match Home Affairs records.',
-        );
-      }
+
+      const firstName = str(
+        v.Firstnames ?? sv.Names ?? flat.Names ?? flat.Name,
+      );
+      const surname = str(v.Lastname ?? sv.Surname ?? flat.Surname);
+      const dob = str(
+        v.Dob ?? sv.DateOfBirth ?? flat.DateOfBirth ?? flat.dob ?? flat.DOB,
+      );
+      const gender = str(v.Gender ?? sv.Gender ?? flat.Gender);
+      const transactionId = str(
+        sv.transaction_id ??
+          rtr.transaction_id ??
+          data.requestId ??
+          data.transaction_id,
+      );
 
       return {
         success: true,
-        firstName: r.Name ?? '',
-        surname: r.Surname ?? '',
-        dob: r.dob ?? r.DOB ?? r.DateOfBirth ?? '',
-        gender: r.Gender ?? '',
-        deceasedStatus:
-          r.DeadIndicator === 'No' ? 'Alive' : r.DeadIndicator ?? 'Alive',
-        idBlocked: r.IDNBlocked === 'Yes' ? 'YES' : 'NO',
-        transactionId:
-          (data.transaction_id as string) ?? (data.requestId as string) ?? '',
+        firstName,
+        surname,
+        dob,
+        gender,
+        deceasedStatus: dead === 'No' ? 'Alive' : dead || '',
+        idBlocked: blocked === 'Yes' ? 'YES' : 'NO',
+        transactionId,
       };
     } catch (err) {
       if (err instanceof KycException) throw err;
