@@ -5,6 +5,7 @@ import { useAuth, useUser, useClerk } from '@clerk/nextjs';
 import Link from 'next/link';
 import type { Address } from '@/lib/types';
 import { PROVINCE_LABELS } from '@/lib/utils';
+import { safeJson } from '@/lib/safe-json';
 
 const API_URL =
   process.env.INTERNAL_API_URL ??
@@ -79,10 +80,13 @@ export default function SettingsPage() {
         },
       });
       if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
+        const e = await safeJson<{ message?: string }>(res, {});
         throw new Error(e.message ?? `Error ${res.status}`);
       }
-      return res.json();
+      // Mutations (PATCH/DELETE) legitimately return an empty 200/204 body —
+      // a raw res.json() there throws "Unexpected end of JSON input".
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return safeJson<any>(res, {});
     },
     [getToken],
   );

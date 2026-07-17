@@ -17,6 +17,7 @@ import {
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { HelpTip } from '@/components/help-tip';
+import { safeJson } from '@/lib/safe-json';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -278,8 +279,9 @@ export default function EditProfilePage() {
           cache: 'no-store',
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data: Me = await res.json();
+        const data = await safeJson<Me | null>(res, null);
         if (cancelled) return;
+        if (!data) throw new Error('Empty profile response');
         setMe(data);
         setFirstName(data.firstName ?? '');
         setLastName(data.lastName ?? '');
@@ -336,9 +338,10 @@ export default function EditProfilePage() {
           username: username.trim() || null,
         }),
       });
-      const data = await res.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await safeJson<any>(res, {});
       if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
-      setMe(data);
+      if (data?.id) setMe(data);
       setPersonalStatus({ tone: 'success', msg: 'Saved.' });
     } catch (err) {
       setPersonalStatus({
@@ -375,9 +378,10 @@ export default function EditProfilePage() {
           addrLng,
         }),
       });
-      const data = await res.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await safeJson<any>(res, {});
       if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
-      setMe(data);
+      if (data?.id) setMe(data);
       setAddressStatus({ tone: 'success', msg: 'Address saved.' });
     } catch (err) {
       setAddressStatus({
@@ -410,9 +414,10 @@ export default function EditProfilePage() {
           bankAccountType,
         }),
       });
-      const data = await res.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await safeJson<any>(res, {});
       if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
-      setMe(data);
+      if (data?.id) setMe(data);
       setBankStatus({ tone: 'success', msg: 'Banking details saved.' });
     } catch (err) {
       setBankStatus({
@@ -448,7 +453,8 @@ export default function EditProfilePage() {
         },
         body: JSON.stringify({ phone: newPhone.trim() }),
       });
-      const data = await res.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await safeJson<any>(res, {});
       if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
       setPhoneMode('entering-code');
       setPhoneStatus({
@@ -485,14 +491,18 @@ export default function EditProfilePage() {
         },
         body: JSON.stringify({ code: otp.trim() }),
       });
-      const data = await res.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await safeJson<any>(res, {});
       if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
       // Refresh /me so the verified badge re-renders.
       const meRes = await fetch(`${API_URL}/users/me`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: 'no-store',
       });
-      if (meRes.ok) setMe(await meRes.json());
+      if (meRes.ok) {
+        const m = await safeJson<Me | null>(meRes, null);
+        if (m) setMe(m);
+      }
       setPhoneMode('idle');
       setNewPhone('');
       setOtp('');
