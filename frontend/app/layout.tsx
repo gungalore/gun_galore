@@ -13,6 +13,7 @@ import { StickyFeaturedStrip } from '@/components/sticky-featured-strip';
 import { ConnectionStatusBanner } from '@/components/connection-status-banner';
 import { SwUpdateBanner } from '@/components/sw-update-banner';
 import { PushFirstLaunchPrompt } from '@/components/push-first-launch-prompt';
+import { ProfileSetupPrompt } from '@/components/profile-setup-prompt';
 import { WishlistProvider } from '@/lib/use-wishlist';
 import ConsentSync from '@/components/consent-sync';
 import { AskGgProvider } from '@/lib/use-ask-gg-widget';
@@ -309,6 +310,14 @@ export default function RootLayout({
               condition. Matches the iOS/Android-native pattern where
               an installed app asks for notifications on first launch. */}
           <PushFirstLaunchPrompt />
+          {/* One-time post-signup "finish your profile" welcome dialog.
+              Self-gates: signed-in + profile <100% + freshly-created
+              account + not snoozed + off auth/KYC/create-listing/admin
+              routes + once per session. Shows a progress bar off the
+              profileCompleteness value already in /users/me and points
+              to /profile/edit. Fully dismissible (unlike the create-
+              listing hard-wall modal). */}
+          <ProfileSetupPrompt />
           {/* Ask GG Everywhere — site-wide launcher + lazy chat panel.
               Self-gates off /admin, /checkout, /ask-gg, auth and other
               focused routes; FAB in browser modes only (the PWA tab is
