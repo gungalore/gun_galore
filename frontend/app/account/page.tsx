@@ -63,6 +63,21 @@ function fmtDate(iso: string | null | undefined): string | null {
   return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+// Parse a fetch Response safely. Critically guards the `.json()` call: an
+// endpoint can legitimately answer 200 with an EMPTY body (e.g.
+// /subscriptions/me for a brand-new user with no subscription), and a raw
+// res.json() on that throws "Unexpected end of JSON input", 500-ing the whole
+// account page. Returns the fallback instead of throwing.
+async function safeJson<T>(res: Response | null, fallback: T): Promise<T> {
+  if (!res || !res.ok) return fallback;
+  try {
+    const text = await res.text();
+    return text ? (JSON.parse(text) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export default async function AccountPage() {
   const { userId, getToken } = await auth();
   if (!userId) redirect('/sign-in?redirect_url=/account');
@@ -76,11 +91,13 @@ export default async function AccountPage() {
     fetch(`${API_URL}/transactions?role=buyer`, { headers, cache: 'no-store' }).catch(() => null),
   ]);
 
-  const me: Me | null = meRes?.ok ? await meRes.json() : null;
-  const sub: { tier?: string; periodEnd?: string | null } | null =
-    subRes?.ok ? await subRes.json() : null;
-  const alerts: { total?: number } | null = alertsRes?.ok ? await alertsRes.json() : null;
-  const orders: { paymentStatus?: string }[] = ordersRes?.ok ? await ordersRes.json() : [];
+  const me = await safeJson<Me | null>(meRes, null);
+  const sub = await safeJson<{ tier?: string; periodEnd?: string | null } | null>(
+    subRes,
+    null,
+  );
+  const alerts = await safeJson<{ total?: number } | null>(alertsRes, null);
+  const orders = await safeJson<{ paymentStatus?: string }[]>(ordersRes, []);
 
   const unread = alerts?.total ?? 0;
   const activeOrders = Array.isArray(orders)

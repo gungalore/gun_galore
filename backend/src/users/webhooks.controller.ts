@@ -11,10 +11,20 @@ interface ClerkUserData {
   last_name: string | null;
   username: string | null;
   image_url: string;
-  // Phone is captured at signup via the custom form and stored in
-  // unsafe_metadata so it's available before Clerk's phone-verification
-  // flow runs (which we skip — we only need the number for SMS/shipping).
-  unsafe_metadata?: { phone?: string };
+  // Phone + sign-up consent are captured via the custom form and stored in
+  // unsafe_metadata: phone so it's available before Clerk's phone-verification
+  // flow (which we skip); consent (Terms/Privacy/18+/marketing + policy
+  // version) as the durable POPIA record, attached to this specific Clerk user.
+  unsafe_metadata?: {
+    phone?: string;
+    consent?: {
+      terms?: boolean;
+      privacy?: boolean;
+      age?: boolean;
+      marketing?: boolean;
+      policyVersion?: string;
+    };
+  };
 }
 
 interface ClerkWebhookEvent {
@@ -60,26 +70,57 @@ export class WebhooksController {
     const { type, data } = event;
     this.logger.log(`Clerk webhook: ${type} for ${data.id}`);
 
-    if (type === 'user.created' || type === 'user.updated') {
-      // Phone preference: verified phone_numbers > unsafe_metadata.phone.
-      // Our custom form stuffs the SA number into unsafe_metadata so it's
-      // available without going through Clerk's phone-verification step.
-      const phone =
-        data.phone_numbers[0]?.phone_number ?? data.unsafe_metadata?.phone;
+    // Never let a sync failure (e.g. a P2002 unique conflict, or a transient
+    // DB error) escape as a 500 — svix/Clerk would retry the same poison event
+    // repeatedly. We log loudly and 200 the webhook; the ClerkGuard lazy
+    // upsert-from-Clerk is the durable backstop that syncs the user on their
+    // first authenticated request regardless.
+    try {
+      if (type === 'user.created' || type === 'user.updated') {
+        // Phone preference: verified phone_numbers > unsafe_metadata.phone.
+        // Our custom form stuffs the SA number into unsafe_metadata so it's
+        // available without going through Clerk's phone-verification step.
+        const phone =
+          data.phone_numbers[0]?.phone_number ?? data.unsafe_metadata?.phone;
 
-      await this.usersService.upsertFromClerk({
-        clerkId: data.id,
-        email: data.email_addresses[0]?.email_address ?? '',
-        username: data.username ?? undefined,
-        firstName: data.first_name ?? undefined,
-        lastName: data.last_name ?? undefined,
-        phone: phone ?? undefined,
-        avatarUrl: data.image_url ?? undefined,
-      });
-    }
+        // Resurrection guard: a reordered/retried `user.updated` that arrives
+        // AFTER a `user.deleted` must not recreate the row. Updates only touch
+        // an existing user; only `user.created` may create.
+        if (type === 'user.updated') {
+          const exists = await this.usersService.findByClerkId(data.id);
+          if (!exists) {
+            this.logger.warn(
+              `Clerk user.updated for ${data.id} with no local row — skipping (likely a post-deletion reorder)`,
+            );
+            return { received: true };
+          }
+        }
 
-    if (type === 'user.deleted') {
-      await this.usersService.deleteByClerkId(data.id);
+        await this.usersService.upsertFromClerk({
+          clerkId: data.id,
+          email: data.email_addresses[0]?.email_address ?? '',
+          username: data.username ?? undefined,
+          firstName: data.first_name ?? undefined,
+          lastName: data.last_name ?? undefined,
+          phone: phone ?? undefined,
+          avatarUrl: data.image_url ?? undefined,
+        });
+
+        // Stamp the durable POPIA sign-up consent (email path attaches it to
+        // unsafe_metadata at signUp.create). Set-once, so re-runs are safe.
+        const consent = data.unsafe_metadata?.consent;
+        if (consent) {
+          await this.usersService.recordSignupConsent(data.id, consent);
+        }
+      }
+
+      if (type === 'user.deleted') {
+        await this.usersService.deleteByClerkId(data.id);
+      }
+    } catch (err) {
+      this.logger.error(
+        `Clerk webhook ${type} for ${data.id} failed (200-ing so it isn't retried indefinitely; lazy-sync backstops it): ${(err as Error).message}`,
+      );
     }
 
     return { received: true };

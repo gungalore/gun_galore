@@ -178,8 +178,20 @@ function VerifyKycPageInner() {
   // the transaction page that prompted them). For token arrivals (no
   // session) default to home, NOT /dashboard — that would itself bounce
   // to sign-in and re-create the wall we're removing.
+  // Only honour a SAME-ORIGIN, single-slash-rooted relative path — never an
+  // absolute or protocol-relative ("//evil.example") URL, which would let a
+  // crafted /kyc/verify?returnTo=… link bounce the user off-site (phishing) at
+  // a high-trust identity/banking moment.
+  const rawReturnTo = searchParams.get('returnTo');
   const returnTo =
-    searchParams.get('returnTo') || (actionToken ? '/' : '/dashboard');
+    rawReturnTo &&
+    rawReturnTo.startsWith('/') &&
+    !rawReturnTo.startsWith('//') &&
+    !rawReturnTo.includes('\\') // "\" is normalised to "/" by browsers → treat as protocol-relative
+      ? rawReturnTo
+      : actionToken
+        ? '/'
+        : '/dashboard';
 
   useEffect(() => {
     // The token flow runs without a Clerk session — don't force sign-in.

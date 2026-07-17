@@ -123,21 +123,27 @@ async function bootstrap() {
     origin: (origin, callback) => {
       // Same-origin / curl / Postman → no Origin header → allow.
       if (!origin) return callback(null, true);
+      const isProd = process.env.NODE_ENV === 'production';
       const allowed = [
         process.env.FRONTEND_URL,
-        // Local dev defaults — Next dev on 3000, prod-test on 3002,
-        // any other local port we spin up.
-        /^https?:\/\/localhost(:\d+)?$/,
-        /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
-        // Same machine reached from a phone over LAN (ngrok / IP).
-        /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/,
         // Capacitor (Hunt Ballistics iOS app + future Android). Each
         // platform serves the bundled web app under a custom scheme:
         //   iOS:     capacitor://localhost
         //   Android: https://localhost (or capacitor:// in newer Cap)
         //   legacy:  ionic://localhost
+        // These are first-party app shells and must be trusted in prod too.
         /^capacitor:\/\/localhost$/,
         /^ionic:\/\/localhost$/,
+        // Local dev / LAN origins are DEV-ONLY — never trusted (with
+        // credentials) in production, where only FRONTEND_URL + the app
+        // schemes above are valid.
+        ...(isProd
+          ? []
+          : [
+              /^https?:\/\/localhost(:\d+)?$/,
+              /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+              /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/,
+            ]),
       ].filter(Boolean);
       const ok = allowed.some((rule) =>
         rule instanceof RegExp ? rule.test(origin) : rule === origin,

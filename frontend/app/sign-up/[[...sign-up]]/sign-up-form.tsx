@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useRef, useId, FormEvent } from 'react';
 import Link from 'next/link';
 // We import the LEGACY useSignUp from @clerk/nextjs/legacy because Clerk 7
 // has a new "Signals"-based API that returns a SignUpFutureResource — that
@@ -8,20 +8,56 @@ import Link from 'next/link';
 // { isLoaded, signUp, setActive } which matches the imperative flow we want
 // (create → prepareEmailAddressVerification → attemptEmailAddressVerification).
 import { useSignUp } from '@clerk/nextjs/legacy';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { isClerkAPIResponseError } from '@clerk/nextjs/errors';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
-// Sign-up flow
-// ─────────────
-// Step 1 ("form"): user fills first/last/username/email/cell/password and submits.
-//   We call signUp.create(...) which puts Clerk in a missing_email_address state
-//   and emails a 6-digit code.
-// Step 2 ("verify"): we show a code-input. attemptEmailAddressVerification.
-//   On status=complete we activate the session and redirect to /dashboard.
-//   Our backend webhook receives `user.created` and upserts the row in our DB.
-// Step 3 ("done"): unused fallthrough — Clerk has already navigated us away.
+// Version stamp recorded with each consent so we can prove WHICH Terms /
+// Privacy Policy a user accepted (POPIA accountability). Bump when the
+// policies materially change.
+const POLICY_VERSION = '2026-07-17';
+// sessionStorage key the app-wide <ConsentSync/> flushes to the backend once
+// the session is live. Used ONLY for the Google/OAuth path (where we can't
+// attach unsafeMetadata to the redirect) — the email path records consent via
+// Clerk unsafeMetadata instead (per-user, race-free). sessionStorage (per-tab,
+// cleared on tab close) + a timestamp TTL keeps a leftover record from an
+// abandoned OAuth attempt from ever attaching to a different account.
+const PENDING_CONSENT_KEY = 'gg_pending_consent';
+
+function consentPayload(marketing: boolean) {
+  return {
+    terms: true,
+    privacy: true,
+    age: true,
+    marketing,
+    policyVersion: POLICY_VERSION,
+  };
+}
+
+// Only accept a same-origin, single-slash-rooted relative path as a post-auth
+// redirect target — never an absolute, protocol-relative ("//evil"), or
+// backslash-tricked ("/\evil" → browsers normalise "\" to "/") URL.
+function safeRelativePath(raw: string | null | undefined): string | null {
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) {
+    return null;
+  }
+  return raw;
+}
+
+// OAuth-only: stash the consent (tagged with a timestamp) in per-tab
+// sessionStorage so <ConsentSync/> can record it after the redirect completes.
+function writePendingConsent(marketing: boolean) {
+  try {
+    sessionStorage.setItem(
+      PENDING_CONSENT_KEY,
+      JSON.stringify({ ...consentPayload(marketing), ts: Date.now() }),
+    );
+  } catch {
+    // Storage unavailable (private mode) — consent still gated in the UI; the
+    // record is best-effort. Never block sign-up on this.
+  }
+}
 
 type Step = 'form' | 'verify';
 
@@ -29,7 +65,8 @@ type UsernameStatus =
   | { kind: 'idle' }
   | { kind: 'checking' }
   | { kind: 'available' }
-  | { kind: 'taken'; reason: string };
+  | { kind: 'taken'; reason: string }
+  | { kind: 'error' }; // availability endpoint failed — advisory only
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -39,7 +76,7 @@ const inputStyle: React.CSSProperties = {
   borderRadius: '6px',
   padding: '10px 12px',
   fontSize: '14px',
-  outline: 'none',
+  // NOTE: no `outline: none` — keyboard users need a visible focus ring.
 };
 
 function Field({
@@ -47,29 +84,31 @@ function Field({
   required,
   children,
   hint,
+  htmlFor,
 }: {
   label: string;
   required?: boolean;
   children: React.ReactNode;
   hint?: string;
+  htmlFor?: string;
 }) {
   return (
     <div>
       <label
+        htmlFor={htmlFor}
         className="block text-xs mb-1.5"
         style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
       >
         {label}
         {required && (
-          <span style={{ color: 'var(--red)', marginLeft: 4 }}>*</span>
+          <span style={{ color: 'var(--red)', marginLeft: 4 }} aria-hidden>
+            *
+          </span>
         )}
       </label>
       {children}
       {hint && (
-        <p
-          className="text-xs mt-1"
-          style={{ color: 'var(--text-tertiary)' }}
-        >
+        <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
           {hint}
         </p>
       )}
@@ -80,6 +119,20 @@ function Field({
 export default function SignUpForm() {
   const { isLoaded, signUp, setActive } = useSignUp();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Where to land after sign-up — honour a same-origin ?redirect_url, else
+  // /dashboard. Validated so it can never become an open redirect.
+  const redirectTarget = safeRelativePath(searchParams.get('redirect_url')) ?? '/dashboard';
+
+  const ids = {
+    firstName: useId(),
+    lastName: useId(),
+    username: useId(),
+    email: useId(),
+    phone: useId(),
+    password: useId(),
+    usernameStatus: useId(),
+  };
 
   const [step, setStep] = useState<Step>('form');
   const [form, setForm] = useState({
@@ -91,21 +144,43 @@ export default function SignUpForm() {
     password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
-  const [agreed, setAgreed] = useState(false);
+  const [agreedTerms, setAgreedTerms] = useState(false);
+  const [agreedAge, setAgreedAge] = useState(false);
+  const [marketing, setMarketing] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>({
     kind: 'idle',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [ssoLoading, setSsoLoading] = useState(false);
   const [formError, setFormError] = useState('');
+  const formErrorRef = useRef<HTMLDivElement>(null);
 
   // Verification step
   const [code, setCode] = useState('');
   const [verifyError, setVerifyError] = useState('');
+  const [verifyNotice, setVerifyNotice] = useState('');
   const [verifying, setVerifying] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
+
+  // Move focus to the error banner on a failed submit so screen-reader +
+  // keyboard users aren't stranded (the banner also announces via role=alert).
+  useEffect(() => {
+    if (formError && formErrorRef.current) {
+      formErrorRef.current.focus();
+      formErrorRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [formError]);
+
+  // Resend cooldown ticker.
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   // ── Debounced username availability check ──────────────────────────
   useEffect(() => {
@@ -122,6 +197,7 @@ export default function SignUpForm() {
           `${API_URL}/users/username-check?u=${encodeURIComponent(u)}`,
           { signal: ctrl.signal },
         );
+        if (!res.ok) throw new Error(`status ${res.status}`);
         const data: { available: boolean; reason?: string } = await res.json();
         if (data.available) {
           setUsernameStatus({ kind: 'available' });
@@ -133,7 +209,9 @@ export default function SignUpForm() {
         }
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
-        setUsernameStatus({ kind: 'idle' });
+        // Advisory only — the endpoint hiccupped. Do NOT block sign-up; Clerk
+        // enforces uniqueness server-side and returns a real error on submit.
+        setUsernameStatus({ kind: 'error' });
       }
     }, 400);
     return () => {
@@ -141,6 +219,14 @@ export default function SignUpForm() {
       ctrl.abort();
     };
   }, [form.username]);
+
+  const consentOk = agreedTerms && agreedAge;
+
+  // Build the SA E.164 number: strip non-digits AND a single leading 0
+  // (users type "082…" but E.164 is +27 82…), then prefix +27.
+  function phoneToE164(raw: string): string {
+    return '+27' + raw.replace(/\D/g, '').replace(/^0/, '');
+  }
 
   // ── Step 1: create the Clerk SignUp + send verification email ──────
   async function handleSubmit(e: FormEvent) {
@@ -150,25 +236,26 @@ export default function SignUpForm() {
     setSubmitting(true);
 
     try {
-      // Phone digits without spaces, plus +27 prefix for E.164 storage.
-      const phoneE164 = '+27' + form.phone.replace(/\D/g, '');
-
       await signUp.create({
         emailAddress: form.email.trim(),
         password: form.password,
         username: form.username.trim().toLowerCase(),
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
-        // Phone goes in unsafeMetadata — our webhook reads it from there
-        // and stores it in User.phone. We skip Clerk's phone-verification
-        // flow because the number is only used for SMS notifications,
-        // not authentication.
-        unsafeMetadata: { phone: phoneE164 },
+        // Phone + consent go in unsafeMetadata — our webhook / lazy-sync read
+        // them from there. Phone → User.phone (unverified; the OTP flow marks
+        // it verified). consent → the timestamped POPIA record. Attaching
+        // consent to the Clerk user (not browser storage) makes it per-user
+        // and race-free: it can never attach to a different account.
+        unsafeMetadata: {
+          phone: phoneToE164(form.phone),
+          consent: consentPayload(marketing),
+        },
       });
 
-      // Trigger email verification
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
       setStep('verify');
+      setResendCooldown(30);
     } catch (err) {
       setFormError(prettyClerkError(err));
     } finally {
@@ -189,10 +276,13 @@ export default function SignUpForm() {
       });
       if (result.status === 'complete') {
         await setActive({ session: result.createdSessionId });
-        router.push('/dashboard');
+        // Consent is flushed to the backend by the app-wide <ConsentSync/>
+        // once the session is live — no token juggling here.
+        router.push(redirectTarget);
       } else {
+        // Never surface a raw Clerk status string to the user.
         setVerifyError(
-          `Verification incomplete — status: ${result.status}. Please try again.`,
+          "We couldn't finish verifying your account. Request a new code, or contact support if this keeps happening.",
         );
       }
     } catch (err) {
@@ -203,26 +293,49 @@ export default function SignUpForm() {
   }
 
   async function handleResend() {
-    if (!isLoaded || !signUp) return;
+    if (!isLoaded || !signUp || resendCooldown > 0) return;
     setVerifyError('');
+    setVerifyNotice('');
     try {
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      setVerifyNotice(`A new code is on its way to ${form.email}.`);
+      setResendCooldown(30);
     } catch (err) {
       setVerifyError(prettyClerkError(err));
     }
   }
 
+  // Abandon the in-progress sign-up and return to the form (e.g. the user
+  // mistyped their email). Clerk keeps the pending sign-up server-side, so we
+  // just reset our local step; a fresh submit with a corrected email starts
+  // over cleanly.
+  function handleStartOver() {
+    setStep('form');
+    setCode('');
+    setVerifyError('');
+    setVerifyNotice('');
+  }
+
   async function handleGoogleSSO() {
     if (!isLoaded || !signUp) return;
+    if (!consentOk) {
+      setFormError(
+        'Please agree to the Terms & Privacy Policy and confirm you are 18 or older before continuing.',
+      );
+      return;
+    }
     setFormError('');
+    setSsoLoading(true);
     try {
+      writePendingConsent(marketing);
       await signUp.authenticateWithRedirect({
         strategy: 'oauth_google',
         redirectUrl: '/sso-callback',
-        redirectUrlComplete: '/dashboard',
+        redirectUrlComplete: redirectTarget,
       });
     } catch (err) {
       setFormError(prettyClerkError(err));
+      setSsoLoading(false);
     }
   }
 
@@ -244,8 +357,11 @@ export default function SignUpForm() {
         setCode={setCode}
         onSubmit={handleVerify}
         onResend={handleResend}
+        onStartOver={handleStartOver}
         verifying={verifying}
         error={verifyError}
+        notice={verifyNotice}
+        resendCooldown={resendCooldown}
       />
     );
   }
@@ -277,25 +393,48 @@ export default function SignUpForm() {
         >
           Create your account
         </h1>
-        <p
-          className="text-sm mb-6"
-          style={{ color: 'var(--text-tertiary)' }}
-        >
+        <p className="text-sm mb-6" style={{ color: 'var(--text-tertiary)' }}>
           South Africa&apos;s firearms marketplace — sign up to buy or sell.
         </p>
+
+        {/* Top-level form error (announced + focus-managed) */}
+        {formError && (
+          <div
+            ref={formErrorRef}
+            role="alert"
+            aria-live="assertive"
+            tabIndex={-1}
+            className="mb-4 px-3 py-2 rounded-[6px] text-xs"
+            style={{
+              background: 'rgba(200,16,46,0.08)',
+              border: '0.5px solid var(--red)',
+              color: 'var(--red)',
+              outline: 'none',
+            }}
+          >
+            {formError}
+          </div>
+        )}
 
         {/* Google SSO */}
         <button
           type="button"
           onClick={handleGoogleSSO}
+          disabled={ssoLoading || !consentOk}
           className="w-full py-2.5 rounded-[6px] text-sm flex items-center justify-center gap-2 mb-4"
           style={{
             background: 'var(--bg-inset)',
             border: '0.5px solid var(--border)',
             color: 'var(--text-primary)',
             fontWeight: 500,
-            cursor: 'pointer',
+            cursor: ssoLoading || !consentOk ? 'not-allowed' : 'pointer',
+            opacity: consentOk ? 1 : 0.5,
           }}
+          title={
+            consentOk
+              ? undefined
+              : 'Agree to the Terms & confirm you are 18+ to continue'
+          }
         >
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
             <path
@@ -315,56 +454,27 @@ export default function SignUpForm() {
               d="M8 3.18c1.18 0 2.24.4 3.07 1.2l2.3-2.3A8 8 0 0 0 8 0 8 8 0 0 0 .86 4.4l2.74 2.04A4.7 4.7 0 0 1 8 3.18Z"
             />
           </svg>
-          Continue with Google
+          {ssoLoading ? 'Redirecting…' : 'Continue with Google'}
         </button>
 
         {/* Divider */}
         <div className="flex items-center gap-3 my-4">
-          <span
-            style={{
-              flex: 1,
-              height: 1,
-              background: 'var(--border)',
-              opacity: 0.5,
-            }}
-          />
-          <span
-            className="text-xs"
-            style={{ color: 'var(--text-tertiary)' }}
-          >
+          <span style={{ flex: 1, height: 1, background: 'var(--border)', opacity: 0.5 }} />
+          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
             or
           </span>
-          <span
-            style={{
-              flex: 1,
-              height: 1,
-              background: 'var(--border)',
-              opacity: 0.5,
-            }}
-          />
+          <span style={{ flex: 1, height: 1, background: 'var(--border)', opacity: 0.5 }} />
         </div>
-
-        {/* Top-level form error */}
-        {formError && (
-          <div
-            className="mb-4 px-3 py-2 rounded-[6px] text-xs"
-            style={{
-              background: 'rgba(200,16,46,0.08)',
-              border: '0.5px solid var(--red)',
-              color: 'var(--red)',
-            }}
-          >
-            {formError}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* First name + Surname */}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="First name" required>
+            <Field label="First name" required htmlFor={ids.firstName}>
               <input
+                id={ids.firstName}
                 type="text"
                 required
+                aria-required
                 value={form.firstName}
                 onChange={(e) => set('firstName', e.target.value)}
                 style={inputStyle}
@@ -372,10 +482,12 @@ export default function SignUpForm() {
                 placeholder="Gerhard"
               />
             </Field>
-            <Field label="Surname" required>
+            <Field label="Surname" required htmlFor={ids.lastName}>
               <input
+                id={ids.lastName}
                 type="text"
                 required
+                aria-required
                 value={form.lastName}
                 onChange={(e) => set('lastName', e.target.value)}
                 style={inputStyle}
@@ -387,16 +499,22 @@ export default function SignUpForm() {
 
           {/* Username with live availability check */}
           <div>
-            <label
-              className="block text-xs mb-1.5 flex items-center justify-between"
-              style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
-            >
-              <span>
+            <div className="flex items-center justify-between mb-1.5">
+              <label
+                htmlFor={ids.username}
+                className="block text-xs"
+                style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
+              >
                 Username
-                <span style={{ color: 'var(--red)', marginLeft: 4 }}>*</span>
-              </span>
+                <span style={{ color: 'var(--red)', marginLeft: 4 }} aria-hidden>
+                  *
+                </span>
+              </label>
               {form.username && (
                 <span
+                  id={ids.usernameStatus}
+                  role="status"
+                  aria-live="polite"
                   className="text-xs"
                   style={{
                     color:
@@ -411,21 +529,24 @@ export default function SignUpForm() {
                   {usernameStatus.kind === 'checking' && 'Checking…'}
                   {usernameStatus.kind === 'available' && '✓ Available'}
                   {usernameStatus.kind === 'taken' && '✕ ' + usernameStatus.reason}
+                  {usernameStatus.kind === 'error' &&
+                    "Couldn't check right now — we'll confirm on submit"}
                 </span>
               )}
-            </label>
+            </div>
             <input
+              id={ids.username}
               type="text"
               required
+              aria-required
+              aria-describedby={form.username ? ids.usernameStatus : undefined}
+              aria-invalid={usernameStatus.kind === 'taken'}
               minLength={3}
               maxLength={32}
               pattern="[a-z0-9_]+"
               value={form.username}
               onChange={(e) =>
-                set(
-                  'username',
-                  e.target.value.replace(/\s+/g, '').toLowerCase(),
-                )
+                set('username', e.target.value.replace(/\s+/g, '').toLowerCase())
               }
               style={{
                 ...inputStyle,
@@ -439,19 +560,18 @@ export default function SignUpForm() {
               autoComplete="username"
               placeholder="gerhardf"
             />
-            <p
-              className="text-xs mt-1"
-              style={{ color: 'var(--text-tertiary)' }}
-            >
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
               Shown publicly on your listings. Lowercase letters, numbers, and underscores.
             </p>
           </div>
 
           {/* Email */}
-          <Field label="Email address" required>
+          <Field label="Email address" required htmlFor={ids.email}>
             <input
+              id={ids.email}
               type="email"
               required
+              aria-required
               value={form.email}
               onChange={(e) => set('email', e.target.value)}
               style={inputStyle}
@@ -464,6 +584,7 @@ export default function SignUpForm() {
           <Field
             label="Cell number"
             required
+            htmlFor={ids.phone}
             hint="We use this for SMS-based delivery and dispute notifications."
           >
             <div className="flex gap-2">
@@ -474,17 +595,19 @@ export default function SignUpForm() {
                   border: '0.5px solid var(--border)',
                   color: 'var(--text-tertiary)',
                 }}
+                aria-hidden
               >
                 +27
               </span>
               <input
+                id={ids.phone}
                 type="tel"
                 required
-                pattern="[0-9 ]{8,12}"
+                aria-required
+                aria-label="Cell number (South African, without the country code)"
+                pattern="0?[0-9 ]{8,12}"
                 value={form.phone}
-                onChange={(e) =>
-                  set('phone', e.target.value.replace(/[^\d ]/g, ''))
-                }
+                onChange={(e) => set('phone', e.target.value.replace(/[^\d ]/g, ''))}
                 style={inputStyle}
                 autoComplete="tel"
                 placeholder="82 000 0000"
@@ -493,11 +616,13 @@ export default function SignUpForm() {
           </Field>
 
           {/* Password */}
-          <Field label="Password" required hint="At least 8 characters.">
+          <Field label="Password" required htmlFor={ids.password} hint="At least 8 characters.">
             <div style={{ position: 'relative' }}>
               <input
+                id={ids.password}
                 type={showPassword ? 'text' : 'password'}
                 required
+                aria-required
                 minLength={8}
                 value={form.password}
                 onChange={(e) => set('password', e.target.value)}
@@ -509,6 +634,7 @@ export default function SignUpForm() {
                 type="button"
                 onClick={() => setShowPassword((s) => !s)}
                 className="text-xs"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
                 style={{
                   position: 'absolute',
                   right: 10,
@@ -526,49 +652,69 @@ export default function SignUpForm() {
             </div>
           </Field>
 
-          {/* Terms */}
-          <label
-            className="flex items-start gap-2 text-xs cursor-pointer"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-              style={{
-                marginTop: 2,
-                accentColor: 'var(--red)',
-                cursor: 'pointer',
-              }}
-            />
-            <span>
-              I agree to the{' '}
-              <Link
-                href="/terms"
-                style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}
-              >
-                Terms
-              </Link>
-              {' '}and{' '}
-              <Link
-                href="/privacy"
-                style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}
-              >
-                Privacy Policy
-              </Link>
-              {' '}and I am over 18 years old.
-            </span>
-          </label>
+          {/* Consent — Terms/Privacy and the 18+ affirmation are SEPARATE,
+              both required; marketing is a distinct optional opt-in. */}
+          <div className="space-y-2 pt-1">
+            <label
+              className="flex items-start gap-2 text-xs cursor-pointer"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              <input
+                type="checkbox"
+                checked={agreedTerms}
+                onChange={(e) => setAgreedTerms(e.target.checked)}
+                style={{ marginTop: 2, accentColor: 'var(--red)', cursor: 'pointer' }}
+              />
+              <span>
+                I agree to the{' '}
+                <Link href="/terms" style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}>
+                  Terms
+                </Link>{' '}
+                and{' '}
+                <Link href="/privacy" style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}>
+                  Privacy Policy
+                </Link>
+                .
+              </span>
+            </label>
+            <label
+              className="flex items-start gap-2 text-xs cursor-pointer"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              <input
+                type="checkbox"
+                checked={agreedAge}
+                onChange={(e) => setAgreedAge(e.target.checked)}
+                style={{ marginTop: 2, accentColor: 'var(--red)', cursor: 'pointer' }}
+              />
+              <span>I confirm I am 18 years of age or older.</span>
+            </label>
+            <label
+              className="flex items-start gap-2 text-xs cursor-pointer"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              <input
+                type="checkbox"
+                checked={marketing}
+                onChange={(e) => setMarketing(e.target.checked)}
+                style={{ marginTop: 2, accentColor: 'var(--red)', cursor: 'pointer' }}
+              />
+              <span>
+                Send me occasional deals and product news (optional — you can opt out anytime).
+              </span>
+            </label>
+          </div>
 
           {/* Clerk CAPTCHA mount point — required when smart bot protection is on.
               Clerk auto-detects and hides this when not needed. */}
           <div id="clerk-captcha" />
 
           {(() => {
+            // Username availability is ADVISORY: block only on a confirmed
+            // 'taken'. 'idle' / 'checking' / 'error' still allow submit — Clerk
+            // enforces uniqueness server-side and returns a real error.
             const canSubmit =
-              agreed &&
-              usernameStatus.kind === 'available' &&
-              !submitting;
+              consentOk && usernameStatus.kind !== 'taken' && !submitting;
             return (
               <button
                 type="submit"
@@ -588,15 +734,9 @@ export default function SignUpForm() {
           })()}
         </form>
 
-        <p
-          className="text-xs text-center mt-5"
-          style={{ color: 'var(--text-tertiary)' }}
-        >
+        <p className="text-xs text-center mt-5" style={{ color: 'var(--text-tertiary)' }}>
           Already have an account?{' '}
-          <Link
-            href="/sign-in"
-            style={{ color: 'var(--red)', textDecoration: 'none' }}
-          >
+          <Link href="/sign-in" style={{ color: 'var(--red)', textDecoration: 'none' }}>
             Sign in
           </Link>
         </p>
@@ -613,59 +753,69 @@ function VerifyStep({
   setCode,
   onSubmit,
   onResend,
+  onStartOver,
   verifying,
   error,
+  notice,
+  resendCooldown,
 }: {
   email: string;
   code: string;
   setCode: (c: string) => void;
   onSubmit: (e: FormEvent) => void;
   onResend: () => void;
+  onStartOver: () => void;
   verifying: boolean;
   error: string;
+  notice: string;
+  resendCooldown: number;
 }) {
+  const codeId = useId();
   return (
     <div className="w-full max-w-[480px]">
       <div className="text-center mb-6">
         <Link href="/" style={{ textDecoration: 'none' }}>
           <span
             className="text-xl tracking-tight"
-            style={{
-              color: 'var(--text-primary)',
-              fontWeight: 500,
-              letterSpacing: '-0.01em',
-            }}
+            style={{ color: 'var(--text-primary)', fontWeight: 500, letterSpacing: '-0.01em' }}
           >
-            Gun
-            <span style={{ color: 'var(--red)' }}>·</span>
-            Galore
+            Gun<span style={{ color: 'var(--red)' }}>·</span>Galore
           </span>
         </Link>
       </div>
 
       <div
         className="rounded-[8px] p-6 sm:p-8"
-        style={{
-          background: 'var(--bg-card)',
-          border: '0.5px solid var(--border)',
-        }}
+        style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
       >
-        <h1
-          className="text-xl mb-1"
-          style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-        >
+        <h1 className="text-xl mb-1" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
           Check your email
         </h1>
-        <p
-          className="text-sm mb-6"
-          style={{ color: 'var(--text-tertiary)' }}
-        >
+        <p className="text-sm mb-6" style={{ color: 'var(--text-tertiary)' }}>
           We sent a 6-digit code to{' '}
-          <span style={{ color: 'var(--text-primary)' }}>{email}</span>. Enter it below to finish creating your account.
+          <span style={{ color: 'var(--text-primary)' }}>{email}</span>. Enter it below to finish
+          creating your account.{' '}
+          <button
+            type="button"
+            onClick={onStartOver}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--red)',
+              cursor: 'pointer',
+              padding: 0,
+              textDecoration: 'underline',
+              fontSize: 'inherit',
+            }}
+          >
+            Wrong email? Start over
+          </button>
         </p>
 
         {error && (
           <div
+            role="alert"
+            aria-live="assertive"
             className="mb-4 px-3 py-2 rounded-[6px] text-xs"
             style={{
               background: 'rgba(200,16,46,0.08)',
@@ -676,15 +826,31 @@ function VerifyStep({
             {error}
           </div>
         )}
+        {!error && notice && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-4 px-3 py-2 rounded-[6px] text-xs"
+            style={{
+              background: 'rgba(34,197,94,0.08)',
+              border: '0.5px solid rgba(34,197,94,0.4)',
+              color: '#22c55e',
+            }}
+          >
+            {notice}
+          </div>
+        )}
 
         <form onSubmit={onSubmit} className="space-y-4">
-          <Field label="Verification code" required>
+          <Field label="Verification code" required htmlFor={codeId}>
             <input
+              id={codeId}
               type="text"
               inputMode="numeric"
               pattern="[0-9]{6}"
               maxLength={6}
               required
+              aria-required
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
               style={{
@@ -716,23 +882,21 @@ function VerifyStep({
           </button>
         </form>
 
-        <p
-          className="text-xs text-center mt-5"
-          style={{ color: 'var(--text-tertiary)' }}
-        >
+        <p className="text-xs text-center mt-5" style={{ color: 'var(--text-tertiary)' }}>
           Didn&apos;t get the code?{' '}
           <button
             type="button"
             onClick={onResend}
+            disabled={resendCooldown > 0}
             style={{
               background: 'transparent',
               border: 'none',
-              color: 'var(--red)',
-              cursor: 'pointer',
+              color: resendCooldown > 0 ? 'var(--text-tertiary)' : 'var(--red)',
+              cursor: resendCooldown > 0 ? 'not-allowed' : 'pointer',
               padding: 0,
             }}
           >
-            Resend
+            {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend'}
           </button>
         </p>
       </div>
@@ -746,7 +910,6 @@ function prettyClerkError(err: unknown): string {
   if (isClerkAPIResponseError(err)) {
     const first = err.errors[0];
     if (!first) return 'Something went wrong. Please try again.';
-    // longMessage is friendlier than message
     return first.longMessage ?? first.message ?? 'Something went wrong.';
   }
   if (err instanceof Error) return err.message;

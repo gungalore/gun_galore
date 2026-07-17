@@ -5,10 +5,10 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { verifyToken } from '@clerk/backend';
 import { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
+import { verifyClerkToken } from './clerk-verify';
 
 /**
  * Dual-auth guard: accepts EITHER a Clerk session bearer token OR
@@ -55,9 +55,7 @@ export class ClerkOrTokenGuard implements CanActivate {
     const bearer = this.extractBearer(request);
     if (bearer) {
       try {
-        const payload = await verifyToken(bearer, {
-          secretKey: process.env.CLERK_SECRET_KEY,
-        });
+        const payload = await verifyClerkToken(bearer);
         request.clerkUserId = payload.sub!;
         request.viaActionToken = false;
         return true;

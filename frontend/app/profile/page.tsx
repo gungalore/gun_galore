@@ -101,6 +101,19 @@ export const metadata = {
   title: 'My profile — Gun Galore',
 };
 
+// Parse a fetch Response safely: null on a missing/non-OK response or an
+// empty/unparseable body, so a transient backend blip never throws in the
+// server component (which would 500 the page).
+async function safeJson<T>(res: Response | null): Promise<T | null> {
+  if (!res || !res.ok) return null;
+  try {
+    const text = await res.text();
+    return text ? (JSON.parse(text) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function ProfilePage() {
   const { userId, getToken } = await auth();
   if (!userId) redirect('/sign-in?redirect_url=/profile');
@@ -111,18 +124,22 @@ export default async function ProfilePage() {
   // Fetch our backend's user record + the trust dashboard. The Me record
   // is the source of truth for seller tier / KYC status / totals;
   // TrustDashboard adds the recent ratings list.
+  // Guard both the fetch (backend unreachable → reject) AND the json() parse
+  // (a 200 with an empty/partial body → "Unexpected end of JSON input"). Either
+  // failure degrades to null instead of 500-ing the whole page — matching the
+  // resilience the /account page already has.
   const [meRes, trustRes] = await Promise.all([
     fetch(`${API_URL}/users/me`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',
-    }),
+    }).catch(() => null),
     fetch(`${API_URL}/ratings/dashboard`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',
-    }),
+    }).catch(() => null),
   ]);
-  const me: Me | null = meRes.ok ? await meRes.json() : null;
-  const trust: TrustDashboard | null = trustRes.ok ? await trustRes.json() : null;
+  const me: Me | null = await safeJson<Me>(meRes);
+  const trust: TrustDashboard | null = await safeJson<TrustDashboard>(trustRes);
 
   const displayName =
     [me?.firstName, me?.lastName].filter(Boolean).join(' ') ||

@@ -14,6 +14,7 @@ import { ConnectionStatusBanner } from '@/components/connection-status-banner';
 import { SwUpdateBanner } from '@/components/sw-update-banner';
 import { PushFirstLaunchPrompt } from '@/components/push-first-launch-prompt';
 import { WishlistProvider } from '@/lib/use-wishlist';
+import ConsentSync from '@/components/consent-sync';
 import { AskGgProvider } from '@/lib/use-ask-gg-widget';
 import { AskGgHost } from '@/components/ask-gg/ask-gg-host';
 import './globals.css';
@@ -235,6 +236,9 @@ export default function RootLayout({
           ))}
         </head>
         <body className="antialiased">
+          {/* Flushes any pending sign-up consent to the backend once the
+              session is live (POPIA record). No-op when signed out. */}
+          <ConsentSync />
           <WishlistProvider>
           <AskGgProvider>
           {/* PublicNav + PublicFooter hide themselves on /admin/*

@@ -1,5 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
-import { verifyToken } from '@clerk/backend';
+import { verifyClerkToken } from './clerk-verify';
 import { Request } from 'express';
 
 /**
@@ -30,9 +30,7 @@ export class OptionalClerkGuard implements CanActivate {
     const [type, token] = request.headers.authorization?.split(' ') ?? [];
     if (type === 'Bearer' && token) {
       try {
-        const payload = await verifyToken(token, {
-          secretKey: process.env.CLERK_SECRET_KEY,
-        });
+        const payload = await verifyClerkToken(token);
         request.clerkUserId = payload.sub!;
       } catch {
         // Invalid / expired token → treat as anonymous. Public reads must

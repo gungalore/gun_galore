@@ -1,12 +1,13 @@
-// Custom sign-up form — VISUAL MOCK for now. We'll wire it to Clerk after
-// you've signed off on the look.
+// Custom sign-up form — PRODUCTION, fully wired to Clerk (see sign-up-form.tsx:
+// signUp.create → email-code verification → setActive). Consent is recorded via
+// POST /users/me/consent (flushed by <ConsentSync/>).
 //
-// Field map → Clerk field (eventual):
+// Field map → Clerk field:
 //   firstName     → Clerk firstName
 //   lastName      → Clerk lastName
 //   username      → Clerk username (also stored as unique User.username locally)
 //   email         → Clerk emailAddress
-//   phone         → Clerk phoneNumber
+//   phone         → unsafeMetadata.phone (→ our webhook → User.phone; unverified)
 //   password      → Clerk password
 //
 // Delivery address is captured at first checkout (both seller + buyer give it,

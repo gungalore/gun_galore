@@ -174,21 +174,20 @@ export default clerkMiddleware(async (auth, request) => {
   // is the more reliable behaviour.
   const { userId } = await auth();
   if (!userId) {
-    // Build the redirect URL from forwarded headers so we send the
-    // user to https://gungalore.co.za/sign-in, not localhost:3000/sign-in.
-    // request.url reflects the localhost socket Next.js is listening on,
-    // not the public hostname that nginx is proxying for.
-    const host = request.headers.get('host') || 'gungalore.co.za';
-    const proto = request.headers.get('x-forwarded-proto') || 'https';
-    const publicBase = `${proto}://${host}`;
+    // Pin the redirect base to a CONFIGURED public URL rather than the
+    // inbound Host header — a spoofed Host must never be able to turn this
+    // sign-in bounce into an off-site (open) redirect. request.url reflects
+    // the localhost socket Next.js listens on, not the public hostname, so we
+    // can't use it either.
+    const publicBase =
+      process.env.NEXT_PUBLIC_APP_URL || 'https://gungalore.co.za';
     const currentPath =
       request.nextUrl.pathname + request.nextUrl.search;
 
     const signInUrl = new URL('/sign-in', publicBase);
-    signInUrl.searchParams.set(
-      'redirect_url',
-      `${publicBase}${currentPath}`,
-    );
+    // Relative redirect target only — never embed a host (defence-in-depth
+    // with the sign-in/sign-up forms, which also reject non-relative values).
+    signInUrl.searchParams.set('redirect_url', currentPath);
     // MUST be NextResponse.redirect, NOT Response.redirect. A bare
     // Web-API Response.redirect() returns a response with an IMMUTABLE
     // headers guard; clerkMiddleware then tries to attach its

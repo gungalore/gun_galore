@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SmsService } from '../sms/sms.service';
-import { User, Province, NotificationCategory } from '@prisma/client';
+import { User, Province, NotificationCategory, Prisma } from '@prisma/client';
 import { createHash, randomInt } from 'crypto';
 import { createClerkClient } from '@clerk/backend';
 import { encryptSaIdNumber, hashSaIdNumber } from '../common/id-crypto';
@@ -165,12 +165,64 @@ export class UsersService {
         email: data.email,
         // Only update username if Clerk gave us one — never wipe an existing value.
         ...(username ? { username } : {}),
-        firstName: data.firstName ?? null,
-        lastName: data.lastName ?? null,
-        phone: data.phone ?? null,
-        avatarUrl: data.avatarUrl ?? null,
+        // Avatar is Clerk-owned — sync when present.
+        ...(data.avatarUrl ? { avatarUrl: data.avatarUrl } : {}),
+        // firstName / lastName / phone are DELIBERATELY NOT synced from Clerk
+        // on update. Our KYC + profile flow is the system of record for the
+        // seller's legal name and the (OTP-verified) phone — a reordered or
+        // stale `user.updated` event must never overwrite a Home-Affairs-
+        // verified name or a verified number with whatever the user last
+        // typed into their Clerk profile. Initial values are still seeded on
+        // CREATE above; later changes go through PATCH /users/me (which writes
+        // both our DB and Clerk).
       },
     });
+  }
+
+  // Record sign-up consent (POPIA accountability) for the current Clerk user.
+  // Timestamps are set-once — a repeat call never moves the original consent
+  // moment. Age affirmation + Terms + Privacy are captured together at sign-up;
+  // marketing is a separate, explicit opt-in (only stamped when true, and
+  // cleared to null when the user later opts out).
+  async recordSignupConsent(
+    clerkId: string,
+    dto: {
+      terms?: boolean;
+      privacy?: boolean;
+      age?: boolean;
+      marketing?: boolean;
+      policyVersion?: string;
+    },
+  ): Promise<boolean> {
+    const existing = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: {
+        id: true,
+        termsAcceptedAt: true,
+        privacyConsentAt: true,
+        ageAffirmedAt: true,
+      },
+    });
+    // Row not there yet (create-webhook race that the lazy-sync also missed).
+    // Report false so the caller can retry rather than dropping the record.
+    if (!existing) return false;
+    const now = new Date();
+    await this.prisma.user.update({
+      where: { clerkId },
+      data: {
+        ...(dto.terms && !existing.termsAcceptedAt ? { termsAcceptedAt: now } : {}),
+        ...(dto.privacy && !existing.privacyConsentAt ? { privacyConsentAt: now } : {}),
+        ...(dto.age && !existing.ageAffirmedAt ? { ageAffirmedAt: now } : {}),
+        ...(dto.policyVersion ? { consentPolicyVersion: dto.policyVersion.slice(0, 40) } : {}),
+        // Marketing is toggleable both ways (explicit opt-in / opt-out).
+        ...(dto.marketing === true
+          ? { marketingConsentAt: now }
+          : dto.marketing === false
+            ? { marketingConsentAt: null }
+            : {}),
+      },
+    });
+    return true;
   }
 
   async deleteByClerkId(clerkId: string): Promise<void> {
@@ -203,6 +255,17 @@ export class UsersService {
             phone: null,
             avatarUrl: null,
             idNumberEncrypted: null,
+            // KYC identity artifacts — the most sensitive PII we hold. Scrub
+            // the document/selfie image URLs, DOB, SA-ID cross-check hash and
+            // Home-Affairs/vision JSON on erasure, keeping only what the SAP
+            // 534 / FICA record legally requires (which lives on the
+            // Transaction, not here). (Cloudinary asset deletion is a tracked
+            // follow-up — the URLs are unguessable but should also be purged.)
+            dateOfBirth: null,
+            kycIdDocumentUrl: null,
+            kycSelfieUrl: null,
+            kycHaCheckJson: Prisma.DbNull,
+            kycClaudeFindings: Prisma.DbNull,
             addrBuilding: null,
             addrStreet: null,
             addrAddress2: null,

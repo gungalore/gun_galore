@@ -5,10 +5,11 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { verifyToken, createClerkClient } from '@clerk/backend';
+import { createClerkClient } from '@clerk/backend';
 import { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
+import { verifyClerkToken } from './clerk-verify';
 
 @Injectable()
 export class ClerkGuard implements CanActivate {
@@ -41,9 +42,7 @@ export class ClerkGuard implements CanActivate {
 
     let clerkUserId: string;
     try {
-      const payload = await verifyToken(token, {
-        secretKey: process.env.CLERK_SECRET_KEY,
-      });
+      const payload = await verifyClerkToken(token);
       clerkUserId = payload.sub!;
       (request as Request & { clerkUserId?: string }).clerkUserId = clerkUserId;
     } catch {
@@ -92,6 +91,25 @@ export class ClerkGuard implements CanActivate {
         phone,
         avatarUrl: u.imageUrl ?? undefined,
       });
+      // Also stamp the sign-up consent the email path stashed in
+      // unsafeMetadata, so a first authed request that beats the webhook still
+      // records the POPIA consent (set-once).
+      const consent = (
+        u.unsafeMetadata as
+          | {
+              consent?: {
+                terms?: boolean;
+                privacy?: boolean;
+                age?: boolean;
+                marketing?: boolean;
+                policyVersion?: string;
+              };
+            }
+          | undefined
+      )?.consent;
+      if (consent) {
+        await this.usersService.recordSignupConsent(clerkUserId, consent);
+      }
       this.logger.log(`Auto-synced new user from Clerk: ${clerkUserId}`);
     } catch (err) {
       // Don't block the request — the downstream service will throw its

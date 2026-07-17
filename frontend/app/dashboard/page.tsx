@@ -45,12 +45,22 @@ export default async function DashboardPage() {
   if (!userId) redirect('/sign-in?redirect_url=/dashboard');
 
   const token = await getToken();
-  const res = await fetch(`${API_URL}/ratings/dashboard`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  });
-
-  const data: TrustDashboard | null = res.ok ? await res.json() : null;
+  // Guard BOTH the fetch (backend unreachable) and the json() parse (a 200 with
+  // an empty/partial body → "Unexpected end of JSON input") so a transient blip
+  // or a zero-data brand-new account never 500s this post-sign-up landing page.
+  let data: TrustDashboard | null = null;
+  try {
+    const res = await fetch(`${API_URL}/ratings/dashboard`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const text = await res.text();
+      data = text ? (JSON.parse(text) as TrustDashboard) : null;
+    }
+  } catch {
+    data = null;
+  }
 
   return (
     <main

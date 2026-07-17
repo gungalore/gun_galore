@@ -302,6 +302,20 @@ model User {
   kycReviewedAt     DateTime?
   kycReviewNote     String?
 
+  // ── Sign-up consent (POPIA accountability) ─────────────────────────
+  // Captured at account creation (email + OAuth paths) and recorded via
+  // POST /users/consent. Set-once timestamps — the original consent moment
+  // is never overwritten. ageAffirmedAt = the 18+ self-affirmation (required
+  // to create an account); the legally load-bearing firearm-eligibility gate
+  // still lives at firearm checkout (firearmAttestation18Plus).
+  termsAcceptedAt      DateTime?
+  privacyConsentAt     DateTime?
+  ageAffirmedAt        DateTime?
+  consentPolicyVersion String?
+  // Separate, explicit marketing opt-in (POPIA direct-marketing consent).
+  // Distinct from transactional notifications; null = not opted in.
+  marketingConsentAt   DateTime?
+
   totalSales                Int       @default(0)
   isBanned                  Boolean   @default(false)
   bannedAt                  DateTime?

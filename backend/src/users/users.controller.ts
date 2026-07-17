@@ -314,6 +314,37 @@ export class UsersController {
     return this.users.saveBuyerPhone(clerkId, phone);
   }
 
+  // ─────────────────── Sign-up consent (POPIA) ──────────────────────
+  // Called by the sign-up flow right after auth completes (email + OAuth),
+  // recording the Terms / Privacy / 18+ affirmation as a durable, timestamped
+  // consent record. ClerkGuard lazy-upserts the User row first, so this works
+  // even in the create-webhook race. Marketing is a separate explicit opt-in.
+  @Post('me/consent')
+  @UseGuards(ClerkGuard)
+  async recordConsent(
+    @CurrentUser() clerkId: string,
+    @Body()
+    body: {
+      terms?: boolean;
+      privacy?: boolean;
+      age?: boolean;
+      marketing?: boolean;
+      policyVersion?: string;
+    },
+  ) {
+    const recorded = await this.users.recordSignupConsent(clerkId, {
+      terms: body?.terms === true,
+      privacy: body?.privacy === true,
+      age: body?.age === true,
+      marketing: typeof body?.marketing === 'boolean' ? body.marketing : undefined,
+      policyVersion:
+        typeof body?.policyVersion === 'string' ? body.policyVersion : undefined,
+    });
+    // recorded=false ⇒ the User row wasn't there yet (rare create-race); the
+    // client keeps its pending record and retries rather than losing consent.
+    return { recorded };
+  }
+
   // ─────────────────── Phone change: request OTP ─────────────────────
   // Body: { phone: "0820000000" | "+27820000000" }
   // Sends a 4-digit code to the new number. Returns { sent: true } on
