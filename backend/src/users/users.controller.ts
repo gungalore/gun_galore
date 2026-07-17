@@ -111,9 +111,19 @@ export class UsersController {
         bankAccountNumber: true,
         bankBranchCode: true,
         bankAccountType: true,
+        // Seller completeness sections (identity + verification) — the
+        // listings count decides buyer-shape vs seller-shape.
+        kycIdVerifiedAt: true,
+        _count: { select: { listings: true } },
       },
     });
     if (!user) return null;
+    // Compute completeness BEFORE the action-token bank strip below —
+    // the banking section must reflect reality, not the redaction.
+    const profileCompleteness = computeCompleteness({
+      ...user,
+      listingsCount: user._count.listings,
+    });
     // When reached via a CHECKOUT action token (a replayable 24h
     // URL-bearer credential, not a full Clerk session) NEVER return the
     // user's banking details. The token is for completing a checkout, not
@@ -125,7 +135,9 @@ export class UsersController {
       user.bankBranchCode = null;
       user.bankAccountType = null;
     }
-    return { ...user, profileCompleteness: computeCompleteness(user) };
+    const { _count, ...rest } = user;
+    void _count;
+    return { ...rest, profileCompleteness };
   }
 
   // ─────────────────── Urgent notifications strip ───────────────────
@@ -369,10 +381,24 @@ export class UsersController {
 }
 
 // ─────────────────── Profile completeness ─────────────────────────
-// Drives the nav ring + the setup prompt. Three sections; each
-// contributes ~33% to the percent. `missing` is the array the
-// frontend renders into a checklist with deep-links to the right
-// section on /profile/edit.
+// Drives the nav ring + the setup prompt. Two shapes:
+//   Buyers (no listings, never forced into KYC): the original three
+//   sections at ~33% each — name, phone, address.
+//   Sellers (≥1 listing OR kycRequiredAt set): five sections at 20%
+//   each — the buyer trio plus banking (needed to pay out) and the
+//   two identity-verification stages. UNDER_REVIEW counts as done for
+//   the percent (nothing more is needed FROM the seller); the "being
+//   reviewed" state renders on the verification progress bar instead.
+// `missing` is the array the frontend renders into a checklist with
+// deep-links to the right page.
+export type CompletenessMissing =
+  | 'name'
+  | 'phone'
+  | 'address'
+  | 'banking'
+  | 'identity'
+  | 'verification';
+
 interface CompletenessInput {
   firstName: string | null;
   lastName: string | null;
@@ -383,11 +409,19 @@ interface CompletenessInput {
   addrPostalCode: string | null;
   addrLat: number | null;
   addrLng: number | null;
+  bankAccountNumber?: string | null;
+  bankBranchCode?: string | null;
+  bankAccountHolder?: string | null;
+  kycStatus?: string | null;
+  kycIdVerifiedAt?: Date | null;
+  kycRequiredAt?: Date | null;
+  listingsCount?: number;
 }
 
-function computeCompleteness(u: CompletenessInput): {
+export function computeCompleteness(u: CompletenessInput): {
   percent: number;
-  missing: ('name' | 'phone' | 'address')[];
+  missing: CompletenessMissing[];
+  shape: 'buyer' | 'seller';
 } {
   const hasName = !!(u.firstName && u.lastName);
   const hasPhone = !!(u.phone && u.phoneVerified);
@@ -398,10 +432,38 @@ function computeCompleteness(u: CompletenessInput): {
     u.addrLat != null &&
     u.addrLng != null
   );
-  const done = [hasName, hasPhone, hasAddress].filter(Boolean).length;
-  const missing: ('name' | 'phone' | 'address')[] = [];
-  if (!hasName) missing.push('name');
-  if (!hasPhone) missing.push('phone');
-  if (!hasAddress) missing.push('address');
-  return { percent: Math.round((done / 3) * 100), missing };
+
+  const isSeller = (u.listingsCount ?? 0) > 0 || !!u.kycRequiredAt;
+  if (!isSeller) {
+    const done = [hasName, hasPhone, hasAddress].filter(Boolean).length;
+    const missing: CompletenessMissing[] = [];
+    if (!hasName) missing.push('name');
+    if (!hasPhone) missing.push('phone');
+    if (!hasAddress) missing.push('address');
+    return {
+      percent: Math.round((done / 3) * 100),
+      missing,
+      shape: 'buyer',
+    };
+  }
+
+  const hasBanking = !!(
+    u.bankAccountNumber &&
+    u.bankBranchCode &&
+    u.bankAccountHolder
+  );
+  const hasIdentity = !!u.kycIdVerifiedAt;
+  const hasVerification =
+    u.kycStatus === 'VERIFIED' || u.kycStatus === 'UNDER_REVIEW';
+
+  const sections: [boolean, CompletenessMissing][] = [
+    [hasName && hasPhone, hasName ? 'phone' : 'name'],
+    [hasAddress, 'address'],
+    [hasBanking, 'banking'],
+    [hasIdentity, 'identity'],
+    [hasVerification, 'verification'],
+  ];
+  const done = sections.filter(([ok]) => ok).length;
+  const missing = sections.filter(([ok]) => !ok).map(([, key]) => key);
+  return { percent: done * 20, missing, shape: 'seller' as const };
 }

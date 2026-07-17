@@ -6,15 +6,21 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   VerifyNowService,
   KycException,
   type CreditBalance,
+  type IdBasicResult,
 } from './verifynow.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
+import { SettingsService, FLAGS } from '../settings/settings.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { ClaudeKycService, type KycClaudeFindings } from './claude-kyc.service';
+import { crossCheckIdentity, saIdLuhnValid } from './kyc-cross-check';
 
 // SHA-256 hash of a SA ID number with a per-app salt. We never store
 // the raw 13-digit number — only the hash — so even if the User table
@@ -73,6 +79,11 @@ export class KycService {
     // @Global ActionTokensModule — used to mint the KYC_VERIFY token so
     // the "verify your identity" SMS link works without a Clerk login.
     private actionTokens: ActionTokensService,
+    // Claude-flow additions (all @Global except ClaudeKycService, which
+    // kyc.module.ts provides locally).
+    private settings: SettingsService,
+    private cloudinary: CloudinaryService,
+    private claudeKyc: ClaudeKycService,
   ) {}
 
   // ─────────────────── POPIA consent ────────────────────────────────
@@ -353,8 +364,13 @@ export class KycService {
   }
 
   // ─────────────────── Status poll ──────────────────────────────────
+  // Extended for the Claude flow: `flow` tells the wizard which pipeline
+  // to render; `steps`/`nextStep` are the server-side save-&-resume state
+  // (every step persists onto User, so "continue later" is just leaving
+  // and coming back — the wizard jumps to nextStep). Superset of the
+  // legacy shape so old clients keep working.
   async getStatus(clerkId: string) {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { clerkId },
       select: {
         kycStatus: true,
@@ -364,8 +380,645 @@ export class KycService {
         kycIdVerifiedAt: true,
         kycRequiredAt: true,
         kycAttempts: true,
+        dateOfBirth: true,
+        kycIdDocumentUrl: true,
+        kycSelfieUrl: true,
+        phone: true,
       },
     });
+    if (!user) return null;
+
+    const claudeFlow = await this.settings.get(FLAGS.kycClaudeFlowEnabled);
+
+    const steps = {
+      consent: !!user.kycConsentGivenAt,
+      // Legacy users may have kycIdVerifiedAt without a dateOfBirth — the
+      // Claude flow re-runs Details for them (cheap: dup-hash short-circuits
+      // apply and the Basic credit re-burn is a one-off).
+      details: !!user.kycIdVerifiedAt && !!user.dateOfBirth,
+      document: !!user.kycIdDocumentUrl,
+      selfie: !!user.kycSelfieUrl,
+    };
+
+    let nextStep:
+      | 'consent'
+      | 'details'
+      | 'document'
+      | 'selfie'
+      | 'review'
+      | 'done'
+      | 'failed';
+    if (user.kycStatus === 'VERIFIED') nextStep = 'done';
+    else if (user.kycStatus === 'UNDER_REVIEW') nextStep = 'review';
+    else if (user.kycStatus === 'REJECTED' && user.kycAttempts >= 3)
+      nextStep = 'failed';
+    else if (!steps.consent) nextStep = 'consent';
+    else if (!steps.details) nextStep = 'details';
+    else if (!steps.document) nextStep = 'document';
+    else nextStep = 'selfie';
+
+    const { phone, dateOfBirth, kycIdDocumentUrl, kycSelfieUrl, ...legacy } =
+      user;
+    void dateOfBirth;
+    void kycIdDocumentUrl;
+    void kycSelfieUrl;
+    return {
+      ...legacy,
+      flow: claudeFlow ? ('CLAUDE' as const) : ('VERIFYNOW' as const),
+      steps,
+      nextStep,
+      phoneMasked: phone ? `•••${phone.slice(-4)}` : null,
+    };
+  }
+
+  // ═══════════════════ Claude-vision KYC flow ════════════════════════
+  // kyc_claude_flow_enabled: ID document upload + live selfie judged by
+  // Claude vision; VerifyNow only runs the 1-credit SA ID (Basic) record
+  // check. See claude-kyc.service.ts + kyc-cross-check.ts for the verdict
+  // mechanics. All endpoints throw when the flag is off so the legacy
+  // pipeline stays the single source of truth until rollout.
+
+  private async assertClaudeFlow(): Promise<void> {
+    const on = await this.settings.get(FLAGS.kycClaudeFlowEnabled);
+    if (!on) {
+      throw new BadRequestException(
+        'This verification method is not available.',
+      );
+    }
+  }
+
+  // ── Step 2: Details (SA ID number + date of birth) ─────────────────
+  // DELIBERATELY does NOT validate the DOB against the ID number's YYMMDD
+  // prefix — that silent cross-check happens only at verdict time so a
+  // faker typing a borrowed ID number isn't coached into fixing the DOB.
+  // Luhn (typo) validation IS surfaced: it reveals nothing about the DOB
+  // linkage and saves a VerifyNow credit on fat-fingered numbers.
+  async submitDetails(clerkId: string, idNumber: string, dob: string) {
+    await this.assertClaudeFlow();
+
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true, kycConsentGivenAt: true, idNumberEncrypted: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.kycConsentGivenAt) {
+      throw new ForbiddenException(
+        'POPIA consent must be given before identity verification.',
+      );
+    }
+
+    if (!saIdLuhnValid(idNumber)) {
+      throw new BadRequestException(
+        'That does not look like a valid SA ID number — please check it and try again.',
+      );
+    }
+    // 18+ gate (safe to surface — unrelated to the ID-digit linkage).
+    const dobDate = new Date(`${dob}T00:00:00Z`);
+    if (Number.isNaN(dobDate.getTime())) {
+      throw new BadRequestException('Please enter a valid date of birth.');
+    }
+    const age =
+      (Date.now() - dobDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    if (age < 18) {
+      throw new BadRequestException(
+        'You must be at least 18 to sell on Gun Galore.',
+      );
+    }
+
+    // Dup-check BEFORE burning the VerifyNow credit (one ID = one account).
+    const idHash = hashSaIdNumber(idNumber);
+    const existing = await this.prisma.user.findUnique({
+      where: { kycIdHash: idHash },
+      select: { id: true },
+    });
+    if (existing && existing.id !== user.id) {
+      throw new BadRequestException(
+        'This SA ID number is already linked to another Gun Galore account. Contact support if this is an error.',
+      );
+    }
+
+    let result: IdBasicResult;
+    try {
+      result = await this.verifyNow.verifyIdBasic(idNumber);
+    } catch (err) {
+      if (err instanceof KycException) {
+        this.log.warn(
+          `VerifyNow SA ID Basic failed for ${clerkId}: ${err.message}`,
+        );
+        throw new BadRequestException(
+          'We could not verify your ID right now. Please try again in a moment.',
+        );
+      }
+      throw err;
+    }
+
+    // Encrypt-at-rest copy of the raw ID for SAP 534 prefill + the
+    // verdict-time cross-check (only written if the profile modal hasn't
+    // already stored one).
+    let idNumberEncrypted: string | undefined;
+    if (!user.idNumberEncrypted) {
+      try {
+        const { encryptSaIdNumber } = await import('../common/id-crypto');
+        idNumberEncrypted = encryptSaIdNumber(idNumber);
+      } catch (err) {
+        this.log.error(
+          `Failed to encrypt SA ID for ${clerkId}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    await this.prisma.user.update({
+      where: { clerkId },
+      data: {
+        kycIdVerifiedAt: new Date(),
+        kycStatus: 'PENDING',
+        kycIdHash: idHash,
+        kycMethod: 'CLAUDE',
+        dateOfBirth: dob,
+        firstName: result.firstName || undefined,
+        lastName: result.surname || undefined,
+        kycHaCheckJson: {
+          firstName: result.firstName,
+          surname: result.surname,
+          dob: result.dob,
+          gender: result.gender,
+          transactionId: result.transactionId,
+        } as Prisma.InputJsonValue,
+        ...(idNumberEncrypted ? { idNumberEncrypted } : {}),
+      },
+    });
+
+    // NB: never return the HA dob to the client — it would leak the very
+    // value the silent cross-check compares against.
+    return { success: true, firstName: result.firstName, surname: result.surname };
+  }
+
+  // ── Step 3: ID document upload ──────────────────────────────────────
+  async submitIdDocument(clerkId: string, file: Express.Multer.File) {
+    await this.assertClaudeFlow();
+
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true, kycIdVerifiedAt: true, dateOfBirth: true, kycStatus: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.kycIdVerifiedAt || !user.dateOfBirth) {
+      throw new ForbiddenException('Complete your details first.');
+    }
+    if (user.kycStatus === 'VERIFIED' || user.kycStatus === 'UNDER_REVIEW') {
+      throw new BadRequestException('Your verification is already in progress.');
+    }
+
+    // PDF by declared type OR magic bytes (extension lies happen).
+    const isPdf =
+      file.mimetype === 'application/pdf' ||
+      file.buffer.subarray(0, 5).toString('latin1') === '%PDF-';
+
+    const uploaded = isPdf
+      ? await this.cloudinary.uploadRaw(file.buffer, `kyc/${user.id}`)
+      : await this.cloudinary.uploadImage(file.buffer, `kyc/${user.id}`);
+
+    await this.prisma.user.update({
+      where: { clerkId },
+      data: { kycIdDocumentUrl: uploaded.url },
+    });
+
+    return { success: true };
+  }
+
+  // ── Step 4: live selfie → the one vision verdict ────────────────────
+  async submitSelfieClaudeVerdict(clerkId: string, selfieBase64: string) {
+    await this.assertClaudeFlow();
+
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: {
+        id: true,
+        kycIdVerifiedAt: true,
+        dateOfBirth: true,
+        kycIdDocumentUrl: true,
+        kycStatus: true,
+        kycAttempts: true,
+        idNumberEncrypted: true,
+        kycHaCheckJson: true,
+        phone: true,
+        email: true,
+        firstName: true,
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.kycIdVerifiedAt || !user.dateOfBirth || !user.kycIdDocumentUrl) {
+      throw new ForbiddenException(
+        'Complete your details and ID document upload first.',
+      );
+    }
+    if (user.kycStatus === 'VERIFIED' || user.kycStatus === 'UNDER_REVIEW') {
+      throw new BadRequestException('Your verification is already in progress.');
+    }
+
+    // Persist the selfie first (audit trail + admin review + the silent
+    // anchored upgrade later reuses it).
+    const selfieUpload = await this.cloudinary.uploadImage(
+      Buffer.from(selfieBase64, 'base64'),
+      `kyc/${user.id}`,
+    );
+
+    // Decrypt the entered ID for the server-side cross-check.
+    let idNumber: string;
+    try {
+      const { decryptSaIdNumber } = await import('../common/id-crypto');
+      idNumber = decryptSaIdNumber(user.idNumberEncrypted ?? '');
+    } catch (err) {
+      this.log.error(
+        `Verdict: failed to decrypt SA ID for ${clerkId}: ${(err as Error).message}`,
+      );
+      throw new BadRequestException(
+        'Could not read your saved ID. Please restart verification.',
+      );
+    }
+
+    // Tier is resolved server-side and is invisible to the seller: high-
+    // value sellers additionally get the official Home Affairs photo
+    // pulled and matched (the "anchored" gate).
+    const tier = await this.resolveKycTier(user.id);
+    let haPhotoBase64: string | undefined;
+    if (tier === 'ANCHORED') {
+      try {
+        const anchored = await this.verifyNow.verifyIdNumber(idNumber);
+        haPhotoBase64 = anchored.idPhotoBase64 || undefined;
+      } catch (err) {
+        // No HA photo → we can't run the anchored gate. Do NOT silently
+        // downgrade a high-value seller to the cheap gate — park for a
+        // human instead.
+        this.log.warn(
+          `Anchored HA photo pull failed for ${clerkId}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // Fetch PDF bytes when the stored document is a raw upload (Claude
+    // reads the PDF natively; the URL block only works for images).
+    const isPdfDoc = user.kycIdDocumentUrl.includes('/raw/upload/');
+    let documentPdf: Buffer | undefined;
+    if (isPdfDoc) {
+      try {
+        const res = await fetch(user.kycIdDocumentUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        documentPdf = Buffer.from(await res.arrayBuffer());
+      } catch (err) {
+        this.log.error(
+          `Verdict: failed to fetch ID document PDF for ${clerkId}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    const mode: 'standard' | 'anchored' =
+      tier === 'ANCHORED' && haPhotoBase64 ? 'anchored' : 'standard';
+
+    // Vision scan — failure NEVER auto-verifies or auto-rejects.
+    let findings: KycClaudeFindings | null = null;
+    try {
+      if (isPdfDoc && !documentPdf) {
+        throw new Error('PDF document bytes unavailable');
+      }
+      findings = await this.claudeKyc.scan({
+        selfieBase64,
+        documentUrl: isPdfDoc ? undefined : user.kycIdDocumentUrl,
+        documentPdf,
+        mode,
+        haPhotoBase64,
+      });
+    } catch (err) {
+      this.log.error(
+        `Claude KYC scan failed for ${clerkId}: ${(err as Error).message}`,
+      );
+    }
+
+    const ha = (user.kycHaCheckJson ?? {}) as {
+      firstName?: string;
+      surname?: string;
+      dob?: string;
+    };
+    const crossCheck = crossCheckIdentity({
+      enteredIdNumber: idNumber,
+      enteredDob: user.dateOfBirth,
+      doc: {
+        idNumber: findings?.document?.extracted_id_number ?? null,
+        surname: findings?.document?.extracted_surname ?? null,
+        names: findings?.document?.extracted_names ?? null,
+        dob: findings?.document?.extracted_dob ?? null,
+        legibility: findings?.document?.legibility ?? 0,
+      },
+      ha: {
+        firstName: ha.firstName ?? '',
+        surname: ha.surname ?? '',
+        dob: ha.dob ?? '',
+      },
+    });
+
+    // Verdict: hard cross-check lies reject even without Claude; a missing
+    // scan otherwise parks for a human; anchored sellers whose HA photo
+    // pull failed also park (never silently downgraded).
+    let status: 'VERIFIED' | 'REJECTED' | 'UNDER_REVIEW';
+    if (crossCheck.hardFails.length > 0) {
+      status = 'REJECTED';
+    } else if (!findings || (tier === 'ANCHORED' && mode === 'standard')) {
+      status = 'UNDER_REVIEW';
+    } else {
+      status = this.claudeKyc.statusFromFindings(findings, crossCheck, mode);
+    }
+
+    const persistedFindings = {
+      ...(findings ?? { scanFailed: true }),
+      crossCheck: {
+        hardFails: crossCheck.hardFails,
+        softFails: crossCheck.softFails,
+      },
+      tier,
+      mode,
+    } as unknown as Prisma.InputJsonValue;
+
+    // Guarded transition — mirrors submitFaceMatch so two concurrent
+    // submissions can't double-increment attempts or double-notify.
+    const guarded = await this.prisma.user.updateMany({
+      where: { clerkId, kycStatus: { in: ['PENDING', 'REJECTED'] } },
+      data: {
+        kycAttempts: { increment: 1 },
+        kycStatus: status,
+        kycVerifiedAt: status === 'VERIFIED' ? new Date() : undefined,
+        kycSelfieUrl: selfieUpload.url,
+        kycClaudeFindings: persistedFindings,
+        kycTier: tier,
+      },
+    });
+    if (guarded.count === 0) {
+      this.log.log(
+        `submitSelfieClaudeVerdict no-op for ${clerkId} (already processed)`,
+      );
+      return {
+        success: false,
+        status: user.kycStatus,
+        message: 'KYC already processed. Check your account status.',
+      };
+    }
+
+    if (status === 'VERIFIED') {
+      if (user.phone) {
+        await this.sms.sendSms({
+          to: user.phone,
+          message:
+            'Gun Galore: Your identity has been verified. Your pending sale can now proceed.',
+          reference: `kyc-approved-${user.id}`,
+        });
+      }
+      if (user.email) {
+        await this.notifications.sellerKycApproved(
+          user.email,
+          user.firstName ?? 'Seller',
+        );
+      }
+      return { success: true, status, message: 'Identity verified.' };
+    }
+
+    if (status === 'UNDER_REVIEW') {
+      // No strike, no failure SMS — nothing more is needed from the
+      // seller; a human decides from the admin dossier.
+      try {
+        await this.prisma.adminAlert.create({
+          data: {
+            type: 'KYC_REVIEW',
+            referenceId: user.id,
+            context: `Claude KYC inconclusive for ${user.firstName ?? clerkId} — review the ID document + selfie in the user dossier and approve/reject.`,
+            urgent: true,
+          },
+        });
+      } catch (err) {
+        this.log.error('Failed to create KYC_REVIEW alert', err);
+      }
+      return {
+        success: true,
+        status,
+        message:
+          'Your verification is being reviewed — nothing more is needed from you. We will SMS you when it is done.',
+      };
+    }
+
+    // REJECTED — reuse the legacy strike/messaging ladder. The copy stays
+    // GENERIC on purpose: never name the DOB cross-check as the reason.
+    const fresh = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { kycAttempts: true },
+    });
+    const newAttempts = fresh?.kycAttempts ?? (user.kycAttempts ?? 0) + 1;
+    if (newAttempts >= 3) {
+      await this.flagForAdminReview(user.id, clerkId, 0);
+    }
+    const retryMessage =
+      newAttempts >= 3
+        ? 'Please contact support for assistance with identity verification.'
+        : 'We could not verify your identity. Please make sure your ID document is clearly readable and your face is well lit, then try again.';
+    if (user.phone) {
+      await this.sms.sendSms({
+        to: user.phone,
+        message: `Gun Galore: ${retryMessage}`,
+        reference: `kyc-failed-${user.id}-${newAttempts}`,
+      });
+    }
+    if (user.email) {
+      await this.notifications.sellerKycRejected(
+        user.email,
+        user.firstName ?? 'Seller',
+        retryMessage,
+      );
+    }
+    return { success: false, status, message: retryMessage };
+  }
+
+  // ── "SMS me the link" phone handoff ─────────────────────────────────
+  // Desktop sellers without a webcam scan the QR — but a good portion of
+  // sellers are not QR-literate, so this sends the same token link by SMS.
+  // Service-side cap (3/hour) because the IP-keyed throttler doesn't stop
+  // a single user hammering mint.
+  async sendHandoffSms(clerkId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true, phone: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.phone) {
+      throw new BadRequestException(
+        'No phone number on file — add one on your profile first.',
+      );
+    }
+
+    const recentMints = await this.prisma.actionToken.count({
+      where: {
+        purpose: 'KYC_VERIFY',
+        authorisedUserId: user.id,
+        createdAt: { gt: new Date(Date.now() - 60 * 60 * 1000) },
+      },
+    });
+    if (recentMints >= 3) {
+      throw new BadRequestException(
+        'Too many links requested — use the most recent SMS, or try again in an hour.',
+      );
+    }
+
+    const appUrl = process.env.FRONTEND_URL ?? 'https://gungalore.co.za';
+    const token = await this.actionTokens.mint({
+      purpose: 'KYC_VERIFY',
+      targetType: 'user',
+      targetId: user.id,
+      authorisedUserId: user.id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+    await this.sms.sendSms({
+      to: user.phone,
+      message: `Gun Galore: Continue your identity verification on your phone: ${appUrl}/a/${token}`,
+      reference: `kyc-handoff-${user.id}`,
+    });
+
+    return { sent: true, phoneMasked: `•••${user.phone.slice(-4)}` };
+  }
+
+  // ── Value tier (invisible to the seller) ────────────────────────────
+  // ANCHORED when the seller's highest active listing or pending-payout
+  // sale is at/above kyc_anchored_threshold_cents — those sellers get the
+  // official Home Affairs photo pulled (10cr) and matched, because the
+  // uploaded-document reference is forgeable and high-value fraud is
+  // where that matters.
+  async resolveKycTier(userId: string): Promise<'STANDARD' | 'ANCHORED'> {
+    const threshold = await this.settings.get(FLAGS.kycAnchoredThresholdCents);
+    if (threshold <= 0) return 'ANCHORED'; // 0 = anchor everyone
+
+    const [maxListing, maxPendingSale] = await Promise.all([
+      this.prisma.listing.aggregate({
+        where: { sellerId: userId, status: 'ACTIVE', price: { not: null } },
+        _max: { price: true },
+      }),
+      this.prisma.transaction.findFirst({
+        where: {
+          listing: { sellerId: userId },
+          paymentStatus: { in: ['HELD', 'RELEASED'] },
+          paidOutAt: null,
+          refundOfId: null,
+        },
+        orderBy: { listing: { price: 'desc' } },
+        select: { listing: { select: { price: true } } },
+      }),
+    ]);
+
+    const top = Math.max(
+      maxListing._max.price ?? 0,
+      maxPendingSale?.listing?.price ?? 0,
+    );
+    return top >= threshold ? 'ANCHORED' : 'STANDARD';
+  }
+
+  // ── Silent tier upgrade ─────────────────────────────────────────────
+  // Called (fire-and-forget) from the first-payment hook when a sale at/
+  // above the threshold lands on a seller who was VERIFIED on the cheap
+  // STANDARD tier. Re-runs the anchored gate against the STORED selfie —
+  // zero user interaction. Pass → tier bumped silently. Fail or
+  // inconclusive → VERIFIED flips to UNDER_REVIEW (payout auto-holds via
+  // the existing gates) + admins alerted. The seller only ever notices if
+  // something is actually wrong.
+  async maybeUpgradeKycTier(
+    sellerId: string,
+    salePriceCents: number,
+  ): Promise<void> {
+    try {
+      const claudeFlow = await this.settings.get(FLAGS.kycClaudeFlowEnabled);
+      if (!claudeFlow) return;
+      const threshold = await this.settings.get(
+        FLAGS.kycAnchoredThresholdCents,
+      );
+      if (threshold <= 0 || salePriceCents < threshold) return;
+
+      const seller = await this.prisma.user.findUnique({
+        where: { id: sellerId },
+        select: {
+          id: true,
+          clerkId: true,
+          kycStatus: true,
+          kycTier: true,
+          kycMethod: true,
+          kycSelfieUrl: true,
+          kycIdDocumentUrl: true,
+          idNumberEncrypted: true,
+          firstName: true,
+        },
+      });
+      if (
+        !seller ||
+        seller.kycStatus !== 'VERIFIED' ||
+        seller.kycMethod !== 'CLAUDE' ||
+        seller.kycTier !== 'STANDARD' ||
+        !seller.kycSelfieUrl ||
+        !seller.idNumberEncrypted
+      ) {
+        return;
+      }
+
+      const { decryptSaIdNumber } = await import('../common/id-crypto');
+      const idNumber = decryptSaIdNumber(seller.idNumberEncrypted);
+
+      // Pull the official photo + refetch the stored selfie.
+      const anchored = await this.verifyNow.verifyIdNumber(idNumber);
+      if (!anchored.idPhotoBase64) throw new Error('No HA photo returned');
+      const selfieRes = await fetch(seller.kycSelfieUrl);
+      if (!selfieRes.ok) throw new Error(`selfie fetch HTTP ${selfieRes.status}`);
+      const selfieBase64 = Buffer.from(await selfieRes.arrayBuffer()).toString(
+        'base64',
+      );
+
+      const findings = await this.claudeKyc.scan({
+        selfieBase64,
+        documentUrl: seller.kycIdDocumentUrl ?? undefined,
+        mode: 'anchored',
+        haPhotoBase64: anchored.idPhotoBase64,
+      });
+
+      const anchorScore = findings.face_match?.same_person_vs_ha_photo ?? 0;
+      if (anchorScore >= 80) {
+        await this.prisma.user.update({
+          where: { id: seller.id },
+          data: { kycTier: 'ANCHORED' },
+        });
+        this.log.log(`KYC tier silently upgraded to ANCHORED for ${seller.id}`);
+        return;
+      }
+
+      // Anchored gate failed or inconclusive — hold payout, human decides.
+      await this.prisma.user.updateMany({
+        where: { id: seller.id, kycStatus: 'VERIFIED' },
+        data: {
+          kycStatus: 'UNDER_REVIEW',
+          kycClaudeFindings: {
+            ...findings,
+            upgradeCheck: true,
+            anchorScore,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+      await this.prisma.adminAlert.create({
+        data: {
+          type: 'KYC_REVIEW',
+          referenceId: seller.id,
+          context: `High-value sale (R${(salePriceCents / 100).toFixed(0)}) triggered an anchored identity re-check for ${seller.firstName ?? seller.id} and the official-photo match scored ${anchorScore}. Payout is held — review in the user dossier.`,
+          urgent: true,
+        },
+      });
+      this.log.warn(
+        `KYC anchored upgrade FAILED for ${seller.id} (score ${anchorScore}) — flipped to UNDER_REVIEW`,
+      );
+    } catch (err) {
+      // Never break the payment path over an upgrade check; leave the
+      // seller on STANDARD and let the next qualifying sale retry.
+      this.log.warn(
+        `maybeUpgradeKycTier failed for ${sellerId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   // ─────────────────── Trigger: first sale forces verification ──────
@@ -395,6 +1048,9 @@ export class KycService {
       return;
     }
     if (seller.kycStatus === 'VERIFIED') return;
+    // UNDER_REVIEW = the file is with the admins — nothing for the seller
+    // to do, so a "verify your identity" SMS would only confuse them.
+    if (seller.kycStatus === 'UNDER_REVIEW') return;
     if (seller.kycRequiredAt) return; // already notified — banner is up
 
     // Mark the deadline so the in-app banner shows on next login.

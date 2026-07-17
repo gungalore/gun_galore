@@ -269,6 +269,26 @@ export class AdminUsersController {
     return this.adminService.updateUser(id, admin.sub, dto);
   }
 
+  // Claude-KYC human review — decide an UNDER_REVIEW verification from
+  // the dossier. Guarded transition; reason required for the audit row.
+  @Post(':id/kyc-review')
+  @HttpCode(200)
+  reviewKyc(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { decision?: 'APPROVE' | 'REJECT'; reason?: string },
+  ) {
+    if (body.decision !== 'APPROVE' && body.decision !== 'REJECT') {
+      throw new BadRequestException('decision must be APPROVE or REJECT');
+    }
+    return this.adminService.reviewKyc(
+      id,
+      admin.sub,
+      body.decision,
+      body.reason ?? '',
+    );
+  }
+
   // Bulk-ban. Body: { userIds: string[], reason: string }. Each ban
   // gets its own USER_BAN audit row via the underlying updateUser call.
   @Post('bulk-ban')

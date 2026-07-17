@@ -45,6 +45,7 @@ function makeService(overrides: {
     zohoBooks as never,
     {} as never, // stitch — manual rail, never called
     {} as never, // transactions — unused
+    {} as never, // sms — unused by release
   );
   return { service, prisma, txc, zohoBooks };
 }

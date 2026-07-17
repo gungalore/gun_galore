@@ -19,9 +19,11 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 // catch them at the moment of intent (handled elsewhere).
 
 // Lookup table from `missing` keys to human-readable + deep-link.
-const MISSING_LABEL: Record<
-  'name' | 'phone' | 'address',
-  { label: string; href: string; helper: string }
+// Partial<> + a defensive skip in the render loop: the backend may add
+// keys before this bundle redeploys, and an unknown key must never
+// crash the nav.
+const MISSING_LABEL: Partial<
+  Record<string, { label: string; href: string; helper: string }>
 > = {
   name: {
     label: 'Your name',
@@ -37,6 +39,21 @@ const MISSING_LABEL: Record<
     label: 'Pickup / delivery address',
     href: '/profile/edit',
     helper: 'So we can find your nearest Pudo locker + quote shipping.',
+  },
+  banking: {
+    label: 'Banking details',
+    href: '/profile/edit',
+    helper: 'Needed to pay out your sales.',
+  },
+  identity: {
+    label: 'Your SA ID + date of birth',
+    href: '/kyc/verify',
+    helper: 'First step of identity verification.',
+  },
+  verification: {
+    label: 'Identity verification',
+    href: '/kyc/verify',
+    helper: 'ID document + selfie — required before payout.',
   },
 };
 
@@ -190,6 +207,7 @@ export function ProfileCompletionRing() {
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {missing.map((key) => {
               const item = MISSING_LABEL[key];
+              if (!item) return null;
               return (
                 <li key={key} style={{ marginBottom: 8 }}>
                   <Link

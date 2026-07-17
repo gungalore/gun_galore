@@ -7,19 +7,58 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { QRCodeSVG } from 'qrcode.react';
 import { HelpTip } from '@/components/help-tip';
+import { processImage } from '@/lib/process-image';
 
-// PORTED from gun_galore_project/frontend/src/app/verify/kyc/page.tsx —
-// same flow, adapted to gun-galore's design tokens (var(--bg-card),
-// var(--red) etc.) so it matches every other surface. The QR-fallback
-// branch from the original (for desktops with no webcam) is intentionally
-// dropped — keeping the surface area small until a seller actually asks
-// for it. Camera-less devices currently see a "use your phone" hint.
+// TWO FLOWS live on this page, branched by GET /kyc/status → `flow`:
 //
-// IMPORTANT: do not "improve" the VerifyNow request bodies or response
-// parsing without re-testing the full flow against the real API — both
-// idNumber + selfieBase64 shapes are dictated by VerifyNow.
+//   VERIFYNOW (legacy, flag off): consent → id (Home Affairs photo pull)
+//   → selfie (VerifyNow facematch). PORTED from the old project.
+//   IMPORTANT: do not "improve" the VerifyNow request bodies or response
+//   parsing without re-testing against the real API.
+//
+//   CLAUDE (kyc_claude_flow_enabled): consent → details (ID number + DOB)
+//   → document (upload ID as photo/PDF) → selfie (live capture → Claude
+//   vision verdict). Every step persists server-side, so "save & finish
+//   later" is just leaving — on return, status.nextStep resumes the
+//   wizard at the first incomplete step (works for SMS-token arrivals
+//   too). NOTE: the DOB input is deliberately NOT validated against the
+//   ID number client-side — that cross-check is a silent server-side
+//   anti-fraud measure. Do not add it here.
+//
+// Camera-less devices get the QR handoff plus an "SMS me the link"
+// button (Claude flow) for sellers who don't know what a QR code is.
 
-type Step = 'consent' | 'id' | 'selfie' | 'success' | 'failed';
+type Step =
+  | 'loading'
+  | 'consent'
+  | 'details'
+  | 'id'
+  | 'document'
+  | 'selfie'
+  | 'review'
+  | 'success'
+  | 'failed';
+
+interface KycStatus {
+  flow: 'CLAUDE' | 'VERIFYNOW';
+  kycStatus: string;
+  kycAttempts: number;
+  nextStep:
+    | 'consent'
+    | 'details'
+    | 'document'
+    | 'selfie'
+    | 'review'
+    | 'done'
+    | 'failed';
+  steps: {
+    consent: boolean;
+    details: boolean;
+    document: boolean;
+    selfie: boolean;
+  };
+  phoneMasked: string | null;
+}
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -103,11 +142,16 @@ function VerifyKycPageInner() {
   const searchParams = useSearchParams();
   const { getToken, isLoaded, isSignedIn } = useAuth();
 
-  const [step, setStep] = useState<Step>('consent');
+  const [step, setStep] = useState<Step>('loading');
+  const [flow, setFlow] = useState<'CLAUDE' | 'VERIFYNOW'>('VERIFYNOW');
+  const [phoneMasked, setPhoneMasked] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [consentChecked, setConsentChecked] = useState(false);
   const [idNumber, setIdNumber] = useState('');
+  const [dob, setDob] = useState('');
+  const [docFileName, setDocFileName] = useState('');
+  const [docPreviewUrl, setDocPreviewUrl] = useState<string | null>(null);
   const [verifiedName, setVerifiedName] = useState('');
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
@@ -115,6 +159,15 @@ function VerifyKycPageInner() {
   const [attempts, setAttempts] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // DOB input ceiling: sellers must be 18+. This is the only DOB
+  // validation on the client — see the flow note at the top of the file.
+  const dobMax = (() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 18);
+    return d.toISOString().slice(0, 10);
+  })();
 
   // Action-token auth: when the seller arrives via the SMS one-tap link
   // (/a/<token> → /kyc/verify?t=<token>) there's no Clerk session, so we
@@ -143,13 +196,64 @@ function VerifyKycPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function apiPost(path: string, body?: object) {
+  // Flow branch + save-&-resume: GET /kyc/status decides which pipeline
+  // renders AND (Claude flow) which step to resume at — every completed
+  // step is already persisted server-side. Status failure falls back to
+  // the legacy flow at consent, which is always safe.
+  useEffect(() => {
+    if (!actionToken && !(isLoaded && isSignedIn)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = (await apiGet('status')) as unknown as KycStatus;
+        if (cancelled) return;
+        setPhoneMasked(s.phoneMasked ?? null);
+        setAttempts(s.kycAttempts ?? 0);
+        if (s.flow !== 'CLAUDE') {
+          setFlow('VERIFYNOW');
+          setStep('consent');
+          return;
+        }
+        setFlow('CLAUDE');
+        switch (s.nextStep) {
+          case 'done':
+            setStep('success');
+            setTimeout(() => router.push(returnTo), 3000);
+            break;
+          case 'review':
+            setStep('review');
+            break;
+          case 'failed':
+            setError(
+              'Please contact support for assistance with identity verification.',
+            );
+            setStep('failed');
+            break;
+          case 'selfie':
+            setStep('selfie');
+            void detectCameraAndProceed();
+            break;
+          default:
+            setStep(s.nextStep);
+        }
+      } catch {
+        if (!cancelled) {
+          setFlow('VERIFYNOW');
+          setStep('consent');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionToken, isLoaded, isSignedIn]);
+
+  async function authedUrlAndHeaders(path: string) {
     // Token flow: authorise via ?t=<token> (no Clerk session). Otherwise
     // send the Clerk JWT as a Bearer header (signed-in path).
     let url = `${API_URL}/kyc/${path}`;
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
+    const headers: Record<string, string> = {};
     if (actionToken) {
       const sep = url.includes('?') ? '&' : '?';
       url = `${url}${sep}t=${encodeURIComponent(actionToken)}`;
@@ -157,11 +261,31 @@ function VerifyKycPageInner() {
       const token = await getToken();
       headers.Authorization = `Bearer ${token}`;
     }
+    return { url, headers };
+  }
+
+  async function apiPost(path: string, body?: object | FormData) {
+    const { url, headers } = await authedUrlAndHeaders(path);
+    const isForm = body instanceof FormData;
+    // FormData sets its own multipart boundary — never set Content-Type.
+    if (!isForm) headers['Content-Type'] = 'application/json';
     const res = await fetch(url, {
       method: 'POST',
       headers,
-      body: body ? JSON.stringify(body) : undefined,
+      body: isForm ? body : body ? JSON.stringify(body) : undefined,
     });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      throw new Error(
+        (data?.message as string) || `Request failed (${res.status})`,
+      );
+    }
+    return data;
+  }
+
+  async function apiGet(path: string) {
+    const { url, headers } = await authedUrlAndHeaders(path);
+    const res = await fetch(url, { headers, cache: 'no-store' });
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) {
       throw new Error(
@@ -177,12 +301,79 @@ function VerifyKycPageInner() {
     setError('');
     try {
       await apiPost('consent');
-      setStep('id');
+      setStep(flow === 'CLAUDE' ? 'details' : 'id');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.');
     } finally {
       setLoading(false);
     }
+  }
+
+  // ─── Claude flow Step 2: ID number + date of birth ───────────────
+  async function handleDetailsSubmit() {
+    if (idNumber.length !== 13 || !dob) return;
+    setLoading(true);
+    setError('');
+    try {
+      const data = await apiPost('details', { idNumber, dob });
+      if (data.success) {
+        setVerifiedName(
+          `${(data.firstName as string) ?? ''} ${(data.surname as string) ?? ''}`.trim(),
+        );
+        // Short pause so the seller sees the "Welcome, NAME" confirmation.
+        setTimeout(() => setStep('document'), 1500);
+      } else {
+        setError(
+          (data.message as string) ||
+            'ID could not be verified. Check the number and try again.',
+        );
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Verification service unavailable.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ─── Claude flow Step 3: ID document upload ──────────────────────
+  async function handleDocumentUpload(file: File) {
+    setLoading(true);
+    setError('');
+    try {
+      let toSend = file;
+      if (file.type !== 'application/pdf') {
+        // Downscale/re-encode client-side when the browser can decode it.
+        // HEIC on desktop can't be decoded here — upload the original and
+        // let the backend transcode via Cloudinary before the vision call.
+        try {
+          toSend = await processImage(file);
+        } catch {
+          toSend = file;
+        }
+      }
+      const form = new FormData();
+      form.append('document', toSend);
+      await apiPost('id-document', form);
+      setDocFileName(file.name);
+      setStep('selfie');
+      void detectCameraAndProceed();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed — try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function onDocPicked(file: File | null) {
+    if (!file) return;
+    setDocFileName(file.name);
+    if (docPreviewUrl) URL.revokeObjectURL(docPreviewUrl);
+    setDocPreviewUrl(
+      file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+    );
+    void handleDocumentUpload(file);
   }
 
   // ─── Step 2: SA ID number → Home Affairs lookup ──────────────────
@@ -277,11 +468,33 @@ function VerifyKycPageInner() {
     void startCamera();
   }
 
-  // ─── Step 3: submit selfie ───────────────────────────────────────
+  // ─── Final step: submit selfie ───────────────────────────────────
   async function submitSelfie(base64: string) {
     setLoading(true);
     setError('');
     try {
+      if (flow === 'CLAUDE') {
+        // One call: uploads the selfie, runs the vision verdict, returns
+        // VERIFIED | UNDER_REVIEW | REJECTED.
+        const data = await apiPost('selfie', { selfieBase64: base64 });
+        const status = data.status as string | undefined;
+        const nextAttempts = attempts + 1;
+        setAttempts(nextAttempts);
+        if (status === 'VERIFIED') {
+          setStep('success');
+          setTimeout(() => router.push(returnTo), 3000);
+        } else if (status === 'UNDER_REVIEW') {
+          setStep('review');
+        } else {
+          setError(
+            (data.message as string) ||
+              'We could not verify your identity. Please try again.',
+          );
+          setStep('failed');
+        }
+        return;
+      }
+
       const data = await apiPost('face-match', { selfieBase64: base64, idNumber });
       const nextAttempts = attempts + 1;
       setAttempts(nextAttempts);
@@ -305,14 +518,47 @@ function VerifyKycPageInner() {
     }
   }
 
-  // Step indicator pill bar.
+  // "Save & finish later" — nothing to persist: every completed step is
+  // already on the server; returning resumes at status.nextStep.
+  function SaveLaterLink() {
+    if (flow !== 'CLAUDE') return null;
+    return (
+      <button
+        type="button"
+        onClick={() => router.push(returnTo)}
+        style={{
+          display: 'block',
+          margin: '12px auto 0',
+          background: 'transparent',
+          border: 'none',
+          color: 'var(--text-tertiary)',
+          fontSize: 12,
+          textDecoration: 'underline',
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+        }}
+      >
+        Save &amp; finish later — your progress is kept
+      </button>
+    );
+  }
+
+  // Step indicator pill bar — items depend on the active flow.
   function StepBar() {
-    const items: { key: Step; label: string }[] = [
-      { key: 'consent', label: 'Consent' },
-      { key: 'id', label: 'ID Verify' },
-      { key: 'selfie', label: 'Face Match' },
-    ];
-    const order: Step[] = ['consent', 'id', 'selfie'];
+    const items: { key: Step; label: string }[] =
+      flow === 'CLAUDE'
+        ? [
+            { key: 'consent', label: 'Consent' },
+            { key: 'details', label: 'Details' },
+            { key: 'document', label: 'ID document' },
+            { key: 'selfie', label: 'Selfie' },
+          ]
+        : [
+            { key: 'consent', label: 'Consent' },
+            { key: 'id', label: 'ID Verify' },
+            { key: 'selfie', label: 'Face Match' },
+          ];
+    const order: Step[] = items.map((i) => i.key);
     const currentIdx = order.indexOf(step);
     return (
       <div
@@ -403,12 +649,27 @@ function VerifyKycPageInner() {
           >
             Identity verification
             <HelpTip title="Identity verification (KYC)" side="bottom">
-              South African law (FICA + POPIA) requires us to verify
-              every seller before releasing funds. We use VerifyNow — a
-              licensed identity-checking service — to cross-check your
-              SA ID against Home Affairs and match a selfie to your
-              official photo. Takes under a minute. Your ID number is
-              encrypted; your selfie isn&apos;t stored after the match.
+              {flow === 'CLAUDE' ? (
+                <>
+                  South African law (FICA + POPIA) requires us to verify
+                  every seller before releasing funds. You&apos;ll enter your
+                  SA ID number and date of birth (checked against Home
+                  Affairs records via VerifyNow, a licensed identity
+                  service), upload a photo or PDF of your ID document, and
+                  take a quick selfie. Your ID number is stored encrypted;
+                  the document and selfie are kept securely for our
+                  verification records, as set out in our Privacy Policy.
+                </>
+              ) : (
+                <>
+                  South African law (FICA + POPIA) requires us to verify
+                  every seller before releasing funds. We use VerifyNow — a
+                  licensed identity-checking service — to cross-check your
+                  SA ID against Home Affairs and match a selfie to your
+                  official photo. Takes under a minute. Your ID number is
+                  encrypted; your selfie isn&apos;t stored after the match.
+                </>
+              )}
             </HelpTip>
           </div>
           <div
@@ -417,6 +678,26 @@ function VerifyKycPageInner() {
             Required to release your payout on Gun Galore
           </div>
         </div>
+
+        {/* ─── Loading (status fetch) ───────────────────────────── */}
+        {step === 'loading' && (
+          <div style={{ ...cardStyle, textAlign: 'center', padding: '40px 24px' }}>
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                border: '2px solid var(--border)',
+                borderTop: '2px solid var(--red)',
+                borderRadius: '50%',
+                animation: 'kyc-spin 0.8s linear infinite',
+                margin: '0 auto 12px',
+              }}
+            />
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+              Loading your verification…
+            </div>
+          </div>
+        )}
 
         {/* ─── Step 1: consent ──────────────────────────────────── */}
         {step === 'consent' && (
@@ -429,10 +710,22 @@ function VerifyKycPageInner() {
                 marginBottom: 20,
               }}
             >
-              South African law requires us to verify your identity before we
-              can release the funds from your first sale. We check your SA ID
-              against Home Affairs and match a selfie to your official ID photo
-              — done in under a minute.
+              {flow === 'CLAUDE' ? (
+                <>
+                  South African law requires us to verify your identity before
+                  we can release the funds from your first sale. You&apos;ll
+                  enter your ID details, upload a photo or PDF of your SA ID,
+                  and take a quick selfie. You can stop at any point and
+                  finish later — your progress is saved.
+                </>
+              ) : (
+                <>
+                  South African law requires us to verify your identity before
+                  we can release the funds from your first sale. We check your
+                  SA ID against Home Affairs and match a selfie to your
+                  official ID photo — done in under a minute.
+                </>
+              )}
             </div>
             <label
               style={{
@@ -462,9 +755,22 @@ function VerifyKycPageInner() {
                   lineHeight: 1.6,
                 }}
               >
-                I consent to Gun Galore verifying my identity using my SA ID
-                number and a selfie. This check is performed by VerifyNow (Pty)
-                Ltd in accordance with POPIA.
+                {flow === 'CLAUDE' ? (
+                  <>
+                    I consent to Gun Galore verifying my identity using my SA
+                    ID number, date of birth, ID document and a selfie. The ID
+                    number is checked against official records by VerifyNow
+                    (Pty) Ltd; the document and selfie are assessed by Gun
+                    Galore&apos;s automated systems and, where needed, our
+                    staff — all in accordance with POPIA.
+                  </>
+                ) : (
+                  <>
+                    I consent to Gun Galore verifying my identity using my SA
+                    ID number and a selfie. This check is performed by
+                    VerifyNow (Pty) Ltd in accordance with POPIA.
+                  </>
+                )}
               </span>
             </label>
             {error && <ErrorBanner>{error}</ErrorBanner>}
@@ -478,7 +784,162 @@ function VerifyKycPageInner() {
           </div>
         )}
 
-        {/* ─── Step 2: SA ID number ─────────────────────────────── */}
+        {/* ─── Claude Step 2: ID number + date of birth ─────────── */}
+        {step === 'details' && (
+          <div style={cardStyle}>
+            <StepBar />
+            {verifiedName && (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  background: 'rgba(34,197,94,0.1)',
+                  border: '0.5px solid rgba(34,197,94,0.3)',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  color: '#22c55e',
+                  marginBottom: 16,
+                  textAlign: 'center',
+                }}
+              >
+                Welcome, {verifiedName}
+              </div>
+            )}
+            <div
+              style={{
+                fontSize: 13,
+                color: 'var(--text-tertiary)',
+                marginBottom: 20,
+                lineHeight: 1.5,
+              }}
+            >
+              Enter your South African ID number and your date of birth. We
+              check the ID number against official records.
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>SA ID Number *</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={13}
+                placeholder="13-digit ID number"
+                value={idNumber}
+                onChange={(e) => setIdNumber(e.target.value.replace(/\D/g, ''))}
+                style={inputStyle}
+              />
+              {idNumber.length > 0 && idNumber.length !== 13 && (
+                <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                  Must be 13 digits ({idNumber.length}/13)
+                </div>
+              )}
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>Date of birth *</label>
+              <input
+                type="date"
+                value={dob}
+                max={dobMax}
+                min="1900-01-01"
+                onChange={(e) => setDob(e.target.value)}
+                style={{ ...inputStyle, colorScheme: 'dark' }}
+              />
+            </div>
+            {error && <ErrorBanner>{error}</ErrorBanner>}
+            <button
+              onClick={handleDetailsSubmit}
+              disabled={loading || idNumber.length !== 13 || !dob}
+              style={primaryButton(loading || idNumber.length !== 13 || !dob)}
+            >
+              {loading ? 'Checking your details…' : 'Continue'}
+            </button>
+            <SaveLaterLink />
+          </div>
+        )}
+
+        {/* ─── Claude Step 3: ID document upload ────────────────── */}
+        {step === 'document' && (
+          <div style={cardStyle}>
+            <StepBar />
+            <div
+              style={{
+                fontSize: 13,
+                color: 'var(--text-tertiary)',
+                marginBottom: 16,
+                lineHeight: 1.5,
+              }}
+            >
+              Upload a clear photo or PDF scan of your South African ID —
+              smart card (photo side) or green ID book (photo page). Make
+              sure the photo, ID number and date of birth are readable.
+            </div>
+
+            {docPreviewUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={docPreviewUrl}
+                alt="ID document preview"
+                style={{
+                  width: '100%',
+                  maxHeight: 220,
+                  objectFit: 'contain',
+                  borderRadius: 8,
+                  background: 'var(--bg-deep)',
+                  marginBottom: 14,
+                }}
+              />
+            )}
+            {!docPreviewUrl && docFileName && (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  background: 'var(--bg-inset)',
+                  border: '0.5px solid var(--border)',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  color: 'var(--text-secondary)',
+                  marginBottom: 14,
+                }}
+              >
+                📄 {docFileName}
+              </div>
+            )}
+
+            {error && <ErrorBanner>{error}</ErrorBanner>}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
+              style={{ display: 'none' }}
+              onChange={(e) => onDocPicked(e.target.files?.[0] ?? null)}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              style={primaryButton(loading)}
+            >
+              {loading
+                ? 'Uploading…'
+                : docFileName
+                  ? 'Choose a different file'
+                  : 'Choose photo or PDF'}
+            </button>
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--text-tertiary)',
+                marginTop: 10,
+                textAlign: 'center',
+                lineHeight: 1.5,
+              }}
+            >
+              On your phone you can take a photo of your ID directly. Max
+              10&nbsp;MB.
+            </div>
+            <SaveLaterLink />
+          </div>
+        )}
+
+        {/* ─── Step 2 (legacy): SA ID number ────────────────────── */}
         {step === 'id' && (
           <div style={cardStyle}>
             <StepBar />
@@ -565,7 +1026,19 @@ function VerifyKycPageInner() {
               // defeat the liveness check (anyone could submit any
               // photo). The phone-handoff route forces the selfie to
               // come from a real camera at the time of submission.
-              <CameraUnavailableHandoff returnTo={returnTo} actionToken={actionToken} />
+              <CameraUnavailableHandoff
+                returnTo={returnTo}
+                actionToken={actionToken}
+                phoneMasked={flow === 'CLAUDE' ? phoneMasked : null}
+                onSmsRequest={
+                  flow === 'CLAUDE'
+                    ? async () => {
+                        const r = await apiPost('handoff-sms');
+                        return (r.phoneMasked as string) ?? phoneMasked ?? '';
+                      }
+                    : undefined
+                }
+              />
             ) : (
               <div style={{ position: 'relative', marginBottom: 20 }}>
                 <div
@@ -691,6 +1164,7 @@ function VerifyKycPageInner() {
                 </button>
               </div>
             )}
+            <SaveLaterLink />
           </div>
         )}
 
@@ -738,6 +1212,65 @@ function VerifyKycPageInner() {
             >
               Redirecting…
             </div>
+          </div>
+        )}
+
+        {/* ─── Under review (Claude flow) ──────────────────────── */}
+        {step === 'review' && (
+          <div style={{ ...cardStyle, textAlign: 'center', padding: '32px 24px' }}>
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                background: 'rgba(245,158,11,0.1)',
+                border: '0.5px solid rgba(245,158,11,0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+                fontSize: 24,
+              }}
+            >
+              🕑
+            </div>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 500,
+                color: '#f59e0b',
+                marginBottom: 8,
+              }}
+            >
+              Verification being reviewed
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: 'var(--text-tertiary)',
+                lineHeight: 1.6,
+                marginBottom: 20,
+              }}
+            >
+              Nothing more is needed from you. Our team is double-checking
+              your submission — we&apos;ll SMS you as soon as it&apos;s done.
+              Your listings stay live in the meantime.
+            </div>
+            <Link
+              href={returnTo}
+              style={{
+                display: 'inline-block',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                border: '0.5px solid var(--border)',
+                borderRadius: 6,
+                padding: '12px 24px',
+                fontSize: 13,
+                textDecoration: 'none',
+              }}
+            >
+              Done
+            </Link>
           </div>
         )}
 
@@ -820,13 +1353,45 @@ function VerifyKycPageInner() {
 // capture there. Liveness preserved (the selfie still comes from a
 // real camera at the time of capture). File upload is intentionally
 // NOT offered as a workaround.
+//
+// Claude flow adds an "SMS me the link" button for sellers who don't
+// know what a QR code is — the backend mints a 7-day token and texts
+// the /a/<token> link to the phone on file.
 function CameraUnavailableHandoff({
   returnTo,
   actionToken,
+  phoneMasked,
+  onSmsRequest,
 }: {
   returnTo: string;
   actionToken: string | null;
+  phoneMasked?: string | null;
+  onSmsRequest?: () => Promise<string>;
 }) {
+  const [smsState, setSmsState] = useState<
+    'idle' | 'sending' | 'sent' | 'cooldown'
+  >('idle');
+  const [smsSentTo, setSmsSentTo] = useState('');
+  const [smsError, setSmsError] = useState('');
+
+  async function handleSms() {
+    if (!onSmsRequest || smsState === 'sending' || smsState === 'cooldown')
+      return;
+    setSmsState('sending');
+    setSmsError('');
+    try {
+      const masked = await onSmsRequest();
+      setSmsSentTo(masked);
+      setSmsState('cooldown');
+      // 60s cooldown before re-enable so a slow SMS doesn't get hammered.
+      setTimeout(() => setSmsState('sent'), 60_000);
+    } catch (err) {
+      setSmsError(
+        err instanceof Error ? err.message : 'Could not send the SMS.',
+      );
+      setSmsState('idle');
+    }
+  }
   // The QR points to the same /kyc/verify URL, carrying the action token
   // (so the phone stays login-free too) AND the original returnTo so the
   // seller lands back where they came from after finishing on their
@@ -894,9 +1459,76 @@ function CameraUnavailableHandoff({
           marginBottom: 10,
         }}
       >
-        You&apos;ll be asked to sign in on your phone, then re-enter
-        your ID number. The whole thing takes under a minute.
+        Your progress so far is saved — your phone picks up right where
+        you left off.
       </p>
+
+      {/* "SMS me the link" — same handoff for sellers who don't use QR
+          codes. Hidden when there's no phone on file or no handler
+          (legacy flow). */}
+      {onSmsRequest && (
+        <div style={{ marginTop: 14, textAlign: 'center' }}>
+          {phoneMasked || smsSentTo ? (
+            <>
+              <button
+                type="button"
+                onClick={handleSms}
+                disabled={smsState === 'sending' || smsState === 'cooldown'}
+                style={{
+                  background:
+                    smsState === 'sending' || smsState === 'cooldown'
+                      ? 'var(--bg-card)'
+                      : 'var(--red)',
+                  color:
+                    smsState === 'sending' || smsState === 'cooldown'
+                      ? 'var(--text-tertiary)'
+                      : '#fff',
+                  border: 'none',
+                  borderRadius: 6,
+                  padding: '10px 18px',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor:
+                    smsState === 'sending' || smsState === 'cooldown'
+                      ? 'not-allowed'
+                      : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {smsState === 'sending'
+                  ? 'Sending…'
+                  : smsState === 'cooldown'
+                    ? `Sent to ${smsSentTo}`
+                    : smsState === 'sent'
+                      ? 'SMS the link again'
+                      : `Rather SMS the link to ${phoneMasked}`}
+              </button>
+              {smsState === 'cooldown' && (
+                <p
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--text-tertiary)',
+                    marginTop: 8,
+                  }}
+                >
+                  Open the SMS on your phone and tap the link. You can
+                  request another in a minute if it doesn&apos;t arrive.
+                </p>
+              )}
+              {smsError && (
+                <p style={{ fontSize: 11, color: 'var(--red)', marginTop: 8 }}>
+                  {smsError}
+                </p>
+              )}
+            </>
+          ) : (
+            <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+              Want the link by SMS instead? Add a phone number on your
+              profile first.
+            </p>
+          )}
+        </div>
+      )}
 
       <div
         style={{

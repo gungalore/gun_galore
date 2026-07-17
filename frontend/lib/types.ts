@@ -178,16 +178,29 @@ export interface Me {
   phoneVerified: boolean;
   avatarUrl: string | null;
   sellerTier: SellerTier;
-  kycStatus: 'NONE' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+  kycStatus: 'NONE' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'UNDER_REVIEW';
   kycVerifiedAt: string | null;
-  // Set by the backend when the seller's first sale triggers VerifyNow.
+  // Set by the backend when the seller's first sale triggers verification.
   // The in-app KYC banner reads this to decide whether to surface.
   kycRequiredAt: string | null;
-  // Computed server-side from name + verified phone + address-with-coords.
-  // Drives the nav completion ring + JIT prompts.
+  // Computed server-side. Buyers: name/phone/address at ~33% each.
+  // Sellers (≥1 listing or kycRequiredAt): five sections at 20% each,
+  // adding banking + the two identity-verification stages. Render
+  // defensively — skip unknown keys so old clients never crash when the
+  // backend grows the union.
   profileCompleteness: {
-    percent: number; // 0 | 33 | 67 | 100
-    missing: ('name' | 'phone' | 'address')[];
+    percent: number; // 0–100
+    missing: (
+      | 'name'
+      | 'phone'
+      | 'address'
+      | 'banking'
+      | 'identity'
+      | 'verification'
+    )[];
+    // 'seller' = the 5×20% shape (drives the verification progress bar);
+    // may be absent on older backend deploys — treat missing as 'buyer'.
+    shape?: 'buyer' | 'seller';
   };
   trustScore: number;
   averageRating: number | null;

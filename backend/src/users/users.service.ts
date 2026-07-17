@@ -849,11 +849,20 @@ export class UsersService {
   }> {
     const user = await this.prisma.user.findUnique({
       where: { clerkId },
-      select: { id: true, kycStatus: true, kycRequiredAt: true },
+      select: {
+        id: true,
+        kycStatus: true,
+        kycRequiredAt: true,
+        // Claude-flow partial-progress markers for the kyc-finish nudge.
+        kycConsentGivenAt: true,
+        kycIdVerifiedAt: true,
+        kycIdDocumentUrl: true,
+        kycSelfieUrl: true,
+      },
     });
     if (!user) return { notifications: [] };
 
-    const [winningBids, acceptedOffers, salesNeedingDispatch] =
+    const [winningBids, acceptedOffers, salesNeedingDispatch, listingsCount] =
       await Promise.all([
         this.prisma.bid.findMany({
           where: {
@@ -885,6 +894,7 @@ export class UsersService {
             shippingStatus: 'PENDING',
           },
         }),
+        this.prisma.listing.count({ where: { sellerId: user.id } }),
       ]);
 
     const notifications: {
@@ -894,13 +904,31 @@ export class UsersService {
       severity: 'info' | 'warning' | 'critical';
     }[] = [];
 
-    // 1. KYC first — it gates the seller's payout entirely.
-    if (user.kycRequiredAt && user.kycStatus !== 'VERIFIED') {
+    // 1. KYC first — it gates the seller's payout entirely. UNDER_REVIEW
+    // is suppressed: the file is with the admins, nothing to act on.
+    const kycSettled =
+      user.kycStatus === 'VERIFIED' || user.kycStatus === 'UNDER_REVIEW';
+    if (user.kycRequiredAt && !kycSettled) {
       notifications.push({
         id: 'kyc-required',
         label: 'Verify identity to release payout',
         href: '/kyc/verify',
         severity: 'critical',
+      });
+    } else if (
+      !kycSettled &&
+      listingsCount >= 1 &&
+      (user.kycConsentGivenAt || user.kycIdVerifiedAt || user.kycIdDocumentUrl)
+    ) {
+      // 1b. Started-but-unfinished verification (no forcing sale yet).
+      // Softer nudge so a seller who bailed mid-wizard picks it back up
+      // BEFORE a sale forces it. Never shown to pure buyers, and never
+      // alongside kyc-required (that branch already won above).
+      notifications.push({
+        id: 'kyc-finish',
+        label: 'Finish your identity verification',
+        href: '/kyc/verify',
+        severity: 'warning',
       });
     }
 

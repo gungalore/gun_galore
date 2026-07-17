@@ -13,6 +13,7 @@ import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { StitchService } from '../payments/stitch.service';
+import { SmsService } from '../sms/sms.service';
 import { TransactionsService, PAYMENT_MODE } from '../payments/transactions.service';
 import { reversalListingData } from '../payments/inventory';
 import { ListingReviewDto, ReviewAction } from './dto/listing-review.dto';
@@ -38,6 +39,9 @@ export class AdminService {
     // refundTransaction() to cancel any platform-booked carrier shipment so a
     // refunded sale doesn't leave a live (already-billed) waybill (P5.2).
     private readonly transactions: TransactionsService,
+    // @Global — reviewKyc() sends the seller the same SMS the automated
+    // KYC verdict would have.
+    private readonly sms: SmsService,
   ) {}
 
   // ---------------------------------------------------------------
@@ -335,6 +339,111 @@ export class AdminService {
     }
 
     return updated;
+  }
+
+  // ---------------------------------------------------------------
+  // Claude-KYC human review — decides an UNDER_REVIEW verification
+  // from the user dossier. Guarded transition (only moves a row that
+  // is still UNDER_REVIEW) so two admins can't double-decide, and the
+  // seller gets the same SMS/email the automated verdict would send.
+  // The blunt PATCH kycStatus override above stays for emergencies.
+  // ---------------------------------------------------------------
+  async reviewKyc(
+    userId: string,
+    adminId: string,
+    decision: 'APPROVE' | 'REJECT',
+    reason: string,
+  ) {
+    if (!reason || reason.trim().length < 5) {
+      throw new BadRequestException(
+        'A short reason (min 5 characters) is required for the audit trail.',
+      );
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        kycStatus: true,
+        phone: true,
+        email: true,
+        firstName: true,
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.kycStatus !== 'UNDER_REVIEW') {
+      throw new BadRequestException(
+        `This verification is not awaiting review (status: ${user.kycStatus}).`,
+      );
+    }
+
+    const newStatus = decision === 'APPROVE' ? 'VERIFIED' : 'REJECTED';
+    const guarded = await this.prisma.user.updateMany({
+      where: { id: userId, kycStatus: 'UNDER_REVIEW' },
+      data: {
+        kycStatus: newStatus,
+        kycVerifiedAt: decision === 'APPROVE' ? new Date() : undefined,
+        kycReviewedById: adminId,
+        kycReviewedAt: new Date(),
+        kycReviewNote: reason.trim(),
+      },
+    });
+    if (guarded.count === 0) {
+      throw new BadRequestException(
+        'Already decided by another admin — refresh the page.',
+      );
+    }
+
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'USER_KYC_REVIEW',
+      resourceType: 'User',
+      resourceId: userId,
+      oldValue: 'UNDER_REVIEW',
+      newValue: newStatus,
+      reason: reason.trim(),
+    });
+
+    // Seller comms — identical to the automated verdict paths. Never
+    // include the admin's internal reason in the rejection message.
+    try {
+      if (decision === 'APPROVE') {
+        if (user.phone) {
+          await this.sms.sendSms({
+            to: user.phone,
+            message:
+              'Gun Galore: Your identity has been verified. Your pending sale can now proceed.',
+            reference: `kyc-approved-${user.id}`,
+          });
+        }
+        if (user.email) {
+          await this.notifications.sellerKycApproved(
+            user.email,
+            user.firstName ?? 'Seller',
+          );
+        }
+      } else {
+        const msg =
+          'We could not verify your identity. Please contact support for assistance.';
+        if (user.phone) {
+          await this.sms.sendSms({
+            to: user.phone,
+            message: `Gun Galore: ${msg}`,
+            reference: `kyc-review-rejected-${user.id}`,
+          });
+        }
+        if (user.email) {
+          await this.notifications.sellerKycRejected(
+            user.email,
+            user.firstName ?? 'Seller',
+            msg,
+          );
+        }
+      }
+    } catch {
+      // Notification failure never rolls back the decision.
+    }
+
+    return { success: true, kycStatus: newStatus };
   }
 
   // ---------------------------------------------------------------

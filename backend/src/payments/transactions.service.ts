@@ -700,6 +700,19 @@ export class TransactionsService {
             `triggerSellerVerification failed for ${listing.sellerId}: ${(err as Error).message}`,
           ),
         );
+    } else if (listing.price) {
+      // Seller is already VERIFIED — but a high-value sale on a seller who
+      // cleared the cheap STANDARD Claude tier triggers a silent anchored
+      // re-check (official Home Affairs photo vs the stored selfie). The
+      // method itself no-ops unless flag + threshold + tier all apply, and
+      // it never throws into the checkout path.
+      void this.kyc
+        .maybeUpgradeKycTier(listing.sellerId, listing.price)
+        .catch((err) =>
+          this.logger.warn(
+            `maybeUpgradeKycTier failed for ${listing.sellerId}: ${(err as Error).message}`,
+          ),
+        );
     }
 
     return {

@@ -85,6 +85,11 @@ enum KycStatus {
   PENDING
   VERIFIED
   REJECTED
+  // Claude-vision flow: automated verdict was inconclusive (score band or a
+  // soft cross-check mismatch) — a human admin must approve/reject from the
+  // user dossier. Payout gates check `!== VERIFIED`, so this blocks payout
+  // with no gate changes. Terminal for the wizard (no user action needed).
+  UNDER_REVIEW
 }
 
 enum ClaudeDecision {
@@ -257,14 +262,46 @@ model User {
   kycIdHash                 String?   @unique
   // SA ID number stored AES-GCM encrypted at rest. Set when the
   // seller completes their profile (modal pops up after their first
-  // listing publishes). On first sale, KycService decrypts it and
-  // runs the VerifyNow Home Affairs lookup — the seller only does
-  // the selfie face-match step. After KYC passes we PURGE this
-  // column (set null) and keep only kycIdHash long-term; the
-  // encrypted blob is transient PII we don't keep around.
+  // listing publishes) or at the Claude-flow Details step. RETAINED
+  // after KYC passes under the firearms-transfer regulatory-compliance
+  // basis (FCA s125 / SAP 534): KycService/Saps534Service decrypt it to
+  // prefill Section C of the SAP 534 on a later firearm sale, and the
+  // Claude verdict step decrypts it for the identity cross-check.
   // Encryption key derives from ID_HASH_SECRET via HKDF in
   // backend/src/common/id-crypto.ts.
   idNumberEncrypted         String?
+
+  // ─────────────── Claude-vision KYC flow (kyc_claude_flow_enabled) ───────────────
+  // Cheap path: seller uploads their ID document + takes a live selfie;
+  // Claude vision face-matches + OCRs; VerifyNow only does the 1-credit
+  // "SA ID (Basic)" record check. Anti-forgery = server-side cross-checks
+  // (entered DOB vs ID-number digits vs document OCR vs Home Affairs record).
+  // Date of birth EXACTLY as the seller typed it ('YYYY-MM-DD'). Deliberately
+  // NOT validated against the ID number at capture — the silent mismatch is
+  // the faker catch-out, applied only at verdict time.
+  dateOfBirth       String?
+  // Cloudinary URLs — RETAINED post-verification (operator decision
+  // 2026-07-17: FICA-style audit trail, same posture as stamped SAP 534s).
+  kycIdDocumentUrl  String?
+  kycSelfieUrl      String?
+  // Full Claude findings JSON (+ merged crossCheck hard/soft fails) so the
+  // admin dossier can re-render the reasoning without another vision call.
+  kycClaudeFindings Json?
+  // SA ID (Basic) result persisted at the Details step so the verdict step
+  // can cross-check names/DOB without burning a second VerifyNow credit.
+  kycHaCheckJson    Json?
+  // Which pipeline verified/attempted this user: 'VERIFYNOW' | 'CLAUDE'.
+  kycMethod         String?
+  // 'STANDARD' (< anchored threshold) | 'ANCHORED' (official DHA photo was
+  // pulled and matched). Resolved server-side by max listing/sale value —
+  // invisible to the seller. Silent upgrade re-runs anchored scan on the
+  // stored selfie when a VERIFIED STANDARD seller crosses the threshold.
+  kycTier           String?
+  // Human decision on UNDER_REVIEW (admin dossier Approve/Reject).
+  kycReviewedById   String?
+  kycReviewedAt     DateTime?
+  kycReviewNote     String?
+
   totalSales                Int       @default(0)
   isBanned                  Boolean   @default(false)
   bannedAt                  DateTime?

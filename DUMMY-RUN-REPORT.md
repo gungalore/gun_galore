@@ -1,6 +1,6 @@
 # Gun Galore — End-to-End Dummy Run Report
 
-Generated: 2026-07-16T19:23:49.880Z
+Generated: 2026-07-17T09:08:51.267Z
 
 Fully offline simulation against the isolated throwaway DB `gun_galore_dummyrun`. Every external integration (payments gateway, courier, KYC, email/SMS, Zoho, Cloudinary, Anthropic) is a no-op/stub. The harness calls the REAL service methods and invokes each sweep directly (all crons stopped).
 

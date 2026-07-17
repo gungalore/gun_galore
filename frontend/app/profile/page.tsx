@@ -6,6 +6,7 @@ import { Me, TrustDashboard, SellerTier } from '@/lib/types';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { HelpTip } from '@/components/help-tip';
+import { SellerVerificationProgress } from '@/components/seller-verification-progress';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -32,6 +33,7 @@ const KYC_TONE: Record<string, { label: string; colour: string }> = {
   PENDING: { label: 'Verification pending', colour: '#f59e0b' },
   VERIFIED: { label: 'ID verified', colour: '#22c55e' },
   REJECTED: { label: 'Verification rejected', colour: 'var(--red)' },
+  UNDER_REVIEW: { label: 'Verification being reviewed', colour: '#f59e0b' },
 };
 
 function StatCard({
@@ -338,6 +340,15 @@ export default async function ProfilePage() {
 
       {/* Reveal — body cards animate, header above does not. */}
       <PageReveal className="space-y-6">
+
+      {/* ── Seller setup progress ─────────────────────────────────────
+          Only renders for sellers (5-section completeness shape from the
+          backend). Buyers see nothing here. */}
+      {me && (
+        <div data-reveal>
+          <SellerVerificationProgress me={me} />
+        </div>
+      )}
 
       {/* ── Stats ───────────────────────────────────────────────────── */}
       <div data-reveal className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminStatusChip as StatusChip } from '@/components/admin/status-chip';
 import UserActions from '../user-actions';
+import { KycReviewPanel } from './kyc-review-panel';
 
 // ─── Types — kept loose because the backend returns a rich object ────
 // with optional fields we want to render conditionally. `any`-ish typing
@@ -37,6 +38,15 @@ interface Dossier {
     kycRequiredAt: string | null;
     kycAttempts: number;
     kycFaceMatchScore: number | null;
+    // Claude-vision KYC flow (nullable on legacy VerifyNow users).
+    kycMethod: string | null;
+    kycTier: string | null;
+    dateOfBirth: string | null;
+    kycIdDocumentUrl: string | null;
+    kycSelfieUrl: string | null;
+    kycClaudeFindings: Record<string, unknown> | null;
+    kycReviewedAt: string | null;
+    kycReviewNote: string | null;
     totalSales: number;
     isBanned: boolean;
     bannedAt: string | null;
@@ -167,6 +177,9 @@ export default function UserDossierPage() {
 
   const [d, setD] = useState<Dossier | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // Bumped by the KYC review panel after a decision so the dossier
+  // re-fetches and renders the new status.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!requireAdminToken()) return;
@@ -186,7 +199,7 @@ export default function UserDossierPage() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, refreshKey]);
 
   if (!loaded) {
     return (
@@ -363,15 +376,23 @@ export default function UserDossierPage() {
           <DataList
             rows={[
               ['KYC status', u.kycStatus],
+              ['Method', u.kycMethod ?? 'VERIFYNOW'],
+              ...(u.kycTier ? ([['Tier', u.kycTier]] as [string, string][]) : []),
               ['Required at', formatDateTime(u.kycRequiredAt)],
               ['Verified at', formatDateTime(u.kycVerifiedAt)],
-              ['Face-match attempts', u.kycAttempts.toString()],
+              ['Attempts', u.kycAttempts.toString()],
               [
                 'Face-match score',
                 u.kycFaceMatchScore !== null
                   ? `${(u.kycFaceMatchScore * 100).toFixed(1)}%`
                   : '—',
               ],
+              ...(u.kycReviewedAt
+                ? ([
+                    ['Human review', formatDateTime(u.kycReviewedAt)],
+                    ['Review note', u.kycReviewNote ?? '—'],
+                  ] as [string, string][])
+                : []),
               ['Bank', u.bankName ?? '—'],
               ['Account holder', u.bankAccountHolder ?? '—'],
               [
@@ -383,6 +404,55 @@ export default function UserDossierPage() {
               ['Bank details reviewed (manual)', formatDateTime(u.bankVerifiedAt)],
             ]}
           />
+
+          {/* Claude-flow evidence — open in a new tab for full-size review. */}
+          {(u.kycIdDocumentUrl || u.kycSelfieUrl) && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+              {u.kycIdDocumentUrl && (
+                <a
+                  href={u.kycIdDocumentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs rounded-[6px] px-3 py-2"
+                  style={{
+                    background: 'var(--bg-inset)',
+                    border: '0.5px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    textDecoration: 'none',
+                  }}
+                >
+                  📄 Open ID document ↗
+                </a>
+              )}
+              {u.kycSelfieUrl && (
+                <a
+                  href={u.kycSelfieUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs rounded-[6px] px-3 py-2"
+                  style={{
+                    background: 'var(--bg-inset)',
+                    border: '0.5px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    textDecoration: 'none',
+                  }}
+                >
+                  🤳 Open selfie ↗
+                </a>
+              )}
+            </div>
+          )}
+
+          {u.kycClaudeFindings && (
+            <KycFindings findings={u.kycClaudeFindings} />
+          )}
+
+          {u.kycStatus === 'UNDER_REVIEW' && (
+            <KycReviewPanel
+              userId={u.id}
+              onDecided={() => setRefreshKey((k) => k + 1)}
+            />
+          )}
         </Section>
       </div>
 
@@ -663,6 +733,94 @@ function DataList({ rows }: { rows: [string, string][] }) {
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Claude-KYC findings — score rows + issues + server cross-check flags,
+// re-rendered from the persisted JSON (no fresh vision call). Rendered
+// defensively: any shape drift just drops rows instead of crashing.
+function KycFindings({ findings }: { findings: Record<string, unknown> }) {
+  const fm = (findings.face_match ?? {}) as Record<string, unknown>;
+  const doc = (findings.document ?? {}) as Record<string, unknown>;
+  const cc = (findings.crossCheck ?? {}) as {
+    hardFails?: string[];
+    softFails?: string[];
+  };
+  const scoreRows: [string, unknown][] = [
+    ['Selfie vs document photo', fm.same_person],
+    ['Live-capture impression', fm.selfie_live_capture],
+    ['Document photo visible', fm.document_photo_visible],
+    ...(fm.same_person_vs_ha_photo !== undefined
+      ? ([['Selfie vs official record photo', fm.same_person_vs_ha_photo]] as [
+          string,
+          unknown,
+        ][])
+      : []),
+    ['Looks genuine SA ID', doc.looks_genuine_sa_id],
+    ['Document legibility', doc.legibility],
+    ['Overall confidence', findings.overall_confidence],
+  ];
+  const issues = [
+    ...((fm.issues as string[]) ?? []),
+    ...((doc.issues as string[]) ?? []),
+  ];
+  const scoreColor = (v: unknown) =>
+    typeof v !== 'number'
+      ? 'var(--text-tertiary)'
+      : v >= 80
+        ? '#22c55e'
+        : v >= 50
+          ? '#f59e0b'
+          : 'var(--red)';
+
+  return (
+    <div
+      className="rounded-[8px] p-3 mt-3 text-xs"
+      style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)' }}
+    >
+      <p
+        className="uppercase mb-2"
+        style={{ color: 'var(--text-tertiary)', letterSpacing: '0.08em', fontWeight: 500 }}
+      >
+        Automated findings{findings.scanFailed ? ' — SCAN FAILED' : ''}
+        {typeof findings.mode === 'string' ? ` · ${findings.mode}` : ''}
+      </p>
+      {scoreRows.map(([label, v]) => (
+        <div key={label} className="flex justify-between py-1" style={{ gap: 12 }}>
+          <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
+          <span style={{ color: scoreColor(v), fontWeight: 500 }}>
+            {typeof v === 'number' ? `${v}%` : '—'}
+          </span>
+        </div>
+      ))}
+      {typeof doc.document_type === 'string' && (
+        <div className="flex justify-between py-1" style={{ gap: 12 }}>
+          <span style={{ color: 'var(--text-secondary)' }}>Document type</span>
+          <span style={{ color: 'var(--text-primary)' }}>{doc.document_type}</span>
+        </div>
+      )}
+      {typeof findings.recommendation === 'string' && (
+        <p className="mt-2" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          <strong>Model recommendation:</strong> {findings.recommendation} —{' '}
+          {(findings.recommendation_reason as string) ?? ''}
+        </p>
+      )}
+      {issues.length > 0 && (
+        <p className="mt-2" style={{ color: '#f59e0b', lineHeight: 1.5 }}>
+          <strong>Issues:</strong> {issues.join('; ')}
+        </p>
+      )}
+      {(cc.hardFails?.length ?? 0) > 0 && (
+        <p className="mt-2" style={{ color: 'var(--red)', lineHeight: 1.5 }}>
+          <strong>Cross-check HARD fails:</strong> {cc.hardFails!.join(', ')}
+        </p>
+      )}
+      {(cc.softFails?.length ?? 0) > 0 && (
+        <p className="mt-1" style={{ color: '#f59e0b', lineHeight: 1.5 }}>
+          <strong>Cross-check soft fails:</strong> {cc.softFails!.join(', ')}
+        </p>
+      )}
     </div>
   );
 }

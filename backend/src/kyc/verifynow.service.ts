@@ -38,6 +38,23 @@ export interface FaceMatchResult {
   transactionId: string;
 }
 
+/**
+ * "SA ID (Basic)" — the 1-credit record check used by the Claude KYC flow.
+ * No photo; identity fields only. `dob` may be '' if the Basic product
+ * doesn't return it (confirm in sandbox — the cross-check degrades safely).
+ */
+export interface IdBasicResult {
+  success: boolean;
+  firstName: string;
+  surname: string;
+  /** As returned by VerifyNow (may be '' on Basic). Normalised downstream. */
+  dob: string;
+  gender: string;
+  deceasedStatus: string;
+  idBlocked: string;
+  transactionId: string;
+}
+
 export interface CreditBalance {
   /** Credits remaining on the VerifyNow account. */
   available: number;
@@ -162,6 +179,98 @@ export class VerifyNowService {
     } catch (err) {
       if (err instanceof KycException) throw err;
       this.log.error('VerifyNow ID check error', err);
+      throw new KycException(
+        'Identity verification service unavailable — please try again shortly.',
+      );
+    }
+  }
+
+  /**
+   * Claude-flow cheap check — VerifyNow "SA ID (Basic)": 1 credit (R2.99)
+   * vs 10 for the home_affairs_id_photo pull. Returns the Home Affairs
+   * record WITHOUT the official photo — the Claude flow matches the selfie
+   * against the seller's uploaded ID document instead, and this call only
+   * proves the ID number is real + supplies name/DOB for the server-side
+   * cross-check.
+   *
+   * reportType: VerifyNow's dashboard names the product "SA ID (Basic)" but
+   * the API string is not published on the pricing page — pin it in sandbox
+   * before flipping kyc_claude_flow_enabled in prod. VERIFYNOW_BASIC_REPORT_TYPE
+   * overrides the default guess without a redeploy.
+   *
+   * Response parsing mirrors verifyIdNumber (same /verify envelope). Basic
+   * may omit fields the photo product returns (esp. dob) — parse everything
+   * defensively and let absent fields degrade to '' rather than erroring;
+   * the DOB↔ID-digit cross-check works even when HA dob is absent.
+   */
+  async verifyIdBasic(idNumber: string): Promise<IdBasicResult> {
+    try {
+      const reportType =
+        process.env.VERIFYNOW_BASIC_REPORT_TYPE ?? 'said_verification';
+      const res = await fetch(`${this.baseUrl}/verify`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ reportType, idNumber, mode: this.mode }),
+      });
+
+      const raw = await res.text();
+      let data: Record<string, unknown>;
+      try {
+        data = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      } catch {
+        data = { rawBody: raw };
+      }
+
+      if (!res.ok) {
+        this.log.error(
+          `VerifyNow SA ID Basic failed: HTTP ${res.status} — ${raw.slice(0, 300)}`,
+        );
+        throw new KycException(
+          (data?.message as string) ||
+            'Identity verification service unavailable — please try again shortly.',
+        );
+      }
+      if (data.success === false) {
+        this.log.error(
+          `VerifyNow SA ID Basic returned success=false: ${raw.slice(0, 300)}`,
+        );
+        throw new KycException(
+          (data?.message as string) || 'We could not verify this ID number.',
+        );
+      }
+
+      const r = (data.result ?? {}) as Record<string, string | undefined>;
+
+      // Same up-front refusals as the photo product.
+      if (r.DeadIndicator && r.DeadIndicator !== 'No') {
+        throw new KycException('We could not verify this ID number.');
+      }
+      if (r.IDNBlocked && r.IDNBlocked !== 'No') {
+        throw new KycException(
+          'This ID number has been flagged. Please contact support.',
+        );
+      }
+      if (r.IDN && idNumber && r.IDN !== idNumber) {
+        throw new KycException(
+          'The provided ID number does not match Home Affairs records.',
+        );
+      }
+
+      return {
+        success: true,
+        firstName: r.Name ?? '',
+        surname: r.Surname ?? '',
+        dob: r.dob ?? r.DOB ?? r.DateOfBirth ?? '',
+        gender: r.Gender ?? '',
+        deceasedStatus:
+          r.DeadIndicator === 'No' ? 'Alive' : r.DeadIndicator ?? 'Alive',
+        idBlocked: r.IDNBlocked === 'Yes' ? 'YES' : 'NO',
+        transactionId:
+          (data.transaction_id as string) ?? (data.requestId as string) ?? '',
+      };
+    } catch (err) {
+      if (err instanceof KycException) throw err;
+      this.log.error('VerifyNow SA ID Basic error', err);
       throw new KycException(
         'Identity verification service unavailable — please try again shortly.',
       );

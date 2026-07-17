@@ -186,6 +186,29 @@ export const FLAGS = {
     default: false,
     parse: (s) => s === 'true' || s === '1',
   } as FlagDefinition<boolean>,
+  // ── Claude-vision KYC ──────────────────────────────────────────────
+  // OFF = the legacy VerifyNow photo+facematch flow runs untouched. ON =
+  // sellers verify via ID-document upload + live selfie judged by Claude,
+  // with VerifyNow only doing the 1-credit SA ID (Basic) record check.
+  // Flipping OFF mid-rollout is safe: in-flight sellers resume the legacy
+  // flow (kycIdVerifiedAt is already set by the Details step).
+  kycClaudeFlowEnabled: {
+    key: 'kyc_claude_flow_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  // Value ceiling (ZAR cents) for the cheap tier. A seller whose highest
+  // active listing / pending-payout sale is >= this gets the ANCHORED
+  // check (official DHA photo pulled + matched) instead — resolved
+  // server-side, invisible to the seller. Default R10,000.
+  kycAnchoredThresholdCents: {
+    key: 'kyc_anchored_threshold_cents',
+    default: 1_000_000,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? n : 1_000_000;
+    },
+  } as FlagDefinition<number>,
 } as const;
 
 @Injectable()
