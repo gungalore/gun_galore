@@ -59,7 +59,7 @@ export class UsersController {
     @CurrentUser() clerkId: string,
     @Req() req: Request & { viaActionToken?: boolean },
   ) {
-    const user = await this.prisma.user.findUnique({
+    const meQuery = () => this.prisma.user.findUnique({
       where: { clerkId },
       select: {
         id: true,
@@ -117,6 +117,14 @@ export class UsersController {
         _count: { select: { listings: true } },
       },
     });
+    let user = await meQuery();
+    if (!user && !req.viaActionToken) {
+      // Valid Clerk session but no DB row (missed webhook / deleted row /
+      // instance switch): provision from the Clerk API so the app never
+      // renders an empty profile for a signed-in user, then re-read.
+      const provisioned = await this.users.lazyProvisionFromClerk(clerkId);
+      if (provisioned) user = await meQuery();
+    }
     if (!user) return null;
     // Compute completeness BEFORE the action-token bank strip below —
     // the banking section must reflect reality, not the redaction.

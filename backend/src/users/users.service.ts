@@ -214,6 +214,59 @@ export class UsersService {
     });
   }
 
+  // Lazy-provision backstop: a request carries a VALID Clerk session but the
+  // clerkId has no DB row. This happens when the user.created webhook was
+  // missed/failed, the row was deleted (e.g. an operator account reset), or
+  // after a Clerk instance switch. Pull the identity from the Clerk API and
+  // run it through the SAME upsertFromClerk path the webhook uses (including
+  // the relink-by-email guard), so a signed-in user never sees an empty
+  // profile. Returns null (never throws) if the Clerk lookup fails —
+  // /users/me then degrades to its old empty response instead of a 500.
+  async lazyProvisionFromClerk(clerkId: string): Promise<User | null> {
+    try {
+      const cu = await this.clerk.users.getUser(clerkId);
+      const email =
+        cu.primaryEmailAddress?.emailAddress ??
+        cu.emailAddresses[0]?.emailAddress ??
+        '';
+      // Never create a row without an email — it's our unique relink key
+      // and every comms surface assumes it.
+      if (!email) return null;
+      const unsafe = (cu.unsafeMetadata ?? {}) as {
+        phone?: string;
+        consent?: {
+          terms?: boolean;
+          privacy?: boolean;
+          age?: boolean;
+          marketing?: boolean;
+          policyVersion?: string;
+        };
+      };
+      const user = await this.upsertFromClerk({
+        clerkId,
+        email,
+        username: cu.username ?? undefined,
+        firstName: cu.firstName ?? undefined,
+        lastName: cu.lastName ?? undefined,
+        phone: cu.phoneNumbers?.[0]?.phoneNumber ?? unsafe.phone,
+        avatarUrl: cu.imageUrl ?? undefined,
+      });
+      this.logger.log(
+        `Lazy-provisioned user row for ${clerkId} (valid session, no DB row)`,
+      );
+      // Same consent stamping as the webhook — set-once, safe to repeat.
+      if (unsafe.consent) {
+        await this.recordSignupConsent(clerkId, unsafe.consent);
+      }
+      return user;
+    } catch (err) {
+      this.logger.warn(
+        `Lazy-provision from Clerk failed for ${clerkId}: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
+
   // Record sign-up consent (POPIA accountability) for the current Clerk user.
   // Timestamps are set-once — a repeat call never moves the original consent
   // moment. Age affirmation + Terms + Privacy are captured together at sign-up;
