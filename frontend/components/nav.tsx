@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { SignInButton, useUser, useClerk } from '@clerk/nextjs';
 import { useRouter, usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
-import { ProfileCompletionRing } from '@/components/profile-completion-ring';
+import { AvatarCompletionRing } from '@/components/avatar-completion-ring';
 import { LiveSearch } from '@/components/live-search';
 import { UrgentBell } from '@/components/urgent-bell';
 import { CartButton } from '@/components/cart-button';
@@ -178,11 +178,13 @@ export function Nav() {
               <div className="hidden md:flex items-center gap-3">
                 {isSignedIn ? (
                   <>
-                    <ProfileCompletionRing />
                     <div className="relative" ref={menuRef}>
                       {/* One consolidated account tile: avatar + name +
                           chevron. Replaces the old separate name link,
-                          "Account ▾" button, and Clerk UserButton. */}
+                          "Account ▾" button, and Clerk UserButton. The
+                          avatar is wrapped in AvatarCompletionRing, which
+                          draws a profile-completeness arc hugging it and
+                          vanishes at 100%. */}
                       <button
                         onClick={() => setMenuOpen((o) => !o)}
                         aria-label="Account menu"
@@ -191,41 +193,43 @@ export function Nav() {
                           display: 'flex',
                           alignItems: 'center',
                           gap: 8,
-                          padding: '3px 8px 3px 3px',
+                          padding: '2px 8px 2px 2px',
                           borderRadius: 999,
                           border: '0.5px solid var(--border)',
                           background: 'var(--bg-card)',
                           cursor: 'pointer',
                         }}
                       >
-                        <span
-                          style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: '50%',
-                            overflow: 'hidden',
-                            flexShrink: 0,
-                            background: 'var(--red)',
-                            color: '#fff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 13,
-                            fontWeight: 500,
-                          }}
-                        >
-                          {user?.imageUrl ? (
-                            <Image
-                              src={user.imageUrl}
-                              alt=""
-                              width={28}
-                              height={28}
-                              style={{ objectFit: 'cover' }}
-                            />
-                          ) : (
-                            (displayName || 'G').charAt(0).toUpperCase()
-                          )}
-                        </span>
+                        <AvatarCompletionRing>
+                          <span
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: '50%',
+                              overflow: 'hidden',
+                              flexShrink: 0,
+                              background: 'var(--red)',
+                              color: '#fff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 13,
+                              fontWeight: 500,
+                            }}
+                          >
+                            {user?.imageUrl ? (
+                              <Image
+                                src={user.imageUrl}
+                                alt=""
+                                width={28}
+                                height={28}
+                                style={{ objectFit: 'cover' }}
+                              />
+                            ) : (
+                              (displayName || 'G').charAt(0).toUpperCase()
+                            )}
+                          </span>
+                        </AvatarCompletionRing>
                         <span
                           className="hidden sm:inline"
                           style={{
