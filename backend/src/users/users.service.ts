@@ -260,9 +260,13 @@ export class UsersService {
       }
       return user;
     } catch (err) {
-      this.logger.warn(
-        `Lazy-provision from Clerk failed for ${clerkId}: ${(err as Error).message}`,
-      );
+      // Flatten to one line — Prisma messages start with a newline, which
+      // made earlier sync-failure logs look empty and hid the real cause.
+      const msg = ((err as Error).message ?? String(err))
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 300);
+      this.logger.warn(`Lazy-provision from Clerk failed for ${clerkId}: ${msg}`);
       return null;
     }
   }

@@ -5,7 +5,6 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createClerkClient } from '@clerk/backend';
 import { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
@@ -14,9 +13,6 @@ import { verifyClerkToken } from './clerk-verify';
 @Injectable()
 export class ClerkGuard implements CanActivate {
   private readonly logger = new Logger(ClerkGuard.name);
-  private readonly clerk = createClerkClient({
-    secretKey: process.env.CLERK_SECRET_KEY,
-  });
 
   // In-flight sync promises keyed by clerkUserId. When the page that
   // just finished signing up fires several authenticated requests at
@@ -73,49 +69,21 @@ export class ClerkGuard implements CanActivate {
   }
 
   private async syncFromClerk(clerkUserId: string) {
-    try {
-      const u = await this.clerk.users.getUser(clerkUserId);
-      // Phone preference: verified Clerk phone > unsafe metadata > none
-      const unsafePhone =
-        typeof u.unsafeMetadata?.phone === 'string'
-          ? u.unsafeMetadata.phone
-          : undefined;
-      const phone = u.phoneNumbers[0]?.phoneNumber ?? unsafePhone;
-
-      await this.usersService.upsertFromClerk({
-        clerkId: u.id,
-        email: u.emailAddresses[0]?.emailAddress ?? '',
-        username: u.username ?? undefined,
-        firstName: u.firstName ?? undefined,
-        lastName: u.lastName ?? undefined,
-        phone,
-        avatarUrl: u.imageUrl ?? undefined,
-      });
-      // Also stamp the sign-up consent the email path stashed in
-      // unsafeMetadata, so a first authed request that beats the webhook still
-      // records the POPIA consent (set-once).
-      const consent = (
-        u.unsafeMetadata as
-          | {
-              consent?: {
-                terms?: boolean;
-                privacy?: boolean;
-                age?: boolean;
-                marketing?: boolean;
-                policyVersion?: string;
-              };
-            }
-          | undefined
-      )?.consent;
-      if (consent) {
-        await this.usersService.recordSignupConsent(clerkUserId, consent);
-      }
+    // Single code path with the webhook + /users/me backstop: fetch from
+    // the Clerk API, upsert (incl. relink-by-email), stamp consent. It
+    // refuses to create a row when the Clerk user has NO email — the old
+    // inline version mapped that to '' and died every request on the
+    // email unique constraint once one ''-email row existed. Never
+    // blocks the request either way; downstream throws if it truly
+    // needs a row.
+    const user = await this.usersService.lazyProvisionFromClerk(clerkUserId);
+    if (user) {
       this.logger.log(`Auto-synced new user from Clerk: ${clerkUserId}`);
-    } catch (err) {
-      // Don't block the request — the downstream service will throw its
-      // own ForbiddenException if it really needs a User row.
+    } else {
       this.logger.warn(
-        `Failed to auto-sync ${clerkUserId} from Clerk: ${(err as Error).message}`,
+        `Auto-sync did not create a row for ${clerkUserId} — likely an ` +
+          `email-less Clerk user (created outside the sign-up form) or a ` +
+          `Clerk API failure; see UsersService logs.`,
       );
     }
   }
