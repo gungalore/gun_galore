@@ -150,6 +150,41 @@ export class UsersService {
       ? data.username.trim().toLowerCase()
       : null;
 
+    // Auto-relink returning users after a Clerk instance switch (dev→prod).
+    // The production instance issues a BRAND-NEW clerkId, but the user's
+    // existing row still carries the old instance's clerkId — keyed by the
+    // SAME email. Without this, the upsert below would try to CREATE a new
+    // row and either orphan the account (GET /users/me returns empty → no
+    // profile, no completeness) or blow up on the email @unique guard. So:
+    // if there's no row for this clerkId but one exists for this email,
+    // move that row onto the new clerkId instead of creating a duplicate.
+    // Legal name / OTP-verified phone are left untouched (system of record).
+    if (data.email) {
+      const byClerk = await this.prisma.user.findUnique({
+        where: { clerkId: data.clerkId },
+        select: { id: true },
+      });
+      if (!byClerk) {
+        const byEmail = await this.prisma.user.findFirst({
+          where: { email: data.email, NOT: { clerkId: data.clerkId } },
+          select: { id: true },
+        });
+        if (byEmail) {
+          this.logger.log(
+            `Re-linked existing user ${byEmail.id} to new clerkId ${data.clerkId} (matched by email)`,
+          );
+          return this.prisma.user.update({
+            where: { id: byEmail.id },
+            data: {
+              clerkId: data.clerkId,
+              ...(username ? { username } : {}),
+              ...(data.avatarUrl ? { avatarUrl: data.avatarUrl } : {}),
+            },
+          });
+        }
+      }
+    }
+
     return this.prisma.user.upsert({
       where: { clerkId: data.clerkId },
       create: {
