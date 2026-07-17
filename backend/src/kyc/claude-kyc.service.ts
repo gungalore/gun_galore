@@ -21,10 +21,10 @@ import type { CrossCheckResult } from './kyc-cross-check';
  * prevents anchor bias ("the caller told me the name, so I read the
  * name") and keeps cross-check inputs out of the model transcript.
  *
- * Verdict convention mirrors dealer-verification.service.ts:
- *   all gates ≥ 80 and cross-check clean → VERIFIED
- *   any gate < 50 or a hard cross-check fail → REJECTED
- *   anything between / soft fails / Claude unavailable → UNDER_REVIEW
+ * Verdict thresholds (operator decision 2026-07-17):
+ *   every gate ≥ 70 and cross-check clean → VERIFIED
+ *   any gate 50-69 (none < 50)            → UNDER_REVIEW (admin decides)
+ *   any gate < 50, or a hard cross-check fail → REJECTED (email support)
  */
 
 // Sonnet 5 — the current-generation vision model. Dedicated to KYC (its own
@@ -33,7 +33,8 @@ import type { CrossCheckResult } from './kyc-cross-check';
 // (ANTHROPIC_MODEL_JUDGE) and can be tuned independently.
 const MODEL_VISION = process.env.ANTHROPIC_MODEL_KYC ?? 'claude-sonnet-5';
 
-const AUTO_APPROVE_FLOOR = 80;
+// Auto-approve at 70% certainty; 50-69 goes to a human; below 50 is rejected.
+const AUTO_APPROVE_FLOOR = 70;
 const AUTO_REJECT_CEILING = 50;
 
 export interface KycClaudeFindings {

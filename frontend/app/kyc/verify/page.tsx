@@ -1297,7 +1297,53 @@ function VerifyKycPageInner() {
             >
               {error}
             </div>
-            {attempts < 3 ? (
+            {flow === 'CLAUDE' ? (
+              // Rejected verdict → point the seller to support (the 50-69
+              // band already routes borderline cases to a human). A quiet
+              // retry stays available in case it was just a bad capture.
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  alignItems: 'center',
+                }}
+              >
+                <a
+                  href="mailto:support@gungalore.co.za?subject=Identity%20verification%20help"
+                  style={{
+                    ...primaryButton(false),
+                    width: 'auto',
+                    padding: '12px 24px',
+                    textDecoration: 'none',
+                    display: 'inline-block',
+                  }}
+                >
+                  Email support
+                </a>
+                {attempts < 3 && (
+                  <button
+                    onClick={() => {
+                      setStep('selfie');
+                      setError('');
+                      setCapturedImage(null);
+                      void startCamera();
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-tertiary)',
+                      fontSize: 12,
+                      textDecoration: 'underline',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    Try again
+                  </button>
+                )}
+              </div>
+            ) : attempts < 3 ? (
               <button
                 onClick={() => {
                   setStep('selfie');

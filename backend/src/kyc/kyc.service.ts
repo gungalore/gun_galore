@@ -813,10 +813,13 @@ export class KycService {
     if (newAttempts >= 3) {
       await this.flagForAdminReview(user.id, clerkId, 0);
     }
-    const retryMessage =
-      newAttempts >= 3
-        ? 'Please contact support for assistance with identity verification.'
-        : 'We could not verify your identity. Please make sure your ID document is clearly readable and your face is well lit, then try again.';
+    // A sub-50 Claude verdict (or a hard cross-check fail) is a confident
+    // rejection — the 50-69 band already routes borderline cases to a human,
+    // so we don't loop these through retries; we point them to support. Copy
+    // stays generic (never names the DOB cross-check).
+    const supportEmail =
+      process.env.SUPPORT_EMAIL ?? 'support@gungalore.co.za';
+    const retryMessage = `We couldn't verify your identity from the document and selfie you provided. Please email ${supportEmail} and our team will help you get verified.`;
     if (user.phone) {
       await this.sms.sendSms({
         to: user.phone,
@@ -979,8 +982,9 @@ export class KycService {
         haPhotoBase64: anchored.idPhotoBase64,
       });
 
+      // Same 70% pass bar as the interactive flow (AUTO_APPROVE_FLOOR).
       const anchorScore = findings.face_match?.same_person_vs_ha_photo ?? 0;
-      if (anchorScore >= 80) {
+      if (anchorScore >= 70) {
         await this.prisma.user.update({
           where: { id: seller.id },
           data: { kycTier: 'ANCHORED' },

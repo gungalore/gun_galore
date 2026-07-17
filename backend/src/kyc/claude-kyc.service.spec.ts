@@ -42,7 +42,7 @@ const hard: CrossCheckResult = { pass: false, hardFails: ['dob-id-digit-mismatch
 describe('ClaudeKycService.statusFromFindings', () => {
   const svc = new ClaudeKycService();
 
-  it('VERIFIED when all gates ≥80 and cross-check clean', () => {
+  it('VERIFIED when all gates ≥70 and cross-check clean', () => {
     expect(svc.statusFromFindings(findings(), clean, 'standard')).toBe('VERIFIED');
   });
 
@@ -55,10 +55,17 @@ describe('ClaudeKycService.statusFromFindings', () => {
     ).toBe('REJECTED');
   });
 
-  it('UNDER_REVIEW in the 50-79 band', () => {
+  it('UNDER_REVIEW in the 50-69 band', () => {
     expect(
       svc.statusFromFindings(findings({ same_person: 65 }), clean, 'standard'),
     ).toBe('UNDER_REVIEW');
+  });
+
+  it('boundary: 70 → VERIFIED, 69 → UNDER_REVIEW, 50 → UNDER_REVIEW, 49 → REJECTED', () => {
+    expect(svc.statusFromFindings(findings({ same_person: 70 }), clean, 'standard')).toBe('VERIFIED');
+    expect(svc.statusFromFindings(findings({ same_person: 69 }), clean, 'standard')).toBe('UNDER_REVIEW');
+    expect(svc.statusFromFindings(findings({ same_person: 50 }), clean, 'standard')).toBe('UNDER_REVIEW');
+    expect(svc.statusFromFindings(findings({ same_person: 49 }), clean, 'standard')).toBe('REJECTED');
   });
 
   it('soft cross-check fails cap the verdict at UNDER_REVIEW even at perfect scores', () => {
