@@ -1135,26 +1135,47 @@ enum DealPoStatus {
 }
 
 model Dealer {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   name          String
-  licenceNumber String   @unique
+  licenceNumber String    @unique
   address       String
-  suburb        String
-  city          String
-  province      Province
-  postalCode    String
+  // Address components are nullable so an AUTO_VERIFICATION entry (harvested
+  // from an approved firearm dealer-transfer, which may only carry a raw OCR
+  // address) can be stored. Curated MANUAL entries keep all four — the admin
+  // form still requires them. An admin fills any gaps during review.
+  suburb        String?
+  city          String?
+  province      Province?
+  postalCode    String?
   lat           Float?
   lng           Float?
   phone         String?
   email         String?
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  // Offered to buyers at checkout. AUTO entries land isActive=false so OCR
+  // alone can never route a live firearm transfer through an unvetted dealer.
+  isActive      Boolean   @default(true)
+  // Provenance. MANUAL = admin-curated (trusted, verified by default).
+  // AUTO_VERIFICATION = auto-added the moment a dealer's SAP 534 passed
+  // verification; lands inactive + unverified for admin review.
+  source        String    @default("MANUAL")
+  // Has an admin eyeballed this entry? MANUAL rows are verified on creation;
+  // AUTO rows start false and flip true when an admin reviews & activates.
+  isVerified    Boolean   @default(true)
+  // The full address string as OCR'd off the SAP 534 (AUTO entries only) —
+  // kept raw for admin reference while they normalise it into the structured
+  // suburb/city/province/postalCode fields.
+  rawAddress    String?
+  // When we first / most recently saw this dealer on an approved transfer.
+  firstSeenAt   DateTime?
+  lastSeenAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   transactions Transaction[]
 
   @@index([province])
   @@index([isActive])
+  @@index([source])
 }
 
 model Transaction {

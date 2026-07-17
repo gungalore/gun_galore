@@ -11,15 +11,20 @@ interface Dealer {
   name: string;
   licenceNumber: string;
   address: string;
-  suburb: string;
-  city: string;
-  province: string;
-  postalCode: string;
+  suburb: string | null;
+  city: string | null;
+  province: string | null;
+  postalCode: string | null;
   phone: string | null;
   email: string | null;
   lat: number | null;
   lng: number | null;
   isActive: boolean;
+  source: string;
+  isVerified: boolean;
+  rawAddress: string | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
   _count: { transactions: number };
 }
 
@@ -27,9 +32,12 @@ export default function DealersPage() {
   const searchParams = useSearchParams();
   const search = searchParams.get('search') ?? undefined;
   const includeInactive = searchParams.get('includeInactive') ?? undefined;
+  const source = searchParams.get('source') ?? undefined;
+  const pending = searchParams.get('pending') ?? undefined;
 
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [count, setCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -39,6 +47,8 @@ export default function DealersPage() {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (includeInactive) params.set('includeInactive', includeInactive);
+      if (source) params.set('source', source);
+      if (pending) params.set('pending', pending);
       try {
         const res = await adminFetch(`/admin/dealers?${params.toString()}`);
         if (cancelled) return;
@@ -46,6 +56,7 @@ export default function DealersPage() {
           const data = await res.json();
           setDealers(data.rows);
           setCount(data.count);
+          setPendingCount(data.pendingCount ?? 0);
         }
       } catch {
         // empty list will render
@@ -55,7 +66,7 @@ export default function DealersPage() {
     return () => {
       cancelled = true;
     };
-  }, [search, includeInactive]);
+  }, [search, includeInactive, source, pending]);
 
   return (
     <div>
@@ -66,12 +77,24 @@ export default function DealersPage() {
           <>
             Dealers in this directory are offered to buyers at checkout when shipping is
             <strong style={{ color: 'var(--text-primary)' }}> DEALER_TRANSFER </strong>
-            (firearms only). Verify the licence before adding.
+            (firearms only). Entries auto-added from a verified transfer land
+            <strong style={{ color: 'var(--text-primary)' }}> inactive </strong>
+            until you review &amp; activate them — verify the licence first.
           </>
         }
       />
 
-      {loaded && <DealersTable initialDealers={dealers} />}
+      {loaded && (
+        <DealersTable
+          initialDealers={dealers}
+          pendingCount={pendingCount}
+          activeFilters={{
+            source: source ?? null,
+            pending: pending === 'true',
+            includeInactive: includeInactive === 'true',
+          }}
+        />
+      )}
     </div>
   );
 }

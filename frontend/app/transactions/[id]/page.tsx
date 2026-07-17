@@ -543,7 +543,7 @@ export default async function TransactionPage({
                 <div className="flex justify-between">
                   <span style={{ color: 'var(--text-tertiary)' }}>Receiving dealer</span>
                   <span style={{ color: 'var(--text-primary)' }}>
-                    {tx.dealer.name}, {tx.dealer.city}
+                    {[tx.dealer.name, tx.dealer.city].filter(Boolean).join(', ')}
                   </span>
                 </div>
               )}

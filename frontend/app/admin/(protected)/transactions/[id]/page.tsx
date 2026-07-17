@@ -471,7 +471,7 @@ export default function TransactionDossierPage() {
             ['Pudo tracking code', t.pudoTrackingCode ?? '—'],
             ['TCG waybill', t.tcgWaybill ?? '—'],
             ['Delivery address', t.deliveryAddress ? JSON.stringify(t.deliveryAddress) : '—'],
-            ['Dealer', t.dealer ? `${t.dealer.name} (${t.dealer.licenceNumber}) · ${t.dealer.city}` : '—'],
+            ['Dealer', t.dealer ? [`${t.dealer.name} (${t.dealer.licenceNumber})`, t.dealer.city].filter(Boolean).join(' · ') : '—'],
             ['Private-arrange consent', formatDateTime(t.privateArrangeAcceptedAt)],
           ]}
         />

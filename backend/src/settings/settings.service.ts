@@ -209,6 +209,19 @@ export const FLAGS = {
       return Number.isFinite(n) && n >= 0 ? n : 1_000_000;
     },
   } as FlagDefinition<number>,
+  // ── Dealer auto-registration ───────────────────────────────────────
+  // When ON, an approved firearm dealer-transfer auto-adds the receiving
+  // SAPS-licensed dealer (read off the SAP 534 + seller-supplied details)
+  // into the Dealer directory as an INACTIVE, UNVERIFIED, source=AUTO
+  // entry for an admin to review and activate. OFF = nothing is written
+  // to the directory from the verification path (the legacy behaviour).
+  // Never routes a live checkout on OCR alone — auto entries are inactive
+  // until an admin activates them, regardless of this flag.
+  dealerAutoRegisterEnabled: {
+    key: 'dealer_auto_register_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
 } as const;
 
 @Injectable()

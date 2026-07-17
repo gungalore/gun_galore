@@ -5,6 +5,8 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { ShippingService } from '../shipping/shipping.service';
+import { SettingsService, FLAGS } from '../settings/settings.service';
+import { extractDealerFromVerification } from './dealer-registry.util';
 
 /**
  * Dealer stock-in verification — when a firearm DEALER_TRANSFER
@@ -61,6 +63,15 @@ export interface DealerVerificationFindings {
     block_letters: number;              // handwriting is in block capitals
     dealer_licence_visible: number;     // dealer's licence number readable on the form
     extracted_dealer_licence: string | null; // what Claude read; we compare to our Dealer record
+    // Structured dealer identity read off the SAP 534 — used to auto-register
+    // the receiving dealer into the SAPS-licensed directory (as an inactive,
+    // unverified entry for admin review). All nullable — the model omits what
+    // it cannot read cleanly, and the seller-typed stocked-at details are the
+    // reliable fallback.
+    extracted_dealer_name: string | null;
+    extracted_dealer_address: string | null;
+    extracted_dealer_city: string | null;
+    extracted_dealer_province: string | null;
     // Section D firearm "type" — deliberately left blank on the prefilled
     // form (P3); the dealer fills it, and we read it back here.
     firearm_type: string | null;
@@ -109,6 +120,9 @@ export class DealerVerificationService {
     // S6 — a swap firearm leg drives its "delivery" (dealer stock-in) through
     // the normal shipping-update path so the swap both-delivered rollup fires.
     private readonly shipping: ShippingService,
+    // Dealer auto-registration flag (dealer_auto_register_enabled). Global
+    // provider — no module import needed.
+    private readonly settings: SettingsService,
   ) {
     const key = process.env.ANTHROPIC_API_KEY;
     this.client = key ? new Anthropic({ apiKey: key }) : null;
@@ -504,6 +518,17 @@ export class DealerVerificationService {
         return;
       }
 
+      // Dealer auto-registration (flag-gated). Harvest the receiving SAPS-
+      // licensed dealer off the now-verified SAP 534 + the seller-typed
+      // stocked-at details into the Dealer directory as an INACTIVE,
+      // UNVERIFIED, source=AUTO_VERIFICATION entry for an admin to review and
+      // activate. Runs for both normal firearm sales AND swap firearm legs
+      // (both reach this point on approval). Self-guarded + fully idempotent
+      // (short-circuits on tx.dealerId, upserts on the licence) so it can
+      // NEVER block, delay, or double-fire the payout below — awaited only so
+      // the tx→dealer link is set before the swap branch's early return.
+      await this.registerDealerFromVerification(transactionId);
+
       // S6 — a swap firearm leg carries ZERO money (settlement happens on the
       // Swap parent in S5), so there is NO per-leg payout or totalSales bump.
       // The dealer stock-in IS this leg's delivery: route it through the normal
@@ -636,6 +661,165 @@ export class DealerVerificationService {
   }
 
   // -------------------------------------------------------------------
+  // Internal — auto-register the receiving dealer into the directory
+  // -------------------------------------------------------------------
+  // Runs on an APPROVED firearm dealer-transfer (normal sale or swap leg).
+  // Adds the SAPS-licensed dealer the firearm was booked into — read off the
+  // verified SAP 534 + the seller-typed stocked-at details — to the Dealer
+  // directory so the operator builds a real database of the network over time.
+  //
+  // Safety rails (this feeds the same table checkout picks dealers from):
+  //   • Flag-gated (dealer_auto_register_enabled); OFF ⇒ pure no-op.
+  //   • New entries land isActive=false + isVerified=false + source=AUTO_
+  //     VERIFICATION — never offered at checkout on OCR alone; an admin
+  //     reviews & activates.
+  //   • Never demotes / overwrites a curated (MANUAL) or already-active
+  //     dealer — a repeat sighting only bumps lastSeenAt + links the tx.
+  //   • No readable licence ⇒ no row (would be un-keyable / duplicate-prone);
+  //     a soft admin alert asks for a manual add instead.
+  //   • Fully idempotent (short-circuits when the tx is already dealer-linked)
+  //     and fire-and-forget — a failure here must never touch the payout.
+  private async registerDealerFromVerification(
+    transactionId: string,
+  ): Promise<void> {
+    try {
+      if (!(await this.settings.get(FLAGS.dealerAutoRegisterEnabled))) return;
+
+      const tx = await this.prisma.transaction.findUnique({
+        where: { id: transactionId },
+        select: {
+          id: true,
+          dealerId: true,
+          stockedAtDealerName: true,
+          stockedAtDealerAddress: true,
+          stockedAtDealerPhone: true,
+          dealerVerificationFindings: true,
+        },
+      });
+      if (!tx) return;
+      // Idempotency — already linked ⇒ we've harvested this transfer (the
+      // auto + admin-override paths both call the release hook).
+      if (tx.dealerId) return;
+
+      const findings = (tx.dealerVerificationFindings ?? null) as {
+        saps534?: {
+          extracted_dealer_licence?: string | null;
+          extracted_dealer_name?: string | null;
+          extracted_dealer_address?: string | null;
+          extracted_dealer_city?: string | null;
+          extracted_dealer_province?: string | null;
+        };
+      } | null;
+
+      const extracted = extractDealerFromVerification({
+        ocr: findings?.saps534,
+        stockedAtName: tx.stockedAtDealerName,
+        stockedAtAddress: tx.stockedAtDealerAddress,
+        stockedAtPhone: tx.stockedAtDealerPhone,
+      });
+
+      if (!extracted.licenceNumber) {
+        // No key to register on. Nudge an admin to add it by hand rather than
+        // create a bogus/duplicate-prone entry.
+        //
+        // Idempotency: this branch creates no dealer and never sets tx.dealerId,
+        // so the tx.dealerId short-circuit above cannot gate it. A swap firearm
+        // leg's paymentStatus stays HELD permanently (settlement is on the Swap
+        // parent), so the release hook's HELD-guard won't block a re-approval
+        // from re-entering here — dedup on an existing alert for this tx so the
+        // nudge is raised at most once.
+        const alreadyAlerted = await this.prisma.adminAlert.findFirst({
+          where: {
+            type: 'DEALER_AUTO_REGISTER_NO_LICENCE',
+            referenceId: transactionId,
+          },
+          select: { id: true },
+        });
+        if (alreadyAlerted) return;
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'DEALER_AUTO_REGISTER_NO_LICENCE',
+              referenceId: transactionId,
+              urgent: false,
+              context:
+                `Firearm transfer ${transactionId.slice(-8).toUpperCase()} was verified, ` +
+                `but no dealer licence number could be read from the SAP 534 — the ` +
+                `dealer was NOT auto-added to the directory. If "${extracted.name}" ` +
+                `should be on the network, add it manually in /admin/dealers.`,
+            },
+          })
+          .catch(() => undefined);
+        return;
+      }
+
+      const existing = await this.prisma.dealer.findUnique({
+        where: { licenceNumber: extracted.licenceNumber },
+        select: { id: true },
+      });
+      const now = new Date();
+
+      if (existing) {
+        // Never demote or overwrite an existing (curated OR previously-seen
+        // auto) dealer. Record the fresh sighting + link the tx for
+        // provenance / transaction counts.
+        await this.prisma.dealer.update({
+          where: { id: existing.id },
+          data: { lastSeenAt: now },
+        });
+        await this.prisma.transaction.update({
+          where: { id: transactionId },
+          data: { dealerId: existing.id },
+        });
+        return;
+      }
+
+      const created = await this.prisma.dealer.create({
+        data: {
+          name: extracted.name,
+          licenceNumber: extracted.licenceNumber,
+          address: extracted.address,
+          rawAddress: extracted.rawAddress,
+          city: extracted.city,
+          province: extracted.province,
+          phone: extracted.phone,
+          source: 'AUTO_VERIFICATION',
+          isVerified: false,
+          isActive: false,
+          firstSeenAt: now,
+          lastSeenAt: now,
+        },
+      });
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: { dealerId: created.id },
+      });
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'DEALER_AUTO_REGISTERED',
+            referenceId: created.id,
+            urgent: false,
+            context:
+              `New dealer auto-added from a verified firearm transfer: ` +
+              `"${created.name}" (licence ${created.licenceNumber}). It is INACTIVE ` +
+              `and UNVERIFIED until you review & activate it in /admin/dealers — ` +
+              `buyers are not offered it at checkout yet.`,
+          },
+        })
+        .catch(() => undefined);
+      this.logger.log(
+        `Auto-registered dealer ${created.licenceNumber} (${created.id}) from tx ${transactionId}`,
+      );
+    } catch (err) {
+      // Fire-and-forget — never let a directory write disturb the payout.
+      this.logger.warn(
+        `registerDealerFromVerification failed for ${transactionId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // -------------------------------------------------------------------
   // Internal — send outcome notification to the seller
   // -------------------------------------------------------------------
   private async sendOutcomeEmail(
@@ -721,6 +905,10 @@ Schema:
     "block_letters": <0-100>,               // handwriting is in block capitals — Gun Galore requires this
     "dealer_licence_visible": <0-100>,
     "extracted_dealer_licence": "<string or null>",  // what you read on the form
+    "extracted_dealer_name": "<the receiving dealer's business/trading name exactly as printed on the form, or null>",
+    "extracted_dealer_address": "<the dealer's full street address as one line, or null>",
+    "extracted_dealer_city": "<the dealer's city / town, or null>",
+    "extracted_dealer_province": "<the dealer's province, e.g. Gauteng / Western Cape, or null>",
     "firearm_type": "<the firearm TYPE from Section D, e.g. Pistol / Rifle / Shotgun / Self-loading rifle, or null>",
     "extracted_firearm_serial": "<the firearm serial number written in Section D, or null>",
     "firearm_serial_matches_listing": <0-100>,  // does Section D's serial match the expected serial in the user context?
@@ -753,7 +941,8 @@ Rules:
 - Block letters is REQUIRED for SAPS 534 — cursive / mixed case scores low.
 - "Stamp" includes an inked rubber stamp, a printed dealer letterhead, or a clearly signed + printed name + date combination.
 - Be conservative with REJECT — only recommend REJECT when at least one field is below 50 and cannot be salvaged by a reshoot. Recommend ADMIN_REVIEW when you're uncertain.
-- Read the firearm TYPE and SERIAL from Section D of the 534. If Section D's serial does not match the expected serial in the user context, score firearm_serial_matches_listing low and add an issue. If the type is blank or unreadable, set firearm_type to null and do not penalise other scores for it.`;
+- Read the firearm TYPE and SERIAL from Section D of the 534. If Section D's serial does not match the expected serial in the user context, score firearm_serial_matches_listing low and add an issue. If the type is blank or unreadable, set firearm_type to null and do not penalise other scores for it.
+- Read the RECEIVING DEALER's identity from the form — their trading name, full street address, city, and province — into extracted_dealer_name / _address / _city / _province. These build our SAPS-licensed dealer directory. Transcribe exactly what is printed; set any field you cannot read cleanly to null (do NOT guess). Reading these does not affect any score.`;
 
     const saps534Block = args.saps534Pdf
       ? ({

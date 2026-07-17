@@ -755,8 +755,15 @@ export class AdminDealersController {
   list(
     @Query('search') search?: string,
     @Query('includeInactive') includeInactive?: string,
+    @Query('source') source?: string,
+    @Query('pending') pending?: string,
   ) {
-    return this.dealers.list(search, includeInactive === 'true');
+    return this.dealers.list(
+      search,
+      includeInactive === 'true',
+      source,
+      pending === 'true',
+    );
   }
 
   @Post()
