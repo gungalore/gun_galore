@@ -50,6 +50,26 @@ declare const self: ServiceWorkerGlobalScope;
 // fallback) ensures nothing else can intercept them.
 const networkOnlyRoutes: RuntimeCaching[] = [
   {
+    // RSC navigation + prefetch payloads are build-specific — they encode
+    // the current build's chunk graph. Caching them across a redeploy
+    // POISONS client-side navigation: the browser loads the new build's
+    // HTML (HTML is network-only, always fresh) but is still controlled by
+    // the previous SW, which serves the OLD build's RSC from its
+    // `pages-rsc` cache. The build IDs mismatch, so every in-app link
+    // either dead-ends (nav silently does nothing) or falls through to a
+    // hard nav → /offline. Same "page content must always be fresh" rule
+    // the HTML pages already follow (see file header). Force network-only
+    // and keep FIRST so it wins over defaultCache's pages-rsc /
+    // pages-rsc-prefetch NetworkFirst caches. Detected via the RSC /
+    // Next-Router-Prefetch request headers, with a `?_rsc=` search-param
+    // fallback for engines that strip custom headers off the SW request.
+    matcher: ({ request, url }) =>
+      request.headers.get('RSC') === '1' ||
+      request.headers.has('Next-Router-Prefetch') ||
+      url.search.includes('_rsc='),
+    handler: new NetworkOnly(),
+  },
+  {
     matcher: ({ url }) => url.pathname.startsWith('/admin'),
     handler: new NetworkOnly(),
   },
