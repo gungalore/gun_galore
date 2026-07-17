@@ -3,7 +3,7 @@
 import { useEffect, useState, FormEvent, ReactNode } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useAuth, UserProfile, useClerk } from '@clerk/nextjs';
+import { useAuth, useUser, UserProfile, useClerk } from '@clerk/nextjs';
 import { Me } from '@/lib/types';
 import {
   AddressAutocomplete,
@@ -517,6 +517,16 @@ export default function EditProfilePage() {
     }
   }
 
+  // Email + identity state for the Verification section. Email + its
+  // verified flag come from Clerk (system of record for email); ID
+  // verification status comes from our KYC pipeline via /users/me.
+  const { user: clerkUser } = useUser();
+  const emailAddr =
+    clerkUser?.primaryEmailAddress?.emailAddress ?? me?.email ?? null;
+  const emailVerified =
+    clerkUser?.primaryEmailAddress?.verification?.status === 'verified';
+  const kyc = me?.kycStatus ?? 'NONE';
+
   if (!isLoaded) return null;
   if (!isSignedIn) {
     return (
@@ -594,8 +604,8 @@ export default function EditProfilePage() {
             hint explaining where to change them (contact support).
             Username is the only editable identity field. */}
         <SectionCard
-          title="Personal info"
-          subtitle="Your name is set from your ID document during verification. Your username is the public handle that shows on your listings and reviews."
+          title="Contact"
+          subtitle="Your name is set from your ID during verification; your username is the public handle shown on your listings and reviews. Your phone, email and ID all live under Verification below."
         >
           <form onSubmit={handleSavePersonal} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -691,11 +701,71 @@ export default function EditProfilePage() {
           </form>
         </SectionCard>
 
-        {/* ── Phone ─────────────────────────────────────────────────── */}
+        {/* ── Verification (email + phone + ID, all in one place) ────── */}
         <SectionCard
-          title="Phone number"
-          subtitle="We send a 4-digit verification code via SMS when you change it. Your old number keeps working until you verify the new one."
+          title="Verification"
+          subtitle="Everything that needs verifying, in one place — your email, your phone, and your ID. Verifying your ID here means you're ready to sell the moment you list, no waiting."
         >
+          {/* ── Email ── */}
+          <div
+            className="flex items-baseline justify-between gap-3 pb-4 mb-4"
+            style={{ borderBottom: '0.5px solid var(--border)' }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <p
+                className="text-xs mb-0.5"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                Email
+              </p>
+              <p
+                className="text-sm"
+                style={{
+                  color: 'var(--text-primary)',
+                  fontWeight: 500,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {emailAddr || 'Not set'}
+              </p>
+            </div>
+            {emailAddr && (
+              <span
+                className="text-xs px-2.5 py-1 rounded-full"
+                style={{
+                  background: emailVerified
+                    ? 'rgba(34,197,94,0.12)'
+                    : 'rgba(245,158,11,0.12)',
+                  border: `0.5px solid ${emailVerified ? '#22c55e' : '#f59e0b'}`,
+                  color: emailVerified ? '#22c55e' : '#f59e0b',
+                  fontWeight: 500,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {emailVerified ? '✓ Verified' : 'Unverified'}
+              </span>
+            )}
+          </div>
+          {emailAddr && !emailVerified && (
+            <div className="mb-5">
+              <SecondaryButton onClick={() => openUserProfile()}>
+                Verify email →
+              </SecondaryButton>
+            </div>
+          )}
+
+          {/* ── Phone ── */}
+          <p
+            className="text-xs uppercase mb-2"
+            style={{
+              color: 'var(--text-tertiary)',
+              letterSpacing: '0.06em',
+              fontWeight: 600,
+            }}
+          >
+            Phone
+          </p>
           {/* Current + status */}
           <div
             className="flex items-baseline justify-between gap-3 pb-4"
@@ -905,6 +975,88 @@ export default function EditProfilePage() {
               </button>
             </div>
           )}
+
+          {/* ── Identity / ID ── */}
+          <div
+            className="pt-5 mt-4"
+            style={{ borderTop: '0.5px solid var(--border)' }}
+          >
+            <p
+              className="text-xs uppercase mb-2"
+              style={{
+                color: 'var(--text-tertiary)',
+                letterSpacing: '0.06em',
+                fontWeight: 600,
+              }}
+            >
+              ID verification
+            </p>
+            <div className="flex items-baseline justify-between gap-3">
+              <p
+                className="text-sm"
+                style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
+              >
+                {kyc === 'VERIFIED'
+                  ? 'Your identity is verified.'
+                  : kyc === 'UNDER_REVIEW'
+                    ? 'Being reviewed — nothing more needed from you right now.'
+                    : kyc === 'REJECTED'
+                      ? 'Your last verification didn’t pass. You can try again.'
+                      : 'Verify your SA ID with a quick photo + selfie. Do it now and you’re ready to sell the moment you list.'}
+              </p>
+              <span
+                className="text-xs px-2.5 py-1 rounded-full"
+                style={{
+                  whiteSpace: 'nowrap',
+                  background:
+                    kyc === 'VERIFIED'
+                      ? 'rgba(34,197,94,0.12)'
+                      : kyc === 'UNDER_REVIEW'
+                        ? 'rgba(245,158,11,0.12)'
+                        : 'var(--bg-inset)',
+                  border: `0.5px solid ${
+                    kyc === 'VERIFIED'
+                      ? '#22c55e'
+                      : kyc === 'UNDER_REVIEW'
+                        ? '#f59e0b'
+                        : 'var(--border)'
+                  }`,
+                  color:
+                    kyc === 'VERIFIED'
+                      ? '#22c55e'
+                      : kyc === 'UNDER_REVIEW'
+                        ? '#f59e0b'
+                        : 'var(--text-tertiary)',
+                  fontWeight: 500,
+                }}
+              >
+                {kyc === 'VERIFIED'
+                  ? '✓ Verified'
+                  : kyc === 'UNDER_REVIEW'
+                    ? 'In review'
+                    : 'Not verified'}
+              </span>
+            </div>
+            {kyc !== 'VERIFIED' && kyc !== 'UNDER_REVIEW' && (
+              <div className="mt-3">
+                <Link
+                  href="/kyc/verify?returnTo=/profile/edit"
+                  style={{
+                    display: 'inline-block',
+                    background: 'var(--red)',
+                    color: '#fff',
+                    borderRadius: 8,
+                    padding: '10px 18px',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    textDecoration: 'none',
+                  }}
+                >
+                  Verify my ID now →
+                </Link>
+              </div>
+            )}
+          </div>
         </SectionCard>
 
         {/* ── Address ───────────────────────────────────────────────── */}
