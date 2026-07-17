@@ -1,20 +1,56 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useAuth } from '@clerk/nextjs';
 import type { Me } from '@/lib/types';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // Dashboard header identity block: greets the user by name and — while the
 // profile isn't finished — shows a clickable completeness bar that opens
 // the unified profile form (/profile/edit, "every part that has to be
-// filled out"). Server-rendered (no client JS): the bar is a Link and the
-// percent comes from the profileCompleteness that GET /users/me already
-// computes (buyer = name/phone/address; seller adds banking/identity/
-// verification). Hides the bar at 100% and just greets by name.
+// filled out"). The percent comes from the profileCompleteness that GET
+// /users/me computes (buyer = name/phone/address; seller adds banking/
+// identity/verification). Hides the bar at 100%.
+//
+// Self-fetches /users/me CLIENT-side (same pattern as the nav
+// ProfileCompletionRing) because the dashboard's SERVER-side fetches to
+// the backend come back empty for authed users, whereas the browser's own
+// token call works fine.
 function fillColour(p: number): string {
   if (p >= 67) return '#22c55e';
   if (p >= 34) return '#f59e0b';
   return 'var(--red)';
 }
 
-export function DashboardProfileProgress({ me }: { me: Me | null }) {
+export function DashboardProfileProgress() {
+  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const [me, setMe] = useState<Me | null>(null);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await fetch(`${API_URL}/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const text = await res.text();
+        const data = text ? (JSON.parse(text) as Me) : null;
+        if (!cancelled && data) setMe(data);
+      } catch {
+        // Non-fatal — header just falls back to "My Dashboard".
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn, getToken]);
+
   const name = me?.firstName?.trim() || me?.username || null;
   const percent = me?.profileCompleteness?.percent ?? 0;
   const missingCount = me?.profileCompleteness?.missing?.length ?? 0;
@@ -49,7 +85,9 @@ export function DashboardProfileProgress({ me }: { me: Me | null }) {
           >
             <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
               Complete your profile
-              {missingCount ? ` — ${missingCount} thing${missingCount === 1 ? '' : 's'} left` : ''}
+              {missingCount
+                ? ` — ${missingCount} thing${missingCount === 1 ? '' : 's'} left`
+                : ''}
             </span>
             <span
               className="text-xs"
