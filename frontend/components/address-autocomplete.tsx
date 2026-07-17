@@ -105,8 +105,13 @@ function patchConsoleErrorOnce() {
   window.console.error = function (...args: unknown[]) {
     const first = args[0];
     const text = typeof first === 'string' ? first : '';
+    // Match ONLY the specific fatal auth-error classes. The old code also
+    // matched the bare phrase 'Google Maps JavaScript API', which Google
+    // prints in benign console messages too (loading-pattern + deprecation
+    // notices) — that false-matched and flipped the whole widget into
+    // "auth failed", hiding suggestions and disabling "use my location"
+    // even though the key works fine.
     if (
-      text.includes('Google Maps JavaScript API') ||
       text.includes('ApiTargetBlockedMapError') ||
       text.includes('InvalidKeyMapError') ||
       text.includes('RefererNotAllowedMapError') ||
@@ -330,7 +335,19 @@ export function AddressAutocomplete({
     if (typeof IntersectionObserver === 'undefined' || !inputRef.current) return;
     const node = inputRef.current;
     const observer = new IntersectionObserver((entries) => {
-      for (const e of entries) if (!e.isIntersecting) removeStalePacContainers();
+      for (const e of entries) {
+        // Sweep orphaned dropdowns ONLY when the field is not the active
+        // input. Google's predictions dropdown appearing (and its layout
+        // shift) can momentarily flip the field out of the viewport
+        // intersection — sweeping then removes the very dropdown the user
+        // is typing into, which reads as "autocomplete never proposes
+        // addresses". Guarding on activeElement keeps the fix for the
+        // real case (field hidden by a parent, e.g. Clerk modal tab
+        // switch) while never nuking a live, in-use dropdown.
+        if (!e.isIntersecting && document.activeElement !== node) {
+          removeStalePacContainers();
+        }
+      }
     });
     observer.observe(node);
     return () => observer.disconnect();
