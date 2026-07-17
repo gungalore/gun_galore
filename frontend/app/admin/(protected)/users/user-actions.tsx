@@ -5,7 +5,10 @@ import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/admin-auth';
 
 const TIERS = ['NEW', 'ESTABLISHED', 'TRUSTED', 'TOP_SELLER', 'DEALER'];
-const KYC_STATUSES = ['PENDING', 'SUBMITTED', 'VERIFIED', 'REJECTED'];
+// Must match the KycStatus enum (backend @IsEnum rejects anything else).
+// 'SUBMITTED' was never a real status; 'UNDER_REVIEW' is the Claude-flow
+// human-review state; 'NONE' resets a user to unverified.
+const KYC_STATUSES = ['NONE', 'PENDING', 'VERIFIED', 'REJECTED', 'UNDER_REVIEW'];
 const SUBSCRIPTION_TIERS = ['FREE', 'MEMBER', 'PRO'];
 
 // Destructive admin actions on a user now require:
