@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, FormEvent, ReactNode } from 'react';
+import { useEffect, useRef, useState, FormEvent, ReactNode } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useAuth, useUser, UserProfile, useClerk } from '@clerk/nextjs';
+import { useAuth, useUser } from '@clerk/nextjs';
 import { Me } from '@/lib/types';
 import {
   AddressAutocomplete,
@@ -192,11 +192,23 @@ function StatusBanner({
   );
 }
 
+// Clerk SDK errors carry a user-worded `errors[].longMessage` (e.g.
+// "Incorrect password. Please try again."). Surface that instead of a
+// generic failure so the inline photo / password / email-verify forms
+// give the same quality of feedback Clerk's own modal did.
+function clerkErrorMsg(err: unknown): string {
+  const e = err as { errors?: { longMessage?: string; message?: string }[] };
+  return (
+    e?.errors?.[0]?.longMessage ??
+    e?.errors?.[0]?.message ??
+    (err instanceof Error ? err.message : 'Something went wrong — try again.')
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────
 
 export default function EditProfilePage() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
-  const { openUserProfile } = useClerk();
 
   const [me, setMe] = useState<Me | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -527,6 +539,140 @@ export default function EditProfilePage() {
     clerkUser?.primaryEmailAddress?.verification?.status === 'verified';
   const kyc = me?.kycStatus ?? 'NONE';
 
+  // ── Clerk-managed bits, edited INLINE (no identity modal) ──────────
+  // Photo, password and email-verification live in Clerk, not our DB —
+  // but Clerk's frontend SDK exposes each one (setProfileImage,
+  // updatePassword, prepare/attemptVerification), so we render our own
+  // controls in the house style instead of opening Clerk's UserProfile
+  // modal. clerkUser updates reactively after each call, so badges and
+  // avatars refresh without a reload.
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoStatus, setPhotoStatus] = useState<
+    { tone: 'success' | 'error'; msg: string } | null
+  >(null);
+  const [pwOpen, setPwOpen] = useState(false);
+  const [curPassword, setCurPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwStatus, setPwStatus] = useState<
+    { tone: 'success' | 'error'; msg: string } | null
+  >(null);
+  const [emailMode, setEmailMode] = useState<'idle' | 'code'>('idle');
+  const [emailCode, setEmailCode] = useState('');
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<
+    { tone: 'success' | 'error'; msg: string } | null
+  >(null);
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Reset so picking the same file twice still fires onChange.
+    e.target.value = '';
+    if (!file || !clerkUser) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setPhotoStatus({ tone: 'error', msg: 'Photo must be under 10 MB.' });
+      return;
+    }
+    setPhotoBusy(true);
+    setPhotoStatus(null);
+    try {
+      await clerkUser.setProfileImage({ file });
+      setPhotoStatus({ tone: 'success', msg: 'Photo updated.' });
+    } catch (err) {
+      setPhotoStatus({ tone: 'error', msg: clerkErrorMsg(err) });
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function handleRemovePhoto() {
+    if (!clerkUser) return;
+    setPhotoBusy(true);
+    setPhotoStatus(null);
+    try {
+      await clerkUser.setProfileImage({ file: null });
+      setPhotoStatus({ tone: 'success', msg: 'Photo removed.' });
+    } catch (err) {
+      setPhotoStatus({ tone: 'error', msg: clerkErrorMsg(err) });
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function handleChangePassword(e: FormEvent) {
+    e.preventDefault();
+    if (!clerkUser) return;
+    if (newPassword.length < 8) {
+      setPwStatus({
+        tone: 'error',
+        msg: 'New password must be at least 8 characters.',
+      });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwStatus({ tone: 'error', msg: 'The two passwords don’t match.' });
+      return;
+    }
+    setPwBusy(true);
+    setPwStatus(null);
+    try {
+      // currentPassword is required when one exists; an OAuth-only
+      // account (passwordEnabled=false) sets its first password instead.
+      await clerkUser.updatePassword({
+        newPassword,
+        ...(clerkUser.passwordEnabled ? { currentPassword: curPassword } : {}),
+      });
+      setPwOpen(false);
+      setCurPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPwStatus({ tone: 'success', msg: 'Password changed.' });
+    } catch (err) {
+      setPwStatus({ tone: 'error', msg: clerkErrorMsg(err) });
+    } finally {
+      setPwBusy(false);
+    }
+  }
+
+  async function handleSendEmailCode() {
+    const email = clerkUser?.primaryEmailAddress;
+    if (!email) return;
+    setEmailBusy(true);
+    setEmailStatus(null);
+    try {
+      await email.prepareVerification({ strategy: 'email_code' });
+      setEmailMode('code');
+      setEmailCode('');
+      setEmailStatus({
+        tone: 'success',
+        msg: `Code sent to ${email.emailAddress}.`,
+      });
+    } catch (err) {
+      setEmailStatus({ tone: 'error', msg: clerkErrorMsg(err) });
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
+  async function handleVerifyEmailCode() {
+    const email = clerkUser?.primaryEmailAddress;
+    if (!email) return;
+    setEmailBusy(true);
+    setEmailStatus(null);
+    try {
+      await email.attemptVerification({ code: emailCode.trim() });
+      // clerkUser refreshes reactively → the badge flips to ✓ Verified
+      // and this whole block unmounts (it only renders while unverified).
+      setEmailMode('idle');
+    } catch (err) {
+      setEmailStatus({ tone: 'error', msg: clerkErrorMsg(err) });
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
   if (!isLoaded) return null;
   if (!isSignedIn) {
     return (
@@ -749,9 +895,73 @@ export default function EditProfilePage() {
           </div>
           {emailAddr && !emailVerified && (
             <div className="mb-5">
-              <SecondaryButton onClick={() => openUserProfile()}>
-                Verify email →
-              </SecondaryButton>
+              {emailMode === 'idle' ? (
+                <div className="flex items-center gap-3 flex-wrap">
+                  <SecondaryButton
+                    onClick={handleSendEmailCode}
+                    disabled={emailBusy}
+                  >
+                    {emailBusy ? 'Sending…' : 'Verify email'}
+                  </SecondaryButton>
+                  {emailStatus && (
+                    <StatusBanner tone={emailStatus.tone}>
+                      {emailStatus.msg}
+                    </StatusBanner>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <Field
+                    label="Verification code"
+                    hint={`Enter the 6-digit code we emailed to ${emailAddr}.`}
+                  >
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={emailCode}
+                      onChange={(e) =>
+                        setEmailCode(e.target.value.replace(/\D/g, ''))
+                      }
+                      style={{
+                        ...inputStyle,
+                        maxWidth: 220,
+                        letterSpacing: '0.2em',
+                      }}
+                      placeholder="000000"
+                      autoFocus
+                    />
+                  </Field>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <PrimaryButton
+                      onClick={handleVerifyEmailCode}
+                      disabled={emailBusy || emailCode.length !== 6}
+                    >
+                      {emailBusy ? 'Checking…' : 'Confirm'}
+                    </PrimaryButton>
+                    <SecondaryButton
+                      onClick={handleSendEmailCode}
+                      disabled={emailBusy}
+                    >
+                      Resend code
+                    </SecondaryButton>
+                    <SecondaryButton
+                      onClick={() => {
+                        setEmailMode('idle');
+                        setEmailStatus(null);
+                      }}
+                      disabled={emailBusy}
+                    >
+                      Cancel
+                    </SecondaryButton>
+                    {emailStatus && (
+                      <StatusBanner tone={emailStatus.tone}>
+                        {emailStatus.msg}
+                      </StatusBanner>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1195,24 +1405,175 @@ export default function EditProfilePage() {
           </form>
         </SectionCard>
 
-        {/* ── Photo, password & 2FA ─────────────────────────────────────
-            Email now lives in the Verification section above; this card is
-            just the remaining identity-provider settings (profile photo,
-            password, two-factor). */}
+        {/* ── Photo & password ──────────────────────────────────────────
+            These live in Clerk (the identity provider), not our DB — but
+            we edit them INLINE via the Clerk frontend SDK so the page
+            stays one consistent surface. No modal, no separate page.
+            (2FA isn't enabled on the instance, so there's nothing else
+            left that needs Clerk's own UI.) */}
         <SectionCard
-          title="Photo, password & security"
-          subtitle="Your profile photo, password and two-factor are managed by our identity provider. Opens in a modal — close it to come back here."
+          title="Photo & password"
+          subtitle="Your public profile photo and the password you sign in with."
         >
-          <div className="flex items-center gap-3">
-            <PrimaryButton onClick={() => openUserProfile()}>
-              Open identity settings
-            </PrimaryButton>
+          {/* Photo — preview + upload/remove, saved straight to Clerk.
+              The nav avatar follows automatically (it reads the same
+              Clerk image). */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <span
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                overflow: 'hidden',
+                flexShrink: 0,
+                background: 'var(--red)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 20,
+                fontWeight: 500,
+              }}
+            >
+              {clerkUser?.hasImage && clerkUser?.imageUrl ? (
+                <Image
+                  src={clerkUser.imageUrl}
+                  alt=""
+                  width={56}
+                  height={56}
+                  style={{ objectFit: 'cover' }}
+                />
+              ) : (
+                (clerkUser?.username || username || 'G')
+                  .charAt(0)
+                  .toUpperCase()
+              )}
+            </span>
+            <div className="flex items-center gap-3 flex-wrap">
+              <SecondaryButton
+                onClick={() => photoInputRef.current?.click()}
+                disabled={photoBusy}
+              >
+                {photoBusy
+                  ? 'Uploading…'
+                  : clerkUser?.hasImage
+                    ? 'Change photo'
+                    : 'Upload photo'}
+              </SecondaryButton>
+              {clerkUser?.hasImage && (
+                <SecondaryButton onClick={handleRemovePhoto} disabled={photoBusy}>
+                  Remove
+                </SecondaryButton>
+              )}
+            </div>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              style={{ display: 'none' }}
+              onChange={handlePhotoChange}
+            />
           </div>
-          {/* Hide the embedded UserProfile component — we use the modal
-              opened above instead so the dark theme stays consistent. The
-              import is kept because future versions might want to embed
-              it inline if we can tame its appearance. */}
-          {false && <UserProfile />}
+          {photoStatus && (
+            <StatusBanner tone={photoStatus.tone}>
+              {photoStatus.msg}
+            </StatusBanner>
+          )}
+
+          {/* Password — inline change form, same house widgets as the
+              rest of the page. Clerk enforces its own strength rules;
+              its message is surfaced verbatim on failure. */}
+          <div
+            className="pt-4"
+            style={{ borderTop: '0.5px solid var(--border)' }}
+          >
+            <p
+              className="text-xs uppercase mb-2"
+              style={{
+                color: 'var(--text-tertiary)',
+                letterSpacing: '0.06em',
+                fontWeight: 600,
+              }}
+            >
+              Password
+            </p>
+            {!pwOpen ? (
+              <div className="flex items-center gap-3 flex-wrap">
+                <SecondaryButton
+                  onClick={() => {
+                    setPwOpen(true);
+                    setPwStatus(null);
+                  }}
+                >
+                  {clerkUser?.passwordEnabled
+                    ? 'Change password'
+                    : 'Set a password'}
+                </SecondaryButton>
+                {pwStatus && (
+                  <StatusBanner tone={pwStatus.tone}>
+                    {pwStatus.msg}
+                  </StatusBanner>
+                )}
+              </div>
+            ) : (
+              <form onSubmit={handleChangePassword} className="space-y-3">
+                {clerkUser?.passwordEnabled && (
+                  <Field label="Current password">
+                    <input
+                      type="password"
+                      value={curPassword}
+                      onChange={(e) => setCurPassword(e.target.value)}
+                      style={{ ...inputStyle, maxWidth: 340 }}
+                      autoComplete="current-password"
+                      autoFocus
+                    />
+                  </Field>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="New password" hint="At least 8 characters.">
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      style={inputStyle}
+                      autoComplete="new-password"
+                    />
+                  </Field>
+                  <Field label="Confirm new password">
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      style={inputStyle}
+                      autoComplete="new-password"
+                    />
+                  </Field>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <PrimaryButton type="submit" disabled={pwBusy}>
+                    {pwBusy ? 'Saving…' : 'Save password'}
+                  </PrimaryButton>
+                  <SecondaryButton
+                    onClick={() => {
+                      setPwOpen(false);
+                      setCurPassword('');
+                      setNewPassword('');
+                      setConfirmPassword('');
+                      setPwStatus(null);
+                    }}
+                    disabled={pwBusy}
+                  >
+                    Cancel
+                  </SecondaryButton>
+                  {pwStatus && (
+                    <StatusBanner tone={pwStatus.tone}>
+                      {pwStatus.msg}
+                    </StatusBanner>
+                  )}
+                </div>
+              </form>
+            )}
+          </div>
         </SectionCard>
       </PageReveal>
     </main>
