@@ -369,6 +369,12 @@ export function AddressAutocomplete({
       return;
     }
     setLocating(true);
+
+    // Step 1 — get the GPS fix. Its OWN try/catch so a geolocation failure
+    // (permission / timeout / unavailable) is reported accurately and never
+    // conflated with the address-lookup step below.
+    let lat: number;
+    let lng: number;
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -377,26 +383,8 @@ export function AddressAutocomplete({
           maximumAge: 0,
         });
       });
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const Geocoder = (window as GWindow).google?.maps?.Geocoder;
-      if (!Geocoder) {
-        setGeoError('Address lookup isn’t ready yet — please type your address.');
-        return;
-      }
-      const { results } = await new Geocoder().geocode({ location: { lat, lng } });
-      const best = results?.[0];
-      if (!best?.formatted_address) {
-        setGeoError('Couldn’t find an address for your location — please type it in.');
-        return;
-      }
-      if (inputRef.current) inputRef.current.value = best.formatted_address;
-      onChangeRef.current(best.formatted_address, best.place_id);
-      if (onComponentsRef.current && best.address_components) {
-        onComponentsRef.current(
-          parseAddressComponents(best.address_components, best.geometry, lat, lng),
-        );
-      }
+      lat = pos.coords.latitude;
+      lng = pos.coords.longitude;
     } catch (err) {
       const code = (err as GeolocationPositionError | undefined)?.code;
       if (code === 1) {
@@ -406,6 +394,33 @@ export function AddressAutocomplete({
       } else {
         setGeoError('Couldn’t get your location — please type your address.');
       }
+      setLocating(false);
+      return;
+    }
+
+    // Step 2 — we HAVE the coordinates. Turn them into a street address via
+    // the Google Geocoder. If reverse-geocoding fails (most commonly the
+    // Geocoding API isn’t enabled / authorised on the Maps key), we must NOT
+    // say "couldn’t get your location" — we got it. Keep the coordinates
+    // (shipping distance still works) and ask the user to type the street.
+    try {
+      const Geocoder = (window as GWindow).google?.maps?.Geocoder;
+      if (!Geocoder) throw new Error('geocoder-not-ready');
+      const { results } = await new Geocoder().geocode({ location: { lat, lng } });
+      const best = results?.[0];
+      if (!best?.formatted_address) throw new Error('no-result');
+      if (inputRef.current) inputRef.current.value = best.formatted_address;
+      onChangeRef.current(best.formatted_address, best.place_id);
+      if (onComponentsRef.current && best.address_components) {
+        onComponentsRef.current(
+          parseAddressComponents(best.address_components, best.geometry, lat, lng),
+        );
+      }
+    } catch {
+      // Record the coordinates anyway so distance/shipping still works,
+      // then tell the user honestly that only the street needs typing.
+      if (onComponentsRef.current) onComponentsRef.current({ lat, lng });
+      setGeoError('Got your location, but address lookup isn’t available right now — please fill in the street below.');
     } finally {
       setLocating(false);
     }
