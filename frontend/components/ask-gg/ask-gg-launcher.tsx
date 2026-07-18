@@ -240,7 +240,11 @@ export function AskGgLauncher({
   return (
     <>
       {scene && (
-        <AdventureStage scene={scene} onDone={() => setScene(null)} />
+        <AdventureStage
+          scene={scene}
+          onDone={() => setScene(null)}
+          onOpen={() => open()}
+        />
       )}
       {bubble && (
         <div

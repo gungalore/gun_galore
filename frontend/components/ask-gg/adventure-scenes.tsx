@@ -31,9 +31,12 @@ export const ADVENTURE_DURATIONS: Record<AdventureKind, number> = {
 export function AdventureStage({
   scene,
   onDone,
+  onOpen,
 }: {
   scene: AdventureKind;
   onDone: () => void;
+  /** Same action as tapping Sparkie — cancels the scene + opens the panel. */
+  onOpen: () => void;
 }) {
   const [closing, setClosing] = useState(false);
   // Keep the latest onDone without retiming the scene when the parent
@@ -54,29 +57,35 @@ export function AdventureStage({
   }, [scene]);
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label="Open Ask GG — your Gun Galore assistant"
       className={[
         `gg-adv gg-adv-${scene}`,
         'app-chrome fixed z-[51]',
-        // Same corner slot as GG's speech bubble: clear of the FAB on
-        // both breakpoints (desktop FAB is 160px tall + 20px offset).
-        'right-4 bottom-[calc(104px+env(safe-area-inset-bottom))]',
-        'md:right-6 md:bottom-[188px]',
+        // Sparkie's OWN corner slot (same offsets as #askgg-dock) — the
+        // stage blooms out of exactly where he sits (transform-origin is
+        // its bottom-right corner) and stands in for him while it plays.
+        // The dock (z-52) stays above, so his hit area + mute button keep
+        // working over the stage's corner.
+        'right-4 bottom-[calc(12px+env(safe-area-inset-bottom))]',
+        'md:right-6 md:bottom-5',
         'w-[240px] md:w-[300px]',
       ].join(' ')}
       style={{
         aspectRatio: '16 / 10',
-        pointerEvents: 'none',
+        padding: 0,
+        cursor: 'pointer',
         opacity: closing ? 0 : 1,
         transition: 'opacity 320ms ease',
       }}
-      aria-hidden="true"
     >
       {scene === 'campfire' && <CampfireScene />}
       {scene === 'desert' && <DesertScene />}
       {scene === 'camp' && <CampScene />}
       {scene === 'clays' && <ClaysScene />}
-    </div>
+    </button>
   );
 }
 
