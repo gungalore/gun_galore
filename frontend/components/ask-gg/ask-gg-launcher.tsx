@@ -2,7 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { AskGgMascot } from './ask-gg-mascot';
+import type { AdventureKind } from './adventure-scenes';
+
+// Adventure scenes are a separate lazy chunk — nothing loads until the
+// first scene actually fires (~a minute into a session at the earliest).
+const AdventureStage = dynamic(
+  () => import('./adventure-scenes').then((m) => m.AdventureStage),
+  { ssr: false },
+);
 import {
   pickNudge,
   markNudgeShown,
@@ -74,6 +83,68 @@ export function AskGgLauncher({
   const pathname = usePathname();
   // Permanent mute (localStorage). While muted GG says nothing proactively.
   const [muted, setMuted] = useGgMuted();
+
+  // ── Adventure moments ────────────────────────────────────────────
+  // Rare one-shot scenes (campfire / desert drive / tent / clays) that
+  // play in a small stage popping out of this corner. First one ~45–90s
+  // after mount, then one every ~60–120s. Clays is deliberately the
+  // rarest. Never: panel open, muted, tab hidden, reduced motion,
+  // install card up, or while GG's speech bubble is showing. The
+  // launcher lives in the root layout, so the cadence survives
+  // navigation instead of resetting per page.
+  const [scene, setScene] = useState<AdventureKind | null>(null);
+  const lastSceneRef = useRef<AdventureKind | null>(null);
+
+  useEffect(() => {
+    if (panelArmed || muted) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let t: number;
+    const pick = (): AdventureKind => {
+      // Weighted pool — clays ~1 in 7; never the same scene twice running.
+      const pool: AdventureKind[] = [
+        'campfire', 'desert', 'camp',
+        'campfire', 'desert', 'camp',
+        'clays',
+      ];
+      let k = pool[Math.floor(Math.random() * pool.length)];
+      while (k === lastSceneRef.current) {
+        k = pool[Math.floor(Math.random() * pool.length)];
+      }
+      return k;
+    };
+    const schedule = (delay: number) => {
+      t = window.setTimeout(() => {
+        const clear =
+          document.visibilityState === 'visible' &&
+          !document.body.hasAttribute('data-install-prompt') &&
+          !document.getElementById('askgg-hello');
+        if (clear) {
+          const k = pick();
+          lastSceneRef.current = k;
+          setScene(k);
+        }
+        schedule(60_000 + Math.random() * 60_000);
+      }, delay);
+    };
+    schedule(45_000 + Math.random() * 45_000);
+    return () => clearTimeout(t);
+  }, [panelArmed, muted]);
+
+  // Opening the panel (or muting) cancels any scene mid-play.
+  useEffect(() => {
+    if (panelArmed || muted) setScene(null);
+  }, [panelArmed, muted]);
+
+  // Demo/QA hook: window.__ggAdventure('desert') plays a scene on demand.
+  useEffect(() => {
+    const w = window as unknown as {
+      __ggAdventure?: (k: AdventureKind) => void;
+    };
+    w.__ggAdventure = (k) => setScene(k);
+    return () => {
+      delete w.__ggAdventure;
+    };
+  }, []);
 
   // ONE proactive "speak" per page — useful-first. After a short dwell GG
   // shows this page-kind's contextual coaching tip (if there is one and it
@@ -161,11 +232,16 @@ export function AskGgLauncher({
 
   const open = (prefill?: string) => {
     setBubble(null);
+    // User intent beats theatre — a tap cancels any scene instantly.
+    setScene(null);
     onOpen(prefill);
   };
 
   return (
     <>
+      {scene && (
+        <AdventureStage scene={scene} onDone={() => setScene(null)} />
+      )}
       {bubble && (
         <div
           id="askgg-hello"
@@ -246,8 +322,11 @@ export function AskGgLauncher({
             // Soft shadow so the character reads as a floating spark against
             // any page background, with nothing behind him.
             filter: 'drop-shadow(0 3px 9px rgba(0,0,0,0.55))',
-            // Calm + slightly dimmed while muted.
-            opacity: muted ? 0.9 : 1,
+            // Hidden while an adventure scene plays (he's "in" the scene);
+            // calm + slightly dimmed while muted. Hit area stays live —
+            // tapping mid-scene cancels it and opens the panel.
+            opacity: scene ? 0 : muted ? 0.9 : 1,
+            transition: 'opacity 250ms ease',
           }}
         >
           {/* Just the character. Grins while he's talking; still + calm (no

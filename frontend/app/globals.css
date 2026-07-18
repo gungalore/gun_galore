@@ -463,3 +463,149 @@ body[data-install-prompt='true'] #askgg-hello {
   border-left-color: var(--red);
   color: #fff;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Ask GG — adventure moments (components/ask-gg/adventure-scenes.tsx).
+   Four rare one-shot scenes staged in a card popping out of the
+   launcher corner. Ported 1:1 from the operator-approved mockup.
+   RULE (learned the hard way): with transform-box:fill-box,
+   transform-origin must be center/%, never px viewBox coordinates —
+   px origins are bbox-relative and send wheels/props orbiting.
+   ═══════════════════════════════════════════════════════════════════ */
+.gg-adv {
+  background: radial-gradient(120% 90% at 50% 108%, #211d16 0%, #141310 55%, #100f0d 100%);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  transform-origin: 100% 100%;
+  animation: gg-adv-pop 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.gg-adv svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+@keyframes gg-adv-pop { from { scale: .18; opacity: 0; } 60% { scale: 1.04; opacity: 1; } to { scale: 1; } }
+.gg-adv svg g, .gg-adv svg path, .gg-adv svg ellipse, .gg-adv svg circle,
+.gg-adv svg rect, .gg-adv svg polygon { transform-box: fill-box; }
+
+/* ── Campfire (8s) ── */
+.gg-adv-campfire .flame { transform-origin: 50% 100%; }
+.gg-adv-campfire .fl-o { animation: s1grow 8s ease-in-out infinite, s1flickA 8s ease-in-out infinite; }
+.gg-adv-campfire .fl-m { animation: s1grow 8s ease-in-out infinite, s1flickB 8s ease-in-out infinite; }
+.gg-adv-campfire .fl-i { animation: s1grow 8s ease-in-out infinite, s1flickC 8s ease-in-out infinite; }
+@keyframes s1grow { 0%, 13% { scale: 0 0; } 20% { scale: 1.15 1.25; } 24% { scale: 1 1; } 97% { scale: 1 1; } 100% { scale: .9 .2; } }
+@keyframes s1flickA { 26% { skew: 0deg; } 32% { skew: 4deg; scale: 1 1.08; } 40% { skew: -3deg; scale: 1 .94; } 50% { skew: 2deg; scale: 1 1.1; } 62% { skew: -4deg; scale: 1 .96; } 74% { skew: 3deg; scale: 1 1.06; } 86% { skew: -2deg; scale: 1 .98; } }
+@keyframes s1flickB { 28% { skew: 0deg; } 36% { skew: -4deg; scale: 1 1.12; } 46% { skew: 3deg; scale: 1 .9; } 58% { skew: -2deg; scale: 1 1.14; } 70% { skew: 4deg; scale: 1 .95; } 82% { skew: -3deg; scale: 1 1.08; } }
+@keyframes s1flickC { 30% { skew: 0deg; } 38% { skew: 5deg; scale: 1 1.2; } 48% { skew: -4deg; scale: 1 .85; } 60% { skew: 3deg; scale: 1 1.18; } 72% { skew: -5deg; scale: 1 .9; } 84% { skew: 4deg; scale: 1 1.1; } }
+.gg-adv-campfire .warm-l { animation: s1warmL 3.1s ease-in-out infinite alternate; }
+.gg-adv-campfire .warm-r { animation: s1warmR 2.6s ease-in-out infinite alternate; }
+@keyframes s1warmL { from { translate: 0 0; } to { translate: -1.5px -2px; } }
+@keyframes s1warmR { from { translate: 0 -1px; } to { translate: 1px 1.5px; } }
+.gg-adv-campfire .strike { animation: s1strike 8s linear infinite; opacity: 0; transform-origin: center; }
+@keyframes s1strike { 0%, 9% { opacity: 0; scale: .2; } 11.5% { opacity: 1; scale: 1.5; } 14.5% { opacity: 0; scale: .4; } 100% { opacity: 0; } }
+.gg-adv-campfire .glow { animation: s1glow 8s ease-in-out infinite; transform-origin: center; }
+@keyframes s1glow { 0%, 14% { opacity: 0; } 24% { opacity: .55; } 40% { opacity: .4; } 55% { opacity: .6; } 70% { opacity: .45; } 85% { opacity: .58; } 97% { opacity: .5; } 100% { opacity: 0; } }
+.gg-adv-campfire .smk { animation: s1smoke 8s linear infinite; opacity: 0; }
+.gg-adv-campfire .smk2 { animation-delay: -2.6s; }
+.gg-adv-campfire .smk3 { animation-delay: -5.2s; }
+@keyframes s1smoke { 0%, 24% { opacity: 0; translate: 0 0; scale: .5; } 30% { opacity: .35; } 55% { opacity: .22; translate: 6px -26px; scale: 1; } 78% { opacity: 0; translate: 10px -44px; scale: 1.35; } 100% { opacity: 0; } }
+.gg-adv-campfire .m-neutral { animation: s1mn 8s linear infinite; }
+.gg-adv-campfire .m-grin { animation: s1mg 8s linear infinite; }
+@keyframes s1mn { 0%, 26% { opacity: 1; } 28%, 92% { opacity: 0; } 94%, 100% { opacity: 1; } }
+@keyframes s1mg { 0%, 26% { opacity: 0; } 28%, 92% { opacity: 1; } 94%, 100% { opacity: 0; } }
+.gg-adv-campfire .pupils { animation: s1look 8s ease-in-out infinite; }
+@keyframes s1look { 0%, 8% { translate: 0 0; } 14%, 88% { translate: -2.4px 1.2px; } 96%, 100% { translate: 0 0; } }
+.gg-adv-campfire .gg-f { animation: s1breathe 4s ease-in-out infinite; }
+@keyframes s1breathe { 0%, 100% { translate: 0 0; } 50% { translate: 0 -2px; } }
+
+/* ── Desert drive (continuous while staged) ── */
+.gg-adv-desert .wheel { transform-origin: center; animation: s2spin .55s linear infinite; }
+@keyframes s2spin { to { rotate: 360deg; } }
+.gg-adv-desert .truck { animation: s2bounce 4s linear infinite; }
+@keyframes s2bounce { 0%, 100% { translate: 0 0; rotate: 0deg; } 8% { translate: 0 -1.6px; } 16% { translate: 0 .6px; } 24% { translate: 0 -1px; } 32% { translate: 0 .4px; } 40% { translate: 0 -1.4px; } 52% { translate: 0 .5px; } 58% { translate: 0 -6.5px; rotate: -2.6deg; } 64% { translate: 0 1.8px; rotate: 1.4deg; } 72% { translate: 0 -1.2px; rotate: 0deg; } 82% { translate: 0 .5px; } 92% { translate: 0 -1.5px; } }
+.gg-adv-desert .rider { animation: s2rider 4s linear infinite; }
+@keyframes s2rider { 0%, 100% { translate: 0 0; rotate: 0deg; } 8% { translate: 0 -1px; } 16% { translate: 0 .5px; } 40% { translate: 0 -1px; } 52% { translate: 0 .4px; } 60% { translate: 0 -5px; rotate: 2deg; } 66% { translate: 0 2px; rotate: -1.5deg; } 74% { translate: 0 -.8px; rotate: 0deg; } 90% { translate: 0 -1px; } }
+.gg-adv-desert .hat-lift { animation: s2hat 4s linear infinite; }
+@keyframes s2hat { 0%, 56%, 70%, 100% { translate: 0 0; rotate: 0deg; } 61% { translate: .5px -4.5px; rotate: 6deg; } 65% { translate: 0 1px; } }
+/* dashes stream AGAINST the drive direction (jeep faces right) */
+.gg-adv-desert .ground-dash { stroke-dasharray: 26 22; animation: s2dash .42s linear infinite; }
+@keyframes s2dash { to { stroke-dashoffset: 48; } }
+.gg-adv-desert .dunes-far { animation: s2dunesF 22s linear infinite; }
+.gg-adv-desert .dunes-near { animation: s2dunesN 12s linear infinite; }
+.gg-adv-desert .scenery { animation: s2scroll 6.4s linear infinite; }
+@keyframes s2dunesF { to { translate: -360px 0; } }
+@keyframes s2dunesN { to { translate: -360px 0; } }
+@keyframes s2scroll { to { translate: -360px 0; } }
+.gg-adv-desert .dust { animation: s2dust 1.1s linear infinite; opacity: 0; transform-origin: center; }
+.gg-adv-desert .dust2 { animation-delay: -.37s; }
+.gg-adv-desert .dust3 { animation-delay: -.74s; }
+@keyframes s2dust { 0% { opacity: 0; scale: .3; translate: 0 0; } 18% { opacity: .45; } 100% { opacity: 0; scale: 1.5; translate: -34px -12px; } }
+.gg-adv-desert .heat { animation: s2heat 5s ease-in-out infinite alternate; transform-origin: center; }
+@keyframes s2heat { from { opacity: .14; } to { opacity: .3; } }
+.gg-adv-desert .m-grin { opacity: 1; }
+.gg-adv-desert .m-neutral { opacity: 0; }
+
+/* ── Pitching camp (9s) ── */
+.gg-adv-camp .bag { animation: s3bag 9s linear infinite; }
+@keyframes s3bag { 0%, 26% { opacity: 1; } 28%, 100% { opacity: 0; } }
+.gg-adv-camp .mallet-tap { transform-origin: 50% 96%; animation: s3tap 9s ease-in-out infinite; }
+@keyframes s3tap { 0%, 6% { rotate: 0deg; } 9% { rotate: -26deg; } 11% { rotate: 4deg; } 13.5% { rotate: -26deg; } 15.5% { rotate: 4deg; } 18% { rotate: -26deg; } 20%, 100% { rotate: 0deg; } }
+.gg-adv-camp .work-arms { animation: s3work 9s linear infinite; }
+.gg-adv-camp .cele-arms { animation: s3cele 9s linear infinite; opacity: 0; }
+@keyframes s3work { 0%, 37% { opacity: 1; } 39%, 94% { opacity: 0; } 97%, 100% { opacity: 1; } }
+@keyframes s3cele { 0%, 38% { opacity: 0; } 40%, 93% { opacity: 1; } 96%, 100% { opacity: 0; } }
+.gg-adv-camp .tink { opacity: 0; transform-origin: center; animation: s3tink 9s linear infinite; }
+.gg-adv-camp .tink2 { animation-delay: .4s; }
+.gg-adv-camp .tink3 { animation-delay: .81s; }
+@keyframes s3tink { 0%, 10.5% { opacity: 0; scale: .2; } 12% { opacity: 1; scale: 1.25; } 14% { opacity: 0; scale: .4; } 100% { opacity: 0; } }
+.gg-adv-camp .tent { transform-origin: 50% 100%; animation: s3tent 9s ease-in-out infinite; }
+@keyframes s3tent { 0%, 26% { scale: 1 .045; } 30% { scale: 1.04 1.14; } 33% { scale: .98 .93; } 36% { scale: 1.01 1.04; } 39%, 97% { scale: 1 1; } 100% { scale: 1 .5; } }
+.gg-adv-camp .pennant { transform-origin: 0% 50%; animation: s3flag 9s ease-in-out infinite; }
+@keyframes s3flag { 0%, 44% { skew: 0deg; } 50% { skew: -8deg; } 58% { skew: 6deg; } 66% { skew: -7deg; } 74% { skew: 5deg; } 82% { skew: -6deg; } 90% { skew: 4deg; } 100% { skew: 0deg; } }
+.gg-adv-camp .guy { stroke-dasharray: 30; stroke-dashoffset: 30; animation: s3guy 9s linear infinite; }
+@keyframes s3guy { 0%, 30% { stroke-dashoffset: 30; } 36%, 96% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 30; } }
+.gg-adv-camp .spark { opacity: 0; transform-origin: center; animation: s3spark 9s linear infinite; }
+.gg-adv-camp .spark2 { animation-delay: .35s; }
+.gg-adv-camp .spark3 { animation-delay: .7s; }
+@keyframes s3spark { 0%, 41% { opacity: 0; scale: .2; } 44% { opacity: 1; scale: 1.2; } 49% { opacity: 0; scale: .5; translate: 0 -10px; } 100% { opacity: 0; } }
+.gg-adv-camp .m-neutral { animation: s3mn 9s linear infinite; }
+.gg-adv-camp .m-o { animation: s3mo 9s linear infinite; }
+.gg-adv-camp .m-grin { animation: s3mg 9s linear infinite; }
+@keyframes s3mn { 0%, 5% { opacity: 1; } 6%, 95% { opacity: 0; } 96%, 100% { opacity: 1; } }
+@keyframes s3mo { 0%, 26% { opacity: 0; } 28%, 38% { opacity: 1; } 39%, 100% { opacity: 0; } }
+@keyframes s3mg { 0%, 39% { opacity: 0; } 41%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
+.gg-adv-camp .gg-f { animation: s1breathe 4.5s ease-in-out infinite; }
+
+/* ── Range day (8s) ── */
+.gg-adv-clays .clay { transform-origin: center; animation: s4clay 8s linear infinite; opacity: 0; }
+@keyframes s4clay { 0%, 7% { opacity: 0; translate: 0 0; rotate: 0deg; } 9% { opacity: 1; } 14% { translate: -22px -22px; rotate: -90deg; } 20% { translate: -46px -38px; rotate: -220deg; } 25.8% { opacity: 1; translate: -66px -48px; rotate: -330deg; } 26.5%, 100% { opacity: 0; translate: -66px -48px; } }
+.gg-adv-clays .gun-grp { transform-origin: 0% 60%; animation: s4track 8s ease-in-out infinite; }
+@keyframes s4track { 0%, 6% { rotate: 0deg; } 12% { rotate: 3deg; } 20% { rotate: -2deg; } 25% { rotate: -4deg; } 27% { rotate: 0deg; } 29% { rotate: -3deg; } 34%, 88% { rotate: -2deg; } 96%, 100% { rotate: 0deg; } }
+.gg-adv-clays .rig { animation: s4recoil 8s ease-in-out infinite; }
+@keyframes s4recoil { 0%, 25.5% { translate: 0 0; rotate: 0deg; } 27% { translate: -4.5px .5px; rotate: -3deg; } 30% { translate: 1px 0; rotate: .7deg; } 33%, 100% { translate: 0 0; rotate: 0deg; } }
+.gg-adv-clays .flash { opacity: 0; transform-origin: center; animation: s4flash 8s linear infinite; }
+@keyframes s4flash { 0%, 25.2% { opacity: 0; scale: .2; } 26.2% { opacity: 1; scale: 1.8; } 27.4% { opacity: 0; scale: .5; } 100% { opacity: 0; } }
+.gg-adv-clays .shard { opacity: 0; animation-duration: 8s; animation-timing-function: ease-out; animation-iteration-count: infinite; }
+.gg-adv-clays .shard1 { animation-name: s4sh1; }
+.gg-adv-clays .shard2 { animation-name: s4sh2; }
+.gg-adv-clays .shard3 { animation-name: s4sh3; }
+.gg-adv-clays .shard4 { animation-name: s4sh4; }
+@keyframes s4sh1 { 0%, 25.8% { opacity: 0; translate: 0 0; rotate: 0deg; } 27% { opacity: 1; } 42% { opacity: 0; translate: -26px 34px; rotate: 160deg; } 100% { opacity: 0; } }
+@keyframes s4sh2 { 0%, 25.8% { opacity: 0; translate: 0 0; rotate: 0deg; } 27% { opacity: 1; } 42% { opacity: 0; translate: 18px 30px; rotate: -140deg; } 100% { opacity: 0; } }
+@keyframes s4sh3 { 0%, 25.8% { opacity: 0; translate: 0 0; rotate: 0deg; } 27% { opacity: 1; } 40% { opacity: 0; translate: -8px 40px; rotate: 200deg; } 100% { opacity: 0; } }
+@keyframes s4sh4 { 0%, 25.8% { opacity: 0; translate: 0 0; rotate: 0deg; } 27% { opacity: 1; } 38% { opacity: 0; translate: 8px 24px; rotate: -90deg; } 100% { opacity: 0; } }
+.gg-adv-clays .poof { opacity: 0; transform-origin: center; animation: s4poof 8s linear infinite; }
+@keyframes s4poof { 0%, 25.8% { opacity: 0; scale: .3; } 27.5% { opacity: .5; scale: 1.3; } 34% { opacity: 0; scale: 2; } 100% { opacity: 0; } }
+.gg-adv-clays .wisp { opacity: 0; animation: s4wisp 8s linear infinite; }
+@keyframes s4wisp { 0%, 28% { opacity: 0; translate: 0 0; } 32% { opacity: .4; } 48% { opacity: 0; translate: 5px -18px; } 100% { opacity: 0; } }
+.gg-adv-clays .m-neutral { animation: s4mn 8s linear infinite; }
+.gg-adv-clays .m-grin { animation: s4mg 8s linear infinite; }
+@keyframes s4mn { 0%, 29% { opacity: 1; } 31%, 90% { opacity: 0; } 92%, 100% { opacity: 1; } }
+@keyframes s4mg { 0%, 29% { opacity: 0; } 31%, 90% { opacity: 1; } 92%, 100% { opacity: 0; } }
+.gg-adv-clays .pupils { animation: s4look 8s ease-in-out infinite; }
+@keyframes s4look { 0%, 6% { translate: 0 0; } 10%, 26% { translate: 2.4px -1.4px; } 32%, 88% { translate: 1px 0; } 96%, 100% { translate: 0 0; } }
+.gg-adv-clays .trap { transform-origin: center; animation: s4trap 8s ease-in-out infinite; }
+@keyframes s4trap { 0%, 6.5% { rotate: 0deg; } 8% { rotate: -16deg; } 10% { rotate: 2deg; } 12%, 100% { rotate: 0deg; } }
+
+/* The scheduler skips reduced-motion users; this is the belt to match. */
+@media (prefers-reduced-motion: reduce) {
+  .gg-adv { display: none; }
+}
