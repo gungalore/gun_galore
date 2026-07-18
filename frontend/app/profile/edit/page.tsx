@@ -16,6 +16,7 @@ import {
 } from '@/components/manual-address-fields';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
+import { StepAccordion } from '@/components/step-accordion';
 import { HelpTip } from '@/components/help-tip';
 import { safeJson } from '@/lib/safe-json';
 
@@ -23,9 +24,9 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 
 // ─── Shared theming primitives (kept inline so this page is self-contained)
 //
-// SectionCard mirrors the look of every other panel on the site
-// (StepAccordion bodies, /profile stat cards, dashboard sections) so
-// the page reads as one continuous design.
+// The page's section chrome is the Sell form's StepAccordion (imported
+// above) so /profile/edit and /listings/new read as the same design;
+// only the small field/button primitives live here.
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -38,49 +39,6 @@ const inputStyle: React.CSSProperties = {
   color: 'var(--text-primary)',
   outline: 'none',
 };
-
-function SectionCard({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section
-      data-reveal
-      className="rounded-[8px] p-5 sm:p-6"
-      style={{
-        background: 'var(--bg-card)',
-        border: '0.5px solid var(--border)',
-      }}
-    >
-      <header className="mb-5">
-        <h2
-          className="text-base"
-          style={{
-            color: 'var(--text-primary)',
-            fontWeight: 500,
-            letterSpacing: '-0.005em',
-          }}
-        >
-          {title}
-        </h2>
-        {subtitle && (
-          <p
-            className="text-xs mt-1"
-            style={{ color: 'var(--text-tertiary)', lineHeight: 1.55 }}
-          >
-            {subtitle}
-          </p>
-        )}
-      </header>
-      <div className="space-y-4">{children}</div>
-    </section>
-  );
-}
 
 function Field({
   label,
@@ -673,6 +631,67 @@ export default function EditProfilePage() {
     }
   }
 
+  // ── Step accordion (sell-form chrome) ──────────────────────────────
+  // Same StepAccordion the Sell form uses, but as an EDIT surface: no
+  // step is ever locked, red = needs attention, green ✓ = done, one
+  // open at a time. Completion mirrors /users/me profileCompleteness
+  // (the same source as the nav ring + dashboard bar) so every surface
+  // agrees on what's outstanding.
+  const missing = me?.profileCompleteness?.missing ?? [];
+  const step1Done = !!me && !missing.includes('name');
+  const step2Done =
+    !!me &&
+    emailVerified &&
+    !missing.includes('phone') &&
+    !missing.includes('identity') &&
+    !missing.includes('verification');
+  const step3Done = !!me && !missing.includes('address');
+  const step4Done = !!me && !missing.includes('banking');
+  const step5Done = !!clerkUser?.hasImage;
+
+  const [openStep, setOpenStep] = useState<number | null>(null);
+  const openInitDone = useRef(false);
+  // Once the profile arrives, open the FIRST incomplete step (all
+  // collapsed green when nothing's outstanding) — so arriving from the
+  // completeness ring lands you straight on what needs finishing.
+  useEffect(() => {
+    if (!me || openInitDone.current) return;
+    openInitDone.current = true;
+    const done = [step1Done, step2Done, step3Done, step4Done, step5Done];
+    const firstIncomplete = done.findIndex((d) => !d);
+    setOpenStep(firstIncomplete === -1 ? null : firstIncomplete + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me]);
+
+  function toggleStep(n: number) {
+    setOpenStep((v) => (v === n ? null : n));
+  }
+
+  // Collapsed-row summaries, sell-form style ("what's in this step").
+  const step1Summary = step1Done
+    ? [[firstName, lastName].filter(Boolean).join(' '), username]
+        .filter(Boolean)
+        .join(' · ')
+    : 'Add your name';
+  const step2Summary = [
+    `Email ${emailVerified ? '✓' : '—'}`,
+    `Phone ${me?.phoneVerified ? '✓' : '—'}`,
+    kyc === 'VERIFIED'
+      ? 'ID ✓'
+      : kyc === 'UNDER_REVIEW'
+        ? 'ID in review'
+        : 'ID not verified',
+  ].join(' · ');
+  const step3Summary = addr.street
+    ? [addr.street, addr.city].filter(Boolean).join(', ')
+    : 'No address yet';
+  const step4Summary = bankAccountNumber
+    ? `${bankName || 'Bank'} ···${bankAccountNumber.slice(-4)}`
+    : 'No banking details yet';
+  const step5Summary = step5Done ? 'Photo uploaded' : 'No photo yet';
+
+  const percent = me?.profileCompleteness?.percent ?? 0;
+
   if (!isLoaded) return null;
   if (!isSignedIn) {
     return (
@@ -686,7 +705,7 @@ export default function EditProfilePage() {
 
   return (
     <main
-      className="relative max-w-[900px] mx-auto px-4 py-8"
+      className="relative max-w-[1280px] mx-auto px-4 py-8 sm:py-12"
       style={{ zIndex: 1 }}
     >
       {/* Page-wide settings scenery — dimmed photo + vignette so the
@@ -703,10 +722,10 @@ export default function EditProfilePage() {
 
       {/* Page header — sits OUTSIDE PageReveal so it renders at full
           opacity immediately. Only the body cards animate. */}
-      <header className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+      <header className="mb-8 flex items-start justify-between gap-4 flex-wrap max-w-[820px]">
         <div>
           <p
-            className="text-xs uppercase mb-1"
+            className="text-xs uppercase mb-2"
             style={{
               color: 'var(--red)',
               letterSpacing: '0.12em',
@@ -716,20 +735,24 @@ export default function EditProfilePage() {
             Account
           </p>
           <h1
-            className="text-2xl sm:text-3xl"
+            className="text-3xl sm:text-4xl mb-2"
             style={{
               color: 'var(--text-primary)',
               fontWeight: 500,
-              letterSpacing: '-0.01em',
+              letterSpacing: '-0.02em',
             }}
           >
             Edit profile
           </h1>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Work through the steps below — green means done. Each step saves
+            on its own.
+          </p>
         </div>
         <Link
           href="/profile"
           className="text-sm"
-          style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }}
+          style={{ color: 'var(--text-tertiary)', textDecoration: 'none', paddingTop: 4 }}
         >
           ← Back to profile
         </Link>
@@ -741,17 +764,24 @@ export default function EditProfilePage() {
         </div>
       )}
 
-      {/* Reveal — house standard: 0.5s pre-pause, 2.5s per-item, random
-          variant per page-load. Only the body cards live inside. */}
-      <PageReveal className="space-y-5">
+      {/* Reveal — house standard. Sell-form layout: steps column + a
+          sticky completeness sidebar on desktop. */}
+      <PageReveal className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+        <div data-reveal className="space-y-3 max-w-[820px]">
         {/* ── Personal info ───────────────────────────────────────────
             First + last name are NOT editable here — they come from the
             ID document during KYC. We display them read-only with a
             hint explaining where to change them (contact support).
             Username is the only editable identity field. */}
-        <SectionCard
+        <StepAccordion
+          number={1}
           title="Contact"
-          subtitle="Your name is set from your ID during verification; your username is the public handle shown on your listings and reviews. Your phone, email and ID all live under Verification below."
+          description="Your name is set from your ID during verification; your username is the public handle shown on your listings and reviews. Your phone, email and ID all live under Verification below."
+          status={step1Done ? 'complete' : 'active'}
+          expanded={openStep === 1}
+          onToggle={() => toggleStep(1)}
+          summary={step1Summary}
+          hideContinue
         >
           <form onSubmit={handleSavePersonal} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -845,12 +875,18 @@ export default function EditProfilePage() {
               )}
             </div>
           </form>
-        </SectionCard>
+        </StepAccordion>
 
         {/* ── Verification (email + phone + ID, all in one place) ────── */}
-        <SectionCard
+        <StepAccordion
+          number={2}
           title="Verification"
-          subtitle="Everything that needs verifying, in one place — your email, your phone, and your ID. Verifying your ID here means you're ready to sell the moment you list, no waiting."
+          description="Everything that needs verifying, in one place — your email, your phone, and your ID. Verifying your ID here means you're ready to sell the moment you list, no waiting."
+          status={step2Done ? 'complete' : 'active'}
+          expanded={openStep === 2}
+          onToggle={() => toggleStep(2)}
+          summary={step2Summary}
+          hideContinue
         >
           {/* ── Email ── */}
           <div
@@ -1267,12 +1303,18 @@ export default function EditProfilePage() {
               </div>
             )}
           </div>
-        </SectionCard>
+        </StepAccordion>
 
         {/* ── Address ───────────────────────────────────────────────── */}
-        <SectionCard
+        <StepAccordion
+          number={3}
           title="Address"
-          subtitle="Search for your address — picking a suggestion fills in the fields below. Edit anything Google got wrong before saving."
+          description="Search for your address — picking a suggestion fills in the fields below. Edit anything Google got wrong before saving."
+          status={step3Done ? 'complete' : 'active'}
+          expanded={openStep === 3}
+          onToggle={() => toggleStep(3)}
+          summary={step3Summary}
+          hideContinue
         >
           <form onSubmit={handleSaveAddress} className="space-y-3">
             <Field
@@ -1318,15 +1360,21 @@ export default function EditProfilePage() {
               )}
             </div>
           </form>
-        </SectionCard>
+        </StepAccordion>
 
         {/* ── Banking details ───────────────────────────────────────
             FLOW-F2 — the account refunds AND seller payouts are EFT'd to.
             Refund SMS/email deep-link here when a buyer who's owed a
             refund has nothing on file. */}
-        <SectionCard
+        <StepAccordion
+          number={4}
           title="Banking details"
-          subtitle="Refunds owed to you and any sales payouts are paid to this account by EFT. Make sure the account holder name matches your ID — we check it before the first payout."
+          description="Refunds owed to you and any sales payouts are paid to this account by EFT. Make sure the account holder name matches your ID — we check it before the first payout."
+          status={step4Done ? 'complete' : 'active'}
+          expanded={openStep === 4}
+          onToggle={() => toggleStep(4)}
+          summary={step4Summary}
+          hideContinue
         >
           <form onSubmit={handleSaveBank} className="space-y-4">
             {me?.bankVerifiedAt && (
@@ -1403,7 +1451,7 @@ export default function EditProfilePage() {
               )}
             </div>
           </form>
-        </SectionCard>
+        </StepAccordion>
 
         {/* ── Photo & password ──────────────────────────────────────────
             These live in Clerk (the identity provider), not our DB — but
@@ -1411,9 +1459,15 @@ export default function EditProfilePage() {
             stays one consistent surface. No modal, no separate page.
             (2FA isn't enabled on the instance, so there's nothing else
             left that needs Clerk's own UI.) */}
-        <SectionCard
+        <StepAccordion
+          number={5}
           title="Photo & password"
-          subtitle="Your public profile photo and the password you sign in with."
+          description="Your public profile photo and the password you sign in with."
+          status={step5Done ? 'complete' : 'active'}
+          expanded={openStep === 5}
+          onToggle={() => toggleStep(5)}
+          summary={step5Summary}
+          hideContinue
         >
           {/* Photo — preview + upload/remove, saved straight to Clerk.
               The nav avatar follows automatically (it reads the same
@@ -1574,7 +1628,110 @@ export default function EditProfilePage() {
               </form>
             )}
           </div>
-        </SectionCard>
+        </StepAccordion>
+        </div>
+
+        {/* ── Sticky completeness sidebar (desktop) — the sell form's
+            sidebar slot, repurposed: live percent + a per-step checklist
+            that jumps to (and opens) the step you click. Mirrors the nav
+            ring / dashboard bar exactly (same /users/me source). */}
+        <aside data-reveal className="hidden lg:block">
+          <div
+            className="sticky top-20 rounded-[8px] p-5 space-y-4"
+            style={{
+              background: 'var(--bg-card)',
+              border: '0.5px solid var(--border)',
+            }}
+          >
+            <p
+              className="text-xs uppercase"
+              style={{
+                color: 'var(--text-tertiary)',
+                letterSpacing: '0.08em',
+                fontWeight: 500,
+              }}
+            >
+              Profile completeness
+            </p>
+            <div className="flex items-baseline gap-2">
+              <span
+                className="text-3xl"
+                style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+              >
+                {percent}%
+              </span>
+              {percent >= 100 && (
+                <span
+                  className="text-xs"
+                  style={{ color: '#22c55e', fontWeight: 500 }}
+                >
+                  Complete ✓
+                </span>
+              )}
+            </div>
+            <div
+              className="h-1.5 rounded-full overflow-hidden"
+              style={{ background: 'var(--bg-inset)' }}
+            >
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${percent}%`,
+                  background:
+                    percent >= 67
+                      ? '#22c55e'
+                      : percent >= 34
+                        ? '#f59e0b'
+                        : 'var(--red)',
+                  transition: 'width 0.3s',
+                }}
+              />
+            </div>
+            <div className="space-y-1 pt-1">
+              {[
+                { n: 1, label: 'Contact', done: step1Done },
+                { n: 2, label: 'Verification', done: step2Done },
+                { n: 3, label: 'Address', done: step3Done },
+                { n: 4, label: 'Banking details', done: step4Done },
+                { n: 5, label: 'Photo & password', done: step5Done },
+              ].map((s) => (
+                <button
+                  key={s.n}
+                  type="button"
+                  onClick={() => setOpenStep(s.n)}
+                  className="w-full flex items-center justify-between gap-2 text-left text-sm rounded-[6px] px-2 py-1.5"
+                  style={{
+                    background:
+                      openStep === s.n ? 'var(--bg-inset)' : 'transparent',
+                    border: 'none',
+                    color: s.done
+                      ? 'var(--text-tertiary)'
+                      : 'var(--text-primary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span>{s.label}</span>
+                  <span
+                    className="text-xs"
+                    style={{
+                      color: s.done ? '#22c55e' : 'var(--red)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {s.done ? '✓' : '○'}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <p
+              className="text-xs"
+              style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+            >
+              A complete profile means faster checkout, selling without
+              hold-ups, and payouts that clear first time.
+            </p>
+          </div>
+        </aside>
       </PageReveal>
     </main>
   );
