@@ -61,7 +61,7 @@ const MISSING_LABEL: Partial<Record<string, string>> = {
   name: 'Your name',
   phone: 'A verified phone number',
   address: 'Your delivery / pickup address',
-  banking: 'Banking details (to get paid out)',
+  banking: 'Banking details (refunds & payouts)',
   identity: 'Your SA ID & date of birth',
   verification: 'Identity verification',
 };

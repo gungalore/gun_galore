@@ -421,13 +421,18 @@ export class UsersController {
 
 // ─────────────────── Profile completeness ─────────────────────────
 // Drives the nav ring + the setup prompt. Two shapes:
-//   Buyers (no listings, never forced into KYC): the original three
-//   sections at ~33% each — name, phone, address.
+//   Buyers (no listings, never forced into KYC): four sections at 25%
+//   each — name, phone, address, banking. Banking counts for BUYERS
+//   too (operator decision 2026-07-18): refunds are EFT'd to this
+//   account, so it's required of everyone, not just sellers — and the
+//   profile editor's Banking step reads red-until-filled like the
+//   Verification step instead of "optional".
 //   Sellers (≥1 listing OR kycRequiredAt set): five sections at 20%
-//   each — the buyer trio plus banking (needed to pay out) and the
-//   two identity-verification stages. UNDER_REVIEW counts as done for
-//   the percent (nothing more is needed FROM the seller); the "being
-//   reviewed" state renders on the verification progress bar instead.
+//   each — the buyer four plus the two identity-verification stages
+//   (folded into one Verification section in the UI). UNDER_REVIEW
+//   counts as done for the percent (nothing more is needed FROM the
+//   seller); the "being reviewed" state renders on the verification
+//   progress bar instead.
 // `missing` is the array the frontend renders into a checklist with
 // deep-links to the right page.
 export type CompletenessMissing =
@@ -472,25 +477,29 @@ export function computeCompleteness(u: CompletenessInput): {
     u.addrLng != null
   );
 
-  const isSeller = (u.listingsCount ?? 0) > 0 || !!u.kycRequiredAt;
-  if (!isSeller) {
-    const done = [hasName, hasPhone, hasAddress].filter(Boolean).length;
-    const missing: CompletenessMissing[] = [];
-    if (!hasName) missing.push('name');
-    if (!hasPhone) missing.push('phone');
-    if (!hasAddress) missing.push('address');
-    return {
-      percent: Math.round((done / 3) * 100),
-      missing,
-      shape: 'buyer',
-    };
-  }
-
   const hasBanking = !!(
     u.bankAccountNumber &&
     u.bankBranchCode &&
     u.bankAccountHolder
   );
+
+  const isSeller = (u.listingsCount ?? 0) > 0 || !!u.kycRequiredAt;
+  if (!isSeller) {
+    const done = [hasName, hasPhone, hasAddress, hasBanking].filter(
+      Boolean,
+    ).length;
+    const missing: CompletenessMissing[] = [];
+    if (!hasName) missing.push('name');
+    if (!hasPhone) missing.push('phone');
+    if (!hasAddress) missing.push('address');
+    if (!hasBanking) missing.push('banking');
+    return {
+      percent: Math.round((done / 4) * 100),
+      missing,
+      shape: 'buyer',
+    };
+  }
+
   const hasIdentity = !!u.kycIdVerifiedAt;
   const hasVerification =
     u.kycStatus === 'VERIFIED' || u.kycStatus === 'UNDER_REVIEW';
