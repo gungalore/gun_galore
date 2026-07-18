@@ -7,18 +7,22 @@ import { animateOpen, animateClose, popIn } from '@/lib/anim';
 // page: only one step expanded at a time, completed steps roll up green,
 // the current step is red, locked future steps are dim.
 //
-// Three states:
+// Four states:
 //   locked   — previous step is incomplete. Bar is dim; clicking does nothing.
 //   active   — current step. Bar is red; expanded; the Continue button at
 //              the bottom advances to the next step.
 //   complete — every required field in this step is filled. Bar is green;
 //              collapsed; clicking re-opens for edits.
+//   idle     — OPTIONAL and empty (edit surfaces like /profile/edit):
+//              neutral chrome, fully clickable, tagged "· Optional".
+//              Green would lie ("done" when nothing's filled) and red
+//              would nag for something that isn't required yet.
 //
 // Body open/close is GSAP-driven (smooth real-height interpolation, not
 // the janky max-height trick). The status badge pops in when the step
 // flips to "complete".
 
-export type StepStatus = 'locked' | 'active' | 'complete';
+export type StepStatus = 'locked' | 'active' | 'complete' | 'idle';
 
 interface Props {
   number: number;
@@ -189,6 +193,14 @@ export function StepAccordion({
                 style={{ color: 'var(--red)', fontWeight: 500 }}
               >
                 · Up next
+              </span>
+            )}
+            {status === 'idle' && (
+              <span
+                className="text-xs"
+                style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}
+              >
+                · Optional
               </span>
             )}
           </div>

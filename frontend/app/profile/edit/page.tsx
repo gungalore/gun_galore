@@ -16,7 +16,7 @@ import {
 } from '@/components/manual-address-fields';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
-import { StepAccordion } from '@/components/step-accordion';
+import { StepAccordion, type StepStatus } from '@/components/step-accordion';
 import { HelpTip } from '@/components/help-tip';
 import { safeJson } from '@/lib/safe-json';
 
@@ -633,33 +633,54 @@ export default function EditProfilePage() {
 
   // ── Step accordion (sell-form chrome) ──────────────────────────────
   // Same StepAccordion the Sell form uses, but as an EDIT surface: no
-  // step is ever locked, red = needs attention, green ✓ = done, one
-  // open at a time. Completion mirrors /users/me profileCompleteness
-  // (the same source as the nav ring + dashboard bar) so every surface
-  // agrees on what's outstanding.
+  // step is ever locked, one open at a time, and each step's colour is
+  // an honest three-way state:
+  //   green ✓   — the data is ACTUALLY filled in / verified
+  //   red       — required (per profileCompleteness.missing) and missing
+  //   neutral   — empty but not required yet ("· Optional", e.g. banking
+  //               before you sell, or the profile photo)
+  // Green-when-empty would lie; red-when-optional would nag. The
+  // required set stays shape-aware via the same missing[] the nav ring
+  // and dashboard bar use, so every surface agrees.
   const missing = me?.profileCompleteness?.missing ?? [];
-  const step1Done = !!me && !missing.includes('name');
-  const step2Done =
-    !!me &&
-    emailVerified &&
-    !missing.includes('phone') &&
-    !missing.includes('identity') &&
-    !missing.includes('verification');
-  const step3Done = !!me && !missing.includes('address');
-  const step4Done = !!me && !missing.includes('banking');
-  const step5Done = !!clerkUser?.hasImage;
+  const isSeller = me?.profileCompleteness?.shape === 'seller';
+
+  // Data truth — what's actually on file, independent of shape rules.
+  const nameFilled = !!(me?.firstName && me?.lastName);
+  const emailPhoneDone = emailVerified && !!me?.phoneVerified;
+  const idDone = kyc === 'VERIFIED' || kyc === 'UNDER_REVIEW';
+  const addressFilled = !!me && !missing.includes('address');
+  const bankingFilled = !!me?.bankAccountNumber;
+  const photoFilled = !!clerkUser?.hasImage;
+
+  const statusOf = (filled: boolean, required: boolean): StepStatus =>
+    filled ? 'complete' : required ? 'active' : 'idle';
+
+  const step1Status = statusOf(nameFilled, true);
+  // Email + phone are required for everyone; the ID leg only gates the
+  // green once the profile is seller-shaped (has a listing / KYC due).
+  const step2Status = statusOf(emailPhoneDone && (idDone || !isSeller), true);
+  const step3Status = statusOf(addressFilled, true);
+  const step4Status = statusOf(bankingFilled, missing.includes('banking'));
+  const step5Status = statusOf(photoFilled, false);
 
   const [openStep, setOpenStep] = useState<number | null>(null);
   const openInitDone = useRef(false);
-  // Once the profile arrives, open the FIRST incomplete step (all
-  // collapsed green when nothing's outstanding) — so arriving from the
-  // completeness ring lands you straight on what needs finishing.
+  // Once the profile arrives, open the FIRST step that's genuinely
+  // outstanding (red). Optional-empty steps don't auto-open; if nothing
+  // is red the page loads fully collapsed.
   useEffect(() => {
     if (!me || openInitDone.current) return;
     openInitDone.current = true;
-    const done = [step1Done, step2Done, step3Done, step4Done, step5Done];
-    const firstIncomplete = done.findIndex((d) => !d);
-    setOpenStep(firstIncomplete === -1 ? null : firstIncomplete + 1);
+    const statuses = [
+      step1Status,
+      step2Status,
+      step3Status,
+      step4Status,
+      step5Status,
+    ];
+    const firstActive = statuses.findIndex((s) => s === 'active');
+    setOpenStep(firstActive === -1 ? null : firstActive + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
 
@@ -668,7 +689,7 @@ export default function EditProfilePage() {
   }
 
   // Collapsed-row summaries, sell-form style ("what's in this step").
-  const step1Summary = step1Done
+  const step1Summary = nameFilled
     ? [[firstName, lastName].filter(Boolean).join(' '), username]
         .filter(Boolean)
         .join(' · ')
@@ -680,15 +701,19 @@ export default function EditProfilePage() {
       ? 'ID ✓'
       : kyc === 'UNDER_REVIEW'
         ? 'ID in review'
-        : 'ID not verified',
+        : isSeller
+          ? 'ID not verified'
+          : 'ID optional until you sell',
   ].join(' · ');
   const step3Summary = addr.street
     ? [addr.street, addr.city].filter(Boolean).join(', ')
     : 'No address yet';
-  const step4Summary = bankAccountNumber
+  const step4Summary = bankingFilled
     ? `${bankName || 'Bank'} ···${bankAccountNumber.slice(-4)}`
-    : 'No banking details yet';
-  const step5Summary = step5Done ? 'Photo uploaded' : 'No photo yet';
+    : missing.includes('banking')
+      ? 'No banking details yet'
+      : 'Optional — needed before your first payout';
+  const step5Summary = photoFilled ? 'Photo uploaded' : 'No photo yet';
 
   const percent = me?.profileCompleteness?.percent ?? 0;
 
@@ -777,7 +802,7 @@ export default function EditProfilePage() {
           number={1}
           title="Contact"
           description="Your name is set from your ID during verification; your username is the public handle shown on your listings and reviews. Your phone, email and ID all live under Verification below."
-          status={step1Done ? 'complete' : 'active'}
+          status={step1Status}
           expanded={openStep === 1}
           onToggle={() => toggleStep(1)}
           summary={step1Summary}
@@ -882,7 +907,7 @@ export default function EditProfilePage() {
           number={2}
           title="Verification"
           description="Everything that needs verifying, in one place — your email, your phone, and your ID. Verifying your ID here means you're ready to sell the moment you list, no waiting."
-          status={step2Done ? 'complete' : 'active'}
+          status={step2Status}
           expanded={openStep === 2}
           onToggle={() => toggleStep(2)}
           summary={step2Summary}
@@ -1310,7 +1335,7 @@ export default function EditProfilePage() {
           number={3}
           title="Address"
           description="Search for your address — picking a suggestion fills in the fields below. Edit anything Google got wrong before saving."
-          status={step3Done ? 'complete' : 'active'}
+          status={step3Status}
           expanded={openStep === 3}
           onToggle={() => toggleStep(3)}
           summary={step3Summary}
@@ -1370,7 +1395,7 @@ export default function EditProfilePage() {
           number={4}
           title="Banking details"
           description="Refunds owed to you and any sales payouts are paid to this account by EFT. Make sure the account holder name matches your ID — we check it before the first payout."
-          status={step4Done ? 'complete' : 'active'}
+          status={step4Status}
           expanded={openStep === 4}
           onToggle={() => toggleStep(4)}
           summary={step4Summary}
@@ -1463,7 +1488,7 @@ export default function EditProfilePage() {
           number={5}
           title="Photo & password"
           description="Your public profile photo and the password you sign in with."
-          status={step5Done ? 'complete' : 'active'}
+          status={step5Status}
           expanded={openStep === 5}
           onToggle={() => toggleStep(5)}
           summary={step5Summary}
@@ -1688,12 +1713,14 @@ export default function EditProfilePage() {
               />
             </div>
             <div className="space-y-1 pt-1">
+              {/* Mark mirrors the step status exactly: ✓ filled, red ○
+                  required-and-missing, neutral – optional-and-empty. */}
               {[
-                { n: 1, label: 'Contact', done: step1Done },
-                { n: 2, label: 'Verification', done: step2Done },
-                { n: 3, label: 'Address', done: step3Done },
-                { n: 4, label: 'Banking details', done: step4Done },
-                { n: 5, label: 'Photo & password', done: step5Done },
+                { n: 1, label: 'Contact', status: step1Status },
+                { n: 2, label: 'Verification', status: step2Status },
+                { n: 3, label: 'Address', status: step3Status },
+                { n: 4, label: 'Banking details', status: step4Status },
+                { n: 5, label: 'Photo & password', status: step5Status },
               ].map((s) => (
                 <button
                   key={s.n}
@@ -1704,9 +1731,10 @@ export default function EditProfilePage() {
                     background:
                       openStep === s.n ? 'var(--bg-inset)' : 'transparent',
                     border: 'none',
-                    color: s.done
-                      ? 'var(--text-tertiary)'
-                      : 'var(--text-primary)',
+                    color:
+                      s.status === 'active'
+                        ? 'var(--text-primary)'
+                        : 'var(--text-tertiary)',
                     cursor: 'pointer',
                   }}
                 >
@@ -1714,11 +1742,20 @@ export default function EditProfilePage() {
                   <span
                     className="text-xs"
                     style={{
-                      color: s.done ? '#22c55e' : 'var(--red)',
+                      color:
+                        s.status === 'complete'
+                          ? '#22c55e'
+                          : s.status === 'active'
+                            ? 'var(--red)'
+                            : 'var(--text-tertiary)',
                       fontWeight: 500,
                     }}
                   >
-                    {s.done ? '✓' : '○'}
+                    {s.status === 'complete'
+                      ? '✓'
+                      : s.status === 'active'
+                        ? '○'
+                        : '–'}
                   </span>
                 </button>
               ))}
