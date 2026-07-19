@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -41,6 +42,23 @@ export function bidIncrement(currentAmount: number): number {
   }
   return DEFAULT_INCREMENT;
 }
+
+// Thrown inside the bid transaction when the compare-and-swap on the
+// listing snapshot fails — i.e. a concurrent bid (or the end-of-auction
+// sweep) changed the auction between our read and our write. Aborting
+// the transaction rolls the Bid rows back too; the caller re-reads and
+// re-resolves from fresh state, which is exactly the correct semantics
+// for a lost race.
+class BidConflictError extends Error {
+  constructor() {
+    super('auction state moved during bid resolution');
+  }
+}
+
+// How many times placeBid re-runs its transaction after a CAS conflict
+// before giving up. Conflicts cluster in the sniping window; two
+// retries with jitter comfortably absorbs human-scale contention.
+const BID_RETRY_ATTEMPTS = 3;
 
 @Injectable()
 export class AuctionsService {
@@ -280,8 +298,69 @@ export class AuctionsService {
       throw new ForbiddenException('Bidding suspended — three strikes for non-payment');
     }
 
-    // All bid logic runs in a transaction so the proxy-bidding calculation
-    // is atomic against concurrent bids.
+    // CONCURRENCY: the transaction alone is NOT enough. At Postgres's
+    // default READ COMMITTED isolation, two simultaneous bids both read
+    // the same listing snapshot and the last writer wins — the proxy
+    // duel between them never happens and the wrong bidder can hold the
+    // lead (worst exactly in the sniping window, when bids cluster).
+    // The write inside is therefore a compare-and-swap on the snapshot
+    // we resolved against; on conflict the whole attempt (including its
+    // Bid rows) rolls back and we re-resolve from fresh state.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const outcome = await this.placeBidAttempt(buyer.id, listingId, dto);
+        // Fire notifications only after the transaction has actually
+        // committed (previously they were queued inside the tx and
+        // could race a rollback).
+        if (outcome.outbidUserId && outcome.outbidUserId !== buyer.id) {
+          void this.notifyOutbid(
+            outcome.outbidUserId,
+            listingId,
+            outcome.currentBid,
+          );
+        }
+        void this.notifyBidPlaced(
+          outcome.sellerId,
+          listingId,
+          outcome.currentBid,
+        );
+        // Inbox: the user just bid on this auction — clear any stale
+        // "you've been outbid" rows for them on this listing.
+        void this.notifications.resolveByEntity('listing', listingId, {
+          userId: buyer.id,
+        });
+        return {
+          currentBid: outcome.currentBid,
+          bidCount: outcome.bidCount,
+          reserveMet: outcome.reserveMet,
+          endTime: outcome.endTime,
+          youAreHighBidder: outcome.highBidderId === buyer.id,
+        };
+      } catch (err) {
+        if (err instanceof BidConflictError && attempt < BID_RETRY_ATTEMPTS) {
+          // Small jittered backoff so two colliding bidders don't
+          // lock-step into the same window again.
+          await new Promise((r) => setTimeout(r, 25 + Math.random() * 75));
+          continue;
+        }
+        if (err instanceof BidConflictError) {
+          throw new ConflictException(
+            'Bidding is moving fast — your bid could not be placed. Please try again.',
+          );
+        }
+        throw err;
+      }
+    }
+  }
+
+  // One transactional bid-resolution attempt. Throws BidConflictError
+  // (rolling everything back) when the CAS detects the auction changed
+  // underneath us.
+  private async placeBidAttempt(
+    buyerId: string,
+    listingId: string,
+    dto: PlaceBidDto,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const listing = await tx.listing.findUnique({
         where: { id: listingId },
@@ -307,7 +386,7 @@ export class AuctionsService {
       if (listing.status !== 'ACTIVE') {
         throw new BadRequestException('Auction is not active');
       }
-      if (listing.sellerId === buyer.id) {
+      if (listing.sellerId === buyerId) {
         throw new ForbiddenException('Cannot bid on your own auction');
       }
       const now = new Date();
@@ -350,7 +429,7 @@ export class AuctionsService {
       //   C) Same bidder is just raising their own ceiling — quietly
       //      update maxAmount, do not change visible bid.
       // ---------------------------------------------------------------
-      const isSameBidder = listing.currentBidderId === buyer.id;
+      const isSameBidder = listing.currentBidderId === buyerId;
       const currentBid = listing.currentBid ?? 0;
       const isOneShot = dto.isOneShot === true;
 
@@ -387,8 +466,8 @@ export class AuctionsService {
         if (dto.maxAmount > prevHighMax) {
           visibleBid = dto.maxAmount;
           if (visibleBid < startingBid) visibleBid = startingBid;
-          newHighBidderId = buyer.id;
-          if (listing.currentBidderId && listing.currentBidderId !== buyer.id) {
+          newHighBidderId = buyerId;
+          if (listing.currentBidderId && listing.currentBidderId !== buyerId) {
             outbidUserId = listing.currentBidderId;
             // Beaten proxy holder gets a last-stand row if they had
             // an actual proxy ceiling above R0.
@@ -403,7 +482,7 @@ export class AuctionsService {
       } else if (isSameBidder) {
         // Just raising your own ceiling — visible bid stays.
         visibleBid = currentBid > 0 ? currentBid : startingBid;
-        newHighBidderId = buyer.id;
+        newHighBidderId = buyerId;
         // Persist the raised maxAmount via a new Bid row so history is honest.
       } else if (dto.maxAmount > prevHighMax) {
         // New bidder beats stored max.
@@ -412,7 +491,7 @@ export class AuctionsService {
         visibleBid = Math.min(dto.maxAmount, proposed);
         // First bid scenario — visible bid is at least startingBid.
         if (visibleBid < startingBid) visibleBid = startingBid;
-        newHighBidderId = buyer.id;
+        newHighBidderId = buyerId;
         outbidUserId = listing.currentBidderId; // might be null on first bid
         // Beaten proxy holder gets a last-stand row (Auto Bid vs Auto
         // Bid duels are now fully visible in the bid history).
@@ -456,7 +535,7 @@ export class AuctionsService {
         await tx.bid.create({
           data: {
             listingId,
-            bidderId: buyer.id,
+            bidderId: buyerId,
             amount: dto.maxAmount,
             maxAmount: dto.maxAmount,
           },
@@ -481,7 +560,7 @@ export class AuctionsService {
         await tx.bid.create({
           data: {
             listingId,
-            bidderId: buyer.id,
+            bidderId: buyerId,
             amount: visibleBid,
             maxAmount: dto.maxAmount,
           },
@@ -490,19 +569,33 @@ export class AuctionsService {
         await tx.bid.create({
           data: {
             listingId,
-            bidderId: buyer.id,
+            bidderId: buyerId,
             amount: visibleBid,
             maxAmount: dto.maxAmount,
           },
         });
       }
 
-      // Update listing snapshot. bidCount increments by 2 for any
-      // dual-row case (proxyCountered OR proxyExhausted), 1 otherwise,
-      // so the count always matches the visible rows in the bid log.
+      // Update the listing snapshot — as a COMPARE-AND-SWAP on every
+      // field the resolution above depended on. If a concurrent bid (or
+      // the end sweep) changed any of them since our read, count === 0:
+      // we throw, the transaction rolls back (including the Bid rows
+      // created above), and the caller re-resolves from fresh state.
+      // bidCount is in the guard on purpose — ANY interleaved bid bumps
+      // it, so even a write that left currentBid coincidentally equal
+      // is detected. status/endTime in the guard also make a bid lose
+      // cleanly to a concurrent finalization instead of overwriting it.
       const dualRow = proxyCountered || proxyExhausted;
-      const updated = await tx.listing.update({
-        where: { id: listingId },
+      const claim = await tx.listing.updateMany({
+        where: {
+          id: listingId,
+          status: 'ACTIVE',
+          endedAt: null,
+          currentBid: listing.currentBid,
+          currentBidderId: listing.currentBidderId,
+          bidCount: listing.bidCount,
+          endTime: listing.endTime,
+        },
         data: {
           currentBid: visibleBid,
           currentBidderId: newHighBidderId,
@@ -510,36 +603,21 @@ export class AuctionsService {
           reserveMet,
           endTime: newEndTime,
         },
-        select: {
-          currentBid: true,
-          currentBidderId: true,
-          bidCount: true,
-          reserveMet: true,
-          endTime: true,
-        },
       });
-
-      // Fire-and-forget notifications (outside the transaction is preferable,
-      // but for simplicity we do it after; the tx itself has already committed
-      // by the time .then resolves on these calls).
-      if (outbidUserId && outbidUserId !== buyer.id) {
-        void this.notifyOutbid(outbidUserId, listingId, visibleBid);
+      if (claim.count === 0) {
+        throw new BidConflictError();
       }
-      void this.notifyBidPlaced(listing.sellerId, listingId, visibleBid);
-      // Inbox: the user just bid higher on this auction — clear any
-      // unresolved "you've been outbid" rows for them on this listing.
-      // Stops the bell badge from showing a stale outbid alert after
-      // they've already responded to it.
-      void this.notifications.resolveByEntity('listing', listingId, {
-        userId: buyer.id,
-      });
 
+      // Outcome for the wrapper — notifications fire there, strictly
+      // after this transaction commits.
       return {
-        currentBid: updated.currentBid,
-        bidCount: updated.bidCount,
-        reserveMet: updated.reserveMet,
-        endTime: updated.endTime,
-        youAreHighBidder: updated.currentBidderId === buyer.id,
+        currentBid: visibleBid,
+        bidCount: listing.bidCount + (dualRow ? 2 : 1),
+        reserveMet,
+        endTime: newEndTime,
+        highBidderId: newHighBidderId,
+        outbidUserId,
+        sellerId: listing.sellerId,
       };
     });
   }
@@ -682,14 +760,31 @@ export class AuctionsService {
 
       const now = new Date();
 
+      // Every finalize write below is a COMPARE-AND-SWAP on the snapshot
+      // we just read (bidCount/currentBidderId) plus a re-assertion that
+      // endTime is STILL in the past at write time. A last-instant bid
+      // that changed the leader — or extended endTime via snipe
+      // protection — makes the claim fail; we simply skip and let the
+      // next minute's sweep re-evaluate fresh state. Without this, the
+      // sweep could crown a stale winner or end an auction that a snipe
+      // bid had just legitimately extended.
+      const casWhere = {
+        id: listingId,
+        status: 'ACTIVE' as const,
+        endedAt: null,
+        endTime: { lt: now },
+        bidCount: listing.bidCount,
+        currentBidderId: listing.currentBidderId,
+      };
+
       // Case A: bids exist AND reserve met (or no reserve) → winner!
       if (
         listing.bidCount > 0 &&
         listing.currentBidderId &&
         (listing.reservePrice === null || listing.reserveMet)
       ) {
-        await tx.listing.update({
-          where: { id: listingId },
+        const claim = await tx.listing.updateMany({
+          where: casWhere,
           data: {
             status: 'PAYMENT_PENDING',
             endedAt: now,
@@ -697,6 +792,7 @@ export class AuctionsService {
             expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
           },
         });
+        if (claim.count === 0) return; // state moved — re-evaluate next sweep
         // Mark the winning bid
         const winningBid = await tx.bid.findFirst({
           where: { listingId, bidderId: listing.currentBidderId },
@@ -721,10 +817,11 @@ export class AuctionsService {
 
       // Case B: bids exist but reserve NOT met → seller decides
       if (listing.bidCount > 0 && !listing.reserveMet) {
-        await tx.listing.update({
-          where: { id: listingId },
+        const claim = await tx.listing.updateMany({
+          where: casWhere,
           data: { status: 'EXPIRED', endedAt: now },
         });
+        if (claim.count === 0) return; // state moved — re-evaluate next sweep
         void this.notifyAuctionEndedSeller(listing.sellerId, listingId, 'NO_RESERVE', listing.currentBid ?? 0);
         // M30 — no winner in a reserve-not-met close, so every bidder is a
         // loser: resolve all bid_outbid rows on the listing + notify each.
@@ -733,10 +830,11 @@ export class AuctionsService {
       }
 
       // Case C: no bids
-      await tx.listing.update({
-        where: { id: listingId },
+      const claim = await tx.listing.updateMany({
+        where: casWhere,
         data: { status: 'EXPIRED', endedAt: now },
       });
+      if (claim.count === 0) return; // state moved — re-evaluate next sweep
       void this.notifyAuctionEndedSeller(listing.sellerId, listingId, 'NO_BIDS', 0);
     });
   }
