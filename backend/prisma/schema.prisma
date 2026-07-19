@@ -2109,6 +2109,22 @@ model ReferenceCounter {
   updatedAt DateTime @updatedAt
 }
 
+// SMS marketing campaigns — a short key carried in outbound SMS links
+// (gungalore.co.za/?c=KEY). Arriving with an ACTIVE key shows the welcome
+// banner overlay once per browser session; plain visits never see it.
+// hits counts banner-shown arrivals = per-blast click attribution.
+model MarketingCampaign {
+  id        String    @id @default(cuid())
+  key       String    @unique // short URL token, e.g. "j26"
+  name      String // internal label, e.g. "July 2026 launch SMS"
+  headline  String? // banner headline override; null = default copy
+  active    Boolean   @default(true)
+  hits      Int       @default(0)
+  lastHitAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
 // Load Lab cartridge reference specs — standardised chamber/pressure data
 // derived from our GRT (Gordon's Reloading Tool) extraction, matched to the
 // Load Lab cartridgeKey. REFERENCE dimensions (SAAMI/CIP standardised),

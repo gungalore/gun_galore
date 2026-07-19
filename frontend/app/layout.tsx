@@ -18,6 +18,7 @@ import { WishlistProvider } from '@/lib/use-wishlist';
 import ConsentSync from '@/components/consent-sync';
 import { AskGgProvider } from '@/lib/use-ask-gg-widget';
 import { AskGgHost } from '@/components/ask-gg/ask-gg-host';
+import { WelcomeBanner } from '@/components/welcome-banner';
 import './globals.css';
 
 // Inline script that runs BEFORE first paint and:
@@ -323,6 +324,9 @@ export default function RootLayout({
               focused routes; FAB in browser modes only (the PWA tab is
               the standalone entry). The chat chunk loads on first open. */}
           <AskGgHost />
+          {/* SMS-arrival welcome banner — self-gates: renders only when the
+              URL carries an active campaign key (?c=KEY), once per session. */}
+          <WelcomeBanner />
           </AskGgProvider>
           </WishlistProvider>
         </body>

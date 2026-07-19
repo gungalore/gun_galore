@@ -35,6 +35,7 @@ import { ZohoBooksModule } from './zoho/zoho-books.module';
 import { ActionTokensModule } from './actions/action-tokens.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { RaffleModule } from './raffle/raffle.module';
+import { MarketingModule } from './marketing/marketing.module';
 import { SavedSearchesModule } from './saved-searches/saved-searches.module';
 import { ReportsModule } from './reports/reports.module';
 import { SupportModule } from './support/support.module';
@@ -93,6 +94,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     ActionTokensModule,
     WishlistModule,
     RaffleModule,
+    MarketingModule,
     SavedSearchesModule,
     ReportsModule,
     PushModule,
