@@ -329,10 +329,12 @@ export interface Listing {
   // units to render the specifications table.
   attributes?: Record<string, unknown> | null;
   passFeeToBuyer: boolean;
-  // Owner-only: the hidden auto-accept threshold is returned by
-  // GET /listings/:id ONLY to the seller (edit-form prefill), so it's
-  // optional on the shared type — absent from the public/anonymous payload.
+  // Owner-only: the hidden auto-accept/auto-decline thresholds are
+  // returned by GET /listings/:id ONLY to the seller (edit-form
+  // prefill), so they're optional on the shared type — absent from the
+  // public/anonymous payload.
   autoAcceptThreshold?: number | null;
+  autoDeclineThreshold?: number | null;
   // Claude moderation fields. decision/reasons/autoFixApplied come back ONLY
   // to the owner (their moderation banner); confidence/reviewedAt/
   // originalDescription are admin-only and never on this endpoint. All

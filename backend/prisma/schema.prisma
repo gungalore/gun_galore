@@ -847,6 +847,10 @@ model Listing {
   quantityReserved  Int     @default(0)
 
   autoAcceptThreshold Int? // ZAR cents; Take a Shot only
+  // Offers at or below this are instantly declined without bothering the
+  // seller (the lowball filter — mirror of autoAcceptThreshold). Hidden
+  // seller threshold; never exposed publicly or to buyers.
+  autoDeclineThreshold Int? // ZAR cents; Take a Shot only
 
   // ----- AUCTION-specific fields -----
   // price (above) = starting bid for AUCTION listings
@@ -1917,6 +1921,12 @@ model Offer {
   buyerNote     String?
   sellerNote    String?
   status        OfferStatus @default(PENDING)
+  // How many offers this buyer has made on this listing across the row's
+  // lifetime. Re-offers after a REJECTED/WITHDRAWN/EXPIRED close UPDATE
+  // this same row back to PENDING (preserving the audit identity) and
+  // bump the count; capped at 5 so a buyer can't pester a seller
+  // indefinitely (eBay-style attempt limit).
+  attemptCount Int @default(1)
 
   // buyer has 24h to respond to a counter
   expiresAt DateTime

@@ -72,6 +72,7 @@ export default function EditListingPage() {
     buyNowPrice: '',
     // Take-a-Shot-specific
     autoAcceptThreshold: '',
+    autoDeclineThreshold: '',
   });
   // Existing images that have been queued for delete. We hide them
   // from the visible thumbnail strip but only call DELETE on save —
@@ -166,6 +167,9 @@ export default function EditListingPage() {
           autoAcceptThreshold: l.autoAcceptThreshold
             ? String(l.autoAcceptThreshold / 100)
             : '',
+          autoDeclineThreshold: l.autoDeclineThreshold
+            ? String(l.autoDeclineThreshold / 100)
+            : '',
         });
       } finally {
         setLoading(false);
@@ -233,6 +237,11 @@ export default function EditListingPage() {
       if (form.autoAcceptThreshold.trim()) {
         body.autoAcceptThreshold = Math.round(
           parseFloat(form.autoAcceptThreshold) * 100,
+        );
+      }
+      if (form.autoDeclineThreshold.trim()) {
+        body.autoDeclineThreshold = Math.round(
+          parseFloat(form.autoDeclineThreshold) * 100,
         );
       }
 
@@ -648,6 +657,32 @@ export default function EditListingPage() {
                 ⚠ Offers at or above R{form.autoAcceptThreshold} will be auto-accepted with no further review.
               </p>
             )}
+          </Field>
+        )}
+        {listing.listingType === 'TAKE_A_SHOT' && (
+          <Field label="Auto-decline offers at or below (R)">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={form.autoDeclineThreshold}
+              onChange={(e) => set('autoDeclineThreshold', e.target.value)}
+              style={inputStyle}
+              placeholder="Leave blank to see every offer"
+            />
+            {form.autoDeclineThreshold.trim() && (
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                Offers at or below R{form.autoDeclineThreshold} are declined instantly — you won&apos;t be notified.
+              </p>
+            )}
+            {form.autoDeclineThreshold.trim() &&
+              form.autoAcceptThreshold.trim() &&
+              parseFloat(form.autoDeclineThreshold) >=
+                parseFloat(form.autoAcceptThreshold) && (
+                <p className="text-xs mt-1" style={{ color: 'var(--red)' }}>
+                  Must be below the auto-accept threshold (R{form.autoAcceptThreshold}).
+                </p>
+              )}
           </Field>
         )}
 

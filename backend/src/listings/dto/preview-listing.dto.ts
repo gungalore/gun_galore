@@ -88,6 +88,11 @@ export class PreviewListingDto {
   @IsOptional()
   @IsInt()
   @Min(100)
+  autoDeclineThreshold?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(100)
   reservePrice?: number;
 
   @IsOptional()

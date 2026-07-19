@@ -16,6 +16,9 @@ import { OfferStatus } from '@prisma/client';
 const OFFER_TTL_HOURS = 48;
 const COUNTER_TTL_HOURS = 24;
 const CHECKOUT_TTL_HOURS = 24;
+// eBay-style attempt cap — a buyer gets this many offers per listing
+// across the row's lifetime (re-offers re-use the row; see submit()).
+const MAX_OFFER_ATTEMPTS = 5;
 // Lazy getter — must NOT be a module-level constant. ES module imports
 // hoist before main.ts's dotenv.config() runs, so a top-level
 // `const APP_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000'`
@@ -46,6 +49,13 @@ export class OffersService {
     const buyer = await this.prisma.user.findUnique({ where: { clerkId: buyerClerkId } });
     if (!buyer) throw new ForbiddenException('User not found');
     if (buyer.isBanned) throw new ForbiddenException('Account is suspended');
+    // An accepted offer is a commitment to pay — the same 3-strike
+    // non-payment gate the auction engine enforces applies here.
+    if (buyer.auctionStrikes >= 3) {
+      throw new ForbiddenException(
+        'Offers suspended — three strikes for non-payment',
+      );
+    }
 
     const listing = await this.prisma.listing.findUnique({
       where: { id: dto.listingId },
@@ -58,12 +68,31 @@ export class OffersService {
     }
     if (listing.sellerId === buyer.id) throw new BadRequestException('Sellers cannot offer on their own listings');
 
-    // One offer per buyer per listing (enforced by @@unique in schema)
+    // Single-promise rule: once ANY offer on this listing is ACCEPTED
+    // the item is spoken for (buyer has a live pay window) — no new
+    // offers until that resolves (payment converts it; a lapse frees it).
+    const siblingAccepted = await this.prisma.offer.findFirst({
+      where: { listingId: listing.id, status: OfferStatus.ACCEPTED },
+      select: { id: true },
+    });
+    if (siblingAccepted) {
+      throw new BadRequestException(
+        'The seller has already accepted another offer on this item.',
+      );
+    }
+
+    // One offer ROW per buyer per listing (@@unique). Re-offers after a
+    // close re-use the row (audit identity preserved) and are capped.
     const existing = await this.prisma.offer.findUnique({
       where: { listingId_buyerId: { listingId: listing.id, buyerId: buyer.id } },
     });
     if (existing && !['REJECTED', 'WITHDRAWN', 'EXPIRED'].includes(existing.status)) {
       throw new BadRequestException('You already have an active offer on this listing');
+    }
+    if (existing && existing.attemptCount >= MAX_OFFER_ATTEMPTS) {
+      throw new BadRequestException(
+        `You've reached the limit of ${MAX_OFFER_ATTEMPTS} offers on this listing.`,
+      );
     }
 
     // Contact-detail filter on the optional buyer note — the seller
@@ -83,39 +112,72 @@ export class OffersService {
       }
     }
 
+    // Lowball filter — at/below the seller's auto-decline threshold the
+    // offer is recorded as instantly REJECTED (it still consumes an
+    // attempt, so threshold-probing burns the 5-offer cap) and the buyer
+    // is notified. The seller is deliberately NOT notified — sparing
+    // them lowball noise is the whole point of the threshold.
+    const autoDecline =
+      listing.autoDeclineThreshold !== null &&
+      dto.offerAmount <= listing.autoDeclineThreshold;
+
     // Auto-accept if offer meets the threshold
     const autoAccept =
+      !autoDecline &&
       listing.autoAcceptThreshold !== null &&
       dto.offerAmount >= listing.autoAcceptThreshold;
 
+    const status = autoDecline
+      ? OfferStatus.REJECTED
+      : autoAccept
+        ? OfferStatus.ACCEPTED
+        : OfferStatus.PENDING;
     const expiresAt = new Date(
       Date.now() + (autoAccept ? COUNTER_TTL_HOURS : OFFER_TTL_HOURS) * 3_600_000,
     );
 
-    // If a previous (closed) offer exists, delete it so the unique constraint is clear
-    if (existing) {
-      await this.prisma.offer.delete({ where: { id: existing.id } });
+    // Fresh round on the same row (attempt counted) or a first offer.
+    const offer = existing
+      ? await this.prisma.offer.update({
+          where: { id: existing.id },
+          data: {
+            offerAmount: dto.offerAmount,
+            buyerNote: dto.buyerNote ?? null,
+            // Clear the previous round's counter so stale seller terms
+            // never leak into this round.
+            counterAmount: null,
+            sellerNote: null,
+            status,
+            expiresAt,
+            attemptCount: { increment: 1 },
+          },
+        })
+      : await this.prisma.offer.create({
+          data: {
+            listingId: listing.id,
+            buyerId: buyer.id,
+            offerAmount: dto.offerAmount,
+            buyerNote: dto.buyerNote,
+            status,
+            expiresAt,
+          },
+        });
+
+    if (autoDecline) {
+      void this.notifyBuyerOfReject(offer.id);
+      return { offer, autoAccepted: false, autoDeclined: true };
     }
-
-    const offer = await this.prisma.offer.create({
-      data: {
-        listingId: listing.id,
-        buyerId: buyer.id,
-        offerAmount: dto.offerAmount,
-        buyerNote: dto.buyerNote,
-        status: autoAccept ? OfferStatus.ACCEPTED : OfferStatus.PENDING,
-        expiresAt,
-      },
-    });
-
-    // Notify seller of new offer (or skip if auto-accepted)
-    if (!autoAccept) {
-      void this.notifySellerOfOffer(offer.id);
-    } else {
+    if (autoAccept) {
+      // Item is now promised to this buyer: decline every other open
+      // offer (eBay behaviour) and — unlike before — TELL THE SELLER
+      // their threshold just sold the item.
+      void this.declineSiblings(listing.id, offer.id);
       void this.notifyBuyerOfAccept(offer.id);
+      void this.notifySellerOfAutoAccept(offer.id);
+      return { offer, autoAccepted: true };
     }
-
-    return { offer, autoAccepted: autoAccept };
+    void this.notifySellerOfOffer(offer.id);
+    return { offer, autoAccepted: false };
   }
 
   // ----------------------------------------------------------------
@@ -137,6 +199,23 @@ export class OffersService {
       );
     }
 
+    // Single-promise rule: refuse to accept when ANOTHER offer on this
+    // listing is already ACCEPTED (its buyer holds a live pay window) —
+    // otherwise two buyers get "pay now" promises for one item.
+    const siblingAccepted = await this.prisma.offer.findFirst({
+      where: {
+        listingId: listing.id,
+        id: { not: offerId },
+        status: OfferStatus.ACCEPTED,
+      },
+      select: { id: true },
+    });
+    if (siblingAccepted) {
+      throw new BadRequestException(
+        'You have already accepted another offer on this listing — wait for that buyer to pay or for their window to lapse.',
+      );
+    }
+
     // Atomic guard: include status=PENDING in the WHERE clause so a
     // concurrent counter() / reject() cannot interleave between the
     // read above and this write. If another transition already won,
@@ -153,6 +232,10 @@ export class OffersService {
     }
     const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
 
+    // The item is promised to this buyer — decline every other open
+    // offer on the listing (eBay behaviour) so no rival buyer is left
+    // dangling on an item that's effectively sold.
+    void this.declineSiblings(listing.id, offerId);
     void this.notifyBuyerOfAccept(offerId);
     // Resolve the seller's "offer received" notification — they just
     // acted on it. The new "offer accepted" row that fires for the
@@ -171,10 +254,17 @@ export class OffersService {
       throw new BadRequestException('Offer is not pending');
     }
 
-    const updated = await this.prisma.offer.update({
-      where: { id: offerId },
+    // Atomic guard (same pattern as accept) — a concurrent accept /
+    // withdraw / expiry between the read and this write must not be
+    // silently overwritten with REJECTED.
+    const guard = await this.prisma.offer.updateMany({
+      where: { id: offerId, status: OfferStatus.PENDING },
       data: { status: OfferStatus.REJECTED },
     });
+    if (guard.count === 0) {
+      throw new BadRequestException('Offer is no longer pending');
+    }
+    const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
 
     void this.notifyBuyerOfReject(offerId);
     // Seller resolved their "offer received". Buyer's new
@@ -194,6 +284,13 @@ export class OffersService {
     if (offer.counterAmount !== null) {
       throw new BadRequestException('Seller can only counter once per offer');
     }
+    // Logical sanity: a counter below the buyer's own offer is a
+    // nonsense state, and a counter AT their offer is just an accept.
+    if (dto.counterAmount <= offer.offerAmount) {
+      throw new BadRequestException(
+        'A counter-offer must be higher than the buyer’s offer — if you’re happy with their price, use Accept.',
+      );
+    }
 
     // Contact-detail filter on the seller's counter-note — buyer sees
     // this verbatim in their counter-offer notification, so it's the
@@ -209,8 +306,11 @@ export class OffersService {
       }
     }
 
-    const updated = await this.prisma.offer.update({
-      where: { id: offerId },
+    // Atomic guard — must not overwrite a concurrent accept/withdraw/
+    // expiry with a counter (the buyer could be holding a pay-now token
+    // for an ACCEPTED offer this write would silently flip back).
+    const guard = await this.prisma.offer.updateMany({
+      where: { id: offerId, status: OfferStatus.PENDING, counterAmount: null },
       data: {
         counterAmount: dto.counterAmount,
         sellerNote: dto.sellerNote,
@@ -218,6 +318,10 @@ export class OffersService {
         expiresAt: new Date(Date.now() + COUNTER_TTL_HOURS * 3_600_000),
       },
     });
+    if (guard.count === 0) {
+      throw new BadRequestException('Offer is no longer pending');
+    }
+    const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
 
     void this.notifyBuyerOfCounter(offerId);
     // Seller resolved their "offer received". Buyer's new
@@ -236,6 +340,23 @@ export class OffersService {
       throw new BadRequestException('No counter to accept');
     }
 
+    // Single-promise rule (mirrors accept()) — if another offer on the
+    // listing is already ACCEPTED, this counter is a dead end; give the
+    // buyer a clean error instead of a second pay-now promise.
+    const siblingAccepted = await this.prisma.offer.findFirst({
+      where: {
+        listingId: offer.listingId,
+        id: { not: offerId },
+        status: OfferStatus.ACCEPTED,
+      },
+      select: { id: true },
+    });
+    if (siblingAccepted) {
+      throw new BadRequestException(
+        'The seller has already accepted another offer on this item.',
+      );
+    }
+
     // Atomic guard (mirrors accept()): include status=COUNTERED in the WHERE
     // clause so a concurrent rejectCounter() / expiry cron cannot interleave
     // between the read above and this write. If another transition already
@@ -251,6 +372,9 @@ export class OffersService {
       throw new BadRequestException('No counter to accept');
     }
     const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
+
+    // Item promised to this buyer — close out every other open offer.
+    void this.declineSiblings(offer.listingId, offerId);
 
     void this.notifySellerOfCounterAccepted(offerId);
     // FLOW-F5 — the buyer accepted the seller's counter, so the AGREED price
@@ -274,10 +398,15 @@ export class OffersService {
       throw new BadRequestException('No counter to reject');
     }
 
-    const updated = await this.prisma.offer.update({
-      where: { id: offerId },
+    // Atomic guard — mirrors acceptCounter.
+    const guard = await this.prisma.offer.updateMany({
+      where: { id: offerId, status: OfferStatus.COUNTERED },
       data: { status: OfferStatus.REJECTED },
     });
+    if (guard.count === 0) {
+      throw new BadRequestException('No counter to reject');
+    }
+    const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
 
     void this.notifySellerOfCounterRejected(offerId);
     // Buyer resolved their "offer countered". Seller's new
@@ -295,10 +424,24 @@ export class OffersService {
       throw new BadRequestException('Cannot withdraw — offer is no longer pending');
     }
 
-    return this.prisma.offer.update({
-      where: { id: offerId },
+    // Atomic guard — without it a withdraw racing the seller's accept
+    // could overwrite ACCEPTED with WITHDRAWN while the buyer holds a
+    // freshly-minted pay-now token.
+    const guard = await this.prisma.offer.updateMany({
+      where: { id: offerId, status: OfferStatus.PENDING },
       data: { status: OfferStatus.WITHDRAWN },
     });
+    if (guard.count === 0) {
+      throw new BadRequestException('Cannot withdraw — offer is no longer pending');
+    }
+    const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
+
+    // Clear the seller's action-required "offer received" bell (it was
+    // left lit before — sellers clicked through to an offer that no
+    // longer existed) and tell them the buyer withdrew.
+    void this.notifications.resolveByEntity('offer', offerId);
+    void this.notifySellerOfWithdrawal(offerId);
+    return updated;
   }
 
   // ----------------------------------------------------------------
@@ -374,6 +517,13 @@ export class OffersService {
     const isSeller = offer.listing.seller.clerkId === clerkId;
     if (!isBuyer && !isSeller) throw new ForbiddenException('Access denied');
 
+    // The auto-accept threshold is the seller's PRIVATE negotiating
+    // floor — leaking it to the buyer lets them bid exactly that number
+    // every time. Only the seller sees it on this endpoint.
+    if (!isSeller) {
+      offer.listing.autoAcceptThreshold = null;
+    }
+
     // PRIVATE_ARRANGE is legal only for firearms (SAPS inter-dealer
     // peer transfer). Strip it from the offer-checkout options on
     // non-firearm listings so the buyer never sees a method the
@@ -391,14 +541,46 @@ export class OffersService {
   // Cron helper — expire stale offers
   // ----------------------------------------------------------------
   async expireStale() {
-    const result = await this.prisma.offer.updateMany({
+    // Per-row (guarded) instead of one bulk update — expiries used to be
+    // completely SILENT: an accepted sale could evaporate with no word
+    // to the seller, no word to the buyer, and no non-payment
+    // consequence. Each lapse now notifies the right party and an
+    // accepted-but-unpaid lapse strikes the buyer (same commitment rule
+    // as unpaid auction wins).
+    const now = new Date();
+    const stale = await this.prisma.offer.findMany({
       where: {
         status: { in: [OfferStatus.PENDING, OfferStatus.COUNTERED, OfferStatus.ACCEPTED] },
-        expiresAt: { lt: new Date() },
+        expiresAt: { lt: now },
       },
-      data: { status: OfferStatus.EXPIRED },
+      select: { id: true, status: true, buyerId: true, listingId: true },
+      take: 200,
     });
-    if (result.count > 0) this.logger.log(`Expired ${result.count} offer(s)`);
+    let expired = 0;
+    for (const o of stale) {
+      // Guarded flip — a decision landing mid-sweep wins over the expiry.
+      const claim = await this.prisma.offer.updateMany({
+        where: { id: o.id, status: o.status, expiresAt: { lt: now } },
+        data: { status: OfferStatus.EXPIRED },
+      });
+      if (claim.count === 0) continue;
+      expired += 1;
+      // Clear any still-open action-required inbox rows on this offer.
+      void this.notifications.resolveByEntity('offer', o.id);
+      if (o.status === OfferStatus.PENDING) {
+        // Seller never responded within 48h — tell the buyer.
+        void this.notifyOfferExpired(o.id);
+      } else if (o.status === OfferStatus.COUNTERED) {
+        // Buyer never answered the counter — tell the seller.
+        void this.notifyCounterExpired(o.id);
+      } else {
+        // ACCEPTED lapsed: buyer blew the 24h pay window. Tell both
+        // sides and strike the buyer.
+        void this.notifyAcceptedLapsed(o.id);
+        void this.strikeUnpaidOfferBuyer(o.buyerId, o.listingId);
+      }
+    }
+    if (expired > 0) this.logger.log(`Expired ${expired} offer(s)`);
   }
 
   // ----------------------------------------------------------------
@@ -424,6 +606,175 @@ export class OffersService {
     if (!offer) throw new NotFoundException('Offer not found');
     if (offer.buyerId !== buyer.id) throw new ForbiddenException('Access denied');
     return { offer, listing: offer.listing };
+  }
+
+  // The item was promised to one buyer — decline every other open offer
+  // (PENDING or COUNTERED) on the listing and tell each losing buyer.
+  // eBay behaviour; without it rival buyers dangled on an effectively
+  // sold item. Best-effort: a failure here never blocks the accept.
+  private async declineSiblings(listingId: string, keptOfferId: string) {
+    try {
+      const siblings = await this.prisma.offer.findMany({
+        where: {
+          listingId,
+          id: { not: keptOfferId },
+          status: { in: [OfferStatus.PENDING, OfferStatus.COUNTERED] },
+        },
+        select: { id: true },
+      });
+      if (siblings.length === 0) return;
+      await this.prisma.offer.updateMany({
+        where: {
+          id: { in: siblings.map((s) => s.id) },
+          status: { in: [OfferStatus.PENDING, OfferStatus.COUNTERED] },
+        },
+        data: { status: OfferStatus.REJECTED },
+      });
+      for (const s of siblings) {
+        void this.notifications.resolveByEntity('offer', s.id);
+        void this.notifyBuyerOfReject(s.id);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `declineSiblings failed for listing ${listingId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // Accepted-offer pay window lapsed — record a non-payment strike
+  // against the buyer (same counter + admin-alert pattern as unpaid
+  // auction wins; the submit()/placeBid gates read the same field).
+  private async strikeUnpaidOfferBuyer(buyerId: string, listingId: string) {
+    try {
+      const after = await this.prisma.user.update({
+        where: { id: buyerId },
+        data: { auctionStrikes: { increment: 1 }, lastStrikeAt: new Date() },
+        select: { auctionStrikes: true, username: true },
+      });
+      if (after.auctionStrikes >= 3) {
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'BIDDER_AUCTION_STRIKES_THRESHOLD',
+              referenceId: buyerId,
+              urgent: true,
+              context: `Buyer @${after.username ?? buyerId} hit ${after.auctionStrikes} unpaid-commitment strikes (latest: accepted offer on listing ${listingId} never paid) — review for suspension.`,
+            },
+          })
+          .catch(() => undefined);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `strikeUnpaidOfferBuyer failed for ${buyerId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // Seller notice for an auto-accepted offer — their threshold just
+  // sold the item and the buyer has 24h to pay. Previously silent.
+  private async notifySellerOfAutoAccept(offerId: string) {
+    try {
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: offerId },
+        include: { listing: { include: { seller: true } }, buyer: true },
+      });
+      if (!offer) return;
+      await this.notifications.offerAutoAccepted({
+        sellerEmail: offer.listing.seller.email,
+        sellerName: offer.listing.seller.firstName ?? 'Seller',
+        sellerPhone: offer.listing.seller.phone,
+        buyerName: offer.buyer.username ?? 'A buyer',
+        listingTitle: offer.listing.title,
+        listingId: offer.listing.id,
+        amount: offer.offerAmount,
+        offerId: offer.id,
+      });
+    } catch (err) {
+      this.logger.error(`notifySellerOfAutoAccept failed: ${(err as Error).message}`);
+    }
+  }
+
+  private async notifySellerOfWithdrawal(offerId: string) {
+    try {
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: offerId },
+        include: { listing: { include: { seller: true } }, buyer: true },
+      });
+      if (!offer) return;
+      await this.notifications.offerWithdrawn({
+        sellerEmail: offer.listing.seller.email,
+        sellerName: offer.listing.seller.firstName ?? 'Seller',
+        buyerName: offer.buyer.username ?? 'A buyer',
+        listingTitle: offer.listing.title,
+        listingId: offer.listing.id,
+        offerId: offer.id,
+      });
+    } catch (err) {
+      this.logger.error(`notifySellerOfWithdrawal failed: ${(err as Error).message}`);
+    }
+  }
+
+  private async notifyOfferExpired(offerId: string) {
+    try {
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: offerId },
+        include: { listing: true, buyer: true },
+      });
+      if (!offer) return;
+      await this.notifications.offerExpiredBuyer({
+        buyerEmail: offer.buyer.email,
+        buyerName: offer.buyer.firstName ?? 'Buyer',
+        listingTitle: offer.listing.title,
+        listingId: offer.listing.id,
+        offerId: offer.id,
+      });
+    } catch (err) {
+      this.logger.error(`notifyOfferExpired failed: ${(err as Error).message}`);
+    }
+  }
+
+  private async notifyCounterExpired(offerId: string) {
+    try {
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: offerId },
+        include: { listing: { include: { seller: true } }, buyer: true },
+      });
+      if (!offer) return;
+      await this.notifications.counterExpiredSeller({
+        sellerEmail: offer.listing.seller.email,
+        sellerName: offer.listing.seller.firstName ?? 'Seller',
+        buyerName: offer.buyer.username ?? 'The buyer',
+        listingTitle: offer.listing.title,
+        listingId: offer.listing.id,
+        offerId: offer.id,
+      });
+    } catch (err) {
+      this.logger.error(`notifyCounterExpired failed: ${(err as Error).message}`);
+    }
+  }
+
+  private async notifyAcceptedLapsed(offerId: string) {
+    try {
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: offerId },
+        include: { listing: { include: { seller: true } }, buyer: true },
+      });
+      if (!offer) return;
+      await this.notifications.acceptedOfferLapsed({
+        sellerEmail: offer.listing.seller.email,
+        sellerName: offer.listing.seller.firstName ?? 'Seller',
+        sellerPhone: offer.listing.seller.phone,
+        buyerEmail: offer.buyer.email,
+        buyerName: offer.buyer.firstName ?? 'Buyer',
+        buyerPhone: offer.buyer.phone,
+        listingTitle: offer.listing.title,
+        listingId: offer.listing.id,
+        amount: offer.counterAmount ?? offer.offerAmount,
+        offerId: offer.id,
+      });
+    } catch (err) {
+      this.logger.error(`notifyAcceptedLapsed failed: ${(err as Error).message}`);
+    }
   }
 
   private async notifySellerOfOffer(offerId: string) {

@@ -51,6 +51,7 @@ interface ListingDossier {
     durationDays: number | null;
     endedAt: string | null;
     autoAcceptThreshold: number | null;
+    autoDeclineThreshold: number | null;
     isFeatured: boolean;
     passFeeToBuyer: boolean;
     shippingMethods: string[];
@@ -281,6 +282,9 @@ export default function ListingDossierPage() {
               )}
               {l.listingType === 'TAKE_A_SHOT' && (
                 <Mini label="Auto-accept" value={formatRand(l.autoAcceptThreshold)} />
+              )}
+              {l.listingType === 'TAKE_A_SHOT' && (
+                <Mini label="Auto-decline" value={formatRand(l.autoDeclineThreshold)} />
               )}
               <Mini label="Engagement" value={`${d.offers.length}o · ${d.bids.length}b · ${d.watchers.length}w`} />
               <Mini label="Created" value={formatDate(l.createdAt)} />

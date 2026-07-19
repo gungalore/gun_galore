@@ -2167,6 +2167,213 @@ export class NotificationsService {
     );
   }
 
+  // Seller notice — their auto-accept threshold just sold the item.
+  // (Buyer gets the standard offerAccepted pay-now flow separately.)
+  async offerAutoAccepted(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    buyerName: string;
+    listingTitle: string;
+    listingId: string;
+    amount: number;
+    offerId: string;
+  }) {
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'offer_auto_accepted',
+      title: 'Sold at your auto-accept price',
+      body: `${d.buyerName} offered ${formatRand(d.amount)} on ${d.listingTitle} — auto-accepted. They have 24h to pay.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'success', label: 'Auto-accepted' },
+      headline: 'Sold at your auto-accept price',
+      body: `Hi ${b(d.sellerName)}, ${b(d.buyerName)} offered ${b(formatRand(d.amount))} on ${b(d.listingTitle)} — at or above your auto-accept threshold, so it was accepted instantly. The buyer has 24 hours to pay; we'll let you know the moment payment lands.`,
+      cta: {
+        label: 'View listing',
+        url: `${this.appUrl}/listings/${d.listingId}`,
+      },
+      preheader: `Auto-accepted at ${formatRand(d.amount)} — ${d.listingTitle}`,
+    });
+    await this.send(d.sellerEmail, 'Sold at your auto-accept price — ' + d.listingTitle, html);
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: ${truncate(d.listingTitle, 30)} auto-accepted at R${Math.round(d.amount / 100)}. Buyer has 24h to pay.`,
+      `offer-auto-acc-${d.offerId}`,
+    );
+  }
+
+  // Seller notice — the buyer withdrew their pending offer.
+  async offerWithdrawn(d: {
+    sellerEmail: string;
+    sellerName: string;
+    buyerName: string;
+    listingTitle: string;
+    listingId: string;
+    offerId: string;
+  }) {
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'offer_withdrawn',
+      title: 'Offer withdrawn',
+      body: `${d.buyerName} withdrew their offer on ${d.listingTitle}. Listing stays active.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'error', label: 'Withdrawn' },
+      headline: 'Offer withdrawn',
+      body: `Hi ${b(d.sellerName)}, ${b(d.buyerName)} has withdrawn their offer on ${b(d.listingTitle)}. The listing remains active.`,
+      cta: {
+        label: 'View listing',
+        url: `${this.appUrl}/listings/${d.listingId}`,
+      },
+      preheader: `${d.buyerName} withdrew their offer`,
+    });
+    await this.send(d.sellerEmail, 'Offer withdrawn — ' + d.listingTitle, html);
+  }
+
+  // Buyer notice — their offer lapsed with no seller response (48h).
+  async offerExpiredBuyer(d: {
+    buyerEmail: string;
+    buyerName: string;
+    listingTitle: string;
+    listingId: string;
+    offerId: string;
+  }) {
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'offer_expired',
+      title: 'Offer expired',
+      body: `The seller didn't respond to your offer on ${d.listingTitle} in time. You can make a new offer while the listing is live.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'error', label: 'Expired' },
+      headline: 'Your offer expired',
+      body: `Hi ${b(d.buyerName)}, the seller didn't respond to your offer on ${b(d.listingTitle)} within 48 hours, so it has expired. The listing is still live — you're welcome to make a new offer.`,
+      cta: {
+        label: 'View listing',
+        url: `${this.appUrl}/listings/${d.listingId}`,
+      },
+      preheader: `Your offer on ${d.listingTitle} expired`,
+    });
+    await this.send(d.buyerEmail, 'Your offer expired — ' + d.listingTitle, html);
+  }
+
+  // Seller notice — their counter lapsed unanswered (24h).
+  async counterExpiredSeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    buyerName: string;
+    listingTitle: string;
+    listingId: string;
+    offerId: string;
+  }) {
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'counter_expired',
+      title: 'Counter expired',
+      body: `${d.buyerName} didn't respond to your counter on ${d.listingTitle} in time. Listing stays active.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'error', label: 'Expired' },
+      headline: 'Your counter-offer expired',
+      body: `Hi ${b(d.sellerName)}, ${b(d.buyerName)} didn't respond to your counter-offer on ${b(d.listingTitle)} within 24 hours, so it has expired. The listing remains active.`,
+      cta: {
+        label: 'View listing',
+        url: `${this.appUrl}/listings/${d.listingId}`,
+      },
+      preheader: `Your counter on ${d.listingTitle} expired`,
+    });
+    await this.send(d.sellerEmail, 'Counter expired — ' + d.listingTitle, html);
+  }
+
+  // Both-party notice — an ACCEPTED offer's 24h pay window lapsed.
+  // Seller learns their sale evaporated; buyer learns the sale was
+  // cancelled (and takes a non-payment strike, handled by OffersService).
+  async acceptedOfferLapsed(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone?: string | null;
+    listingTitle: string;
+    listingId: string;
+    amount: number;
+    offerId: string;
+  }) {
+    // Seller side
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'offer_payment_lapsed',
+      title: 'Buyer never paid',
+      body: `The accepted ${formatRand(d.amount)} offer on ${d.listingTitle} wasn't paid within 24h. The listing is active again — other buyers can offer.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+    });
+    const sellerHtml = this.email({
+      status: { tone: 'error', label: 'Payment lapsed' },
+      headline: 'The buyer never paid',
+      body: `Hi ${b(d.sellerName)}, the accepted offer of ${b(formatRand(d.amount))} on ${b(d.listingTitle)} was not paid within the 24-hour window, so the sale has been cancelled. Your listing is active again and open to new offers.`,
+      cta: {
+        label: 'View listing',
+        url: `${this.appUrl}/listings/${d.listingId}`,
+      },
+      preheader: `Accepted offer on ${d.listingTitle} — buyer never paid`,
+    });
+    await this.send(d.sellerEmail, 'Buyer never paid — ' + d.listingTitle, sellerHtml);
+    await this.sendSms(
+      d.sellerPhone,
+      `Gun Galore: The accepted offer on ${truncate(d.listingTitle, 30)} wasn't paid in 24h. Your listing is active again.`,
+      `offer-lapse-s-${d.offerId}`,
+    );
+    // Buyer side
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'offer_payment_lapsed',
+      title: 'Payment window missed — sale cancelled',
+      body: `You didn't complete payment for ${d.listingTitle} within 24h, so the sale was cancelled.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+    });
+    const buyerHtml = this.email({
+      status: { tone: 'error', label: 'Sale cancelled' },
+      headline: 'Payment window missed',
+      body: `Hi ${b(d.buyerName)}, your accepted offer of ${b(formatRand(d.amount))} on ${b(d.listingTitle)} was cancelled because payment wasn't completed within 24 hours. Repeated unpaid commitments lead to a bidding and offer suspension.`,
+      cta: {
+        label: 'View listing',
+        url: `${this.appUrl}/listings/${d.listingId}`,
+      },
+      preheader: `Sale cancelled — payment window missed`,
+    });
+    await this.send(d.buyerEmail, 'Sale cancelled — payment window missed', buyerHtml);
+  }
+
   // ---------------------------------------------------------------
   // Auction notifications
   // ---------------------------------------------------------------

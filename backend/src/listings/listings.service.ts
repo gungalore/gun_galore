@@ -158,6 +158,7 @@ export const PUBLIC_LISTING_SELECT = {
 const OWNER_LISTING_EXTRAS_SELECT = {
   reservePrice: true,
   autoAcceptThreshold: true,
+  autoDeclineThreshold: true,
   claudeDecision: true,
   claudeReasons: true,
   claudeAutoFixApplied: true,
@@ -1012,6 +1013,20 @@ export class ListingsService {
       ? Math.min(requestedStock, 9999)
       : 1;
 
+    // Take a Shot thresholds must not cross: an auto-decline floor at or
+    // above the auto-accept ceiling would make every offer both decline
+    // AND accept. (Decline wins in OffersService, but the config is
+    // nonsense — reject it at source.)
+    if (
+      dto.autoDeclineThreshold != null &&
+      dto.autoAcceptThreshold != null &&
+      dto.autoDeclineThreshold >= dto.autoAcceptThreshold
+    ) {
+      throw new BadRequestException(
+        'The auto-decline threshold must be below the auto-accept threshold.',
+      );
+    }
+
     // (attributes were validated + the DG collection-only flag computed above,
     // before the collection gates — see cleanedAttributes / attributesForDb /
     // effectiveCollectionOnly.)
@@ -1082,6 +1097,7 @@ export class ListingsService {
         licenceExpiresAt: firearmLicenceExpiresAt,
         passFeeToBuyer: dto.passFeeToBuyer,
         autoAcceptThreshold: dto.autoAcceptThreshold,
+        autoDeclineThreshold: dto.autoDeclineThreshold,
         reservePrice: dto.reservePrice ?? null,
         buyNowPrice: dto.buyNowPrice ?? null,
         durationDays: dto.durationDays ?? null,
@@ -2176,6 +2192,22 @@ export class ListingsService {
     const plannedDealerUpdate = plannedDealerProvided
       ? this.buildPlannedDealer(dto, listing.isFirearm)
       : undefined;
+    // Take a Shot thresholds must not cross post-edit (mirrors create()).
+    // Compare the EFFECTIVE values — an edit may change only one side.
+    const effDecline =
+      dto.autoDeclineThreshold !== undefined
+        ? dto.autoDeclineThreshold
+        : listing.autoDeclineThreshold;
+    const effAccept =
+      dto.autoAcceptThreshold !== undefined
+        ? dto.autoAcceptThreshold
+        : listing.autoAcceptThreshold;
+    if (effDecline != null && effAccept != null && effDecline >= effAccept) {
+      throw new BadRequestException(
+        'The auto-decline threshold must be below the auto-accept threshold.',
+      );
+    }
+
     // Strip fields from the ...dto spread at the TYPE level — a runtime `delete`
     // wouldn't change the type, so the spread would clash with Prisma's input:
     //   - collectionPapersAttested: a create-time attestation, not a Listing column.

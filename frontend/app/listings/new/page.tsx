@@ -529,6 +529,7 @@ export default function NewListingPage() {
     // anywhere in the UI. Hardcoded so the API receives the right flag.
     passFeeToBuyer: true,
     autoAcceptThreshold: '',
+    autoDeclineThreshold: '',
     durationDays: '7',
     reservePrice: '',
     // Buy Now is opt-in. The checkbox below toggles whether the price
@@ -1535,6 +1536,11 @@ export default function NewListingPage() {
     if (form.autoAcceptThreshold) {
       body.autoAcceptThreshold = Math.round(
         parseFloat(form.autoAcceptThreshold) * 100,
+      );
+    }
+    if (form.autoDeclineThreshold) {
+      body.autoDeclineThreshold = Math.round(
+        parseFloat(form.autoDeclineThreshold) * 100,
       );
     }
     if (form.listingType === 'AUCTION') {
@@ -2978,6 +2984,7 @@ export default function NewListingPage() {
 
             {/* Take a Shot extras */}
             {form.listingType === 'TAKE_A_SHOT' && (
+              <>
               <Field
                 label="Auto-accept threshold"
                 hint="Hidden from buyers. Any offer at or above this amount is accepted instantly."
@@ -3018,6 +3025,40 @@ export default function NewListingPage() {
                   </p>
                 )}
               </Field>
+
+              <Field
+                label="Auto-decline threshold"
+                hint="Hidden from buyers. Offers at or below this amount are declined instantly — you'll never see them."
+                tip={
+                  <>
+                    The lowball filter. Offers at or below this number
+                    are declined automatically without notifying you,
+                    so time-wasters never reach your inbox. Buyers are
+                    limited to 5 offers per listing, so they can&apos;t
+                    fish for the threshold either. Must be below the
+                    auto-accept threshold if you set both.
+                  </>
+                }
+              >
+                <PriceInput
+                  value={form.autoDeclineThreshold}
+                  onChange={(v) => set('autoDeclineThreshold', v)}
+                  placeholder="Optional"
+                />
+                {form.autoDeclineThreshold &&
+                  form.autoAcceptThreshold &&
+                  parseFloat(form.autoDeclineThreshold) >=
+                    parseFloat(form.autoAcceptThreshold) && (
+                    <p
+                      className="text-xs mt-2"
+                      style={{ color: 'var(--red)' }}
+                    >
+                      Must be below the auto-accept threshold (R
+                      {form.autoAcceptThreshold}).
+                    </p>
+                  )}
+              </Field>
+              </>
             )}
           </StepAccordion>
 

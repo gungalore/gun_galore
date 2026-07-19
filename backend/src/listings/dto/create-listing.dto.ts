@@ -97,6 +97,14 @@ export class CreateListingDto {
   @Min(100)
   autoAcceptThreshold?: number;
 
+  // ZAR cents; TAKE_A_SHOT only — offers at or below this are instantly
+  // declined without notifying the seller (the lowball filter). Must sit
+  // below autoAcceptThreshold when both are set (service-validated).
+  @IsOptional()
+  @IsInt()
+  @Min(100)
+  autoDeclineThreshold?: number;
+
   // ---- AUCTION-only fields ----------------------------------------
   // Hidden reserve in ZAR cents. Optional.
   @IsOptional()
