@@ -7,6 +7,7 @@ import {
   Min,
   Max,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { SwapRole } from '@prisma/client';
 import { SWAP_CASH_MAX_CENTS } from './create-swap-proposal.dto';
@@ -21,9 +22,11 @@ export class CounterSwapDto {
   counterCashAmount: number;
 
   // Who pays the countered cash. INITIATOR_GIVES = proposer pays owner;
-  // OWNER_GIVES = owner pays proposer.
+  // OWNER_GIVES = owner pays proposer. Only meaningful (and only required)
+  // when the countered cash is non-zero.
+  @ValidateIf((o) => (o.counterCashAmount ?? 0) > 0)
   @IsEnum(SwapRole)
-  counterCashDirection: SwapRole;
+  counterCashDirection?: SwapRole;
 
   @IsOptional()
   @IsString()

@@ -530,6 +530,7 @@ export default function NewListingPage() {
     passFeeToBuyer: true,
     autoAcceptThreshold: '',
     autoDeclineThreshold: '',
+    declaredValue: '',
     durationDays: '7',
     reservePrice: '',
     // Buy Now is opt-in. The checkbox below toggles whether the price
@@ -1115,11 +1116,13 @@ export default function NewListingPage() {
     const step3 =
       !form.listingType
         ? false
-        : form.listingType === 'TAKE_A_SHOT' || form.listingType === 'SWOP'
-          ? true // no price required — buyer names a price / a swap has no sale price
-          : form.listingType === 'AUCTION'
-            ? (hasPrice || hasReserve) && !!form.durationDays
-            : hasPrice;
+        : form.listingType === 'TAKE_A_SHOT'
+          ? true // no price required — buyer names a price
+          : form.listingType === 'SWOP'
+            ? parseFloat(form.declaredValue || '0') > 0 // declared value replaces the price
+            : form.listingType === 'AUCTION'
+              ? (hasPrice || hasReserve) && !!form.durationDays
+              : hasPrice;
 
     // Step 4 — delivery + address. The seller picks ≥1 shipping method
     // and fills the pickup address. NO locker selection here — for PUDO,
@@ -1542,6 +1545,9 @@ export default function NewListingPage() {
       body.autoDeclineThreshold = Math.round(
         parseFloat(form.autoDeclineThreshold) * 100,
       );
+    }
+    if (form.listingType === 'SWOP' && form.declaredValue) {
+      body.declaredValueCents = Math.round(parseFloat(form.declaredValue) * 100);
     }
     if (form.listingType === 'AUCTION') {
       body.durationDays = parseInt(form.durationDays, 10);
@@ -2778,6 +2784,30 @@ export default function NewListingPage() {
                   counter the cash. Gun Galore arranges both couriers and the
                   funds are held until both parcels are delivered.
                 </div>
+              </Field>
+            )}
+            {form.listingType === 'SWOP' && (
+              <Field
+                label="Declared value"
+                required
+                hint="What the item is honestly worth. Shown to the other party while negotiating."
+                tip={
+                  <>
+                    Your declared value does three jobs: it anchors the
+                    negotiation, it sets your swap service fee (1.5% of this
+                    value, minimum R50, capped at R750 — PRO members get 25%
+                    off), and it caps the compensation you can claim if your
+                    parcel is lost or the swap goes wrong. Over-declaring costs
+                    you fees; under-declaring costs you protection — so honest
+                    is best.
+                  </>
+                }
+              >
+                <PriceInput
+                  value={form.declaredValue}
+                  onChange={(v) => set('declaredValue', v)}
+                  placeholder="e.g. 8 500"
+                />
               </Field>
             )}
 

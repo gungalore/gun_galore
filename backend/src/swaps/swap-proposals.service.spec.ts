@@ -2,6 +2,13 @@
 // imports transactions.service → ESM-only meilisearch. Stub it (mirrors the
 // swap-funding spec).
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
+// convertToSwap gates on the module-load PAYMENTS_LIVE const (env unset in
+// jest ⇒ false, which would fail every accept test) — force it live here.
+// The payments-off behaviour has its own dedicated test via jest.isolateModules.
+jest.mock('../payments/transactions.service', () => {
+  const actual = jest.requireActual('../payments/transactions.service');
+  return { ...actual, PAYMENTS_LIVE: true };
+});
 
 import { BadRequestException } from '@nestjs/common';
 import { SwapProposalsService } from './swap-proposals.service';
@@ -54,6 +61,7 @@ function makeService(over: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockResolvedValue({ id: 'PR1', status: 'PENDING' }),
       update: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -79,6 +87,8 @@ function makeService(over: {
     swapProposalReceived: jest.fn().mockResolvedValue(undefined),
     swapProposalCountered: jest.fn().mockResolvedValue(undefined),
     swapDeclined: jest.fn().mockResolvedValue(undefined),
+    swapCounterRejected: jest.fn().mockResolvedValue(undefined),
+    swapProposalWithdrawn: jest.fn().mockResolvedValue(undefined),
   };
   const contactFilter = { check: jest.fn().mockResolvedValue({ allowed: true }) };
   const actionTokens = { mint: jest.fn().mockResolvedValue('tok') };
@@ -295,5 +305,156 @@ describe('SwapProposalsService.expireStale', () => {
     await service.expireStale();
     expect(prisma.swapProposal.findMany).not.toHaveBeenCalled();
     expect(notifications.swapDeclined).not.toHaveBeenCalled();
+  });
+});
+
+// 2026-07-19 hardening + monetisation — gates, CAS transitions, declared value.
+describe('SwapProposalsService — 2026-07-19 gates', () => {
+  it('propose: refused at 3 unmet-commitment strikes', async () => {
+    const { service, prisma } = makeService();
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'P',
+      isBanned: false,
+      auctionStrikes: 3,
+    });
+    await expect(
+      service.propose('clerkP', { listingId: 'A', offeredListingId: 'B' } as never),
+    ).rejects.toThrow(/three strikes/i);
+  });
+
+  it('propose: non-PRO capped at one open proposal (PRO is not)', async () => {
+    const { service, prisma } = makeService();
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'P',
+      isBanned: false,
+      auctionStrikes: 0,
+      subscriptionTier: 'FREE',
+    });
+    prisma.swapProposal.count.mockResolvedValue(1);
+    await expect(
+      service.propose('clerkP', { listingId: 'A', offeredListingId: 'B' } as never),
+    ).rejects.toThrow(/upgrade to PRO/i);
+
+    // Same state but PRO — the cap must NOT fire; the next guard (self-swap)
+    // proves we got past it.
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'P',
+      isBanned: false,
+      auctionStrikes: 0,
+      subscriptionTier: 'PRO',
+    });
+    await expect(
+      service.propose('clerkP', { listingId: 'X', offeredListingId: 'X' } as never),
+    ).rejects.toThrow(/itself/i);
+  });
+
+  it('propose: refused when either listing lacks a declared value', async () => {
+    const { service, prisma } = makeService();
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'P',
+      isBanned: false,
+      auctionStrikes: 0,
+      subscriptionTier: 'PRO',
+    });
+    prisma.listing.findUnique
+      .mockResolvedValueOnce(activeSwop({ id: 'L_OWNER', declaredValueCents: null }))
+      .mockResolvedValueOnce(
+        activeSwop({ id: 'L_PROP', sellerId: 'P', declaredValueCents: 500_000 }),
+      );
+    await expect(
+      service.propose('clerkP', {
+        listingId: 'L_OWNER',
+        offeredListingId: 'L_PROP',
+      } as never),
+    ).rejects.toThrow(/declared value/i);
+  });
+
+  it('withdraw: CAS — loses cleanly against a concurrent accept', async () => {
+    const { service, prisma } = makeService();
+    prisma.user.findUnique.mockResolvedValue({ id: 'P' });
+    prisma.swapProposal.findUnique.mockResolvedValue({
+      id: 'PR1',
+      status: SwapProposalStatus.PENDING,
+      proposer: { clerkId: 'clerkP' },
+    });
+    prisma.swapProposal.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.withdraw('clerkP', 'PR1')).rejects.toThrow(
+      /no longer open/i,
+    );
+  });
+
+  it('reject: CAS is status-guarded so it cannot relabel a CONVERTED proposal', async () => {
+    const { service, prisma } = makeService();
+    prisma.user.findUnique.mockResolvedValue({ id: 'O' });
+    prisma.swapProposal.findUnique.mockResolvedValue({
+      id: 'PR1',
+      status: SwapProposalStatus.PENDING,
+      owner: { clerkId: 'clerkO', auctionStrikes: 0 },
+    });
+    prisma.swapProposal.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.reject('clerkO', 'PR1')).rejects.toThrow(/no longer open/i);
+    expect(prisma.swapProposal.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: SwapProposalStatus.PENDING }),
+      }),
+    );
+  });
+
+  it('rejectCounter: notifies the owner their counter was declined', async () => {
+    const { service, prisma, notifications } = makeService();
+    prisma.user.findUnique.mockResolvedValue({ id: 'P' });
+    prisma.swapProposal.findUnique.mockResolvedValue({
+      id: 'PR1',
+      status: SwapProposalStatus.COUNTERED,
+      proposer: { clerkId: 'clerkP', username: 'pp' },
+      owner: { email: 'o@x.co', firstName: 'O' },
+      listing: { title: 'T' },
+      listingId: 'L',
+    });
+    prisma.swapProposal.updateMany.mockResolvedValue({ count: 1 });
+    await service.rejectCounter('clerkP', 'PR1');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(notifications.swapCounterRejected).toHaveBeenCalled();
+  });
+});
+
+// The payments-off gate is a module-load const, so it needs an isolated
+// module registry with PAYMENTS_LIVE forced false.
+describe('SwapProposalsService — payments-off agreement gate', () => {
+  it('refuses to agree a swap while card payments are off', async () => {
+    jest.resetModules();
+    jest.doMock('../payments/transactions.service', () => {
+      const actual = jest.requireActual('../payments/transactions.service');
+      return { ...actual, PAYMENTS_LIVE: false };
+    });
+    const { SwapProposalsService: Svc } = await import('./swap-proposals.service');
+    const prisma = {
+      swapProposal: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'PR1',
+          status: SwapProposalStatus.PENDING,
+          counterCashAmount: null,
+          offeredListingId: 'L_PROP',
+          ownerId: 'O',
+          owner: { clerkId: 'clerkO', auctionStrikes: 0 },
+        }),
+      },
+      listing: {
+        findUnique: jest.fn().mockResolvedValue({ isFirearm: false }),
+      },
+    };
+    const svc = new Svc(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      new FeeCalculator(),
+    );
+    await expect(svc.acceptProposal('clerkO', 'PR1')).rejects.toThrow(
+      /card payments launch/i,
+    );
+    jest.dontMock('../payments/transactions.service');
   });
 });

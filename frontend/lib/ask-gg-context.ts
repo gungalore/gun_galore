@@ -17,7 +17,6 @@ export type AskGgPageKind =
   | 'orders'
   | 'transaction'
   | 'cart'
-  | 'wanted'
   | 'wishlist'
   | 'subscribe'
   | 'dashboard'
@@ -68,7 +67,6 @@ export function derivePageContext(pathname: string | null): {
     return { kind: 'earnings', ctx };
   }
   if (seg[0] === 'cart' || seg[0] === 'checkout') return { kind: 'cart', ctx };
-  if (seg[0] === 'wanted') return { kind: 'wanted', ctx };
   if (seg[0] === 'wishlist') return { kind: 'wishlist', ctx };
   if (seg[0] === 'subscribe') return { kind: 'subscribe', ctx };
   if (seg[0] === 'dashboard') return { kind: 'dashboard', ctx };

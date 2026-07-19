@@ -13,12 +13,14 @@ import {
   SwapStatus,
   SwapRole,
 } from '@prisma/client';
+import { randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { KycService } from '../kyc/kyc.service';
 import { FeeCalculator } from '../payments/fee.calculator';
+import { PAYMENTS_LIVE } from '../payments/transactions.service';
 import { SwapFundingService } from './swap-funding.service';
 import { CreateSwapProposalDto } from './dto/create-swap-proposal.dto';
 import { CounterSwapDto } from './dto/counter-swap.dto';
@@ -26,14 +28,19 @@ import { CounterSwapDto } from './dto/counter-swap.dto';
 const PROPOSAL_TTL_HOURS = 48;
 const COUNTER_TTL_HOURS = 24;
 
+// Non-PRO members may run ONE open proposal at a time (as proposer); PRO is
+// unlimited. Operator monetisation decision 2026-07-19.
+const FREE_OPEN_PROPOSALS_LIMIT = 1;
+
 // Proof-of-possession code — 6 unambiguous chars (no 0/O/1/I/L) so it's easy to
-// handwrite + for Claude vision to read back. Scoped per leg (not global), so a
-// random code is fine. Prefixed "GG-" so the slip reads e.g. "GG-7K2P9X".
+// handwrite + for Claude vision to read back. Scoped per leg (not global).
+// crypto.randomInt (not Math.random) so the code can't be predicted from the
+// PRNG state — it's the anti-replay anchor for proof-of-possession.
 function genProofCode(): string {
   const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let s = '';
   for (let i = 0; i < 6; i++) {
-    s += alphabet[Math.floor(Math.random() * alphabet.length)];
+    s += alphabet[randomInt(alphabet.length)];
   }
   return `GG-${s}`;
 }
@@ -79,10 +86,32 @@ export class SwapProposalsService {
         ? proposal.counterCashAmount
         : proposal.cashAmount;
     const cashCommissionCents = this.fees.swapCashCommission(effectiveCash);
+    // Monetisation (2026-07-19): estimated value-based service fee for each
+    // side, from the declared value of the item that side SENDS (base rate —
+    // the PRO discount, if any, is applied at funding setup). Lets both
+    // parties see their cost while negotiating instead of at the EFT step.
+    const l = proposal as unknown as {
+      listing?: { declaredValueCents?: number | null; isFirearm?: boolean };
+      offeredListing?: { declaredValueCents?: number | null; isFirearm?: boolean };
+    };
+    const proposerServiceFeeEstimateCents = l.offeredListing
+      ? this.fees.swapServiceFee(
+          l.offeredListing.declaredValueCents ?? 0,
+          !!l.offeredListing.isFirearm,
+        )
+      : null;
+    const ownerServiceFeeEstimateCents = l.listing
+      ? this.fees.swapServiceFee(
+          l.listing.declaredValueCents ?? 0,
+          !!l.listing.isFirearm,
+        )
+      : null;
     return {
       ...proposal,
       cashCommissionCents,
       cashNetToRecipientCents: Math.max(0, effectiveCash - cashCommissionCents),
+      proposerServiceFeeEstimateCents,
+      ownerServiceFeeEstimateCents,
     };
   }
 
@@ -95,6 +124,25 @@ export class SwapProposalsService {
     });
     if (!proposer) throw new ForbiddenException('User not found');
     if (proposer.isBanned) throw new ForbiddenException('Account is suspended');
+    // Agreeing a swap is a commitment to prove, address, fund and ship —
+    // the same 3-strike non-payment gate the auction + offer engines use.
+    if (proposer.auctionStrikes >= 3) {
+      throw new ForbiddenException(
+        'Swaps suspended — three strikes for unmet commitments',
+      );
+    }
+    // Monetisation (2026-07-19): non-PRO members run one open proposal at a
+    // time; PRO is unlimited.
+    if (proposer.subscriptionTier !== 'PRO') {
+      const open = await this.prisma.swapProposal.count({
+        where: { proposerId: proposer.id, status: { in: OPEN_STATUSES } },
+      });
+      if (open >= FREE_OPEN_PROPOSALS_LIMIT) {
+        throw new BadRequestException(
+          'You already have an open swap proposal. Wait for it to resolve, withdraw it, or upgrade to PRO for unlimited simultaneous proposals.',
+        );
+      }
+    }
 
     if (dto.listingId === dto.offeredListingId) {
       throw new BadRequestException('You cannot swap a listing for itself');
@@ -156,6 +204,21 @@ export class SwapProposalsService {
     if (wanted.isFirearm) {
       this.logger.log(
         `FIREARM_ATTESTATION swap-propose accepted=true proposer=${proposer.id} wanted=${wanted.id}`,
+      );
+    }
+
+    // Monetisation (2026-07-19): every SWOP listing must carry a declared
+    // value before it can enter a swap — it drives the service fee, the
+    // negotiation display and the dispute ceiling. New SWOP listings are
+    // create-validated; this guards any legacy row.
+    if (!wanted.declaredValueCents || wanted.declaredValueCents <= 0) {
+      throw new BadRequestException(
+        'That listing needs a declared value before it can be swapped — ask the owner to update it.',
+      );
+    }
+    if (!offered.declaredValueCents || offered.declaredValueCents <= 0) {
+      throw new BadRequestException(
+        'Add a declared value to your listing before offering it in a swap (edit the listing).',
       );
     }
 
@@ -238,6 +301,7 @@ export class SwapProposalsService {
     if (proposal.counterCashAmount !== null) {
       throw new BadRequestException('You can only counter once per proposal');
     }
+    this.assertOwnerNotStruck(proposal.owner);
     // The owner commits to RECEIVING the offered item by countering — attest if
     // it's a firearm (they'll still have to accept-counter, but they're the
     // recipient and this is their commit point).
@@ -251,8 +315,15 @@ export class SwapProposalsService {
       if (!check.allowed) throw new BadRequestException(check.reason);
     }
 
-    const updated = await this.prisma.swapProposal.update({
-      where: { id: proposalId },
+    // CAS — status + counter-once re-asserted at write time, so a counter
+    // racing an accept (or a second counter) fails cleanly instead of
+    // relabelling a CONVERTED proposal back to COUNTERED.
+    const claim = await this.prisma.swapProposal.updateMany({
+      where: {
+        id: proposalId,
+        status: SwapProposalStatus.PENDING,
+        counterCashAmount: null,
+      },
       data: {
         counterCashAmount: dto.counterCashAmount,
         counterCashDirection: dto.counterCashDirection,
@@ -261,10 +332,13 @@ export class SwapProposalsService {
         expiresAt: new Date(Date.now() + COUNTER_TTL_HOURS * 3_600_000),
       },
     });
+    if (claim.count === 0) {
+      throw new BadRequestException('Proposal is no longer open');
+    }
 
     void this.notifyProposerOfCounter(proposalId);
     void this.notifications.resolveByEntity('swapProposal', proposalId);
-    return updated;
+    return this.prisma.swapProposal.findUnique({ where: { id: proposalId } });
   }
 
   // ----------------------------------------------------------------
@@ -279,6 +353,7 @@ export class SwapProposalsService {
     if (proposal.status !== SwapProposalStatus.PENDING) {
       throw new BadRequestException('Proposal is not pending');
     }
+    this.assertOwnerNotStruck(proposal.owner);
     // The owner RECEIVES the offered item on accept — attest if it's a firearm.
     await this.requireOwnerFirearmAttestation(proposal, firearmAttestation18Plus);
     return this.convertToSwap(proposalId, SwapProposalStatus.PENDING, false);
@@ -303,13 +378,17 @@ export class SwapProposalsService {
     if (proposal.status !== SwapProposalStatus.PENDING) {
       throw new BadRequestException('Proposal is not pending');
     }
-    const updated = await this.prisma.swapProposal.update({
-      where: { id: proposalId },
+    // CAS — a reject racing an accept must lose, not relabel a live swap.
+    const claim = await this.prisma.swapProposal.updateMany({
+      where: { id: proposalId, status: SwapProposalStatus.PENDING },
       data: { status: SwapProposalStatus.REJECTED },
     });
+    if (claim.count === 0) {
+      throw new BadRequestException('Proposal is no longer open');
+    }
     void this.notifyDeclined(proposalId, 'declined');
     void this.notifications.resolveByEntity('swapProposal', proposalId);
-    return updated;
+    return this.prisma.swapProposal.findUnique({ where: { id: proposalId } });
   }
 
   // ----------------------------------------------------------------
@@ -320,12 +399,19 @@ export class SwapProposalsService {
     if (proposal.status !== SwapProposalStatus.COUNTERED) {
       throw new BadRequestException('No counter to reject');
     }
-    const updated = await this.prisma.swapProposal.update({
-      where: { id: proposalId },
+    // CAS — must lose against a concurrent accept-counter.
+    const claim = await this.prisma.swapProposal.updateMany({
+      where: { id: proposalId, status: SwapProposalStatus.COUNTERED },
       data: { status: SwapProposalStatus.REJECTED },
     });
+    if (claim.count === 0) {
+      throw new BadRequestException('Proposal is no longer open');
+    }
+    // Tell the OWNER their counter was declined (parity with the offers
+    // engine — before this the counter just silently died).
+    void this.notifyOwnerCounterRejected(proposalId);
     void this.notifications.resolveByEntity('swapProposal', proposalId);
-    return updated;
+    return this.prisma.swapProposal.findUnique({ where: { id: proposalId } });
   }
 
   // ----------------------------------------------------------------
@@ -336,12 +422,19 @@ export class SwapProposalsService {
     if (proposal.status !== SwapProposalStatus.PENDING) {
       throw new BadRequestException('Cannot withdraw — proposal is no longer pending');
     }
-    const updated = await this.prisma.swapProposal.update({
-      where: { id: proposalId },
+    // CAS — must lose against a concurrent accept.
+    const claim = await this.prisma.swapProposal.updateMany({
+      where: { id: proposalId, status: SwapProposalStatus.PENDING },
       data: { status: SwapProposalStatus.WITHDRAWN },
     });
+    if (claim.count === 0) {
+      throw new BadRequestException('Proposal is no longer open');
+    }
+    // Tell the OWNER the proposal was withdrawn so they don't act on a
+    // stale email/SMS (parity with the offers engine).
+    void this.notifyOwnerWithdrawn(proposalId);
     void this.notifications.resolveByEntity('swapProposal', proposalId);
-    return updated;
+    return this.prisma.swapProposal.findUnique({ where: { id: proposalId } });
   }
 
   // ----------------------------------------------------------------
@@ -355,6 +448,15 @@ export class SwapProposalsService {
     expectedStatus: SwapProposalStatus,
     useCounter: boolean,
   ) {
+    // Agreement is the step that RESERVES both listings. While the card
+    // paygate is off there is no funding rail, so an agreed swap could only
+    // sit AWAITING_FUNDING with both items off the market — block here (the
+    // negotiation itself stays open). Mirrors the checkout gate.
+    if (!PAYMENTS_LIVE) {
+      throw new BadRequestException(
+        'Swaps can be agreed once card payments launch — that is coming very soon. Your proposal stays open in the meantime.',
+      );
+    }
     const swapId = await this.prisma.$transaction(async (tx) => {
       // 1. Claim the proposal — status guard makes a concurrent accept
       //    return count=0 and abort. The expiresAt guard also rejects an
@@ -648,6 +750,7 @@ export class SwapProposalsService {
         id: true,
         title: true,
         isFirearm: true,
+        declaredValueCents: true,
         images: { where: { isPrimary: true }, take: 1, select: { url: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -709,6 +812,7 @@ export class SwapProposalsService {
           id: true,
           title: true,
           isFirearm: true,
+          declaredValueCents: true,
           images: { where: { isPrimary: true }, take: 1, select: { url: true } },
           seller: { select: { username: true, clerkId: true } },
         },
@@ -718,6 +822,7 @@ export class SwapProposalsService {
           id: true,
           title: true,
           isFirearm: true,
+          declaredValueCents: true,
           images: { where: { isPrimary: true }, take: 1, select: { url: true } },
         },
       },
@@ -736,6 +841,17 @@ export class SwapProposalsService {
       throw new ForbiddenException('Access denied');
     }
     return { proposal };
+  }
+
+  // The owner commits to prove/address/fund/ship by countering or accepting —
+  // same 3-strike gate as the proposer side. NOT applied to reject (declining
+  // costs nothing and must always be possible).
+  private assertOwnerNotStruck(owner: { auctionStrikes: number }) {
+    if (owner.auctionStrikes >= 3) {
+      throw new ForbiddenException(
+        'Swaps suspended — three strikes for unmet commitments',
+      );
+    }
   }
 
   private async loadForProposer(proposerClerkId: string, proposalId: string) {
@@ -856,6 +972,52 @@ export class SwapProposalsService {
       });
     } catch (err) {
       this.logger.error(`notifyProposerOfCounter failed: ${(err as Error).message}`);
+    }
+  }
+
+  // Owner is told their counter was declined by the proposer.
+  private async notifyOwnerCounterRejected(proposalId: string) {
+    try {
+      const proposal = await this.prisma.swapProposal.findUnique({
+        where: { id: proposalId },
+        include: { listing: true, owner: true, proposer: true },
+      });
+      if (!proposal) return;
+      await this.notifications.swapCounterRejected({
+        email: proposal.owner.email,
+        name: proposal.owner.firstName ?? 'there',
+        proposerName: proposal.proposer?.username ?? 'The member',
+        wantedTitle: proposal.listing.title,
+        wantedListingId: proposal.listingId,
+        proposalId: proposal.id,
+      });
+    } catch (err) {
+      this.logger.error(
+        `notifyOwnerCounterRejected failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // Owner is told the proposer withdrew, so a stale email/SMS isn't acted on.
+  private async notifyOwnerWithdrawn(proposalId: string) {
+    try {
+      const proposal = await this.prisma.swapProposal.findUnique({
+        where: { id: proposalId },
+        include: { listing: true, owner: true, proposer: true },
+      });
+      if (!proposal) return;
+      await this.notifications.swapProposalWithdrawn({
+        email: proposal.owner.email,
+        name: proposal.owner.firstName ?? 'there',
+        proposerName: proposal.proposer?.username ?? 'The member',
+        wantedTitle: proposal.listing.title,
+        wantedListingId: proposal.listingId,
+        proposalId: proposal.id,
+      });
+    } catch (err) {
+      this.logger.error(
+        `notifyOwnerWithdrawn failed: ${(err as Error).message}`,
+      );
     }
   }
 

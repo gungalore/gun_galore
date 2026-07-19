@@ -73,6 +73,8 @@ export default function EditListingPage() {
     // Take-a-Shot-specific
     autoAcceptThreshold: '',
     autoDeclineThreshold: '',
+    // Swop-specific
+    declaredValue: '',
   });
   // Existing images that have been queued for delete. We hide them
   // from the visible thumbnail strip but only call DELETE on save —
@@ -170,6 +172,9 @@ export default function EditListingPage() {
           autoDeclineThreshold: l.autoDeclineThreshold
             ? String(l.autoDeclineThreshold / 100)
             : '',
+          declaredValue: l.declaredValueCents
+            ? String(l.declaredValueCents / 100)
+            : '',
         });
       } finally {
         setLoading(false);
@@ -242,6 +247,11 @@ export default function EditListingPage() {
       if (form.autoDeclineThreshold.trim()) {
         body.autoDeclineThreshold = Math.round(
           parseFloat(form.autoDeclineThreshold) * 100,
+        );
+      }
+      if (form.declaredValue.trim()) {
+        body.declaredValueCents = Math.round(
+          parseFloat(form.declaredValue) * 100,
         );
       }
 
@@ -683,6 +693,28 @@ export default function EditListingPage() {
                   Must be below the auto-accept threshold (R{form.autoAcceptThreshold}).
                 </p>
               )}
+          </Field>
+        )}
+
+        {/* Swop declared value — the honest-value anchor: sets the swap
+            service fee (1.5%, min R50, cap R750), is shown to the
+            counterparty in negotiation, and caps dispute compensation. */}
+        {listing.listingType === 'SWOP' && (
+          <Field label="Declared value (R)">
+            <input
+              type="number"
+              min={1}
+              step="0.01"
+              value={form.declaredValue}
+              onChange={(e) => set('declaredValue', e.target.value)}
+              style={inputStyle}
+              placeholder="What the item is honestly worth"
+            />
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+              Shown to the other party while negotiating. Sets your swap
+              service fee (1.5%, min R50, max R750) and caps what you can
+              claim if the swap goes wrong — honest is best.
+            </p>
           </Field>
         )}
 

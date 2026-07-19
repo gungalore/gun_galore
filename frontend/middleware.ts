@@ -19,9 +19,9 @@ const isPublicRoute = createRouteMatcher([
   '/welcome(.*)',
   '/sellers(.*)', // public seller profiles
   '/category(.*)', // public category landing/browse pages
-  '/wanted(.*)',   // Wanted board — public browse/detail (SEO + anonymous
-                   // browsing like /listings); posting/responding is gated
-                   // in-page + server-side on the API.
+  '/wanted(.*)',   // Wanted module REMOVED 2026-07-19 — keep public so the
+                   // dead URLs 404 instead of 307ing to sign-in (same
+                   // precedent as /competitions).
   '/brand(.*)',    // P5.7 — public brand index (/brands) + brand landing
                    // pages (/brand/[slug]); SEO surfaces, must be crawlable
                    // without auth (mirrors /category above).

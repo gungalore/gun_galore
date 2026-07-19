@@ -135,6 +135,20 @@ export class SwapProofService {
       },
     });
     this.logger.log(`Swap proof for leg ${legId} → ${status} (score ${score})`);
+    // A proof stuck in PENDING_REVIEW (uncertain scores, or the vision call
+    // failed) blocks the whole swap silently — surface it in the alerts
+    // inbox so an admin reviews the photo instead of the swap just stalling.
+    if (status === 'PENDING_REVIEW') {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'swap-proof-review',
+            referenceId: legId,
+            context: `Swap proof photo for leg ${legId} needs manual review (score ${score}${findings ? '' : '; vision scan unavailable'}) — swap ${leg.swapId} is blocked until reviewed.`,
+          },
+        })
+        .catch(() => undefined);
+    }
     // Approving this leg may have cleared the last prerequisite — nudge funding
     // setup (no-op until both legs APPROVED + address-ready).
     if (status === 'APPROVED' && leg.swapId) {

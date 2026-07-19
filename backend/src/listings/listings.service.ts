@@ -65,6 +65,10 @@ export const PUBLIC_LISTING_SELECT = {
   price: true,
   compareAtPriceZarCents: true,
   listingType: true,
+  // SWOP honest-value anchor — PUBLIC BY DESIGN (it is the negotiation
+  // display + dispute ceiling; unlike reserve/thresholds it must be seen
+  // by the counterparty). Null for every non-SWOP listing.
+  declaredValueCents: true,
   status: true,
   condition: true,
   province: true,
@@ -1027,6 +1031,15 @@ export class ListingsService {
       );
     }
 
+    // SWOP listings are price-less, so the declared value is the honest-value
+    // anchor for the swap service fee + negotiation display + dispute
+    // ceiling — required at create (2026-07-19 monetisation).
+    if (dto.listingType === ListingType.SWOP && !dto.declaredValueCents) {
+      throw new BadRequestException(
+        'A Swop / Trade listing needs a declared value (what the item is honestly worth).',
+      );
+    }
+
     // (attributes were validated + the DG collection-only flag computed above,
     // before the collection gates — see cleanedAttributes / attributesForDb /
     // effectiveCollectionOnly.)
@@ -1098,6 +1111,7 @@ export class ListingsService {
         passFeeToBuyer: dto.passFeeToBuyer,
         autoAcceptThreshold: dto.autoAcceptThreshold,
         autoDeclineThreshold: dto.autoDeclineThreshold,
+        declaredValueCents: dto.declaredValueCents ?? null,
         reservePrice: dto.reservePrice ?? null,
         buyNowPrice: dto.buyNowPrice ?? null,
         durationDays: dto.durationDays ?? null,
@@ -2205,6 +2219,18 @@ export class ListingsService {
     if (effDecline != null && effAccept != null && effDecline >= effAccept) {
       throw new BadRequestException(
         'The auto-decline threshold must be below the auto-accept threshold.',
+      );
+    }
+
+    // A SWOP listing can never lose its declared value post-edit (mirrors
+    // the create() requirement; compare EFFECTIVE values).
+    const effDeclared =
+      dto.declaredValueCents !== undefined
+        ? dto.declaredValueCents
+        : listing.declaredValueCents;
+    if (listing.listingType === ListingType.SWOP && !effDeclared) {
+      throw new BadRequestException(
+        'A Swop / Trade listing needs a declared value (what the item is honestly worth).',
       );
     }
 

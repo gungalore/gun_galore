@@ -466,13 +466,6 @@ export class AskGgGuideService {
 
     if (seg[0] === 'cart' || seg[0] === 'checkout') return 'cart';
 
-    // Wanted — poster form + a single ad get their own variants.
-    if (seg[0] === 'wanted') {
-      if (seg[1] === 'new') return 'wanted-new';
-      if (seg.length === 2) return 'wanted-detail';
-      return 'wanted';
-    }
-
     // Account cluster.
     if (seg[0] === 'dashboard') return 'dashboard';
     if (seg[0] === 'account' || seg[0] === 'profile') return 'profile';

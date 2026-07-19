@@ -18,8 +18,7 @@ export type NotificationLinkedType =
   | 'swapProposal'
   | 'swap'
   | 'subscription'
-  | 'featured'
-  | 'wantedAd';
+  | 'featured';
 
 interface PersistOpts {
   userId: string;
@@ -3808,6 +3807,66 @@ export class NotificationsService {
       preheader: `Swap ${d.reason} — ${d.wantedTitle}`,
     });
     await this.send(d.email, `Swap ${d.reason}: ` + d.wantedTitle, html);
+  }
+
+  // Owner is told the proposer declined their counter.
+  async swapCounterRejected(d: {
+    email: string;
+    name: string;
+    proposerName: string;
+    wantedTitle: string;
+    wantedListingId: string;
+    proposalId: string;
+  }) {
+    await this.persistByEmail(d.email, {
+      category: 'SELLER',
+      type: 'swap_counter_rejected',
+      title: 'Swap counter declined',
+      body: `${d.proposerName} declined your counter on ${d.wantedTitle}`,
+      url: `/listings/${d.wantedListingId}`,
+      iconKey: 'offer',
+      linkedType: 'swapProposal',
+      linkedId: d.proposalId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Counter declined' },
+      headline: 'Your swap counter was declined',
+      body: `Hi ${b(d.name)}, ${b(d.proposerName)} declined the counter you made on the swap for ${b(d.wantedTitle)}. Your listing stays active for other proposals.`,
+      cta: { label: 'View listing', url: `${this.appUrl}/listings/${d.wantedListingId}` },
+      preheader: `Counter declined — ${d.wantedTitle}`,
+    });
+    await this.send(d.email, 'Swap counter declined: ' + d.wantedTitle, html);
+  }
+
+  // Owner is told the proposer withdrew their swap proposal.
+  async swapProposalWithdrawn(d: {
+    email: string;
+    name: string;
+    proposerName: string;
+    wantedTitle: string;
+    wantedListingId: string;
+    proposalId: string;
+  }) {
+    await this.persistByEmail(d.email, {
+      category: 'SELLER',
+      type: 'swap_withdrawn',
+      title: 'Swap proposal withdrawn',
+      body: `${d.proposerName} withdrew their swap proposal on ${d.wantedTitle}`,
+      url: `/listings/${d.wantedListingId}`,
+      iconKey: 'offer',
+      linkedType: 'swapProposal',
+      linkedId: d.proposalId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Withdrawn' },
+      headline: 'A swap proposal was withdrawn',
+      body: `Hi ${b(d.name)}, ${b(d.proposerName)} withdrew their swap proposal on ${b(d.wantedTitle)}. No action is needed — your listing stays active.`,
+      cta: { label: 'View listing', url: `${this.appUrl}/listings/${d.wantedListingId}` },
+      preheader: `Swap proposal withdrawn — ${d.wantedTitle}`,
+    });
+    await this.send(d.email, 'Swap proposal withdrawn: ' + d.wantedTitle, html);
   }
 
   // Swap funding is set up — this party's EFT instructions (amount + ref).

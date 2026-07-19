@@ -15,7 +15,7 @@
 // styling reads symmetric:
 //   1. Shop     → opens a bottom sheet with the shopping surfaces:
 //                 All listings / Marketplace / Auctions / Take a Shot /
-//                 Swop / Wanted.
+//                 Swop / Trade.
 //   2. Alerts   → routes to /notifications. Bell icon. When there are
 //                 unresolved notifications, shows a red active-count
 //                 badge in the top-right corner of the bell.
@@ -694,30 +694,6 @@ function ShopSheet({
       isActive:
         pathname === '/' && searchParams.get('listingType') === 'SWOP',
     },
-    {
-      key: 'wanted',
-      href: '/wanted',
-      title: 'Wanted',
-      tagline: 'Post what you’re looking for — sellers come to you, free',
-      icon: (
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="11" cy="11" r="7" />
-          <path d="m21 21-4.35-4.35" />
-          <path d="M11 8v3l2 2" />
-        </svg>
-      ),
-      isActive: pathname.startsWith('/wanted'),
-    },
   ];
 
   return (
@@ -861,7 +837,7 @@ function ShopSheet({
 //   3. My account section — Dashboard, Profile, all /my/* destinations.
 //      Folded into the sheet because the "My" tab was replaced by
 //      Wishlist; the My destinations still need a permanent home.
-//   4. Shop section — secondary shop surfaces (Take a Shot, Wanted).
+//   4. Shop section — secondary shop surfaces (Take a Shot, Swop).
 //      Wishlist is intentionally NOT here because it's a primary tab.
 //   5. Legal section — terms / privacy / refund / legal index.
 //   6. Sign out (signed-in only) — destructive-styled button below.
@@ -898,7 +874,7 @@ function MoreSheet({
   const shopLinks = [
     { href: '/wishlist', label: 'Wishlist' },
     { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
-    { href: '/wanted', label: 'Wanted' },
+    { href: '/?listingType=SWOP', label: 'Swop / Trade' },
   ];
   // Account destinations now come from the shared ACCOUNT_GROUPS (rendered via
   // <AccountMenuList/>) so this sheet stays in lockstep with the desktop

@@ -80,11 +80,10 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'Use the filters — price range, brand/make and category — to narrow things fast.',
       'Tell me what you’re after in plain words and I’ll search the marketplace for you.',
       'Save a search and get notified when a matching item is listed.',
-      'Can’t find it? Post a Wanted ad — sellers with a match come to you. It’s free.',
     ],
     ctas: [
       { label: 'Find something for me', ask: 'Help me find ' },
-      { label: 'Post a Wanted ad', href: '/wanted/new' },
+      { label: 'Save this search', ask: 'How do I save a search and get alerts when a matching item is listed?' },
     ],
   },
 
@@ -246,20 +245,6 @@ export const GUIDES: Record<string, AskGgGuide> = {
     ],
   },
 
-  wanted: {
-    key: 'wanted',
-    title: 'Wanted ads',
-    points: [
-      'Looking for something that isn’t listed? Post what you want and sellers with a match respond to you.',
-      'It’s free to post — no upfront fees to advertise.',
-      'When a seller responds with a matching item, you buy it through the normal protected checkout.',
-    ],
-    ctas: [
-      { label: 'Post a Wanted ad', href: '/wanted/new' },
-      { label: 'How do Wanted ads work?', ask: 'How do Wanted ads work — posting one, and what happens when a seller responds?' },
-    ],
-  },
-
   help: {
     key: 'help',
     title: 'Getting help',
@@ -353,10 +338,8 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'Save any search and we’ll watch the marketplace for you — you get an alert when a new matching item is listed.',
       'It’s the fastest way to be first on a hard-to-find item without checking back every day.',
       'Toggle alerts on or off per search whenever you like.',
-      'Still not finding it? Post a Wanted ad and sellers come to you — it’s free.',
     ],
     ctas: [
-      { label: 'Post a Wanted ad', href: '/wanted/new' },
       { label: 'How do alerts work?', ask: 'How do saved-search alerts work — when and how do I get notified?' },
     ],
   },
@@ -475,34 +458,6 @@ export const GUIDES: Record<string, AskGgGuide> = {
     ctas: [
       { label: 'What exactly do I upload?', ask: 'What documents and photos do I need to upload for firearm dealer-stock verification?' },
       { label: 'Why is this needed?', ask: 'Why does a firearm sale need dealer stock-in verification before payout?' },
-    ],
-  },
-
-  'wanted-new': {
-    key: 'wanted-new',
-    title: 'Posting a Wanted ad',
-    points: [
-      'Describe what you’re after and sellers with a match come to you — no more endless searching.',
-      'It’s completely free to post: no upfront fees to advertise.',
-      'Be specific (make, model, condition, budget) so the right sellers respond.',
-      'When a seller responds with a matching item, you buy it through the normal protected checkout.',
-    ],
-    ctas: [
-      { label: 'Help me word it', ask: 'Help me write a clear Wanted ad for the item I’m looking for.' },
-    ],
-  },
-
-  'wanted-detail': {
-    key: 'wanted-detail',
-    title: 'This Wanted ad',
-    points: [
-      'A buyer is looking for this. If you’re a seller with a match, respond by linking one of your active listings.',
-      'Only your username is shared — contact details are kept off-platform so your deal stays protected.',
-      'If it’s your own ad, sellers who respond will show up for you to review.',
-      'It’s free to respond — no upfront fees.',
-    ],
-    ctas: [
-      { label: 'How do I respond?', ask: 'How do I respond to a Wanted ad as a seller, and what happens next?' },
     ],
   },
 

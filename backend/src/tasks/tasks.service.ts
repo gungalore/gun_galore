@@ -657,6 +657,26 @@ export class TasksService {
     }
   }
 
+  // Hourly — cancel agreed swaps that never reached funding setup (proof
+  // photo / delivery address outstanding past the pre-funding window):
+  // restock both listings + strike the ghosting side. Runs regardless of
+  // payment mode — no money exists before funding setup, and this is what
+  // un-wedges reserved listings when a party disappears after agreeing.
+  @Cron(CronExpression.EVERY_HOUR)
+  async sweepUnreadySwaps() {
+    this.logger.debug('Running swap pre-funding sweep cron');
+    try {
+      await this.swapFunding.sweepUnreadySwaps();
+    } catch (err) {
+      this.logger.error(
+        `sweepUnreadySwaps failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('swap-prefunding-sweep');
+    }
+  }
+
   // P1.3 — hourly retry for swap leg-fee Zoho receipts that failed at
   // completion (createSwapFeeReceipts is idempotent per side, so a re-fire
   // can only fill a missing receipt). Keeps Books whole without an admin

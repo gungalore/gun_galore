@@ -23,12 +23,15 @@ type SwapRole = 'INITIATOR_GIVES' | 'OWNER_GIVES';
 interface Offerable {
   id: string;
   title: string;
+  isFirearm?: boolean;
+  declaredValueCents?: number | null;
   images: { url: string }[];
 }
 interface MiniListing {
   id: string;
   title: string;
   isFirearm?: boolean;
+  declaredValueCents?: number | null;
   images?: { url: string }[];
 }
 interface Proposal {
@@ -42,6 +45,11 @@ interface Proposal {
   // on the excess above R1,000) + the net figure the recipient is paid.
   cashCommissionCents?: number;
   cashNetToRecipientCents?: number;
+  // Value-based swap service fee estimates (base rate; PRO discount is
+  // applied at funding). proposer = fee on the offered item, owner = fee
+  // on the listed item.
+  proposerServiceFeeEstimateCents?: number | null;
+  ownerServiceFeeEstimateCents?: number | null;
   proposerNote: string | null;
   ownerNote: string | null;
   listing: MiniListing;
@@ -342,6 +350,16 @@ function OwnerProposalCard({
         {cashSummary(p)}
         {p.status === 'COUNTERED' ? ' · you countered — awaiting their reply' : ''}
       </p>
+      {(p.offeredListing.declaredValueCents || p.ownerServiceFeeEstimateCents) && (
+        <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+          {p.offeredListing.declaredValueCents
+            ? `Their item's declared value: ${rand(p.offeredListing.declaredValueCents)}. `
+            : ''}
+          {p.ownerServiceFeeEstimateCents
+            ? `Your swap service fee if you accept: ~${rand(p.ownerServiceFeeEstimateCents)} (PRO saves 25%).`
+            : ''}
+        </p>
+      )}
       {p.proposerNote && (
         <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
           “{p.proposerNote}”
@@ -480,6 +498,16 @@ function ViewerProposalView({
       <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
         {cashSummary(p)}
       </p>
+      {(p.listing.declaredValueCents || p.proposerServiceFeeEstimateCents) && (
+        <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+          {p.listing.declaredValueCents
+            ? `Their item's declared value: ${rand(p.listing.declaredValueCents)}. `
+            : ''}
+          {p.proposerServiceFeeEstimateCents
+            ? `Your swap service fee if agreed: ~${rand(p.proposerServiceFeeEstimateCents)} (PRO saves 25%).`
+            : ''}
+        </p>
+      )}
       <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
         {statusLabel[p.status] ?? p.status}
       </p>
@@ -618,9 +646,30 @@ function ProposeForm({
         {offerable.map((o) => (
           <option key={o.id} value={o.id}>
             {o.title}
+            {o.declaredValueCents ? ` — declared ${rand(o.declaredValueCents)}` : ''}
           </option>
         ))}
       </select>
+      {(() => {
+        // Value-based service fee preview for the item the proposer will
+        // SEND: 1.5% of declared value, clamped [min, R750]. Base rate —
+        // the PRO discount is applied at funding.
+        const sel = offerable.find((o) => o.id === offeredId);
+        if (!sel) return null;
+        const min = sel.isFirearm ? 10000 : 5000;
+        const fee = Math.min(
+          Math.max(Math.round((sel.declaredValueCents ?? 0) * 0.015), min),
+          75000,
+        );
+        return (
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            Your swap service fee if agreed: ~{rand(fee)} (1.5% of your
+            declared value, min {rand(min)}, max R750 — PRO members save 25%).
+            It&apos;s added to your funding payment along with your courier
+            cost.
+          </p>
+        );
+      })()}
 
       <label className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
         Add cash to balance the deal? (optional)

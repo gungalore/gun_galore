@@ -30,6 +30,12 @@ import { SwapDeliveryDto } from './dto/swap-delivery.dto';
 // an EFT each, so a few days is reasonable (vs the 1h single-buyer freeze).
 const FUNDING_WINDOW_HOURS = 72;
 
+// How long an agreed swap may sit BEFORE funding is even set up (proof
+// photos + delivery addresses outstanding). Without this, one ghosting
+// party left both listings reserved forever — funding setup is the step
+// that stamps cashPayByAt, so the funding sweep alone could never fire.
+const PRE_FUNDING_WINDOW_DAYS = 7;
+
 // A booked swap leg that's still uncollected after this many days → the swap
 // is flagged DISPUTED for admin review (a party didn't drop their parcel).
 const SHIP_SLA_DAYS = 7;
@@ -217,13 +223,17 @@ export class SwapFundingService {
       const swap = await this.prisma.swap.findUnique({
         where: { id: swapId },
         include: {
+          initiator: { select: { subscriptionTier: true } },
+          owner: { select: { subscriptionTier: true } },
           transactions: {
             select: {
               id: true,
               swapRole: true,
               listingId: true,
               deliveryAddress: true,
-              listing: { select: { isFirearm: true } },
+              listing: {
+                select: { isFirearm: true, declaredValueCents: true },
+              },
             },
           },
         },
@@ -267,17 +277,25 @@ export class SwapFundingService {
         swap.cashPayerId === swap.initiatorId ? swap.cashAmount : 0;
       const ownerCash = swap.cashPayerId === swap.ownerId ? swap.cashAmount : 0;
 
+      // Value-based service fee (operator 2026-07-19): each party's fee is
+      // rate × the declared value of the item THEY send, clamped [min, cap],
+      // with the PRO discount. Legacy zero-value listings fall back to the
+      // flat leg minimum inside swapServiceFee.
       const initiatorBd = this.fees.breakdownSwapLeg(
         initiatorQuote.priceCents,
         initiatorCash,
         initiatorIsFirearm,
         'manual',
+        initiatorGives.listing?.declaredValueCents ?? 0,
+        swap.initiator.subscriptionTier === 'PRO',
       );
       const ownerBd = this.fees.breakdownSwapLeg(
         ownerQuote.priceCents,
         ownerCash,
         ownerIsFirearm,
         'manual',
+        ownerGives.listing?.declaredValueCents ?? 0,
+        swap.owner.subscriptionTier === 'PRO',
       );
 
       const [initiatorRef, ownerRef] = await Promise.all([
@@ -321,6 +339,11 @@ export class SwapFundingService {
             ownerFundingRef: ownerRef,
             ownerFundingAmount: ownerBd.partyTotal,
             ownerCourierCents: ownerQuote.priceCents,
+            // Persist each side's service fee — createSwapFeeReceipts reads
+            // these columns to book revenue at completion (they were never
+            // written before this, so Zoho booked R0 per side).
+            swapFeeInitiator: initiatorBd.serviceFee,
+            swapFeeOwner: ownerBd.serviceFee,
           },
         }),
       ]);
@@ -713,12 +736,178 @@ export class SwapFundingService {
             `Swap ${swap.id} funding lapsed → CANCELLED; listings released`,
           );
           void this.notifyFundingCancelled(swap.id);
+          // Strike the side(s) that never paid (neither verified nor
+          // detected) — agreeing a swap and not funding burns the
+          // counterparty exactly like an unpaid auction win.
+          void this.strikeUnfundedSides(swap.id);
         }
       } catch (err) {
         this.logger.warn(
           `swap funding sweep failed for ${swap.id}: ${(err as Error).message}`,
         );
       }
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Cron — agreed swaps that never reached funding setup (proof photo or
+  // delivery address outstanding) past PRE_FUNDING_WINDOW_DAYS → cancel +
+  // restock both listings + strike the party/parties that never completed
+  // their prerequisites. Runs regardless of payment mode: no money exists
+  // before funding setup (no refs, no amounts), so cancel is always safe —
+  // this is what un-wedges listings when a party ghosts after agreeing.
+  // ----------------------------------------------------------------
+  async sweepUnreadySwaps() {
+    const cutoff = new Date(
+      Date.now() - PRE_FUNDING_WINDOW_DAYS * 86_400_000,
+    );
+    const stale = await this.prisma.swap.findMany({
+      where: {
+        status: SwapStatus.AWAITING_FUNDING,
+        fundingSetUpAt: null,
+        createdAt: { lt: cutoff },
+      },
+      select: {
+        id: true,
+        initiatorId: true,
+        ownerId: true,
+        transactions: {
+          select: {
+            swapRole: true,
+            listingId: true,
+            swapProofStatus: true,
+            deliveryAddress: true,
+            listing: { select: { isFirearm: true } },
+          },
+        },
+      },
+      take: 50,
+    });
+
+    for (const swap of stale) {
+      try {
+        const claim = await this.prisma.$transaction(async (txc) => {
+          // Guarded on fundingSetUpAt still null — if funding got set up in
+          // the gap, the ordinary funding sweep owns it from here.
+          const c = await txc.swap.updateMany({
+            where: {
+              id: swap.id,
+              status: SwapStatus.AWAITING_FUNDING,
+              fundingSetUpAt: null,
+            },
+            data: {
+              status: SwapStatus.CANCELLED,
+              cancelledAt: new Date(),
+              cancelledReason: 'pre-funding-requirements-not-completed',
+            },
+          });
+          if (c.count === 0) return false;
+          await txc.listing.updateMany({
+            where: {
+              id: { in: swap.transactions.map((t) => t.listingId) },
+              status: ListingStatus.PAYMENT_PENDING,
+            },
+            data: { status: ListingStatus.ACTIVE },
+          });
+          return true;
+        });
+        if (!claim) continue;
+
+        this.logger.log(
+          `Swap ${swap.id} never reached funding setup in ${PRE_FUNDING_WINDOW_DAYS}d → CANCELLED; listings released`,
+        );
+        void this.notifyFundingCancelled(swap.id);
+
+        // Fault: a party is at fault if the leg they SEND was never
+        // proof-approved, or the courier leg they RECEIVE never got a
+        // delivery address. (Firearm receive-legs need no address.)
+        const realLegs = swap.transactions.filter((t) => t.swapRole != null);
+        const giveOf = (role: SwapRole) =>
+          realLegs.find((t) => t.swapRole === role);
+        const initiatorGives = giveOf(SwapRole.INITIATOR_GIVES);
+        const ownerGives = giveOf(SwapRole.OWNER_GIVES);
+        const addressMissing = (leg?: {
+          deliveryAddress: unknown;
+          listing: { isFirearm: boolean } | null;
+        }) => !!leg && !leg.listing?.isFirearm && leg.deliveryAddress == null;
+        const initiatorAtFault =
+          initiatorGives?.swapProofStatus !== 'APPROVED' ||
+          addressMissing(ownerGives); // initiator receives OWNER_GIVES
+        const ownerAtFault =
+          ownerGives?.swapProofStatus !== 'APPROVED' ||
+          addressMissing(initiatorGives); // owner receives INITIATOR_GIVES
+        if (initiatorAtFault) {
+          void this.strikeSwapParty(swap.initiatorId, swap.id, 'never completed proof/address');
+        }
+        if (ownerAtFault) {
+          void this.strikeSwapParty(swap.ownerId, swap.id, 'never completed proof/address');
+        }
+      } catch (err) {
+        this.logger.warn(
+          `swap pre-funding sweep failed for ${swap.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  // Strike the side(s) of a funding-lapsed swap that neither verified nor
+  // provisionally detected a payment. Post-commit fire-and-forget.
+  private async strikeUnfundedSides(swapId: string) {
+    try {
+      const s = await this.prisma.swap.findUnique({
+        where: { id: swapId },
+        select: {
+          initiatorId: true,
+          ownerId: true,
+          initiatorVerifiedAt: true,
+          initiatorDetectedAt: true,
+          ownerVerifiedAt: true,
+          ownerDetectedAt: true,
+        },
+      });
+      if (!s) return;
+      if (!s.initiatorVerifiedAt && !s.initiatorDetectedAt) {
+        await this.strikeSwapParty(s.initiatorId, swapId, 'never funded their side');
+      }
+      if (!s.ownerVerifiedAt && !s.ownerDetectedAt) {
+        await this.strikeSwapParty(s.ownerId, swapId, 'never funded their side');
+      }
+    } catch (err) {
+      this.logger.warn(
+        `strikeUnfundedSides failed for ${swapId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // Same 3-strike commitment ledger the auction + offer engines use
+  // (User.auctionStrikes): at 3 strikes propose/accept are refused and an
+  // admin alert fires for suspension review.
+  private async strikeSwapParty(userId: string, swapId: string, why: string) {
+    try {
+      const after = await this.prisma.user.update({
+        where: { id: userId },
+        data: { auctionStrikes: { increment: 1 }, lastStrikeAt: new Date() },
+        select: { auctionStrikes: true, username: true },
+      });
+      this.logger.log(
+        `Swap strike: user ${userId} (${why}, swap ${swapId}) → ${after.auctionStrikes}`,
+      );
+      if (after.auctionStrikes >= 3) {
+        await this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'BIDDER_AUCTION_STRIKES_THRESHOLD',
+              referenceId: userId,
+              urgent: true,
+              context: `Member @${after.username ?? userId} hit ${after.auctionStrikes} unpaid-commitment strikes (latest: swap ${swapId} — ${why}) — review for suspension.`,
+            },
+          })
+          .catch(() => undefined);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `strikeSwapParty failed for ${userId}: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -892,6 +1081,9 @@ export class SwapFundingService {
             },
           })
           .catch(() => undefined);
+        // Tell BOTH members their swap is frozen pending review — before
+        // this, an auto-dispute was silent and the swap just stopped moving.
+        void this.notifySwapDisputed(s.id);
         this.logger.warn(`Swap ${s.id} shipping stalled → DISPUTED (admin-owned)`);
       } catch (err) {
         this.logger.warn(

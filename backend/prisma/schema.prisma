@@ -451,12 +451,6 @@ model User {
   // ACTIVE listing is published. See SavedSearch.
   savedSearches SavedSearch[]
 
-  // ── Wanted-ads back-relations (demand capture) ───────────────────
-  // Ads this user posted ("looking for…") and responses they sent to
-  // other users' wanted ads. See WantedAd / WantedResponse.
-  wantedAds       WantedAd[]
-  wantedResponses WantedResponse[] @relation("WantedResponses")
-
   // ── Push notification back-relation ──────────────────────────────
   // Browser/PWA push subscription endpoints. One row per device a user
   // has opted in on (iPhone PWA + Android Chrome = two rows). Fired
@@ -615,10 +609,6 @@ model Category {
   createdAt                    DateTime   @default(now())
 
   listings Listing[]
-
-  // Wanted ads posted against this category (demand capture). SetNull on
-  // category delete so historic ads survive taxonomy edits.
-  wantedAds WantedAd[]
 
   // Cross-sell complementary relationships (directional). Admin-managed.
   crossSellFrom CategoryRelation[] @relation("CrossSellFrom")
@@ -852,6 +842,13 @@ model Listing {
   // seller threshold; never exposed publicly or to buyers.
   autoDeclineThreshold Int? // ZAR cents; Take a Shot only
 
+  // ----- SWOP-specific fields -----
+  // Honest-value anchor for a swap listing (SWOP is price-less). Drives the
+  // value-based swap service fee, is shown to the counterparty during
+  // negotiation, and caps dispute compensation for THIS item's sender —
+  // over-declaring costs fees, under-declaring costs protection.
+  declaredValueCents Int? // ZAR cents; required for SWOP at create/update
+
   // ----- AUCTION-specific fields -----
   // price (above) = starting bid for AUCTION listings
   reservePrice    Int? // optional hidden reserve; never exposed publicly
@@ -969,10 +966,6 @@ model Listing {
   // saved this" social-proof signal.
   wishlistedBy         WatchedListing[]
   questions            ListingQuestion[]
-  // Wanted-ad responses that link this listing as the "I have this for
-  // sale" answer. SetNull on listing delete — the response text survives.
-  wantedResponses      WantedResponse[]
-
   // Featured-slot back-relation. When a seller wins a featured slot
   // auction + binds this listing to it, the slot's
   // `currentListingId` points here. Optional 1:1 (a listing is in
@@ -3431,71 +3424,3 @@ model Swap {
   @@index([status, cashPayByAt])
 }
 
-// ─── Wanted ads (demand capture) ──────────────────────────────────────
-//
-// A buyer posts what they're LOOKING FOR; sellers respond with a link to
-// one of their own ACTIVE listings and/or a contact-filtered message.
-// Deliberately NOT a Listing: a wanted ad is never sellable — no price,
-// no checkout, no cart, no offers, no shipping, no Zoho. Any actual
-// transaction happens on the responder's normal listing through the
-// existing money rails. Competitive answer to classifieds-style "Wanted"
-// boards, but with the platform (not phone numbers) in the loop.
-
-enum WantedStatus {
-  ACTIVE
-  CLOSED // owner closed it (found the item / no longer needed)
-  EXPIRED // lapsed past expiresAt (browse hides these at query time)
-}
-
-model WantedAd {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title       String
-  description String
-  categoryId  String?
-  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  province    Province?
-
-  // Optional "willing to pay around" band, in cents. DISPLAY-ONLY —
-  // no money ever moves on a wanted ad.
-  budgetMinCents Int?
-  budgetMaxCents Int?
-
-  status    WantedStatus @default(ACTIVE)
-  // Auto-lapse: browse queries exclude ads past this date (lazy expiry —
-  // no cron; status stays ACTIVE in the row, readers treat it as EXPIRED).
-  expiresAt DateTime
-  closedAt  DateTime?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-
-  responses WantedResponse[]
-
-  @@index([status, expiresAt, createdAt(sort: Desc)])
-  @@index([categoryId])
-  @@index([userId, createdAt(sort: Desc)])
-}
-
-model WantedResponse {
-  id          String   @id @default(cuid())
-  wantedAdId  String
-  wantedAd    WantedAd @relation(fields: [wantedAdId], references: [id], onDelete: Cascade)
-  responderId String
-  responder   User     @relation("WantedResponses", fields: [responderId], references: [id], onDelete: Cascade)
-  // Optional link to one of the responder's own ACTIVE listings ("I have
-  // this for sale"). The ad owner clicks through and buys/offers on the
-  // listing via the normal flow. SetNull on delete — text survives.
-  listingId   String?
-  listing     Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
-  // Contact-detail-filtered free text (same filter as offer notes).
-  message     String
-  createdAt   DateTime @default(now())
-
-  // Same listing can't be pitched twice on the same ad by the same
-  // responder. NULL listingIds are distinct in Postgres, so the total
-  // response cap per responder per ad is enforced in service code.
-  @@unique([wantedAdId, responderId, listingId])
-  @@index([wantedAdId, createdAt(sort: Desc)])
-  @@index([responderId])
-}

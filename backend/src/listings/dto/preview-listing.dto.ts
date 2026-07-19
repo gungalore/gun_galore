@@ -93,6 +93,11 @@ export class PreviewListingDto {
   @IsOptional()
   @IsInt()
   @Min(100)
+  declaredValueCents?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(100)
   reservePrice?: number;
 
   @IsOptional()

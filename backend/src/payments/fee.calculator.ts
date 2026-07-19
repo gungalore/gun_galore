@@ -50,15 +50,26 @@ export type PaymentMode = 'paygate' | 'manual';
 // R15/waybill.
 export const SHIPPING_HANDLING_FEE_CENTS = 1_500; // R15 — per courier waybill
 
-// ── Swop / Trade (SWOP) flat fees — ZAR cents ───────────────────────────
-// A swap has no sale price, so GG earns a FLAT service fee per shipment leg
-// (two legs per swap = earned twice). Operator decision 2026-06-28: R50/leg.
-// Rationale: GG pays the VerifyNow KYC fee (~R28) for each party acting as a
-// seller, so R50 covers that + margin. Each party pays their own leg's fee.
-export const SWAP_SHIPPING_FEE_CENTS = 5_000; // R50 — courier (non-firearm) leg
-// Firearm leg has no courier rate to mark up; flat handling fee covers the
-// SAPS-534 verification + dealer coordination. Used from S6.
-export const SWAP_FIREARM_FEE_CENTS = 10_000; // R100 — firearm dealer-transfer leg
+// ── Swop / Trade (SWOP) service fees — ZAR cents ────────────────────────
+// A swap has no sale price, so GG earns a service fee per shipment leg
+// (two legs per swap = earned twice). Originally a flat R50/leg (operator
+// 2026-06-28); operator decision 2026-07-19: VALUE-BASED — a percentage of
+// the sender's DECLARED item value, clamped to [min, cap]. Without this,
+// two R50k rifles could swap for R100 total fees while GG carries KYC,
+// proof-of-possession, dealer routing and dispute handling — a commission
+// bypass for exactly the highest-value trades. The declared value is
+// self-policing: it is public during negotiation and caps the sender's
+// dispute compensation (over-declare = higher fee, under-declare = less
+// protection). The old flat amounts survive as the per-leg MINIMUMS.
+export const SWAP_SHIPPING_FEE_CENTS = 5_000; // R50 — courier-leg minimum
+// Firearm leg minimum is higher: covers SAPS-534 verification + dealer
+// coordination. Used from S6.
+export const SWAP_FIREARM_FEE_CENTS = 10_000; // R100 — firearm-leg minimum
+export const SWAP_VALUE_FEE_RATE = 0.015; // 1.5% of the declared value
+export const SWAP_VALUE_FEE_CAP_CENTS = 75_000; // R750 cap keeps swapping cheaper than sell+buy
+// PRO members get a discount on the swap service fee (applied after the
+// min/cap clamp, so a PRO courier leg can go below R50).
+export const SWAP_PRO_FEE_DISCOUNT = 0.25;
 
 // P0.5 — commission on the swap CASH component. cashAmount had no ceiling
 // and no fee beyond the flat legs, so any ordinary sale could be structured
@@ -281,18 +292,45 @@ export class FeeCalculator {
     );
   }
 
+  /**
+   * Value-based swap service fee for ONE leg: rate × the sender's declared
+   * item value, clamped to [leg minimum, cap], then the PRO discount.
+   * declaredValueCents 0/absent falls back to the leg minimum (legacy
+   * listings created before the declared-value requirement).
+   */
+  swapServiceFee(
+    declaredValueCents: number,
+    isFirearmLeg = false,
+    isPro = false,
+  ): number {
+    const min = isFirearmLeg ? SWAP_FIREARM_FEE_CENTS : SWAP_SHIPPING_FEE_CENTS;
+    const raw = Math.round(
+      Math.max(0, Math.round(declaredValueCents)) * SWAP_VALUE_FEE_RATE,
+    );
+    const clamped = Math.min(Math.max(raw, min), SWAP_VALUE_FEE_CAP_CENTS);
+    return isPro
+      ? Math.round(clamped * (1 - SWAP_PRO_FEE_DISCOUNT))
+      : clamped;
+  }
+
   breakdownSwapLeg(
     courierCostCents: number,
     cashContributionCents = 0,
     isFirearmLeg = false,
     mode: PaymentMode = 'manual',
+    // Operator 2026-07-19 — value-based fee inputs. Defaults keep every
+    // existing caller (and legacy zero-value listings) on the old flat fee.
+    declaredValueCents = 0,
+    isPro = false,
   ): SwapLegFeeBreakdown {
     const courierCost = isFirearmLeg
       ? 0
       : Math.max(0, Math.round(courierCostCents));
-    const serviceFee = isFirearmLeg
-      ? SWAP_FIREARM_FEE_CENTS
-      : SWAP_SHIPPING_FEE_CENTS;
+    const serviceFee = this.swapServiceFee(
+      declaredValueCents,
+      isFirearmLeg,
+      isPro,
+    );
     const cashContribution = Math.max(0, Math.round(cashContributionCents));
     const subtotal = courierCost + serviceFee + cashContribution;
     // GG absorbs the EFT handling out of the flat fee — computed for internal

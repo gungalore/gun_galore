@@ -12,6 +12,7 @@ import {
   ArrayMinSize,
   ArrayMaxSize,
   Min,
+  Max,
   Length,
   MaxLength,
   ValidateIf,
@@ -104,6 +105,16 @@ export class CreateListingDto {
   @IsInt()
   @Min(100)
   autoDeclineThreshold?: number;
+
+  // ---- SWOP-only field --------------------------------------------
+  // Honest-value anchor in ZAR cents — REQUIRED for SWOP listings
+  // (service-validated). Drives the value-based swap service fee, is shown
+  // to the counterparty while negotiating, and caps dispute compensation.
+  @IsOptional()
+  @IsInt()
+  @Min(100)
+  @Max(100_000_000)
+  declaredValueCents?: number;
 
   // ---- AUCTION-only fields ----------------------------------------
   // Hidden reserve in ZAR cents. Optional.
