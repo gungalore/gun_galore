@@ -302,8 +302,12 @@ body[data-install-prompt='true'] #askgg-hello {
 .gg-sk-brow-r {
   transform-box: view-box;
 }
-.gg-sk-arm-l { transform-origin: 34px 74px; }
-.gg-sk-arm-r { transform-origin: 86px 74px; }
+/* Pivot AT each arm's shoulder anchor (the sleeve start point in
+   ask-gg-mascot.tsx) so waves/celebrates rotate from the shoulder and
+   the sleeve never detaches. Moved 2026-07-18 from (34,74)/(86,74)
+   when the arms were re-anchored from neck height to the torso line. */
+.gg-sk-arm-l { transform-origin: 42px 86px; }
+.gg-sk-arm-r { transform-origin: 78px 86px; }
 .gg-sk-brow-l { transform-origin: 47px 45px; }
 .gg-sk-brow-r { transform-origin: 73px 45px; }
 

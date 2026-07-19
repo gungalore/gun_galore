@@ -19,9 +19,10 @@ import { useEffect, useId, useRef } from 'react';
 //     eyes follow a nearby cursor.
 //
 // The character is built on the SAME animation rig as the previous mascot —
-// identical `gg-sk-*` class names and viewBox coordinates (arm pivots 34/86,74;
-// brow pivots 47/73,45; eyes 47/73,56; pupils 48/72,58; mouths ~y70) — so the
-// globals.css rig drives it unchanged. Everything animates the individual
+// identical `gg-sk-*` class names and viewBox coordinates (arm pivots 42/78,86
+// — at the torso-shoulder anchors since 2026-07-18; brow pivots 47/73,45;
+// eyes 47/73,56; pupils 48/72,58; mouths ~y70) — so the globals.css rig
+// drives it unchanged. Everything animates the individual
 // transform properties (translate / rotate / scale) so effects COMPOSE, and
 // every motion sits behind prefers-reduced-motion: no-preference.
 //
@@ -208,9 +209,14 @@ export function AskGgMascot({
 
       <g className="gg-sk-float">
         {/* arms (behind body) — sleeves in shirt khaki, skin hands */}
+        {/* Arms anchor at the TORSO SHOULDERS (y≈86, on the shirt line) —
+            the original paths started at y=76, neck height beside the
+            jaw, so the sleeves read as sprouting from his neck. The CSS
+            rig pivots (globals.css .gg-sk-arm-l/r transform-origins)
+            moved with them — keep the two in sync. */}
         <g className="gg-sk-arm-l">
           <path
-            d="M40 76 C31 80 27 88 28 96"
+            d="M42 86 C33 88 28 92 28 96"
             stroke={`url(#${shirtId})`}
             strokeWidth="9"
             strokeLinecap="round"
@@ -220,7 +226,7 @@ export function AskGgMascot({
         </g>
         <g className="gg-sk-arm-r">
           <path
-            d="M80 76 C89 80 93 88 92 96"
+            d="M78 86 C87 88 92 92 92 96"
             stroke={`url(#${shirtId})`}
             strokeWidth="9"
             strokeLinecap="round"
