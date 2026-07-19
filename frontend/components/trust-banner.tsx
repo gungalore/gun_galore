@@ -6,7 +6,7 @@
 // House rule: never the word "escrow" — "payment is held" is correct.
 
 const POINTS = [
-  'Payment held until delivery',
+  'Buyer / Seller Protection System',
   'ID-verified sellers',
   'Couriered & tracked',
   'No upfront fees to advertise',
