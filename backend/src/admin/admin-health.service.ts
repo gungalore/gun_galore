@@ -290,6 +290,7 @@ export class AdminHealthService {
       { key: 'swap-prefunding-sweep', label: 'Swap pre-funding sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'prize-draw', label: 'PRO prize draw', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'swap-fee-receipt-retry', label: 'Swap fee receipt retry', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
+      { key: 'zoho-revenue-doc-retry', label: 'Zoho revenue-doc retry', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'swap-locked-redrive', label: 'Swap locked-state redrive', schedule: 'every 5 min', expectedIntervalSec: 300 },
       { key: 'swap-shipping-sla', label: 'Swap shipping SLA sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'swap-verification-sweep', label: 'Swap verification sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },

@@ -700,6 +700,24 @@ export class TasksService {
   // completion (createSwapFeeReceipts is idempotent per side, so a re-fire
   // can only fill a missing receipt). Keeps Books whole without an admin
   // clicking a retry button.
+  // Hourly — self-heal FAILED/stranded commission invoices + missing
+  // subscription sales receipts (previously manual-retry only; a Zoho
+  // outage during a release window would silently leave holes in Books).
+  @Cron(CronExpression.EVERY_HOUR)
+  async retryRevenueDocs() {
+    this.logger.debug('Running Zoho revenue-doc retry cron');
+    try {
+      await this.zohoBooks.retryFailedRevenueDocs();
+    } catch (err) {
+      this.logger.error(
+        `retryRevenueDocs failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('zoho-revenue-doc-retry');
+    }
+  }
+
   @Cron(CronExpression.EVERY_HOUR)
   async retrySwapFeeReceipts() {
     try {

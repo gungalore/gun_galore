@@ -1042,6 +1042,63 @@ export class ZohoBooksService {
    * createDealPurchaseOrder is idempotent, so a re-fire can only fill the gap.
    * Bounded per run; never throws.
    */
+  /**
+   * Hourly self-heal for the two revenue documents that previously had NO
+   * automatic retry (only the manual /zoho-retry button): commission
+   * invoices whose last sync FAILED (or stranded PENDING >1h — a crash
+   * between markPending and the result), and SUCCEEDED subscription
+   * charges with no sales receipt after 15 min. Both create-calls are
+   * idempotent (guarded on zohoCommissionInvoiceId / zohoReceiptId), so
+   * re-firing a false negative is a no-op. SKIPPED rows are deliberate
+   * decisions and are never retried.
+   */
+  async retryFailedRevenueDocs(limit = 25): Promise<void> {
+    if (!this.isEnabled()) return;
+    try {
+      const staleFloor = new Date(Date.now() - 3_600_000);
+      const failedInvoices = await this.prisma.transaction.findMany({
+        where: {
+          zohoCommissionInvoiceId: null,
+          OR: [
+            { zohoSyncStatus: 'FAILED' },
+            {
+              zohoSyncStatus: 'PENDING',
+              zohoSyncLastAttemptAt: { lt: staleFloor },
+            },
+          ],
+        },
+        select: { id: true },
+        take: limit,
+      });
+      for (const t of failedInvoices) {
+        await this.createCommissionInvoice(t.id);
+      }
+
+      const missingReceipts = await this.prisma.subscriptionCharge.findMany({
+        where: {
+          status: 'SUCCEEDED',
+          zohoReceiptId: null,
+          chargedAt: { lt: new Date(Date.now() - 15 * 60_000) },
+        },
+        select: { id: true },
+        take: limit,
+      });
+      for (const c of missingReceipts) {
+        await this.createSubscriptionSalesReceipt(c.id);
+      }
+
+      if (failedInvoices.length || missingReceipts.length) {
+        this.logger.log(
+          `retryFailedRevenueDocs: re-fired ${failedInvoices.length} commission invoice(s) + ${missingReceipts.length} subscription receipt(s)`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `retryFailedRevenueDocs failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
   async retryMissingDealPurchaseOrders(limit = 25): Promise<void> {
     if (!this.isEnabled()) return;
     try {
