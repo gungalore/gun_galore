@@ -83,6 +83,7 @@ export function SiteFooter() {
             <li><Link href="/?listingType=TAKE_A_SHOT" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Take a Shot</Link></li>
             <li><Link href="/?listingType=SWOP" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Swop / Trade</Link></li>
             <li><Link href="/deals" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Daily Deals</Link></li>
+            <li><Link href="/raffle" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Prize Draw</Link></li>
             <li><Link href="/subscribe" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>GG PRO</Link></li>
             <li><Link href="/listings/new" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Sell</Link></li>
             <li><Link href="/faq" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Help &amp; FAQ</Link></li>

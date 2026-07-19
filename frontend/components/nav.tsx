@@ -102,6 +102,8 @@ export function Nav() {
     { href: '/?listingType=AUCTION', label: 'Auctions' },
     { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
     { href: '/?listingType=SWOP', label: 'Swop / Trade' },
+    { href: '/deals', label: 'Daily Deals' },
+    { href: '/raffle', label: 'Prize Draw' },
   ];
 
   // Account menu items now live in lib/account-menu.tsx (ACCOUNT_GROUPS) so the
