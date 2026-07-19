@@ -9,7 +9,6 @@ import { AdminPageHeader } from '@/components/admin/page-header';
 
 interface AttentionQueue {
   pendingListings: number;
-  pendingPayments: number;
   kycStalled: number;
   dispatchSlaAtRisk: number;
   disputedPayments: number;
@@ -159,14 +158,10 @@ export default function AdminCommandCenterPage() {
           hint: 'Buyer raised dispute',
           group: 'Payments',
         },
-        {
-          label: 'Pending verification',
-          value: attention.pendingPayments,
-          href: '/admin/transactions?status=PENDING_ADMIN_VERIFICATION',
-          tone: attention.pendingPayments > 0 ? 'warn' : 'calm',
-          hint: 'Manual verification needed',
-          group: 'Payments',
-        },
+        // ("Pending verification" card removed 2026-07-18 — it counted the
+        // old manual-EFT PENDING_ADMIN_VERIFICATION status, which nothing
+        // can produce since the EFT strip. Re-add when the new payment
+        // rail has a pay-in verification queue.)
         {
           label: 'Dispatch SLA at risk',
           value: attention.dispatchSlaAtRisk,
@@ -219,6 +214,18 @@ export default function AdminCommandCenterPage() {
           href: '/admin/audit?resourceType=Alert',
           tone: attention.unresolvedAlerts > 0 ? 'warn' : 'calm',
           hint: 'System-raised flags',
+          group: 'Alerts',
+        },
+        // Contact-detail bypass attempts the filter blocked in the last 7
+        // days — the backend always computed this; the card was simply
+        // never rendered. Warn-grade: it's evidence of fee-dodging
+        // attempts, reviewable on the Trust & Safety page.
+        {
+          label: 'Fee-bypass attempts (7d)',
+          value: attention.feeBypassAttempts7d,
+          href: '/admin/trust-safety',
+          tone: attention.feeBypassAttempts7d > 0 ? 'warn' : 'calm',
+          hint: 'Contact-detail filter blocks',
           group: 'Alerts',
         },
         // Service credits below alarm — silent-failure risk. SMS/email

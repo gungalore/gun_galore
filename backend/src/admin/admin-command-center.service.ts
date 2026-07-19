@@ -28,7 +28,6 @@ import { AdminCreditsService } from './admin-credits.service';
 
 export interface AttentionQueue {
   pendingListings: number;
-  pendingPayments: number;
   kycStalled: number; // kycRequiredAt > 24h ago && !verified
   dispatchSlaAtRisk: number; // paid > 24h ago && !dispatched
   disputedPayments: number;
@@ -116,7 +115,6 @@ export class AdminCommandCenterService {
 
     const [
       pendingListings,
-      pendingPayments,
       kycStalled,
       dispatchSlaAtRisk,
       disputedPayments,
@@ -128,9 +126,10 @@ export class AdminCommandCenterService {
       dealFulfilmentAttention,
     ] = await Promise.all([
       this.prisma.listing.count({ where: { status: 'PENDING_REVIEW' } }),
-      this.prisma.transaction.count({
-        where: { paymentStatus: 'PENDING_ADMIN_VERIFICATION' },
-      }),
+      // NOTE: the old manual-EFT "PENDING_ADMIN_VERIFICATION" count was
+      // removed with the EFT strip — nothing can produce that status any
+      // more, so the card read 0 forever. Re-add a pay-in verification
+      // card here when the new payment rail lands, if it needs one.
       this.prisma.user.count({
         where: {
           kycRequiredAt: { not: null, lt: kycStalledCutoff },
@@ -237,7 +236,6 @@ export class AdminCommandCenterService {
 
     return {
       pendingListings,
-      pendingPayments,
       kycStalled,
       dispatchSlaAtRisk,
       disputedPayments,
@@ -531,10 +529,7 @@ export class AdminCommandCenterService {
         type: 'ADMIN_ACTION',
         title: `${a.action.replace(/_/g, ' ').toLowerCase()}`,
         subtitle: `${a.adminUser.email}${a.resourceType ? ` · ${a.resourceType}` : ''}`,
-        href:
-          a.resourceType && a.resourceId
-            ? `/admin/${a.resourceType.toLowerCase()}s/${a.resourceId}`
-            : '/admin/audit',
+        href: adminActionHref(a.resourceType, a.resourceId),
         occurredAt: a.createdAt,
       });
     }
@@ -577,6 +572,43 @@ function formatRand(cents: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   })}`;
+}
+
+// Deep-link for an ADMIN_ACTION feed row. The old code naively built
+// `/admin/<type>s/<id>` which 404'd for every resource without a detail
+// page (e.g. a Setting change linked to /admin/settings/<key>). Only the
+// four types with real [id] pages get a detail link; the rest map to
+// their LIST page; anything unknown falls back to the audit log.
+const ADMIN_DETAIL_ROUTES: Record<string, string> = {
+  User: 'users',
+  Listing: 'listings',
+  Transaction: 'transactions',
+  Order: 'orders',
+};
+const ADMIN_LIST_ROUTES: Record<string, string> = {
+  Setting: 'settings',
+  Deal: 'deals',
+  Dealer: 'dealers',
+  Supplier: 'suppliers',
+  Category: 'categories',
+  CategoryAttribute: 'categories',
+  Broadcast: 'broadcast',
+  AskGgKbEntry: 'ask-gg',
+  AskGgGuideOverride: 'ask-gg',
+  ManualLoad: 'reloading',
+  ReloadingManual: 'reloading',
+};
+function adminActionHref(
+  resourceType: string | null,
+  resourceId: string | null,
+): string {
+  if (resourceType && resourceId && ADMIN_DETAIL_ROUTES[resourceType]) {
+    return `/admin/${ADMIN_DETAIL_ROUTES[resourceType]}/${resourceId}`;
+  }
+  if (resourceType && ADMIN_LIST_ROUTES[resourceType]) {
+    return `/admin/${ADMIN_LIST_ROUTES[resourceType]}`;
+  }
+  return '/admin/audit';
 }
 
 function formatType(t: string): string {
