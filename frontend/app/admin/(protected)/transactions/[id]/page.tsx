@@ -36,7 +36,7 @@ interface TransactionDossier {
     // M26 — payout-hold lever fields (auto-returned by the dossier endpoint).
     payoutHeldAt: string | null;
     payoutHoldReason: string | null;
-    payoutBatchId: string | null;
+
     paidOutAt: string | null;
     shippingMethod: string | null;
     trackingReference: string | null;
@@ -351,7 +351,7 @@ export default function TransactionDossierPage() {
             paymentStatus={t.paymentStatus}
             payoutHeldAt={t.payoutHeldAt}
             payoutHoldReason={t.payoutHoldReason}
-            payoutSettled={!!t.payoutBatchId || !!t.paidOutAt}
+            payoutSettled={!!t.paidOutAt}
           />
           {(t.refundedAmount ?? 0) > 0 && t.paymentStatus !== 'REFUNDED' && (
             <p className="text-xs mt-2" style={{ color: 'var(--amber, #f59e0b)' }}>

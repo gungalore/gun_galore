@@ -15,12 +15,11 @@ import { AdminSettingsService } from './admin-settings.service';
 import { AdminBroadcastService } from './admin-broadcast.service';
 import {
   AdminAuthController,
-  AdminStatsController,
+  AdminAlertsController,
   AdminListingsController,
   AdminUsersController,
   AdminTransactionsController,
   AdminOrdersController,
-  AdminKycController,
   AdminAdminsController,
   AdminAuditController,
   AdminAnalyticsController,
@@ -38,21 +37,20 @@ import {
 import { AdminSwapsController } from './admin-swaps.controller';
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
 import { SuperadminGuard } from './guards/superadmin.guard';
-import { KycModule } from '../kyc/kyc.module';
 import { ListingsModule } from '../listings/listings.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
 import { SwapsModule } from '../swaps/swaps.module';
 
 @Module({
-  // KycModule for AdminKycController; ListingsModule so reviewListing
-  // can re-index the listing in Meilisearch after the admin approve/
-  // reject decision; PaymentsModule so the admin tx dossier
-  // controller can call DealerVerificationService.adminOverride;
-  // ZohoBooksModule for the Credit Note posted from refundTransaction.
+  // ListingsModule so reviewListing can re-index the listing in
+  // Meilisearch after the admin approve/reject decision; PaymentsModule
+  // so the admin tx dossier controller can call
+  // DealerVerificationService.adminOverride; ZohoBooksModule for the
+  // Credit Note posted from refundTransaction. (KycModule was only here
+  // for the removed AdminKycController.)
   imports: [
     JwtModule.register({}),
-    KycModule,
     ListingsModule,
     PaymentsModule,
     ZohoBooksModule,
@@ -77,12 +75,11 @@ import { SwapsModule } from '../swaps/swaps.module';
   ],
   controllers: [
     AdminAuthController,
-    AdminStatsController,
+    AdminAlertsController,
     AdminListingsController,
     AdminUsersController,
     AdminTransactionsController,
     AdminOrdersController,
-    AdminKycController,
     AdminAdminsController,
     AdminAuditController,
     AdminAnalyticsController,

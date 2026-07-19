@@ -80,6 +80,7 @@ const GROUPS: NavGroup[] = [
         label: 'Analytics & Health',
         aliases: ['/admin/health'],
       },
+      { href: '/admin/alerts', label: 'Alerts' },
       { href: '/admin/audit', label: 'Audit Log' },
       { href: '/admin/settings', label: 'Settings' },
       { href: '/admin/broadcast', label: 'Broadcast' },

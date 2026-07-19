@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { adminFetch } from '@/lib/admin-auth';
 
 /**
  * Admin panel — Zoho Books sync status for one transaction.
@@ -40,8 +41,11 @@ export function ZohoSyncPanel({ tx }: { tx: TxLike }) {
     setBusy(true);
     setResult(null);
     try {
-      const res = await fetch(
-        `/api/admin/transactions/${tx.id}/zoho-retry`,
+      // adminFetch, NOT raw fetch — the endpoint is behind AdminJwtGuard
+      // and needs the Bearer token attached (the old raw fetch sent no
+      // auth header, so this button always came back 401).
+      const res = await adminFetch(
+        `/admin/transactions/${tx.id}/zoho-retry`,
         { method: 'POST' },
       );
       if (!res.ok) {

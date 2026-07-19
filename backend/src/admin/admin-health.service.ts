@@ -263,15 +263,38 @@ export class AdminHealthService {
       schedule: string;
       expectedIntervalSec: number;
     }> = [
+      // Every schedule below is cross-checked against the actual @Cron
+      // decorators in tasks.service.ts (audit 2026-07-18 — dispatch-sla
+      // was declared "every 10 min" while the cron runs hourly, which
+      // false-red'd the row for 30 of every 60 minutes). deal-drops is
+      // deliberately NOT monitored: it only records a run when a drop
+      // actually fires, so a freshness check would false-alarm forever.
       { key: 'shipping-poll', label: 'Shipping tracking poll', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'auction-end', label: 'Auction end sweep', schedule: 'every 1 min', expectedIntervalSec: 60 },
-      { key: 'offer-expire', label: 'Offer expiry sweep', schedule: 'every 5 min', expectedIntervalSec: 300 },
-      { key: 'dispatch-sla', label: 'Dispatch SLA enforcer', schedule: 'every 10 min', expectedIntervalSec: 600 },
+      { key: 'offer-expire', label: 'Offer expiry sweep', schedule: 'every 10 min', expectedIntervalSec: 600 },
+      { key: 'dispatch-sla', label: 'Dispatch SLA enforcer', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'verifynow-balance', label: 'VerifyNow balance refresh', schedule: 'every 5 min', expectedIntervalSec: 300 },
       { key: 'push-prune', label: 'Push subscription cleanup', schedule: 'every 1 week', expectedIntervalSec: 604800 },
       { key: 'saved-search-match', label: 'Saved-search alert matcher', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'stuck-held-funds', label: 'Stuck-held-funds admin alert', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'deal-po-retry', label: 'Deal PO retry', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
+      { key: 'credit-poll', label: 'Service credit snapshot poll', schedule: 'every 15 min', expectedIntervalSec: 900 },
+      { key: 'firearm-licence-expiry', label: 'Firearm licence expiry sweep', schedule: 'daily 06:00', expectedIntervalSec: 86400 },
+      { key: 'pa-payout-reconcile', label: 'Payout reconcile sweep', schedule: 'every 5 min', expectedIntervalSec: 300 },
+      { key: 'orphan-reclaim', label: 'Orphaned reservation reclaim', schedule: 'every 5 min', expectedIntervalSec: 300 },
+      { key: 'order-status-rollup', label: 'Order status rollup', schedule: 'every 30 min', expectedIntervalSec: 1800 },
+      { key: 'featured-tick', label: 'Featured slots tick', schedule: 'every 1 min', expectedIntervalSec: 60 },
+      { key: 'subscription-sweep', label: 'Subscription sweep', schedule: 'every 10 min', expectedIntervalSec: 600 },
+      { key: 'swap-proposal-expire', label: 'Swap proposal expiry', schedule: 'every 10 min', expectedIntervalSec: 600 },
+      { key: 'swap-funding-sweep', label: 'Swap funding sweep', schedule: 'every 10 min', expectedIntervalSec: 600 },
+      { key: 'swap-fee-receipt-retry', label: 'Swap fee receipt retry', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
+      { key: 'swap-locked-redrive', label: 'Swap locked-state redrive', schedule: 'every 5 min', expectedIntervalSec: 300 },
+      { key: 'swap-shipping-sla', label: 'Swap shipping SLA sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
+      { key: 'swap-verification-sweep', label: 'Swap verification sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
+      { key: 'deal-collection-sweep', label: 'Deal collection sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
+      { key: 'experience-sla', label: 'Experience SLA sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
+      { key: 'dealer-verification-ageing', label: 'Dealer verification ageing', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
+      { key: 'accept-escalation', label: '48h accept escalation', schedule: 'every 10 min', expectedIntervalSec: 600 },
     ];
 
     const rows = await this.prisma.setting.findMany({

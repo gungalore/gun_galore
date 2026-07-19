@@ -739,11 +739,44 @@ export class AdminCreditsService {
 
   // -------------------------------------------------------------------
   // Thresholds CRUD — operator-managed per-service alert levels.
+  //
+  // BUILT-IN DEFAULTS: before 2026-07-18 the alarm chain only worked
+  // once the operator had hand-created CreditThreshold rows — with the
+  // table empty, countServicesBelowAlarm() was hard-wired to 0 and a
+  // service could run dry silently (VerifyNow reached 28 credits with
+  // zero warnings anywhere). These floors apply whenever no DB row
+  // exists for a service; saving a threshold from the credits page
+  // creates a DB row that overrides the default.
   // -------------------------------------------------------------------
   async listThresholds() {
-    return this.prisma.creditThreshold.findMany({
+    const rows = await this.prisma.creditThreshold.findMany({
       orderBy: { service: 'asc' },
     });
+    // Merge in defaults for services with no custom row so the credits
+    // page (which computes warn/alarm client-side from this list) and
+    // the command-center count agree on one effective threshold set.
+    const have = new Set(rows.map((r) => r.service));
+    const merged: Array<
+      (typeof rows)[number] | {
+        service: string;
+        warnThreshold: number | null;
+        alarmThreshold: number | null;
+        enabled: boolean;
+        source: 'default';
+      }
+    > = [...rows];
+    for (const [service, d] of Object.entries(DEFAULT_THRESHOLDS)) {
+      if (!have.has(service)) {
+        merged.push({
+          service,
+          warnThreshold: d.warn,
+          alarmThreshold: d.alarm,
+          enabled: true,
+          source: 'default',
+        });
+      }
+    }
+    return merged.sort((a, b) => a.service.localeCompare(b.service));
   }
 
   async upsertThreshold(
@@ -874,27 +907,48 @@ export class AdminCreditsService {
   // Returns 0 when nothing is configured — never throws.
   // -------------------------------------------------------------------
   async countServicesBelowAlarm(): Promise<number> {
-    const thresholds = await this.prisma.creditThreshold.findMany({
-      where: { enabled: true, alarmThreshold: { not: null } },
-    });
-    if (thresholds.length === 0) return 0;
+    // Effective alarm level per service = custom DB row when one exists
+    // (a disabled row or a null alarm level opts the service OUT), else
+    // the built-in default. Matches what listThresholds() serves the
+    // credits page, so both surfaces always agree.
+    const rows = await this.prisma.creditThreshold.findMany();
+    const effective = new Map<string, number>();
+    for (const [service, d] of Object.entries(DEFAULT_THRESHOLDS)) {
+      if (d.alarm != null) effective.set(service, d.alarm);
+    }
+    for (const r of rows) {
+      if (r.enabled && r.alarmThreshold != null) {
+        effective.set(r.service, r.alarmThreshold);
+      } else {
+        effective.delete(r.service);
+      }
+    }
 
     let count = 0;
-    for (const t of thresholds) {
+    for (const [service, alarm] of effective) {
       // Find the most recent snapshot for this service.
       const latest = await this.prisma.creditSnapshot.findFirst({
-        where: { service: t.service, balance: { not: null } },
+        where: { service, balance: { not: null } },
         orderBy: { fetchedAt: 'desc' },
         select: { balance: true },
       });
-      if (
-        latest?.balance != null &&
-        t.alarmThreshold != null &&
-        latest.balance <= t.alarmThreshold
-      ) {
+      if (latest?.balance != null && latest.balance <= alarm) {
         count++;
       }
     }
     return count;
   }
 }
+
+// Built-in alert floors for the services whose balance we can actually
+// poll (Anthropic/Pudo/TCG expose no balance API — they can't alarm on
+// a number, so they carry no default). Units are each provider's own
+// credit unit. Override per-service from the /admin/credits page.
+const DEFAULT_THRESHOLDS: Record<
+  string,
+  { warn: number | null; alarm: number | null }
+> = {
+  verifynow: { warn: 100, alarm: 50 },
+  smsportal: { warn: 200, alarm: 100 },
+  cloudinary: { warn: 15, alarm: 5 },
+};

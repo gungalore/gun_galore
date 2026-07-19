@@ -45,16 +45,35 @@ export class AdminService {
   ) {}
 
   // ---------------------------------------------------------------
-  // Stats
+  // Alerts inbox — list + resolve AdminAlert rows. The command-center
+  // card counts them; this is where the admin actually works them.
   // ---------------------------------------------------------------
-  async stats() {
-    const [pendingListings, pendingPayments, totalUsers, bannedUsers] = await Promise.all([
-      this.prisma.listing.count({ where: { status: 'PENDING_REVIEW' } }),
-      this.prisma.transaction.count({ where: { paymentStatus: 'PENDING_ADMIN_VERIFICATION' } }),
-      this.prisma.user.count(),
-      this.prisma.user.count({ where: { isBanned: true } }),
-    ]);
-    return { pendingListings, pendingPayments, totalUsers, bannedUsers };
+  async listAlerts(resolved?: boolean, limit = 100) {
+    return this.prisma.adminAlert.findMany({
+      where: resolved === undefined ? {} : { resolved },
+      orderBy: [{ resolved: 'asc' }, { createdAt: 'desc' }],
+      take: Math.min(Math.max(limit, 1), 200),
+    });
+  }
+
+  async resolveAlert(adminId: string, alertId: string, reason?: string) {
+    // Guarded update — a second admin resolving the same alert gets a
+    // clean error instead of silently double-writing.
+    const updated = await this.prisma.adminAlert.updateMany({
+      where: { id: alertId, resolved: false },
+      data: { resolved: true, resolvedAt: new Date() },
+    });
+    if (updated.count === 0) {
+      throw new BadRequestException('Alert not found or already resolved.');
+    }
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'ALERT_RESOLVE',
+      resourceType: 'Alert',
+      resourceId: alertId,
+      reason: reason?.trim() || 'Resolved from the alerts inbox',
+    });
+    return { ok: true };
   }
 
   // ---------------------------------------------------------------
@@ -1185,10 +1204,25 @@ export class AdminService {
   // ---------------------------------------------------------------
   // Transactions
   // ---------------------------------------------------------------
-  async getTransactions(status?: string, page = 1, limit = 20) {
-    const where = status
-      ? { paymentStatus: status as never }
-      : { paymentStatus: 'PENDING_ADMIN_VERIFICATION' as never };
+  async getTransactions(
+    status?: string,
+    page = 1,
+    limit = 20,
+    filter?: string,
+  ) {
+    // Default to HELD — the live money-in-flight queue. (The old default
+    // was the manual-EFT PENDING_ADMIN_VERIFICATION fossil, which made
+    // /admin/transactions land on a permanently-empty list.)
+    const where: Record<string, unknown> = {
+      paymentStatus: (status ?? 'HELD') as never,
+    };
+    // Command-center deep-link: HELD sales where the seller blew the 48h
+    // accept window and the escalation cron flagged them.
+    if (filter === 'accept-stalled') {
+      where.acceptEscalatedAt = { not: null };
+      where.acceptedAt = null;
+      where.rejectedAt = null;
+    }
     const [transactions, total] = await Promise.all([
       this.prisma.transaction.findMany({
         where,
@@ -1336,15 +1370,13 @@ export class AdminService {
       },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
-    // Releasable states: PENDING_ADMIN_VERIFICATION (the manual-EFT review gate)
-    // OR plain HELD (P5.3 — the admin manually releasing a delivered order the
-    // buyer never confirmed). A DISPUTED/REFUNDED/RELEASED tx is not releasable
-    // here. The atomic CAS below is the real guard against a race with the
-    // buyer's own confirmDelivery on a HELD tx.
-    if (
-      tx.paymentStatus !== 'PENDING_ADMIN_VERIFICATION' &&
-      tx.paymentStatus !== 'HELD'
-    )
+    // Releasable state: HELD (P5.3 — the admin manually releasing a
+    // delivered order the buyer never confirmed). A DISPUTED/REFUNDED/
+    // RELEASED tx is not releasable here. The atomic CAS below is the
+    // real guard against a race with the buyer's own confirmDelivery.
+    // (The manual-EFT PENDING_ADMIN_VERIFICATION gate was removed with
+    // the EFT strip — nothing can produce that status.)
+    if (tx.paymentStatus !== 'HELD')
       throw new BadRequestException(
         `Transaction is not releasable (current: ${tx.paymentStatus}).`,
       );
@@ -1408,7 +1440,7 @@ export class AdminService {
       const claim = await txc.transaction.updateMany({
         where: {
           id: txId,
-          paymentStatus: { in: ['PENDING_ADMIN_VERIFICATION', 'HELD'] },
+          paymentStatus: 'HELD',
           // Belt-and-braces: keep the paid-only guard inside the atomic CAS so
           // an unpaid HELD row can never be flipped to RELEASED even if the
           // pre-check above is ever bypassed.

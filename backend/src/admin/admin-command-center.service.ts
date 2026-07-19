@@ -539,7 +539,7 @@ export class AdminCommandCenterService {
         type: 'ADMIN_ALERT',
         title: `Alert — ${al.type.replace(/_/g, ' ').toLowerCase()}`,
         subtitle: al.context ?? undefined,
-        href: '/admin', // future: dedicated alerts page
+        href: '/admin/alerts',
         occurredAt: al.createdAt,
         urgent: al.urgent,
       });

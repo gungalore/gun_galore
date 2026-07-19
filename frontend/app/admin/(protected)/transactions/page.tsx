@@ -24,12 +24,18 @@ interface TxResponse {
   limit: number;
 }
 
-const STATUS_TABS = ['PENDING_ADMIN_VERIFICATION', 'HELD', 'RELEASED', 'REFUNDED'];
+// HELD leads (live money in flight) — the old first tab was the
+// manual-EFT PENDING_ADMIN_VERIFICATION fossil, a status nothing can
+// produce since the EFT strip, so the page landed on an empty list.
+const STATUS_TABS = ['HELD', 'DISPUTED', 'RELEASED', 'REFUNDED'];
 
 export default function AdminTransactionsPage() {
   const searchParams = useSearchParams();
-  const status = searchParams.get('status') ?? 'PENDING_ADMIN_VERIFICATION';
+  const status = searchParams.get('status') ?? 'HELD';
   const page = searchParams.get('page') ?? '1';
+  // Command-center deep-link: HELD sales flagged by the 48h-accept
+  // escalation cron. Passed straight through to the backend query.
+  const filter = searchParams.get('filter') ?? '';
 
   const [data, setData] = useState<TxResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -70,7 +76,7 @@ export default function AdminTransactionsPage() {
     let cancelled = false;
     (async () => {
       const res = await adminFetch(
-        `/admin/transactions?status=${status}&page=${page}&limit=20`,
+        `/admin/transactions?status=${status}&page=${page}&limit=20${filter ? `&filter=${encodeURIComponent(filter)}` : ''}`,
       );
       if (cancelled) return;
       if (res.ok) setData(await res.json());
@@ -80,7 +86,7 @@ export default function AdminTransactionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [status, page]);
+  }, [status, page, filter]);
 
   function name(p: { firstName: string | null; lastName: string | null; email: string }) {
     return [p.firstName, p.lastName].filter(Boolean).join(' ') || p.email;
@@ -202,9 +208,12 @@ export default function AdminTransactionsPage() {
                       {new Date(tx.createdAt).toLocaleDateString('en-ZA')}
                     </td>
                     <td className="px-4 py-3">
-                      {status === 'PENDING_ADMIN_VERIFICATION' && (
-                        <TransactionActions txId={tx.id} />
-                      )}
+                      {/* Inline Release/Refund on live HELD rows (the old
+                          gate was the manual-EFT fossil status, leaving
+                          real rows with no actions). DISPUTED rows need
+                          the dossier's resolve-dispute flow — open the
+                          transaction for those. */}
+                      {status === 'HELD' && <TransactionActions txId={tx.id} />}
                     </td>
                   </tr>
                 ))}

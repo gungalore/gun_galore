@@ -111,6 +111,18 @@ function statusFor(
   threshold: Threshold | undefined,
 ): 'ok' | 'warn' | 'alarm' | 'unconfigured' {
   if (snap.error?.includes('not configured')) return 'unconfigured';
+  // Services with NO balance API (Anthropic admin API off, Pudo, TCG
+  // post-paid) can't be auto-checked — that's a known limitation, not an
+  // emergency, so they render grey "not configured" instead of red.
+  // A null balance with any OTHER error is a real probe failure → alarm.
+  if (
+    snap.balance == null &&
+    /no (public )?balance endpoint|may not be enabled|post-paid/i.test(
+      snap.error ?? '',
+    )
+  ) {
+    return 'unconfigured';
+  }
   if (snap.balance == null) return 'alarm';
   if (
     threshold?.alarmThreshold != null &&

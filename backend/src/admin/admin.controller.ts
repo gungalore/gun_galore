@@ -28,7 +28,6 @@ import { ListingReviewDto } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import { UpdateAdminRoleDto } from './dto/update-admin-role.dto';
-import { KycService } from '../kyc/kyc.service';
 import { AdminAuditService } from './admin-audit.service';
 import {
   AdminAnalyticsService,
@@ -116,17 +115,36 @@ export class AdminAuthController {
 }
 
 // ---------------------------------------------------------------
-// Stats
+// Alerts — the inbox for AdminAlert rows. Before this existed the
+// command center could COUNT unresolved alerts but there was no UI
+// (or endpoint) to view or resolve them; the only way was raw SQL.
 // ---------------------------------------------------------------
-@Controller('admin')
+@Controller('admin/alerts')
 @UseGuards(AdminJwtGuard)
-export class AdminStatsController {
+export class AdminAlertsController {
   constructor(private readonly adminService: AdminService) {}
 
-  @Get('stats')
-  @UseGuards(SuperadminGuard)
-  stats() {
-    return this.adminService.stats();
+  // List alerts, unresolved first. ?resolved=true shows the handled
+  // history; default returns everything (the page groups client-side).
+  @Get()
+  listAlerts(
+    @Query('resolved') resolved?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.listAlerts(
+      resolved === undefined ? undefined : resolved === 'true',
+      Number(limit) || 100,
+    );
+  }
+
+  @Post(':id/resolve')
+  @HttpCode(200)
+  resolveAlert(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { reason?: string },
+  ) {
+    return this.adminService.resolveAlert(admin.sub, id, body?.reason);
   }
 }
 
@@ -141,16 +159,10 @@ export class AdminListingsController {
     private readonly listingsService: ListingsService,
   ) {}
 
-  // One-time / maintenance reindex of every ACTIVE listing into
-  // Meilisearch. Needed after the parentId/parentSlug rollup fields
-  // were added to the search doc — existing docs predate them, so
-  // parent-category browse misses them until re-indexed. Returns the
-  // count re-indexed.
-  @Post('reindex')
-  @HttpCode(200)
-  reindexAll() {
-    return this.listingsService.reindexAllActiveListings();
-  }
+  // (The one-time POST /reindex maintenance route was removed 2026-07-18
+  // — no UI ever called it. Bulk reindex still runs automatically after
+  // category-attribute changes via reindexAllActiveListings; call that
+  // from a script if a manual rebuild is ever needed.)
 
   @Get()
   getListings(
@@ -326,11 +338,15 @@ export class AdminTransactionsController {
     @Query('status') status?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    // filter=accept-stalled narrows HELD rows to escalated 48h-accept
+    // breaches — the command-center "Sales awaiting accept" deep-link.
+    @Query('filter') filter?: string,
   ) {
     return this.adminService.getTransactions(
       status,
       Number(page) || 1,
       Number(limit) || 20,
+      filter,
     );
   }
 
@@ -540,32 +556,9 @@ export class AdminAdminsController {
 // ---------------------------------------------------------------
 // KYC — VerifyNow credit balance
 // ---------------------------------------------------------------
-// VerifyNow doesn't expose a "buy credits" API, so this controller
-// is read-only: cached balance + a forced refresh that hits /my_credits
-// live. The admin UI shows the number and links out to verifynow.co.za
-// for top-ups.
-@Controller('admin/kyc')
-@UseGuards(AdminJwtGuard)
-export class AdminKycController {
-  constructor(private readonly kyc: KycService) {}
-
-  // Returns whatever's in the Settings cache (populated every 5 min by
-  // TasksService.refreshVerifyNowBalance). Null if we've never fetched.
-  @Get('balance')
-  async getBalance() {
-    const cached = await this.kyc.getCachedCreditBalance();
-    return { balance: cached };
-  }
-
-  // Hit VerifyNow live, write to cache, return new value. Used by the
-  // admin panel's "Refresh now" button.
-  @Post('balance/refresh')
-  @HttpCode(200)
-  async refreshBalance() {
-    const fresh = await this.kyc.refreshCreditBalance();
-    return { balance: fresh };
-  }
-}
+// (AdminKycController removed 2026-07-18 — its standalone VerifyNow
+// balance page was an orphan superseded by /admin/credits, which polls
+// the same balance through the credit-snapshot cron.)
 
 // ---------------------------------------------------------------
 // Global search — powers the type-ahead in the admin layout header.

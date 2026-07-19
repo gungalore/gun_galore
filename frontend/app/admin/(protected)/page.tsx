@@ -211,7 +211,10 @@ export default function AdminCommandCenterPage() {
         {
           label: 'Unresolved alerts',
           value: attention.unresolvedAlerts,
-          href: '/admin/audit?resourceType=Alert',
+          // The alerts INBOX (was /admin/audit?resourceType=Alert — a
+          // filter no audit row ever matches, i.e. a guaranteed-empty
+          // page).
+          href: '/admin/alerts',
           tone: attention.unresolvedAlerts > 0 ? 'warn' : 'calm',
           hint: 'System-raised flags',
           group: 'Alerts',

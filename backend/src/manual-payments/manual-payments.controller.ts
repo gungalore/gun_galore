@@ -12,13 +12,9 @@ import { ManualPaymentsService } from './manual-payments.service';
 export class ManualPaymentsController {
   constructor(private readonly manual: ManualPaymentsService) {}
 
-  // Preview of what's owed now — seller payouts (RELEASED) + buyer refunds
-  // (REFUNDED), plus rows a settlement would skip (missing bank details / KYC
-  // gate / zero-net) with a structured reason each.
-  @Get('payouts-due')
-  payoutsDue() {
-    return this.manual.getPayoutsDuePreview();
-  }
+  // (GET payouts-due removed 2026-07-18 — no UI consumed it since the FNB
+  // rail was stripped. The rail-agnostic getPayoutsDue/collectDue service
+  // methods stay for the future payment provider's disbursement leg.)
 
   // P1.3 — every entity whose latest Zoho Books sync FAILED, in one list.
   @Get('zoho-failed')
