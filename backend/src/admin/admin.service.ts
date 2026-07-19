@@ -403,6 +403,16 @@ export class AdminService {
       reason: reason.trim(),
     });
 
+    // Decision landed — auto-resolve the KYC_REVIEW alert(s) raised for
+    // this user (both the inconclusive-verdict and anchored-recheck alerts
+    // carry referenceId = user id). Same pattern as BUYER_DISPUTE_RAISED
+    // resolving on refund/release; without it every reviewed dossier left
+    // a permanently-unresolved alert inflating the command-center count.
+    void this.prisma.adminAlert.updateMany({
+      where: { type: 'KYC_REVIEW', referenceId: userId, resolved: false },
+      data: { resolved: true, resolvedAt: new Date() },
+    });
+
     // Seller comms — identical to the automated verdict paths. Never
     // include the admin's internal reason in the rejection message.
     try {
