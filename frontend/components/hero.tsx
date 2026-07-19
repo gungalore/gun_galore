@@ -128,7 +128,7 @@ export function Hero() {
       `}</style>
 
       <div className="relative max-w-[1280px] mx-auto px-4 sm:px-6 py-12 sm:py-14 flex flex-col md:flex-row md:items-center md:justify-between gap-8 lg:gap-12" style={{ minHeight: 'inherit' }}>
-        <div className="max-w-[560px]">
+        <div className="max-w-[600px]">
           {/* Eyebrow */}
           <p
             className="hero-reveal hero-reveal-1 text-xs uppercase mb-4"
@@ -147,19 +147,25 @@ export function Hero() {
               mobile. Shadow is subtle on desktop where the overlay
               already darkens the left, but it's the difference
               between "readable" and "professional" on mobile. */}
+          {/* The old lockup hard-<br>'d after "trade", but at lg:text-6xl the
+              first line overflowed the 560px column, so "trade" wrapped onto
+              its own stranded line and the break made it a ragged 4-liner.
+              Now: no manual break, `text-wrap: balance` for even lines at
+              every viewport, a nowrap guard so "gear." can never orphan, and
+              one size notch down at lg so the balanced block breathes. */}
           <h1
-            className="hero-reveal hero-reveal-2 text-4xl sm:text-5xl lg:text-6xl leading-[1.05] mb-5"
+            className="hero-reveal hero-reveal-2 text-4xl sm:text-5xl lg:text-[3.4rem] leading-[1.12] mb-5"
             style={{
               color: 'var(--text-primary)',
               fontWeight: 500,
               letterSpacing: '-0.02em',
               textShadow: '0 2px 8px rgba(0, 0, 0, 0.55)',
+              textWrap: 'balance',
             }}
           >
             Buy, sell, bid and{' '}
-            <span style={{ color: 'var(--red)' }}>trade</span>
-            <br />
-            outdoor, hunting &amp; sport gear.
+            <span style={{ color: 'var(--red)' }}>trade</span> outdoor,
+            hunting &amp; <span style={{ whiteSpace: 'nowrap' }}>sport gear.</span>
           </h1>
 
           {/* Subhead. The previous color (var(--text-secondary) =
