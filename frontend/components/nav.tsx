@@ -66,8 +66,17 @@ export function Nav() {
         setMenuOpen(false);
       }
     }
+    // Escape closes the dropdown too (basic keyboard affordance — the
+    // outside-click listener alone stranded keyboard users).
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMenuOpen(false);
+    }
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
   }, []);
 
   // Close the mobile drawer on route change.
@@ -264,8 +273,12 @@ export function Nav() {
                             background: 'var(--bg-card)',
                             border: '0.5px solid var(--border)',
                             boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-                            maxHeight: '76vh',
-                            overflowY: 'auto',
+                            // Header + sign-out stay pinned; only the middle
+                            // link list scrolls (it gets its own themed
+                            // scrollbar). 88px ≈ nav height + breathing room.
+                            maxHeight: 'calc(100vh - 88px)',
+                            display: 'flex',
+                            flexDirection: 'column',
                           }}
                         >
                           <Link
@@ -278,25 +291,45 @@ export function Nav() {
                               padding: '12px 14px',
                               borderBottom: '0.5px solid var(--border)',
                               textDecoration: 'none',
+                              flexShrink: 0,
                             }}
                           >
-                            <div
-                              style={{
-                                width: 34,
-                                height: 34,
-                                borderRadius: '50%',
-                                background: 'var(--red)',
-                                color: '#fff',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontWeight: 500,
-                                fontSize: 14,
-                                flexShrink: 0,
-                              }}
-                            >
-                              {(displayName || 'G').charAt(0).toUpperCase()}
-                            </div>
+                            {user?.imageUrl ? (
+                              // Same avatar the chip shows — the header used
+                              // to render a generic initial circle instead.
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={user.imageUrl}
+                                alt=""
+                                width={34}
+                                height={34}
+                                style={{
+                                  width: 34,
+                                  height: 34,
+                                  borderRadius: '50%',
+                                  objectFit: 'cover',
+                                  flexShrink: 0,
+                                }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: 34,
+                                  height: 34,
+                                  borderRadius: '50%',
+                                  background: 'var(--red)',
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: 500,
+                                  fontSize: 14,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {(displayName || 'G').charAt(0).toUpperCase()}
+                              </div>
+                            )}
                             <div style={{ minWidth: 0, flex: 1 }}>
                               <p
                                 style={{
@@ -316,12 +349,14 @@ export function Nav() {
                               </p>
                             </div>
                           </Link>
-                          <AccountMenuList
-                            pathname={pathname}
-                            onNavigate={() => setMenuOpen(false)}
-                            compact
-                          />
-                          <div style={{ borderTop: '0.5px solid var(--border)' }}>
+                          <div className="gg-menu-scroll" style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+                            <AccountMenuList
+                              pathname={pathname}
+                              onNavigate={() => setMenuOpen(false)}
+                              compact
+                            />
+                          </div>
+                          <div style={{ borderTop: '0.5px solid var(--border)', flexShrink: 0 }}>
                             <button
                               type="button"
                               onClick={async () => {

@@ -613,3 +613,20 @@ body[data-install-prompt='true'] #askgg-hello {
 @media (prefers-reduced-motion: reduce) {
   .gg-adv { display: none; }
 }
+
+/* Account-dropdown scroll area — slim themed scrollbar instead of the
+   default heavy track (the menu scrolls internally on short viewports). */
+.gg-menu-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.gg-menu-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.gg-menu-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.gg-menu-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}

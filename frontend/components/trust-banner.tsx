@@ -96,13 +96,16 @@ export function TrustCard() {
           .gg-tc-point {
             opacity: 0;
             animation: gg-tc-cycle 9s ease-in-out infinite;
-            animation-delay: calc(var(--i) * 0.55s);
+            animation-delay: calc(var(--i) * 0.4s);
           }
+          /* Long visible plateau (4%–93%) + tighter 0.4s stagger so all four
+             points read together for ~85% of the loop — the old timing left
+             most of the list invisible for roughly a quarter of every cycle. */
           @keyframes gg-tc-cycle {
             0%   { opacity: 0; transform: translateX(10px); }
-            7%   { opacity: 1; transform: translateX(0); }
-            80%  { opacity: 1; transform: translateX(0); }
-            90%  { opacity: 0; transform: translateX(10px); }
+            4%   { opacity: 1; transform: translateX(0); }
+            93%  { opacity: 1; transform: translateX(0); }
+            99%  { opacity: 0; transform: translateX(10px); }
             100% { opacity: 0; transform: translateX(10px); }
           }
         }

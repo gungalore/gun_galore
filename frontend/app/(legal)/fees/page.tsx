@@ -43,7 +43,7 @@ export default function FeesPage() {
           <li><strong>Listing is free.</strong> Browsing, listing and offering cost nothing.</li>
           <li><strong>No charge until a sale completes.</strong> Our commission is only ever taken from a completed sale — it is deducted from the seller's payout, never billed up front.</li>
           <li><strong>Commission is banded</strong> — a lower percentage applies the higher the sale price (see below).</li>
-          <li>Optional extras (a GG+ membership or a featured homepage slot) are the only things you can choose to pay for separately.</li>
+          <li>Optional extras (a GG PRO membership or a featured homepage slot) are the only things you can choose to pay for separately.</li>
         </ul>
       </div>
       <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 24 }}>
@@ -144,32 +144,16 @@ export default function FeesPage() {
 
       <h2>5. Optional extras</h2>
 
-      <h3>5.1 GG+ membership</h3>
+      <h3>5.1 GG PRO membership</h3>
       <p>
-        GG+ is an optional paid membership with member benefits, including
-        reduced fees on featured homepage slots (see below). Membership is
-        prepaid per 31-day period — there is no debit order and no fixed-term
-        contract; it simply lapses if you don't renew.
+        GG PRO is the optional paid membership, at{' '}
+        <strong>R99 per 31-day period</strong>. It includes the full Ask GG
+        assistant, the Load Lab load-data browser, swap benefits, and reduced
+        fees on featured homepage slots (see below). Membership is prepaid —
+        there is no debit order and no fixed-term contract; it simply lapses
+        if you don&apos;t renew. The free tier includes a working preview of
+        every PRO feature.
       </p>
-      <table style={{ width: '100%', fontSize: 14, borderCollapse: 'collapse', marginBottom: 16 }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid var(--border)' }}>
-            <th style={{ textAlign: 'left', padding: '8px 0' }}>Tier</th>
-            <th style={{ textAlign: 'left', padding: '8px 0' }}>Price</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[
-            ['GG+ Member', 'R49 per 31 days'],
-            ['GG+ Pro', 'R149 per 31 days'],
-          ].map(([tier, price], i) => (
-            <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
-              <td style={{ padding: '6px 8px 6px 0' }}>{tier}</td>
-              <td style={{ padding: '6px 0' }}>{price}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
 
       <h3>5.2 Featured homepage slots</h3>
       <p>
@@ -201,19 +185,22 @@ export default function FeesPage() {
         </tbody>
       </table>
       <p>
-        GG+ members pay less for a featured slot: <strong>Member saves 25%</strong>
-        {' '}and <strong>Pro saves 50%</strong> off the slot fee. The live
-        tiers, floor and any discount are always shown on the bidding page
-        before you commit.
+        GG PRO members pay less for a featured slot: <strong>PRO saves 50%</strong>
+        {' '}off the slot fee. The live tiers, floor and any discount are
+        always shown on the bidding page before you commit.
       </p>
 
       <h3>5.3 Swap / Trade</h3>
       <p>
-        When two members swap items rather than buy and sell, GunGalore
-        charges a flat service fee per shipment leg instead of a
-        percentage commission: <strong>R50</strong> for a courier leg and{' '}
-        <strong>R100</strong> for a firearm dealer-transfer leg. Each party
-        pays for the leg they send.
+        When two members swap items rather than buy and sell, each party
+        pays a service fee for the leg they send:{' '}
+        <strong>1.5% of the item&apos;s declared value</strong>, with a
+        minimum of <strong>R50</strong> for a courier leg (<strong>R100</strong>{' '}
+        for a firearm dealer-transfer leg) and a cap of <strong>R750</strong>{' '}
+        per leg. GG PRO members get 25% off the swap service fee. Any cash
+        top-up above R1,000 carries the standard commission bands on the
+        amount above R1,000, deducted from the cash the receiving party is
+        paid at settlement. Your exact fee is always shown before you pay.
       </p>
 
       <h2>6. Currency and VAT</h2>

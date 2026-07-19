@@ -56,7 +56,9 @@ export function SignedInWelcome() {
           ''
         )}
       </p>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {/* xl:pr-24 keeps the last chip clear of the floating GG mascot dock
+          (bottom-right) on short viewports where the strip sits behind it. */}
+      <div className="xl:pr-24" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {[
           { href: '/my/orders', label: 'My orders' },
           { href: '/my/sales', label: 'My sales' },

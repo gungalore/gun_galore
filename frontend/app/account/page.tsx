@@ -165,13 +165,15 @@ export default async function AccountPage() {
               >
                 {kyc.label}
               </span>
-              {/* GG+ tier chip (or a join nudge) */}
+              {/* GG PRO tier chip (or an upgrade nudge — the single paid
+                  tier since 2026-07-19; legacy MEMBER rows show their own
+                  label until they lapse). */}
               {ggPlus ? (
                 <span
                   className="text-xs px-2 py-0.5 rounded-[4px]"
                   style={{ color: 'var(--red)', background: 'rgba(200,16,46,0.10)', border: '0.5px solid var(--red)' }}
                 >
-                  GG+ {ggPlus}
+                  {ggPlus === 'PRO' ? 'GG PRO' : `GG+ ${ggPlus}`}
                   {periodEnd ? ` · renews ${periodEnd}` : ''}
                 </span>
               ) : (
@@ -179,13 +181,14 @@ export default async function AccountPage() {
                   href="/subscribe"
                   className="text-xs px-2 py-0.5 rounded-[4px]"
                   style={{
-                    color: 'var(--text-secondary)',
-                    background: 'var(--bg-inset)',
-                    border: '0.5px solid var(--border)',
+                    color: 'var(--red)',
+                    background: 'rgba(200,16,46,0.08)',
+                    border: '0.5px solid rgba(200,16,46,0.45)',
                     textDecoration: 'none',
+                    fontWeight: 500,
                   }}
                 >
-                  Join GG+
+                  Get GG PRO — R99/mo
                 </Link>
               )}
               {me && (
@@ -278,51 +281,8 @@ export default async function AccountPage() {
               </div>
             ))}
 
-            {/* Support card — links out to help surfaces (not in ACCOUNT_GROUPS). */}
-            <div
-              className="rounded-[10px] overflow-hidden"
-              style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
-            >
-              <p
-                className="text-xs uppercase"
-                style={{
-                  color: 'var(--text-tertiary)',
-                  letterSpacing: '0.06em',
-                  fontWeight: 600,
-                  padding: '14px 16px 6px',
-                  margin: 0,
-                }}
-              >
-                Help
-              </p>
-              {[
-                { href: '/support', label: 'Support & tickets' },
-                { href: '/faq', label: 'FAQ' },
-                { href: '/how-selling-works', label: 'How selling works' },
-              ].map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="flex items-center gap-3"
-                  style={{ padding: '11px 16px', fontSize: 14, textDecoration: 'none', color: 'var(--text-secondary)' }}
-                >
-                  <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="var(--text-tertiary)"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                  >
-                    <path d="M9 6l6 6-6 6" />
-                  </svg>
-                </Link>
-              ))}
-            </div>
+            {/* Help now lives in ACCOUNT_GROUPS (shared with the dropdown /
+                drawer / More sheet), so it renders with the groups above. */}
           </div>
         </PageReveal>
       </main>

@@ -105,7 +105,9 @@ function GgPlusPill({
   // Plus pill" generically; tier-aware shading is a tasteful
   // upgrade cue without screaming about it.
   const isPro = tier === 'PRO';
-  const label = isPro ? 'GG+ PRO' : 'GG+';
+  // Rebrand 2026-07-19: the single paid tier is GG PRO. Legacy MEMBER rows
+  // keep the old GG+ pill until they lapse.
+  const label = isPro ? 'GG PRO' : 'GG+';
   return (
     <span
       title={

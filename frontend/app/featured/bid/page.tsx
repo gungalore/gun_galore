@@ -306,7 +306,7 @@ export default function FeaturedBidPage() {
               flexShrink: 0,
             }}
           >
-            GG+ {bidderTier}
+            {bidderTier === 'PRO' ? 'GG PRO' : `GG+ ${bidderTier}`}
           </span>
           <span style={{ color: 'var(--text-secondary)' }}>
             Your Ask GG subscription unlocks{' '}
@@ -1025,7 +1025,7 @@ function BidModal({
                     color: 'var(--text-primary)',
                   }}
                 >
-                  GG+ {bidderTier} discount −{bidderDiscountPercent}% →{' '}
+                  {bidderTier === 'PRO' ? 'GG PRO' : `GG+ ${bidderTier}`} discount −{bidderDiscountPercent}% →{' '}
                   you&apos;ll be charged{' '}
                   <strong>{formatRand(effectiveChargeCents)}</strong>{' '}
                   (saving {formatRand(snapped.amountCents - effectiveChargeCents)})

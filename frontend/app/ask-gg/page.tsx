@@ -770,7 +770,7 @@ function TierPerksTable({
     },
     {
       label: 'Username badge',
-      perk: { free: '—', pro: 'GG+ PRO pill' },
+      perk: { free: '—', pro: 'GG PRO pill' },
     },
     {
       label: 'Featured-listing bid discount',

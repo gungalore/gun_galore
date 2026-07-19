@@ -113,6 +113,42 @@ export const LogoutIcon: IconC = () => (
     <path d="M15 12H4M11 8l-4 4 4 4M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
   </Svg>
 );
+const SwapIcon: IconC = () => (
+  <Svg>
+    <path d="M4 7h13M14 3l4 4-4 4" />
+    <path d="M20 17H7M10 21l-4-4 4-4" />
+  </Svg>
+);
+const WalletIcon: IconC = () => (
+  <Svg>
+    <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+    <path d="M16 12h5M3 9h18" />
+  </Svg>
+);
+const CrownIcon: IconC = () => (
+  <Svg>
+    <path d="M4 17h16l1-9-5 3.5L12 6l-4 5.5L3 8l1 9z" />
+    <path d="M5 20h14" />
+  </Svg>
+);
+const HelpIcon: IconC = () => (
+  <Svg>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.5 9.5a2.5 2.5 0 0 1 4.9.6c0 1.6-2.4 2.1-2.4 3.4" />
+    <circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none" />
+  </Svg>
+);
+const FaqIcon: IconC = () => (
+  <Svg>
+    <path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4V5z" />
+  </Svg>
+);
+const BookIcon: IconC = () => (
+  <Svg>
+    <path d="M12 6a4 4 0 0 0-4-3H4v15h5a3 3 0 0 1 3 2 3 3 0 0 1 3-2h5V3h-4a4 4 0 0 0-4 3z" />
+    <path d="M12 6v14" />
+  </Svg>
+);
 
 // ── Structure ────────────────────────────────────────────────────────
 export interface AccountMenuItem {
@@ -132,6 +168,11 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
       { href: '/my/orders', label: 'Orders', Icon: OrdersIcon },
       { href: '/my/offers', label: 'Offers made', Icon: TagIcon },
       { href: '/my/bids', label: 'Bids', Icon: GavelIcon },
+      // Swaps live under Buying (both parties "shop" the other's item).
+      // Without this entry /my/swaps was only reachable from notification
+      // links — a member who cleared their inbox couldn't get back to a
+      // live swap.
+      { href: '/my/swaps', label: 'Swaps', Icon: SwapIcon },
       { href: '/wishlist', label: 'Wishlist', Icon: HeartIcon },
       { href: '/saved-searches', label: 'Saved searches', Icon: SearchAlertIcon },
     ],
@@ -141,6 +182,7 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     items: [
       { href: '/my/listings', label: 'Listings', Icon: StoreIcon },
       { href: '/my/sales', label: 'Sales', Icon: ReceiptIcon },
+      { href: '/my/earnings', label: 'Earnings', Icon: WalletIcon },
       { href: '/offers/received', label: 'Offers received', Icon: InboxIcon },
     ],
   },
@@ -149,8 +191,19 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     items: [
       { href: '/dashboard', label: 'Dashboard', Icon: DashboardIcon },
       { href: '/profile', label: 'Profile', Icon: UserIcon },
+      { href: '/subscribe', label: 'GG PRO', Icon: CrownIcon },
       { href: '/settings', label: 'Settings', Icon: SettingsIcon },
       { href: '/notifications', label: 'Notifications', Icon: BellIcon },
+    ],
+  },
+  // Shared with the /account hub (which used to hard-code its own copy —
+  // the exact drift the single-source file exists to prevent).
+  {
+    title: 'Help',
+    items: [
+      { href: '/support', label: 'Support & tickets', Icon: HelpIcon },
+      { href: '/faq', label: 'FAQ', Icon: FaqIcon },
+      { href: '/how-selling-works', label: 'How selling works', Icon: BookIcon },
     ],
   },
 ];
