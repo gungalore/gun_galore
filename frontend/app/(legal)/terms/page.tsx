@@ -24,7 +24,7 @@ export const metadata = {
 export default function TermsPage() {
   return (
     <>
-      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 16 July 2026" />
+      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 19 July 2026" />
 
       <h2>1. About us</h2>
       <p>
@@ -51,9 +51,11 @@ export default function TermsPage() {
         self-defence items, air rifles, and regulated categories such as
         firearms, ammunition and accessories — for sale or auction, and
         allows other registered users ("<strong>Buyers</strong>") to
-        purchase those goods. GunGalore is a <strong>platform</strong> —
-        we do not own, stock, dispatch or directly sell any of the goods
-        listed on the Platform. Where a transaction involves an item
+        purchase those goods. For marketplace listings GunGalore is a{' '}
+        <strong>platform</strong> — we do not own, stock, dispatch or
+        directly sell the goods members list. The one exception is{' '}
+        <strong>Daily Deals</strong> (section 12), where GunGalore
+        itself is the seller of record. Where a transaction involves an item
         subject to the Firearms Control Act 60 of 2000, physical
         possession is transferred only through a SAPS-licensed dealer.
         GunGalore is not a SAPS-licensed dealer and does not handle
@@ -239,13 +241,73 @@ export default function TermsPage() {
         <strong>Take-a-Shot</strong> (buyer-initiated price offer with
         a 48-hour Seller response window and a one-counter limit). The
         operating rules of each mode are summarised on the Platform
-        and described in detail in our help materials. Submitting a
+        and described in detail in our help materials. Swop / Trade, our fourth sale mode, is governed by section 11 below. Submitting a
         bid, offer or Buy Now purchase constitutes a binding offer to
         purchase the listed item at the stated price, subject only to
         the Seller's response window where applicable.
       </p>
 
-      <h2>11. Disputes and refunds</h2>
+      <h2>11. Swop / Trade</h2>
+      <p>
+        <strong>Swop / Trade</strong> is a fourth sale mode: a
+        fully-managed two-way exchange of items between two members,
+        with an optional cash top-up either way. Each party must
+        declare an honest value for the item they offer. The{' '}
+        <strong>declared value</strong> is shown to the other party
+        during negotiation, determines the swap service fee set out on
+        our <a href="/fees" style={{ color: 'var(--red)' }}>Fees</a>{' '}
+        page, and caps the compensation payable to that party if the
+        swap fails — over-declaring increases your fee, under-declaring
+        reduces your protection. Before a swap can be funded, each
+        party must photograph their item together with a unique
+        verification code we issue (proof of possession). Cash top-ups
+        above the threshold on the Fees page carry standard commission,
+        deducted from the cash the recipient is paid. Firearms may only
+        change hands through a licensed dealer in terms of the Firearms
+        Control Act. Agreeing a swap is a commitment to verify, pay and
+        ship: members who repeatedly fail to honour agreed swaps may be
+        suspended under the same three-strike rule that applies to
+        unpaid auction wins and offers.
+      </p>
+
+      <h2>12. Daily Deals</h2>
+      <p>
+        <strong>Daily Deals</strong> are limited-time offers in which
+        GunGalore itself is the seller of record: your purchase
+        contract for a Daily Deal is with GunGalore (Pty) Ltd, not
+        with a marketplace member. Deal purchases are delivered by
+        courier from our supplier's warehouse within the delivery
+        window shown on the deal, are covered by the same funds-held
+        protection as marketplace purchases, and buyers receive a
+        formal receipt by email. Returns and refunds for Daily Deals
+        are governed by our{' '}
+        <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>{' '}
+        and the Consumer Protection Act. Daily Deals never include
+        items requiring a licence to possess.
+      </p>
+
+      <h2>13. GG PRO membership and the prize draw</h2>
+      <p>
+        <strong>GG PRO</strong> is our single paid membership tier: a
+        prepaid 31-day subscription at the price shown on our{' '}
+        <a href="/fees" style={{ color: 'var(--red)' }}>Fees</a> page.
+        It does not auto-renew — you renew when you choose, and unused
+        days stack when you renew early. Free accounts receive limited
+        previews of PRO features. PRO benefits are described on the
+        subscription page and may evolve; benefits added or adjusted
+        apply from your next period. Active paid PRO members are also
+        entered — automatically and at no charge — into our
+        promotional prize draw. Entry is a free benefit of membership
+        at its ordinary price: no payment is required to enter or win,
+        and no part of the subscription price is a payment for entry.
+        The draw is run as a promotional competition under section 36
+        of the Consumer Protection Act and is governed by the{' '}
+        <a href="/raffle/rules" style={{ color: 'var(--red)' }}>competition rules</a>,
+        including the winner's right to exchange any prize for an
+        alternative of equal value.
+      </p>
+
+      <h2>14. Disputes and refunds</h2>
       <p>
         If you believe a Buyer or Seller has not met their obligations
         — for example, an item arrived damaged or never arrived — you
@@ -260,7 +322,7 @@ export default function TermsPage() {
         return defective goods).
       </p>
 
-      <h2>12. Suspension and termination</h2>
+      <h2>15. Suspension and termination</h2>
       <p>
         We may suspend or terminate your account immediately, with or
         without notice, where we reasonably believe that you have:
@@ -281,7 +343,7 @@ export default function TermsPage() {
         transactions in progress, fees due or warranties given.
       </p>
 
-      <h2>13. Intellectual property</h2>
+      <h2>16. Intellectual property</h2>
       <p>
         The Platform (including its software, design, brand, written
         content and structure) is owned by GunGalore (or its licensors)
@@ -292,7 +354,7 @@ export default function TermsPage() {
         the Platform.
       </p>
 
-      <h2>14. Limitation of liability</h2>
+      <h2>17. Limitation of liability</h2>
       <p>
         To the maximum extent permitted by South African law, GunGalore
         will not be liable to you for any indirect, incidental,
@@ -313,7 +375,7 @@ export default function TermsPage() {
         misconduct, and liability under the Consumer Protection Act.
       </p>
 
-      <h2>15. Indemnity</h2>
+      <h2>18. Indemnity</h2>
       <p>
         You agree to indemnify, defend and hold harmless GunGalore,
         its directors, officers, employees and agents from and against
@@ -326,7 +388,7 @@ export default function TermsPage() {
         Platform, or (d) any content you submit to the Platform.
       </p>
 
-      <h2>16. Force majeure</h2>
+      <h2>19. Force majeure</h2>
       <p>
         Neither party will be liable for any failure or delay in
         performance caused by events beyond its reasonable control,
@@ -337,7 +399,7 @@ export default function TermsPage() {
         or Clerk).
       </p>
 
-      <h2>17. Notices and communications</h2>
+      <h2>20. Notices and communications</h2>
       <p>
         Notices to you will be sent to the email address registered on
         your account and, where appropriate, by SMS to your verified
@@ -348,7 +410,7 @@ export default function TermsPage() {
         or by post to the registered address set out in paragraph 1.
       </p>
 
-      <h2>18. Severability</h2>
+      <h2>21. Severability</h2>
       <p>
         If any provision of these Terms is found by a competent court
         to be unenforceable, that provision will be severed and the
@@ -356,7 +418,7 @@ export default function TermsPage() {
         effect.
       </p>
 
-      <h2>19. Governing law and jurisdiction</h2>
+      <h2>22. Governing law and jurisdiction</h2>
       <p>
         These Terms are governed by and construed in accordance with
         the laws of the Republic of South Africa. You and GunGalore
@@ -365,7 +427,7 @@ export default function TermsPage() {
         any dispute arising out of or in connection with these Terms.
       </p>
 
-      <h2>20. Complaints and contact</h2>
+      <h2>23. Complaints and contact</h2>
       <p>
         We aim to acknowledge complaints within 2 business days and
         resolve them within 14 business days. To raise a complaint or
@@ -390,7 +452,7 @@ export default function TermsPage() {
         <strong>Postal:</strong> GunGalore (Pty) Ltd, 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570
       </p>
 
-      <h2>21. ECT Act § 43 disclosures</h2>
+      <h2>24. ECT Act § 43 disclosures</h2>
       <p>
         In compliance with Section 43 of the Electronic Communications
         and Transactions Act 25 of 2002:

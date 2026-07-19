@@ -6,7 +6,7 @@
 //     TOP_SELLER_DISCOUNT)
 //   - Card processing fee (3.5% + R1.50 / transaction): same file
 //   - Shipping handling (R15/waybill) + swap leg fees: same file
-//   - GG+ membership prices: backend/src/settings/settings.service.ts
+//   - GG PRO membership prices: backend/src/settings/settings.service.ts
 //     (launch defaults R49 / R149; operator-tunable)
 //   - Featured-slot ladder: FeaturedSlotConfig defaults in schema.prisma
 //
