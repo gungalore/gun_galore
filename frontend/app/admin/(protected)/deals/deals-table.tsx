@@ -623,10 +623,10 @@ function DealFormModal({
     <ModalShell onClose={() => !busy && onClose()} title={mode === 'create' ? 'New deal' : `Edit ${deal?.title}`}>
       <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3">
         <SectionLabel>Product</SectionLabel>
-        <Field label="Title">
+        <Field label="Title" info="The deal's public name — it headlines the deal card on /deals and the homepage. Keep it short and product-first, e.g. 'Vortex Crossfire II 4-12x44'.">
           <input required value={form.title} onChange={(e) => set('title', e.target.value)} style={inputStyle} />
         </Field>
-        <Field label="Category (licensed / firearm categories are not selectable)">
+        <Field label="Category (licensed / firearm categories are not selectable)" info="Where the item sits in the catalogue — drives search, filters and the spec fields buyers see. Firearm/licensed categories are deliberately blocked: Daily Deals are gear only.">
           <select
             required
             value={form.categoryId}
@@ -644,7 +644,7 @@ function DealFormModal({
             ))}
           </select>
         </Field>
-        <Field label="Description">
+        <Field label="Description" info="The sales copy on the deal page: what it is, what's in the box, why the price is special. Plain honest language — this is first-party GG stock, so we carry the CPA obligations.">
           <textarea
             required
             value={form.description}
@@ -654,7 +654,7 @@ function DealFormModal({
           />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Condition">
+          <Field label="Condition" info="Shown on the card. Daily Deals are normally NEW — only change this if the supplier is clearing demo/open-box stock, and say so in the description.">
             <select value={form.condition} onChange={(e) => set('condition', e.target.value)} style={inputStyle}>
               {CONDITIONS.map((c) => (
                 <option key={c} value={c}>
@@ -663,7 +663,7 @@ function DealFormModal({
               ))}
             </select>
           </Field>
-          <Field label="Warehouse province">
+          <Field label="Warehouse province" info="Where the stock physically ships FROM (the supplier's warehouse). Courier quotes at checkout are calculated from here, so a wrong province means wrong shipping prices.">
             <select value={form.province} onChange={(e) => set('province', e.target.value)} style={inputStyle}>
               {PROVINCES.map((p) => (
                 <option key={p} value={p}>
@@ -674,17 +674,17 @@ function DealFormModal({
           </Field>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <Field label="Brand (opt)">
+          <Field label="Brand (opt)" info="Optional catalogue detail — improves search and the brand pages. Leave blank for unbranded goods.">
             <input value={form.make} onChange={(e) => set('make', e.target.value)} style={inputStyle} />
           </Field>
-          <Field label="Model (opt)">
+          <Field label="Model (opt)" info="Optional model name/number for the spec table and search.">
             <input value={form.model} onChange={(e) => set('model', e.target.value)} style={inputStyle} />
           </Field>
-          <Field label="Calibre (opt)">
+          <Field label="Calibre (opt)" info="Only for calibre-specific accessories (e.g. cleaning kits, snap caps). Leave blank for everything else.">
             <input value={form.calibre} onChange={(e) => set('calibre', e.target.value)} style={inputStyle} />
           </Field>
         </div>
-        <Field label="Shipping method">
+        <Field label="Shipping method" info="How the parcel reaches the buyer. Courier options are quoted live from the warehouse province + parcel size at checkout.">
           <div className="flex flex-col gap-1.5 mt-1">
             <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
               <input type="checkbox" checked disabled style={{ accentColor: 'var(--red)' }} />
@@ -695,7 +695,7 @@ function DealFormModal({
             </p>
           </div>
         </Field>
-        <Field label="Parcel size (for courier quotes)">
+        <Field label="Parcel size (for courier quotes)" info="Weight and box dimensions of ONE unit as it ships. Checkout courier quotes are priced off these numbers — measure the actual boxed product or quotes will be wrong and the margin eats the difference.">
           <div className="grid grid-cols-4 gap-2">
             <input
               type="number"
@@ -738,7 +738,7 @@ function DealFormModal({
 
         <SectionLabel>Deal economics</SectionLabel>
         <div className="grid grid-cols-3 gap-3">
-          <Field label="Cost price (R)">
+          <Field label="Cost price (R)" info="What GG pays the supplier per unit, ex shipping. NEVER shown to buyers — it only drives the margin/profit preview below so you can see the deal is worth running.">
             <input
               type="number"
               step="0.01"
@@ -748,7 +748,7 @@ function DealFormModal({
               style={inputStyle}
             />
           </Field>
-          <Field label="Deal price (R)">
+          <Field label="Deal price (R)" info="What the buyer actually pays during the deal. Must be below the was price.">
             <input
               type="number"
               step="0.01"
@@ -759,7 +759,7 @@ function DealFormModal({
               style={inputStyle}
             />
           </Field>
-          <Field label="Was price (R)">
+          <Field label="Was price (R)" info="The genuine regular selling price the discount is measured against — the card shows SAVE % off this. It must be defensible (a puffed-up was-price is a Consumer Protection Act problem).">
             <input
               type="number"
               step="0.01"
@@ -799,7 +799,7 @@ function DealFormModal({
         </div>
 
         <div className="grid grid-cols-3 gap-3">
-          <Field label="Stock">
+          <Field label="Stock" info="Units available for this run. The deal flips to sold-out when they're gone, and the supplier purchase order is cut for the units actually sold — so overstating stock is safe for money, but embarrassing for buyers.">
             <input
               type="number"
               min="1"
@@ -808,7 +808,7 @@ function DealFormModal({
               style={inputStyle}
             />
           </Field>
-          <Field label="Per-customer cap">
+          <Field label="Per-customer cap" info="Maximum units one buyer may take, so a single buyer can't clear the whole deal. 1–2 is typical for hero deals.">
             <input
               type="number"
               min="1"
@@ -817,7 +817,7 @@ function DealFormModal({
               style={inputStyle}
             />
           </Field>
-          <Field label="Hero rank">
+          <Field label="Hero rank" info="Display order when several deals run at once — rank 1 is the big hero card at the top of /deals, higher numbers stack below it.">
             <input
               type="number"
               value={form.heroRank}
@@ -827,7 +827,7 @@ function DealFormModal({
           </Field>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <Field label="Ships in (min days)">
+          <Field label="Ships in (min days)" info="The fastest realistic dispatch-to-door estimate, in business days after payment. Shown to buyers as the delivery promise — the supplier must actually meet it.">
             <input
               type="number"
               min="0"
@@ -836,7 +836,7 @@ function DealFormModal({
               style={inputStyle}
             />
           </Field>
-          <Field label="Ships in (max days)">
+          <Field label="Ships in (max days)" info="The slow end of the delivery promise. Quote honestly — late deliveries become disputes and refunds.">
             <input
               type="number"
               min="0"
@@ -845,12 +845,12 @@ function DealFormModal({
               style={inputStyle}
             />
           </Field>
-          <Field label="Drop date (opt)">
+          <Field label="Drop date (opt)" info="Optional: pre-schedule the day this deal drops — it goes live automatically at the site-wide drop hour (set in Settings). Leave blank to schedule or go live manually from the table.">
             <input type="date" value={form.dropDate} onChange={(e) => set('dropDate', e.target.value)} style={inputStyle} />
           </Field>
         </div>
         <SectionLabel>Supplier &amp; fulfilment</SectionLabel>
-        <Field label="Supplier (drop-ship warehouse — a purchase order is cut here on sell-out)">
+        <Field label="Supplier (drop-ship warehouse — a purchase order is cut here on sell-out)" info="The supplier holding the stock. When the deal sells out (or ends with sales), a purchase order for the sold units is generated and emailed to this supplier automatically — so the right supplier with the right email is critical.">
           <select value={form.supplierId} onChange={(e) => set('supplierId', e.target.value)} style={inputStyle}>
             <option value="">No supplier assigned</option>
             {suppliers.map((s) => (
@@ -1048,10 +1048,10 @@ function ScheduleModal({ deal, onClose, onDone }: { deal: Deal; onClose: () => v
   return (
     <ModalShell onClose={() => !busy && onClose()} title={`Schedule — ${deal.title}`}>
       <form onSubmit={submit} className="grid grid-cols-1 gap-3">
-        <Field label="Starts at">
+        <Field label="Starts at" info="When the deal goes LIVE and appears on /deals. Buyers see it from this moment.">
           <input type="datetime-local" required value={startsAt} onChange={(e) => setStartsAt(e.target.value)} style={inputStyle} />
         </Field>
-        <Field label="Ends at">
+        <Field label="Ends at" info="When the deal closes. Buyers see a countdown to this time; unsold stock simply doesn't get ordered from the supplier.">
           <input type="datetime-local" required value={endsAt} onChange={(e) => setEndsAt(e.target.value)} style={inputStyle} />
         </Field>
         {error && <p className="text-xs" style={{ color: 'var(--red)' }}>{error}</p>}
@@ -1097,7 +1097,7 @@ function ExtendModal({ deal, onClose, onDone }: { deal: Deal; onClose: () => voi
   return (
     <ModalShell onClose={() => !busy && onClose()} title={`Extra Time — ${deal.title}`}>
       <form onSubmit={submit} className="grid grid-cols-1 gap-3">
-        <Field label="Extend until">
+        <Field label="Extend until" info="Extra-time end. The deal shows an 'extra time' badge until then — use sparingly or the countdowns stop meaning anything.">
           <input type="datetime-local" required value={until} onChange={(e) => setUntil(e.target.value)} style={inputStyle} />
         </Field>
         {error && <p className="text-xs" style={{ color: 'var(--red)' }}>{error}</p>}
@@ -1160,12 +1160,62 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+// Field with an optional tap-to-open explainer: the ⓘ toggles a short
+// plain-English description under the label (tooltips-on-hover don't work
+// on touch, and the operator asked for every input to be explained).
+function Field({
+  label,
+  info,
+  children,
+}: {
+  label: string;
+  info?: string;
+  children: React.ReactNode;
+}) {
+  const [showInfo, setShowInfo] = useState(false);
   return (
     <div>
       <label className="text-xs uppercase tracking-wider mb-1 block" style={{ color: 'var(--text-tertiary)' }}>
         {label}
+        {info && (
+          <button
+            type="button"
+            onClick={() => setShowInfo((v) => !v)}
+            aria-expanded={showInfo}
+            aria-label={`Explain: ${label}`}
+            className="ml-1.5 inline-flex items-center justify-center rounded-full align-middle"
+            style={{
+              width: 15,
+              height: 15,
+              fontSize: 10,
+              lineHeight: 1,
+              background: showInfo ? 'var(--red)' : 'var(--bg-inset)',
+              color: showInfo ? '#fff' : 'var(--text-tertiary)',
+              border: '0.5px solid var(--border)',
+              cursor: 'pointer',
+              padding: 0,
+              textTransform: 'none',
+            }}
+          >
+            i
+          </button>
+        )}
       </label>
+      {info && showInfo && (
+        <p
+          className="text-xs mb-1.5 rounded px-2 py-1.5"
+          style={{
+            color: 'var(--text-secondary)',
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--border)',
+            lineHeight: 1.55,
+            textTransform: 'none',
+            letterSpacing: 'normal',
+          }}
+        >
+          {info}
+        </p>
+      )}
       {children}
     </div>
   );
