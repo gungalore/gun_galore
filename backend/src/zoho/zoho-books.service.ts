@@ -741,9 +741,13 @@ export class ZohoBooksService {
         payload.deposit_to_account_id = depositAccountId;
       }
 
+      // Operator decision 2026-07-19: Daily Deals buyers receive the FORMAL
+      // document — Zoho emails the sales receipt to the buyer contact on
+      // creation (?send=true). GG is not VAT-registered, so the org issues
+      // non-VAT receipts until registration (no tax config = no VAT line).
       const resp = await this.request<CreateSalesReceiptResp>(
         'POST',
-        '/salesreceipts',
+        '/salesreceipts?send=true',
         payload,
       );
       const receiptId = resp.salesreceipt?.salesreceipt_id;
