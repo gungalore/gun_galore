@@ -14,6 +14,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
 import { SavedSearchesModule } from '../saved-searches/saved-searches.module';
 import { DealsModule } from '../deals/deals.module';
+import { RaffleModule } from '../raffle/raffle.module';
 
 @Module({
   // AdminModule is imported so we can inject AdminCreditsService into
@@ -40,6 +41,9 @@ import { DealsModule } from '../deals/deals.module';
     // NOT @Global, so it MUST be listed here or Nest can't inject DealsService
     // into TasksService and the app crash-loops at boot (tsc stays green).
     DealsModule,
+    // Prize-draw cron — RaffleModule exports RaffleService (NOT @Global,
+    // same crash-loop rule as DealsModule above).
+    RaffleModule,
   ],
   providers: [TasksService],
 })

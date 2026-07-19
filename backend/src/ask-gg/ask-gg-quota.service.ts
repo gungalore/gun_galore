@@ -169,7 +169,7 @@ export class AskGgQuotaService {
         cap: snap.cap,
         used: snap.used,
         windowResetsAt: snap.windowResetsAt.toISOString(),
-        minTier: 'MEMBER',
+        minTier: 'PRO',
       });
     }
 
@@ -280,7 +280,7 @@ export class AskGgQuotaService {
       code: 'free-photo-quota-exhausted',
       cap,
       used,
-      minTier: 'MEMBER',
+      minTier: 'PRO',
     });
   }
 

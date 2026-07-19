@@ -37,7 +37,11 @@ const PAY_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h to EFT
 const PERIOD_DAYS = 31;
 const REMINDER_DAYS_BEFORE = 3;
 
-const PAID_TIERS: SubscriptionTier[] = ['MEMBER', 'PRO'];
+// Single paid tier since 2026-07-19 (MEMBER retired — FREE demos every
+// feature, PRO R99/mo). MEMBER stays in the DB enum (Postgres removal is
+// invasive) and in TIER_RANK so any legacy row keeps its entitlements
+// until it lapses, but it can no longer be purchased.
+const PAID_TIERS: SubscriptionTier[] = ['PRO'];
 
 // Tier ordering so we never silently downgrade a live paid period. On the
 // prepaid-EFT rail we do NOT support mid-period tier CHANGES (proration is a
@@ -59,16 +63,13 @@ export class SubscriptionsService {
   ) {}
 
   async pricing() {
-    const [memberCents, proCents] = await Promise.all([
-      this.settings.get(FLAGS.subscriptionMemberPriceCents),
-      this.settings.get(FLAGS.subscriptionProPriceCents),
-    ]);
-    return { memberCents, proCents, periodDays: PERIOD_DAYS };
+    const proCents = await this.settings.get(FLAGS.subscriptionProPriceCents);
+    return { proCents, periodDays: PERIOD_DAYS };
   }
 
-  private async priceFor(tier: SubscriptionTier): Promise<number> {
+  private async priceFor(_tier: SubscriptionTier): Promise<number> {
     const p = await this.pricing();
-    return tier === 'PRO' ? p.proCents : p.memberCents;
+    return p.proCents;
   }
 
   /** Current tier + period + any open (payable) charge for the member. */
@@ -133,7 +134,7 @@ export class SubscriptionsService {
     assertPaymentsLive();
     const tier = tierRaw as SubscriptionTier;
     if (!PAID_TIERS.includes(tier)) {
-      throw new BadRequestException('Choose MEMBER or PRO.');
+      throw new BadRequestException('GG PRO is the only paid plan.');
     }
     const user = await this.prisma.user.findUnique({
       where: { clerkId },

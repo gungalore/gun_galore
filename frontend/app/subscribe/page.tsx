@@ -18,7 +18,6 @@ import { formatPrice } from '@/lib/utils';
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 interface Pricing {
-  memberCents: number;
   proCents: number;
   periodDays: number;
 }
@@ -29,22 +28,28 @@ interface Mine {
   periodEnd: string | null;
 }
 
-const TIER_PERKS: Record<'MEMBER' | 'PRO', string[]> = {
-  MEMBER: [
-    'Ask GG: 20 messages / hour',
-    'Unlimited photo identification (5/query)',
-    'Ballistic calculator',
-    'GG+ username badge',
-    '25% off featured-listing bids',
-  ],
+// Single paid tier since 2026-07-19: FREE demos every feature, PRO
+// unlocks it all. The prize-draw line deliberately says only "amazing
+// prizes" — the actual prize of the running cycle is shown on /raffle.
+const TIER_PERKS: Record<'PRO', string[]> = {
   PRO: [
+    'Automatic entry into the free PRO prize draw — amazing prizes, every cycle',
     'Ask GG: 60 messages / hour',
     'Unlimited photo identification (10/query)',
-    'Ballistic calculator + Load Lab',
+    'Ballistic calculator + full Load Lab load data',
+    'Unlimited open swap proposals + 25% off swap service fees',
     'GG+ PRO username badge',
     '50% off featured-listing bids',
   ],
 };
+
+// What FREE gets — an honest demo of everything PRO unlocks.
+const FREE_DEMOS: string[] = [
+  'Ask GG: 5 messages / 30 days',
+  'Load Lab: preview 3 published loads per calibre',
+  'One open swap proposal at a time',
+  'Watch the PRO prize draw (PRO members are entered free)',
+];
 
 export default function SubscribePage() {
   const { getToken, isSignedIn, isLoaded } = useAuth();
@@ -91,7 +96,7 @@ export default function SubscribePage() {
   }, [isLoaded, isSignedIn, loadMine]);
 
   const checkout = useCallback(
-    async (tier: 'MEMBER' | 'PRO') => {
+    async (tier: 'PRO') => {
       setError(null);
       setBusyTier(tier);
       try {
@@ -138,8 +143,7 @@ export default function SubscribePage() {
       })
     : null;
 
-  const tiers: Array<{ key: 'MEMBER' | 'PRO'; cents: number | null; accent: boolean }> = [
-    { key: 'MEMBER', cents: pricing?.memberCents ?? null, accent: false },
+  const tiers: Array<{ key: 'PRO'; cents: number | null; accent: boolean }> = [
     { key: 'PRO', cents: pricing?.proCents ?? null, accent: true },
   ];
 
@@ -172,8 +176,31 @@ export default function SubscribePage() {
           </div>
         )}
 
-        {/* Tier cards */}
+        {/* Tier cards — FREE (demo of everything) alongside PRO. */}
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+          <div
+            className="rounded-[10px] p-5"
+            style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+          >
+            <h2 className="text-lg font-semibold m-0 mb-1" style={{ color: 'var(--text-primary)' }}>
+              Free
+            </h2>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+              <strong style={{ color: 'var(--text-primary)', fontSize: 18 }}>R0</strong> — try
+              everything
+            </p>
+            <ul className="m-0 p-0 mb-5" style={{ listStyle: 'none', fontSize: 13, lineHeight: 1.7 }}>
+              {FREE_DEMOS.map((perk) => (
+                <li key={perk} style={{ color: 'var(--text-secondary)' }}>
+                  <span style={{ color: 'var(--text-tertiary)', marginRight: 6 }}>•</span>
+                  {perk}
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Every PRO feature has a free taste — upgrade when it earns its keep.
+            </p>
+          </div>
           {tiers.map((t) => (
             <div
               key={t.key}
@@ -185,7 +212,7 @@ export default function SubscribePage() {
             >
               <div className="flex items-center justify-between mb-1">
                 <h2 className="text-lg font-semibold m-0" style={{ color: 'var(--text-primary)' }}>
-                  {t.key === 'MEMBER' ? 'Member' : 'Pro'}
+                  Pro
                 </h2>
                 {t.accent && (
                   <span
@@ -245,14 +272,14 @@ export default function SubscribePage() {
                       ? 'Renew (+31 days)'
                       : isCrossTierBlocked
                         ? `Switch at renewal`
-                        : `Get ${t.key === 'MEMBER' ? 'Member' : 'Pro'}`;
+                        : 'Get Pro';
                   return (
                     <button
                       type="button"
                       disabled={disabled}
                       title={
                         isCrossTierBlocked
-                          ? `You're on GG+ ${currentTier} until your period ends. You can switch to ${t.key === 'MEMBER' ? 'Member' : 'Pro'} then.`
+                          ? `You're on GG+ ${currentTier} until your period ends. You can switch to Pro then.`
                           : undefined
                       }
                       onClick={() => void checkout(t.key)}

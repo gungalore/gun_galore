@@ -439,6 +439,7 @@ model User {
   swapProposalsReceived SwapProposal[] @relation("SwapProposalsReceived")
   swapsInitiated        Swap[]         @relation("SwapsInitiated")
   swapsReceived         Swap[]         @relation("SwapsReceived")
+  prizeDrawsWon         PrizeDraw[]
 
   // ── Wishlist back-relation ───────────────────────────────────────
   // Saved listings the user wants to come back to. See WatchedListing.
@@ -2607,6 +2608,46 @@ model Subscription {
 
 // One row per recurring charge attempt (success or failure). Drives
 // the billing-history page on /subscriptions + admin spend audit.
+// ── PRO prize draw (promotional competition) ─────────────────────────
+// A physical prize bought by GG, displayed for the whole cycle, drawn
+// among paid-up PRO members (comp/admin-granted accounts excluded). The
+// prize budget is ADVISORY ONLY (computed in admin from a % of recent
+// subscription revenue) — no money moves through this module. Winners
+// may exchange any prize for an alternative of equal value (this is
+// also how a licence-bearing prize is handled when the winner cannot
+// or prefers not to accept it). Public copy never names prize
+// categories — the actual prize of the running cycle is displayed.
+enum PrizeDrawStatus {
+  LIVE // on display, drawAt scheduled
+  DRAWN // winner picked, awaiting fulfilment
+  FULFILLED // prize handed over / exchanged
+  CANCELLED // withdrawn before the draw (admin, reason kept)
+}
+
+model PrizeDraw {
+  id              String          @id @default(cuid())
+  title           String
+  description     String
+  prizeValueCents Int // actual value of the purchased prize
+  imageUrls       String[]
+  status          PrizeDrawStatus @default(LIVE)
+  displayStartAt  DateTime        @default(now())
+  drawAt          DateTime
+  drawnAt         DateTime?
+  winnerUserId    String?
+  winner          User?           @relation(fields: [winnerUserId], references: [id], onDelete: SetNull)
+  entrantCount    Int             @default(0)
+  // Draw audit: { entrantsHash, algorithm, timestamp } — CPA record-keeping.
+  drawAudit       Json?
+  fulfilledAt     DateTime?
+  fulfilmentNote  String? // e.g. "exchanged for equal-value alternative"
+  cancelledReason String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([status, drawAt])
+}
+
 model SubscriptionCharge {
   id             String       @id @default(cuid())
   subscriptionId String

@@ -732,26 +732,24 @@ function TierPerksTable({
   current: 'FREE' | 'MEMBER' | 'PRO' | null;
 }) {
   const [prices, setPrices] = useState<{
-    memberCents: number;
     proCents: number;
   } | null>(null);
   const [pricesFailed, setPricesFailed] = useState(false);
   useEffect(() => {
     fetch(`${API_URL}/subscriptions/pricing`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((p: { memberCents: number; proCents: number } | null) =>
+      .then((p: { proCents: number } | null) =>
         p ? setPrices(p) : setPricesFailed(true),
       )
       .catch(() => setPricesFailed(true));
   }, []);
   const rand = (cents: number) => `R${Math.round(cents / 100)}/mo`;
-  type Perk = { free: string; member: string; pro: string };
+  type Perk = { free: string; pro: string };
   const ROWS: Array<{ label: string; perk: Perk }> = [
     {
       label: 'Ask GG chat',
       perk: {
         free: '5 messages / month',
-        member: '20 messages / hour',
         pro: '60 messages / hour',
       },
     },
@@ -759,25 +757,24 @@ function TierPerksTable({
       label: 'Photo identification',
       perk: {
         free: '5 photos / month',
-        member: 'Unlimited (5/query)',
         pro: 'Unlimited (10/query)',
       },
     },
     {
       label: 'Reloading-manual lookup',
-      perk: { free: '✓', member: '✓', pro: '✓' },
+      perk: { free: '✓', pro: '✓' },
     },
     {
       label: 'Ballistic calculator',
-      perk: { free: '—', member: '✓', pro: '✓' },
+      perk: { free: '—', pro: '✓' },
     },
     {
       label: 'Username badge',
-      perk: { free: '—', member: 'GG+ pill', pro: 'GG+ PRO pill' },
+      perk: { free: '—', pro: 'GG+ PRO pill' },
     },
     {
       label: 'Featured-listing bid discount',
-      perk: { free: '—', member: '25% off', pro: '50% off' },
+      perk: { free: '—', pro: '50% off' },
     },
   ];
 
@@ -788,12 +785,6 @@ function TierPerksTable({
     accent: boolean;
   }> = [
     { key: 'FREE', label: 'Free', price: 'R0', accent: false },
-    {
-      key: 'MEMBER',
-      label: 'Member',
-      price: prices ? rand(prices.memberCents) : pricesFailed ? 'See /subscribe' : '…',
-      accent: false,
-    },
     {
       key: 'PRO',
       label: 'Pro',
@@ -908,7 +899,7 @@ function TierPerksTable({
               }}
             >
               {ROWS.map((r) => {
-                const value = r.perk[t.key === 'FREE' ? 'free' : t.key === 'MEMBER' ? 'member' : 'pro'];
+                const value = r.perk[t.key === 'FREE' ? 'free' : 'pro'];
                 const isDash = value === '—';
                 return (
                   <li

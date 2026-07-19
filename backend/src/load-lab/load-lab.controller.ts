@@ -62,14 +62,9 @@ export class LoadLabController {
    */
   @Get('manual-cartridges')
   async manualCartridges(@CurrentUser() clerkId: string) {
-    const tier = await this.tierOf(clerkId);
-    if (tier !== 'PRO') {
-      return {
-        upgradeRequired: true,
-        reason:
-          'The Load Lab manual load-data browser is a Gun Galore PRO feature. Upgrade to browse published loads by calibre.',
-      };
-    }
+    // FREE demo (2026-07-19): everyone browses the calibre tree — the tree
+    // is the lure; the load DATA is the PRO value (capped below).
+    await this.tierOf(clerkId); // still requires a signed-in, synced user
     return this.manualBrowse.listCartridges();
   }
 
@@ -80,14 +75,27 @@ export class LoadLabController {
   @Get('manual-loads')
   async manualLoads(@CurrentUser() clerkId: string, @Query('cartridgeKey') cartridgeKey: string) {
     const tier = await this.tierOf(clerkId);
-    if (tier !== 'PRO') {
-      return {
-        upgradeRequired: true,
-        reason:
-          'Published load data is a Gun Galore PRO feature. Upgrade to see manual loads for this calibre.',
-      };
-    }
-    return this.manualBrowse.loadsForCartridge(cartridgeKey ?? '');
+    const full = await this.manualBrowse.loadsForCartridge(cartridgeKey ?? '');
+    if (tier === 'PRO') return full;
+    // FREE demo (2026-07-19): the first bullet-weight group with its first
+    // 3 loads is shown; the rest is counted but withheld. Enough to prove
+    // the data is real, not enough to reload from.
+    const groups = Array.isArray(full.groups) ? full.groups : [];
+    const firstGroup = groups[0]
+      ? [
+          {
+            ...(groups[0] as Record<string, unknown>),
+            loads: ((groups[0] as { loads?: unknown[] }).loads ?? []).slice(0, 3),
+          },
+        ]
+      : [];
+    return {
+      ...full,
+      groups: firstGroup,
+      demo: true,
+      upgradeReason:
+        'You are previewing 3 of the published loads for this calibre. Gun Galore PRO unlocks all of them, with source manual + page citations.',
+    };
   }
 
   /**

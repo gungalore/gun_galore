@@ -95,6 +95,10 @@ export interface CartridgeLoadsResponse {
   manuals: string[];
   /** All printed labels this canonical cartridge merges (usually one). */
   variants: string[];
+  /** FREE demo (2026-07-19): true when the server capped the response to a
+   *  3-load preview; upgradeReason carries the upsell copy. */
+  demo?: boolean;
+  upgradeReason?: string;
 }
 
 /** The discriminated unions each call resolves to. Narrow on the

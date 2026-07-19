@@ -531,7 +531,19 @@ function LoadDataPanel({
     return <CenterNote>No published loads for this calibre yet.</CenterNote>;
   }
   // Key by cartridge so the bullet-weight selection resets when the calibre changes.
-  return <LoadDataView key={loads.cartridge} data={loads} />;
+  return (
+    <>
+      <LoadDataView key={loads.cartridge} data={loads} />
+      {loads.demo && (
+        <UpgradeNudge
+          reason={
+            loads.upgradeReason ??
+            `You're previewing 3 of ${loads.totalLoads} published loads. Gun Galore PRO unlocks all of them.`
+          }
+        />
+      )}
+    </>
+  );
 }
 
 function LoadDataView({ data }: { data: CartridgeLoadsResponse }) {

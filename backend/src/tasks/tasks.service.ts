@@ -23,6 +23,7 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { SavedSearchesService } from '../saved-searches/saved-searches.service';
 import { DealsService } from '../deals/deals.service';
+import { RaffleService } from '../raffle/raffle.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { NotificationCategory } from '@prisma/client';
 
@@ -69,6 +70,7 @@ export class TasksService {
     private readonly zohoBooks: ZohoBooksService,
     private readonly savedSearches: SavedSearchesService,
     private readonly deals: DealsService,
+    private readonly raffle: RaffleService,
     private readonly settings: SettingsService,
   ) {}
 
@@ -654,6 +656,23 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('swap-funding-sweep');
+    }
+  }
+
+  // Hourly — run any PRO prize draw whose draw date has passed. No-ops
+  // while pro_draw_enabled is OFF.
+  @Cron(CronExpression.EVERY_HOUR)
+  async runPrizeDraws() {
+    this.logger.debug('Running prize draw cron');
+    try {
+      await this.raffle.runDueDraws();
+    } catch (err) {
+      this.logger.error(
+        `runPrizeDraws failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('prize-draw');
     }
   }
 

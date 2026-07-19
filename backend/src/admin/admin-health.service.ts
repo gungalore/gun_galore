@@ -288,6 +288,7 @@ export class AdminHealthService {
       { key: 'swap-proposal-expire', label: 'Swap proposal expiry', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'swap-funding-sweep', label: 'Swap funding sweep', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'swap-prefunding-sweep', label: 'Swap pre-funding sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
+      { key: 'prize-draw', label: 'PRO prize draw', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'swap-fee-receipt-retry', label: 'Swap fee receipt retry', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'swap-locked-redrive', label: 'Swap locked-state redrive', schedule: 'every 5 min', expectedIntervalSec: 300 },
       { key: 'swap-shipping-sla', label: 'Swap shipping SLA sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },

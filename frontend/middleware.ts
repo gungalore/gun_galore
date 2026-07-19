@@ -22,6 +22,8 @@ const isPublicRoute = createRouteMatcher([
   '/wanted(.*)',   // Wanted module REMOVED 2026-07-19 — keep public so the
                    // dead URLs 404 instead of 307ing to sign-in (same
                    // precedent as /competitions).
+  '/raffle(.*)',   // PRO prize-draw page — public marketing surface
+                   // (anonymous browsing is the whole lure).
   '/brand(.*)',    // P5.7 — public brand index (/brands) + brand landing
                    // pages (/brand/[slug]); SEO surfaces, must be crawlable
                    // without auth (mirrors /category above).

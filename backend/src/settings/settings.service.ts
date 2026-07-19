@@ -44,25 +44,55 @@ export const FLAGS = {
       return Number.isFinite(n) ? n : 20000;
     },
   } as FlagDefinition<number>,
-  // P1.1 — Ask GG subscription pricing, ZAR CENTS per 31-day period.
-  // Admin-tunable via the marketplace settings editor without a deploy.
-  // Launch defaults: MEMBER R49/mo, PRO R149/mo (operator can change).
-  subscriptionMemberPriceCents: {
-    key: 'subscription_member_price_cents',
-    default: 4900,
-    parse: (s) => {
-      const n = parseInt(s, 10);
-      return Number.isFinite(n) && n > 0 ? n : 4900;
-    },
-  } as FlagDefinition<number>,
+  // GG PRO subscription price, ZAR CENTS per 31-day period. Single paid
+  // tier since 2026-07-19 (MEMBER retired — operator decision): FREE gets
+  // a demo of every PRO feature, PRO is R99/mo.
   subscriptionProPriceCents: {
     key: 'subscription_pro_price_cents',
-    default: 14900,
+    default: 9900,
     parse: (s) => {
       const n = parseInt(s, 10);
-      return Number.isFinite(n) && n > 0 ? n : 14900;
+      return Number.isFinite(n) && n > 0 ? n : 9900;
     },
   } as FlagDefinition<number>,
+  // ── PRO prize draw (promotional competition) ─────────────────────
+  // Master switch — OFF until payments are live + attorney sign-off on
+  // the rules page. The whole module (cron, public page, admin panel)
+  // no-ops/teases while OFF.
+  proDrawEnabled: {
+    key: 'pro_draw_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+  // ADVISORY budget maths shown in /admin/raffle only — % of PRO
+  // subscription revenue over the ending cycle suggested as the next
+  // prize budget. Never shown publicly, never moves money.
+  rafflePoolPercent: {
+    key: 'raffle_pool_percent',
+    default: 30,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 30;
+    },
+  } as FlagDefinition<number>,
+  // Guaranteed floor for the suggested prize budget, ZAR cents.
+  raffleFloorCents: {
+    key: 'raffle_floor_cents',
+    default: 50_000,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? n : 50_000;
+    },
+  } as FlagDefinition<number>,
+  // Draw cadence: MONTHLY (30d) → BIWEEKLY (14d) → WEEKLY (7d). Applies
+  // to NEWLY created draws only — a live displayed prize keeps its
+  // announced draw date (a running competition's goalposts never move).
+  raffleFrequency: {
+    key: 'raffle_frequency',
+    default: 'MONTHLY',
+    parse: (s) =>
+      s === 'WEEKLY' || s === 'BIWEEKLY' || s === 'MONTHLY' ? s : 'MONTHLY',
+  } as FlagDefinition<string>,
   // Dangerous-goods gate — a loose lithium battery (the `battery_wh` attribute)
   // above this watt-hour value is forced collection-only, never couriered
   // (carriers won't carry >100 Wh loose cells, UN3480). Admin-tunable without a

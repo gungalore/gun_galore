@@ -3809,6 +3809,42 @@ export class NotificationsService {
     await this.send(d.email, `Swap ${d.reason}: ` + d.wantedTitle, html);
   }
 
+  // PRO prize-draw winner — inbox + email + SMS. Never states how the
+  // draw is funded; the equal-value exchange option is mentioned so a
+  // licence-bearing prize never corners the winner.
+  async raffleWinner(d: {
+    email: string;
+    name: string;
+    phone?: string | null;
+    prizeTitle: string;
+    prizeValueCents: number;
+  }) {
+    await this.persistByEmail(d.email, {
+      category: 'BUYER',
+      type: 'raffle_winner',
+      title: 'You won this month’s PRO prize draw! 🎉',
+      body: `You won: ${d.prizeTitle} (value ${formatRand(d.prizeValueCents)}). We'll contact you to arrange delivery.`,
+      url: '/raffle',
+      iconKey: 'offer',
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'success', label: 'Winner' },
+      headline: 'You won the GG PRO prize draw!',
+      body: `Hi ${b(d.name)}, congratulations — you are this cycle's GG PRO prize-draw winner. Your prize: ${b(d.prizeTitle)} (value ${formatRand(d.prizeValueCents)}). Our team will contact you within 2 business days to arrange delivery. If you'd prefer, you can exchange your prize for an alternative of equal value.`,
+      cta: { label: 'See the draw page', url: `${this.appUrl}/raffle` },
+      preheader: 'You won the GG PRO prize draw',
+    });
+    await this.send(d.email, 'You won the GG PRO prize draw! 🎉', html);
+    if (d.phone) {
+      await this.sendSms(
+        d.phone,
+        `Gun Galore: congratulations — you WON the GG PRO prize draw (${d.prizeTitle}). We'll contact you to arrange delivery.`,
+        'raffle-winner',
+      );
+    }
+  }
+
   // Owner is told the proposer declined their counter.
   async swapCounterRejected(d: {
     email: string;
