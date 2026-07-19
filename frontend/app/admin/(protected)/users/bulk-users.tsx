@@ -21,6 +21,7 @@ interface User {
   username: string | null;
   firstName: string | null;
   lastName: string | null;
+  phone: string | null;
   sellerTier: string;
   kycStatus: string;
   subscriptionTier: string;
@@ -194,6 +195,9 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
                     <UserActions
                       userId={u.id}
                       username={u.username}
+                      firstName={u.firstName}
+                      lastName={u.lastName}
+                      phone={u.phone}
                       isBanned={u.isBanned}
                       sellerTier={u.sellerTier}
                       kycStatus={u.kycStatus}

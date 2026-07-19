@@ -290,6 +290,9 @@ export default function UserDossierPage() {
           <UserActions
             userId={u.id}
             username={u.username}
+            firstName={u.firstName ?? null}
+            lastName={u.lastName ?? null}
+            phone={u.phone ?? null}
             isBanned={u.isBanned}
             sellerTier={u.sellerTier}
             kycStatus={u.kycStatus}

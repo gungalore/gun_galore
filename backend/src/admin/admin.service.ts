@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
-import { AdminRole } from '@prisma/client';
+import { AdminRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
@@ -260,6 +260,7 @@ export class AdminService {
           username: true,
           firstName: true,
           lastName: true,
+          phone: true,
           sellerTier: true,
           kycStatus: true,
           subscriptionTier: true,
@@ -331,16 +332,50 @@ export class AdminService {
       });
     }
 
+    // Profile support edits — each field audited separately so history
+    // reads "username: old → new", never a blob. Empty string clears a
+    // name/phone (→ null); username can only be replaced, never cleared
+    // (public identity — listings/ratings render it).
+    const profileFields = [
+      ['username', dto.username?.trim(), user.username, false],
+      ['firstName', dto.firstName?.trim(), user.firstName, true],
+      ['lastName', dto.lastName?.trim(), user.lastName, true],
+      ['phone', dto.phone?.trim(), user.phone, true],
+    ] as const;
+    for (const [field, rawNext, current, clearable] of profileFields) {
+      if (rawNext === undefined) continue;
+      const next = rawNext === '' ? (clearable ? null : undefined) : rawNext;
+      if (next === undefined || next === current) continue;
+      data[field] = next;
+      actions.push({
+        action: 'USER_PROFILE_EDIT',
+        oldValue: `${field}: ${current ?? '—'}`,
+        newValue: `${field}: ${next ?? '—'}`,
+      });
+    }
+
     // No-op PATCH (all values match current state). Don't write an
     // audit row + don't roundtrip the DB.
     if (actions.length === 0) {
       return user;
     }
 
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data,
-    });
+    let updated;
+    try {
+      updated = await this.prisma.user.update({
+        where: { id: userId },
+        data,
+      });
+    } catch (e) {
+      // Username collision — surface the friendly 400 instead of a 500.
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        throw new BadRequestException('That username is already taken.');
+      }
+      throw e;
+    }
 
     // Audit each distinct change with its own row so /admin/audit
     // shows a clean history when an admin batches multiple field

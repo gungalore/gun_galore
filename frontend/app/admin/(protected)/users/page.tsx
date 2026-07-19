@@ -12,6 +12,7 @@ interface User {
   username: string | null;
   firstName: string | null;
   lastName: string | null;
+  phone: string | null;
   sellerTier: string;
   kycStatus: string;
   subscriptionTier: string;
