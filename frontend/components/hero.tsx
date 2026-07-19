@@ -164,8 +164,9 @@ export function Hero() {
             }}
           >
             Buy, sell, bid and{' '}
-            <span style={{ color: 'var(--red)' }}>trade</span> outdoor,
-            hunting &amp; <span style={{ whiteSpace: 'nowrap' }}>sport gear.</span>
+            <span style={{ color: 'var(--red)' }}>trade</span>
+            {' '}outdoor, hunting &amp;{' '}
+            <span style={{ whiteSpace: 'nowrap' }}>sport gear.</span>
           </h1>
 
           {/* Subhead. The previous color (var(--text-secondary) =
