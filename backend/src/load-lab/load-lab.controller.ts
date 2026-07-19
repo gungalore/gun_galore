@@ -99,6 +99,27 @@ export class LoadLabController {
   }
 
   /**
+   * Reference chamber/pressure spec for a cartridge (GRT-derived, match-
+   * verified). Standard, max pressure, case + overall length, case capacity,
+   * and the official CIP/SAAMI datasheet link. Served to ANY signed-in
+   * reloader (not PRO-gated) — it's standardised reference data, not a load
+   * recipe, and a rich cartridge page is a stronger free surface than a
+   * paywall. Returns null when we hold no verified spec (wildcats, etc.).
+   */
+  @Get('cartridge-spec')
+  async cartridgeSpec(
+    @CurrentUser() clerkId: string,
+    @Query('cartridgeKey') cartridgeKey: string,
+  ) {
+    await this.tierOf(clerkId); // signed-in gate only
+    if (!cartridgeKey) return { spec: null };
+    const spec = await this.prisma.cartridgeSpec.findUnique({
+      where: { cartridgeKey },
+    });
+    return { spec };
+  }
+
+  /**
    * Recommended published loads for a cartridge + bullet weight (±tolerance,
    * default 5gr), quoted from the manual library. PRO-gated. Still served for
    * the Ask GG `lookupPublishedLoads` tool parity path.

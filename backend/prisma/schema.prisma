@@ -2109,6 +2109,31 @@ model ReferenceCounter {
   updatedAt DateTime @updatedAt
 }
 
+// Load Lab cartridge reference specs — standardised chamber/pressure data
+// derived from our GRT (Gordon's Reloading Tool) extraction, matched to the
+// Load Lab cartridgeKey. REFERENCE dimensions (SAAMI/CIP standardised),
+// NOT load recipes: max pressure, case length, overall length, case
+// capacity + a link to the official CIP/SAAMI datasheet. Every row was
+// adversarially match-verified before seeding; wildcats without a real
+// standard are labelled as such. Static data — refreshed by re-running the
+// seed loader, never written at runtime.
+model CartridgeSpec {
+  cartridgeKey         String  @id // joins ManualLoad.cartridgeKey
+  displayName          String
+  grtName              String // the reference cartridge name matched
+  standard             String // 'CIP' | 'SAAMI' | 'WILDCAT' | 'OTHER'
+  origin               String? // country of origin (US, DE, GB, …)
+  cartridgeType        String? // GRT ciptype, e.g. "1 rimless"
+  year                 Int? // standardisation / introduction year
+  caseLengthMm         Float? // L3
+  maxCartridgeLengthMm Float? // L6 (max overall length)
+  maxPressureBar       Int? // Pmax
+  maxPressurePsi       Int? // Pmax converted (bar × 14.5038)
+  caseCapacityGrH2O    Float? // V — case capacity in grains of water
+  officialPdfUrl       String? // CIP TDCC / SAAMI datasheet link
+  updatedAt            DateTime @updatedAt
+}
+
 // Outbound SMS audit log — every send (whether real, stubbed, or
 // failed) writes a row here. We use it for debugging delivery issues
 // and to prove a verification code was actually dispatched. Each row

@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { CartridgeSpecPanel } from './CartridgeSpecPanel';
 import {
   isUpgradeRequired,
   useLoadData,
@@ -524,15 +525,30 @@ function LoadDataPanel({
       </CenterNote>
     );
   }
+  // The reference spec panel is free + independent of the PRO load-data gate,
+  // so it renders above whatever the load area shows (upgrade nudge, demo, or
+  // full data). Self-hides when we hold no verified spec for the cartridge.
+  const specPanel = <CartridgeSpecPanel cartridgeKey={selectedKey} />;
   if (isUpgradeRequired(loads)) {
-    return <UpgradeNudge reason={loads.reason} />;
+    return (
+      <>
+        {specPanel}
+        <UpgradeNudge reason={loads.reason} />
+      </>
+    );
   }
   if (!loads.found || loads.groups.length === 0) {
-    return <CenterNote>No published loads for this calibre yet.</CenterNote>;
+    return (
+      <>
+        {specPanel}
+        <CenterNote>No published loads for this calibre yet.</CenterNote>
+      </>
+    );
   }
   // Key by cartridge so the bullet-weight selection resets when the calibre changes.
   return (
     <>
+      {specPanel}
       <LoadDataView key={loads.cartridge} data={loads} />
       {loads.demo && (
         <UpgradeNudge
