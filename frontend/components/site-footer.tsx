@@ -37,7 +37,9 @@ export function SiteFooter() {
           maxWidth: 1280,
           margin: '0 auto',
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          // 180px min so all SIX groups fit one row at desktop widths —
+          // at 220px the Account group wrapped onto an orphaned second row.
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
           gap: 32,
           marginBottom: 24,
         }}
@@ -58,8 +60,9 @@ export function SiteFooter() {
           </p>
           <p style={{ color: 'var(--text-tertiary-on-card)', lineHeight: 1.6, margin: 0 }}>
             South Africa&apos;s outdoor, hunting and sport marketplace.
-            Seller identity verified before payout · every payment held
-            until delivery is confirmed.
+            Seller identity verified before payout · Buyer / Seller
+            Protection System on every deal — payment held until delivery
+            is confirmed.
           </p>
         </div>
 
@@ -78,6 +81,9 @@ export function SiteFooter() {
             <li><Link href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Marketplace</Link></li>
             <li><Link href="/?listingType=AUCTION" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Auctions</Link></li>
             <li><Link href="/?listingType=TAKE_A_SHOT" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Take a Shot</Link></li>
+            <li><Link href="/?listingType=SWOP" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Swop / Trade</Link></li>
+            <li><Link href="/deals" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Daily Deals</Link></li>
+            <li><Link href="/subscribe" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>GG PRO</Link></li>
             <li><Link href="/listings/new" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Sell</Link></li>
             <li><Link href="/faq" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Help &amp; FAQ</Link></li>
           </ul>

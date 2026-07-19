@@ -184,6 +184,11 @@ export default async function HomePage({
   // Drawn from the dominant category of the current results (or the active
   // category filter), narrowed by the search query for the calibre signal.
   const crossSellExcludeIds = browse.listings.map((l) => l.id).join(',');
+
+  // Featured slots with a real listing bound. Unsold slots COLLAPSE on the
+  // landing page — a wall of "Featured spot available" placeholders reads
+  // as a dead site to buyers; sellers get one compact bid link instead.
+  const occupiedFeatured = featuredListings.filter((s) => s.listing);
   const crossSellFromCategoryId =
     params.categoryId ??
     (() => {
@@ -258,7 +263,10 @@ export default async function HomePage({
               + warm drop-shadow glow (matches the card glow). Hairline
               gradient rules on either side give it a premium catalog
               feel — they fade in toward the text from outer transparent
-              so the eye is drawn to the heading. */}
+              so the eye is drawn to the heading. The WHOLE Featured
+              block (header + marquee) collapses when no slot carries a
+              listing — see occupiedFeatured. */}
+          {occupiedFeatured.length > 0 && (<>
           <div className="flex items-center justify-center gap-5 mb-6 mt-2">
             <div
               style={{
@@ -338,7 +346,7 @@ export default async function HomePage({
                 animation: 'featuredHomeScrollH 60s linear infinite',
               }}
             >
-              {[...featuredListings, ...featuredListings].map((slot, i) => (
+              {[...occupiedFeatured, ...occupiedFeatured].map((slot, i) => (
                 <div
                   key={`${slot.slotNumber}-${i}`}
                   style={{
@@ -362,12 +370,19 @@ export default async function HomePage({
               ))}
             </div>
           </div>
-          {featuredListings.length === 0 && (
-            <div
-              className="text-center py-12 text-sm"
-              style={{ color: 'var(--text-tertiary)' }}
-            >
-              Featured slots loading…
+          </>)}
+          {occupiedFeatured.length === 0 && (
+            <div className="text-center mb-8" data-reveal>
+              <Link
+                href="/featured/bid"
+                className="inline-block text-sm px-4 py-2 rounded-[6px]"
+                style={{
+                  border: '0.5px solid var(--border)',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                Sellers: bid for a featured spot →
+              </Link>
             </div>
           )}
           {/* Recently viewed — self-hides if the user has < 2 entries
@@ -375,6 +390,45 @@ export default async function HomePage({
               rail. Sits below the featured marquee so returning users
               get a quick re-entry into things they were looking at. */}
           <RecentlyViewedRail />
+
+          {/* Latest listings — the landing page previously ended here with
+              NO product grid at all: real ads were only reachable via the
+              nav. `browse` (24 newest, no filters) was already fetched for
+              this surface; render it. */}
+          {browse.listings.length > 0 && (
+            <div className="mt-10">
+              <div className="flex items-end justify-between mb-5 gap-4 flex-wrap">
+                <h2
+                  className="text-2xl sm:text-3xl m-0"
+                  style={{
+                    color: 'var(--text-primary)',
+                    fontWeight: 500,
+                    letterSpacing: '-0.01em',
+                  }}
+                >
+                  Latest listings
+                </h2>
+                <Link
+                  href="/?sort=newest"
+                  className="text-sm"
+                  style={{ color: 'var(--red)' }}
+                >
+                  Browse everything →
+                </Link>
+              </div>
+              <div
+                className="grid gap-4"
+                style={{
+                  gridTemplateColumns:
+                    'repeat(auto-fill, minmax(240px, 1fr))',
+                }}
+              >
+                {browse.listings.map((l) => (
+                  <ListingCard key={l.id} listing={l} />
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       ) : hasBackground ? (
         /* Filtered surfaces (marketplace/auctions/take-a-shot) keep
@@ -476,8 +530,8 @@ export default async function HomePage({
               style={{ color: 'var(--text-tertiary)' }}
             >
               {Object.keys(params).filter((k) => params[k as keyof SearchParams] && k !== 'listingType').length > 0
-                ? 'Try clearing some filters or browse the other shopping surfaces.'
-                : 'Be the first to spot new listings here — check back soon or browse the other shopping surfaces below.'}
+                ? 'Try clearing some filters — or save this search and we’ll alert you the moment something matches.'
+                : 'Nothing listed here yet — got one lying in the safe or the garage? Yours could be the first.'}
             </p>
             <div className="flex gap-2 justify-center flex-wrap">
               {Object.keys(params).filter((k) => params[k as keyof SearchParams] && k !== 'listingType' && k !== 'q').length > 0 && (
@@ -505,6 +559,18 @@ export default async function HomePage({
                   Clear filters →
                 </a>
               )}
+              <a
+                href="/listings/new"
+                className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+                style={{
+                  background: 'var(--red)',
+                  color: '#fff',
+                  fontWeight: 500,
+                  textDecoration: 'none',
+                }}
+              >
+                Sell yours →
+              </a>
               <a
                 href="/"
                 className="inline-block py-2.5 px-5 rounded-[6px] text-sm"

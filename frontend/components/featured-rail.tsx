@@ -116,6 +116,32 @@ export function FeaturedRail() {
     return null;
   }
 
+  // Unsold slots COLLAPSE (same rule as the homepage marquee): the rail
+  // only renders slots that carry a listing. With none occupied the whole
+  // rail reduces to the compact seller-facing bid link — a column of
+  // "Waiting for first bid" placeholders squeezes the browse grid and
+  // reads as a dead site to buyers.
+  const occupied = slots.filter((s) => s.currentListing);
+  if (occupied.length === 0) {
+    return (
+      <aside className="hidden lg:block" style={{ width: 260, flexShrink: 0 }}>
+        <Link
+          href="/featured/bid"
+          className="block text-xs text-center py-2 rounded-[6px]"
+          style={{
+            background: 'var(--bg-inset)',
+            color: 'var(--text-secondary)',
+            border: '0.5px solid var(--border)',
+            textDecoration: 'none',
+            fontWeight: 500,
+          }}
+        >
+          Bid for a featured spot →
+        </Link>
+      </aside>
+    );
+  }
+
   return (
     <>
       {/* ─── Desktop: sticky left sidebar ──────────────────────── */}
@@ -204,7 +230,7 @@ export function FeaturedRail() {
               animationPlayState: 'running',
             }}
           >
-            {[...slots, ...slots].map((slot, i) => (
+            {[...occupied, ...occupied].map((slot, i) => (
               <RailCard
                 key={`${slot.id}-${i}`}
                 slot={slot}
@@ -292,7 +318,7 @@ export function FeaturedRail() {
               animation: 'featuredScrollH 90s linear infinite',
             }}
           >
-            {[...slots, ...slots].map((slot, i) => (
+            {[...occupied, ...occupied].map((slot, i) => (
               <RailCard
                 key={`m-${slot.id}-${i}`}
                 slot={slot}

@@ -211,7 +211,7 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
           }}
         >
           {/* Left column — root categories */}
-          <div style={{ borderRight: '0.5px solid var(--border)', overflowY: 'auto', minHeight: 0, padding: '6px 0' }}>
+          <div className="gg-menu-scroll" style={{ borderRight: '0.5px solid var(--border)', overflowY: 'auto', minHeight: 0, padding: '6px 0' }}>
             {roots.map((r) => {
               const active = activeRootObj?.id === r.id;
               return (
@@ -240,7 +240,7 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
             })}
           </div>
           {/* Right column — children of the active root */}
-          <div style={{ overflowY: 'auto', minHeight: 0, padding: '8px 0' }}>
+          <div className="gg-menu-scroll" style={{ overflowY: 'auto', minHeight: 0, padding: '8px 0' }}>
             {activeRootObj && (
               <>
                 {children.map((c) => (

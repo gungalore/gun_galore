@@ -84,6 +84,28 @@ export function AskGgLauncher({
   // Permanent mute (localStorage). While muted GG says nothing proactively.
   const [muted, setMuted] = useGgMuted();
 
+  // Minimized (localStorage): the mascot collapses to a compact "✨ Ask GG"
+  // pill in the same corner — for users who find him in the way. The pill
+  // still opens the chat; a small restore control brings him back. While
+  // minimized no bubbles or adventure scenes fire. Hydrated in an effect so
+  // SSR markup stays deterministic.
+  const [minimized, setMinimized] = useState(false);
+  useEffect(() => {
+    try {
+      setMinimized(localStorage.getItem('gg-mascot-minimized') === '1');
+    } catch {
+      /* private mode etc. — stay expanded */
+    }
+  }, []);
+  const applyMinimized = (next: boolean) => {
+    setMinimized(next);
+    try {
+      localStorage.setItem('gg-mascot-minimized', next ? '1' : '0');
+    } catch {
+      /* non-fatal */
+    }
+  };
+
   // ── Adventure moments ────────────────────────────────────────────
   // Rare one-shot scenes (campfire / desert drive / tent / clays) that
   // play in a small stage popping out of this corner. First one ~45–90s
@@ -96,7 +118,7 @@ export function AskGgLauncher({
   const lastSceneRef = useRef<AdventureKind | null>(null);
 
   useEffect(() => {
-    if (panelArmed || muted) return;
+    if (panelArmed || muted || minimized) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     let t: number;
     const pick = (): AdventureKind => {
@@ -128,12 +150,12 @@ export function AskGgLauncher({
     };
     schedule(45_000 + Math.random() * 45_000);
     return () => clearTimeout(t);
-  }, [panelArmed, muted]);
+  }, [panelArmed, muted, minimized]);
 
   // Opening the panel (or muting) cancels any scene mid-play.
   useEffect(() => {
-    if (panelArmed || muted) setScene(null);
-  }, [panelArmed, muted]);
+    if (panelArmed || muted || minimized) setScene(null);
+  }, [panelArmed, muted, minimized]);
 
   // Demo/QA hook: window.__ggAdventure('desert') plays a scene on demand.
   useEffect(() => {
@@ -153,7 +175,7 @@ export function AskGgLauncher({
   // visible, install card down, not mid-form. The 3.5–4.2s dwell means rapid
   // click-throughs (timer cancelled on nav) never trigger it.
   useEffect(() => {
-    if (panelArmed || muted) return;
+    if (panelArmed || muted || minimized) return;
     const coach = pickNudge(pathname);
     const { kind, ctx } = derivePageContext(pathname);
 
@@ -211,7 +233,7 @@ export function AskGgLauncher({
       coach ? 4200 : 3500,
     );
     return () => clearTimeout(t);
-  }, [pathname, panelArmed, muted]);
+  }, [pathname, panelArmed, muted, minimized]);
 
   // Reset the per-page-view guard + drop any visible bubble on nav.
   useEffect(() => {
@@ -221,14 +243,14 @@ export function AskGgLauncher({
 
   // Auto-hide after 14s; stand down when the panel opens or GG is muted.
   useEffect(() => {
-    if (panelArmed || muted) {
+    if (panelArmed || muted || minimized) {
       setBubble(null);
       return;
     }
     if (!bubble) return;
     const t = window.setTimeout(() => setBubble(null), 14_000);
     return () => clearTimeout(t);
-  }, [bubble, panelArmed, muted]);
+  }, [bubble, panelArmed, muted, minimized]);
 
   const open = (prefill?: string) => {
     setBubble(null);
@@ -236,6 +258,73 @@ export function AskGgLauncher({
     setScene(null);
     onOpen(prefill);
   };
+
+  // Minimized: the whole dock reduces to a compact "✨ Ask GG" pill in the
+  // same corner. It still opens the chat; the small ◱ control restores the
+  // mascot. All hooks above have already run (guards keep them inert).
+  if (minimized) {
+    return (
+      <div
+        id="askgg-dock"
+        className={[
+          'app-chrome fixed z-[52] flex items-center gap-1.5',
+          'right-4 bottom-[calc(12px+env(safe-area-inset-bottom))]',
+          'md:right-6 md:bottom-5',
+        ].join(' ')}
+      >
+        <button
+          type="button"
+          id="askgg-fab"
+          onClick={() => open()}
+          aria-label="Open Ask GG — your Gun Galore assistant"
+          className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            boxShadow: '0 3px 12px rgba(0,0,0,0.45)',
+            color: 'var(--text-primary)',
+            cursor: 'pointer',
+            fontWeight: 500,
+          }}
+        >
+          <span aria-hidden>✨</span> Ask GG
+        </button>
+        <button
+          type="button"
+          onClick={() => applyMinimized(false)}
+          aria-label="Bring the GG character back"
+          title="Bring GG back"
+          className="flex items-center justify-center rounded-full w-6 h-6"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            color: 'var(--text-tertiary)',
+            cursor: 'pointer',
+            padding: 0,
+            fontSize: 12,
+            lineHeight: 0,
+          }}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M15 3h6v6" />
+            <path d="M9 21H3v-6" />
+            <path d="M21 3l-7 7" />
+            <path d="M3 21l7-7" />
+          </svg>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -337,6 +426,48 @@ export function AskGgLauncher({
               idle wiggles) while muted. `fill` scales him to the responsive
               box (80px mobile → 160px desktop). */}
           <AskGgMascot alive={!muted} fill mood={bubble ? 'happy' : 'idle'} />
+        </button>
+        {/* Minimize at GG's ~2 o'clock — collapses him to the "✨ Ask GG"
+            pill (persisted) for users who find the character in the way.
+            stopPropagation so tapping it never opens the panel. */}
+        <button
+          type="button"
+          id="askgg-minimize"
+          onClick={(e) => {
+            e.stopPropagation();
+            setBubble(null);
+            setScene(null);
+            applyMinimized(true);
+          }}
+          aria-label="Minimize GG to a compact Ask GG button"
+          title="Minimize GG"
+          className={[
+            'absolute flex items-center justify-center rounded-full',
+            'w-6 h-6 md:w-8 md:h-8',
+            'right-[2px] top-[10px] md:right-[6px] md:top-[24px]',
+          ].join(' ')}
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            boxShadow: '0 1px 5px rgba(0,0,0,0.45)',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            padding: 0,
+            lineHeight: 0,
+          }}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
         </button>
         {/* Mute toggle at GG's ~4 o'clock — the clear way to shut him up.
             Permanent (localStorage) until unmuted. stopPropagation so tapping
