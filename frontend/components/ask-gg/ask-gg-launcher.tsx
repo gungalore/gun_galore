@@ -52,6 +52,41 @@ const HELLO_TEXTS = [
   'Need a hand or some advice? Tap me and ask 👋',
 ];
 
+// Dry SA one-liners (operator-approved set, 2026-07-20). Boet cracks one
+// now and then instead of a plain hello, and sometimes as the linger
+// prompt. HOUSE RULE: keep them wholesome outdoor/braai/camp humour —
+// NEVER firearm jokes on this platform. Tapping the bubble still opens
+// the chat, so a joke is also an invitation.
+const JOKES = [
+  'What do you call a buck with no eyes? No-eye-deer. …I’ll see myself out.',
+  'I’d tell you my camping joke, but it’s in tents.',
+  'Braai forecast: 100% chance of someone telling you you’re doing it wrong.',
+  'Biltong is just steak that learned patience.',
+  'My bakkie and I have a deal — it doesn’t start, and I stay calm. Mostly.',
+  'Fish swim in schools. Some of them still never learn.',
+  '‘Now-now’ is a precise unit of time. Somewhere between now and never.',
+  'Load shedding taught me more about camping than camping ever did.',
+  'Rain on the tent isn’t a leak, boet. It’s character building.',
+  'I asked my compass for life advice. It just pointed me somewhere else.',
+  'A skottel is just a braai in a hurry. We don’t judge. Much.',
+  'The veld is lekker quiet this time of year. Unlike my neighbour’s generator.',
+];
+
+// Linger prompt — the user's been parked on one page a while; Boet checks
+// in. Dry, not needy. A tap opens the chat.
+const LINGER_TEXTS = [
+  'You’ve been here a while, boet. Need a hand?',
+  'Still looking? Tap me and I’ll help you find it.',
+  'Ag, don’t scroll alone — ask me anything.',
+];
+
+// How long someone sits on one page before Boet offers help (ms), and the
+// share of linger prompts he swaps for a joke instead.
+const LINGER_AFTER_MS = 60_000;
+const LINGER_JOKE_CHANCE = 0.3;
+// Share of generic-page greetings that become a joke instead of a hello.
+const HELLO_JOKE_CHANCE = 0.25;
+
 // Activity scenes Boet wanders through (everything but idle). The launcher
 // alternates idle → one of these → idle.
 const ACTIVITIES: BoetScene[] = [
@@ -111,11 +146,14 @@ export function AskGgLauncher({
     }
   };
 
-  // ── Autonomous wandering ─────────────────────────────────────────
-  // idle 2.8–5.4s → a random activity (~4s) → idle, forever. Never while
-  // the panel's open, muted, minimized, tab hidden, or reduced-motion (he
-  // just idles). The launcher lives in the root layout, so the cadence
-  // survives navigation instead of resetting per page.
+  // ── Occasional activity (calm cadence) ───────────────────────────
+  // Boet mostly just stands there breathing/blinking. Every ~30–60s of
+  // idle he plays ONE ~4s activity scene, then settles again — punctuation,
+  // not a show (operator dialed the original constant wandering down,
+  // 2026-07-20). Never while the panel's open, muted, minimized, tab
+  // hidden, or reduced-motion (he just idles). The launcher lives in the
+  // root layout, so the cadence survives navigation instead of resetting
+  // per page.
   const [scene, setScene] = useState<BoetScene>('idle');
   const sceneRef = useRef<BoetScene>('idle');
   useEffect(() => {
@@ -131,7 +169,7 @@ export function AskGgLauncher({
     let t: number;
     const step = () => {
       const cur = sceneRef.current;
-      const dwell = cur === 'idle' ? 2800 + Math.random() * 2600 : 4000;
+      const dwell = cur === 'idle' ? 28_000 + Math.random() * 32_000 : 4000;
       t = window.setTimeout(() => {
         // Hold on a hidden tab — animations are paused anyway; just idle.
         if (document.hidden) {
@@ -216,6 +254,13 @@ export function AskGgLauncher({
             text: coach.text,
             prefill: coach.prefill,
           });
+        } else if (Math.random() < HELLO_JOKE_CHANCE) {
+          // Now and then the greeting is one of Boet's dry one-liners
+          // instead of a hello — same slot, same tap-to-open behaviour.
+          setBubble({
+            kind: 'hello',
+            text: JOKES[Math.floor(Math.random() * JOKES.length)],
+          });
         } else {
           const text = HELLO_TEXTS[greetIdxRef.current % HELLO_TEXTS.length];
           greetIdxRef.current += 1;
@@ -227,9 +272,43 @@ export function AskGgLauncher({
     return () => clearTimeout(t);
   }, [pathname, panelArmed, muted, minimized]);
 
-  // Reset the per-page-view guard + drop any visible bubble on nav.
+  // ── Linger prompt ────────────────────────────────────────────────
+  // Parked on ONE page for LINGER_AFTER_MS without opening the chat →
+  // Boet checks in ("Need a hand?"), occasionally with a joke instead.
+  // Separate from the greeting (which fires ~4s in and auto-hides at
+  // 14s): this is a second, later bubble — once per page view, same
+  // guards as every other proactive speak, and never over a bubble
+  // that's still showing.
+  const lingerSpentRef = useRef(false);
+  useEffect(() => {
+    if (panelArmed || muted || minimized) return;
+    const t = window.setTimeout(() => {
+      if (lingerSpentRef.current) return;
+      if (document.visibilityState !== 'visible') return;
+      if (document.body.hasAttribute('data-install-prompt')) return;
+      if (document.getElementById('askgg-hello')) return; // bubble still up
+      const ae = document.activeElement;
+      if (
+        ae instanceof HTMLInputElement ||
+        ae instanceof HTMLTextAreaElement ||
+        (ae instanceof HTMLElement && ae.isContentEditable)
+      ) {
+        return;
+      }
+      lingerSpentRef.current = true;
+      const text =
+        Math.random() < LINGER_JOKE_CHANCE
+          ? JOKES[Math.floor(Math.random() * JOKES.length)]
+          : LINGER_TEXTS[Math.floor(Math.random() * LINGER_TEXTS.length)];
+      setBubble({ kind: 'hello', text });
+    }, LINGER_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [pathname, panelArmed, muted, minimized]);
+
+  // Reset the per-page-view guards + drop any visible bubble on nav.
   useEffect(() => {
     spentThisPageRef.current = false;
+    lingerSpentRef.current = false;
     setBubble(null);
   }, [pathname]);
 
