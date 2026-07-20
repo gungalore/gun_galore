@@ -2290,6 +2290,14 @@ model FeaturedSlotBid {
   amountCents Int
   tier        FeaturedTier
 
+  // Buy-Now purchase (skip-the-auction premium). When true this row is
+  // NOT an auction bid — the seller paid a fixed 2× the tier's base price
+  // to claim the slot outright + immediately, bypassing the auction. The
+  // `tier` still drives the featured DURATION; `amountCents` holds the 2×
+  // base (pre-discount) and `chargedAmountCents` the cash collected. Lets
+  // revenue reports + /my/bids distinguish outright purchases from bids.
+  isBuyNow Boolean @default(false)
+
   // Phase E2 — Ask GG subscription perk (OD1 locked).
   //   FREE   → 0  (full price)
   //   MEMBER → 25 (25% off the slot fee)

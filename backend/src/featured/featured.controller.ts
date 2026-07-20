@@ -16,6 +16,7 @@ import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { CurrentAdmin } from '../admin/decorators/current-admin.decorator';
 import { PlaceFeaturedBidDto } from './dto/place-bid.dto';
 import { BindFeaturedListingDto } from './dto/bind-listing.dto';
+import { FeaturedBuyNowDto } from './dto/buy-now.dto';
 import {
   BanFeaturedBidderDto,
   CloseAuctionEarlyDto,
@@ -79,6 +80,16 @@ export class FeaturedSellerController {
     @Body() dto: PlaceFeaturedBidDto,
   ) {
     return this.featured.placeBid(clerkId, dto.slotId, dto.amountCents);
+  }
+
+  // Buy Now — claim the slot outright at 2× the chosen tier's price,
+  // skipping the auction. Picks the listing up front so it's atomic.
+  @Post('buy-now')
+  buyNow(
+    @CurrentUser() clerkId: string,
+    @Body() dto: FeaturedBuyNowDto,
+  ) {
+    return this.featured.buyNow(clerkId, dto.slotId, dto.tier, dto.listingId);
   }
 
   // Within the 15-min bind window, the winner picks one of their

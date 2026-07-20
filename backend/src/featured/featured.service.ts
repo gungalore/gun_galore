@@ -49,7 +49,7 @@ import { StitchService } from '../payments/stitch.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
-import { PAYMENT_MODE, assertPaymentsLive } from '../payments/transactions.service';
+import { PAYMENT_MODE, assertPaymentsLive } from '../payments/payment-mode';
 
 // P1.2 — how long the winner has to pay the slot fee by EFT once they
 // pick a listing (manual rail). Mirrors the subscription pay window.
@@ -61,6 +61,13 @@ const FEATURED_PAY_WINDOW_MS = 24 * 60 * 60 * 1000;
 // this, the slot is forfeited even if the winner keeps re-arming their
 // per-bind paymentPayByAt. One extra pay-window of slack beyond the first.
 export const FEATURED_UNPAID_MAX_MS = FEATURED_PAY_WINDOW_MS;
+
+// Buy-Now premium: the fixed multiple of a tier's base price a seller
+// pays to skip the auction and take the slot outright + immediately.
+// 2× = "pay double the tier price, no bidding, live now" (operator call
+// 2026-07-20). The subscription discount still applies to this doubled
+// base, so a PRO seller nets the tier's normal price for the convenience.
+export const BUY_NOW_MULTIPLIER = 2;
 
 // Featured-slot service.
 //
@@ -487,6 +494,280 @@ export class FeaturedService {
     };
   }
 
+  // ─── Buy Now: claim a slot OUTRIGHT, skipping the auction ───────────
+  //
+  // A seller pays a fixed premium — BUY_NOW_MULTIPLIER × the chosen
+  // tier's base price — to take a featured slot immediately instead of
+  // bidding + waiting out the 24h auction. They pick the tier (which
+  // sets the featured DURATION) + the listing up front, so the whole
+  // thing is atomic: no 15-min bind window. The subscription discount
+  // (PRO −50%) applies to the doubled base, exactly like an auction bid,
+  // so the charged cash uses the same applyFeaturedDiscount snapshot.
+  //
+  // Only valid on a slot that is AUCTION_RUNNING or VACANT — never one
+  // with a live paying occupant (OCCUPIED) or a winner mid-bind
+  // (BIND_WINDOW). Any open auction on the slot is closed AWARDED to the
+  // buy-now purchase and its outstanding bids marked LOST (a Buy It Now
+  // out-bids everyone; no money was collected from them so nothing to
+  // refund).
+  //
+  // Payment routes through the SAME seam as bindListingToSlot: on the
+  // manual rail (current prod state) assertPaymentsLive() throws 503
+  // "launching soon" BEFORE any write, so Buy Now is inert until the
+  // card paygate is live. Non-prod paygate uses the synthetic-id path so
+  // the flow stays exercisable end-to-end.
+  async buyNow(
+    clerkId: string,
+    slotId: string,
+    tier: FeaturedTier,
+    listingId: string,
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { clerkId } });
+    if (!user) throw new ForbiddenException('User not synced');
+    if (user.isBanned) throw new ForbiddenException('Account suspended');
+
+    const ban = await this.prisma.featuredSlotBidderBan.findUnique({
+      where: { userId: user.id },
+    });
+    if (ban) {
+      throw new ForbiddenException(
+        `Banned from featured slots: ${ban.reason}`,
+      );
+    }
+
+    // ── Payment gate (mirrors bindListingToSlot) ──────────────────────
+    // Do this BEFORE opening the transaction so production (manual rail,
+    // payments not live) touches no rows at all — the seller lands on the
+    // shared "card payments launching soon" 503 surface.
+    if (PAYMENT_MODE === 'manual') {
+      // Throws ServiceUnavailable (503) while PAYMENTS_LIVE is false — the
+      // current state. The manual-EFT slot-fee lane is retired, so there
+      // is no rail to collect a Buy Now fee yet.
+      assertPaymentsLive();
+      // Defensive: if payments are ever flipped live while STILL on the
+      // manual rail, refuse rather than hand out free featuring — real
+      // fee capture is owned by the card paygate rail.
+      throw new BadRequestException(
+        'Featured Buy Now is not available yet — card checkout is launching soon.',
+      );
+    }
+    if (PAYMENT_MODE === 'paygate' && process.env.NODE_ENV === 'production') {
+      // AUDIT H1 (same as bind): no real gateway charge is wired here yet,
+      // so refuse in production to avoid handing out free homepage
+      // featuring on a fabricated payment id. Non-prod keeps the synthetic
+      // path below so the paygate lifecycle stays testable.
+      throw new BadRequestException(
+        'Featured Buy Now is temporarily disabled while the new payment integration is being wired. Please try again later.',
+      );
+    }
+
+    const cfg = await this.getConfig();
+    const baseCents = tierAmount(tier, cfg) * BUY_NOW_MULTIPLIER;
+    const durationSec = tierDuration(tier, cfg);
+    // Snapshot the subscription discount on the purchase, same as a bid.
+    const discountPercent = featuredDiscountPercent(user.subscriptionTier);
+    const chargedAmountCents = applyFeaturedDiscount(baseCents, discountPercent);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const slot = await tx.featuredSlot.findUnique({
+        where: { id: slotId },
+        include: { currentAuction: true },
+      });
+      if (!slot) throw new NotFoundException('Slot not found');
+      // Fast-fail on the common case; the FINAL CAS below is the real
+      // race guard (a concurrent buy-now / auction-close between this read
+      // and the claim is caught there).
+      if (slot.status !== 'AUCTION_RUNNING' && slot.status !== 'VACANT') {
+        throw new BadRequestException(
+          'This slot is not available for Buy Now right now — it is either live or being claimed by an auction winner.',
+        );
+      }
+
+      const listing = await tx.listing.findUnique({
+        where: { id: listingId },
+        select: {
+          id: true,
+          sellerId: true,
+          status: true,
+          isDealListing: true,
+          featuredInSlot: { select: { id: true } },
+        },
+      });
+      if (!listing) throw new NotFoundException('Listing not found');
+      if (listing.sellerId !== user.id) {
+        throw new ForbiddenException('Listing is not yours');
+      }
+      if (listing.isDealListing) {
+        throw new BadRequestException('Daily Deals cannot be featured');
+      }
+      if (listing.status !== 'ACTIVE') {
+        throw new BadRequestException('Listing must be ACTIVE to be featured');
+      }
+      if (listing.featuredInSlot) {
+        throw new BadRequestException(
+          'Listing is already featured in another slot',
+        );
+      }
+
+      // Auction: reuse the slot's open auction (award it to this purchase
+      // + mark its outstanding bids LOST) or spin up a fresh closed one so
+      // the buy-now bid always hangs off an auction row (revenue + audit).
+      const now = new Date();
+      let auctionId = slot.currentAuctionId;
+      if (auctionId) {
+        await tx.featuredSlotBid.updateMany({
+          where: { auctionId, status: 'ACTIVE' },
+          data: { status: 'LOST' },
+        });
+      } else {
+        const created = await tx.featuredAuction.create({
+          data: {
+            slotId: slot.id,
+            kind: FeaturedAuctionKind.AD_HOC,
+            status: FeaturedAuctionStatus.CLOSED_AWARDED,
+            closesAt: now,
+            closedAt: now,
+          },
+        });
+        auctionId = created.id;
+      }
+
+      const bid = await tx.featuredSlotBid.create({
+        data: {
+          auctionId,
+          bidderId: user.id,
+          amountCents: baseCents,
+          tier,
+          isBuyNow: true,
+          discountPercent,
+          chargedAmountCents,
+          status: 'WON',
+          paidAt: now,
+        },
+      });
+      // Bid-scoped synthetic paygate id (real capture wired at paygate
+      // cutover) — mirrors the auction bind path's `featured-<bidId>` so
+      // it's per-purchase unique + traceable, not slot-scoped (which would
+      // collide across successive buy-nows on one slot).
+      await tx.featuredSlotBid.update({
+        where: { id: bid.id },
+        data: { peachPaymentId: `featured-buynow-${bid.id}` },
+      });
+
+      await tx.featuredAuction.update({
+        where: { id: auctionId },
+        data: {
+          status: FeaturedAuctionStatus.CLOSED_AWARDED,
+          closedAt: now,
+          winningBidId: bid.id,
+        },
+      });
+
+      const featuredUntil = new Date(now.getTime() + durationSec * 1000);
+
+      // FINAL CAS — the atomic race guard. Guarded on the ORIGINAL
+      // eligible statuses so a concurrent buy-now / auction-close that
+      // already moved this slot on wins and this whole transaction
+      // (including the auction + bid rows created above) rolls back.
+      const claim = await tx.featuredSlot.updateMany({
+        where: { id: slot.id, status: { in: ['AUCTION_RUNNING', 'VACANT'] } },
+        data: {
+          status: FeaturedSlotStatus.OCCUPIED,
+          currentListingId: listing.id,
+          currentSellerId: user.id,
+          currentAuctionId: auctionId,
+          featuredUntil,
+        },
+      });
+      if (claim.count === 0) {
+        throw new BadRequestException(
+          'This slot was just claimed by someone else — please pick another.',
+        );
+      }
+
+      await this.recordEvent(
+        slot.id,
+        'BUY_NOW_PURCHASED',
+        {
+          bidId: bid.id,
+          tier,
+          baseCents,
+          chargedAmountCents,
+          discountPercent,
+          listingId: listing.id,
+        },
+        user.id,
+        undefined,
+        tx,
+      );
+      await this.recordEvent(
+        slot.id,
+        'LISTING_BOUND',
+        {
+          listingId: listing.id,
+          featuredUntil: featuredUntil.toISOString(),
+          durationSec,
+          viaBuyNow: true,
+        },
+        user.id,
+        undefined,
+        tx,
+      );
+      await this.recordEvent(
+        slot.id,
+        'FEATURED_LIVE',
+        {
+          listingId: listing.id,
+          featuredUntil: featuredUntil.toISOString(),
+        },
+        undefined,
+        undefined,
+        tx,
+      );
+
+      return {
+        bidId: bid.id,
+        featuredUntil,
+        tier,
+        durationSec,
+        baseCents,
+        chargedAmountCents,
+        discountPercent,
+      };
+    }).catch((err) => {
+      // Two concurrent buy-nows of the SAME listing on two eligible slots
+      // both pass the non-atomic featuredInSlot read, then the loser's
+      // FINAL CAS trips the @unique on FeaturedSlot.currentListingId. Turn
+      // that raw P2002 into the same graceful message the read produces
+      // instead of surfacing a 500.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new BadRequestException(
+          'Listing is already featured in another slot',
+        );
+      }
+      throw err;
+    });
+
+    // Zoho Books slot-fee Sales Receipt — fire-and-forget AFTER commit, so
+    // createFeaturedSlotInvoice's base-client read sees the committed bid
+    // row (firing inside the tx read it as null and silently dropped it).
+    // Only the paygate rail reaches here (manual threw above), and it
+    // captured the money synthetically, so this path owns the receipt.
+    void this.zohoBooks.createFeaturedSlotInvoice(result.bidId);
+
+    return {
+      featuredUntil: result.featuredUntil,
+      tier: result.tier,
+      durationSec: result.durationSec,
+      baseCents: result.baseCents,
+      chargedAmountCents: result.chargedAmountCents,
+      discountPercent: result.discountPercent,
+    };
+  }
+
   // Winner binds a listing to the slot. Must be called within the
   // bind window. Charges Peach AFTER the listing is validated +
   // bound, so a payment never lands on a slot we couldn't fill.
@@ -773,8 +1054,17 @@ export class FeaturedService {
         closesAt: null,
       },
     });
-    await this.prisma.featuredSlot.update({
-      where: { id: slotId },
+    // CAS the slot mutation on it still being VACANT with no auction. A
+    // buyNow can claim a VACANT slot (→ OCCUPIED) between the findUnique
+    // above and here; without this guard the blind update would wipe that
+    // paid buy-now and re-auction the slot. On a lost race, back out the
+    // auction row we just created so it doesn't dangle.
+    const claim = await this.prisma.featuredSlot.updateMany({
+      where: {
+        id: slotId,
+        status: FeaturedSlotStatus.VACANT,
+        currentAuctionId: null,
+      },
       data: {
         currentAuctionId: auction.id,
         status: FeaturedSlotStatus.AUCTION_RUNNING,
@@ -783,6 +1073,10 @@ export class FeaturedService {
         featuredUntil: null,
       },
     });
+    if (claim.count === 0) {
+      await this.prisma.featuredAuction.delete({ where: { id: auction.id } });
+      return;
+    }
     await this.recordEvent(slotId, 'AUCTION_OPENED', {
       auctionId: auction.id,
       kind: 'AD_HOC',
@@ -815,17 +1109,28 @@ export class FeaturedService {
       });
 
       if (!top) {
-        await tx.featuredAuction.update({
-          where: { id: auctionId },
+        // CAS the auction transition on status OPEN. The auction row is
+        // the single point both this cron and buyNow write, so if a
+        // concurrent buyNow already closed+awarded it (its bids are now
+        // LOST, so `top` read as null and we landed here), this matches 0
+        // rows and we abort WITHOUT touching the slot buyNow just claimed.
+        const closed = await tx.featuredAuction.updateMany({
+          where: { id: auctionId, status: 'OPEN' },
           data: {
             status: FeaturedAuctionStatus.CLOSED_NO_BIDS,
             closedAt: new Date(),
           },
         });
+        if (closed.count === 0) return; // buyNow (or another close) won it
         // Detach this auction from the slot and let the cron open a
-        // fresh ad-hoc auction on the next tick.
-        await tx.featuredSlot.update({
-          where: { id: auction.slotId },
+        // fresh ad-hoc auction on the next tick. Guarded so we never
+        // clobber a slot an admin award / buyNow moved off this auction.
+        await tx.featuredSlot.updateMany({
+          where: {
+            id: auction.slotId,
+            currentAuctionId: auctionId,
+            status: FeaturedSlotStatus.AUCTION_RUNNING,
+          },
           data: {
             currentAuctionId: null,
             status: FeaturedSlotStatus.VACANT,
@@ -838,15 +1143,19 @@ export class FeaturedService {
         return;
       }
 
-      // Mark winning bid + losers in bulk.
-      await tx.featuredAuction.update({
-        where: { id: auctionId },
+      // Mark winning bid + losers in bulk. CAS the auction transition on
+      // status OPEN (see above) so a concurrent buyNow that already
+      // awarded this auction makes us a no-op instead of overwriting its
+      // winner + clobbering the OCCUPIED slot.
+      const closed = await tx.featuredAuction.updateMany({
+        where: { id: auctionId, status: 'OPEN' },
         data: {
           status: FeaturedAuctionStatus.CLOSED_AWARDED,
           closedAt: new Date(),
           winningBidId: top.id,
         },
       });
+      if (closed.count === 0) return; // buyNow (or another close) won it
       await tx.featuredSlotBid.updateMany({
         where: {
           auctionId,
@@ -858,9 +1167,15 @@ export class FeaturedService {
 
       // Move slot into BIND_WINDOW. Promotion to OCCUPIED happens when
       // the winner calls bindListingToSlot. Cron expires the window
-      // after bindWindowSec.
-      await tx.featuredSlot.update({
-        where: { id: auction.slotId },
+      // after bindWindowSec. Guarded on the slot still running THIS
+      // auction so an admin award / buyNow that moved it off is not
+      // overwritten (the auction stays CLOSED_AWARDED but harmless).
+      await tx.featuredSlot.updateMany({
+        where: {
+          id: auction.slotId,
+          currentAuctionId: auctionId,
+          status: FeaturedSlotStatus.AUCTION_RUNNING,
+        },
         data: { status: FeaturedSlotStatus.BIND_WINDOW },
       });
 
@@ -998,6 +1313,10 @@ export class FeaturedService {
         currentListingId: null,
         currentSellerId: null,
         featuredUntil: null,
+        // Detach the finished auction — openAuction (below) and the cron
+        // recycler both bail while currentAuctionId is still set, so a
+        // slot freed with a stale auction id would never re-auction.
+        currentAuctionId: null,
       },
     });
     await this.recordEvent(slot.id, 'LISTING_SOLD_FREES_SLOT', {
@@ -1022,12 +1341,17 @@ export class FeaturedService {
         currentListingId: null,
         currentSellerId: null,
         featuredUntil: null,
+        // Detach the just-finished auction (an auction-won OR buy-now slot
+        // parks its awarded auction here). The cron recycler only opens a
+        // fresh auction on slots with currentAuctionId:null, so leaving it
+        // set would wedge the slot VACANT forever with no auction.
+        currentAuctionId: null,
       },
     });
     await this.recordEvent(slotId, 'FEATURED_EXPIRED', {});
-    // Don't auto-open a new auction here — the SCHEDULED pre-auction
-    // ran in parallel and either just closed (winner promoted in
-    // closeAuction) or yielded NO_BIDS (handled there).
+    // The EVERY_MINUTE cron recycler picks this freed slot up next tick
+    // ({ status: VACANT, currentAuctionId: null }) and opens a fresh
+    // AD_HOC auction — no need to open one inline here.
   }
 
   // ─── Admin actions ──────────────────────────────────────────────────
@@ -1061,9 +1385,17 @@ export class FeaturedService {
 
     if (refund && bid) {
       const refundCents = bid.chargedAmountCents ?? bid.amountCents;
-      if (bid.peachPaymentId) {
+      // Only a REAL gateway capture id can be reversed on the card. The
+      // bind + buy-now paths currently stamp a synthetic placeholder
+      // (`featured-<bidId>` / `featured-buynow-<bidId>`) because real
+      // capture isn't wired yet (AUDIT H1) — calling the gateway with that
+      // would fail AND falsely report refunded:true. Treat any `featured-`
+      // placeholder like the EFT lane: no auto-reversal, owe a manual refund.
+      const hasRealGatewayId =
+        !!bid.peachPaymentId && !bid.peachPaymentId.startsWith('featured-');
+      if (hasRealGatewayId) {
         // Paygate rail — reverse on the card via the gateway.
-        const r = await this.stitch.refundPayment(bid.peachPaymentId, refundCents);
+        const r = await this.stitch.refundPayment(bid.peachPaymentId!, refundCents);
         await this.prisma.featuredSlotBid.update({
           where: { id: bid.id },
           data: { status: 'REFUNDED' },
@@ -1083,11 +1415,12 @@ export class FeaturedService {
           adminId,
         );
       } else if (bid.paidAt) {
-        // Review fix: EFT-paid bids have no peachPaymentId — there is NO
-        // automatic reversal lane for featured fees (the payout batch
-        // only covers Transactions). Do NOT report refunded:true. Mark
-        // the bid REFUNDED (so it's out of the WON set) and surface that
-        // the operator owes a manual EFT refund of refundCents.
+        // EFT-paid bids (no peachPaymentId) AND synthetic-placeholder
+        // paygate bids (no real capture) have NO automatic reversal lane
+        // for featured fees (the payout batch only covers Transactions).
+        // Do NOT report refunded:true. Mark the bid REFUNDED (so it's out
+        // of the WON set) and surface that the operator owes a manual
+        // refund of refundCents.
         await this.prisma.featuredSlotBid.update({
           where: { id: bid.id },
           data: { status: 'REFUNDED' },
@@ -1416,5 +1749,26 @@ function tierDuration(
       return cfg.t4DurationSec;
     case 'T5':
       return cfg.t5DurationSec;
+  }
+}
+
+// Base (pre-discount, pre-multiplier) price of a tier from config.
+// Used by Buy Now to derive the 2× premium; auction bids read the same
+// amounts via snapToTier.
+export function tierAmount(
+  tier: FeaturedTier,
+  cfg: { t1AmountCents: number; t2AmountCents: number; t3AmountCents: number; t4AmountCents: number; t5AmountCents: number },
+): number {
+  switch (tier) {
+    case 'T1':
+      return cfg.t1AmountCents;
+    case 'T2':
+      return cfg.t2AmountCents;
+    case 'T3':
+      return cfg.t3AmountCents;
+    case 'T4':
+      return cfg.t4AmountCents;
+    case 'T5':
+      return cfg.t5AmountCents;
   }
 }

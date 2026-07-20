@@ -127,7 +127,10 @@ export default function FeaturedBidPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [activeModal, setActiveModal] = useState<
-    null | { kind: 'bid'; slot: SlotForBidder } | { kind: 'bind'; slot: SlotForBidder }
+    | null
+    | { kind: 'bid'; slot: SlotForBidder }
+    | { kind: 'bind'; slot: SlotForBidder }
+    | { kind: 'buynow'; slot: SlotForBidder }
   >(null);
 
   // Tick every second so countdowns refresh.
@@ -395,6 +398,7 @@ export default function FeaturedBidPage() {
                 now={now}
                 onBid={() => setActiveModal({ kind: 'bid', slot })}
                 onBind={() => setActiveModal({ kind: 'bind', slot })}
+                onBuyNow={() => setActiveModal({ kind: 'buynow', slot })}
               />
             ))}
       </div>
@@ -434,6 +438,34 @@ export default function FeaturedBidPage() {
           slot={activeModal.slot}
           onClose={() => setActiveModal(null)}
           onBound={async () => {
+            setActiveModal(null);
+            const r = await fetch(`${API_URL}/featured/slots`, {
+              headers: { Authorization: `Bearer ${await getToken()}` },
+              cache: 'no-store',
+            });
+            if (r.ok) {
+              const wrapped: SlotsResponse | SlotForBidder[] = await r.json();
+              if (Array.isArray(wrapped)) {
+                setSlots(wrapped);
+              } else {
+                setSlots(wrapped.slots);
+                setBidderTier(wrapped.bidderSubscriptionTier);
+                setBidderDiscount(wrapped.bidderDiscountPercent);
+              }
+            }
+          }}
+          getToken={getToken}
+        />
+      )}
+
+      {activeModal?.kind === 'buynow' && config && (
+        <BuyNowModal
+          slot={activeModal.slot}
+          config={config}
+          bidderTier={bidderTier}
+          bidderDiscountPercent={bidderDiscount}
+          onClose={() => setActiveModal(null)}
+          onBought={async () => {
             setActiveModal(null);
             const r = await fetch(`${API_URL}/featured/slots`, {
               headers: { Authorization: `Bearer ${await getToken()}` },
@@ -581,11 +613,13 @@ function SlotCard({
   now,
   onBid,
   onBind,
+  onBuyNow,
 }: {
   slot: SlotForBidder;
   now: number;
   onBid: () => void;
   onBind: () => void;
+  onBuyNow: () => void;
 }) {
   const isAuctionOpen =
     slot.currentAuction?.status === 'OPEN' &&
@@ -740,6 +774,22 @@ function SlotCard({
             }}
           >
             {isYourTopBid ? 'Raise your bid' : 'Place bid'}
+          </button>
+          {/* Buy Now — skip the auction, take the slot outright at 2× the
+              tier price. Always actionable while the slot is open/vacant
+              (no timer dependency; there's nothing to be outbid on). */}
+          <button
+            type="button"
+            onClick={onBuyNow}
+            className="w-full py-2 mt-2 rounded-[6px] text-sm font-medium"
+            style={{
+              background: 'transparent',
+              color: 'var(--text-primary)',
+              border: '0.5px solid var(--red)',
+              cursor: 'pointer',
+            }}
+          >
+            Buy now — skip the auction
           </button>
         </>
       )}
@@ -1108,7 +1158,14 @@ function BindModal({
           headers: { Authorization: `Bearer ${token}` },
           cache: 'no-store',
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          // A non-2xx (401 during token refresh, 500, …) must not leave the
+          // picker stuck on "Loading…" forever. Surface it + resolve to an
+          // empty list so the modal renders an actionable state.
+          setError('Could not load your listings — please close and retry.');
+          setListings([]);
+          return;
+        }
         const data = await res.json();
         // The backend's GET /listings/mine doesn't honor ?status= yet —
         // it returns every listing the seller owns. Filter client-side
@@ -1293,6 +1350,324 @@ function BindModal({
         >
           Cancel
         </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Buy Now modal ────────────────────────────────────────────────────
+// Skip the auction: pick a tier + one of your ACTIVE listings and pay a
+// fixed 2× the tier's base price to take the slot outright, live now, for
+// that tier's duration. Atomic — no bind window. The GG PRO discount
+// applies to the doubled base, mirroring the auction bid maths.
+const BUY_NOW_MULTIPLIER = 2;
+
+function BuyNowModal({
+  slot,
+  config,
+  bidderTier,
+  bidderDiscountPercent,
+  onClose,
+  onBought,
+  getToken,
+}: {
+  slot: SlotForBidder;
+  config: Config;
+  bidderTier: SubscriptionTier;
+  bidderDiscountPercent: number;
+  onClose: () => void;
+  onBought: () => void;
+  getToken: () => Promise<string | null>;
+}) {
+  const tierRows: { tier: Tier; amountCents: number; durationSec: number }[] = [
+    { tier: 'T1', amountCents: config.t1AmountCents, durationSec: config.t1DurationSec },
+    { tier: 'T2', amountCents: config.t2AmountCents, durationSec: config.t2DurationSec },
+    { tier: 'T3', amountCents: config.t3AmountCents, durationSec: config.t3DurationSec },
+    { tier: 'T4', amountCents: config.t4AmountCents, durationSec: config.t4DurationSec },
+    { tier: 'T5', amountCents: config.t5AmountCents, durationSec: config.t5DurationSec },
+  ];
+
+  const [tier, setTier] = useState<Tier>('T1');
+  const [listings, setListings] = useState<MyListing[] | null>(null);
+  const [selectedListing, setSelectedListing] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [comingSoon, setComingSoon] = useState(false);
+
+  const chosen = tierRows.find((r) => r.tier === tier)!;
+  // 2× the base price is what Buy Now charges (pre-discount). The GG PRO
+  // discount then applies to that doubled base — same floor-cents maths
+  // as the backend so the preview never lies.
+  const baseCents = chosen.amountCents * BUY_NOW_MULTIPLIER;
+  const chargedCents = Math.floor(
+    (baseCents * (100 - bidderDiscountPercent)) / 100,
+  );
+
+  // Load the seller's ACTIVE listings on mount (same source as BindModal).
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await fetch(`${API_URL}/listings/mine?status=ACTIVE`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) {
+          // Don't leave the picker stuck on "Loading…" on a non-2xx.
+          setError('Could not load your listings — please close and retry.');
+          setListings([]);
+          return;
+        }
+        const data = await res.json();
+        const all: MyListing[] = Array.isArray(data) ? data : (data.listings ?? []);
+        setListings(all.filter((l) => l.status === 'ACTIVE'));
+      } catch {
+        setError('Could not load your listings');
+      }
+    })();
+  }, [getToken]);
+
+  async function submit() {
+    if (!selectedListing) {
+      setError('Pick a listing to feature first');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/featured/buy-now`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ slotId: slot.id, tier, listingId: selectedListing }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        // Payment gate — the slot fee can't be collected until card
+        // checkout is live, so the backend returns 503 "launching soon".
+        if (res.status === 503 || /launching soon/i.test(data?.message ?? '')) {
+          setComingSoon(true);
+          return;
+        }
+        throw new Error(data?.message ?? `Error ${res.status}`);
+      }
+      onBought();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Buy Now failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ background: 'rgba(0,0,0,0.6)' }}
+      onClick={onClose}
+    >
+      <div
+        className="rounded-[8px] p-6 max-w-md w-full max-h-[85vh] overflow-y-auto"
+        style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {comingSoon ? (
+          <div>
+            <PaymentsComingSoon />
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-2.5 mt-4 rounded-[6px] text-sm"
+              style={{
+                background: 'var(--bg-inset)',
+                color: 'var(--text-secondary)',
+                border: '0.5px solid var(--border)',
+                cursor: 'pointer',
+              }}
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <>
+            <h3
+              className="text-lg mb-1"
+              style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+            >
+              Buy Slot #{slot.slotNumber} outright
+            </h3>
+            <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)' }}>
+              Skip the auction. Pick a tier + one of your active listings and
+              it goes featured immediately for the tier&apos;s duration. Buy Now
+              costs {BUY_NOW_MULTIPLIER}× the normal tier price.
+            </p>
+
+            {/* Tier dropdown */}
+            <label
+              className="text-xs mb-1 block"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              Tier (sets how long you stay featured)
+            </label>
+            <select
+              value={tier}
+              onChange={(e) => setTier(e.target.value as Tier)}
+              className="w-full mb-3 px-3 py-2.5 rounded-[6px] text-sm"
+              style={{
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              {tierRows.map((r) => (
+                <option key={r.tier} value={r.tier}>
+                  {r.tier} · {formatDuration(r.durationSec)} featured —{' '}
+                  {formatRand(r.amountCents * BUY_NOW_MULTIPLIER)}
+                </option>
+              ))}
+            </select>
+
+            {/* Price preview */}
+            <div
+              className="rounded-[6px] px-3 py-3 mb-4 text-xs"
+              style={{
+                background: 'rgba(47,158,107,0.10)',
+                border: '0.5px solid #2f9e6b',
+                color: '#2f9e6b',
+              }}
+            >
+              Buy Now <strong>{formatRand(baseCents)}</strong> —{' '}
+              <strong>{formatDuration(chosen.durationSec)}</strong> featured,
+              live immediately.
+              {bidderDiscountPercent > 0 && (
+                <div
+                  className="mt-1 pt-1"
+                  style={{
+                    borderTop: '0.5px solid rgba(47,158,107,0.30)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  {bidderTier === 'PRO' ? 'GG PRO' : `GG+ ${bidderTier}`} discount
+                  −{bidderDiscountPercent}% → you&apos;ll be charged{' '}
+                  <strong>{formatRand(chargedCents)}</strong>{' '}
+                  (saving {formatRand(baseCents - chargedCents)})
+                </div>
+              )}
+            </div>
+
+            {/* Listing picker */}
+            <label
+              className="text-xs mb-1 block"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              Listing to feature
+            </label>
+            {error && (
+              <p className="text-xs mb-2" style={{ color: 'var(--red)' }}>
+                {error}
+              </p>
+            )}
+            {!listings ? (
+              <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+                Loading your listings…
+              </p>
+            ) : listings.length === 0 ? (
+              <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+                You don&apos;t have any ACTIVE listings to feature.{' '}
+                <Link href="/listings/new" style={{ color: 'var(--red)', textDecoration: 'none' }}>
+                  Create one →
+                </Link>
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {listings.map((l) => {
+                  const active = selectedListing === l.id;
+                  return (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => setSelectedListing(l.id)}
+                      className="w-full flex items-center rounded-[6px] text-left"
+                      style={{
+                        height: 50,
+                        padding: '0 8px',
+                        gap: 10,
+                        background: 'var(--bg-card)',
+                        border: `0.5px solid ${active ? 'var(--red)' : 'var(--border)'}`,
+                        boxShadow: active
+                          ? '0 0 12px rgba(232, 181, 58, 0.20), 0 0 4px rgba(200, 16, 46, 0.18)'
+                          : 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div
+                        className="relative shrink-0 rounded-[3px] overflow-hidden"
+                        style={{ width: 36, height: 36, background: 'var(--bg-inset)' }}
+                      >
+                        {l.images[0] && (
+                          <Image
+                            src={l.images[0].url}
+                            alt=""
+                            fill
+                            className="object-cover"
+                            sizes="36px"
+                          />
+                        )}
+                      </div>
+                      <span
+                        className="text-xs leading-tight truncate flex-1"
+                        style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+                      >
+                        {l.title}
+                      </span>
+                      {active && (
+                        <span
+                          className="text-[10px] shrink-0"
+                          style={{ color: 'var(--red)', fontWeight: 600 }}
+                        >
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="flex-1 py-2.5 rounded-[6px] text-sm"
+                style={{
+                  background: 'var(--bg-inset)',
+                  color: 'var(--text-secondary)',
+                  border: '0.5px solid var(--border)',
+                  cursor: submitting ? 'wait' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submit}
+                disabled={submitting || !selectedListing}
+                className="flex-1 py-2.5 rounded-[6px] text-sm font-medium"
+                style={{
+                  background: !selectedListing || submitting ? 'var(--bg-inset)' : 'var(--red)',
+                  color: !selectedListing || submitting ? 'var(--text-tertiary)' : '#fff',
+                  border: 'none',
+                  cursor: !selectedListing || submitting ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {submitting ? 'Processing…' : `Buy now — ${formatRand(chargedCents)}`}
+              </button>
+            </div>
           </>
         )}
       </div>
