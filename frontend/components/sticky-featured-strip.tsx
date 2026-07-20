@@ -329,15 +329,17 @@ function StickyCard({ slot }: { slot: RailSlot }) {
     );
   }
 
-  // Vacant / auction-open — dashed border + "bid for this spot" nudge.
+  // Vacant / auction-open — vibrant gold-glow "bid for this spot" nudge
+  // (shared .gg-bid-spot rig; operator 2026-07-20 "easy to miss").
   // Centred single-column layout: no image, just slot number + CTA.
   return (
     <Link
       href="/featured/bid"
+      className="gg-bid-spot"
       style={{
         ...baseStyle,
-        background: 'var(--bg-inset)',
-        borderStyle: 'dashed',
+        background:
+          'radial-gradient(120% 100% at 50% 0%, rgba(232, 181, 58, 0.16) 0%, transparent 70%), var(--bg-inset)',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
@@ -347,21 +349,25 @@ function StickyCard({ slot }: { slot: RailSlot }) {
       <div
         style={{
           fontSize: 11.5,
-          fontWeight: 600,
-          letterSpacing: '0.08em',
-          color: 'var(--text-tertiary)',
+          fontWeight: 700,
+          letterSpacing: '0.1em',
+          color: '#e8b53a',
           textTransform: 'uppercase',
         }}
       >
-        Slot #{slot.slotNumber}
+        ★ Spot #{slot.slotNumber} open
       </div>
       <div
         style={{
           fontSize: 14,
           color: 'var(--red)',
-          fontWeight: 600,
+          fontWeight: 700,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
         }}
       >
+        <i className="gg-bid-dot" aria-hidden="true" />
         Bid for this spot →
       </div>
     </Link>

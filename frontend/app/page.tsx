@@ -624,18 +624,19 @@ export default async function HomePage({
 // Placeholder shown in the homepage featured grid for any slot that
 // isn't currently bound to a listing (VACANT / AUCTION_RUNNING /
 // BIND_WINDOW). Same outer dimensions as a real ListingCard so the
-// 4-up grid stays aligned. Grey gradient interior matches the
-// gradient settings used elsewhere (135deg linear, 0-100%) so the
-// placeholder reads as part of the same visual family but clearly
-// shows "nothing here yet — bid for this spot".
+// 4-up grid stays aligned. Vibrant treatment (operator 2026-07-20 —
+// "easy to miss"): warm-gold pulsing glow + shine sweep (shared
+// .gg-bid-spot rig in globals.css), gold star, live-dot CTA pill.
+// These cards SELL a paid product — they must not whisper.
 function EmptyFeaturedSlotCard({ slotNumber }: { slotNumber: number }) {
   return (
     <a
       href="/featured/bid"
+      className="gg-bid-spot rounded-[8px]"
       style={{
         display: 'block',
         background:
-          'linear-gradient(135deg, rgba(100, 100, 100, 0.35) 0%, rgba(100, 100, 100, 0) 100%), var(--bg-card)',
+          'radial-gradient(120% 90% at 50% 0%, rgba(232, 181, 58, 0.18) 0%, rgba(232, 181, 58, 0.04) 55%, transparent 100%), var(--bg-card)',
         textDecoration: 'none',
         height: '100%',
       }}
@@ -643,28 +644,48 @@ function EmptyFeaturedSlotCard({ slotNumber }: { slotNumber: number }) {
       {/* Same 4:3 box ListingCard uses (52.5% padding-bottom) — keeps
           the placeholder card the exact same height as a real one. */}
       <div className="relative" style={{ paddingBottom: '52.5%' }}>
-        <div
-          className="absolute inset-0 flex items-center justify-center"
-          style={{ color: 'var(--text-tertiary)' }}
-        >
-          <span className="text-xs uppercase" style={{ letterSpacing: '0.08em' }}>
-            Slot #{slotNumber}
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
+          {/* Gold star — the universal "featured" glyph */}
+          <svg
+            width="30"
+            height="30"
+            viewBox="0 0 24 24"
+            fill="#e8b53a"
+            aria-hidden="true"
+            style={{ filter: 'drop-shadow(0 0 8px rgba(232,181,58,0.55))' }}
+          >
+            <path d="M12 2l2.9 6.26L21.5 9.3l-4.9 4.46 1.3 6.74L12 17.2l-5.9 3.3 1.3-6.74L2.5 9.3l6.6-1.04Z" />
+          </svg>
+          <span
+            className="text-[11px] uppercase"
+            style={{
+              letterSpacing: '0.12em',
+              color: '#e8b53a',
+              fontWeight: 700,
+            }}
+          >
+            Spot #{slotNumber} open
           </span>
         </div>
       </div>
       <div className="p-3">
         <p
           className="text-sm leading-snug mb-2"
-          style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+          style={{ color: 'var(--text-primary)', fontWeight: 600 }}
         >
-          Featured spot available
+          Your listing here — seen first by every visitor
         </p>
-        <p
-          className="text-xs"
-          style={{ color: 'var(--red)', fontWeight: 500 }}
+        <span
+          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full"
+          style={{
+            background: 'var(--red)',
+            color: '#fff',
+            fontWeight: 600,
+          }}
         >
-          Place a bid →
-        </p>
+          <i className="gg-bid-dot" aria-hidden="true" />
+          Bid or Buy Now →
+        </span>
       </div>
     </a>
   );

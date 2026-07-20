@@ -328,6 +328,87 @@ body[data-install-prompt='true'] #askgg-hello {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Featured bid-spot nudges — the paid-placement SELL. Empty featured
+   slots (homepage grid, browse rail, sticky strip) advertise "bid for
+   this spot"; the operator wants them vibrant and impossible to miss
+   (2026-07-20). Shared treatment: warm-gold pulsing glow border (the
+   house "featured" cue, rgba(232,181,58)) + a periodic shine sweep +
+   a pulsing live-dot on the CTA. Reduced motion keeps the static gold
+   border/glow but stills every animation.
+   ═══════════════════════════════════════════════════════════════════ */
+.gg-bid-spot {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(232, 181, 58, 0.5) !important;
+  box-shadow: 0 0 12px rgba(232, 181, 58, 0.22);
+}
+.gg-bid-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2f9e6b;
+  flex-shrink: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gg-bid-spot {
+    animation: gg-bid-glow 2.8s ease-in-out infinite;
+  }
+  .gg-bid-spot::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 45%;
+    background: linear-gradient(
+      105deg,
+      transparent 0%,
+      rgba(255, 231, 170, 0.16) 50%,
+      transparent 100%
+    );
+    transform: translateX(-140%) skewX(-18deg);
+    animation: gg-bid-shine 4.2s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .gg-bid-dot {
+    animation: gg-bid-dot 1.4s ease-in-out infinite;
+  }
+}
+@keyframes gg-bid-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(232, 181, 58, 0.2);
+    border-color: rgba(232, 181, 58, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(232, 181, 58, 0.5);
+    border-color: rgba(232, 181, 58, 0.9);
+  }
+}
+@keyframes gg-bid-shine {
+  0%,
+  55% {
+    transform: translateX(-140%) skewX(-18deg);
+  }
+  85%,
+  100% {
+    transform: translateX(340%) skewX(-18deg);
+  }
+}
+@keyframes gg-bid-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.7);
+  }
+}
+
 /* Category flyout sub-menu items — red hover/focus highlight matching the
    root category list (rgba red tint + red left border + white text). */
 .cat-submenu-item {

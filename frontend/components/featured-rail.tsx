@@ -242,16 +242,16 @@ export function FeaturedRail() {
 
         <Link
           href="/featured/bid"
-          className="block text-xs text-center mt-3 py-2 rounded-[6px]"
+          className="gg-bid-spot block text-xs text-center mt-3 py-2 rounded-[6px]"
           style={{
-            background: 'var(--bg-inset)',
-            color: 'var(--text-secondary)',
-            border: '0.5px solid var(--border)',
+            background:
+              'radial-gradient(120% 140% at 50% 0%, rgba(232, 181, 58, 0.14) 0%, transparent 70%), var(--bg-inset)',
+            color: 'var(--text-primary)',
             textDecoration: 'none',
-            fontWeight: 500,
+            fontWeight: 600,
           }}
         >
-          Bid for a featured spot →
+          ★ Bid for a featured spot →
         </Link>
       </aside>
 
@@ -287,9 +287,9 @@ export function FeaturedRail() {
           <Link
             href="/featured/bid"
             className="text-[11px]"
-            style={{ color: 'var(--red)', textDecoration: 'none' }}
+            style={{ color: 'var(--red)', textDecoration: 'none', fontWeight: 700 }}
           >
-            Bid for a spot →
+            ★ Bid for a spot →
           </Link>
         </div>
 
@@ -441,33 +441,35 @@ function RailCard({
     );
   }
 
-  // Auction in progress OR vacant — show a "bid now" nudge. Slot
-  // status determines the copy.
+  // Auction in progress OR vacant — vibrant gold-glow "bid now" nudge
+  // (shared .gg-bid-spot rig; operator 2026-07-20 "easy to miss").
+  // Slot status determines the copy.
   const isAuctionOpen =
     slot.currentAuction && slot.currentAuction.status === 'OPEN';
   return (
     <Link
       href="/featured/bid"
+      className="gg-bid-spot"
       style={{
         ...cardStyle,
-        background: 'var(--bg-inset)',
-        borderStyle: 'dashed',
+        background:
+          'radial-gradient(120% 100% at 50% 0%, rgba(232, 181, 58, 0.16) 0%, transparent 70%), var(--bg-inset)',
       }}
     >
       <div style={{ flex: 1, alignSelf: 'center', textAlign: 'center' }}>
         <div
           className="text-[10px] uppercase mb-1"
           style={{
-            color: 'var(--text-tertiary)',
-            letterSpacing: '0.08em',
-            fontWeight: 500,
+            color: '#e8b53a',
+            letterSpacing: '0.1em',
+            fontWeight: 700,
           }}
         >
-          #{slot.slotNumber} · {isAuctionOpen ? 'Auction open' : 'Slot opening'}
+          ★ Spot #{slot.slotNumber} {isAuctionOpen ? '· auction open' : 'open'}
         </div>
         <div
           className="text-[12px] leading-snug"
-          style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+          style={{ color: 'var(--text-primary)', fontWeight: 600 }}
         >
           {/* closesAt=null means the auction is open but no first bid
               yet. Display "Waiting for first bid" instead of a
@@ -475,14 +477,15 @@ function RailCard({
           {isAuctionOpen && slot.currentAuction?.closesAt
             ? `Closing in ${formatRemaining(slot.currentAuction.closesAt)}`
             : isAuctionOpen
-              ? 'Waiting for first bid'
-              : 'Just opened — bid now'}
+              ? 'Be the first to bid'
+              : 'Your listing here — seen first'}
         </div>
         <div
-          className="text-[11px] mt-1"
-          style={{ color: 'var(--red)' }}
+          className="text-[11px] mt-1 inline-flex items-center gap-1.5"
+          style={{ color: 'var(--red)', fontWeight: 700 }}
         >
-          Place a bid →
+          <i className="gg-bid-dot" aria-hidden="true" />
+          Bid or Buy Now →
         </div>
       </div>
     </Link>
