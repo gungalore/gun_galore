@@ -700,6 +700,23 @@ export class TasksService {
   // completion (createSwapFeeReceipts is idempotent per side, so a re-fire
   // can only fill a missing receipt). Keeps Books whole without an admin
   // clicking a retry button.
+  // Every 10 min — re-attempt notification emails parked in the outbox
+  // after a transport failure (normally a no-op; the table stays empty).
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async retryOutboxEmails() {
+    this.logger.debug('Running email outbox retry cron');
+    try {
+      await this.notifications.retryOutboxEmails();
+    } catch (err) {
+      this.logger.error(
+        `retryOutboxEmails failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('email-outbox-retry');
+    }
+  }
+
   // Hourly — self-heal FAILED/stranded commission invoices + missing
   // subscription sales receipts (previously manual-retry only; a Zoho
   // outage during a release window would silently leave holes in Books).

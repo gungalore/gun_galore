@@ -38,6 +38,9 @@ interface PersistOpts {
    * Defaults to false (safer).
    */
   dismissible?: boolean;
+  /** Push even though the row is dismissible — for rare informational
+   *  events that still deserve the phone buzz (e.g. prize-draw winner). */
+  forcePush?: boolean;
 }
 
 // Fails open — emails are fire-and-forget; never block the main flow.
@@ -439,7 +442,7 @@ export class NotificationsService {
     // waiting on persist(). PushService.sendToUser handles its own
     // errors internally — we just don't await the result on the
     // critical path.
-    if (!opts.dismissible) {
+    if (!opts.dismissible || opts.forcePush) {
       void this.push
         .sendToUser(opts.userId, opts.category, {
           title: opts.title,
@@ -1354,6 +1357,9 @@ export class NotificationsService {
         ? `Gun Galore: Collection booked from ${supplier} — The Courier Guy will collect. Waybill ${d.trackingReference}.`
         : `Gun Galore: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
       `booked-${d.transactionId}`,
+      // Waybill + Pudo PIN are delivery-essential — without them the
+      // parcel physically can't be handed over. Bypasses the SMS mute.
+      { critical: true },
     );
   }
 
@@ -3826,7 +3832,10 @@ export class NotificationsService {
       body: `You won: ${d.prizeTitle} (value ${formatRand(d.prizeValueCents)}). We'll contact you to arrange delivery.`,
       url: '/raffle',
       iconKey: 'offer',
+      // Dismissible (no in-app action to resolve) but the win still
+      // deserves the phone buzz — the one informational event that does.
       dismissible: true,
+      forcePush: true,
     });
     const html = this.email({
       status: { tone: 'success', label: 'Winner' },
@@ -4074,9 +4083,88 @@ export class NotificationsService {
       await this.resend.emails.send({ from: FROM, to, subject, html });
       this.logger.debug(`Email sent → ${to} "${subject}"`);
     } catch (err) {
+      // Don't lose the email — park it in the outbox; the 10-min retry
+      // cron re-attempts with backoff (max 5 tries, then admin alert).
       this.logger.error(
-        `Email failed → ${to} "${subject}": ${(err as Error).message}`,
+        `Email failed → ${to} "${subject}": ${(err as Error).message} — queued for retry`,
       );
+      await this.prisma.emailOutbox
+        .create({
+          data: {
+            toAddress: to,
+            subject,
+            html,
+            attempts: 1,
+            nextAttemptAt: new Date(Date.now() + 10 * 60_000),
+            lastError: (err as Error).message.slice(0, 500),
+          },
+        })
+        .catch((e) =>
+          this.logger.error(
+            `emailOutbox enqueue ALSO failed (email lost): ${(e as Error).message}`,
+          ),
+        );
+    }
+  }
+
+  /**
+   * Cron sweep — re-attempt parked emails. Success deletes the row;
+   * failure backs off (attempts × 15 min); the 5th failure drops the row
+   * with an AdminAlert so a hard-bouncing address can't retry forever.
+   * Normally a no-op (the table should be empty).
+   */
+  async retryOutboxEmails(limit = 25): Promise<void> {
+    if (!this.resend) return;
+    const due = await this.prisma.emailOutbox.findMany({
+      where: { nextAttemptAt: { lt: new Date() } },
+      orderBy: { nextAttemptAt: 'asc' },
+      take: limit,
+    });
+    for (const row of due) {
+      try {
+        await this.resend.emails.send({
+          from: FROM,
+          to: row.toAddress,
+          subject: row.subject,
+          html: row.html,
+        });
+        await this.prisma.emailOutbox.delete({ where: { id: row.id } });
+        this.logger.log(
+          `Outbox email delivered on retry ${row.attempts + 1} → ${row.toAddress} "${row.subject}"`,
+        );
+      } catch (err) {
+        const message = (err as Error).message.slice(0, 500);
+        if (row.attempts >= 4) {
+          await this.prisma.emailOutbox
+            .delete({ where: { id: row.id } })
+            .catch(() => undefined);
+          await this.prisma.adminAlert
+            .create({
+              data: {
+                type: 'email-delivery-failed',
+                referenceId: row.toAddress,
+                context: `Email "${row.subject}" to ${row.toAddress} failed ${row.attempts + 1} times and was dropped. Last error: ${message}`,
+              },
+            })
+            .catch(() => undefined);
+          this.logger.error(
+            `Outbox email DROPPED after ${row.attempts + 1} attempts → ${row.toAddress} "${row.subject}"`,
+          );
+        } else {
+          await this.prisma.emailOutbox
+            .update({
+              where: { id: row.id },
+              data: {
+                attempts: { increment: 1 },
+                nextAttemptAt: new Date(
+                  Date.now() + (row.attempts + 1) * 15 * 60_000,
+                ),
+                lastError: message,
+              },
+            })
+            .catch(() => undefined);
+        }
+      }
     }
   }
 
@@ -4089,9 +4177,16 @@ export class NotificationsService {
     to: string | null | undefined,
     message: string,
     reference: string,
+    opts?: {
+      /** Delivery-essential service message (courier PIN / waybill):
+       *  bypasses the SMS-mute preference. Muting is for notification
+       *  chatter — a muted seller still needs the PIN to hand over the
+       *  parcel. Use sparingly; everything else respects the mute. */
+      critical?: boolean;
+    },
   ) {
     if (!to || to.trim().length === 0) return;
-    if (await this.smsMuted(to)) {
+    if (!opts?.critical && (await this.smsMuted(to))) {
       this.logger.debug(`SMS muted by preference → ${to} (${reference})`);
       return;
     }

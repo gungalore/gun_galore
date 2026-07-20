@@ -2109,6 +2109,23 @@ model ReferenceCounter {
   updatedAt DateTime @updatedAt
 }
 
+// Failed notification emails awaiting retry. A Resend outage previously
+// LOST the email (logged only); now send() enqueues here and a 10-min cron
+// re-attempts with backoff (max 5 tries, then an AdminAlert + drop). Rows
+// are deleted on success — this table should normally be empty.
+model EmailOutbox {
+  id            String   @id @default(cuid())
+  toAddress     String
+  subject       String
+  html          String
+  attempts      Int      @default(0)
+  nextAttemptAt DateTime
+  lastError     String?
+  createdAt     DateTime @default(now())
+
+  @@index([nextAttemptAt])
+}
+
 // SMS marketing campaigns — a short key carried in outbound SMS links
 // (gungalore.co.za/?c=KEY). Arriving with an ACTIVE key shows the welcome
 // banner overlay once per browser session; plain visits never see it.
