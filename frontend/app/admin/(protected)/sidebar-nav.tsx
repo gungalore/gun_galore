@@ -2,7 +2,7 @@
 
 // Grouped, collapsible admin sidebar. The old flat 20-item wall is now
 // bucketed into five scannable sections (Operations / Moderation /
-// Marketplace / Ask GG / System) plus a standalone Command Center. The
+// Marketplace / Ask Boet / System) plus a standalone Command Center. The
 // section containing the current route auto-expands; the operator's
 // open/closed choices persist in localStorage. Active link keeps the red
 // left-border + tint. Lives in a client component because both the
@@ -65,7 +65,7 @@ const GROUPS: NavGroup[] = [
   },
   {
     key: 'askgg',
-    label: 'Ask GG',
+    label: 'Ask Boet',
     items: [
       { href: '/admin/ask-gg/kb', label: 'Knowledge Base' },
       { href: '/admin/ask-gg/guides', label: 'Page Guides' },

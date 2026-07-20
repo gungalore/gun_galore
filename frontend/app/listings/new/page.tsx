@@ -2145,7 +2145,7 @@ export default function NewListingPage() {
               minFiles={1}
               maxFiles={5}
             />
-            {/* Ask GG "Help me describe this" — reads the photos and
+            {/* Ask Boet "Help me describe this" — reads the photos and
                 proposes title / description / category / condition.
                 Pure helper: parent owns the form state via onApply.
                 Sits inside Step 1 so the seller can pre-fill Step 2

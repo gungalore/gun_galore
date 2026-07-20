@@ -1,6 +1,6 @@
 'use client';
 
-// Small inline SVG icons shared by the Ask GG chat surface
+// Small inline SVG icons shared by the Ask Boet chat surface
 // (extracted verbatim from app/ask-gg/page.tsx).
 
 export function IconSparkles({ size = 22 }: { size?: number }) {

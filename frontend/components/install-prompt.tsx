@@ -35,7 +35,7 @@ const DISMISS_DAYS = 14;
 const SHOW_DELAY_MS = 3500;
 
 // Routes where an install popup would interrupt a focused task — never show
-// there (matches the Ask GG suppression spirit).
+// there (matches the Ask Boet suppression spirit).
 const SUPPRESS_PREFIXES = [
   '/checkout',
   '/admin',
@@ -173,7 +173,7 @@ export function InstallPrompt() {
       showFallbackHint ||
       showDesktopHint);
 
-  // Ask GG Everywhere — keep the body attribute stamped while our popup is up
+  // Ask Boet Everywhere — keep the body attribute stamped while our popup is up
   // so the Sparkie daily-hello suppresses (it checks data-install-prompt) and
   // the launcher lift rules stay coherent. Harmless behind our backdrop.
   useEffect(() => {

@@ -1,6 +1,6 @@
 import type { AskGgPageContext } from './use-ask-gg';
 
-// Ask GG Everywhere (W4 / F5) — derive the page context the panel sends
+// Ask Boet Everywhere (W4 / F5) — derive the page context the panel sends
 // with each message, purely from the URL. The backend treats these ids
 // as UNTRUSTED hints: it re-fetches everything server-side with
 // ownership checks, so nothing here is load-bearing for privacy — it

@@ -11,9 +11,9 @@
 // GIN index on the page text makes Sprint 2's search instant.
 //
 // Status flow per manual:
-//   PROCESSING → ACTIVE  (extraction succeeded; queryable by Ask GG)
+//   PROCESSING → ACTIVE  (extraction succeeded; queryable by Ask Boet)
 //   PROCESSING → FAILED  (pdf-parse threw; admin can retry / delete)
-//   ACTIVE     → ARCHIVED (hidden from Ask GG; reversible)
+//   ACTIVE     → ARCHIVED (hidden from Ask Boet; reversible)
 //   ARCHIVED   → ACTIVE  (un-hidden)
 
 import { useCallback, useEffect, useState } from 'react';
@@ -272,7 +272,7 @@ export default function ReloadingManualsPage() {
       </div>
 
       <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-        Source-of-truth library for Ask GG&rsquo;s load-data + reloading-theory
+        Source-of-truth library for Ask Boet&rsquo;s load-data + reloading-theory
         answers. Manuals are stored on the server filesystem (not Cloudinary)
         so access is admin-authenticated and there&rsquo;s no external
         dependency. The Postgres FTS index makes lookups instant across the

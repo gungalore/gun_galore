@@ -12,7 +12,7 @@ import {
 import { usePathname } from 'next/navigation';
 import { useAskGg, type UseAskGg } from './use-ask-gg';
 
-// ─── Ask GG Everywhere — shared conversation state ───────────────────
+// ─── Ask Boet Everywhere — shared conversation state ───────────────────
 //
 // ONE useAskGg() instance for the whole app, hosted by <AskGgProvider>
 // in app/layout.tsx (WishlistProvider precedent). The /ask-gg page and

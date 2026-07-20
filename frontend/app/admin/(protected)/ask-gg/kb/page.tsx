@@ -209,7 +209,7 @@ export default function KbAdminPage() {
           className="text-lg font-medium"
           style={{ color: 'var(--text-primary)' }}
         >
-          Ask GG · Knowledge base
+          Ask Boet · Knowledge base
         </h1>
         {data && (
           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>

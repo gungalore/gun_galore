@@ -21,7 +21,7 @@ import {
   CONTEXTUAL_STARTER_PROMPTS,
 } from '@/lib/ask-gg-context';
 
-// Ask GG Everywhere — the site-wide chat panel (the LAZY chunk).
+// Ask Boet Everywhere — the site-wide chat panel (the LAZY chunk).
 //
 // Loaded via next/dynamic on first open (AskGgHost) and kept mounted
 // thereafter — `open` only toggles visibility, so the conversation
@@ -245,7 +245,7 @@ export default function AskGgPanel() {
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label="Ask GG assistant"
+        aria-label="Ask Boet assistant"
         className={[
           'fixed z-[75] bg-[var(--bg-card)] flex flex-col',
           'left-0 right-0 bottom-0 max-h-[88dvh] rounded-t-[16px]',
@@ -274,7 +274,7 @@ export default function AskGgPanel() {
             <span style={{ color: 'var(--red)', display: 'inline-flex' }}>
               <AskGgMascot size={22} mood={mascotMood} />
             </span>
-            Ask GG
+            Ask Boet
           </span>
           <span className="flex items-center gap-1">
             {isSignedIn && ag.messages.length > 0 && (
@@ -291,7 +291,7 @@ export default function AskGgPanel() {
             <button
               type="button"
               onClick={expand}
-              aria-label="Open full Ask GG page"
+              aria-label="Open full Ask Boet page"
               title="Open full page (Load Lab, history)"
               style={{ ...headerBtnStyle, fontSize: 13, width: 'auto', padding: '4px 8px' }}
             >
@@ -300,7 +300,7 @@ export default function AskGgPanel() {
             <button
               type="button"
               onClick={() => setOpen(false)}
-              aria-label="Close Ask GG"
+              aria-label="Close Ask Boet"
               style={headerBtnStyle}
             >
               <IconX />

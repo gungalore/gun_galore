@@ -416,7 +416,7 @@ function ConfirmModal({
       case 'kyc':
         return 'KYC overrides bypass VerifyNow + Home Affairs. Use only when you have independent verification of identity (manual document review).';
       case 'subscription':
-        return 'Manually sets the GG PRO subscription tier without going through paid checkout — a comp / support grant. PRO unlocks Ask GG Pro features, Load Lab, and the ballistics calculator. Reversible; recorded in the audit log.';
+        return 'Manually sets the GG PRO subscription tier without going through paid checkout — a comp / support grant. PRO unlocks Ask Boet Pro features, Load Lab, and the ballistics calculator. Reversible; recorded in the audit log.';
     }
   })();
 

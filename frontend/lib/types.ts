@@ -115,7 +115,7 @@ export interface ListingSeller {
   sellerTier: SellerTier;
   totalSales: number;
   createdAt: string;
-  // Phase E1 — Ask GG badges rendered next to username site-wide.
+  // Phase E1 — Ask Boet badges rendered next to username site-wide.
   // OD1 locked: subscriptionTier MEMBER/PRO → GG+ pill.
   // OD2 locked: isVerifiedExpert → verified-expert badge.
   // Browse cards omit expertBadgeReason (smaller payload); listing-

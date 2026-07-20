@@ -1,4 +1,4 @@
-// Starter-tile prompts for the Ask GG empty state. Pure data — safe to
+// Starter-tile prompts for the Ask Boet empty state. Pure data — safe to
 // import from Server or Client Components. Each tile is a one-tap
 // starter: title, what it's for, and the question it drops into the
 // composer (ready to edit or send).

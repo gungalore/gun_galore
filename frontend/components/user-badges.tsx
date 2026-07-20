@@ -1,6 +1,6 @@
 'use client';
 
-// Phase E1 — Ask GG subscription badges rendered next to a username
+// Phase E1 — Ask Boet subscription badges rendered next to a username
 // on every public surface (listing card, listing-detail seller chip,
 // /sellers/[clerkId] profile, Q&A answers).
 //
@@ -112,8 +112,8 @@ function GgPlusPill({
     <span
       title={
         isPro
-          ? 'Ask GG Pro — full ballistic + reloading assistant + Pro perks'
-          : 'Ask GG Plus — fuller assistant + member perks'
+          ? 'Ask Boet Pro — full ballistic + reloading assistant + Pro perks'
+          : 'Ask Boet Plus — fuller assistant + member perks'
       }
       style={{
         display: 'inline-flex',
@@ -200,7 +200,7 @@ export function UserBadgesWithTooltip({
       {hasExpert && (
         <HelpTip title="Verified Expert" side="bottom">
           Awarded by Gun Galore staff after this seller has contributed
-          5+ verified entries to the Ask GG knowledge base. Their answers
+          5+ verified entries to the Ask Boet knowledge base. Their answers
           on listings + Q&A carry extra weight.
           {expertBadgeReason ? (
             <>

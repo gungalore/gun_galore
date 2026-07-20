@@ -1,6 +1,6 @@
 'use client';
 
-// useAskGg — client hook for the Ask GG chat surface.
+// useAskGg — client hook for the Ask Boet chat surface.
 //
 // State machine:
 //   - On mount (signed-in only): fetches /ask-gg/quota so the page
@@ -32,7 +32,7 @@ const LAST_CONVERSATION_KEY = 'askgg:lastConversationId';
 
 export type AskGgRole = 'user' | 'assistant';
 
-/** A source Ask GG used while answering, rendered as a citation chip
+/** A source Ask Boet used while answering, rendered as a citation chip
  *  below the assistant message so the user can verify. Two kinds:
  *   - manual (default): a reloading-manual page fetch — manualId/
  *     manufacturer/edition/pages set; rendered as a plain chip.
@@ -335,7 +335,7 @@ export interface AskGgPageContext {
 
 export function useAskGg(
   options: {
-    /** Ask GG Everywhere: the provider hosts ONE hook instance globally.
+    /** Ask Boet Everywhere: the provider hosts ONE hook instance globally.
      *  Until the user opens the panel (or is on /ask-gg), `enabled:false`
      *  keeps the hook INERT — no mount-time quota/history fetches on
      *  every page load site-wide. Defaults true (standalone page use). */

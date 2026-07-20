@@ -440,7 +440,7 @@ export function Nav() {
           )}
         </div>
 
-        {/* Second tier — selling-mode links + Ask GG. Desktop only; keeps
+        {/* Second tier — selling-mode links + Ask Boet. Desktop only; keeps
             the selling modes fully visible on their own slim strip instead
             of crushing the search on the top row. Mobile reaches these via
             the hamburger drawer's Shop / Assistant sections. */}
@@ -459,7 +459,7 @@ export function Nav() {
                 {link.label}
               </Link>
             ))}
-            {/* Ask GG — paid AI assistant, set apart from SHOP_LINKS with a
+            {/* Ask Boet — paid AI assistant, set apart from SHOP_LINKS with a
                 sparkles icon so it reads as a different product. Pushed to the
                 right edge of the strip. Mobile-web reaches it via the drawer's
                 Assistant section; the installed PWA has its own bottom tab. */}
@@ -474,7 +474,7 @@ export function Nav() {
                 borderRadius: 999,
                 padding: '3px 12px',
               }}
-              aria-label="Ask GG — AI assistant"
+              aria-label="Ask Boet — AI assistant"
             >
               <svg
                 width="14"
@@ -497,7 +497,7 @@ export function Nav() {
                   strokeLinejoin="round"
                 />
               </svg>
-              Ask GG
+              Ask Boet
             </Link>
           </div>
         </div>
@@ -652,7 +652,7 @@ export function Nav() {
               </div>
             )}
 
-            {/* Assistant section — Ask GG. Separate from Shop because
+            {/* Assistant section — Ask Boet. Separate from Shop because
                 it's a paid AI feature, not a shopping surface. On the
                 installed PWA the equivalent entry is the dedicated
                 bottom-tab-bar tab; here in the mobile-web drawer it
@@ -699,7 +699,7 @@ export function Nav() {
                     strokeLinejoin="round"
                   />
                 </svg>
-                Ask GG
+                Ask Boet
               </Link>
             </div>
 

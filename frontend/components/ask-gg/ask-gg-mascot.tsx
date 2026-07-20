@@ -1,308 +1,426 @@
 'use client';
 
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
-// Sparkie — the Ask GG mascot (safari edition, operator pick 2026-07-13):
-// a little safari ranger in a khaki bush hat with a real face and two working
-// hands. GG red rides on his hatband + neckerchief. A round friendly head, big
-// eyes with eyebrows, a mouth that changes shape (neutral / grin / "o"), two
-// arms that wave / point / tap along / fly up to celebrate, a warm halo and a
-// few adventure sparkles.
+// Boet — the Ask Boet mascot (safari ranger, from the Claude Design
+// "Safari Helper" handoff, 2026-07-20). One inline 260×300 SVG with 10
+// self-contained activity scenes; the launcher drives which one shows via
+// `scene` and wanders him between them. Boet is always subtly alive —
+// blink + breathing are CSS, and his eyes follow the cursor when `alive`.
 //
-//   • Idle LIFE (float / breathe / blink / glance / arm-sway / sparkle orbit +
-//     twinkle + glow) is pure CSS via the `gg-sk-*` rules in globals.css.
-//   • MOODS drive sustained poses: `think` (knit brows, hand to chin, thought
-//     dots) while a reply streams; `happy` (grin + squint) when the answer
-//     lands.
-//   • When `alive` is set (the launcher FAB) Sparkie also performs rare
-//     one-shot moments on his own — wave / peek / point / celebrate — and his
-//     eyes follow a nearby cursor.
-//
-// The character is built on the SAME animation rig as the previous mascot —
-// identical `gg-sk-*` class names and viewBox coordinates (arm pivots 42/78,86
-// — at the torso-shoulder anchors since 2026-07-18; brow pivots 47/73,45;
-// eyes 47/73,56; pupils 48/72,58; mouths ~y70) — so the globals.css rig
-// drives it unchanged. Everything animates the individual
-// transform properties (translate / rotate / scale) so effects COMPOSE, and
-// every motion sits behind prefers-reduced-motion: no-preference.
-//
-// Gradient ids are per-instance (useId) so several Sparkies on one page
-// (FAB + typing bubble) don't collide.
+// Ported faithfully: the SVG is the design's, injected verbatim (so the
+// hand-tuned geometry + per-element animation timings stay pixel-exact),
+// with the `gg-*` keyframe names renamed `boet-*` (globals.css) so they
+// can't clash with other `gg-` rules, and the ids namespaced `boet-*`.
+// Scene switching mirrors the design's apply(): toggle `.sc` display, swap
+// the rig animation, hide the legs while driving. Reduced motion stills
+// everything but the blink (globals.css) and the launcher keeps him idle.
 //
 // ALWAYS-LOADED (imported by the launcher) — keep tiny + react-only.
 
+export type BoetScene =
+  | 'idle'
+  | 'wave'
+  | 'binoculars'
+  | 'campfire'
+  | 'tent'
+  | 'shooting'
+  | 'fishing'
+  | 'knife'
+  | 'map'
+  | 'drive';
+
+// Legacy mood prop — the in-chat + panel avatars still pass it; map it to a
+// calm scene so those call sites don't need to change.
 export type SparkieMood = 'idle' | 'think' | 'happy';
 
-// Autonomous one-shot performances + how long each runs (ms), so the class
-// is stripped and the animation can re-fire next time.
-const MOMENTS = {
-  'gg-sparkie--wave': 1550,
-  'gg-sparkie--peek': 950,
-  'gg-sparkie--point': 1650,
-  'gg-sparkie--celebrate': 1450,
-} as const;
-const MOMENT_KEYS = Object.keys(MOMENTS) as (keyof typeof MOMENTS)[];
+// Per-scene rig (body/head/hat) motion. Everything else stays on the
+// default breathing bob. Values are the design's, verbatim.
+const RIGS: Partial<Record<BoetScene, string>> = {
+  binoculars:
+    'animation:boet-pan 4.2s ease-in-out infinite alternate;transform-origin:130px 292px',
+  shooting:
+    'animation:boet-recoil 2.4s linear infinite;transform-origin:130px 200px',
+  drive: 'animation:boet-drive .45s ease-in-out infinite',
+};
+const DEFAULT_RIG = 'animation:boet-bob 3.4s ease-in-out infinite';
 
-// Cursor proximity inside which Sparkie's eyes track the pointer (px).
-const TRACK_RADIUS = 340;
-// Max pupil offset while tracking (viewBox units at the 120 box).
-const TRACK_MAX = 3.4;
+// The design's SVG, injected verbatim. Contains no backticks or ${} so it
+// sits safely in this template literal; kept as raw HTML (not JSX) so the
+// hyphenated SVG attributes + inline animation styles transfer unchanged.
+const SVG_INNER = `<defs>
+        <radialGradient id="boetSkin" cx="45%" cy="38%" r="75%"><stop offset="0" stop-color="#f2c493"></stop><stop offset="1" stop-color="#d99f6d"></stop></radialGradient>
+        <linearGradient id="boetShirt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cfba8d"></stop><stop offset="1" stop-color="#ad9668"></stop></linearGradient>
+        <linearGradient id="boetVest" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6d6647"></stop><stop offset="1" stop-color="#524d36"></stop></linearGradient>
+        <linearGradient id="boetHat" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#98865e"></stop><stop offset="1" stop-color="#776744"></stop></linearGradient>
+      </defs>
+      <ellipse cx="130" cy="292" rx="62" ry="8" fill="#000" opacity="0.35"></ellipse>
+      <g class="sc sc-campfire" style="display:none">
+        <g>
+          <ellipse cx="52" cy="264" rx="36" ry="16" fill="#e8862d" style="animation:boet-glow 1.2s ease-in-out infinite"></ellipse>
+          <rect x="34" y="262" width="36" height="7" rx="3" fill="#6b4a2e" transform="rotate(12 52 266)"></rect>
+          <rect x="34" y="262" width="36" height="7" rx="3" fill="#5d3f26" transform="rotate(-14 52 266)"></rect>
+          <path d="M52 222 q14 16 10 30 q-2 12 -10 14 q-8 -2 -10 -14 q-4 -14 10 -30 z" fill="#e8862d" style="animation:boet-flame .55s ease-in-out infinite;transform-origin:52px 266px"></path>
+          <path d="M52 234 q9 12 6 21 q-1 8 -6 9 q-5 -1 -6 -9 q-3 -9 6 -21 z" fill="#f2a93b" style="animation:boet-flame .42s ease-in-out infinite;transform-origin:52px 266px"></path>
+          <path d="M52 246 q5 7 3 12 q-1 5 -3 6 q-2 -1 -3 -6 q-2 -5 3 -12 z" fill="#f7d154" style="animation:boet-flame .5s ease-in-out infinite;transform-origin:52px 266px"></path>
+          <circle cx="44" cy="244" r="1.6" fill="#f7c96a" style="animation:boet-spark 1.4s linear infinite .2s"></circle>
+          <circle cx="56" cy="240" r="1.6" fill="#f7c96a" style="animation:boet-spark 1.8s linear infinite .6s"></circle>
+          <circle cx="50" cy="250" r="1.4" fill="#f7c96a" style="animation:boet-spark 1.1s linear infinite"></circle>
+        </g>
+      </g>
+      <g class="sc sc-tent" style="display:none">
+        <g style="animation:boet-wobble 1.15s linear infinite;transform-origin:55px 268px">
+          <path d="M16 268 L55 198 L94 268 Z" fill="#5f6a4a" stroke="#48523a" stroke-width="2"></path>
+          <path d="M42 268 L55 224 L68 268 Z" fill="#47513a"></path>
+          <path d="M55 224 L55 268" stroke="#3b4430" stroke-width="2"></path>
+          <path d="M94 250 L112 264" stroke="#b8a97c" stroke-width="2"></path>
+        </g>
+        <rect x="110" y="258" width="5" height="12" rx="2" fill="#8a7a52" transform="rotate(20 112 264)"></rect>
+      </g>
+      <g class="sc sc-shooting" style="display:none">
+        <g>
+          <rect x="28" y="176" width="5" height="106" fill="#46453e"></rect>
+          <circle cx="30.5" cy="162" r="17" fill="#ece5d2" stroke="#b9b1a0" stroke-width="1.5"></circle>
+          <circle cx="30.5" cy="162" r="11.5" fill="none" stroke="#c0392b" stroke-width="3"></circle>
+          <circle cx="30.5" cy="162" r="4.5" fill="#c0392b"></circle>
+          <g style="animation:boet-hit 2.4s linear infinite;transform-origin:30.5px 162px">
+            <path d="M25 156 L36 168 M36 156 L25 168" stroke="#26221a" stroke-width="2.5" stroke-linecap="round"></path>
+          </g>
+        </g>
+      </g>
+      <g class="sc sc-fishing" style="display:none">
+        <g>
+          <ellipse cx="46" cy="280" rx="44" ry="12" fill="#24404d"></ellipse>
+          <ellipse cx="34" cy="278" rx="14" ry="3.5" fill="none" stroke="#3d5d6d" stroke-width="1.5" opacity="0.7"></ellipse>
+          <ellipse cx="62" cy="283" rx="10" ry="2.5" fill="none" stroke="#3d5d6d" stroke-width="1.5" opacity="0.5"></ellipse>
+        </g>
+      </g>
+      <g class="sc sc-knife" style="display:none">
+        <g>
+          <rect x="44" y="232" width="36" height="42" rx="5" fill="#6b4a2e"></rect>
+          <ellipse cx="62" cy="232" rx="18" ry="7" fill="#8a6a44"></ellipse>
+          <ellipse cx="62" cy="232" rx="10" ry="3.5" fill="none" stroke="#75552f" stroke-width="1.5"></ellipse>
+          <rect x="48" y="220" width="28" height="10" rx="4" fill="#7d8188"></rect>
+        </g>
+      </g>
+      <g id="boet-rig">
+        <g id="boet-legs"><rect x="101" y="272" width="27" height="14" rx="7" fill="#4e3b28"></rect>
+        <rect x="134" y="272" width="27" height="14" rx="7" fill="#443320"></rect>
+        <rect x="106" y="236" width="17" height="42" rx="8" fill="#e2ae7e"></rect>
+        <rect x="137" y="236" width="17" height="42" rx="8" fill="#d9a271"></rect></g>
+        <rect x="101" y="210" width="58" height="32" rx="10" fill="#8a7a52"></rect>
+        <path d="M130 224 L130 242" stroke="#6e6140" stroke-width="3"></path>
+        <path d="M96 176 q6 -24 34 -24 q28 0 34 24 l3 40 h-74 z" fill="url(#boetShirt)"></path>
+        <path d="M102 168 q10 -9 22 -10 l0 58 h-19 q-6 -26 -3 -48 z" fill="url(#boetVest)"></path>
+        <path d="M158 168 q-10 -9 -22 -10 l0 58 h19 q6 -26 3 -48 z" fill="url(#boetVest)"></path>
+        <rect x="105" y="192" width="14" height="13" rx="2" fill="#48432e"></rect>
+        <rect x="141" y="192" width="14" height="13" rx="2" fill="#48432e"></rect>
+        <path d="M105 195 h14 M141 195 h14" stroke="#5f5a3f" stroke-width="2"></path>
+        <rect x="122" y="138" width="16" height="16" rx="6" fill="#dca070"></rect>
+        <circle cx="93" cy="110" r="7" fill="#dca070"></circle>
+        <circle cx="167" cy="110" r="7" fill="#dca070"></circle>
+        <circle cx="130" cy="108" r="38" fill="url(#boetSkin)"></circle>
+        <path d="M96 84 q34 14 68 0 l-2 8 q-32 12 -64 0 z" fill="#b57e4f" opacity="0.25"></path>
+        <ellipse cx="106" cy="122" rx="7" ry="4.5" fill="#e88f5e" opacity="0.3"></ellipse>
+        <ellipse cx="154" cy="122" rx="7" ry="4.5" fill="#e88f5e" opacity="0.3"></ellipse>
+        <g class="boet-eyes" style="animation:boet-blink 4.6s linear infinite;transform-origin:130px 102px">
+          <ellipse cx="116" cy="102" rx="8.5" ry="10.5" fill="#fff"></ellipse>
+          <ellipse cx="144" cy="102" rx="8.5" ry="10.5" fill="#fff"></ellipse>
+          <g id="boet-pupils" style="transition:transform .18s ease-out">
+            <circle cx="116" cy="104" r="4.2" fill="#33261c"></circle>
+            <circle cx="144" cy="104" r="4.2" fill="#33261c"></circle>
+            <circle cx="117.5" cy="102.5" r="1.3" fill="#fff"></circle>
+            <circle cx="145.5" cy="102.5" r="1.3" fill="#fff"></circle>
+          </g>
+        </g>
+        <path d="M106 89 q9 -6 19 -3" stroke="#6b4a2e" stroke-width="3.5" stroke-linecap="round" fill="none"></path>
+        <path d="M135 86 q10 -3 19 3" stroke="#6b4a2e" stroke-width="3.5" stroke-linecap="round" fill="none"></path>
+        <ellipse cx="130" cy="117" rx="5" ry="6.5" fill="#e0a374"></ellipse>
+        <path d="M118 128 q12 11 24 0" stroke="#7c4a2c" stroke-width="3" stroke-linecap="round" fill="none"></path>
+        <path d="M101 80 q3 -34 29 -34 q26 0 29 34 z" fill="url(#boetHat)"></path>
+        <path d="M103 71 q27 11 54 0 l0 9 q-27 9 -54 0 z" fill="#52492f"></path>
+        <ellipse cx="130" cy="80" rx="55" ry="12" fill="url(#boetHat)" stroke="#665836" stroke-width="1.5"></ellipse>
+        <g class="sc sc-idle" style="">
+          <g style="animation:boet-sway 2.6s ease-in-out infinite alternate;transform-origin:97px 166px">
+            <rect x="88" y="160" width="18" height="24" rx="9" fill="#b39c6f"></rect>
+            <rect x="90" y="176" width="14" height="34" rx="7" fill="#e2ae7e"></rect>
+            <circle cx="97" cy="212" r="7" fill="#e8b586"></circle>
+          </g>
+          <g style="animation:boet-sway 2.6s ease-in-out infinite alternate -1.3s;transform-origin:163px 166px">
+            <rect x="154" y="160" width="18" height="24" rx="9" fill="#b39c6f"></rect>
+            <rect x="156" y="176" width="14" height="34" rx="7" fill="#d9a271"></rect>
+            <circle cx="163" cy="212" r="7" fill="#e0ab7c"></circle>
+          </g>
+        </g>
+        <g class="sc sc-wave" style="display:none">
+          <g style="animation:boet-sway 2.6s ease-in-out infinite alternate;transform-origin:97px 166px">
+            <rect x="88" y="160" width="18" height="24" rx="9" fill="#b39c6f"></rect>
+            <rect x="90" y="176" width="14" height="34" rx="7" fill="#e2ae7e"></rect>
+            <circle cx="97" cy="212" r="7" fill="#e8b586"></circle>
+          </g>
+          <g style="animation:boet-wave .9s ease-in-out infinite alternate;transform-origin:163px 166px">
+            <rect x="154" y="160" width="18" height="24" rx="9" fill="#b39c6f"></rect>
+            <rect x="156" y="176" width="14" height="34" rx="7" fill="#d9a271"></rect>
+            <circle cx="163" cy="212" r="7" fill="#e0ab7c"></circle>
+          </g>
+        </g>
+        <g class="sc sc-binoculars" style="display:none">
+          <g>
+            <rect x="88" y="160" width="18" height="20" rx="9" fill="#b39c6f"></rect>
+            <rect x="154" y="160" width="18" height="20" rx="9" fill="#b39c6f"></rect>
+            <path d="M100 172 Q84 156 98 136 Q106 124 114 118" stroke="#e2ae7e" stroke-width="13" fill="none" stroke-linecap="round"></path>
+            <path d="M160 172 Q176 156 162 136 Q154 124 146 118" stroke="#d9a271" stroke-width="13" fill="none" stroke-linecap="round"></path>
+            <circle cx="116" cy="116" r="7" fill="#e8b586"></circle>
+            <circle cx="144" cy="116" r="7" fill="#e0ab7c"></circle>
+            <rect x="102" y="90" width="24" height="24" rx="7" fill="#3c4034" stroke="#2a2d24" stroke-width="1.5"></rect>
+            <rect x="134" y="90" width="24" height="24" rx="7" fill="#3c4034" stroke="#2a2d24" stroke-width="1.5"></rect>
+            <rect x="122" y="96" width="16" height="7" rx="3" fill="#33372c"></rect>
+            <circle cx="114" cy="102" r="7" fill="#202737"></circle>
+            <circle cx="146" cy="102" r="7" fill="#202737"></circle>
+            <path d="M110 98 q2 -3 6 -2" stroke="#8fa3b8" stroke-width="1.5" fill="none" opacity="0.7"></path>
+            <path d="M142 98 q2 -3 6 -2" stroke="#8fa3b8" stroke-width="1.5" fill="none" opacity="0.7"></path>
+          </g>
+        </g>
+        <g class="sc sc-campfire" style="display:none">
+          <g style="animation:boet-sway 2.6s ease-in-out infinite alternate;transform-origin:163px 166px">
+            <rect x="154" y="160" width="18" height="24" rx="9" fill="#b39c6f"></rect>
+            <rect x="156" y="176" width="14" height="34" rx="7" fill="#d9a271"></rect>
+            <circle cx="163" cy="212" r="7" fill="#e0ab7c"></circle>
+          </g>
+          <g style="animation:boet-poke 1.5s ease-in-out infinite alternate;transform-origin:97px 166px">
+            <rect x="88" y="160" width="18" height="20" rx="9" fill="#b39c6f"></rect>
+            <rect x="90" y="174" width="14" height="32" rx="7" fill="#e2ae7e"></rect>
+            <circle cx="97" cy="208" r="7" fill="#e8b586"></circle>
+            <path d="M97 208 L107 261" stroke="#7a5836" stroke-width="5" stroke-linecap="round"></path>
+          </g>
+        </g>
+        <g class="sc sc-tent" style="display:none">
+          <g style="animation:boet-sway 2.6s ease-in-out infinite alternate;transform-origin:163px 166px">
+            <rect x="154" y="160" width="18" height="24" rx="9" fill="#b39c6f"></rect>
+            <rect x="156" y="176" width="14" height="34" rx="7" fill="#d9a271"></rect>
+            <circle cx="163" cy="212" r="7" fill="#e0ab7c"></circle>
+          </g>
+          <g style="animation:boet-hammer 1.15s ease-in infinite;transform-origin:97px 166px">
+            <rect x="88" y="160" width="18" height="20" rx="9" fill="#b39c6f"></rect>
+            <rect x="90" y="174" width="14" height="32" rx="7" fill="#e2ae7e"></rect>
+            <circle cx="97" cy="208" r="7" fill="#e8b586"></circle>
+            <path d="M97 208 L103 242" stroke="#7a5836" stroke-width="5" stroke-linecap="round"></path>
+            <rect x="93" y="238" width="21" height="12" rx="3" fill="#6b6242"></rect>
+          </g>
+        </g>
+        <g class="sc sc-shooting" style="display:none">
+          <g>
+            <rect x="135" y="94" width="19" height="10" rx="5" fill="#e9b686"></rect>
+            <path d="M137 100 h15" stroke="#7c4a2c" stroke-width="2.5" stroke-linecap="round"></path>
+            <path d="M50 171 l-16 -8 9 8 -9 8 z" fill="#f7d154" style="animation:boet-flash 2.4s linear infinite"></path>
+            <rect x="52" y="168" width="76" height="7" rx="3" fill="#6e5a3e" stroke="#463823" stroke-width="1"></rect>
+            <rect x="60" y="161" width="4" height="8" fill="#8a7358"></rect>
+            <path d="M126 166 L156 176 L152 191 L136 183 L126 179 Z" fill="#7a5b3a" stroke="#4a3a24" stroke-width="1"></path>
+            <rect x="88" y="162" width="18" height="18" rx="9" fill="#b39c6f"></rect>
+            <path d="M98 172 L88 176" stroke="#e2ae7e" stroke-width="13" stroke-linecap="round"></path>
+            <circle cx="86" cy="175" r="7" fill="#e8b586"></circle>
+            <rect x="154" y="162" width="18" height="18" rx="9" fill="#b39c6f"></rect>
+            <path d="M160 174 L142 180" stroke="#d9a271" stroke-width="13" stroke-linecap="round"></path>
+            <circle cx="139" cy="180" r="7" fill="#e0ab7c"></circle>
+          </g>
+        </g>
+        <g class="sc sc-fishing" style="display:none">
+          <g>
+            <g style="animation:boet-sway 2.6s ease-in-out infinite alternate -1.3s;transform-origin:163px 166px">
+              <rect x="154" y="160" width="18" height="24" rx="9" fill="#b39c6f"></rect>
+              <rect x="156" y="176" width="14" height="34" rx="7" fill="#d9a271"></rect>
+              <circle cx="163" cy="212" r="7" fill="#e0ab7c"></circle>
+            </g>
+            <rect x="88" y="160" width="18" height="20" rx="9" fill="#b39c6f"></rect>
+            <path d="M97 176 L66 196" stroke="#e2ae7e" stroke-width="13" stroke-linecap="round"></path>
+            <circle cx="64" cy="196" r="7" fill="#e8b586"></circle>
+            <path d="M64 196 L20 150" stroke="#7a5836" stroke-width="4" stroke-linecap="round"></path>
+            <path d="M20 150 L30 268" stroke="#ddd" stroke-width="1.2" opacity="0.7"></path>
+            <g style="animation:boet-bobber 3.6s ease-in-out infinite">
+              <circle cx="30" cy="271" r="4.5" fill="#c0392b"></circle>
+              <path d="M25.5 271 a4.5 4.5 0 0 0 9 0 z" fill="#f4efe2"></path>
+            </g>
+          </g>
+        </g>
+        <g class="sc sc-knife" style="display:none">
+          <g style="animation:boet-sway 2.6s ease-in-out infinite alternate;transform-origin:163px 166px">
+            <rect x="154" y="160" width="18" height="24" rx="9" fill="#b39c6f"></rect>
+            <rect x="156" y="176" width="14" height="34" rx="7" fill="#d9a271"></rect>
+            <circle cx="163" cy="212" r="7" fill="#e0ab7c"></circle>
+          </g>
+          <circle cx="60" cy="220" r="1.6" fill="#f7d154" style="animation:boet-flash .5s linear infinite"></circle>
+          <circle cx="68" cy="217" r="1.4" fill="#f7d154" style="animation:boet-flash .5s linear infinite .2s"></circle>
+          <g style="animation:boet-sharpen .5s ease-in-out infinite alternate;transform-origin:97px 166px">
+            <rect x="88" y="160" width="18" height="20" rx="9" fill="#b39c6f"></rect>
+            <rect x="90" y="174" width="14" height="32" rx="7" fill="#e2ae7e"></rect>
+            <circle cx="97" cy="208" r="7" fill="#e8b586"></circle>
+            <path d="M97 206 L64 218 L66 225 L97 216 Z" fill="#c8ccd2" stroke="#9aa0a8" stroke-width="0.8"></path>
+            <rect x="93" y="204" width="11" height="12" rx="3" fill="#4a3a28"></rect>
+          </g>
+        </g>
+        <g class="sc sc-map" style="display:none">
+          <g>
+            <rect x="88" y="160" width="18" height="18" rx="9" fill="#b39c6f"></rect>
+            <rect x="154" y="160" width="18" height="18" rx="9" fill="#b39c6f"></rect>
+            <path d="M97 172 L108 186" stroke="#e2ae7e" stroke-width="13" stroke-linecap="round"></path>
+            <path d="M163 172 L152 186" stroke="#d9a271" stroke-width="13" stroke-linecap="round"></path>
+            <g style="animation:boet-maptilt 2.2s ease-in-out infinite alternate;transform-origin:130px 190px">
+              <rect x="96" y="164" width="68" height="50" rx="3" fill="#ede3c8" stroke="#c9bc98" stroke-width="1.5"></rect>
+              <path d="M119 164 V214 M141 164 V214" stroke="#d8cba6" stroke-width="1.5"></path>
+              <path d="M104 206 Q120 188 138 198" stroke="#8a7a52" stroke-width="2" stroke-dasharray="4 3" fill="none"></path>
+              <path d="M141 193 l7 7 M148 193 l-7 7" stroke="#c0392b" stroke-width="2.5" stroke-linecap="round"></path>
+            </g>
+            <circle cx="108" cy="188" r="7" fill="#e8b586"></circle>
+            <circle cx="152" cy="188" r="7" fill="#e0ab7c"></circle>
+            <text x="168" y="62" style="font:700 30px Barlow,sans-serif;animation:boet-qmark 3.8s linear infinite" fill="#e8a33d">?</text>
+          </g>
+        </g>
+        <g class="sc sc-drive" style="display:none">
+          <g>
+            <circle cx="243" cy="272" r="5" fill="#a99b78" style="animation:boet-dust .8s linear infinite"></circle>
+            <circle cx="240" cy="264" r="4" fill="#a99b78" style="animation:boet-dust 1s linear infinite .3s"></circle>
+            <circle cx="246" cy="278" r="3.5" fill="#a99b78" style="animation:boet-dust .7s linear infinite .5s"></circle>
+            <rect x="160" y="196" width="78" height="70" rx="6" fill="#66604a" stroke="#45402f" stroke-width="2"></rect>
+            <path d="M174 204 V258 M192 204 V258 M210 204 V258 M228 204 V258" stroke="#57523e" stroke-width="3"></path>
+            <rect x="18" y="214" width="72" height="52" rx="8" fill="#66604a" stroke="#45402f" stroke-width="2"></rect>
+            <path d="M24 224 h10 M24 232 h10 M24 240 h10" stroke="#45402f" stroke-width="2.5"></path>
+            <circle cx="28" cy="252" r="5" fill="#f2d98c" stroke="#45402f" stroke-width="1.5"></circle>
+            <path d="M88 212 L97 168 L104 168 L96 212 Z" fill="#aebfca" opacity="0.35"></path>
+            <path d="M87 213 L97 167" stroke="#4a4534" stroke-width="5" stroke-linecap="round"></path>
+            <rect x="88" y="200" width="76" height="66" rx="4" fill="#6d6750" stroke="#45402f" stroke-width="2"></rect>
+            <path d="M92 206 h68" stroke="#57523e" stroke-width="2"></path>
+            <rect x="146" y="212" width="12" height="4" rx="2" fill="#45402f"></rect>
+            <rect x="86" y="260" width="80" height="8" rx="3" fill="#45402f"></rect>
+            <path d="M32 266 a23 23 0 0 1 46 0 z" fill="#4e4936"></path>
+            <path d="M177 266 a23 23 0 0 1 46 0 z" fill="#4e4936"></path>
+            <g>
+              <circle cx="55" cy="266" r="19" fill="#26241f"></circle>
+              <circle cx="55" cy="266" r="10" fill="#8b8574"></circle>
+              <g style="animation:boet-wheel .5s linear infinite;transform-origin:55px 266px">
+                <path d="M55 257 V275 M46 266 H64" stroke="#45402f" stroke-width="2.5"></path>
+              </g>
+              <circle cx="55" cy="266" r="3.5" fill="#45402f"></circle>
+            </g>
+            <g>
+              <circle cx="200" cy="266" r="19" fill="#26241f"></circle>
+              <circle cx="200" cy="266" r="10" fill="#8b8574"></circle>
+              <g style="animation:boet-wheel .5s linear infinite;transform-origin:200px 266px">
+                <path d="M200 257 V275 M191 266 H209" stroke="#45402f" stroke-width="2.5"></path>
+              </g>
+              <circle cx="200" cy="266" r="3.5" fill="#45402f"></circle>
+            </g>
+            <path d="M108 190 L114 202" stroke="#33302a" stroke-width="4" stroke-linecap="round"></path>
+            <ellipse cx="106" cy="184" rx="4.5" ry="13" fill="none" stroke="#33302a" stroke-width="4"></ellipse>
+            <rect x="88" y="160" width="18" height="16" rx="8" fill="#b39c6f"></rect>
+            <rect x="154" y="160" width="18" height="16" rx="8" fill="#b39c6f"></rect>
+            <path d="M99 170 L106 178" stroke="#e2ae7e" stroke-width="12" stroke-linecap="round"></path>
+            <circle cx="107" cy="177" r="6.5" fill="#e8b586"></circle>
+            <path d="M161 172 L112 188" stroke="#d9a271" stroke-width="12" stroke-linecap="round"></path>
+            <circle cx="110" cy="188" r="6.5" fill="#e0ab7c"></circle>
+          </g>
+        </g>
+      </g>`;
 
 export function AskGgMascot({
   size = 24,
-  mood = 'idle',
-  alive = false,
   fill = false,
+  alive = false,
+  scene,
+  mood,
 }: {
   size?: number;
-  mood?: SparkieMood;
-  alive?: boolean;
-  /** When true, the SVG fills its parent box (width/height 100%) instead of a
-   *  fixed `size`. Lets the launcher scale Sparkie responsively (80px mobile,
-   *  160px desktop) from CSS without re-rendering. */
+  /** Fill the parent box instead of a fixed `size` (launcher scales him). */
   fill?: boolean;
+  /** Run the eye-tracking (the launcher's live FAB); off for tiny avatars. */
+  alive?: boolean;
+  /** The activity to show. Falls back to a calm scene derived from `mood`. */
+  scene?: BoetScene;
+  mood?: SparkieMood;
 }) {
   const ref = useRef<SVGSVGElement | null>(null);
-  const rawId = useId();
-  const uid = rawId.replace(/[^a-zA-Z0-9]/g, '');
-  const haloId = `skHalo${uid}`;
-  const hatId = `skHat${uid}`;
-  const skinId = `skSkin${uid}`;
-  const shirtId = `skShirt${uid}`;
+  const activeScene: BoetScene = scene ?? (mood === 'happy' ? 'wave' : 'idle');
 
-  // Rare one-shot moments: a hello wave ~2.2s after mount, then one every
-  // 18-40s. Skipped under reduced motion, while the tab is hidden, or while
-  // a mood pose (think/happy) is showing.
+  // Show the active scene + swap the rig animation. Mirrors the design's
+  // apply(): hide every `.sc`, show this scene's groups (both the outside-
+  // rig environment and the in-rig arms share the `.sc-<name>` class),
+  // restart their CSS animations (detach → reflow → reattach) so a scene
+  // entered mid-cycle starts clean, set the rig style, and drop the legs
+  // while driving.
   useEffect(() => {
-    if (!alive) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    let timer: number;
-    let unclass: number;
-    const play = (cls: keyof typeof MOMENTS) => {
-      const el = ref.current;
-      if (!el || document.hidden) return;
-      el.classList.add(cls);
-      unclass = window.setTimeout(() => el.classList.remove(cls), MOMENTS[cls]);
-    };
-    const tick = () => {
-      const el = ref.current;
-      // don't stomp on a think/happy pose
-      if (el && !el.className.baseVal?.includes('gg-sparkie--think')) {
-        play(MOMENT_KEYS[Math.floor(Math.random() * MOMENT_KEYS.length)]);
-      }
-      timer = window.setTimeout(tick, 18_000 + Math.random() * 22_000);
-    };
-    const hello = window.setTimeout(() => play('gg-sparkie--wave'), 2200);
-    timer = window.setTimeout(tick, 22_000);
-    return () => {
-      clearTimeout(hello);
-      clearTimeout(timer);
-      clearTimeout(unclass);
-    };
-  }, [alive]);
+    const svg = ref.current;
+    if (!svg) return;
+    svg.querySelectorAll<SVGElement>('.sc').forEach((g) => {
+      g.style.display = 'none';
+    });
+    svg.querySelectorAll<SVGElement>('.sc-' + activeScene).forEach((g) => {
+      g.style.display = '';
+      g.querySelectorAll<SVGElement>('[style*="animation"]').forEach((el) => {
+        const s = el.getAttribute('style') || '';
+        el.setAttribute('style', '');
+        void el.getBoundingClientRect();
+        el.setAttribute('style', s);
+      });
+    });
+    svg.querySelector('#boet-rig')?.setAttribute(
+      'style',
+      RIGS[activeScene] || DEFAULT_RIG,
+    );
+    const legs = svg.querySelector<SVGElement>('#boet-legs');
+    if (legs) legs.style.display = activeScene === 'drive' ? 'none' : '';
+  }, [activeScene]);
 
-  // Eyes follow the cursor when it comes near. Pointer devices only,
-  // reduced-motion off. rAF-gated; pupils driven by CSS vars on the svg —
-  // zero React re-renders. Beyond the radius the idle glance resumes.
+  // Eyes follow the cursor — pointer-fine devices, motion allowed, only on
+  // the live FAB. rAF-gated; drives the pupil group's transform directly
+  // (zero React re-renders). Math is the design's, in the 260×300 box.
   useEffect(() => {
     if (!alive) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     if (!window.matchMedia('(pointer: fine)').matches) return;
     let raf = 0;
-    let lastX = 0;
-    let lastY = 0;
-    const onMove = (e: MouseEvent) => {
-      lastX = e.clientX;
-      lastY = e.clientY;
+    let lx = 0;
+    let ly = 0;
+    const move = (e: MouseEvent) => {
+      lx = e.clientX;
+      ly = e.clientY;
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
-        const el = ref.current;
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        const cx = r.left + r.width / 2;
-        const cy = r.top + r.height / 2;
-        const dx = lastX - cx;
-        const dy = lastY - cy;
-        const dist = Math.hypot(dx, dy);
-        if (dist < TRACK_RADIUS && dist > 1) {
-          const pull = Math.min(1, dist / 90) * TRACK_MAX;
-          el.classList.add('gg-sparkie--track');
-          el.style.setProperty('--sx', `${((dx / dist) * pull).toFixed(2)}px`);
-          el.style.setProperty('--sy', `${((dy / dist) * pull).toFixed(2)}px`);
-        } else {
-          el.classList.remove('gg-sparkie--track');
-        }
+        const svg = ref.current;
+        if (!svg) return;
+        const pupils = svg.querySelector<SVGGElement>('#boet-pupils');
+        if (!pupils) return;
+        const r = svg.getBoundingClientRect();
+        const ex = r.left + r.width * (130 / 260);
+        const ey = r.top + r.height * (102 / 300);
+        const dx = lx - ex;
+        const dy = ly - ey;
+        const d = Math.hypot(dx, dy) || 1;
+        const m = Math.min(d / 40, 1) * 3.4;
+        pupils.style.transition = 'transform .18s ease-out';
+        pupils.style.transform = `translate(${((dx / d) * m).toFixed(2)}px,${(
+          (dy / d) *
+          m
+        ).toFixed(2)}px)`;
       });
     };
-    window.addEventListener('mousemove', onMove, { passive: true });
+    window.addEventListener('mousemove', move, { passive: true });
     return () => {
-      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mousemove', move);
       if (raf) cancelAnimationFrame(raf);
-      ref.current?.classList.remove('gg-sparkie--track');
     };
   }, [alive]);
-
-  const moodClass = mood === 'idle' ? '' : ` gg-sparkie--${mood}`;
 
   return (
     <svg
       ref={ref}
-      className={`gg-sparkie${moodClass}`}
+      className="boet-svg"
       width={fill ? '100%' : size}
       height={fill ? '100%' : size}
-      viewBox="0 0 120 120"
-      fill="none"
+      viewBox="0 0 260 300"
+      role="img"
       aria-hidden="true"
-      style={{ display: 'block', overflow: 'visible' }}
-    >
-      <defs>
-        <radialGradient id={haloId} cx="50%" cy="46%" r="55%">
-          <stop offset="0%" stopColor="#ffcf7a" stopOpacity="0.55" />
-          <stop offset="55%" stopColor="#e8952f" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="#e8952f" stopOpacity="0" />
-        </radialGradient>
-        <linearGradient id={hatId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#dcc084" />
-          <stop offset="1" stopColor="#b7994f" />
-        </linearGradient>
-        <linearGradient id={skinId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#f0c095" />
-          <stop offset="1" stopColor="#dca071" />
-        </linearGradient>
-        <linearGradient id={shirtId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#cdb887" />
-          <stop offset="1" stopColor="#a68b52" />
-        </linearGradient>
-      </defs>
-
-      {/* warm halo */}
-      <ellipse className="gg-sk-glow" cx="60" cy="56" rx="50" ry="50" fill={`url(#${haloId})`} />
-
-      {/* orbiting adventure sparkles */}
-      <g className="gg-sk-sparkles">
-        <path
-          className="gg-sk-spk"
-          style={{ ['--bx' as string]: '-30px', ['--by' as string]: '-26px' }}
-          d="M20 32 l1.8 3.8 3.8 1.8 -3.8 1.8 -1.8 3.8 -1.8 -3.8 -3.8 -1.8 3.8 -1.8 Z"
-          fill="#ffd98a"
-        />
-        <path
-          className="gg-sk-spk"
-          style={{ ['--bx' as string]: '32px', ['--by' as string]: '-22px' }}
-          d="M100 30 l1.6 3.4 3.4 1.6 -3.4 1.6 -1.6 3.4 -1.6 -3.4 -3.4 -1.6 3.4 -1.6 Z"
-          fill="#ffcf7a"
-        />
-        <path
-          className="gg-sk-spk"
-          style={{ ['--bx' as string]: '30px', ['--by' as string]: '28px' }}
-          d="M101 86 l1.4 3 3 1.4 -3 1.4 -1.4 3 -1.4 -3 -3 -1.4 3 -1.4 Z"
-          fill="#ffbf5a"
-        />
-        <path
-          className="gg-sk-spk"
-          style={{ ['--bx' as string]: '-30px', ['--by' as string]: '26px' }}
-          d="M19 88 l1.4 3 3 1.4 -3 1.4 -1.4 3 -1.4 -3 -3 -1.4 3 -1.4 Z"
-          fill="#ffcf7a"
-        />
-      </g>
-
-      <g className="gg-sk-float">
-        {/* arms (behind body) — sleeves in shirt khaki, skin hands */}
-        {/* Arms anchor at the TORSO SHOULDERS (y≈86, on the shirt line) —
-            the original paths started at y=76, neck height beside the
-            jaw, so the sleeves read as sprouting from his neck. The CSS
-            rig pivots (globals.css .gg-sk-arm-l/r transform-origins)
-            moved with them — keep the two in sync. */}
-        <g className="gg-sk-arm-l">
-          <path
-            d="M42 86 C33 88 28 92 28 96"
-            stroke={`url(#${shirtId})`}
-            strokeWidth="9"
-            strokeLinecap="round"
-            fill="none"
-          />
-          <circle cx="28" cy="97" r="5.5" fill="#e7b48c" />
-        </g>
-        <g className="gg-sk-arm-r">
-          <path
-            d="M78 86 C87 88 92 92 92 96"
-            stroke={`url(#${shirtId})`}
-            strokeWidth="9"
-            strokeLinecap="round"
-            fill="none"
-          />
-          <circle cx="92" cy="97" r="5.5" fill="#e7b48c" />
-        </g>
-
-        {/* body — safari shirt torso + head + bush hat (one breathing mass) */}
-        <g className="gg-sk-body">
-          <path d="M38 84 Q60 78 82 84 L86 105 Q60 111 34 105 Z" fill={`url(#${shirtId})`} />
-          <rect x="41" y="93" width="10" height="9" rx="1.5" fill="none" stroke="#8f7139" strokeWidth="1.3" />
-          <rect x="69" y="93" width="10" height="9" rx="1.5" fill="none" stroke="#8f7139" strokeWidth="1.3" />
-          <path d="M52 83 L60 91 L68 83" fill="none" stroke="#8f7139" strokeWidth="1.5" strokeLinejoin="round" />
-          <path d="M54 74 h12 v6 q-6 3 -12 0 Z" fill="#dca071" />
-          {/* red neckerchief — the GG accent */}
-          <path d="M52 83 L60 97 L68 83 Q60 87 52 83 Z" fill="#c8102e" />
-          {/* head */}
-          <ellipse cx="60" cy="56" rx="24" ry="23" fill={`url(#${skinId})`} />
-          <ellipse cx="37" cy="59" rx="4" ry="5.5" fill="#dca071" />
-          <ellipse cx="83" cy="59" rx="4" ry="5.5" fill="#dca071" />
-          <path d="M60 60 q -2.6 4 0 5.4 q 2.6 -1.4 0 -5.4 Z" fill="#cf936a" />
-          {/* soft hat-brim shadow across the forehead */}
-          <ellipse cx="60" cy="50" rx="20" ry="4.5" fill="#000" opacity="0.10" />
-          {/* bush hat — brim, crown, red band */}
-          <path d="M24 41 Q60 30 96 41 Q60 50 24 41 Z" fill="#a98a4d" />
-          <path d="M41 41 Q40 20 60 18 Q80 20 79 41 Q60 45 41 41 Z" fill={`url(#${hatId})`} />
-          <path d="M60 20 L60 40" stroke="#a98a4d" strokeWidth="1.2" opacity="0.5" />
-          <path d="M41 40 Q60 44 79 40 Q60 45.5 41 40 Z" fill="#c8102e" />
-        </g>
-
-        {/* cheeks */}
-        <g className="gg-sk-cheeks">
-          <ellipse cx="44" cy="63" rx="5" ry="3.2" fill="#ff8a5a" />
-          <ellipse cx="76" cy="63" rx="5" ry="3.2" fill="#ff8a5a" />
-        </g>
-
-        {/* eyebrows */}
-        <g className="gg-sk-brow-l">
-          <path d="M40 46 Q47 42 54 46" stroke="#5a3a1e" strokeWidth="2.6" strokeLinecap="round" fill="none" />
-        </g>
-        <g className="gg-sk-brow-r">
-          <path d="M66 46 Q73 42 80 46" stroke="#5a3a1e" strokeWidth="2.6" strokeLinecap="round" fill="none" />
-        </g>
-
-        {/* eyes */}
-        <g className="gg-sk-eyes">
-          <ellipse cx="47" cy="56" rx="6" ry="7.6" fill="#fff" />
-          <ellipse cx="73" cy="56" rx="6" ry="7.6" fill="#fff" />
-          <g className="gg-sk-pupils">
-            <circle cx="48" cy="58" r="3.6" fill="#241014" />
-            <circle cx="72" cy="58" r="3.6" fill="#241014" />
-            <circle cx="46.4" cy="55.8" r="1.2" fill="#fff" />
-            <circle cx="70.4" cy="55.8" r="1.2" fill="#fff" />
-          </g>
-        </g>
-
-        {/* mouths — one shown per state */}
-        <path
-          className="gg-sk-m-neutral"
-          d="M53 70 Q60 75 67 70"
-          stroke="#7a3f1e"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-          fill="none"
-        />
-        <ellipse className="gg-sk-m-o" cx="60" cy="71" rx="3.4" ry="4" fill="#7a3f1e" />
-        <path className="gg-sk-m-grin" d="M51 68 Q60 80 69 68 Q60 73 51 68 Z" fill="#7a3f1e" />
-
-        {/* thought dots (think state) */}
-        <g className="gg-sk-dots">
-          <circle cx="90" cy="30" r="2.2" fill="#ffcf7a" />
-          <circle cx="98" cy="24" r="2.9" fill="#ffbf5a" />
-          <circle cx="106" cy="17" r="3.6" fill="#ff9a3a" />
-        </g>
-      </g>
-    </svg>
+      style={{ display: 'block', overflow: 'visible', cursor: 'pointer' }}
+      dangerouslySetInnerHTML={{ __html: SVG_INNER }}
+    />
   );
 }

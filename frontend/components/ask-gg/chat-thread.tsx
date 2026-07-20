@@ -63,7 +63,7 @@ export function ChatThread({
         // the mascot never gets cut off inside the bubble.
         <div
           aria-live="polite"
-          aria-label="Ask GG is thinking"
+          aria-label="Ask Boet is thinking"
           style={{
             display: 'flex',
             justifyContent: 'flex-start',

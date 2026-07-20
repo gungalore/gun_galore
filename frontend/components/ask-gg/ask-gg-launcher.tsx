@@ -2,16 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import dynamic from 'next/dynamic';
-import { AskGgMascot } from './ask-gg-mascot';
-import type { AdventureKind } from './adventure-scenes';
-
-// Adventure scenes are a separate lazy chunk — nothing loads until the
-// first scene actually fires (~a minute into a session at the earliest).
-const AdventureStage = dynamic(
-  () => import('./adventure-scenes').then((m) => m.AdventureStage),
-  { ssr: false },
-);
+import { AskGgMascot, type BoetScene } from './ask-gg-mascot';
 import {
   pickNudge,
   markNudgeShown,
@@ -20,44 +11,59 @@ import {
 import { useGgMuted } from '@/lib/ask-gg-mute';
 import { derivePageContext } from '@/lib/ask-gg-context';
 
-// Ask GG Everywhere — the floating launcher (mascot) + GG's proactive voice.
+// Ask Boet Everywhere — the floating launcher (Boet the safari ranger) +
+// his proactive voice.
 //
 // ALWAYS-LOADED: this file may import only react, next/navigation,
 // './ask-gg-mascot', '@/lib/ask-gg-nudges', '@/lib/ask-gg-mute' and
 // '@/lib/ask-gg-context' (all lean — the panel chunk carries everything
 // heavy). Rendered by AskGgHost on every non-suppressed page in BROWSER modes.
 //
+// Boet lives in the bottom-right corner (the design's 210px). He WANDERS
+// on his own — idles a few seconds, plays one of nine activity scenes
+// (wave / binoculars / campfire / tent / shooting / fishing / knife / map /
+// drive), back to idle, forever — all in-character (the scenes live in his
+// SVG). Tapping him opens the chat. His eyes follow the cursor.
+//
 // ONE proactive bubble per page — useful-first (site-guide G1 + G3):
-//   - G3 (state-aware): on a listing page GG fetches the server Guide's LIVE
-//     intro ($0 AI) — e.g. an auction's "Current bid R… · reserve met · ends
-//     in Xh" — and leads with THAT, tapping opens the Guide tab. The fetch
-//     runs in parallel with the dwell so it's ready in time; misses fall back.
-//   - Otherwise this page-kind's static coaching tip ("want a fair-price
-//     check?"), tapping stages the question in the composer — never auto-sent,
-//     so no AI quota is spent until the user chooses to ask.
-//   - Otherwise a short rotating hello, so he still greets on generic pages.
-//     Frequency lives in lib/ask-gg-nudges.ts (once per kind/session).
-//   - MUTE (lib/ask-gg-mute, permanent): while muted GG says nothing at all —
-//     no coaching, no hello — but stays fully tappable. Toggled by the small
-//     speaker button at his ~4 o'clock.
+//   - G3 (state-aware): on a listing page Boet fetches the server Guide's
+//     LIVE intro ($0 AI) and leads with THAT; tapping opens the Guide tab.
+//   - Otherwise this page-kind's static coaching tip; tapping stages the
+//     question in the composer — never auto-sent, so no AI quota is spent.
+//   - Otherwise a short rotating hello.
+//   - MUTE (permanent): while muted Boet says nothing — but stays tappable
+//     and stops wandering (calm idle). Toggled by the speaker button.
 //   - Never over the install-prompt card, tab hidden, panel open, or mid-form.
 //
-// Geometry: a fixed #askgg-dock wraps the mascot (#askgg-fab) + mute button;
-// the bubble rides above it; dock + bubble lift via body[data-install-prompt]
-// rules in globals.css.
+// Geometry: a fixed #askgg-dock (flex column) holds the bubble above Boet;
+// dock lifts via body[data-install-prompt] rules in globals.css.
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
-// The assistant (GG) greets on every page visit. Copy rotates so repeat visits
-// don't read robotically — the first line does the full intro (name matches the
-// "Ask GG" branding), the rest are short hellos.
+// Boet greets on every page visit. Copy rotates so repeat visits don't read
+// robotically — the first line does the full intro, the rest are short
+// hellos in his voice.
 const HELLO_TEXTS = [
-  "Hey there 👋 I'm GG, your Gun Galore assistant. Can I help you find something?",
+  "Howzit 👋 I'm Boet, your Gun Galore guide. Can I help you find something?",
   'Hi again 👋 Need a hand finding something?',
   "👋 I'm right here if you need anything — just give me a tap.",
   'Howzit! Looking for something specific? I can help.',
   'Need a hand or some advice? Tap me and ask 👋',
+];
+
+// Activity scenes Boet wanders through (everything but idle). The launcher
+// alternates idle → one of these → idle.
+const ACTIVITIES: BoetScene[] = [
+  'wave',
+  'binoculars',
+  'campfire',
+  'tent',
+  'shooting',
+  'fishing',
+  'knife',
+  'map',
+  'drive',
 ];
 
 interface Bubble {
@@ -81,14 +87,13 @@ export function AskGgLauncher({
   // Advances through HELLO_TEXTS so each greeting varies.
   const greetIdxRef = useRef(0);
   const pathname = usePathname();
-  // Permanent mute (localStorage). While muted GG says nothing proactively.
+  // Permanent mute (localStorage). While muted Boet says nothing proactively.
   const [muted, setMuted] = useGgMuted();
 
-  // Minimized (localStorage): the mascot collapses to a compact "✨ Ask GG"
-  // pill in the same corner — for users who find him in the way. The pill
-  // still opens the chat; a small restore control brings him back. While
-  // minimized no bubbles or adventure scenes fire. Hydrated in an effect so
-  // SSR markup stays deterministic.
+  // Minimized (localStorage): Boet collapses to a compact "✨ Ask Boet" pill
+  // in the same corner — for users who find him in the way. The pill still
+  // opens the chat; a small restore control brings him back. While minimized
+  // no bubbles or scenes fire. Hydrated in an effect so SSR stays deterministic.
   const [minimized, setMinimized] = useState(false);
   useEffect(() => {
     try {
@@ -106,85 +111,73 @@ export function AskGgLauncher({
     }
   };
 
-  // ── Adventure moments ────────────────────────────────────────────
-  // Rare one-shot scenes (campfire / desert drive / tent / clays) that
-  // play in a small stage popping out of this corner. First one ~45–90s
-  // after mount, then one every ~60–120s. Clays is deliberately the
-  // rarest. Never: panel open, muted, tab hidden, reduced motion,
-  // install card up, or while GG's speech bubble is showing. The
-  // launcher lives in the root layout, so the cadence survives
-  // navigation instead of resetting per page.
-  const [scene, setScene] = useState<AdventureKind | null>(null);
-  const lastSceneRef = useRef<AdventureKind | null>(null);
+  // ── Autonomous wandering ─────────────────────────────────────────
+  // idle 2.8–5.4s → a random activity (~4s) → idle, forever. Never while
+  // the panel's open, muted, minimized, tab hidden, or reduced-motion (he
+  // just idles). The launcher lives in the root layout, so the cadence
+  // survives navigation instead of resetting per page.
+  const [scene, setScene] = useState<BoetScene>('idle');
+  const sceneRef = useRef<BoetScene>('idle');
+  useEffect(() => {
+    sceneRef.current = scene;
+  }, [scene]);
 
   useEffect(() => {
-    if (panelArmed || muted || minimized) return;
+    if (panelArmed || muted || minimized) {
+      setScene('idle');
+      return;
+    }
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     let t: number;
-    const pick = (): AdventureKind => {
-      // Weighted pool — clays ~1 in 7; never the same scene twice running.
-      const pool: AdventureKind[] = [
-        'campfire', 'desert', 'camp',
-        'campfire', 'desert', 'camp',
-        'clays',
-      ];
-      let k = pool[Math.floor(Math.random() * pool.length)];
-      while (k === lastSceneRef.current) {
-        k = pool[Math.floor(Math.random() * pool.length)];
-      }
-      return k;
-    };
-    const schedule = (delay: number) => {
+    const step = () => {
+      const cur = sceneRef.current;
+      const dwell = cur === 'idle' ? 2800 + Math.random() * 2600 : 4000;
       t = window.setTimeout(() => {
-        const clear =
-          document.visibilityState === 'visible' &&
-          !document.body.hasAttribute('data-install-prompt') &&
-          !document.getElementById('askgg-hello');
-        if (clear) {
-          const k = pick();
-          lastSceneRef.current = k;
-          setScene(k);
+        // Hold on a hidden tab — animations are paused anyway; just idle.
+        if (document.hidden) {
+          setScene('idle');
+          step();
+          return;
         }
-        schedule(60_000 + Math.random() * 60_000);
-      }, delay);
+        const next: BoetScene =
+          sceneRef.current === 'idle'
+            ? ACTIVITIES[Math.floor(Math.random() * ACTIVITIES.length)]
+            : 'idle';
+        setScene(next);
+        step();
+      }, dwell);
     };
-    schedule(45_000 + Math.random() * 45_000);
+    step();
     return () => clearTimeout(t);
   }, [panelArmed, muted, minimized]);
 
-  // Opening the panel (or muting) cancels any scene mid-play.
-  useEffect(() => {
-    if (panelArmed || muted || minimized) setScene(null);
-  }, [panelArmed, muted, minimized]);
-
-  // Demo/QA hook: window.__ggAdventure('desert') plays a scene on demand.
+  // Demo/QA hook: window.__boetScene('campfire') locks a scene; pass null to
+  // resume wandering. (Back-compat alias for the old __ggAdventure name.)
   useEffect(() => {
     const w = window as unknown as {
-      __ggAdventure?: (k: AdventureKind) => void;
+      __boetScene?: (k: BoetScene | null) => void;
+      __ggAdventure?: (k: BoetScene | null) => void;
     };
-    w.__ggAdventure = (k) => setScene(k);
+    const set = (k: BoetScene | null) => setScene(k ?? 'idle');
+    w.__boetScene = set;
+    w.__ggAdventure = set;
     return () => {
+      delete w.__boetScene;
       delete w.__ggAdventure;
     };
   }, []);
 
-  // ONE proactive "speak" per page — useful-first. After a short dwell GG
-  // shows this page-kind's contextual coaching tip (if there is one and it
-  // hasn't been shown this session); otherwise a rotating hello, so he still
-  // greets on generic pages. Muted → silent. Guards: panel closed, tab
-  // visible, install card down, not mid-form. The 3.5–4.2s dwell means rapid
-  // click-throughs (timer cancelled on nav) never trigger it.
+  // ONE proactive "speak" per page — useful-first. After a short dwell Boet
+  // shows this page-kind's contextual coaching tip (if any, once per session);
+  // otherwise a rotating hello. Muted → silent. Guards: panel closed, tab
+  // visible, install card down, not mid-form.
   useEffect(() => {
     if (panelArmed || muted || minimized) return;
     const coach = pickNudge(pathname);
     const { kind, ctx } = derivePageContext(pathname);
 
-    // G3 — on a listing page whose kind slot is still free, fetch the server
-    // Guide's LIVE intro ($0 AI) in parallel with the dwell. Only auctions (and
-    // other state-aware guides) return an intro; everything else stays null and
-    // falls back to the static tip. At most one fetch per session (the kind
-    // cap closes after the first listing bubble). Resolves into a dead closure
-    // harmlessly if the user navigates first.
+    // G3 — on a listing page whose kind slot is free, fetch the server
+    // Guide's LIVE intro ($0 AI) in parallel with the dwell.
     let liveIntro: string | null = null;
     if (coach && kind === 'listing' && ctx.listingId) {
       const qs = new URLSearchParams({ path: pathname ?? '/' });
@@ -214,7 +207,6 @@ export function AskGgLauncher({
         }
         spentThisPageRef.current = true;
         if (liveIntro) {
-          // Live, state-aware tip → tapping (no prefill) opens the Guide tab.
           markNudgeShown(kind);
           setBubble({ kind, text: `${liveIntro} Tap me for the guide 👇` });
         } else if (coach) {
@@ -241,7 +233,7 @@ export function AskGgLauncher({
     setBubble(null);
   }, [pathname]);
 
-  // Auto-hide after 14s; stand down when the panel opens or GG is muted.
+  // Auto-hide after 14s; stand down when the panel opens or Boet is muted.
   useEffect(() => {
     if (panelArmed || muted || minimized) {
       setBubble(null);
@@ -254,14 +246,11 @@ export function AskGgLauncher({
 
   const open = (prefill?: string) => {
     setBubble(null);
-    // User intent beats theatre — a tap cancels any scene instantly.
-    setScene(null);
     onOpen(prefill);
   };
 
-  // Minimized: the whole dock reduces to a compact "✨ Ask GG" pill in the
-  // same corner. It still opens the chat; the small ◱ control restores the
-  // mascot. All hooks above have already run (guards keep them inert).
+  // Minimized: the whole dock reduces to a compact "✨ Ask Boet" pill in the
+  // same corner. It still opens the chat; the small ◱ control restores Boet.
   if (minimized) {
     return (
       <div
@@ -276,7 +265,7 @@ export function AskGgLauncher({
           type="button"
           id="askgg-fab"
           onClick={() => open()}
-          aria-label="Open Ask GG — your Gun Galore assistant"
+          aria-label="Open Ask Boet — your Gun Galore assistant"
           className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm"
           style={{
             background: 'var(--bg-card)',
@@ -287,13 +276,13 @@ export function AskGgLauncher({
             fontWeight: 500,
           }}
         >
-          <span aria-hidden>✨</span> Ask GG
+          <span aria-hidden>✨</span> Ask Boet
         </button>
         <button
           type="button"
           onClick={() => applyMinimized(false)}
-          aria-label="Bring the GG character back"
-          title="Bring GG back"
+          aria-label="Bring Boet back"
+          title="Bring Boet back"
           className="flex items-center justify-center rounded-full w-6 h-6"
           style={{
             background: 'var(--bg-card)',
@@ -327,25 +316,23 @@ export function AskGgLauncher({
   }
 
   return (
-    <>
-      {scene && (
-        <AdventureStage
-          scene={scene}
-          onDone={() => setScene(null)}
-          onOpen={() => open()}
-        />
-      )}
+    <div
+      id="askgg-dock"
+      className={[
+        'app-chrome fixed z-[52] flex flex-col items-end gap-1',
+        // Boet's footprint — the design's 210px on desktop, trimmed on
+        // mobile so a taller character doesn't crowd content. The id
+        // selector in globals.css lifts this whole dock over the install card.
+        'w-[150px] md:w-[210px]',
+        'right-3 md:right-[26px]',
+        'bottom-[calc(10px+env(safe-area-inset-bottom))] md:bottom-[14px]',
+      ].join(' ')}
+    >
       {bubble && (
         <div
           id="askgg-hello"
           role="status"
-          className={[
-            'gg-hello app-chrome fixed z-[52] flex items-start gap-1',
-            'right-4 bottom-[calc(100px+env(safe-area-inset-bottom))]',
-            // Desktop FAB is 160px tall (md:h-40) sitting 20px off the bottom,
-            // so the bubble clears its top (180px) with an 8px gap.
-            'md:right-6 md:bottom-[188px]',
-          ].join(' ')}
+          className="gg-hello flex items-start gap-1"
           style={{
             maxWidth: 250,
             background: 'var(--bg-card)',
@@ -389,46 +376,31 @@ export function AskGgLauncher({
           </button>
         </div>
       )}
-      <div
-        id="askgg-dock"
-        className={[
-          'app-chrome fixed z-[52]',
-          // No button chrome — GG IS the launcher. This box is his hit area;
-          // he floats inside it. Doubled on desktop (80px → 160px) per
-          // operator; mobile stays 80px. The mute button rides his ~4 o'clock.
-          'right-4 w-20 h-20 md:w-40 md:h-40',
-          'bottom-[calc(12px+env(safe-area-inset-bottom))]',
-          'md:right-6 md:bottom-5',
-        ].join(' ')}
-      >
+
+      {/* Boet himself — his hit area. The character fills the dock width;
+          the SVG's 260×300 viewBox sets the height. */}
+      <div style={{ position: 'relative', width: '100%' }}>
         <button
           type="button"
           id="askgg-fab"
           onClick={() => open()}
-          aria-label="Open Ask GG — your Gun Galore assistant"
-          className="absolute inset-0 flex items-center justify-center"
+          aria-label="Open Ask Boet — your Gun Galore assistant"
+          className="block w-full"
           style={{
             background: 'none',
             border: 'none',
             padding: 0,
             cursor: 'pointer',
-            // Soft shadow so the character reads as a floating spark against
-            // any page background, with nothing behind him.
             filter: 'drop-shadow(0 3px 9px rgba(0,0,0,0.55))',
-            // Hidden while an adventure scene plays (he's "in" the scene);
-            // calm + slightly dimmed while muted. Hit area stays live —
-            // tapping mid-scene cancels it and opens the panel.
-            opacity: scene ? 0 : muted ? 0.9 : 1,
+            // Calm + slightly dimmed while muted; hit area stays live.
+            opacity: muted ? 0.9 : 1,
             transition: 'opacity 250ms ease',
           }}
         >
-          {/* Just the character. Grins while he's talking; still + calm (no
-              idle wiggles) while muted. `fill` scales him to the responsive
-              box (80px mobile → 160px desktop). */}
-          <AskGgMascot alive={!muted} fill mood={bubble ? 'happy' : 'idle'} />
+          <AskGgMascot alive={!muted} fill scene={scene} />
         </button>
-        {/* Minimize at GG's ~2 o'clock — collapses him to the "✨ Ask GG"
-            pill (persisted) for users who find the character in the way.
+
+        {/* Minimize — top-right, over the hat. Collapses to the pill.
             stopPropagation so tapping it never opens the panel. */}
         <button
           type="button"
@@ -436,16 +408,11 @@ export function AskGgLauncher({
           onClick={(e) => {
             e.stopPropagation();
             setBubble(null);
-            setScene(null);
             applyMinimized(true);
           }}
-          aria-label="Minimize GG to a compact Ask GG button"
-          title="Minimize GG"
-          className={[
-            'absolute flex items-center justify-center rounded-full',
-            'w-6 h-6 md:w-8 md:h-8',
-            'right-[2px] top-[10px] md:right-[6px] md:top-[24px]',
-          ].join(' ')}
+          aria-label="Minimize Boet to a compact Ask Boet button"
+          title="Minimize Boet"
+          className="absolute flex items-center justify-center rounded-full w-6 h-6 md:w-7 md:h-7 right-0 top-0"
           style={{
             background: 'var(--bg-card)',
             border: '0.5px solid var(--border)',
@@ -469,9 +436,9 @@ export function AskGgLauncher({
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
         </button>
-        {/* Mute toggle at GG's ~4 o'clock — the clear way to shut him up.
-            Permanent (localStorage) until unmuted. stopPropagation so tapping
-            it never opens the panel. */}
+
+        {/* Mute — just under the minimize. stopPropagation so tapping it
+            never opens the panel. */}
         <button
           type="button"
           id="askgg-mute"
@@ -481,14 +448,10 @@ export function AskGgLauncher({
             setMuted(next);
             if (next) setBubble(null);
           }}
-          aria-label={muted ? 'Unmute GG' : 'Mute GG'}
+          aria-label={muted ? 'Unmute Boet' : 'Mute Boet'}
           aria-pressed={muted}
-          title={muted ? 'Unmute GG' : 'Mute GG'}
-          className={[
-            'absolute flex items-center justify-center rounded-full',
-            'w-6 h-6 md:w-8 md:h-8',
-            'right-[2px] bottom-[10px] md:right-[6px] md:bottom-[24px]',
-          ].join(' ')}
+          title={muted ? 'Unmute Boet' : 'Mute Boet'}
+          className="absolute flex items-center justify-center rounded-full w-6 h-6 md:w-7 md:h-7 right-0 top-8 md:top-9"
           style={{
             background: 'var(--bg-card)',
             border: '0.5px solid var(--border)',
@@ -534,6 +497,6 @@ export function AskGgLauncher({
           )}
         </button>
       </div>
-    </>
+    </div>
   );
 }

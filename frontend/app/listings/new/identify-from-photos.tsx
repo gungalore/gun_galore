@@ -1,6 +1,6 @@
 'use client';
 
-// Ask GG "Help me describe this" button for /listings/new.
+// Ask Boet "Help me describe this" button for /listings/new.
 //
 // Phase B Sprint 2. Reads the photos already in the seller's
 // dropzone, sends them to POST /api/ask-gg/identify-listing, and
@@ -207,7 +207,7 @@ export default function IdentifyFromPhotos({
         }}
       >
         You&rsquo;ve used your 5 free photo identifications this month.
-        Upgrade to Member or Pro for unlimited photo IDs from the Ask GG tab.
+        Upgrade to Member or Pro for unlimited photo IDs from the Ask Boet tab.
         <br />
         <span
           style={{
@@ -259,7 +259,7 @@ export default function IdentifyFromPhotos({
               cursor: identifying ? 'wait' : 'pointer',
               fontFamily: 'inherit',
             }}
-            title="Ask GG identifies the item from your photos"
+            title="Ask Boet identifies the item from your photos"
           >
             <SparklesIcon />
             {identifying
@@ -274,7 +274,7 @@ export default function IdentifyFromPhotos({
               lineHeight: 1.4,
             }}
           >
-            Ask GG reads your photos and proposes a title, description,
+            Ask Boet reads your photos and proposes a title, description,
             condition and category. Nothing is filled in until you press
             &ldquo;Fill form&rdquo; on the proposal.
           </p>
@@ -379,7 +379,7 @@ function ProposalCard({
             color: 'var(--text-primary)',
           }}
         >
-          Ask GG&rsquo;s proposal
+          Ask Boet&rsquo;s proposal
         </h3>
         <span
           style={{

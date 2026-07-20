@@ -1,6 +1,6 @@
 'use client';
 
-// /ask-gg — Ask GG chat surface.
+// /ask-gg — Ask Boet chat surface.
 //
 // Three top-level states, in order of precedence:
 //
@@ -100,7 +100,7 @@ export default function AskGgPage() {
   const router = useRouter();
 
   // First-visit gate: an 18+ / liability disclaimer that must be accepted
-  // before Ask GG is usable (localStorage-persisted; see useAskGgDisclaimer).
+  // before Ask Boet is usable (localStorage-persisted; see useAskGgDisclaimer).
   const { accepted: disclaimerAccepted, accept: acceptDisclaimer } =
     useAskGgDisclaimer();
 
@@ -128,7 +128,7 @@ export default function AskGgPage() {
   }
 
   // Last-10 chat history picker (opens from the header). Opening a fresh
-  // Ask GG always starts a new thread; past chats are reachable here.
+  // Ask Boet always starts a new thread; past chats are reachable here.
   const [historyOpen, setHistoryOpen] = useState(false);
   function newChat() {
     ag.reset();
@@ -258,7 +258,7 @@ export default function AskGgPage() {
                 letterSpacing: '-0.01em',
               }}
             >
-              Ask <span style={{ color: 'var(--red)' }}>GG</span>
+              Ask <span style={{ color: 'var(--red)' }}>Boet</span>
             </h1>
             <p
               style={{
@@ -524,7 +524,7 @@ export default function AskGgPage() {
 
 // ─── Subcomponents ──────────────────────────────────────────────────
 
-/** Prominent two-segment toggle switching the whole Ask GG view between
+/** Prominent two-segment toggle switching the whole Ask Boet view between
  *  the AI chat and the Load Lab. Replaces the old tucked-away pill. */
 function ModeToggle({
   mode,
@@ -561,7 +561,7 @@ function ModeToggle({
   return (
     <div
       role="tablist"
-      aria-label="Ask GG mode"
+      aria-label="Ask Boet mode"
       style={{
         display: 'flex',
         gap: 4,
@@ -601,7 +601,7 @@ function EmptyState({
             color: 'var(--text-primary)',
           }}
         >
-          Welcome to Ask <span style={{ color: 'var(--red)' }}>GG</span>
+          Welcome to Ask <span style={{ color: 'var(--red)' }}>Boet</span>
         </h2>
         <p style={{ margin: '8px 0 0', fontSize: 13.5, lineHeight: 1.55 }}>
           Your firearms-knowledgeable assistant for South African shooters,
@@ -747,7 +747,7 @@ function TierPerksTable({
   type Perk = { free: string; pro: string };
   const ROWS: Array<{ label: string; perk: Perk }> = [
     {
-      label: 'Ask GG chat',
+      label: 'Ask Boet chat',
       perk: {
         free: '5 messages / month',
         pro: '60 messages / hour',
@@ -1009,7 +1009,7 @@ function SignInRequiredCard() {
           color: 'var(--text-primary)',
         }}
       >
-        Ask GG is your firearms assistant
+        Ask Boet is your firearms assistant
       </h2>
       <p
         style={{
@@ -1133,7 +1133,7 @@ function UpgradeCard() {
           maxWidth: 520,
         }}
       >
-        You&rsquo;ve used your 5 free Ask GG messages this month.
+        You&rsquo;ve used your 5 free Ask Boet messages this month.
         Here&rsquo;s what you get by upgrading:
       </p>
       <TierPerksTable current="FREE" />

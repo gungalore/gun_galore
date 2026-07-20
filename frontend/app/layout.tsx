@@ -319,7 +319,7 @@ export default function RootLayout({
               to /profile/edit. Fully dismissible (unlike the create-
               listing hard-wall modal). */}
           <ProfileSetupPrompt />
-          {/* Ask GG Everywhere — site-wide launcher + lazy chat panel.
+          {/* Ask Boet Everywhere — site-wide launcher + lazy chat panel.
               Self-gates off /admin, /checkout, /ask-gg, auth and other
               focused routes; FAB in browser modes only (the PWA tab is
               the standalone entry). The chat chunk loads on first open. */}

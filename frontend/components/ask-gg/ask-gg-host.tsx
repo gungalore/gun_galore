@@ -7,7 +7,7 @@ import { useStandalone } from '@/lib/use-standalone';
 import { useAskGgWidget } from '@/lib/use-ask-gg-widget';
 import { AskGgLauncher } from './ask-gg-launcher';
 
-// Ask GG Everywhere — the always-mounted site-wide host.
+// Ask Boet Everywhere — the always-mounted site-wide host.
 //
 // Mounted once in app/layout.tsx. Responsibilities:
 //   1. Suppression gate — no launcher/panel on focused or self-owned
@@ -17,7 +17,7 @@ import { AskGgLauncher } from './ask-gg-launcher';
 //   3. Lazy panel: the chat chunk (react-markdown et al.) downloads on
 //      FIRST open only (`armed`), then stays mounted so the
 //      conversation survives close/reopen. First next/dynamic in the
-//      repo — deliberate; keeps the always-loaded cost of Ask GG
+//      repo — deliberate; keeps the always-loaded cost of Ask Boet
 //      Everywhere at a few KB.
 //   4. `gg:ask-gg-open` CustomEvent — any chrome (PWA tab in W4, future
 //      page CTAs) can open the panel without importing ask-gg code.
@@ -64,7 +64,7 @@ export function AskGgHost() {
   const suppressed = useMemo(() => isSuppressed(pathname), [pathname]);
 
   // Open-on-event — decoupled entry point for the PWA tab (W6) and any
-  // future "Ask GG about this" CTAs. detail.prefill stages a question
+  // future "Ask Boet about this" CTAs. detail.prefill stages a question
   // in the composer (W5.5 nudge channel).
   useEffect(() => {
     function onOpen(e: Event) {

@@ -34,7 +34,7 @@ interface Mine {
 const TIER_PERKS: Record<'PRO', string[]> = {
   PRO: [
     'Automatic entry into the free PRO prize draw — amazing prizes, every cycle',
-    'Ask GG: 60 messages / hour',
+    'Ask Boet: 60 messages / hour',
     'Unlimited photo identification (10/query)',
     'Ballistic calculator + full Load Lab load data',
     'Unlimited open swap proposals + 25% off swap service fees',
@@ -45,7 +45,7 @@ const TIER_PERKS: Record<'PRO', string[]> = {
 
 // What FREE gets — an honest demo of everything PRO unlocks.
 const FREE_DEMOS: string[] = [
-  'Ask GG: 5 messages / 30 days',
+  'Ask Boet: 5 messages / 30 days',
   'Load Lab: preview 3 published loads per calibre',
   'One open swap proposal at a time',
   'Watch the PRO prize draw (PRO members are entered free)',

@@ -9,7 +9,7 @@ import type { AskGgKbHit } from '@/lib/use-ask-gg';
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
-// Ask GG Everywhere — the signed-out panel body.
+// Ask Boet Everywhere — the signed-out panel body.
 //
 // Zero Claude spend for anonymous visitors: they get instant answers
 // from the verified Help Centre (the PUBLIC read-only endpoint added in
@@ -57,12 +57,12 @@ export function AskGgSignedOut() {
           <IconSparkles />
         </span>
         <p style={{ margin: 0, fontSize: 14, color: 'var(--text-primary)', fontWeight: 600 }}>
-          Ask GG — Gun Galore&apos;s assistant
+          Ask Boet — Gun Galore&apos;s assistant
         </p>
       </div>
       <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
         Instant answers about buying, selling, fees, shipping and firearms
-        rules — try a question below. Sign in to chat with Ask GG about
+        rules — try a question below. Sign in to chat with Ask Boet about
         anything outdoors: gear advice, reloading data, live stock and
         your own orders.
       </p>
@@ -98,7 +98,7 @@ export function AskGgSignedOut() {
       )}
       {searched && hits.length === 0 && (
         <p style={{ margin: 0, fontSize: 12, color: 'var(--text-tertiary)' }}>
-          No instant answer for that yet — sign in and ask Ask GG directly.
+          No instant answer for that yet — sign in and ask Ask Boet directly.
         </p>
       )}
 
@@ -117,7 +117,7 @@ export function AskGgSignedOut() {
             cursor: 'pointer',
           }}
         >
-          Sign in to chat with Ask GG
+          Sign in to chat with Ask Boet
         </button>
       </SignInButton>
       <p style={{ margin: 0, fontSize: 11, color: 'var(--text-tertiary)' }}>

@@ -241,7 +241,7 @@ export default function GuideAdminPage() {
       {modal}
       <div className="flex items-baseline justify-between flex-wrap gap-3 mb-3">
         <h1 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
-          Ask GG · Page guides
+          Ask Boet · Page guides
         </h1>
         {counts && (
           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
@@ -441,7 +441,7 @@ function Editor({
                     <input type="text" aria-label={`Button ${i + 1} label`} placeholder="Label" value={c.label} maxLength={60} onChange={(e) => setCta(i, { label: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
                     <select aria-label={`Button ${i + 1} type`} value={c.kind} onChange={(e) => setCta(i, { kind: e.target.value as EditCta['kind'] })} style={{ ...inputStyle, width: 'auto' }}>
                       <option value="link">Link</option>
-                      <option value="ask">Ask GG</option>
+                      <option value="ask">Ask Boet</option>
                     </select>
                     <button type="button" aria-label="Remove button" onClick={() => setForm({ ...form, ctas: form.ctas.filter((_, idx) => idx !== i) })} style={miniBtn}>
                       ✕

@@ -21,7 +21,7 @@
 //                 badge in the top-right corner of the bell.
 //   3. Sell     → /listings/new (centred, raised red FAB — the
 //                 prominent primary action).
-//   4. Ask GG   → /ask-gg. Sparkles icon. Paid AI assistant — answers
+//   4. Ask Boet   → /ask-gg. Sparkles icon. Paid AI assistant — answers
 //                 firearm / shooting / SA gun-law questions, identifies
 //                 firearms from photos (Phase B), helps with checkout
 //                 and reloading. FREE tier sees an upgrade card; MEMBER
@@ -355,7 +355,7 @@ export function BottomTabBar() {
     },
     {
       key: 'ask-gg',
-      label: 'Ask GG',
+      label: 'Ask Boet',
       // W6 — the tab now opens the site-wide PANEL in place (context
       // preserved: same conversation, same page). On routes where the
       // panel is suppressed (checkout, admin, /ask-gg itself…) the

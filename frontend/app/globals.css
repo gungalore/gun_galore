@@ -234,8 +234,8 @@ html[data-standalone='true']::view-transition-new(root) {
   animation: gg-vt-slide-in 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-/* ─── Ask GG "lure" glow ────────────────────────────────────────────
-   A gentle pulsing red halo on the Ask GG nav pill to draw the eye to
+/* ─── Ask Boet "lure" glow ────────────────────────────────────────────
+   A gentle pulsing red halo on the Ask Boet nav pill to draw the eye to
    the AI assistant. Hover intensifies + pauses the pulse; reduced-motion
    users get a soft static glow instead of the animation. */
 @keyframes gg-ask-glow {
@@ -261,7 +261,7 @@ html[data-standalone='true']::view-transition-new(root) {
   }
 }
 
-/* Ask GG Everywhere — the install-prompt card owns bottom-right
+/* Ask Boet Everywhere — the install-prompt card owns bottom-right
    (fixed 16/16, z 60, ~96px tall). While it's visible (body attribute
    stamped by install-prompt.tsx) lift the launcher clear of it. Targets
    the dock (the fixed wrapper holding the mascot + mute button) so both
@@ -275,176 +275,50 @@ body[data-install-prompt='true'] #askgg-hello {
   bottom: calc(180px + env(safe-area-inset-bottom));
 }
 
-/* Sparkie — the Ask GG mascot (components/ask-gg/ask-gg-mascot.tsx).
-   A little safari ranger: khaki bush hat (GG-red band + neckerchief), a round
-   face with eyebrows and a mouth that changes shape, two arms that gesture, a
-   warm halo + a few orbiting adventure sparkles. Idle life (float/breathe/
-   blink/glance/sway/orbit/glow) is pure CSS; moods (--think / --happy) hold
-   sustained poses; one-shot moments (--wave / --celebrate / --point / --peek)
-   are added from JS. Everything animates individual transform props so effects
-   COMPOSE, and all motion sits behind prefers-reduced-motion: no-preference
-   (reduced motion = a calm Sparkie that still changes expression but never
-   fidgets). The safari edition reuses this rig unchanged — same gg-sk-* class
-   names + viewBox coordinates as the previous mascot. */
-.gg-sk-float,
-.gg-sk-body,
-.gg-sk-eyes,
-.gg-sk-pupils,
-.gg-sk-cheeks,
-.gg-sk-glow,
-.gg-sk-sparkles {
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
-}
-.gg-sk-arm-l,
-.gg-sk-arm-r,
-.gg-sk-brow-l,
-.gg-sk-brow-r {
+/* Boet — the Ask Boet mascot (components/ask-gg/ask-gg-mascot.tsx).
+   A safari ranger from the Claude Design "Safari Helper" handoff: one
+   inline 260x300 SVG with 10 activity scenes the launcher wanders
+   between. Ported faithfully; the design's gg-* animation names are
+   renamed boet-* here to avoid clashing with other gg- rules. Scene props
+   use viewBox-unit transform-origins, so force transform-box: view-box on
+   every element. Reduced motion: everything stills except the blink, and
+   the launcher never switches scenes, so he simply idles. */
+.boet-svg,
+.boet-svg * {
   transform-box: view-box;
 }
-/* Pivot AT each arm's shoulder anchor (the sleeve start point in
-   ask-gg-mascot.tsx) so waves/celebrates rotate from the shoulder and
-   the sleeve never detaches. Moved 2026-07-18 from (34,74)/(86,74)
-   when the arms were re-anchored from neck height to the torso line. */
-.gg-sk-arm-l { transform-origin: 42px 86px; }
-.gg-sk-arm-r { transform-origin: 78px 86px; }
-.gg-sk-brow-l { transform-origin: 47px 45px; }
-.gg-sk-brow-r { transform-origin: 73px 45px; }
 
-/* mouth: one shape shown at a time */
-.gg-sk-m-grin,
-.gg-sk-m-o { display: none; }
-.gg-sk-m-neutral { display: inline; }
-.gg-sk-cheeks { opacity: 0; }
-.gg-sk-dots { opacity: 0; }
+@keyframes boet-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes boet-blink { 0%, 90%, 96%, 100% { transform: scaleY(1); } 93% { transform: scaleY(.08); } }
+@keyframes boet-sway { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+@keyframes boet-wave { from { transform: rotate(-136deg); } to { transform: rotate(-174deg); } }
+@keyframes boet-pan { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+@keyframes boet-recoil { 0%, 70% { transform: translateX(0); } 74% { transform: translateX(6px); } 82%, 100% { transform: translateX(0); } }
+@keyframes boet-flame { 0%, 100% { transform: scaleY(1) scaleX(1); } 50% { transform: scaleY(1.18) scaleX(.9); } }
+@keyframes boet-glow { 0%, 100% { opacity: .14; } 50% { opacity: .24; } }
+@keyframes boet-spark { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-36px); } }
+@keyframes boet-poke { from { transform: rotate(30deg); } to { transform: rotate(42deg); } }
+@keyframes boet-hammer { 0%, 50% { transform: rotate(58deg); } 65% { transform: rotate(6deg); } 78%, 100% { transform: rotate(58deg); } }
+@keyframes boet-wobble { 0%, 63%, 80%, 100% { transform: rotate(0deg); } 68% { transform: rotate(1.6deg); } 74% { transform: rotate(-1deg); } }
+@keyframes boet-flash { 0%, 70%, 79%, 100% { opacity: 0; } 73%, 76% { opacity: 1; } }
+@keyframes boet-hit { 0%, 73% { opacity: 0; transform: scale(0); } 78% { opacity: 1; transform: scale(1.4); } 88% { opacity: 1; transform: scale(1); } 98%, 100% { opacity: 0; } }
+@keyframes boet-bobber { 0%, 32%, 58%, 100% { transform: translateY(0); } 42% { transform: translateY(4px); } 70% { transform: translateY(10px); } 78% { transform: translateY(-2px); } }
+@keyframes boet-sharpen { from { transform: rotate(6deg); } to { transform: rotate(30deg); } }
+@keyframes boet-maptilt { from { transform: rotate(-2.4deg); } to { transform: rotate(2.4deg); } }
+@keyframes boet-qmark { 0%, 55% { opacity: 0; transform: translateY(6px); } 64%, 86% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; } }
+@keyframes boet-drive { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
+@keyframes boet-wheel { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes boet-dust { 0% { opacity: .5; transform: translate(0, 0) scale(.6); } 100% { opacity: 0; transform: translate(30px, -16px) scale(1.7); } }
 
-/* THINK — sustained pose. Static bits live outside the motion query so
-   they still read for reduced-motion users. */
-.gg-sparkie--think .gg-sk-eyes { scale: 1 0.78; }
-.gg-sparkie--think .gg-sk-pupils { translate: 1px -3px; }
-.gg-sparkie--think .gg-sk-brow-l { rotate: 13deg; translate: 1px 2px; }
-.gg-sparkie--think .gg-sk-brow-r { rotate: -13deg; translate: -1px 2px; }
-.gg-sparkie--think .gg-sk-m-neutral { display: none; }
-.gg-sparkie--think .gg-sk-m-o { display: inline; }
-.gg-sparkie--think .gg-sk-arm-r { rotate: -108deg; translate: 3px -2px; }
-.gg-sparkie--think .gg-sk-dots { opacity: 1; }
-
-/* HAPPY — sustained grin */
-.gg-sparkie--happy .gg-sk-m-neutral { display: none; }
-.gg-sparkie--happy .gg-sk-m-grin { display: inline; }
-.gg-sparkie--happy .gg-sk-eyes { scale: 1 0.7; }
-.gg-sparkie--happy .gg-sk-cheeks { opacity: 0.85; }
-.gg-sparkie--happy .gg-sk-brow-l,
-.gg-sparkie--happy .gg-sk-brow-r { translate: 0 -2px; }
-
-@media (prefers-reduced-motion: no-preference) {
-  .gg-sk-float { animation: gg-sk-float 3.6s ease-in-out infinite alternate; }
-  .gg-sk-body { animation: gg-sk-breathe 3.6s ease-in-out infinite alternate; }
-  .gg-sk-eyes { animation: gg-sk-blink 5.2s infinite; }
-  .gg-sk-pupils { animation: gg-sk-glance 9s ease-in-out infinite; }
-  .gg-sk-arm-l { animation: gg-sk-sway-l 3.6s ease-in-out infinite alternate; }
-  .gg-sk-arm-r { animation: gg-sk-sway-r 3.6s ease-in-out infinite alternate; }
-  .gg-sk-glow { animation: gg-sk-glow 3.6s ease-in-out infinite alternate; }
-  .gg-sk-sparkles { animation: gg-sk-orbit 20s linear infinite; }
-  .gg-sk-spk { animation: gg-sk-twinkle 3s ease-in-out infinite; }
-  .gg-sk-spk:nth-child(2) { animation-delay: -1s; }
-  .gg-sk-spk:nth-child(3) { animation-delay: -2s; }
-  .gg-sk-spk:nth-child(4) { animation-delay: -0.5s; }
-
-  /* THINK loops (arm/eyes/pupils held from the static rules) */
-  .gg-sparkie--think .gg-sk-float { animation: gg-sk-think-tilt 2s ease-in-out infinite; }
-  .gg-sparkie--think .gg-sk-eyes { animation: none; }
-  .gg-sparkie--think .gg-sk-pupils { animation: none; }
-  .gg-sparkie--think .gg-sk-arm-r { animation: none; }
-  .gg-sparkie--think .gg-sk-dots { animation: gg-sk-think-dots 1.4s ease-in-out infinite; }
-
-  /* HAPPY squint overrides the blink loop */
-  .gg-sparkie--happy .gg-sk-eyes { animation: none; }
-
-  /* cursor tracking — pupils follow, idle glance pauses */
-  .gg-sparkie--track .gg-sk-pupils {
-    animation: none;
-    translate: var(--sx, 0) var(--sy, 0);
-    transition: translate 0.12s ease-out;
-  }
-
-  /* WAVE */
-  .gg-sparkie--wave .gg-sk-float { animation: gg-sk-hop 1.5s ease-in-out; }
-  .gg-sparkie--wave .gg-sk-arm-r { animation: gg-sk-wave-arm 1.5s ease-in-out; }
-  .gg-sparkie--wave .gg-sk-m-neutral { display: none; }
-  .gg-sparkie--wave .gg-sk-m-grin { display: inline; }
-  .gg-sparkie--wave .gg-sk-brow-l,
-  .gg-sparkie--wave .gg-sk-brow-r { translate: 0 -2px; }
-  .gg-sparkie--wave .gg-sk-cheeks { opacity: 0.7; }
-
-  /* CELEBRATE */
-  .gg-sparkie--celebrate .gg-sk-float { animation: gg-sk-jump 1.4s cubic-bezier(0.3,0.9,0.4,1); }
-  .gg-sparkie--celebrate .gg-sk-body { animation: gg-sk-jump-squash 1.4s ease-in-out; }
-  .gg-sparkie--celebrate .gg-sk-arm-l { animation: gg-sk-arm-up-l 1.4s ease-out; }
-  .gg-sparkie--celebrate .gg-sk-arm-r { animation: gg-sk-arm-up-r 1.4s ease-out; }
-  .gg-sparkie--celebrate .gg-sk-m-neutral { display: none; }
-  .gg-sparkie--celebrate .gg-sk-m-grin { display: inline; }
-  .gg-sparkie--celebrate .gg-sk-eyes { animation: none; scale: 1 0.68; }
-  .gg-sparkie--celebrate .gg-sk-cheeks { opacity: 0.9; }
-  .gg-sparkie--celebrate .gg-sk-spk { animation: gg-sk-burst 1.1s ease-out; }
-
-  /* POINT */
-  .gg-sparkie--point .gg-sk-arm-r { animation: gg-sk-point-arm 1.6s ease-in-out; }
-  .gg-sparkie--point .gg-sk-float { animation: gg-sk-lean 1.6s ease-in-out; }
-  .gg-sparkie--point .gg-sk-pupils { animation: none; translate: 3px 1px; }
-  .gg-sparkie--point .gg-sk-brow-l,
-  .gg-sparkie--point .gg-sk-brow-r { translate: 0 -1.5px; }
-
-  /* PEEK (entrance) */
-  .gg-sparkie--peek { animation: gg-sk-peek 0.9s cubic-bezier(0.3,1.5,0.5,1); }
-  .gg-sparkie--peek .gg-sk-eyes { animation: none; scale: 1.06 1.06; }
-  .gg-sparkie--peek .gg-sk-brow-l { rotate: -6deg; translate: 0 -2px; }
-  .gg-sparkie--peek .gg-sk-brow-r { rotate: 6deg; translate: 0 -2px; }
-
-  .gg-hello { animation: gg-hello-in 0.3s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  /* Still everything (inline scene animations + the rig) but keep the
+     blink so he still reads as alive. Higher-specificity blink rule wins
+     over the blanket kill. */
+  .boet-svg *,
+  .boet-svg #boet-rig { animation: none !important; }
+  .boet-svg .boet-eyes { animation: boet-blink 4.6s linear infinite !important; }
 }
 
-@keyframes gg-sk-float { from { translate: 0 2px; } to { translate: 0 -5px; } }
-@keyframes gg-sk-breathe { from { scale: 1 1; } to { scale: 1.015 0.985; } }
-@keyframes gg-sk-glow { from { opacity: 0.5; scale: 1; } to { opacity: 0.82; scale: 1.09; } }
-@keyframes gg-sk-blink { 0%, 90%, 100% { scale: 1 1; } 93%, 95% { scale: 1 0.08; } }
-@keyframes gg-sk-glance {
-  0%, 22% { translate: 0 0; }
-  30%, 44% { translate: -2px -0.5px; }
-  52%, 70% { translate: 0 0; }
-  78%, 88% { translate: 2px 0; }
-  96%, 100% { translate: 0 0; }
-}
-@keyframes gg-sk-sway-l { from { rotate: 4deg; } to { rotate: -3deg; } }
-@keyframes gg-sk-sway-r { from { rotate: -4deg; } to { rotate: 3deg; } }
-@keyframes gg-sk-orbit { to { rotate: 360deg; } }
-@keyframes gg-sk-twinkle { 0%, 100% { opacity: 0.25; scale: 0.7; } 50% { opacity: 1; scale: 1.15; } }
-@keyframes gg-sk-think-tilt { 0%, 100% { rotate: -5deg; translate: 0 -1px; } 50% { rotate: 5deg; translate: 0 -3px; } }
-@keyframes gg-sk-think-dots { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
-@keyframes gg-sk-wave-arm {
-  0% { rotate: 0deg; } 15% { rotate: -118deg; } 30% { rotate: -138deg; }
-  45% { rotate: -108deg; } 60% { rotate: -138deg; } 75% { rotate: -110deg; }
-  90% { rotate: -130deg; } 100% { rotate: 0deg; }
-}
-@keyframes gg-sk-hop { 0%, 100% { translate: 0 0; } 20% { translate: 0 -10px; } 40% { translate: 0 0; } }
-@keyframes gg-sk-jump {
-  0% { translate: 0 0; } 18% { translate: 0 6px; }
-  45% { translate: 0 -34px; } 62% { translate: 0 -34px; }
-  82% { translate: 0 4px; } 100% { translate: 0 0; }
-}
-@keyframes gg-sk-jump-squash {
-  0%, 100% { scale: 1 1; } 16% { scale: 1.12 0.86; } 45% { scale: 0.94 1.08; } 84% { scale: 1.12 0.86; }
-}
-@keyframes gg-sk-arm-up-l { 0% { rotate: 0deg; } 40%, 70% { rotate: 128deg; } 100% { rotate: 0deg; } }
-@keyframes gg-sk-arm-up-r { 0% { rotate: 0deg; } 40%, 70% { rotate: -128deg; } 100% { rotate: 0deg; } }
-@keyframes gg-sk-burst {
-  0% { opacity: 0; scale: 0.2; translate: 0 0; }
-  30% { opacity: 1; }
-  100% { opacity: 0; scale: 1.5; translate: var(--bx, 0) var(--by, 0); }
-}
-@keyframes gg-sk-point-arm { 0% { rotate: 0deg; } 20%, 80% { rotate: -74deg; } 100% { rotate: 0deg; } }
-@keyframes gg-sk-lean { 0%, 100% { rotate: 0deg; } 25%, 75% { rotate: 5deg; translate: 3px 0; } }
-@keyframes gg-sk-peek { 0% { translate: 0 60px; opacity: 0; } 60% { opacity: 1; } 100% { translate: 0 0; } }
 @keyframes gg-hello-in { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
 
 /* GG site-guide (G5) admin editor — side-by-side form + preview on wide screens. */
@@ -469,7 +343,7 @@ body[data-install-prompt='true'] #askgg-hello {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Ask GG — adventure moments (components/ask-gg/adventure-scenes.tsx).
+   Ask Boet — adventure moments (components/ask-gg/adventure-scenes.tsx).
    Four rare one-shot scenes staged in a card popping out of the
    launcher corner. Ported 1:1 from the operator-approved mockup.
    RULE (learned the hard way): with transform-box:fill-box,

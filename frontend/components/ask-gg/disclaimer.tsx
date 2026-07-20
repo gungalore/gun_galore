@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 
 // First-visit gate: an 18+ / liability disclaimer that must be accepted
-// before Ask GG is usable. Persisted in localStorage so it shows once.
+// before Ask Boet is usable. Persisted in localStorage so it shows once.
 // null = not yet determined (avoids a flash before we read storage).
 const DISCLAIMER_KEY = 'askgg:disclaimer:v1';
 
@@ -84,7 +84,7 @@ export function AskGgDisclaimer({
             color: 'var(--text-secondary)',
           }}
         >
-          Ask GG gives <strong>general information only</strong> — it is not
+          Ask Boet gives <strong>general information only</strong> — it is not
           professional, legal, or safety advice. Firearms, ammunition and
           reloading are inherently dangerous; you alone are responsible for how
           you use anything you read here, and you must verify it against the
@@ -100,7 +100,7 @@ export function AskGgDisclaimer({
         >
           To the fullest extent permitted by law, <strong>Gun Galore accepts
           no liability</strong> for any loss, injury or damage arising from use
-          of Ask GG. By continuing you confirm that you are{' '}
+          of Ask Boet. By continuing you confirm that you are{' '}
           <strong>18 years or older</strong> and that you accept these terms.
         </p>
         <div

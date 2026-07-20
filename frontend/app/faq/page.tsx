@@ -95,7 +95,7 @@ export default function FaqPage() {
           href="/ask-gg"
           style={{ color: 'var(--red)', textDecoration: 'underline' }}
         >
-          Ask GG
+          Ask Boet
         </Link>
         .
       </p>

@@ -147,7 +147,7 @@ export default function FeesPage() {
       <h3>5.1 GG PRO membership</h3>
       <p>
         GG PRO is the optional paid membership, at{' '}
-        <strong>R99 per 31-day period</strong>. It includes the full Ask GG
+        <strong>R99 per 31-day period</strong>. It includes the full Ask Boet
         assistant, the Load Lab load-data browser, swap benefits, and reduced
         fees on featured homepage slots (see below). Membership is prepaid —
         there is no debit order and no fixed-term contract; it simply lapses
