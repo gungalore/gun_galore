@@ -2587,6 +2587,18 @@ export class TransactionsService {
       where: { id: transactionId },
       include: {
         listing: { include: { images: { orderBy: { order: 'asc' } }, category: true } },
+        // The buyer's rating (if any) — drives the rate/edit panel on the
+        // order page. Without this the page couldn't tell a rated
+        // transaction apart and re-offered the form (double-submit → 409).
+        rating: {
+          select: {
+            id: true,
+            stars: true,
+            comment: true,
+            createdAt: true,
+            sellerRespondedAt: true,
+          },
+        },
         // Phone + email pulled in so the PRIVATE_ARRANGE contact-reveal
         // card on the order page has the data it needs. We DO NOT
         // expose contact details indiscriminately — the conditional

@@ -8,13 +8,22 @@ import {
 import { SellerTier } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { AdminAuditService } from '../admin/admin-audit.service';
 import { CreateRatingDto } from './dto/create-rating.dto';
+
+// Buyers may correct a rating for this long after submitting (fat-finger
+// insurance) — the window closes EARLY if the seller has already replied,
+// so an exchange can never be rewritten out from under a response.
+const EDIT_WINDOW_DAYS = 30;
 
 @Injectable()
 export class RatingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly contactFilter: ContactDetailFilterService,
+    private readonly notifications: NotificationsService,
+    private readonly audit: AdminAuditService,
   ) {}
 
   async create(transactionId: string, buyerClerkId: string, dto: CreateRatingDto) {
@@ -23,6 +32,11 @@ export class RatingsService {
       include: { buyer: true, seller: true, rating: true },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
+    // Synthetic swap money rows (settlement/refund) are accounting records,
+    // not purchases — rating through one produced a weird one-sided review
+    // path. Proper two-way swap ratings are a future feature.
+    if (tx.swapId)
+      throw new BadRequestException('Swap ratings are not supported yet.');
     if (tx.buyer.clerkId !== buyerClerkId) throw new ForbiddenException('Only the buyer can rate');
     if (tx.rating) throw new ConflictException('Transaction already has a rating');
     if (tx.paymentStatus !== 'RELEASED')
@@ -55,7 +69,143 @@ export class RatingsService {
     // Recalculate seller trust score and tier
     await this.recalcSeller(tx.sellerId);
 
+    // Tell the seller — a 1–2★ deserves the phone buzz so they can
+    // respond quickly; 3–5★ stays inbox/email. Template methods never
+    // throw, so fire-and-forget is safe.
+    void this.notifications.ratingReceived({
+      email: tx.seller.email,
+      name: tx.seller.firstName ?? 'there',
+      buyerUsername: tx.buyer.username ?? 'A member',
+      stars: dto.stars,
+      comment: dto.comment ?? null,
+      sellerUserId: tx.sellerId,
+    });
+
     return rating;
+  }
+
+  /**
+   * Buyer corrects their rating — allowed for EDIT_WINDOW_DAYS after
+   * submission, and only while the seller has not replied. Re-runs the
+   * contact filter and the seller recompute.
+   */
+  async update(
+    transactionId: string,
+    buyerClerkId: string,
+    dto: CreateRatingDto,
+  ) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: { buyer: true, rating: true },
+    });
+    if (!tx?.rating) throw new NotFoundException('Rating not found');
+    if (tx.buyer.clerkId !== buyerClerkId)
+      throw new ForbiddenException('Only the buyer can edit their rating');
+    if (tx.rating.sellerRespondedAt)
+      throw new BadRequestException(
+        'The seller has replied to this review — it can no longer be edited.',
+      );
+    const ageDays =
+      (Date.now() - new Date(tx.rating.createdAt).getTime()) / 86_400_000;
+    if (ageDays > EDIT_WINDOW_DAYS)
+      throw new BadRequestException(
+        `Ratings can only be edited within ${EDIT_WINDOW_DAYS} days.`,
+      );
+    if (dto.comment) {
+      const check = await this.contactFilter.check(
+        dto.comment,
+        'rating-comment',
+        buyerClerkId,
+      );
+      if (!check.allowed) throw new BadRequestException(check.reason);
+    }
+    const updated = await this.prisma.rating.update({
+      where: { id: tx.rating.id },
+      data: { stars: dto.stars, comment: dto.comment ?? null },
+    });
+    await this.recalcSeller(tx.sellerId);
+    return updated;
+  }
+
+  /**
+   * Seller's single public reply to a review. Once, contact-filtered,
+   * shown under the review on the public profile.
+   */
+  async respond(ratingId: string, sellerClerkId: string, response: string) {
+    const trimmed = (response ?? '').trim();
+    if (trimmed.length < 3 || trimmed.length > 500)
+      throw new BadRequestException('Reply must be 3–500 characters.');
+    const rating = await this.prisma.rating.findUnique({
+      where: { id: ratingId },
+      include: { rated: true },
+    });
+    if (!rating) throw new NotFoundException('Rating not found');
+    if (rating.rated.clerkId !== sellerClerkId)
+      throw new ForbiddenException('Only the rated seller can reply');
+    if (rating.sellerRespondedAt)
+      throw new ConflictException('You have already replied to this review');
+    const check = await this.contactFilter.check(
+      trimmed,
+      'rating-response',
+      sellerClerkId,
+    );
+    if (!check.allowed) throw new BadRequestException(check.reason);
+    return this.prisma.rating.update({
+      where: { id: ratingId },
+      data: { sellerResponse: trimmed, sellerRespondedAt: new Date() },
+    });
+  }
+
+  /**
+   * Admin removal of an abusive/defamatory review — reason mandatory,
+   * audited, seller score recomputed after.
+   */
+  async adminRemove(ratingId: string, adminId: string, reason: string) {
+    const trimmed = (reason ?? '').trim();
+    if (trimmed.length < 5)
+      throw new BadRequestException('A reason is required to remove a rating.');
+    const rating = await this.prisma.rating.findUnique({
+      where: { id: ratingId },
+    });
+    if (!rating) throw new NotFoundException('Rating not found');
+    await this.prisma.rating.delete({ where: { id: ratingId } });
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'RATING_REMOVE',
+      resourceType: 'Rating',
+      resourceId: ratingId,
+      oldValue: `${rating.stars}★ by ${rating.raterId} on ${rating.ratedId}: ${rating.comment ?? '(no comment)'}`,
+      newValue: 'removed',
+      reason: trimmed,
+    });
+    await this.recalcSeller(rating.ratedId);
+    return { ok: true };
+  }
+
+  /**
+   * Daily cron — refresh trust scores for sellers with recent activity
+   * (a released sale, delivery or rating in the last 48h). Keeps the
+   * time-based score components fresh now that viewing the dashboard no
+   * longer triggers a recompute-write.
+   */
+  async recalcRecentSellers(): Promise<number> {
+    const floor = new Date(Date.now() - 48 * 3_600_000);
+    const recent = await this.prisma.transaction.findMany({
+      where: {
+        OR: [
+          { releasedAt: { gte: floor } },
+          { deliveredAt: { gte: floor } },
+          { rating: { is: { updatedAt: { gte: floor } } } },
+        ],
+      },
+      select: { sellerId: true },
+      distinct: ['sellerId'],
+      take: 200,
+    });
+    for (const r of recent) {
+      await this.recalcSeller(r.sellerId).catch(() => undefined);
+    }
+    return recent.length;
   }
 
   async findForSeller(sellerClerkId: string) {
@@ -78,7 +228,10 @@ export class RatingsService {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const score = await this.recalcSeller(user.id);
+    // Read-only — the cached score is refreshed on rating create/edit/
+    // removal + the daily recalc cron. Viewing a page must never write
+    // (the old recompute-on-view could flap a seller's tier mid-anything).
+    const score = user.trustScore;
     const recentRatings = await this.prisma.rating.findMany({
       where: { ratedId: user.id },
       orderBy: { createdAt: 'desc' },

@@ -15,6 +15,7 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
 import { SavedSearchesModule } from '../saved-searches/saved-searches.module';
 import { DealsModule } from '../deals/deals.module';
 import { RaffleModule } from '../raffle/raffle.module';
+import { RatingsModule } from '../ratings/ratings.module';
 
 @Module({
   // AdminModule is imported so we can inject AdminCreditsService into
@@ -44,6 +45,8 @@ import { RaffleModule } from '../raffle/raffle.module';
     // Prize-draw cron — RaffleModule exports RaffleService (NOT @Global,
     // same crash-loop rule as DealsModule above).
     RaffleModule,
+    // Trust-score refresh cron — RatingsModule exports RatingsService.
+    RatingsModule,
   ],
   providers: [TasksService],
 })

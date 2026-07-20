@@ -606,6 +606,8 @@ export default function UserDossierPage() {
                   comment={r.comment}
                   by={`@${r.rater.username ?? 'anonymous'}`}
                   date={r.createdAt}
+                  ratingId={r.id}
+                  onRemoved={() => setRefreshKey((k) => k + 1)}
                 />
               ))}
             </div>
@@ -880,12 +882,37 @@ function RatingCard({
   comment,
   by,
   date,
+  ratingId,
+  onRemoved,
 }: {
   stars: number;
   comment: string | null;
   by: React.ReactNode;
   date: string;
+  /** When set, shows the moderation Remove action (reason required,
+   *  audited, seller score recomputed server-side). */
+  ratingId?: string;
+  onRemoved?: () => void;
 }) {
+  const [busy, setBusy] = useState(false);
+  async function remove() {
+    if (!ratingId) return;
+    const reason = window.prompt(
+      'Reason for removing this review (recorded in the audit log):',
+    );
+    if (!reason || reason.trim().length < 5) return;
+    setBusy(true);
+    try {
+      const r = await adminFetch(`/admin/ratings/${ratingId}/remove`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      if (r.ok) onRemoved?.();
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div
       className="rounded-[6px] p-3"
@@ -900,7 +927,26 @@ function RatingCard({
           {comment}
         </p>
       )}
-      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{by}</p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs m-0" style={{ color: 'var(--text-tertiary)' }}>{by}</p>
+        {ratingId && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void remove()}
+            className="text-xs px-2 py-0.5 rounded-[4px]"
+            style={{
+              background: 'transparent',
+              border: '0.5px solid var(--border)',
+              color: 'var(--red)',
+              cursor: 'pointer',
+              opacity: busy ? 0.5 : 1,
+            }}
+          >
+            Remove
+          </button>
+        )}
+      </div>
     </div>
   );
 }

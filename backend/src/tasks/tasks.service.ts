@@ -24,6 +24,7 @@ import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { SavedSearchesService } from '../saved-searches/saved-searches.service';
 import { DealsService } from '../deals/deals.service';
 import { RaffleService } from '../raffle/raffle.service';
+import { RatingsService } from '../ratings/ratings.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { NotificationCategory } from '@prisma/client';
 
@@ -71,6 +72,7 @@ export class TasksService {
     private readonly savedSearches: SavedSearchesService,
     private readonly deals: DealsService,
     private readonly raffle: RaffleService,
+    private readonly ratings: RatingsService,
     private readonly settings: SettingsService,
   ) {}
 
@@ -700,6 +702,25 @@ export class TasksService {
   // completion (createSwapFeeReceipts is idempotent per side, so a re-fire
   // can only fill a missing receipt). Keeps Books whole without an admin
   // clicking a retry button.
+  // Daily 03:00 — refresh trust scores for sellers with recent activity
+  // (the dashboard no longer recomputes on view, so the time-based score
+  // components refresh here instead).
+  @Cron('0 3 * * *')
+  async refreshTrustScores() {
+    this.logger.debug('Running trust-score refresh cron');
+    try {
+      const n = await this.ratings.recalcRecentSellers();
+      if (n > 0) this.logger.log(`Trust scores refreshed for ${n} seller(s)`);
+    } catch (err) {
+      this.logger.error(
+        `refreshTrustScores failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('trust-score-refresh');
+    }
+  }
+
   // Every 10 min — re-attempt notification emails parked in the outbox
   // after a transport failure (normally a no-op; the table stays empty).
   @Cron(CronExpression.EVERY_10_MINUTES)

@@ -172,10 +172,23 @@ export default async function TransactionPage({
     !tx.rejectedAt &&
     (tx.shippingMethod === 'PUDO' || tx.shippingMethod === 'TCG');
 
-  const canRate =
+  const txRating = (
+    tx as unknown as {
+      rating?: {
+        stars: number;
+        comment: string | null;
+        createdAt: string;
+        sellerRespondedAt: string | null;
+      } | null;
+    }
+  ).rating;
+  const canRate = isBuyer && tx.paymentStatus === 'RELEASED' && !txRating;
+  // Buyer may correct a rating for 30 days, until the seller replies.
+  const canEditRating =
     isBuyer &&
-    tx.paymentStatus === 'RELEASED' &&
-    !(tx as unknown as { rating?: unknown }).rating;
+    !!txRating &&
+    !txRating.sellerRespondedAt &&
+    Date.now() - new Date(txRating.createdAt).getTime() < 30 * 86_400_000;
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
@@ -769,16 +782,24 @@ export default async function TransactionPage({
             </div>
           )}
 
-          {/* Buyer: rate seller */}
-          {canRate && (
+          {/* Buyer: rate seller (or correct an existing rating within the
+              30-day window, until the seller replies). */}
+          {(canRate || canEditRating) && (
             <div
               className="rounded-[8px] p-4"
               style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
             >
               <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
-                Rate this seller
+                {canEditRating ? 'Your rating' : 'Rate this seller'}
               </p>
-              <RatingWidget transactionId={tx.id} />
+              <RatingWidget
+                transactionId={tx.id}
+                existing={
+                  canEditRating && txRating
+                    ? { stars: txRating.stars, comment: txRating.comment }
+                    : undefined
+                }
+              />
             </div>
           )}
 

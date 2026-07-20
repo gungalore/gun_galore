@@ -627,6 +627,8 @@ export interface Rating {
   transactionId: string;
   stars: number;
   comment: string | null;
+  // Seller's single public reply (null until they respond).
+  sellerResponse: string | null;
   createdAt: string;
   // Username-only on public review surfaces (platform policy — real
   // names never on public-facing screens). Backend ratings.service.ts

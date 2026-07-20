@@ -39,6 +39,7 @@ interface SellerRating {
   id: string;
   stars: number;
   comment: string | null;
+  sellerResponse: string | null;
   createdAt: string;
   // Public-facing reviews — username only per platform policy.
   rater: { username: string | null };
@@ -259,6 +260,19 @@ export default async function SellerProfilePage({
                     <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                       {r.comment}
                     </p>
+                  )}
+                  {r.sellerResponse && (
+                    <div
+                      className="mt-2 pl-3 py-1.5"
+                      style={{ borderLeft: '2px solid var(--border)' }}
+                    >
+                      <p className="text-[11px] mb-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                        Seller&apos;s response
+                      </p>
+                      <p className="text-xs m-0" style={{ color: 'var(--text-secondary)' }}>
+                        {r.sellerResponse}
+                      </p>
+                    </div>
                   )}
                   <div className="mt-3" style={{ borderTop: '0.5px solid var(--border-divider)' }} />
                 </div>

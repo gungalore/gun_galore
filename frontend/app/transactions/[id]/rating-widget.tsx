@@ -18,12 +18,20 @@ const inputStyle: React.CSSProperties = {
   resize: 'none',
 };
 
-export function RatingWidget({ transactionId }: { transactionId: string }) {
+export function RatingWidget({
+  transactionId,
+  existing,
+}: {
+  transactionId: string;
+  /** Present when the buyer is CORRECTING an existing rating (30-day
+   *  window, until the seller replies) — prefills + switches to PATCH. */
+  existing?: { stars: number; comment: string | null };
+}) {
   const { getToken } = useAuth();
   const router = useRouter();
-  const [stars, setStars] = useState(0);
+  const [stars, setStars] = useState(existing?.stars ?? 0);
   const [hovered, setHovered] = useState(0);
-  const [comment, setComment] = useState('');
+  const [comment, setComment] = useState(existing?.comment ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -34,7 +42,7 @@ export function RatingWidget({ transactionId }: { transactionId: string }) {
         className="rounded-[6px] px-4 py-3 text-sm"
         style={{ background: 'rgba(0,160,60,0.10)', color: '#00a03c', border: '0.5px solid rgba(0,160,60,0.2)' }}
       >
-        Thank you for your rating.
+        {existing ? 'Your rating has been updated.' : 'Thank you for your rating.'}
       </div>
     );
   }
@@ -46,7 +54,7 @@ export function RatingWidget({ transactionId }: { transactionId: string }) {
     try {
       const token = await getToken();
       const res = await fetch(`${API_URL}/transactions/${transactionId}/rating`, {
-        method: 'POST',
+        method: existing ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ stars, comment: comment.trim() || undefined }),
       });
@@ -164,7 +172,7 @@ export function RatingWidget({ transactionId }: { transactionId: string }) {
           fontWeight: 500,
         }}
       >
-        {submitting ? 'Submitting…' : 'Submit rating'}
+        {submitting ? 'Submitting…' : existing ? 'Update rating' : 'Submit rating'}
       </button>
     </div>
   );

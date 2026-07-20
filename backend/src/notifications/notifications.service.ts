@@ -3815,6 +3815,41 @@ export class NotificationsService {
     await this.send(d.email, `Swap ${d.reason}: ` + d.wantedTitle, html);
   }
 
+  // Seller: a buyer rated one of their sales. 1–2★ gets the phone buzz
+  // (forcePush) so the seller can reply quickly; 3–5★ stays inbox/email.
+  async ratingReceived(d: {
+    email: string;
+    name: string;
+    buyerUsername: string;
+    stars: number;
+    comment: string | null;
+    sellerUserId: string;
+  }) {
+    const starsLabel = `${d.stars}★`;
+    await this.persist({
+      userId: d.sellerUserId,
+      category: 'SELLER',
+      type: 'rating_received',
+      title: `New ${starsLabel} review`,
+      body: `${d.buyerUsername} rated a purchase ${starsLabel}${d.comment ? ` — “${truncate(d.comment, 80)}”` : ''}`,
+      url: '/dashboard',
+      iconKey: 'offer',
+      dismissible: true,
+      forcePush: d.stars <= 2,
+    });
+    const html = this.email({
+      status: {
+        tone: d.stars >= 4 ? 'success' : 'pending',
+        label: `${starsLabel} review`,
+      },
+      headline: `You received a ${starsLabel} review`,
+      body: `Hi ${b(d.name)}, ${b(d.buyerUsername)} rated a recent purchase ${b(starsLabel)}.${d.comment ? ` They wrote: “${b(truncate(d.comment, 200))}”` : ''} You can post one public reply from your dashboard — a composed response to any review builds more trust than a perfect score.`,
+      cta: { label: 'View & reply', url: `${this.appUrl}/dashboard` },
+      preheader: `${d.buyerUsername} left a ${starsLabel} review`,
+    });
+    await this.send(d.email, `New ${starsLabel} review from ${d.buyerUsername}`, html);
+  }
+
   // PRO prize-draw winner — inbox + email + SMS. Never states how the
   // draw is funded; the equal-value exchange option is mentioned so a
   // licence-bearing prize never corners the winner.

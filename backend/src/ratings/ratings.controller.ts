@@ -1,5 +1,15 @@
-import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Patch,
+  Get,
+  Body,
+  Param,
+  UseGuards,
+} from '@nestjs/common';
 import { ClerkGuard } from '../auth/clerk.guard';
+import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
+import { CurrentAdmin } from '../admin/decorators/current-admin.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RatingsService } from './ratings.service';
 import { CreateRatingDto } from './dto/create-rating.dto';
@@ -17,6 +27,33 @@ export class RatingsController {
   ) {
     return this.ratingsService.create(transactionId, clerkId, dto);
   }
+
+  // Buyer corrects their rating (30-day window, closes when the seller
+  // replies).
+  @Patch()
+  update(
+    @Param('transactionId') transactionId: string,
+    @CurrentUser() clerkId: string,
+    @Body() dto: CreateRatingDto,
+  ) {
+    return this.ratingsService.update(transactionId, clerkId, dto);
+  }
+}
+
+// Admin moderation — remove an abusive review (reason mandatory, audited).
+@Controller('admin/ratings')
+@UseGuards(AdminJwtGuard)
+export class RatingsAdminController {
+  constructor(private readonly ratingsService: RatingsService) {}
+
+  @Post(':id/remove')
+  remove(
+    @Param('id') id: string,
+    @CurrentAdmin() adminId: string,
+    @Body() body: { reason?: string },
+  ) {
+    return this.ratingsService.adminRemove(id, adminId, body?.reason ?? '');
+  }
 }
 
 // Auth-gated dashboard endpoint. NOTE: split from the public seller
@@ -33,6 +70,16 @@ export class RatingsDashboardController {
   @Get('dashboard')
   dashboard(@CurrentUser() clerkId: string) {
     return this.ratingsService.getTrustDashboard(clerkId);
+  }
+
+  // Seller's single public reply to a review on their profile.
+  @Post(':id/response')
+  respond(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+    @Body() body: { response?: string },
+  ) {
+    return this.ratingsService.respond(id, clerkId, body?.response ?? '');
   }
 }
 

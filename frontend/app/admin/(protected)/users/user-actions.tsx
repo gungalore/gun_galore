@@ -139,7 +139,7 @@ export default function UserActions({
           </div>
           <div>
             <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
-              GG+ / Pro
+              GG PRO
             </p>
             <select
               defaultValue={subscriptionTier}
@@ -401,7 +401,7 @@ function ConfirmModal({
       case 'kyc':
         return `Override KYC status to ${confirm.value}?`;
       case 'subscription':
-        return `Set GG+ subscription to ${confirm.value}?`;
+        return `Set GG PRO subscription to ${confirm.value}?`;
     }
   })();
 
@@ -416,7 +416,7 @@ function ConfirmModal({
       case 'kyc':
         return 'KYC overrides bypass VerifyNow + Home Affairs. Use only when you have independent verification of identity (manual document review).';
       case 'subscription':
-        return 'Manually sets the GG+ subscription tier without going through paid checkout — a comp / support grant. PRO unlocks Ask GG Pro features, Load Lab, and the ballistics calculator. Reversible; recorded in the audit log.';
+        return 'Manually sets the GG PRO subscription tier without going through paid checkout — a comp / support grant. PRO unlocks Ask GG Pro features, Load Lab, and the ballistics calculator. Reversible; recorded in the audit log.';
     }
   })();
 

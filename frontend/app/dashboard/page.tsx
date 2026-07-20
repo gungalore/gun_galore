@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@clerk/nextjs/server';
 import { TrustDashboard, SellerTier } from '@/lib/types';
+import { RatingReply } from './rating-reply';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { DashboardProfileProgress } from '@/components/dashboard-profile-progress';
@@ -190,6 +191,7 @@ export default async function DashboardPage() {
                         {r.comment}
                       </p>
                     )}
+                    <RatingReply ratingId={r.id} existing={r.sellerResponse} />
                     <div
                       className="mt-2"
                       style={{ borderTop: '0.5px solid var(--border-divider)' }}

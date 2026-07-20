@@ -1884,7 +1884,11 @@ model Rating {
   rated         User        @relation("RatingsReceived", fields: [ratedId], references: [id])
   stars         Int // 1–5
   comment       String?
+  // Seller reply (one public response per review — industry standard).
+  sellerResponse    String?
+  sellerRespondedAt DateTime?
   createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @default(now()) @updatedAt
 
   @@index([ratedId])
 }
