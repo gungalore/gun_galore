@@ -156,14 +156,16 @@ export default async function MyBidsPage() {
             </Link>
             <Link
               href="/featured/bid"
-              className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+              className="gg-bid-spot inline-flex items-center gap-2 py-2.5 px-5 rounded-[6px] text-sm"
               style={{
-                background: 'var(--bg-inset)',
-                color: 'var(--text-secondary)',
-                border: '0.5px solid var(--border)',
+                background:
+                  'radial-gradient(130% 160% at 50% 0%, rgba(232, 181, 58, 0.16) 0%, transparent 70%), var(--bg-card)',
+                color: 'var(--text-primary)',
                 textDecoration: 'none',
+                fontWeight: 600,
               }}
             >
+              <span aria-hidden="true" style={{ color: '#e8b53a' }}>★</span>
               Bid for a featured spot
             </Link>
           </div>

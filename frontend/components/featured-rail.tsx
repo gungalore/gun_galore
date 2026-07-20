@@ -80,7 +80,16 @@ function listingHeadline(l: NonNullable<RailSlot['currentListing']>): string {
 // reaches -50% it visually matches its starting state and the
 // animation can repeat without a jump cut. This is the standard
 // "doubled track" technique for infinite marquees.
-export function FeaturedRail() {
+export function FeaturedRail({
+  hideEmptyNudge = false,
+}: {
+  /** The homepage already shows a big gold "featured spots open" banner
+   *  above the listings, so it passes this to suppress the rail's own
+   *  empty-state nudge and avoid two competing gold CTAs in one viewport.
+   *  Every other surface (listing detail…) leaves it false so the nudge
+   *  shows. */
+  hideEmptyNudge?: boolean;
+} = {}) {
   const [slots, setSlots] = useState<RailSlot[] | null>(null);
 
   // Initial fetch + revalidate every 60s so the rail reflects new
@@ -123,20 +132,53 @@ export function FeaturedRail() {
   // reads as a dead site to buyers.
   const occupied = slots.filter((s) => s.currentListing);
   if (occupied.length === 0) {
+    // Homepage suppresses its own nudge (the banner above already sells).
+    if (hideEmptyNudge) return null;
+    // Collapsed state — the rail shows on listing-detail (+ other) pages
+    // when NO slot is occupied. This is the featured entry point buyers
+    // and sellers see across the site, so it gets the same vibrant gold
+    // treatment as the homepage banner (operator 2026-07-20 — must change
+    // on the other pages too, not just home).
     return (
       <aside className="hidden lg:block" style={{ width: 260, flexShrink: 0 }}>
         <Link
           href="/featured/bid"
-          className="block text-xs text-center py-2 rounded-[6px]"
+          className="gg-bid-spot block rounded-[8px] p-4 text-center"
           style={{
-            background: 'var(--bg-inset)',
-            color: 'var(--text-secondary)',
-            border: '0.5px solid var(--border)',
+            background:
+              'radial-gradient(130% 110% at 50% 0%, rgba(232, 181, 58, 0.18) 0%, transparent 65%), var(--bg-card)',
             textDecoration: 'none',
-            fontWeight: 500,
           }}
         >
-          Bid for a featured spot →
+          <svg
+            width="26"
+            height="26"
+            viewBox="0 0 24 24"
+            fill="#e8b53a"
+            aria-hidden="true"
+            style={{ filter: 'drop-shadow(0 0 8px rgba(232,181,58,0.55))', margin: '0 auto 8px' }}
+          >
+            <path d="M12 2l2.9 6.26L21.5 9.3l-4.9 4.46 1.3 6.74L12 17.2l-5.9 3.3 1.3-6.74L2.5 9.3l6.6-1.04Z" />
+          </svg>
+          <div
+            className="text-[10px] uppercase mb-1"
+            style={{ color: '#e8b53a', letterSpacing: '0.12em', fontWeight: 700 }}
+          >
+            Featured spots open
+          </div>
+          <div
+            className="text-[13px] leading-snug mb-3"
+            style={{ color: 'var(--text-primary)', fontWeight: 600 }}
+          >
+            Put your listing here — seen first by every visitor
+          </div>
+          <span
+            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
+            style={{ background: 'var(--red)', color: '#fff', fontWeight: 600 }}
+          >
+            <i className="gg-bid-dot" aria-hidden="true" />
+            Bid or Buy Now →
+          </span>
         </Link>
       </aside>
     );
