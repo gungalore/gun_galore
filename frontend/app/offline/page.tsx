@@ -13,6 +13,11 @@ export const metadata = {
   title: 'Offline — Gun Galore',
 };
 
+// Self-heal: the moment the browser reports connectivity is back, reload
+// automatically — no tap needed. Inline script (this page must stay a
+// zero-dependency server component that works from the precache).
+const AUTO_RETRY_SCRIPT = `window.addEventListener('online',function(){setTimeout(function(){window.location.reload();},400);});`;
+
 export default function OfflinePage() {
   return (
     <main
@@ -80,10 +85,12 @@ export default function OfflinePage() {
             lineHeight: 1.5,
           }}
         >
-          Tip: install Gun Galore to your home screen and core
+          We&apos;ll reconnect automatically the moment your connection
+          returns. Tip: install Gun Galore to your home screen and core
           interface assets will be cached for faster repeat visits.
         </p>
       </div>
+      <script dangerouslySetInnerHTML={{ __html: AUTO_RETRY_SCRIPT }} />
     </main>
   );
 }

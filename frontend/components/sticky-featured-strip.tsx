@@ -121,28 +121,28 @@ export function StickyFeaturedStrip() {
     };
   }, [eligible]);
 
-  // Tell globals.css to extend body padding while the strip is mounted
-  // (so listing grids don't sit behind it). Cleanup on unmount or when
-  // the user navigates off a shopping surface.
+  // Unsold slots COLLAPSE (2026-07-19 — same rule as the desktop rail +
+  // homepage marquee): only slots carrying a listing render, and with none
+  // occupied the whole strip hides. A wall of "bid for this spot" nudges on
+  // the installed app's home reads as a dead site to its most committed
+  // users; sellers still find featured bidding in the Shop/More sheets.
+  const occupied = (slots ?? []).filter((s) => s.currentListing);
+  const visible = eligible && occupied.length > 0;
+
+  // Tell globals.css to extend body padding while the strip is actually
+  // VISIBLE (not merely eligible — an empty collapsed strip must not
+  // reserve 110px of dead space). Cleanup on hide/unmount/navigation.
   useEffect(() => {
-    if (!eligible) return;
+    if (!visible) return;
     document.body.dataset.hasStickyStrip = 'true';
     return () => {
       delete document.body.dataset.hasStickyStrip;
     };
-  }, [eligible]);
+  }, [visible]);
 
-  if (!eligible) return null;
-  if (!slots || slots.length === 0) return null;
+  if (!visible) return null;
 
-  // Show all 10 slots — occupied slots render as clickable listing
-  // cards, vacant / auction-running slots render as "bid for this
-  // spot" nudges linking to /featured/bid. Same behaviour as the
-  // existing mobile FeaturedRail. (Earlier version filtered to
-  // occupied-only, which produced an empty strip when no listings
-  // had won featured spots yet — exactly the state of the rail on
-  // a fresh site.)
-  const live = slots;
+  const live = occupied;
 
   return (
     <aside

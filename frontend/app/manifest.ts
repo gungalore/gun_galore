@@ -64,6 +64,45 @@ export default function manifest(): MetadataRoute.Manifest {
         url: '/?listingType=AUCTION',
         icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
       },
+      {
+        name: 'Daily Deals',
+        short_name: 'Deals',
+        description: 'Today’s limited-time deal',
+        url: '/deals',
+        icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+      },
+      {
+        name: 'Prize Draw',
+        short_name: 'Prize Draw',
+        description: 'The GG PRO members’ prize draw',
+        url: '/raffle',
+        icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+      },
+    ],
+    // Android's richer install dialog shows these preview cards. Captured
+    // from prod at 390×844 @2x (780×1688), narrow form factor.
+    screenshots: [
+      {
+        src: '/screenshot-home.png',
+        sizes: '780x1688',
+        type: 'image/png',
+        form_factor: 'narrow',
+        label: 'Browse South Africa’s outdoor & sport marketplace',
+      },
+      {
+        src: '/screenshot-listing.png',
+        sizes: '780x1688',
+        type: 'image/png',
+        form_factor: 'narrow',
+        label: 'Every deal protected — payment held until delivery',
+      },
+      {
+        src: '/screenshot-raffle.png',
+        sizes: '780x1688',
+        type: 'image/png',
+        form_factor: 'narrow',
+        label: 'The GG PRO members’ prize draw',
+      },
     ],
     icons: [
       {

@@ -274,7 +274,10 @@ self.addEventListener('push', (event) => {
     self.registration.showNotification(title, {
       body,
       icon: '/icon-192.png',
-      badge: '/icon-192.png',
+      // Monochrome white-on-transparent glyph — Android renders the badge
+      // as a single-colour alpha mask; a full-colour icon degrades to a
+      // grey blob in the status bar.
+      badge: '/badge-72.png',
       tag: payload.tag,
       data: { url },
       requireInteraction: false,
