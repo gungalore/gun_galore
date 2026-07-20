@@ -76,11 +76,28 @@ function listingHeadline(l: NonNullable<RailSlot['currentListing']>): string {
   return formatRand(l.price);
 }
 
-// Pages the strip is allowed to render on. usePathname() + manual
-// match (not searchParams.get — pathname '/' covers every ?listingType
-// variant since they all live on the same route).
+// Pages the strip is allowed to render on. usePathname() + manual match
+// (not searchParams.get — pathname '/' covers every ?listingType variant
+// since they all live on the same route). Extended 2026-07-20 to every
+// buyer-facing browse/detail page so the PWA has featured everywhere (the
+// inline FeaturedRail is display:none in standalone mode — the strip is
+// the PWA's featured surface). Excludes forms, cart, checkout, account,
+// admin, legal, auth.
 function shouldShow(pathname: string): boolean {
   if (pathname === '/') return true;
+  if (pathname === '/deals' || pathname === '/raffle' || pathname === '/brands')
+    return true;
+  if (
+    pathname.startsWith('/category/') ||
+    pathname.startsWith('/deals/') ||
+    pathname.startsWith('/brand/') ||
+    pathname.startsWith('/sellers/')
+  )
+    return true;
+  // Listing detail only (single path segment) — never /listings/new or
+  // /listings/[id]/edit.
+  if (/^\/listings\/[^/]+$/.test(pathname) && pathname !== '/listings/new')
+    return true;
   return false;
 }
 
@@ -121,17 +138,17 @@ export function StickyFeaturedStrip() {
     };
   }, [eligible]);
 
-  // Unsold slots COLLAPSE (2026-07-19 — same rule as the desktop rail +
-  // homepage marquee): only slots carrying a listing render, and with none
-  // occupied the whole strip hides. A wall of "bid for this spot" nudges on
-  // the installed app's home reads as a dead site to its most committed
-  // users; sellers still find featured bidding in the Shop/More sheets.
+  // ALWAYS visible above the navbar on eligible pages (operator
+  // 2026-07-20: "it must be above the navbar on the PWA always"). It no
+  // longer vanishes when no slot is sold — with none occupied it shows a
+  // single vibrant gold "featured spots open" bar instead of the scroller
+  // (not the old "wall of nudges"). Occupied → the listings scroller.
   const occupied = (slots ?? []).filter((s) => s.currentListing);
-  const visible = eligible && occupied.length > 0;
+  const visible = eligible;
+  const isEmpty = occupied.length === 0;
 
-  // Tell globals.css to extend body padding while the strip is actually
-  // VISIBLE (not merely eligible — an empty collapsed strip must not
-  // reserve 110px of dead space). Cleanup on hide/unmount/navigation.
+  // Extend body padding while the strip is mounted so the last row of
+  // content clears both the strip AND the tab bar.
   useEffect(() => {
     if (!visible) return;
     document.body.dataset.hasStickyStrip = 'true';
@@ -170,6 +187,51 @@ export function StickyFeaturedStrip() {
         willChange: 'transform',
       }}
     >
+      {isEmpty ? (
+        // No spot sold yet — a single vibrant gold CTA bar (shared
+        // .gg-bid-spot glow), full width, so the strip is never blank.
+        <Link
+          href="/featured/bid"
+          className="gg-bid-spot"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            minHeight: 46,
+            padding: '10px 14px',
+            textDecoration: 'none',
+            fontWeight: 700,
+            fontSize: 12.5,
+          }}
+        >
+          <span aria-hidden style={{ color: '#e8b53a', fontSize: 15 }}>★</span>
+          <span
+            style={{
+              color: '#e8b53a',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+            }}
+          >
+            Featured spots open
+          </span>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              color: '#fff',
+              background: 'var(--red)',
+              borderRadius: 999,
+              padding: '3px 10px',
+            }}
+          >
+            <i className="gg-bid-dot" aria-hidden />
+            Bid or Buy Now →
+          </span>
+        </Link>
+      ) : (
+        <>
       {/* Tiny header band — labels the strip + offers a "bid for spot"
           shortcut. Single row, very short to keep the strip slim. */}
       <div
@@ -241,6 +303,8 @@ export function StickyFeaturedStrip() {
           ))}
         </div>
       </div>
+        </>
+      )}
     </aside>
   );
 }
