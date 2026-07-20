@@ -30,8 +30,10 @@ export type BoetScene =
   | 'map'
   | 'drive';
 
-// Legacy mood prop — the in-chat + panel avatars still pass it; map it to a
-// calm scene so those call sites don't need to change.
+// Legacy mood prop — the in-chat typing bubble + panel header avatars drive
+// this (not a fixed `scene`). Kept 1:1 with old Sparkie's chat behaviour:
+// `think` while a reply streams, a brief `happy` pulse when it lands. Mapped
+// to the Boet scene that reads the same (see the mood→scene table below).
 export type SparkieMood = 'idle' | 'think' | 'happy';
 
 // Per-scene rig (body/head/hat) motion. Everything else stays on the
@@ -338,7 +340,13 @@ export function AskGgMascot({
   mood?: SparkieMood;
 }) {
   const ref = useRef<SVGSVGElement | null>(null);
-  const activeScene: BoetScene = scene ?? (mood === 'happy' ? 'wave' : 'idle');
+  // mood → scene, matching old Sparkie's chat states:
+  //   think  → `map`  (his amber "?" pops overhead — "working it out")
+  //   happy  → `wave` (a quick friendly wave when the answer lands)
+  //   idle   → `idle`
+  // An explicit `scene` (the launcher's wander loop) always wins.
+  const activeScene: BoetScene =
+    scene ?? (mood === 'think' ? 'map' : mood === 'happy' ? 'wave' : 'idle');
 
   // Show the active scene + swap the rig animation. Mirrors the design's
   // apply(): hide every `.sc`, show this scene's groups (both the outside-
