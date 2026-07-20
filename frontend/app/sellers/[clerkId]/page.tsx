@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { ListingCard } from '@/components/listing-card';
 import { PageReveal } from '@/components/page-reveal';
 import { UserBadgesWithTooltip } from '@/components/user-badges';
@@ -126,6 +127,7 @@ export default async function SellerProfilePage({
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
+      <BrowseRailShell>
       <PageReveal variant="scale-in">
       {/* Profile header */}
       <div
@@ -282,6 +284,7 @@ export default async function SellerProfilePage({
         </div>
       </div>
       </PageReveal>
+    </BrowseRailShell>
     </main>
   );
 }

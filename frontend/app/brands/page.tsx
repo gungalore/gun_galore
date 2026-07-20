@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { BrowseRailShell } from '@/components/browse-rail-shell';
 import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
 import type { BrandSummary } from '@/lib/types';
@@ -20,6 +21,7 @@ export default async function BrandsPage() {
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-8">
+      <BrowseRailShell>
       <nav
         aria-label="Breadcrumb"
         className="text-sm mb-4 flex flex-wrap items-center gap-1.5"
@@ -86,6 +88,7 @@ export default async function BrandsPage() {
           ))}
         </div>
       )}
+    </BrowseRailShell>
     </main>
   );
 }

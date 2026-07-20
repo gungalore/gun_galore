@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { apiFetch } from '@/lib/api';
 import type { DealsResponse } from '@/lib/types';
 import { DealCard } from '@/components/deal-card';
@@ -46,6 +47,7 @@ export default async function DealsPage() {
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-8">
+      <BrowseRailShell>
       <PageReveal>
         <header className="mb-6" data-reveal>
           <div className="flex items-center gap-2 mb-2">
@@ -100,6 +102,7 @@ export default async function DealsPage() {
           </div>
         )}
       </PageReveal>
+    </BrowseRailShell>
     </main>
   );
 }

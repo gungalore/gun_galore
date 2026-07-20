@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
@@ -65,6 +66,7 @@ export default async function BrandPage({
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-8">
+      <BrowseRailShell>
       {/* Breadcrumb */}
       <nav
         aria-label="Breadcrumb"
@@ -119,6 +121,7 @@ export default async function BrandPage({
 
       {/* Pagination */}
       <Pagination currentPage={page} totalPages={totalPages} hrefFor={pageHref} />
+    </BrowseRailShell>
     </main>
   );
 }

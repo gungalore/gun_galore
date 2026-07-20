@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { BrowseRailShell } from '@/components/browse-rail-shell';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -66,7 +67,9 @@ export default function RafflePage() {
   }, []);
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 pb-24">
+    <div className="max-w-[1280px] mx-auto px-4 py-8 pb-24">
+      <BrowseRailShell>
+      <div className="max-w-2xl">
       <h1 className="text-xl font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
         The GG PRO prize draw
       </h1>
@@ -193,6 +196,8 @@ export default function RafflePage() {
           Competition rules
         </Link>
       </p>
+      </div>
+      </BrowseRailShell>
     </div>
   );
 }

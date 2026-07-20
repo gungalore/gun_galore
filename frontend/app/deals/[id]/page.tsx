@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { BrowseRailShell } from '@/components/browse-rail-shell';
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
@@ -78,6 +79,7 @@ export default async function DealDetailPage({
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
+      <BrowseRailShell>
       <div className="mb-4">
         <Link href="/deals" className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
           ← All deals
@@ -299,6 +301,7 @@ export default async function DealDetailPage({
           </p>
         </section>
       </PageReveal>
+    </BrowseRailShell>
     </main>
   );
 }
