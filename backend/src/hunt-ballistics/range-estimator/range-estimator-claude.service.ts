@@ -32,8 +32,10 @@ import type {
 
 const MODEL_SONNET =
   process.env.ANTHROPIC_MODEL_HB_RANGE_DEFAULT ?? 'claude-sonnet-4-6';
+// claude-opus-4-1 retired 2026-08-05 (migrated 2026-07-20) — Opus 4.8 is
+// the recommended replacement and cheaper ($5/$25 vs $15/$75).
 const MODEL_OPUS =
-  process.env.ANTHROPIC_MODEL_HB_RANGE_FALLBACK ?? 'claude-opus-4-1';
+  process.env.ANTHROPIC_MODEL_HB_RANGE_FALLBACK ?? 'claude-opus-4-8';
 const OPUS_FALLBACK_THRESHOLD = parseFloat(
   process.env.HB_RANGE_OPUS_THRESHOLD ?? '0.7',
 );
@@ -47,11 +49,14 @@ const MAX_TOKENS = 512;
 // Mirrors the table in ask-gg-claude.service.ts. Update both when the
 // operator refreshes pricing.
 const PRICES_PER_MTOK_USD: Record<string, { input: number; output: number }> = {
+  'claude-sonnet-5': { input: 3, output: 15 },
   'claude-sonnet-4-6': { input: 3, output: 15 },
   'claude-sonnet-4-5': { input: 3, output: 15 },
+  'claude-opus-4-8': { input: 5, output: 25 },
   'claude-opus-4-1': { input: 15, output: 75 },
   'claude-opus-4': { input: 15, output: 75 },
   'claude-haiku-4-5': { input: 0.25, output: 1.25 },
+  'claude-haiku-4-5-20251001': { input: 0.25, output: 1.25 },
 };
 
 function estimateCostUsd(
@@ -412,8 +417,15 @@ export class RangeEstimatorClaudeService {
   private readonly universalSection: string;
 
   constructor() {
+    // 60s timeout / 1 retry — the estimate endpoint is synchronous behind
+    // the gateway; a hung vision call must fail inside that budget
+    // (audit fix 2026-07-20).
     this.client = process.env.ANTHROPIC_API_KEY
-      ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+      ? new Anthropic({
+          apiKey: process.env.ANTHROPIC_API_KEY,
+          timeout: 60_000,
+          maxRetries: 1,
+        })
       : null;
     if (!this.client) {
       this.logger.warn(
@@ -457,6 +469,18 @@ export class RangeEstimatorClaudeService {
       };
     }
 
+    // Parse failure is NOT low confidence (audit fix 2026-07-20): a
+    // malformed pass-1 reply used to read as confidence 0 and auto-buy
+    // the expensive Opus pass on EVERY request during a formatting
+    // regression — paying for both models and still returning rangeM 0.
+    // Ship the degraded result instead; the user retries.
+    if (pass1.parseFailed) {
+      return {
+        ...pass1,
+        modelUsed: 'sonnet',
+      };
+    }
+
     // Pass 2 — Opus, with a brief escalation hint added to the user message.
     this.logger.log(
       `Sonnet returned confidence ${pass1.confidence.toFixed(2)} ` +
@@ -484,7 +508,9 @@ export class RangeEstimatorClaudeService {
     model: string,
     input: RangeEstimatorClaudeInput,
     opts: { escalation?: boolean } = {},
-  ): Promise<Omit<RangeEstimatorClaudeResult, 'modelUsed'>> {
+  ): Promise<
+    Omit<RangeEstimatorClaudeResult, 'modelUsed'> & { parseFailed?: boolean }
+  > {
     if (!this.client) {
       throw new Error('Claude client not initialised');
     }
@@ -570,6 +596,8 @@ export class RangeEstimatorClaudeService {
       );
       // Return a degraded result rather than throwing — the controller's
       // higher-level error handler can decide whether to retry.
+      // `parseFailed` tells estimate() this is a malformed reply, NOT a
+      // genuine low-confidence read — it must not trigger the Opus pass.
       return {
         rangeM: 0,
         confidence: 0,
@@ -578,6 +606,7 @@ export class RangeEstimatorClaudeService {
         promptTokens,
         completionTokens,
         costUsd,
+        parseFailed: true,
       };
     }
 

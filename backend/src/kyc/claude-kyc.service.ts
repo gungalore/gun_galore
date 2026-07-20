@@ -117,7 +117,11 @@ export class ClaudeKycService {
 
   constructor() {
     const key = process.env.ANTHROPIC_API_KEY;
-    this.client = key ? new Anthropic({ apiKey: key }) : null;
+    // 60s timeout / 1 retry — never hold the KYC request open for the
+    // SDK's 10-min default on a hung call (audit fix 2026-07-20).
+    this.client = key
+      ? new Anthropic({ apiKey: key, timeout: 60_000, maxRetries: 1 })
+      : null;
     if (!key) {
       this.logger.warn(
         'ANTHROPIC_API_KEY not set — Claude KYC verdicts will queue for admin review',
@@ -199,17 +203,24 @@ export class ClaudeKycService {
   ): 'VERIFIED' | 'UNDER_REVIEW' | 'REJECTED' {
     if (crossCheck.hardFails.length > 0) return 'REJECTED';
 
+    // Coerce every gate to a finite number, defaulting to 0 — a string or
+    // hallucinated score must fail the gate, never NaN past it (audit fix
+    // 2026-07-20; `?? 0` alone let `"95"`-style strings through as NaN).
+    const toGate = (v: unknown): number => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
     const gates: number[] = [
-      findings.face_match?.same_person ?? 0,
-      findings.face_match?.selfie_live_capture ?? 0,
-      findings.face_match?.document_photo_visible ?? 0,
-      findings.document?.looks_genuine_sa_id ?? 0,
-      findings.document?.legibility ?? 0,
+      toGate(findings.face_match?.same_person),
+      toGate(findings.face_match?.selfie_live_capture),
+      toGate(findings.face_match?.document_photo_visible),
+      toGate(findings.document?.looks_genuine_sa_id),
+      toGate(findings.document?.legibility),
     ];
     if (mode === 'anchored') {
       // The anchored gate is the whole point of the tier — a missing score
       // (model omitted it) counts as 0 so it can never silently pass.
-      gates.push(findings.face_match?.same_person_vs_ha_photo ?? 0);
+      gates.push(toGate(findings.face_match?.same_person_vs_ha_photo));
     }
 
     if (gates.some((g) => g < AUTO_REJECT_CEILING)) return 'REJECTED';

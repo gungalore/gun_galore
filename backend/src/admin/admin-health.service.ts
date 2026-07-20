@@ -88,6 +88,12 @@ export class AdminHealthService {
       Omit<ServiceProbe, 'status' | 'latencyMs' | 'httpStatus' | 'detail'> & {
         method: 'HEAD' | 'GET';
         requiresEnv?: string[];
+        // Optional request headers (e.g. an API key for an AUTHENTICATED
+        // probe). With `authAware`, a 4xx response counts as DEGRADED —
+        // for auth'd endpoints a 401/403 means the credential is dead,
+        // which is exactly what the probe must catch.
+        headers?: Record<string, string>;
+        authAware?: boolean;
       }
     > = [
       {
@@ -158,11 +164,21 @@ export class AdminHealthService {
         requiresEnv: ['SMSPORTAL_CLIENT_ID'],
       },
       {
+        // AUTHENTICATED probe (audit fix 2026-07-20): the old bare HEAD on
+        // the host reported "up" through a revoked key, exhausted credit,
+        // or any auth failure. /v1/models is authenticated but FREE (no
+        // tokens billed) — a 401/403 here means the key is dead and every
+        // AI feature (Ask Boet, KYC, moderation, licence checks) is down.
         name: 'Anthropic (Claude)',
-        url: 'https://api.anthropic.com',
+        url: 'https://api.anthropic.com/v1/models',
         category: 'comms',
-        method: 'HEAD',
+        method: 'GET',
         requiresEnv: ['ANTHROPIC_API_KEY'],
+        headers: {
+          'x-api-key': process.env.ANTHROPIC_API_KEY ?? '',
+          'anthropic-version': '2023-06-01',
+        },
+        authAware: true,
       },
       {
         // Zoho Books — accounting integration. Probes the public API
@@ -205,14 +221,22 @@ export class AdminHealthService {
           const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
           const res = await fetch(t.url, {
             method: t.method,
+            headers: t.headers,
             signal: controller.signal,
           });
           clearTimeout(timeout);
           const latencyMs = Date.now() - start;
-          // Any response (even 4xx) = host is reachable. 5xx = something
-          // server-side is broken. 2xx-4xx = up.
-          const status: ServiceProbe['status'] =
-            res.status >= 500 ? 'degraded' : 'up';
+          // Default: any response (even 4xx) = host is reachable; 5xx =
+          // something server-side is broken. authAware probes are
+          // stricter: a 4xx on an authenticated endpoint means the
+          // CREDENTIAL is dead → degraded.
+          const status: ServiceProbe['status'] = t.authAware
+            ? res.ok
+              ? 'up'
+              : 'degraded'
+            : res.status >= 500
+              ? 'degraded'
+              : 'up';
           return {
             name: t.name,
             url: t.url,
@@ -220,7 +244,12 @@ export class AdminHealthService {
             status,
             latencyMs,
             httpStatus: res.status,
-            detail: status === 'degraded' ? `HTTP ${res.status}` : null,
+            detail:
+              status === 'degraded'
+                ? t.authAware && res.status === 401
+                  ? `HTTP 401 — API key rejected`
+                  : `HTTP ${res.status}`
+                : null,
           };
         } catch (err) {
           const latencyMs = Date.now() - start;

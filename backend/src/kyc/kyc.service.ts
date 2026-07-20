@@ -70,6 +70,8 @@ export interface CachedBalance {
 @Injectable()
 export class KycService {
   private readonly log = new Logger(KycService.name);
+  // Damper for the kyc-claude-outage admin alert (one per 6h window).
+  private lastKycOutageAlertAt = 0;
 
   constructor(
     private prisma: PrismaService,
@@ -692,6 +694,25 @@ export class KycService {
       this.log.error(
         `Claude KYC scan failed for ${clerkId}: ${(err as Error).message}`,
       );
+      // Outage signal (audit fix 2026-07-20): a dead API silently parks
+      // every KYC check in UNDER_REVIEW — surface it so the operator
+      // notices the outage, not just the growing review queue. Damped to
+      // one alert per 6h; best-effort.
+      const now = Date.now();
+      if (now - this.lastKycOutageAlertAt > 6 * 60 * 60 * 1000) {
+        this.lastKycOutageAlertAt = now;
+        void this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'kyc-claude-outage',
+              urgent: true,
+              context:
+                `Claude KYC scans are failing (${(err as Error).message.slice(0, 160)}). ` +
+                `New verifications are parking in UNDER_REVIEW — check the Anthropic API on /admin/health.`,
+            },
+          })
+          .catch(() => undefined);
+      }
     }
 
     const ha = (user.kycHaCheckJson ?? {}) as {

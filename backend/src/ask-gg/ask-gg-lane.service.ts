@@ -54,23 +54,29 @@ export class AskGgLaneService {
     const text = content.trim().slice(0, 1_200);
     if (!text) return null;
     try {
-      const call = this.client.messages.create({
-        model: LANE_MODEL,
-        max_tokens: 8,
-        system: LANE_SYSTEM,
-        messages: [{ role: 'user', content: text }],
-      });
-      const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('lane-timeout')), LANE_TIMEOUT_MS),
+      // AbortSignal timeout (audit fix 2026-07-20) — the previous
+      // Promise.race left the losing request RUNNING (still billed, and
+      // its eventual rejection was unhandled). Aborting cancels it.
+      const res = await this.client.messages.create(
+        {
+          model: LANE_MODEL,
+          max_tokens: 8,
+          system: LANE_SYSTEM,
+          messages: [{ role: 'user', content: text }],
+        },
+        { signal: AbortSignal.timeout(LANE_TIMEOUT_MS), maxRetries: 0 },
       );
-      const res = await Promise.race([call, timeout]);
+      // STRICT single-token parse (audit fix 2026-07-20): `includes()` let
+      // a reply that ECHOED the user's text steer the billing meter (write
+      // "SUPPORT" in an advice question → free lane). Only an exact
+      // first-token match counts; anything chattier fails safe to null.
       const out =
         res.content[0]?.type === 'text'
-          ? res.content[0].text.trim().toUpperCase()
+          ? res.content[0].text.trim().toUpperCase().split(/\s+/)[0]
           : '';
-      if (out.includes('SUPPORT')) return 'SUPPORT';
-      if (out.includes('MIXED')) return 'MIXED';
-      if (out.includes('ADVICE')) return 'ADVICE';
+      if (out === 'SUPPORT') return 'SUPPORT';
+      if (out === 'MIXED') return 'MIXED';
+      if (out === 'ADVICE') return 'ADVICE';
       return null;
     } catch (err) {
       this.logger.warn(

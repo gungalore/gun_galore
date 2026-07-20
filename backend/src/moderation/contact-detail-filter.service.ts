@@ -272,8 +272,11 @@ export class ContactDetailFilterService {
   }
 
   // ─── Layer 1 — regex ──────────────────────────────────────────────
+  // PUBLIC (audit fix 2026-07-20): the Q&A moderator uses this as its
+  // deterministic fallback when the Claude layer is down, so an outage
+  // fails closed on contact details instead of blanket-approving.
 
-  private regexCheck(text: string): RejectCategory | null {
+  regexCheck(text: string): RejectCategory | null {
     // Normalize zero-width characters and common digit-substitution
     // tricks before regex matching, so "0٨2 - 1.2.3 - 4567" still
     // looks like a phone number.

@@ -387,15 +387,22 @@ export class AdminCreditsService {
 
     try {
       // Last-24h window. RFC3339 UTC.
+      //
+      // AUDIT FIX 2026-07-20: this used to call
+      // /v1/organizations/usage_report/messages and sum cost_usd-style
+      // fields — but that endpoint returns TOKEN COUNTS, never dollars,
+      // so the monitor reported $0 forever while looking healthy. The
+      // COST report endpoint is the one that returns money.
       const endingAt = new Date().toISOString();
       const startingAt = new Date(
         Date.now() - 24 * 60 * 60 * 1000,
       ).toISOString();
       const url = new URL(
-        'https://api.anthropic.com/v1/organizations/usage_report/messages',
+        'https://api.anthropic.com/v1/organizations/cost_report',
       );
       url.searchParams.set('starting_at', startingAt);
       url.searchParams.set('ending_at', endingAt);
+      url.searchParams.set('bucket_width', '1d');
 
       const res = await fetch(url.toString(), {
         method: 'GET',
@@ -419,36 +426,47 @@ export class AdminCreditsService {
         };
       }
 
+      // Cost-report shape: { data: [ { results: [ { currency, amount } ] } ] }
+      // with `amount` a decimal string (USD). Parsed defensively; if the
+      // shape ever drifts we surface the raw payload + an error note
+      // instead of a silent healthy-looking zero.
       const raw = (await res.json().catch(() => ({}))) as {
         data?: Array<{
-          // Buckets contain per-time-window cost rollups. Field names
-          // are conservative defaults based on Anthropic's docs; if the
-          // shape changes the raw metadata will let the operator debug.
-          cost_usd?: number;
-          cost?: number;
-          total_cost_usd?: number;
+          results?: Array<{ amount?: string | number; currency?: string }>;
         }>;
       };
 
-      // Sum every plausible "cost" field across the returned buckets.
       const buckets = Array.isArray(raw.data) ? raw.data : [];
-      const sumSpend = buckets.reduce((acc, b) => {
-        const v = b.cost_usd ?? b.total_cost_usd ?? b.cost ?? 0;
-        return acc + (typeof v === 'number' ? v : 0);
-      }, 0);
+      let sawResult = false;
+      let sumSpend = 0;
+      for (const b of buckets) {
+        for (const r of b.results ?? []) {
+          sawResult = true;
+          const v = Number(r.amount);
+          if (Number.isFinite(v)) sumSpend += v;
+        }
+      }
+      // Buckets with zero results = genuinely no spend in the window —
+      // that's a real 0. No buckets at all when we KNOW there was usage
+      // would also be a real (if surprising) 0; only a shape drift where
+      // buckets exist but carry no parsable results is suspicious.
+      const shapeSuspicious = buckets.length > 0 && !sawResult;
 
       return {
         service: 'anthropic',
-        balance: sumSpend,
+        balance: shapeSuspicious ? null : sumSpend,
         unit: 'USD',
         metadata: {
           raw,
-          spend_today_usd: sumSpend,
+          spend_today_usd: shapeSuspicious ? null : sumSpend,
           bucket_count: buckets.length,
           window_start: startingAt,
           window_end: endingAt,
         },
         fetchedAt,
+        ...(shapeSuspicious
+          ? { error: 'cost_report shape not recognised — see metadata.raw' }
+          : {}),
       };
     } catch (err) {
       return {
@@ -871,7 +889,8 @@ export class AdminCreditsService {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              model: 'claude-haiku-4-5',
+              // Pinned snapshot — an alias can be repointed/retired under us.
+              model: 'claude-haiku-4-5-20251001',
               max_tokens: 1,
               messages: [{ role: 'user', content: 'hi' }],
             }),
@@ -932,23 +951,38 @@ export class AdminCreditsService {
         orderBy: { fetchedAt: 'desc' },
         select: { balance: true },
       });
-      if (latest?.balance != null && latest.balance <= alarm) {
-        count++;
-      }
+      if (latest?.balance == null) continue;
+      // Anthropic's number is 24h SPEND — alarming means it went ABOVE
+      // the ceiling; everything else is a balance dropping BELOW a floor.
+      const tripped =
+        service === 'anthropic'
+          ? latest.balance >= alarm
+          : latest.balance <= alarm;
+      if (tripped) count++;
     }
     return count;
   }
 }
 
 // Built-in alert floors for the services whose balance we can actually
-// poll (Anthropic/Pudo/TCG expose no balance API — they can't alarm on
-// a number, so they carry no default). Units are each provider's own
-// credit unit. Override per-service from the /admin/credits page.
-const DEFAULT_THRESHOLDS: Record<
+// poll. Units are each provider's own credit unit. Override per-service
+// from the /admin/credits page.
+//
+// Anthropic (audit fix 2026-07-20) is a SPEND number (USD over 24h), not
+// a remaining balance — its thresholds are CEILINGS and the cron compares
+// upward for it (see TasksService.checkCreditThreshold). Defaults: warn
+// at $10/day, alarm at $25/day — far above today's normal usage, so a
+// trip means either real growth (nice problem) or a runaway loop / abuse.
+// Exported so the credit-poll cron can materialise a default into a real
+// CreditThreshold row on first crossing (the row carries the alert-dedup
+// timestamps) — without this, defaults were display-only and the cron
+// never alerted for services the operator hadn't configured.
+export const DEFAULT_THRESHOLDS: Record<
   string,
   { warn: number | null; alarm: number | null }
 > = {
   verifynow: { warn: 100, alarm: 50 },
   smsportal: { warn: 200, alarm: 100 },
   cloudinary: { warn: 15, alarm: 5 },
+  anthropic: { warn: 10, alarm: 25 },
 };

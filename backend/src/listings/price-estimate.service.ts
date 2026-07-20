@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { sanitizePromptValue } from '../common/prompt-sanitize';
 
 // Resale-value estimator (audit finding: a seller-acquisition magnet nothing
 // else in SA offers). Produces an INDICATIVE, non-binding price range for a
@@ -368,10 +369,14 @@ export class PriceEstimateService {
     model?: string,
   ): Promise<number | null> {
     if (!this.client) return null;
-    const descriptor = [make, model, input.title?.trim()]
-      .filter(Boolean)
-      .join(' ')
-      .trim();
+    // Seller-typed make/model/title — sanitised (newlines/quotes stripped,
+    // capped) before interpolation so a crafted title can't break out of
+    // the quoted span or smuggle instructions into the web-search prompt
+    // (injection audit fix 2026-07-20).
+    const descriptor = sanitizePromptValue(
+      [make, model, input.title?.trim()].filter(Boolean).join(' '),
+      160,
+    );
     if (!descriptor) return null;
 
     // Normalise the cache key so trivial string variation ("tent", "tent ",

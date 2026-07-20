@@ -517,23 +517,28 @@ Hard rules:
       const text = msg.content.find((b) => b.type === 'text')?.text ?? '{}';
       const parsed = extractJsonObject(text);
       if (!parsed) {
-        // Even after the lenient extractor failed, fall back to
-        // APPROVE rather than HUMAN_REVIEW. The previous behaviour
-        // shoved every parse miss into the admin queue with a 0%
-        // confidence banner that looked alarming to sellers. Since
-        // we only flag two things (contact details + advertised
-        // ammo), a parse failure is overwhelmingly likely on a clean
-        // listing where Claude rambled in prose instead of JSON —
-        // approving is the safer default. The error is still logged
-        // for the operator.
+        // Parse miss. TEXT-ONLY passes still fail open to APPROVE — the
+        // downstream stripContactInfo regex net covers text, and parking
+        // every clean listing where Claude rambled in prose would flood
+        // the admin queue. But an IMAGE-BEARING listing (audit fix
+        // 2026-07-20) has NO fallback net — photo-borne violations (QR
+        // codes, phone numbers in images, storefront signage) are the
+        // whole reason vision runs — so those go to HUMAN_REVIEW instead
+        // of silently skipping photo moderation.
         this.logger.error(
-          `Could not parse Claude moderation JSON — defaulting to APPROVE. Body was: ${text.slice(0, 300)}`,
+          `Could not parse Claude moderation JSON — ${photosAttached ? 'photos attached, queueing HUMAN_REVIEW' : 'text-only, defaulting to APPROVE'}. Body was: ${text.slice(0, 300)}`,
         );
-        return {
-          decision: 'APPROVE',
-          confidence: 0.5,
-          reasons: [],
-        };
+        return photosAttached
+          ? {
+              decision: 'HUMAN_REVIEW',
+              confidence: 0.5,
+              reasons: ['Photo moderation could not complete — manual check queued'],
+            }
+          : {
+              decision: 'APPROVE',
+              confidence: 0.5,
+              reasons: [],
+            };
       }
 
       // Defensive parsing
@@ -572,16 +577,23 @@ Hard rules:
       this.logger.error(
         `Anthropic API error during listing moderation: ${(err as Error).message}`,
       );
-      // Fail open — never block on API error. Same rationale as the
-      // parse-failure fallback above: a transient Anthropic outage
-      // shouldn't park every listing in the admin queue. The error
-      // is logged; if outages persist the operator notices via the
-      // log.
-      return {
-        decision: 'APPROVE',
-        confidence: 0.5,
-        reasons: [],
-      };
+      // TEXT-ONLY: fail open — a transient Anthropic outage shouldn't
+      // park every listing in the admin queue (the text regex net still
+      // applies downstream). IMAGE-BEARING (audit fix 2026-07-20): queue
+      // for a human — photo-only violations have no other net, and an
+      // outage silently disabling photo moderation is exactly the failure
+      // an attacker would wait for.
+      return photosAttached
+        ? {
+            decision: 'HUMAN_REVIEW',
+            confidence: 0.5,
+            reasons: ['Photo moderation unavailable — manual check queued'],
+          }
+        : {
+            decision: 'APPROVE',
+            confidence: 0.5,
+            reasons: [],
+          };
     }
   }
 }

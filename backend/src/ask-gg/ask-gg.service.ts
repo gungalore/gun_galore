@@ -339,18 +339,51 @@ export class AskGgService {
       })),
     );
 
+    // Server-side escalation gate (audit fix 2026-07-20). `escalate` was
+    // client-controlled — a scripted client could force the ~5×-cost Opus
+    // model on EVERY message (runaway-spend vector). Escalation is only
+    // honoured when it can be a genuine "retry that answer" (the
+    // conversation already has an assistant reply to be unhappy with) AND
+    // the user is inside a small daily cap. Ineligible requests silently
+    // downgrade to the default model — never an error.
+    const escalate =
+      (input.escalate ?? false) &&
+      history.some((m) => m.role === 'assistant') &&
+      this.consumeEscalationBudget(user.id);
+
     return {
       user: { ...user, clerkId },
       conversationId: conversationId!,
       isNew,
       userMessage,
       imageUrls,
-      escalate: input.escalate ?? false,
+      escalate,
       claudeHistory,
       contextBlock,
       lane: decision.lane,
       restricted: decision.restricted,
     };
+  }
+
+  // Per-user escalation budget — in-memory sliding 24h window. In-memory
+  // is deliberate: single-pod deploy, and a restart resetting the count is
+  // harmless (the cap is an abuse bound, not billing). 5/day is far above
+  // any honest "this answer wasn't good enough, try harder" usage.
+  private static readonly ESCALATIONS_PER_DAY = 5;
+  private readonly escalationLog = new Map<string, number[]>();
+  private consumeEscalationBudget(userId: string): boolean {
+    const now = Date.now();
+    const dayAgo = now - 24 * 60 * 60 * 1000;
+    const recent = (this.escalationLog.get(userId) ?? []).filter(
+      (t) => t > dayAgo,
+    );
+    if (recent.length >= AskGgService.ESCALATIONS_PER_DAY) {
+      this.escalationLog.set(userId, recent);
+      return false;
+    }
+    recent.push(now);
+    this.escalationLog.set(userId, recent);
+    return true;
   }
 
   /**

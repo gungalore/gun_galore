@@ -35,8 +35,10 @@ import type { ComputeFeesInput } from './ask-gg-platform-tools.service';
 // response when the first one didn't satisfy them.
 const MODEL_DEFAULT =
   process.env.ANTHROPIC_MODEL_ASK_GG_DEFAULT ?? 'claude-sonnet-4-6';
+// claude-opus-4-1 retired 2026-08-05 (migrated 2026-07-20) — Opus 4.8 is
+// the recommended replacement and is also cheaper ($5/$25 vs $15/$75).
 const MODEL_ESCALATED =
-  process.env.ANTHROPIC_MODEL_ASK_GG_ESCALATED ?? 'claude-opus-4-1';
+  process.env.ANTHROPIC_MODEL_ASK_GG_ESCALATED ?? 'claude-opus-4-8';
 
 // Max tool-use iterations per user turn. Prevents Claude getting
 // stuck in a tool loop (e.g. repeatedly searching different phrasings
@@ -1015,7 +1017,19 @@ export class AskGgClaudeService {
     private readonly accountTools: AskGgAccountToolsService,
   ) {
     this.client = process.env.ANTHROPIC_API_KEY
-      ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+      ? new Anthropic({
+          apiKey: process.env.ANTHROPIC_API_KEY,
+          // 80s per request / 1 retry (audit fix 2026-07-20): the SDK's
+          // default is 10 min × retries — the whole send runs behind
+          // nginx (90s) + Cloudflare (~100s), so a hung call used to keep
+          // working (and billing) long after the client 504'd. 80s keeps
+          // the failure INSIDE the gateway budget so the user gets our
+          // friendly error, not a blank 504. Applies per tool-loop
+          // iteration (each is its own request), which is fine — the loop
+          // cap bounds total time.
+          timeout: 80_000,
+          maxRetries: 1,
+        })
       : null;
     if (!this.client) {
       this.logger.warn(
@@ -2358,10 +2372,13 @@ Rules:
 const PRICES_PER_MTOK_USD: Record<string, { input: number; output: number }> = {
   // Sonnet family — bumped if the env var points at a newer Sonnet
   // version, the operator can update prices via this map.
+  'claude-sonnet-5':         { input: 3,  output: 15 },
   'claude-sonnet-4-6':       { input: 3,  output: 15 },
   'claude-sonnet-4-5':       { input: 3,  output: 15 },
-  // Opus family — substantially more expensive, hence user-triggered
-  // escalation only.
+  // Opus family — more expensive, hence user-triggered escalation only.
+  // Opus 4.8 is the current escalation default ($5/$25); 4.1/4 retired
+  // 2026-08 but kept so historical rows still price.
+  'claude-opus-4-8':         { input: 5,  output: 25 },
   'claude-opus-4-1':         { input: 15, output: 75 },
   'claude-opus-4':           { input: 15, output: 75 },
   // Haiku family (used by cheap classifiers; included for
@@ -2369,6 +2386,10 @@ const PRICES_PER_MTOK_USD: Record<string, { input: number; output: number }> = {
   'claude-haiku-4-5':           { input: 0.25, output: 1.25 },
   'claude-haiku-4-5-20251001':  { input: 0.25, output: 1.25 },
 };
+
+// Models we've already warned about missing from the price map — one log
+// line per model per boot, not one per message.
+const unpricedModelsWarned = new Set<string>();
 
 // Anthropic web search is billed per request (~$10 / 1,000 = $0.01 each),
 // on top of the token cost of the content it pulls in.
@@ -2383,7 +2404,18 @@ function estimateCostUsd(
   if (promptTokens === 0 && completionTokens === 0 && webSearches === 0)
     return null;
   const prices = PRICES_PER_MTOK_USD[model];
-  if (!prices) return null;
+  if (!prices) {
+    // A model with no price entry makes every call cost R0 on the spend
+    // dashboard — silent under-reporting. Shout once so a model upgrade
+    // that forgets this map is caught (audit fix 2026-07-20).
+    if (!unpricedModelsWarned.has(model)) {
+      unpricedModelsWarned.add(model);
+      new Logger('AskGgCost').warn(
+        `No price entry for model "${model}" — costUsd will be null; add it to PRICES_PER_MTOK_USD`,
+      );
+    }
+    return null;
+  }
   const inputCost = (promptTokens / 1_000_000) * prices.input;
   const outputCost = (completionTokens / 1_000_000) * prices.output;
   const webCost = webSearches * WEB_SEARCH_USD_PER_REQUEST;

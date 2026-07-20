@@ -15,7 +15,10 @@ import { ExperienceSlaService } from '../payments/experience-sla.service';
 import { TransactionsService } from '../payments/transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeOrderRollupStatus } from '../orders/order-math';
-import { AdminCreditsService } from '../admin/admin-credits.service';
+import {
+  AdminCreditsService,
+  DEFAULT_THRESHOLDS,
+} from '../admin/admin-credits.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
 import { PushService } from '../push/push.service';
@@ -1273,23 +1276,50 @@ export class TasksService {
   // Check the latest balance against the operator-configured threshold
   // for one service. Fires alerts (with 6h dedup) when crossed.
   //
-  // NOTE on Anthropic: for that service the "balance" is SPEND (USD
-  // over 24h) not balance-remaining, so the comparison is conceptually
-  // "are we OVER the limit?". For now we apply the same `balance <=
-  // threshold` rule — the operator should set Anthropic's thresholds
-  // to NEGATIVE numbers if they want spend-cap behaviour, or leave
-  // them null (which the next clause handles). A follow-up could add
-  // a `direction` column to CreditThreshold; until then, the operator
-  // can leave Anthropic thresholds unset and rely on the trend chart.
+  // Direction (audit fix 2026-07-20): for every service except Anthropic
+  // the number is a REMAINING BALANCE — alert when it drops BELOW the
+  // threshold. Anthropic's number is 24h SPEND (USD) — alert when it
+  // rises ABOVE the threshold. The old code applied `balance <=
+  // threshold` to both, so no Anthropic spend alert could ever fire
+  // meaningfully. No schema change: the direction is derived from the
+  // service name.
   private async checkCreditThreshold(
     service: string,
     balance: number,
     unit: string,
   ): Promise<void> {
-    const threshold = await this.prisma.creditThreshold.findUnique({
+    let threshold = await this.prisma.creditThreshold.findUnique({
       where: { service },
     });
+    // No operator-configured row → materialise the built-in default into
+    // a real row (it carries the alert-dedup timestamps). Previously the
+    // defaults were display-only and the cron silently never alerted for
+    // unconfigured services (audit fix 2026-07-20).
+    if (!threshold) {
+      const d = DEFAULT_THRESHOLDS[service];
+      if (!d || (d.warn == null && d.alarm == null)) return;
+      try {
+        threshold = await this.prisma.creditThreshold.create({
+          data: {
+            service,
+            warnThreshold: d.warn,
+            alarmThreshold: d.alarm,
+            enabled: true,
+          },
+        });
+      } catch {
+        // Unique race with a concurrent write — re-read.
+        threshold = await this.prisma.creditThreshold.findUnique({
+          where: { service },
+        });
+      }
+    }
     if (!threshold || !threshold.enabled) return;
+
+    // spend-style services: crossing = value ABOVE threshold.
+    const spendStyle = service === 'anthropic';
+    const crossed = (value: number, limit: number) =>
+      spendStyle ? value >= limit : value <= limit;
 
     const now = new Date();
 
@@ -1297,7 +1327,7 @@ export class TasksService {
     // serves as the warn path (no point sending two emails).
     if (
       threshold.alarmThreshold != null &&
-      balance <= threshold.alarmThreshold
+      crossed(balance, threshold.alarmThreshold)
     ) {
       const lastAlarm = threshold.lastAlarmAlertAt;
       if (
@@ -1319,7 +1349,10 @@ export class TasksService {
       return;
     }
 
-    if (threshold.warnThreshold != null && balance <= threshold.warnThreshold) {
+    if (
+      threshold.warnThreshold != null &&
+      crossed(balance, threshold.warnThreshold)
+    ) {
       const lastWarn = threshold.lastWarnAlertAt;
       if (
         !lastWarn ||
