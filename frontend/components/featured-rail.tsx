@@ -140,7 +140,9 @@ export function FeaturedRail({
     // treatment as the homepage banner (operator 2026-07-20 — must change
     // on the other pages too, not just home).
     return (
-      <aside className="hidden lg:block" style={{ width: 260, flexShrink: 0 }}>
+      // Full-width on mobile (stacks above the content), 260px sidebar on
+      // desktop — so the featured nudge shows on EVERY size, not just lg+.
+      <aside className="w-full lg:w-[260px] mb-4 lg:mb-0" style={{ flexShrink: 0 }}>
         <Link
           href="/featured/bid"
           className="gg-bid-spot block rounded-[8px] p-4 text-center"

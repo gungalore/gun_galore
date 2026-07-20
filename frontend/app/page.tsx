@@ -480,7 +480,7 @@ export default async function HomePage({
           }
         >
           <div className="max-w-[1280px] mx-auto px-4 py-10 flex flex-col lg:flex-row gap-6">
-            <FeaturedRail hideEmptyNudge />
+            <FeaturedRail />
             <section className="flex-1 min-w-0">
               {renderListingsBody()}
             </section>
@@ -488,7 +488,7 @@ export default async function HomePage({
         </PageReveal>
       ) : (
         <div className="max-w-[1280px] mx-auto px-4 py-10 flex flex-col lg:flex-row gap-6">
-          <FeaturedRail hideEmptyNudge />
+          <FeaturedRail />
           <section className="flex-1 min-w-0">
             {renderListingsBody()}
           </section>
