@@ -183,10 +183,12 @@ html[data-standalone='true'] body[data-has-sticky-strip='true'] {
   padding-bottom: calc(60px + 110px + env(safe-area-inset-bottom));
 }
 
-/* Suppress the inline mobile FeaturedRail in standalone mode — the
-   StickyFeaturedStrip (which hugs the bottom tab bar) covers the
-   same data more compactly, so showing both is redundant. */
-html[data-standalone='true'] [data-featured-rail-inline] {
+/* Suppress the inline mobile FeaturedRail AND the collapsed empty-state
+   nudge in standalone mode — the StickyFeaturedStrip (which hugs the
+   bottom tab bar, and now shows its own gold nudge when empty) covers the
+   same job, so showing both would double up the featured CTA. */
+html[data-standalone='true'] [data-featured-rail-inline],
+html[data-standalone='true'] [data-featured-empty-nudge] {
   display: none;
 }
 

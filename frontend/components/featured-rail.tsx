@@ -142,7 +142,11 @@ export function FeaturedRail({
     return (
       // Full-width on mobile (stacks above the content), 260px sidebar on
       // desktop — so the featured nudge shows on EVERY size, not just lg+.
-      <aside className="w-full lg:w-[260px] mb-4 lg:mb-0" style={{ flexShrink: 0 }}>
+      <aside
+        data-featured-empty-nudge
+        className="w-full lg:w-[260px] mb-4 lg:mb-0"
+        style={{ flexShrink: 0 }}
+      >
         <Link
           href="/featured/bid"
           className="gg-bid-spot block rounded-[8px] p-4 text-center"
