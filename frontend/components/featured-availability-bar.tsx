@@ -68,10 +68,10 @@ export function FeaturedAvailabilityBar() {
 
   if (!sum) return null;
 
-  const { openCount, takingBidsCount, totalSlots, topBidCents, openSlots } = sum;
+  const { openCount, takingBidsCount, totalSlots, topBidCents } = sum;
 
   return (
-    <div className="flex flex-col items-center gap-2.5 mb-8" data-reveal>
+    <div className="flex flex-col items-center gap-2.5 mt-7 mb-2" data-reveal>
       {/* Indicator line: how many open + how many taking bids. */}
       <div
         className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[13px]"
@@ -93,35 +93,6 @@ export function FeaturedAvailabilityBar() {
         )}
         {topBidCents ? <span>· top bid {rand(topBidCents)}</span> : null}
       </div>
-
-      {/* Clickable per-slot chips — the missing "bid on a specific open
-          slot" entry point. Each deep-links into the bid page. */}
-      {openSlots.length > 0 && (
-        <div className="flex flex-wrap items-center justify-center gap-2 max-w-3xl">
-          {openSlots.map((s) => (
-            <Link
-              key={s.id}
-              href={`/featured/bid?slot=${s.id}`}
-              className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full transition-colors"
-              style={{
-                border: '0.5px solid rgba(232, 181, 58, 0.5)',
-                background: 'rgba(232, 181, 58, 0.06)',
-                color: 'var(--text-primary)',
-                textDecoration: 'none',
-              }}
-            >
-              <span style={{ fontWeight: 600 }}>Spot {s.slotNumber}</span>
-              <span style={{ color: 'var(--text-tertiary)' }}>
-                {s.bidCount > 0
-                  ? `${rand(s.topBidCents ?? 0)} · ${s.bidCount} bid${
-                      s.bidCount === 1 ? '' : 's'
-                    }`
-                  : 'no bids yet'}
-              </span>
-            </Link>
-          ))}
-        </div>
-      )}
 
       {/* Primary CTA — shared gold treatment. Always present so there's a
           bid entry even when every slot is currently taken. */}

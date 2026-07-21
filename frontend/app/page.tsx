@@ -305,10 +305,6 @@ export default async function HomePage({
               }}
             />
           </div>
-          {/* Availability indicator + per-slot bid entry (the marquee below
-              only shows FILLED slots, so this is where a seller sees how
-              many spots are open / taking bids and clicks in to bid). */}
-          <FeaturedAvailabilityBar />
           {/* Continuously scrolling horizontal marquee — single row
               of half-size cards drifting left. Doubled track + 50%
               translateX gives a seamless loop; hover pauses. Side
@@ -361,6 +357,9 @@ export default async function HomePage({
                 </div>
               ))}
           </DraggableMarquee>
+          {/* Availability indicator + bid entry, below the featured
+              slots: "X of N spots open" + a "Bid for a spot" CTA. */}
+          <FeaturedAvailabilityBar />
           </>)}
           {occupiedFeatured.length === 0 && (
             // Cold-start state: no slot is occupied, so the featured grid
