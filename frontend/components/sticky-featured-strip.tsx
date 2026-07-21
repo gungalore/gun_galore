@@ -26,6 +26,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useStandalone } from '@/lib/use-standalone';
 import { useScrollDirection } from '@/lib/use-scroll-direction';
+import { DraggableMarquee } from '@/components/draggable-marquee';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -266,43 +267,19 @@ export function StickyFeaturedStrip() {
         </Link>
       </div>
 
-      <style>{`
-        @keyframes ggStickyStripScroll {
-          from { transform: translateX(0); }
-          to   { transform: translateX(-50%); }
-        }
-        .gg-sticky-strip-track:hover .gg-sticky-strip-inner,
-        .gg-sticky-strip-track:active .gg-sticky-strip-inner {
-          animation-play-state: paused;
-        }
-      `}</style>
-
-      <div
+      <DraggableMarquee
+        axis="x"
+        speed={58}
         className="gg-sticky-strip-track"
-        style={{
-          overflow: 'hidden',
-          paddingTop: 4,
-          paddingBottom: 6,
-        }}
+        style={{ paddingTop: 4, paddingBottom: 6 }}
+        innerStyle={{ gap: 8, paddingLeft: 12, paddingRight: 12 }}
       >
-        <div
-          className="gg-sticky-strip-inner"
-          style={{
-            display: 'flex',
-            gap: 8,
-            paddingLeft: 12,
-            paddingRight: 12,
-            width: 'max-content',
-            animation: 'ggStickyStripScroll 70s linear infinite',
-          }}
-        >
-          {/* Doubled track for the seamless loop technique (same as the
-              existing FeaturedRail). */}
-          {[...live, ...live].map((slot, i) => (
-            <StickyCard key={`${slot.id}-${i}`} slot={slot} />
-          ))}
-        </div>
-      </div>
+        {/* Doubled track for the seamless loop technique (same as the
+            existing FeaturedRail). */}
+        {[...live, ...live].map((slot, i) => (
+          <StickyCard key={`${slot.id}-${i}`} slot={slot} />
+        ))}
+      </DraggableMarquee>
         </>
       )}
     </aside>

@@ -8,6 +8,7 @@ import { Hero } from '@/components/hero';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
+import { DraggableMarquee } from '@/components/draggable-marquee';
 import { SignedInWelcome } from '@/components/signed-in-welcome';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
@@ -310,43 +311,29 @@ export default async function HomePage({
               entering / leaving don't get hard-clipped (which would
               also chop their glow). Each card gets a warm red→gold
               glow shadow — no gradient outline, just pure glow. */}
-          <style>{`
-            @keyframes featuredHomeScrollH {
-              from { transform: translateX(0); }
-              to   { transform: translateX(-50%); }
-            }
-            .featured-home-track:hover .featured-home-track-inner {
-              animation-play-state: paused;
-            }
-          `}</style>
-          <div
+          <DraggableMarquee
+            axis="x"
+            speed={60}
             className="featured-home-track"
             style={{
               position: 'relative',
-              overflow: 'hidden',
               marginTop: 24,
               WebkitMaskImage:
                 'linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%)',
               maskImage:
                 'linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%)',
             }}
+            innerStyle={{
+              gap: 16,
+              // Padding so card glow has room to breathe at the
+              // track's top/bottom + left/right edges.
+              paddingTop: 28,
+              paddingBottom: 28,
+              paddingLeft: 12,
+              paddingRight: 12,
+            }}
           >
-            <div
-              className="featured-home-track-inner"
-              style={{
-                display: 'flex',
-                gap: 16,
-                width: 'max-content',
-                // Padding so card glow has room to breathe at the
-                // track's top/bottom + left/right edges.
-                paddingTop: 28,
-                paddingBottom: 28,
-                paddingLeft: 12,
-                paddingRight: 12,
-                animation: 'featuredHomeScrollH 60s linear infinite',
-              }}
-            >
-              {[...occupiedFeatured, ...occupiedFeatured].map((slot, i) => (
+            {[...occupiedFeatured, ...occupiedFeatured].map((slot, i) => (
                 <div
                   key={`${slot.slotNumber}-${i}`}
                   style={{
@@ -368,8 +355,7 @@ export default async function HomePage({
                   )}
                 </div>
               ))}
-            </div>
-          </div>
+          </DraggableMarquee>
           </>)}
           {occupiedFeatured.length === 0 && (
             // Cold-start state: no slot is occupied, so the featured grid

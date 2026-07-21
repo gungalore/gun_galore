@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { DraggableMarquee } from '@/components/draggable-marquee';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -232,22 +233,13 @@ export function FeaturedRail({
           Featured
         </div>
 
-        <style>{`
-          @keyframes featuredScroll {
-            from { transform: translateY(0); }
-            to   { transform: translateY(-50%); }
-          }
-          .featured-track:hover .featured-track-inner {
-            animation-play-state: paused;
-          }
-        `}</style>
-
-        <div
+        <DraggableMarquee
+          axis="y"
+          speed={46}
           className="featured-track"
           style={{
             position: 'relative',
             height: 'calc(100vh - 160px)',
-            overflow: 'hidden',
             // Soft top/bottom fade so cards entering/leaving the
             // visible area don't get hard-clipped (which would also
             // chop the card glow). Mask uses 8% on each end so the
@@ -261,32 +253,12 @@ export function FeaturedRail({
             paddingLeft: 4,
             paddingRight: 4,
           }}
+          innerStyle={{ gap: 8 }}
         >
-          <div
-            className="featured-track-inner"
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-              animation:
-                // 90s for a full cycle — 9s per card on the 10-card
-                // track. Doubled (track is rendered twice), so the
-                // visual cadence at any point in the viewport is one
-                // card every ~4.5s, which reads as "drifting" rather
-                // than "scrolling".
-                'featuredScroll 90s linear infinite',
-              animationPlayState: 'running',
-            }}
-          >
-            {[...occupied, ...occupied].map((slot, i) => (
-              <RailCard
-                key={`${slot.id}-${i}`}
-                slot={slot}
-                variant="desktop"
-              />
-            ))}
-          </div>
-        </div>
+          {[...occupied, ...occupied].map((slot, i) => (
+            <RailCard key={`${slot.id}-${i}`} slot={slot} variant="desktop" />
+          ))}
+        </DraggableMarquee>
 
         <Link
           href="/featured/bid"
@@ -341,40 +313,16 @@ export function FeaturedRail({
           </Link>
         </div>
 
-        <style>{`
-          @keyframes featuredScrollH {
-            from { transform: translateX(0); }
-            to   { transform: translateX(-50%); }
-          }
-          .featured-track-h:hover .featured-track-inner-h {
-            animation-play-state: paused;
-          }
-        `}</style>
-
-        <div
+        <DraggableMarquee
+          axis="x"
+          speed={60}
           className="featured-track-h"
-          style={{ overflow: 'hidden' }}
+          innerStyle={{ gap: 10, paddingLeft: 16, paddingRight: 16 }}
         >
-          <div
-            className="featured-track-inner-h"
-            style={{
-              display: 'flex',
-              gap: 10,
-              paddingLeft: 16,
-              paddingRight: 16,
-              width: 'max-content',
-              animation: 'featuredScrollH 90s linear infinite',
-            }}
-          >
-            {[...occupied, ...occupied].map((slot, i) => (
-              <RailCard
-                key={`m-${slot.id}-${i}`}
-                slot={slot}
-                variant="mobile"
-              />
-            ))}
-          </div>
-        </div>
+          {[...occupied, ...occupied].map((slot, i) => (
+            <RailCard key={`m-${slot.id}-${i}`} slot={slot} variant="mobile" />
+          ))}
+        </DraggableMarquee>
       </div>
     </>
   );
@@ -462,7 +410,7 @@ function RailCard({
               fontWeight: 500,
             }}
           >
-            #{slot.slotNumber} · Featured
+            Featured
           </div>
           <div
             className="text-[12px] leading-snug line-clamp-2"
