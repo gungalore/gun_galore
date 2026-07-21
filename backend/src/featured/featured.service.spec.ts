@@ -112,6 +112,9 @@ function myActiveListing(overrides: Record<string, unknown> = {}) {
     status: 'ACTIVE',
     isDealListing: false,
     featuredInSlot: null,
+    // Mirrors the Prisma select: offers filtered to ACCEPTED (empty = none),
+    // which the entry-guard reads via listing.offers.length.
+    offers: [],
     ...overrides,
   };
 }
@@ -284,6 +287,11 @@ describe('buyNow — paygate rail (slot/listing/CAS)', () => {
 
     tx.listing.findUnique.mockResolvedValueOnce(myActiveListing({ featuredInSlot: { id: 'OTHER' } }));
     await expect(service.buyNow('c', 'SLOT1', 'T3', 'L1')).rejects.toThrow(/already featured/i);
+
+    // Accepted-offer entry guard: an item already promised to a buyer can't
+    // be featured (the recycler would reclaim the slot on the next tick).
+    tx.listing.findUnique.mockResolvedValueOnce(myActiveListing({ offers: [{ id: 'OF1' }] }));
+    await expect(service.buyNow('c', 'SLOT1', 'T3', 'L1')).rejects.toThrow(/accepted offer/i);
   });
 
   it('gives a PRO buyer 50% off the doubled base', async () => {

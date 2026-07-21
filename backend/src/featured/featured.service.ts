@@ -11,6 +11,7 @@ import {
   FeaturedBidStatus,
   FeaturedSlotStatus,
   FeaturedTier,
+  ListingStatus,
   Prisma,
   SubscriptionTier,
 } from '@prisma/client';
@@ -169,7 +170,18 @@ export class FeaturedService {
       .filter((x): x is string => !!x);
     const listings = ids.length
       ? await this.prisma.listing.findMany({
-          where: { id: { in: ids } },
+          // Only surface a slot's listing while it is still up for grabs.
+          // Drops out instantly when it sells (ACTIVE -> PAYMENT_PENDING/SOLD),
+          // is cancelled/expires, OR the seller accepts an offer (item is
+          // promised to a buyer) — so a sold/committed item never lingers in
+          // the featured strip during the up-to-1-min window before the cron
+          // recycles the slot. (Slot cleanup + re-auction still happens in the
+          // featured cron; this is the instant buyer-facing display guard.)
+          where: {
+            id: { in: ids },
+            status: ListingStatus.ACTIVE,
+            offers: { none: { status: 'ACCEPTED' } },
+          },
           include: {
             images: { where: { isPrimary: true }, take: 1 },
             category: { select: { id: true, name: true, slug: true } },
@@ -197,7 +209,7 @@ export class FeaturedService {
   // slot has an OPEN auction (for the bid page). Sorted by slotNumber
   // so the rail order is stable.
   async getRail() {
-    return this.prisma.featuredSlot.findMany({
+    const slots = await this.prisma.featuredSlot.findMany({
       orderBy: { slotNumber: 'asc' },
       include: {
         currentListing: {
@@ -205,6 +217,16 @@ export class FeaturedService {
             id: true,
             title: true,
             price: true,
+            // status + any accepted offer drive the display guard below — a
+            // sold/inactive/committed occupant is nulled out so the rail
+            // shows the slot as an open "bid for a spot" placeholder instead
+            // of a dead card.
+            status: true,
+            offers: {
+              where: { status: 'ACCEPTED' },
+              take: 1,
+              select: { id: true },
+            },
             listingType: true,
             currentBid: true,
             buyNowPrice: true,
@@ -227,6 +249,20 @@ export class FeaturedService {
           },
         },
       },
+    });
+    // Instant buyer-facing guard: the moment a featured listing leaves ACTIVE
+    // (sells, cancelled, expires) OR gets an accepted offer (promised to a
+    // buyer), it stops rendering in the rail/sticky strip — without waiting
+    // for the once-a-minute cron to free the slot. Strip the internal
+    // status/offers fields back out so the response shape is unchanged.
+    return slots.map((s) => {
+      const cl = s.currentListing;
+      if (!cl) return s;
+      const unavailable =
+        cl.status !== ListingStatus.ACTIVE || cl.offers.length > 0;
+      if (unavailable) return { ...s, currentListing: null };
+      const { status: _status, offers: _offers, ...listing } = cl;
+      return { ...s, currentListing: listing };
     });
   }
 
@@ -591,6 +627,14 @@ export class FeaturedService {
           status: true,
           isDealListing: true,
           featuredInSlot: { select: { id: true } },
+          // A live accepted offer means the item is already promised to a
+          // buyer — block featuring it (the recycler would reclaim the slot
+          // on the next tick, so the seller would pay for nothing).
+          offers: {
+            where: { status: 'ACCEPTED' },
+            take: 1,
+            select: { id: true },
+          },
         },
       });
       if (!listing) throw new NotFoundException('Listing not found');
@@ -602,6 +646,11 @@ export class FeaturedService {
       }
       if (listing.status !== 'ACTIVE') {
         throw new BadRequestException('Listing must be ACTIVE to be featured');
+      }
+      if (listing.offers.length > 0) {
+        throw new BadRequestException(
+          'Listing has an accepted offer — it is already promised to a buyer and cannot be featured',
+        );
       }
       if (listing.featuredInSlot) {
         throw new BadRequestException(
@@ -802,6 +851,14 @@ export class FeaturedService {
           status: true,
           isDealListing: true,
           featuredInSlot: { select: { id: true } },
+          // A live accepted offer means the item is already promised to a
+          // buyer — block featuring it (the recycler would reclaim the slot
+          // on the next tick, so the seller would pay for nothing).
+          offers: {
+            where: { status: 'ACCEPTED' },
+            take: 1,
+            select: { id: true },
+          },
         },
       });
       if (!listing) throw new NotFoundException('Listing not found');
@@ -816,6 +873,11 @@ export class FeaturedService {
       if (listing.status !== 'ACTIVE') {
         throw new BadRequestException(
           'Listing must be ACTIVE to be featured',
+        );
+      }
+      if (listing.offers.length > 0) {
+        throw new BadRequestException(
+          'Listing has an accepted offer — it is already promised to a buyer and cannot be featured',
         );
       }
       // listingType is intentionally NOT checked — Marketplace
@@ -1306,8 +1368,14 @@ export class FeaturedService {
       where: { currentListingId: listingId },
     });
     if (!slot) return; // listing wasn't featured
-    await this.prisma.featuredSlot.update({
-      where: { id: slot.id },
+    // CAS the free on currentListingId so two overlapping cron ticks can't
+    // both free the same slot — the second would blow away the fresh ad-hoc
+    // auction the first just attached (orphaning it). Only the pass that
+    // still sees THIS listing occupying wins; the loser bails before opening
+    // a duplicate auction. (Matches the CAS discipline on every other
+    // featured-lifecycle write: closeAuction/openAuction/expireFeatured.)
+    const freed = await this.prisma.featuredSlot.updateMany({
+      where: { id: slot.id, currentListingId: listingId },
       data: {
         status: FeaturedSlotStatus.VACANT,
         currentListingId: null,
@@ -1319,6 +1387,7 @@ export class FeaturedService {
         currentAuctionId: null,
       },
     });
+    if (freed.count === 0) return; // another pass already freed it
     await this.recordEvent(slot.id, 'LISTING_SOLD_FREES_SLOT', {
       listingId,
     });

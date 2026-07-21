@@ -93,10 +93,11 @@ export function FeaturedRail({
 } = {}) {
   const [slots, setSlots] = useState<RailSlot[] | null>(null);
 
-  // Initial fetch + revalidate every 60s so the rail reflects new
-  // winners + sold listings within a minute. We DON'T poll faster
-  // because the rail is decorative — buyers click into a card and
-  // see the live listing detail (which has its own polling).
+  // Initial fetch + revalidate every 30s so the rail drops a just-sold /
+  // just-committed listing quickly (the server already hides it the instant
+  // it leaves ACTIVE / gets an accepted offer — this is how fast an
+  // already-open page catches up). The rail is decorative, so we don't poll
+  // faster than that.
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -112,7 +113,7 @@ export function FeaturedRail({
       }
     }
     load();
-    const t = setInterval(load, 60_000);
+    const t = setInterval(load, 30_000);
     return () => {
       cancelled = true;
       clearInterval(t);

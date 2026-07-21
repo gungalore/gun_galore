@@ -467,17 +467,25 @@ export class TasksService {
     const now = new Date();
     const cfg = await this.featured.getConfig();
 
-    // 0) Detect SOLD listings still bound to a slot — free the slot
-    //    so an ad-hoc auction can open. Catches both the "listing
-    //    moved to PAYMENT_PENDING/SOLD/COMPLETED" case and any case
-    //    where the listing was cancelled/paused while featured. Done
-    //    in the cron (rather than via a TransactionsService →
-    //    FeaturedService call) to avoid a cross-module forwardRef.
+    // 0) Detect featured listings that are no longer up for grabs and free
+    //    the slot so an ad-hoc auction can open. Catches:
+    //      (a) the listing left ACTIVE — sold (PAYMENT_PENDING/SOLD),
+    //          cancelled, or expired; and
+    //      (b) the seller ACCEPTED an offer — the item is promised to a
+    //          buyer, so the feature has done its job even though the
+    //          listing stays ACTIVE until that buyer runs checkout.
+    //    Done in the cron (rather than via a TransactionsService /
+    //    OffersService → FeaturedService call) to avoid a cross-module
+    //    forwardRef; the display side is guarded instantly in getRail /
+    //    getFeaturedListings, this just recycles the slot within ~a minute.
     const featuredButUnavailable = await this.prisma.featuredSlot.findMany({
       where: {
         status: 'OCCUPIED',
         currentListing: {
-          status: { notIn: ['ACTIVE'] },
+          OR: [
+            { status: { notIn: ['ACTIVE'] } },
+            { offers: { some: { status: 'ACCEPTED' } } },
+          ],
         },
       },
       select: { id: true, currentListingId: true },

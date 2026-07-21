@@ -114,8 +114,9 @@ export function StickyFeaturedStrip() {
 
   const [slots, setSlots] = useState<RailSlot[] | null>(null);
 
-  // Fetch + revalidate every 60s — same cadence as FeaturedRail so a
-  // user visiting both surfaces sees the same featured snapshot.
+  // Fetch + revalidate every 30s — same cadence as FeaturedRail so a
+  // user visiting both surfaces sees the same featured snapshot (and drops
+  // a just-sold / just-committed listing quickly).
   useEffect(() => {
     if (!eligible) return;
     let cancelled = false;
@@ -132,7 +133,7 @@ export function StickyFeaturedStrip() {
       }
     }
     load();
-    const t = setInterval(load, 60_000);
+    const t = setInterval(load, 30_000);
     return () => {
       cancelled = true;
       clearInterval(t);
