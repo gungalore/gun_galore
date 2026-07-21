@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -132,6 +132,24 @@ export default function FeaturedBidPage() {
     | { kind: 'bind'; slot: SlotForBidder }
     | { kind: 'buynow'; slot: SlotForBidder }
   >(null);
+
+  // Deep-link from the homepage availability bar: /featured/bid?slot=<id>
+  // pre-selects + scrolls to that slot. Read from window (not
+  // useSearchParams) so the page needs no Suspense boundary.
+  const [targetSlotId, setTargetSlotId] = useState<string | null>(null);
+  const scrolledRef = useRef(false);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('slot');
+    if (id) setTargetSlotId(id);
+  }, []);
+  useEffect(() => {
+    if (scrolledRef.current || !targetSlotId || !slots) return;
+    const el = document.getElementById(`featslot-${targetSlotId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      scrolledRef.current = true;
+    }
+  }, [targetSlotId, slots]);
 
   // Tick every second so countdowns refresh.
   useEffect(() => {
@@ -396,6 +414,7 @@ export default function FeaturedBidPage() {
                 key={slot.id}
                 slot={slot}
                 now={now}
+                highlighted={slot.id === targetSlotId}
                 onBid={() => setActiveModal({ kind: 'bid', slot })}
                 onBind={() => setActiveModal({ kind: 'bind', slot })}
                 onBuyNow={() => setActiveModal({ kind: 'buynow', slot })}
@@ -611,12 +630,14 @@ function SlotSkeleton() {
 function SlotCard({
   slot,
   now,
+  highlighted,
   onBid,
   onBind,
   onBuyNow,
 }: {
   slot: SlotForBidder;
   now: number;
+  highlighted?: boolean;
   onBid: () => void;
   onBind: () => void;
   onBuyNow: () => void;
@@ -632,10 +653,24 @@ function SlotCard({
 
   return (
     <div
+      id={`featslot-${slot.id}`}
       className="rounded-[8px] p-4"
       style={{
         background: 'var(--bg-card)',
-        border: `0.5px solid ${isYourTopBid ? 'var(--red)' : 'var(--border)'}`,
+        // Gold ring when the seller deep-linked to this slot from the
+        // homepage availability bar (?slot=<id>); else the normal border
+        // (red when they're the top bidder).
+        border: `${highlighted ? '1px' : '0.5px'} solid ${
+          highlighted
+            ? '#e8b53a'
+            : isYourTopBid
+              ? 'var(--red)'
+              : 'var(--border)'
+        }`,
+        boxShadow: highlighted
+          ? '0 0 0 3px rgba(232, 181, 58, 0.18)'
+          : undefined,
+        scrollMarginTop: 90,
       }}
     >
       <div className="flex items-baseline justify-between mb-3">

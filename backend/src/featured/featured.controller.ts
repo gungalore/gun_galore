@@ -47,6 +47,13 @@ export class FeaturedPublicController {
     return this.featured.getFeaturedListings();
   }
 
+  // Availability summary for the homepage "Featured spots" bar — open /
+  // taking-bids counts + the biddable slots (click straight into a bid).
+  @Get('summary')
+  summary() {
+    return this.featured.getFeaturedSummary();
+  }
+
   // Tier table + bid floor — used by the bid page to show pricing
   // before the seller commits.
   @Get('config')

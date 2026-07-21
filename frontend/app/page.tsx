@@ -8,6 +8,7 @@ import { Hero } from '@/components/hero';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
+import { FeaturedAvailabilityBar } from '@/components/featured-availability-bar';
 import { DraggableMarquee } from '@/components/draggable-marquee';
 import { SignedInWelcome } from '@/components/signed-in-welcome';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
@@ -304,6 +305,10 @@ export default async function HomePage({
               }}
             />
           </div>
+          {/* Availability indicator + per-slot bid entry (the marquee below
+              only shows FILLED slots, so this is where a seller sees how
+              many spots are open / taking bids and clicks in to bid). */}
+          <FeaturedAvailabilityBar />
           {/* Continuously scrolling horizontal marquee — single row
               of half-size cards drifting left. Doubled track + 50%
               translateX gives a seamless loop; hover pauses. Side

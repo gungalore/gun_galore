@@ -205,6 +205,73 @@ export class FeaturedService {
     }));
   }
 
+  // Public availability summary for the homepage "Featured spots" bar —
+  // how many slots are open to bid on, how many are already taking bids,
+  // and the biddable slots themselves (so a seller can click straight into
+  // a specific open slot). Bid AMOUNTS + COUNTS are public (auction prices,
+  // like any bidding site); bidder identity is deliberately NOT exposed
+  // here — that stays on the authed getSlotsForBidder path.
+  async getFeaturedSummary() {
+    const slots = await this.prisma.featuredSlot.findMany({
+      orderBy: { slotNumber: 'asc' },
+      select: {
+        id: true,
+        slotNumber: true,
+        status: true,
+        currentAuctionId: true,
+        currentAuction: { select: { status: true, closesAt: true } },
+      },
+    });
+    const enriched = await Promise.all(
+      slots.map(async (s) => {
+        const auctionOpen = s.currentAuction?.status === 'OPEN';
+        let topBidCents: number | null = null;
+        let bidCount = 0;
+        if (s.currentAuctionId && auctionOpen) {
+          const [top, count] = await Promise.all([
+            this.prisma.featuredSlotBid.findFirst({
+              where: { auctionId: s.currentAuctionId, status: 'ACTIVE' },
+              orderBy: { amountCents: 'desc' },
+              select: { amountCents: true },
+            }),
+            this.prisma.featuredSlotBid.count({
+              where: { auctionId: s.currentAuctionId, status: 'ACTIVE' },
+            }),
+          ]);
+          topBidCents = top?.amountCents ?? null;
+          bidCount = count;
+        }
+        return {
+          id: s.id,
+          slotNumber: s.slotNumber,
+          status: s.status,
+          auctionOpen,
+          closesAt: s.currentAuction?.closesAt ?? null,
+          topBidCents,
+          bidCount,
+        };
+      }),
+    );
+    // "Available" = biddable = not held by a winner (BIND_WINDOW) and not
+    // live (OCCUPIED). AUCTION_RUNNING is actively taking bids; VACANT is
+    // a slot whose fresh auction opens on the next cron tick.
+    const openSlots = enriched.filter(
+      (s) => s.status === 'AUCTION_RUNNING' || s.status === 'VACANT',
+    );
+    const highest = enriched.reduce(
+      (m, s) => Math.max(m, s.topBidCents ?? 0),
+      0,
+    );
+    return {
+      totalSlots: slots.length,
+      openCount: openSlots.length,
+      takingBidsCount: enriched.filter((s) => s.bidCount > 0).length,
+      occupiedCount: enriched.filter((s) => s.status === 'OCCUPIED').length,
+      topBidCents: highest > 0 ? highest : null,
+      openSlots,
+    };
+  }
+
   // The 10 slots — what's currently featured (for the rail) + which
   // slot has an OPEN auction (for the bid page). Sorted by slotNumber
   // so the rail order is stable.
