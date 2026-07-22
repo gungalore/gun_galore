@@ -118,8 +118,7 @@ export class ShippingController {
     }
 
     try {
-      const event = (body.event ?? body.eventType ?? 'unknown') as string;
-      await this.shipping.processTcgEvent(event, body);
+      await this.shipping.processTcgEvent(body);
     } catch (err) {
       this.logger.error(
         `TCG webhook handler failed: ${(err as Error).message}`,

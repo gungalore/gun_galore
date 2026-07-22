@@ -1071,7 +1071,14 @@ export class ShippingService {
       switch (newStatus) {
         case 'COLLECTED':
         case 'IN_TRANSIT':
-          void this.notifications.shippingDispatched(buyerEmail, buyerName, title, transactionId);
+          // Fire the buyer "on its way" notice ONCE — on the first move into a
+          // collected-or-later state. TCG scans a parcel through several hubs
+          // (collected → at-hub → in-transit → at-destination-hub), and all of
+          // those land here; without this guard the buyer would be emailed +
+          // pushed on every hub scan.
+          if (!current || STATUS_RANK[current] < STATUS_RANK.COLLECTED) {
+            void this.notifications.shippingDispatched(buyerEmail, buyerName, title, transactionId);
+          }
           break;
         case 'OUT_FOR_DELIVERY':
           void this.notifications.shippingOutForDelivery(buyerEmail, buyerName, title, transactionId);
@@ -1158,23 +1165,56 @@ export class ShippingService {
   // ------------------------------------------------------------------
   // TCG webhook event processing
   // ------------------------------------------------------------------
-  async processTcgEvent(event: string, payload: Record<string, unknown>): Promise<void> {
-    this.logger.log(`TCG webhook event: ${event}`);
+  async processTcgEvent(payload: Record<string, unknown>): Promise<void> {
+    // TCG / Shiplogic sends a DIFFERENT payload shape per webhook topic and
+    // there is NO top-level `event` field. Only the tracking-event topics
+    // ("Shipment tracking event" / "Parcel tracking event") carry a top-level
+    // `status` slug; notes, invoices, dimension-changes (an array) and
+    // address-changes have none, so they map to nothing and are ignored here.
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
 
-    const status = this.mapTcgStatus(event, payload);
-    const waybill = (payload.waybillNumber ?? payload.waybill) as string | undefined;
-    if (!waybill) {
-      this.logger.warn('TCG webhook missing waybill number — ignoring');
-      return;
-    }
+    const status = this.mapTcgStatus(payload);
     if (!status) {
-      this.logger.warn(`TCG webhook for ${waybill} produced no mapped status — ignoring`);
+      // Not an actionable tracking status (e.g. collection-assigned, at a
+      // hub-internal state, a note/invoice topic, or an unknown slug).
+      this.logger.log(
+        `TCG webhook: status "${String(payload.status ?? 'none')}" is not customer-actionable — ignoring`,
+      );
       return;
     }
 
-    const transaction = await this.findTransactionByTrackingNumber(waybill);
+    // The trackable reference is what we stored at booking — short_tracking_
+    // reference, falling back to custom. The webhook may carry it under
+    // several field names (shipment- vs parcel-level); try each until one
+    // matches a transaction. Parcel refs look like "SLXS7GL/1" — strip the
+    // "/N" parcel suffix.
+    const parcelRef = Array.isArray(payload.parcel_tracking_references)
+      ? String(payload.parcel_tracking_references[0] ?? '').split('/')[0]
+      : undefined;
+    const candidates = [
+      payload.short_tracking_reference,
+      payload.custom_tracking_reference,
+      payload.shipment_short_tracking_reference,
+      payload.shipment_custom_tracking_reference,
+      parcelRef,
+    ].filter((r): r is string => typeof r === 'string' && r.length > 0);
+
+    if (candidates.length === 0) {
+      this.logger.warn('TCG webhook missing a tracking reference — ignoring');
+      return;
+    }
+
+    let transaction: Awaited<
+      ReturnType<typeof this.findTransactionByTrackingNumber>
+    > = null;
+    for (const ref of candidates) {
+      transaction = await this.findTransactionByTrackingNumber(ref);
+      if (transaction) break;
+    }
     if (!transaction) {
-      this.logger.warn(`TCG waybill ${waybill} did not match any transaction — ignoring`);
+      this.logger.warn(
+        `TCG webhook refs [${candidates.join(', ')}] matched no transaction — ignoring`,
+      );
       return;
     }
 
@@ -1210,26 +1250,33 @@ export class ShippingService {
   // ------------------------------------------------------------------
   // Status mapping helpers
   // ------------------------------------------------------------------
-  private mapTcgStatus(
-    event: string,
-    payload: Record<string, unknown>,
-  ): ShippingStatus | null {
-    // TCG event types from CLAUDE.md: shipment_note, shipment_tracking_event,
-    // invoice_generated, parcel_tracking_event, shipment_file_upload.
-    // TODO: verify exact status strings from TCG webhook docs.
-    const statusStr = ((payload.status ?? '') as string).toLowerCase();
-
-    if (event === 'parcel_tracking_event' || event === 'shipment_tracking_event') {
-      if (statusStr.includes('collect')) return 'COLLECTED';
-      if (statusStr.includes('in transit') || statusStr.includes('in_transit')) return 'IN_TRANSIT';
-      if (statusStr.includes('out for delivery') || statusStr.includes('out_for_delivery')) return 'OUT_FOR_DELIVERY';
-      if (statusStr.includes('delivered')) return 'DELIVERED';
-      if (statusStr.includes('failed') || statusStr.includes('unsuccessful')) return 'DELIVERY_FAILED';
-      if (statusStr.includes('return')) return 'RETURNED';
-    }
-
-    if (event === 'shipment_note') return 'PENDING';
-    return null;
+  private mapTcgStatus(payload: Record<string, unknown>): ShippingStatus | null {
+    // The Courier Guy / Shiplogic tracking-status slugs are hyphenated
+    // (verified against TCG's official "Shipment statuses" + webhook docs).
+    // Explicit allow-list → our 6 customer-facing states. Anything NOT here
+    // (collection-assigned/-unassigned/-rejected/-exception/-failed-attempt,
+    // awaiting-dropoff, on-hold(-internal), delivery-assigned/-unassigned/
+    // -rejected, ready-for-pickup handled below, cancelled, floor-check,
+    // submitted, manifested-internal, …) is an intermediate/internal state we
+    // deliberately do NOT notify the customer about.
+    const slug = String(payload.status ?? '').trim().toLowerCase();
+    const map: Record<string, ShippingStatus> = {
+      collected: 'COLLECTED',
+      'in-transit': 'IN_TRANSIT',
+      'at-hub': 'IN_TRANSIT',
+      'at-destination-hub': 'IN_TRANSIT',
+      'ready-for-dispatch': 'IN_TRANSIT',
+      manifested: 'IN_TRANSIT',
+      'returned-to-hub': 'IN_TRANSIT',
+      'out-for-delivery': 'OUT_FOR_DELIVERY',
+      'ready-for-pickup': 'OUT_FOR_DELIVERY',
+      delivered: 'DELIVERED',
+      'delivery-failed-attempt': 'DELIVERY_FAILED',
+      'delivery-exception': 'DELIVERY_FAILED',
+      undeliverable: 'DELIVERY_FAILED',
+      'returned-to-sender': 'RETURNED',
+    };
+    return map[slug] ?? null;
   }
 
   private mapPudoStatus(payload: Record<string, unknown>): ShippingStatus | null {
