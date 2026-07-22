@@ -59,6 +59,7 @@ function makeMocks() {
     prisma as never,
     notifications as never,
     actionTokens as never,
+    { record: jest.fn() } as never,
   );
   return { service, prisma, tx, notifications };
 }

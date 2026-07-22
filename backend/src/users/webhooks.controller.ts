@@ -27,9 +27,21 @@ interface ClerkUserData {
   };
 }
 
+// Session events (session.created / .ended / .removed / .revoked) deliver a
+// Session object: data.id = session id, data.user_id = the Clerk user id.
+interface ClerkSessionData {
+  user_id: string;
+  created_at?: number;
+  last_active_at?: number;
+  status?: string;
+}
+
 interface ClerkWebhookEvent {
   type: string;
-  data: ClerkUserData;
+  // User events and session events share the endpoint; the intersection lets
+  // us read either shape (branches are gated on `type`, so the runtime object
+  // always has the fields the branch touches).
+  data: ClerkUserData & ClerkSessionData;
 }
 
 @Controller('webhooks')
@@ -116,6 +128,24 @@ export class WebhooksController {
 
       if (type === 'user.deleted') {
         await this.usersService.deleteByClerkId(data.id);
+      }
+
+      // Login capture — one LoginEvent per Clerk session. session.created
+      // opens it; the end events close it so we can compute session length.
+      if (type === 'session.created') {
+        await this.usersService.recordLoginEvent({
+          sessionId: data.id,
+          userId: data.user_id,
+          createdAt: data.created_at,
+          lastActiveAt: data.last_active_at,
+        });
+      }
+      if (
+        type === 'session.ended' ||
+        type === 'session.removed' ||
+        type === 'session.revoked'
+      ) {
+        await this.usersService.closeLoginEvent(data.id, type);
       }
     } catch (err) {
       this.logger.error(

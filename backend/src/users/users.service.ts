@@ -136,6 +136,52 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { clerkId } });
   }
 
+  // ── Login insights (Clerk session webhook) ─────────────────────────
+  // Open a LoginEvent for a new Clerk session (idempotent on clerkSessionId
+  // against Svix retries) and stamp User.lastLoginAt. If the user row doesn't
+  // exist yet (session.created racing user.created on a first-ever login), we
+  // skip — the ClerkGuard lazy-sync creates the row on the next authed request
+  // and future logins record normally.
+  async recordLoginEvent(s: {
+    sessionId: string;
+    userId: string;
+    createdAt?: number;
+    lastActiveAt?: number;
+  }): Promise<void> {
+    if (!s.sessionId || !s.userId) return;
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId: s.userId },
+      select: { id: true },
+    });
+    if (!user) return;
+    const startedAt = s.createdAt ? new Date(s.createdAt) : new Date();
+    const lastActiveAt = s.lastActiveAt ? new Date(s.lastActiveAt) : null;
+    await this.prisma.loginEvent.upsert({
+      where: { clerkSessionId: s.sessionId },
+      create: {
+        clerkSessionId: s.sessionId,
+        userId: user.id,
+        startedAt,
+        lastActiveAt,
+      },
+      update: { lastActiveAt: lastActiveAt ?? undefined },
+    });
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: startedAt },
+    });
+  }
+
+  // Close an open LoginEvent (session ended / revoked) so its duration is
+  // known. Idempotent — a second end event finds no open row and no-ops.
+  async closeLoginEvent(sessionId: string, reason: string): Promise<void> {
+    if (!sessionId) return;
+    await this.prisma.loginEvent.updateMany({
+      where: { clerkSessionId: sessionId, endedAt: null },
+      data: { endedAt: new Date(), endReason: reason },
+    });
+  }
+
   async upsertFromClerk(data: {
     clerkId: string;
     email: string;

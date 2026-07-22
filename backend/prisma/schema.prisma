@@ -432,6 +432,9 @@ model User {
   supportTickets SupportTicket[] @relation("UserSupportTickets")
   // ── Formal complaints (CPA/TPPP complaints register) ─────────────
   complaints     Complaint[]     @relation("UserComplaints")
+  // ── Login / activity insights ────────────────────────────────────
+  lastLoginAt    DateTime?
+  loginEvents    LoginEvent[]
 
   // ── Multi-item orders (Phase 8b) ─────────────────────────────────
   orders Order[] @relation("BuyerOrders")
@@ -3600,3 +3603,84 @@ model Swap {
   @@index([status, cashPayByAt])
 }
 
+
+// ─── Insights / behavioural analytics (first-party, internal) ────────
+// Raw append-only behavioural events. Written fire-and-forget via a
+// buffered ActivityService (never in a request transaction). Rolled up
+// nightly into DailyUserStats / HourlyPlatformStats and pruned after 12
+// months (privacy policy §9). userId is the resolved User.id when cheaply
+// known; clerkId/deviceId hold the raw identity for hot read paths where a
+// lookup would be wasteful (resolved in the rollup). No FK on userId so the
+// append path stays constraint-free and can store pre-resolution rows.
+model UserEvent {
+  id          String   @id @default(cuid())
+  userId      String?
+  clerkId     String?
+  deviceId    String?
+  sessionId   String?
+  // listing_view | search | offer_placed | bid_placed | wishlist_add |
+  // cart_add | checkout_started | page_view
+  eventType   String
+  listingId   String?
+  query       String?
+  resultCount Int?
+  amountCents Int?
+  path        String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([clerkId, createdAt])
+}
+
+// One row per Clerk login session. clerkSessionId is unique so a later
+// session.ended/removed webhook can find + close the row and compute
+// session length.
+model LoginEvent {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clerkSessionId String    @unique
+  startedAt      DateTime
+  lastActiveAt   DateTime?
+  endedAt        DateTime?
+  endReason      String?
+  createdAt      DateTime  @default(now())
+
+  @@index([userId, startedAt])
+}
+
+// Nightly per-user rollup (kept in aggregate form beyond the raw-event
+// retention window). Upserted idempotently on (day, userId).
+model DailyUserStats {
+  id           String   @id @default(cuid())
+  day          DateTime @db.Date
+  userId       String
+  logins       Int      @default(0)
+  pageViews    Int      @default(0)
+  listingViews Int      @default(0)
+  searches     Int      @default(0)
+  offers       Int      @default(0)
+  bids         Int      @default(0)
+  events       Int      @default(0)
+
+  @@unique([day, userId])
+  @@index([day])
+  @@index([userId, day])
+}
+
+// Nightly platform activity by hour-of-clock + event type (drives the
+// "when are users active / when do things sell" heatmaps). Upserted on
+// (hour, eventType).
+model HourlyPlatformStats {
+  id          String   @id @default(cuid())
+  hour        DateTime
+  eventType   String
+  count       Int      @default(0)
+  uniqueUsers Int      @default(0)
+
+  @@unique([hour, eventType])
+  @@index([hour])
+}

@@ -12,6 +12,7 @@ import { MobileSearchBar } from '@/components/mobile-search-bar';
 import { StickyFeaturedStrip } from '@/components/sticky-featured-strip';
 import { ConnectionStatusBanner } from '@/components/connection-status-banner';
 import { SwUpdateBanner } from '@/components/sw-update-banner';
+import { PageViewTracker } from '@/components/page-view-tracker';
 import { PushFirstLaunchPrompt } from '@/components/push-first-launch-prompt';
 import { ProfileSetupPrompt } from '@/components/profile-setup-prompt';
 import { WishlistProvider } from '@/lib/use-wishlist';
@@ -257,6 +258,7 @@ export default function RootLayout({
               null when nothing's to show) so they cost a single
               effect-mount when there's no event. */}
           <ConnectionStatusBanner />
+          <PageViewTracker />
           <SwUpdateBanner />
           <PublicNav />
           {/* Search affordance for standalone-PWA users on the Browse

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { trackCartAdd } from './activity-beacon';
 
 // Phase 8b/8d cart — client-only, localStorage-backed. A cart may span
 // MULTIPLE sellers (Phase 8d): it maps to ONE Order + one buyer EFT, which
@@ -71,6 +72,7 @@ export function addToCart(item: CartItem): AddResult {
     return { status: 'exists' };
   }
   write([...items, item]);
+  void trackCartAdd(item.listingId); // insights beacon (fire-and-forget)
   return { status: 'added' };
 }
 

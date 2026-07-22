@@ -26,7 +26,7 @@ export const metadata = {
 export default function PrivacyPage() {
   return (
     <>
-      <LegalDocHeader title="Privacy Policy" lastUpdated="Effective 16 July 2026" />
+      <LegalDocHeader title="Privacy Policy" lastUpdated="Effective 22 July 2026" />
 
       <h2>1. Who we are</h2>
       <p>
@@ -123,8 +123,24 @@ export default function PrivacyPage() {
       <h3>3.6 Device and session</h3>
       <ul>
         <li>IP address, browser type, operating system, login times, session activity (handled by Clerk and visible to you in your Clerk account settings)</li>
-        <li>Aggregated, anonymised performance metrics</li>
+        <li>Performance and error metrics used to keep the Platform working</li>
       </ul>
+
+      <h3>3.7 Usage and activity analytics</h3>
+      <p>
+        To understand how the Platform is used, improve it, and decide what
+        to feature and promote, we collect first-party analytics about your
+        activity on GunGalore. This includes the pages and listings you view,
+        the searches you run, items you save or make offers/bids on, and when
+        and how often you sign in. Where you are signed in, this activity is
+        linked to your account; where you are signed out, it is linked to a
+        first-party device identifier only. We use this internally to produce
+        usage statistics and to time our own communications (for example, our
+        marketing SMS). This is first-party analytics only —{' '}
+        <strong>we do not sell it, and we do not share it with third-party
+        ad networks.</strong> You can object to this profiling (see section 10)
+        and opt out of marketing at any time.
+      </p>
 
       <h2>4. How we collect this information</h2>
       <p>
@@ -231,6 +247,7 @@ export default function PrivacyPage() {
         <li><strong>Encrypted SA ID number:</strong> retained (AES-GCM encrypted at rest) while your account is active, under our firearms-transfer compliance obligations, so we can complete a SAP 534 form if one of your firearms sells; kept for the period required by law after any such transfer, and otherwise deleted on account closure.</li>
         <li><strong>KYC selfie:</strong> not retained by GunGalore; only the match score is kept.</li>
         <li><strong>Email and SMS logs:</strong> 90 days.</li>
+        <li><strong>Usage analytics (raw activity events):</strong> up to 12 months, after which they are deleted; we keep only aggregated, de-identified statistics beyond that period.</li>
         <li><strong>Banking details:</strong> retained while your account is active; deleted on account closure unless there is an unresolved transaction or legal-hold reason to retain.</li>
         <li><strong>Cookies:</strong> see our{' '}
           <a href="/cookies" style={{ color: 'var(--red)' }}>Cookie Policy</a> for specific retention periods.

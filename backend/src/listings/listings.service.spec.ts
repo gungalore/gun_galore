@@ -41,6 +41,7 @@ describe('ListingsService — browse filters & brand facet', () => {
       {} as never, // firearmLicence
       {} as never, // categories
       {} as never, // wishlistAlerts (P5.2)
+      { record: jest.fn() } as never, // activity
     );
   });
 
@@ -118,6 +119,7 @@ describe('ListingsService — findById projection & owner-awareness', () => {
       {} as never, // firearmLicence
       {} as never, // categories
       {} as never, // wishlistAlerts
+      { record: jest.fn() } as never, // activity
     );
   });
 

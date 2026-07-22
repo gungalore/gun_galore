@@ -53,6 +53,7 @@ export class TasksService {
   // DD-F — re-entrancy guard for the hourly stock-ready collection re-book
   // sweep (courier calls can be slow; bookings are idempotent but sequential).
   private dealCollectionSweepRunning = false;
+  private statsRollupRunning = false;
 
   constructor(
     private readonly offersService: OffersService,
@@ -1455,5 +1456,104 @@ export class TasksService {
     this.logger.log(
       `Credit alert dispatched: service=${service} severity=${severity} balance=${balance}${unit ? ' ' + unit : ''} threshold=${threshold} admins=${admins.length}`,
     );
+  }
+
+  // ─── Insights rollups (Phase 2) ─────────────────────────────────────
+  // Nightly at 02:00 — aggregate the last ~2 days of raw UserEvent +
+  // LoginEvent into DailyUserStats (per-user daily) and HourlyPlatformStats
+  // (platform activity by hour-of-clock). A 2-day lookback + idempotent
+  // ON CONFLICT upserts means late-arriving events and day boundaries are
+  // never missed and a re-run just recomputes the same buckets. Raw events
+  // stay the source of truth; these rollups survive the 12-month prune so
+  // aggregate history is permanent (privacy policy §9).
+  @Cron('0 2 * * *')
+  async rollupInsights(): Promise<void> {
+    if (this.statsRollupRunning) return;
+    this.statsRollupRunning = true;
+    const to = new Date();
+    const from = new Date(to.getTime() - 2 * 24 * 60 * 60 * 1000);
+    try {
+      // 0) Resolve hot-path events that only carried a raw clerkId to a
+      //    User.id, so they count in the per-user rollup.
+      await this.prisma.$executeRaw`
+        UPDATE "UserEvent" e SET "userId" = u.id
+        FROM "User" u
+        WHERE e."userId" IS NULL AND e."clerkId" IS NOT NULL
+          AND u."clerkId" = e."clerkId"
+          AND e."createdAt" >= ${from} AND e."createdAt" < ${to}`;
+
+      // 1) Per-user daily activity.
+      await this.prisma.$executeRaw`
+        INSERT INTO "DailyUserStats"
+          ("id","day","userId","pageViews","listingViews","searches","offers","bids","events")
+        SELECT gen_random_uuid()::text, date_trunc('day', "createdAt")::date, "userId",
+          COUNT(*) FILTER (WHERE "eventType" = 'page_view'),
+          COUNT(*) FILTER (WHERE "eventType" = 'listing_view'),
+          COUNT(*) FILTER (WHERE "eventType" = 'search'),
+          COUNT(*) FILTER (WHERE "eventType" = 'offer_placed'),
+          COUNT(*) FILTER (WHERE "eventType" = 'bid_placed'),
+          COUNT(*)
+        FROM "UserEvent"
+        WHERE "userId" IS NOT NULL AND "createdAt" >= ${from} AND "createdAt" < ${to}
+        GROUP BY 2, 3
+        ON CONFLICT ("day","userId") DO UPDATE SET
+          "pageViews" = EXCLUDED."pageViews", "listingViews" = EXCLUDED."listingViews",
+          "searches" = EXCLUDED."searches", "offers" = EXCLUDED."offers",
+          "bids" = EXCLUDED."bids", "events" = EXCLUDED."events"`;
+
+      // 2) Per-user daily logins (from LoginEvent).
+      await this.prisma.$executeRaw`
+        INSERT INTO "DailyUserStats" ("id","day","userId","logins")
+        SELECT gen_random_uuid()::text, date_trunc('day', "startedAt")::date, "userId", COUNT(*)
+        FROM "LoginEvent"
+        WHERE "startedAt" >= ${from} AND "startedAt" < ${to}
+        GROUP BY 2, 3
+        ON CONFLICT ("day","userId") DO UPDATE SET "logins" = EXCLUDED."logins"`;
+
+      // 3) Platform activity by hour + event type (drives the heatmaps).
+      await this.prisma.$executeRaw`
+        INSERT INTO "HourlyPlatformStats" ("id","hour","eventType","count","uniqueUsers")
+        SELECT gen_random_uuid()::text, date_trunc('hour', "createdAt"), "eventType",
+          COUNT(*), COUNT(DISTINCT COALESCE("userId","clerkId","deviceId"))
+        FROM "UserEvent"
+        WHERE "createdAt" >= ${from} AND "createdAt" < ${to}
+        GROUP BY 2, 3
+        ON CONFLICT ("hour","eventType") DO UPDATE SET
+          "count" = EXCLUDED."count", "uniqueUsers" = EXCLUDED."uniqueUsers"`;
+    } catch (err) {
+      this.logger.error(`rollupInsights failed: ${(err as Error).message}`);
+    } finally {
+      this.statsRollupRunning = false;
+      await this.recordCronRun('stats-rollup');
+    }
+  }
+
+  // Weekly — prune raw behavioural events older than 12 months (privacy
+  // policy §9). Rollups above already captured them, so aggregate history
+  // survives. Batched delete so a large purge can't lock the table.
+  @Cron(CronExpression.EVERY_WEEK)
+  async pruneRawEvents(): Promise<void> {
+    const cutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    try {
+      let total = 0;
+      for (let i = 0; i < 100; i++) {
+        const batch = await this.prisma.userEvent.findMany({
+          where: { createdAt: { lt: cutoff } },
+          select: { id: true },
+          take: 5000,
+        });
+        if (batch.length === 0) break;
+        const del = await this.prisma.userEvent.deleteMany({
+          where: { id: { in: batch.map((b) => b.id) } },
+        });
+        total += del.count;
+        if (batch.length < 5000) break;
+      }
+      if (total > 0) this.logger.log(`Pruned ${total} raw events older than 12 months`);
+    } catch (err) {
+      this.logger.warn(`pruneRawEvents failed: ${(err as Error).message}`);
+    } finally {
+      await this.recordCronRun('event-prune');
+    }
   }
 }

@@ -58,6 +58,7 @@ function makeMocks() {
     notifications as never,
     contactFilter as never,
     actionTokens as never,
+    { record: jest.fn() } as never,
   );
   // The notify wrappers re-fetch and fan out — irrelevant to the state
   // machine under test. Spy them out and assert the CALLS.

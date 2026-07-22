@@ -26,6 +26,7 @@ import { FirearmLicenceService } from './firearm-licence.service';
 import { inventoryEligible } from '../payments/inventory';
 import { CategoriesService } from '../categories/categories.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
+import { ActivityService } from '../activity/activity.service';
 import { validateAndCleanAttributes } from './attribute-validation';
 import { Prisma } from '@prisma/client';
 
@@ -265,6 +266,7 @@ export class ListingsService {
     private readonly firearmLicence: FirearmLicenceService,
     private readonly categories: CategoriesService,
     private readonly wishlistAlerts: WishlistAlertsService,
+    private readonly activity: ActivityService,
   ) {}
 
   // Pre-upload the firearm serial + licence proof photos to Cloudinary
@@ -1815,6 +1817,17 @@ export class ListingsService {
       limit,
     });
 
+    // Insights — record only real TEXT searches (not blank browse/filter
+    // changes). Query text + result count is the best "what people want vs
+    // what we stock" signal; zero-result searches flag advertising/stock gaps.
+    if (typeof q === 'string' && q.trim().length > 0) {
+      this.activity.record({
+        eventType: 'search',
+        query: q.trim(),
+        resultCount: result.estimatedTotalHits ?? 0,
+      });
+    }
+
     // Meilisearch returns its own flat document shape (id, title, status,
     // categorySlug, etc.) — NO relations like `images`, `seller`, or
     // `category`. Returning those raw hits would crash every consumer
@@ -1988,6 +2001,14 @@ export class ListingsService {
     if (!listing) throw new NotFoundException('Listing not found');
 
     const isOwner = !!clerkId && listing.seller?.clerkId === clerkId;
+
+    // Insights — a listing view (fire-and-forget; owner previews still record
+    // but the operator's own views are filtered out by ActivityService).
+    this.activity.record({
+      eventType: 'listing_view',
+      actor: { clerkId },
+      listingId: id,
+    });
 
     if (isOwner) {
       // Owner sees their own listing at any status, plus the private extras.

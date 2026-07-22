@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
+import { ActivityService } from '../activity/activity.service';
 import { PlaceBidDto } from './dto/place-bid.dto';
 import { Prisma } from '@prisma/client';
 
@@ -71,6 +72,7 @@ export class AuctionsService {
     // AUCTION_BID + CHECKOUT tokens so the recipient of the outbid
     // / win SMS can act from the link without signing in.
     private readonly actionTokens: ActionTokensService,
+    private readonly activity: ActivityService,
   ) {}
 
   // --- Public read endpoints --------------------------------------------
@@ -328,6 +330,12 @@ export class AuctionsService {
         // "you've been outbid" rows for them on this listing.
         void this.notifications.resolveByEntity('listing', listingId, {
           userId: buyer.id,
+        });
+        this.activity.record({
+          eventType: 'bid_placed',
+          actor: { userId: buyer.id },
+          listingId,
+          amountCents: outcome.currentBid,
         });
         return {
           currentBid: outcome.currentBid,

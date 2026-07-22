@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TransactionsService } from '../payments/transactions.service';
+import { ActivityService } from '../activity/activity.service';
 import { CreateOrderDto } from '../payments/dto/create-order.dto';
 
 // Phase 8b — multi-item single-seller cart. A thin facade: checkout delegates
@@ -11,9 +12,15 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly transactions: TransactionsService,
+    private readonly activity: ActivityService,
   ) {}
 
   checkout(clerkId: string, dto: CreateOrderDto, frontendUrl: string) {
+    this.activity.record({
+      eventType: 'checkout_started',
+      actor: { clerkId },
+      metadata: { lines: Array.isArray(dto.lines) ? dto.lines.length : 1 },
+    });
     return this.transactions.createOrderCheckout(clerkId, dto, frontendUrl);
   }
 

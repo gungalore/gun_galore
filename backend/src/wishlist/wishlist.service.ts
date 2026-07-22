@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ActivityService } from '../activity/activity.service';
 
 /**
  * Wishlist (Save-for-later) service.
@@ -25,7 +26,10 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Injectable()
 export class WishlistService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activity: ActivityService,
+  ) {}
 
   /** Resolve the platform user from the Clerk ID — every endpoint
    * needs this, so DRY it out. Throws if the user isn't provisioned
@@ -68,6 +72,11 @@ export class WishlistService {
     if (existing) return { added: false };
     await this.prisma.watchedListing.create({
       data: { userId, listingId },
+    });
+    this.activity.record({
+      eventType: 'wishlist_add',
+      actor: { userId },
+      listingId,
     });
     return { added: true };
   }

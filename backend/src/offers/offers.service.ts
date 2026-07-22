@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
+import { ActivityService } from '../activity/activity.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { CounterOfferDto } from './dto/counter-offer.dto';
@@ -40,6 +41,7 @@ export class OffersService {
     // tokens at the moment each notification fires so the recipient
     // can act from the SMS link without signing in.
     private readonly actionTokens: ActionTokensService,
+    private readonly activity: ActivityService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -162,6 +164,14 @@ export class OffersService {
             expiresAt,
           },
         });
+
+    this.activity.record({
+      eventType: 'offer_placed',
+      actor: { userId: buyer.id },
+      listingId: listing.id,
+      amountCents: dto.offerAmount,
+      metadata: { status },
+    });
 
     if (autoDecline) {
       void this.notifyBuyerOfReject(offer.id);
