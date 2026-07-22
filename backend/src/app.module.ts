@@ -39,6 +39,7 @@ import { MarketingModule } from './marketing/marketing.module';
 import { SavedSearchesModule } from './saved-searches/saved-searches.module';
 import { ReportsModule } from './reports/reports.module';
 import { SupportModule } from './support/support.module';
+import { ComplaintsModule } from './complaints/complaints.module';
 import { PushModule } from './push/push.module';
 import { AskGgModule } from './ask-gg/ask-gg.module';
 import { ReloadingModule } from './reloading/reloading.module';
@@ -105,6 +106,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     SubscriptionsModule,
     LoadLabModule,
     SupportModule,
+    ComplaintsModule,
   ],
   controllers: [AppController],
   providers: [

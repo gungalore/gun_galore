@@ -20,7 +20,15 @@ import { PrismaService } from '../prisma/prisma.service';
 // AUCTION (AU) listing prefix, because an experience is still fundamentally a
 // BUY_NOW or AUCTION listing; HP only distinguishes the buyer's per-booking
 // EFT reference so hunting bookings reconcile / report separately.
-export type ReferencePrefix = 'UM' | 'AU' | 'TS' | 'FS' | 'SW' | 'SB' | 'HP';
+export type ReferencePrefix =
+  | 'UM'
+  | 'AU'
+  | 'TS'
+  | 'FS'
+  | 'SW'
+  | 'SB'
+  | 'HP'
+  | 'CO'; // CO — formal complaint case number (Complaint.referenceNumber)
 
 const LISTING_TYPE_TO_PREFIX: Record<ListingType, ReferencePrefix> = {
   BUY_NOW: 'UM',

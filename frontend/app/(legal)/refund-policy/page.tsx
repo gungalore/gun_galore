@@ -10,6 +10,7 @@
 //     dispatch-SLA auto-refund, raises admin alert
 //   - Admin dossier actions: release / refund / resolve-dispute-release
 
+import Link from 'next/link';
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -119,14 +120,30 @@ export default function RefundPolicyPage() {
 
       <h2>4. Seller doesn't dispatch — automatic refund</h2>
       <p>
-        If the seller doesn't confirm dispatch within 48 hours of your
-        payment, the system sends them a reminder. If they still don't
-        dispatch, the dispatch-SLA cron will{' '}
-        <strong>automatically refund you in full</strong> (typically
-        within 24 hours of the SLA breach) and notify both parties.
-        You don't need to do anything — the refund is automatic and
-        records as a "dispatch SLA auto-refund" in your transaction
-        history.
+        For courier orders (PUDO and The Courier Guy), the seller has{' '}
+        <strong>5 days from accepting your order</strong> to dispatch it.
+        We send them a reminder before the deadline. If they still haven't
+        dispatched by the end of that window, the system{' '}
+        <strong>automatically refunds you in full</strong> and notifies
+        both parties — you don't need to do anything. The refund records
+        as a &quot;dispatch SLA auto-refund&quot; in your transaction
+        history. (This automatic refund applies to courier orders;
+        collection and dealer-transfer orders follow the dispute route in
+        section&nbsp;6 instead.)
+      </p>
+
+      <h2>4a. Item damaged in transit</h2>
+      <p>
+        If your parcel arrives damaged, <strong>do not confirm receipt</strong>.
+        Photograph the packaging and the damage, then raise it from the order
+        page (or lodge a{' '}
+        <Link href="/complaints/new" style={{ color: 'var(--red)' }}>
+          formal complaint
+        </Link>
+        ) within 48&nbsp;hours of delivery. Your payment stays held while we
+        investigate with you, the seller and the courier. Where the courier is
+        at fault we pursue the courier claim; where the item was misrepresented
+        or poorly packed we resolve it in line with sections&nbsp;2 and&nbsp;6.
       </p>
 
       <h2>5. What is not refundable</h2>

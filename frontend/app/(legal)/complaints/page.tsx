@@ -5,6 +5,7 @@
 // points to the correct consumer, privacy, payment and firearms
 // forums — never an industry association.
 
+import Link from 'next/link';
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -26,8 +27,49 @@ export default function ComplaintsPage() {
         it to, depending on the subject.
       </p>
 
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 12,
+          background: 'var(--bg-card)',
+          border: '0.5px solid var(--red)',
+          borderRadius: 10,
+          padding: '14px 16px',
+          margin: '18px 0',
+        }}
+      >
+        <span style={{ fontSize: 14, fontWeight: 600, flex: 1, minWidth: 200 }}>
+          Lodge a complaint online and get a case reference number to track it.
+        </span>
+        <Link
+          href="/complaints/new"
+          style={{
+            background: 'var(--red)',
+            color: '#fff',
+            padding: '9px 16px',
+            borderRadius: 8,
+            textDecoration: 'none',
+            fontSize: 14,
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Lodge a complaint →
+        </Link>
+      </div>
+
       <h2>1. How to raise a complaint</h2>
-      <p>You can lodge a complaint through either of these channels:</p>
+      <p>
+        The quickest way is our{' '}
+        <Link href="/complaints/new" style={{ color: 'var(--red)' }}>
+          online complaint form
+        </Link>{' '}
+        — you can attach photos, link the order it relates to, and you&apos;ll
+        get a case reference number (e.g. CO000123) to track it. You can also
+        reach us through either of these channels:
+      </p>
       <p
         style={{
           background: 'var(--bg-inset)',

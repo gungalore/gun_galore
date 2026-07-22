@@ -1003,7 +1003,7 @@ export class ShippingService {
           deliveredAt: true,
           swapId: true, // SWOP S4 — drives the both-legs-delivered rollup
           listing: { select: { title: true } },
-          buyer: { select: { email: true, firstName: true } },
+          buyer: { select: { email: true, firstName: true, phone: true } },
           seller: {
             select: {
               email: true,
@@ -1068,6 +1068,7 @@ export class ShippingService {
       // Fire-and-forget notification for buyer
       const buyerEmail = transaction.buyer.email;
       const buyerName = transaction.buyer.firstName ?? 'there';
+      const buyerPhone = transaction.buyer.phone;
       const title = transaction.listing.title;
       switch (newStatus) {
         case 'COLLECTED':
@@ -1082,10 +1083,10 @@ export class ShippingService {
           }
           break;
         case 'OUT_FOR_DELIVERY':
-          void this.notifications.shippingOutForDelivery(buyerEmail, buyerName, title, transactionId);
+          void this.notifications.shippingOutForDelivery(buyerEmail, buyerName, title, transactionId, buyerPhone);
           break;
         case 'DELIVERED':
-          void this.notifications.shippingDelivered(buyerEmail, buyerName, title, transactionId);
+          void this.notifications.shippingDelivered(buyerEmail, buyerName, title, transactionId, buyerPhone);
           break;
         case 'DELIVERY_FAILED':
           void this.notifications.shippingFailed(buyerEmail, buyerName, title, transactionId);

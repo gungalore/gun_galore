@@ -2732,6 +2732,7 @@ export class NotificationsService {
     buyerName: string,
     listingTitle: string,
     transactionId: string,
+    buyerPhone?: string | null,
   ) {
     const html = this.email({
       status: { tone: 'pending', label: 'Out for delivery' },
@@ -2744,6 +2745,12 @@ export class NotificationsService {
       preheader: `${listingTitle} is out for delivery today`,
     });
     await this.send(buyerEmail, 'Out for delivery — ' + listingTitle, html);
+    // High-value SMS — the buyer wants to be home for it.
+    await this.sendSms(
+      buyerPhone,
+      `Gun Galore: ${truncate(listingTitle, 34)} is out for delivery today.`,
+      `buyer-out-for-delivery-${transactionId}`,
+    );
   }
 
   async shippingDelivered(
@@ -2751,11 +2758,13 @@ export class NotificationsService {
     buyerName: string,
     listingTitle: string,
     transactionId: string,
+    buyerPhone?: string | null,
   ) {
     const url = `${this.appUrl}/transactions/${transactionId}`;
-    // In-app inbox: action-required (buyer should confirm receipt
-    // within 7 days or payment auto-releases anyway). Cleared by
-    // resolveByEntity('transaction', txId, buyerUserId) on confirm.
+    // In-app inbox: action-required — the buyer must confirm receipt to
+    // release the seller's payout (there is NO auto-release for physical
+    // goods; funds stay held until the buyer confirms or an admin reviews).
+    // Cleared by resolveByEntity('transaction', txId, buyerUserId) on confirm.
     await this.persistByEmail(buyerEmail, {
       category: 'BUYER',
       type: 'shipping_delivered',
@@ -2770,11 +2779,17 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'success', label: 'Delivered' },
       headline: 'Delivered',
-      body: `Hi ${b(buyerName)}, your ${b(listingTitle)} has been delivered. Please confirm receipt in your dashboard so the seller can be paid. You have 7 days to confirm — after that, the payment will auto-release.`,
+      body: `Hi ${b(buyerName)}, your ${b(listingTitle)} has been delivered. Please confirm receipt in your dashboard so the seller can be paid. If anything is wrong with the item, don't confirm — raise it from the order page and we'll hold the payment while we look into it.`,
       cta: { label: 'Confirm receipt', url },
       preheader: `${listingTitle} was delivered`,
     });
     await this.send(buyerEmail, 'Delivered — ' + listingTitle, html);
+    // High-value SMS — nudges the buyer to confirm, which releases the payout.
+    await this.sendSms(
+      buyerPhone,
+      `Gun Galore: ${truncate(listingTitle, 30)} was delivered. Confirm receipt so the seller can be paid: ${url}`,
+      `buyer-delivered-${transactionId}`,
+    );
   }
 
   async shippingFailed(

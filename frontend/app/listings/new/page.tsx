@@ -2123,7 +2123,7 @@ export default function NewListingPage() {
           <StepAccordion
             number={1}
             title="Photos"
-            description="Buyers click photos first. Bright, sharp, multiple angles. 1–5 photos, drag to reorder."
+            description="Buyers click photos first. Bright, sharp, every angle. 1–6 photos, drag to reorder."
             status={statusFor(1)}
             expanded={isOpen(1)}
             onToggle={() => toggleStep(1)}
@@ -2143,8 +2143,23 @@ export default function NewListingPage() {
               files={images}
               onChange={setImages}
               minFiles={1}
-              maxFiles={5}
+              maxFiles={6}
             />
+            {/* Multi-angle nudge — the single biggest thing a seller can do
+                to avoid "not as described" disputes later. */}
+            <p
+              style={{
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: 'var(--text-tertiary)',
+                margin: '8px 2px 0',
+              }}
+            >
+              📸 Show every angle — front, back, both sides, any serial number
+              or markings, and a close-up of any wear or damage. Honest photos
+              from all sides mean fewer buyer questions and protect you if a
+              buyer ever disputes the item.
+            </p>
             {/* Ask Boet "Help me describe this" — reads the photos and
                 proposes title / description / category / condition.
                 Pure helper: parent owns the form state via onApply.

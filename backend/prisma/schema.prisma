@@ -430,6 +430,8 @@ model User {
 
   // ── Support tickets (Phase 7 P7.2) ───────────────────────────────
   supportTickets SupportTicket[] @relation("UserSupportTickets")
+  // ── Formal complaints (CPA/TPPP complaints register) ─────────────
+  complaints     Complaint[]     @relation("UserComplaints")
 
   // ── Multi-item orders (Phase 8b) ─────────────────────────────────
   orders Order[] @relation("BuyerOrders")
@@ -1627,6 +1629,7 @@ model Transaction {
 
   messages            Message[]
   trackingEvents      TrackingEvent[]
+  complaints          Complaint[]
   rating              Rating?
   confirmedDeliveryAt DateTime?
   // peachPaymentId now has a @unique on the field (creates its own index).
@@ -3262,6 +3265,68 @@ model SupportTicketReply {
   createdAt DateTime @default(now())
 
   @@index([ticketId, createdAt])
+}
+
+// ── Formal complaints register (CPA / Nedbank-TPPP oversight) ────────
+// Distinct from SupportTicket (the general help channel) and from the
+// per-transaction raiseDispute money primitive. A Complaint owns a
+// human-facing case number (CO000123), a category, an OPTIONAL linked
+// order, evidence photos, an assigned owner and an outcome — this is the
+// record that backs the /complaints page's "logged, assigned an owner,
+// recorded with its outcome" promise. When a BUYER lodges a payout-
+// affecting complaint (item not as described / damaged / not arrived) on
+// a still-HELD order, the service also flips that order to DISPUTED to
+// block payout — but the Complaint row is the system of record.
+model Complaint {
+  id              String            @id @default(cuid())
+  // Human case number, e.g. CO000123 (ReferenceNumberService prefix 'CO').
+  referenceNumber String            @unique
+  userId          String
+  user            User              @relation("UserComplaints", fields: [userId], references: [id], onDelete: Cascade)
+  // BUYER | SELLER — which side of the platform the complainant is on.
+  role            String            @default("BUYER")
+  // ITEM_NOT_AS_DESCRIBED | DAMAGED | NOT_ARRIVED | PAYOUT | DELIVERY |
+  // ACCOUNT | LISTING | OTHER
+  category        String
+  subject         String
+  body            String
+  // Optional background link to the order the complaint is about. Stored
+  // as the Transaction cuid (there is no human order number); the picker
+  // shows the listing reference for readability.
+  transactionId   String?
+  transaction     Transaction?      @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  // OPEN | UNDER_REVIEW | AWAITING_USER | RESOLVED | CLOSED
+  status          String            @default("OPEN")
+  // AdminUser.id of the operator who owns the case (the "assigned owner").
+  assignedAdminId String?
+  // Free-text resolution recorded when the case closes.
+  outcome         String?
+  // true if lodging this complaint flipped the linked order to DISPUTED.
+  drovePayoutHold Boolean           @default(false)
+  photos          ComplaintPhoto[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  resolvedAt      DateTime?
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([transactionId])
+}
+
+// Private evidence photos attached to a Complaint. Mirrors ListingImage
+// (thin Cloudinary pointer). NOT run through listing moderation — evidence
+// legitimately contains contact info; served access-controlled to the
+// complainant + admins only.
+model ComplaintPhoto {
+  id          String    @id @default(cuid())
+  complaintId String
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  url         String
+  publicId    String
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([complaintId])
 }
 
 // ── Multi-item orders (Phase 8b) ───────────────────────────────────
