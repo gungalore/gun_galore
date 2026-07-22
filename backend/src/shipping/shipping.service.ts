@@ -1163,31 +1163,34 @@ export class ShippingService {
   }
 
   // ------------------------------------------------------------------
-  // TCG webhook event processing
+  // Shiplogic tracking webhook — SHARED by TCG and Pudo. Both couriers run
+  // on the Shiplogic platform, so the tracking payload is identical: a
+  // top-level HYPHENATED `status` slug + the tracking reference under
+  // short_/custom_tracking_reference (or parcel_tracking_references). There
+  // is NO `event`/`eventType` field. Non-tracking topics (notes, invoices,
+  // dimension-change arrays, address-changes) carry no status → ignored.
   // ------------------------------------------------------------------
-  async processTcgEvent(payload: Record<string, unknown>): Promise<void> {
-    // TCG / Shiplogic sends a DIFFERENT payload shape per webhook topic and
-    // there is NO top-level `event` field. Only the tracking-event topics
-    // ("Shipment tracking event" / "Parcel tracking event") carry a top-level
-    // `status` slug; notes, invoices, dimension-changes (an array) and
-    // address-changes have none, so they map to nothing and are ignored here.
+  private async processShiplogicWebhook(
+    payload: Record<string, unknown>,
+    carrier: 'TCG' | 'Pudo',
+  ): Promise<void> {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
 
-    const status = this.mapTcgStatus(payload);
+    const status = this.mapShiplogicStatus(payload);
     if (!status) {
-      // Not an actionable tracking status (e.g. collection-assigned, at a
-      // hub-internal state, a note/invoice topic, or an unknown slug).
+      // Not an actionable tracking status (e.g. collection-assigned, an
+      // internal hub state, a note/invoice topic, or an unknown slug).
       this.logger.log(
-        `TCG webhook: status "${String(payload.status ?? 'none')}" is not customer-actionable — ignoring`,
+        `${carrier} webhook: status "${String(payload.status ?? 'none')}" is not customer-actionable — ignoring`,
       );
       return;
     }
 
-    // The trackable reference is what we stored at booking — short_tracking_
-    // reference, falling back to custom. The webhook may carry it under
-    // several field names (shipment- vs parcel-level); try each until one
-    // matches a transaction. Parcel refs look like "SLXS7GL/1" — strip the
-    // "/N" parcel suffix.
+    // The trackable reference is what we stored at booking — TCG stores
+    // short_tracking_reference, Pudo stores custom_tracking_reference. Try
+    // every field the webhook might carry it under (shipment- vs parcel-
+    // level + legacy Pudo names) until one matches. Parcel refs look like
+    // "SLXS7GL/1" — strip the "/N" parcel suffix.
     const parcelRef = Array.isArray(payload.parcel_tracking_references)
       ? String(payload.parcel_tracking_references[0] ?? '').split('/')[0]
       : undefined;
@@ -1197,10 +1200,12 @@ export class ShippingService {
       payload.shipment_short_tracking_reference,
       payload.shipment_custom_tracking_reference,
       parcelRef,
+      payload.trackingCode,
+      payload.barcode,
     ].filter((r): r is string => typeof r === 'string' && r.length > 0);
 
     if (candidates.length === 0) {
-      this.logger.warn('TCG webhook missing a tracking reference — ignoring');
+      this.logger.warn(`${carrier} webhook missing a tracking reference — ignoring`);
       return;
     }
 
@@ -1213,7 +1218,7 @@ export class ShippingService {
     }
     if (!transaction) {
       this.logger.warn(
-        `TCG webhook refs [${candidates.join(', ')}] matched no transaction — ignoring`,
+        `${carrier} webhook refs [${candidates.join(', ')}] matched no transaction — ignoring`,
       );
       return;
     }
@@ -1221,74 +1226,77 @@ export class ShippingService {
     await this.applyShippingUpdate(transaction.id, status);
   }
 
-  // ------------------------------------------------------------------
-  // Pudo webhook event processing
-  // ------------------------------------------------------------------
+  async processTcgEvent(payload: Record<string, unknown>): Promise<void> {
+    return this.processShiplogicWebhook(payload, 'TCG');
+  }
+
   async processPudoEvent(payload: Record<string, unknown>): Promise<void> {
-    this.logger.log('Pudo webhook received');
-
-    const status = this.mapPudoStatus(payload);
-    const trackingCode = (payload.trackingCode ?? payload.barcode) as string | undefined;
-    if (!trackingCode) {
-      this.logger.warn('Pudo webhook missing tracking code — ignoring');
-      return;
-    }
-    if (!status) {
-      this.logger.warn(`Pudo webhook for ${trackingCode} produced no mapped status — ignoring`);
-      return;
-    }
-
-    const transaction = await this.findTransactionByTrackingNumber(trackingCode);
-    if (!transaction) {
-      this.logger.warn(`Pudo ${trackingCode} did not match any transaction — ignoring`);
-      return;
-    }
-
-    await this.applyShippingUpdate(transaction.id, status);
+    // Pudo runs on the SAME Shiplogic platform as TCG — identical tracking
+    // payload (hyphenated `status` slug + custom_/short_tracking_reference).
+    return this.processShiplogicWebhook(payload, 'Pudo');
   }
 
   // ------------------------------------------------------------------
   // Status mapping helpers
   // ------------------------------------------------------------------
-  private mapTcgStatus(payload: Record<string, unknown>): ShippingStatus | null {
-    // The Courier Guy / Shiplogic tracking-status slugs are hyphenated
-    // (verified against TCG's official "Shipment statuses" + webhook docs).
-    // Explicit allow-list → our 6 customer-facing states. Anything NOT here
-    // (collection-assigned/-unassigned/-rejected/-exception/-failed-attempt,
-    // awaiting-dropoff, on-hold(-internal), delivery-assigned/-unassigned/
-    // -rejected, ready-for-pickup handled below, cancelled, floor-check,
-    // submitted, manifested-internal, …) is an intermediate/internal state we
-    // deliberately do NOT notify the customer about.
-    const slug = String(payload.status ?? '').trim().toLowerCase();
+  // The Courier Guy + Pudo both run on Shiplogic and share ONE tracking-status
+  // vocabulary of HYPHENATED slugs (verified against TCG's official "Shipment
+  // statuses" + webhook docs and Pudo's dev.api-pudo.co.za tracking docs).
+  // Explicit allow-list → our 6 customer-facing states. Anything NOT listed
+  // (collection-assigned/-unassigned/-rejected/-exception/-failed-attempt,
+  // awaiting-dropoff, created, label-created, submitted, deposit-pending,
+  // on-hold(-internal), delivery-assigned/-unassigned/-rejected, cancelled,
+  // floor-check, …) is a pre-movement or internal state we deliberately do
+  // NOT surface to the customer → returns null (leaves shippingStatus alone).
+  //
+  // SAFETY: this replaced substring matching that mapped BOTH "out-for-delivery"
+  // and "delivery-failed-attempt" to DELIVERED (both contain "deliver"), which
+  // would have falsely told the buyer their parcel arrived — and, on a failed
+  // delivery, started the payout auto-release countdown. Only the two
+  // unambiguous "buyer has it" slugs map to DELIVERED here.
+  private mapShiplogicStatus(
+    payload: Record<string, unknown>,
+  ): ShippingStatus | null {
+    // Normalise casing/separators so IN_TRANSIT / "In Transit" / in-transit
+    // all resolve to the hyphenated key.
+    const slug = String(payload.status ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_]+/g, '-');
     const map: Record<string, ShippingStatus> = {
+      // collected / in the network
       collected: 'COLLECTED',
+      'dropped-off': 'COLLECTED',
+      // moving between hubs / lockers (non-terminal)
       'in-transit': 'IN_TRANSIT',
       'at-hub': 'IN_TRANSIT',
       'at-destination-hub': 'IN_TRANSIT',
       'ready-for-dispatch': 'IN_TRANSIT',
       manifested: 'IN_TRANSIT',
       'returned-to-hub': 'IN_TRANSIT',
+      // non-terminal exception — courier follows up; keep it "in transit" from
+      // a notification POV (matches the polling path's DELIVERY_EXCEPTION rule)
+      // rather than falsely alarming the buyer with a "delivery failed".
+      'delivery-exception': 'IN_TRANSIT',
+      exception: 'IN_TRANSIT',
+      // arrived, awaiting the recipient
       'out-for-delivery': 'OUT_FOR_DELIVERY',
       'ready-for-pickup': 'OUT_FOR_DELIVERY',
+      'ready-for-collection': 'OUT_FOR_DELIVERY',
+      'arrived-at-locker': 'OUT_FOR_DELIVERY',
+      'at-locker': 'OUT_FOR_DELIVERY',
+      // the buyer has it (ONLY these two trigger the payout-release gate)
       delivered: 'DELIVERED',
+      'collected-by-recipient': 'DELIVERED',
+      // terminal failures
       'delivery-failed-attempt': 'DELIVERY_FAILED',
-      'delivery-exception': 'DELIVERY_FAILED',
+      failed: 'DELIVERY_FAILED',
       undeliverable: 'DELIVERY_FAILED',
+      expired: 'DELIVERY_FAILED', // Pudo collection-PIN window lapsed
+      // return to sender
       'returned-to-sender': 'RETURNED',
+      returned: 'RETURNED',
     };
     return map[slug] ?? null;
-  }
-
-  private mapPudoStatus(payload: Record<string, unknown>): ShippingStatus | null {
-    const statusStr = ((payload.status ?? payload.eventCode ?? '') as string).toLowerCase();
-
-    if (statusStr.includes('collect') || statusStr.includes('dropped')) return 'COLLECTED';
-    if (statusStr.includes('in transit') || statusStr.includes('in_transit')) return 'IN_TRANSIT';
-    if (statusStr.includes('ready') || statusStr.includes('out_for')) return 'OUT_FOR_DELIVERY';
-    if (statusStr.includes('deliver') || statusStr.includes('collected by recipient')) return 'DELIVERED';
-    if (statusStr.includes('fail') || statusStr.includes('expired')) return 'DELIVERY_FAILED';
-    if (statusStr.includes('return')) return 'RETURNED';
-
-    return null;
   }
 }

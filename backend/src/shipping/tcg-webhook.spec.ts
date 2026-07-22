@@ -145,4 +145,45 @@ describe('ShippingService.processTcgEvent (real TCG payload)', () => {
       expect.objectContaining({ where: { trackingReference: 'SLXS7GL' } }),
     );
   });
+
+  // ── SAFETY REGRESSIONS ──────────────────────────────────────────────
+  // The old substring map sent BOTH of these to DELIVERED (they contain
+  // "deliver"), which would falsely confirm receipt + start the payout
+  // countdown. They must NEVER map to DELIVERED.
+  it('out-for-delivery does NOT map to DELIVERED (regression)', async () => {
+    const { svc, notifications } = makeService('IN_TRANSIT');
+    await svc.processTcgEvent(trackingEvent('out-for-delivery'));
+    expect(notifications.shippingDelivered).not.toHaveBeenCalled();
+    expect(notifications.shippingOutForDelivery).toHaveBeenCalledTimes(1);
+  });
+
+  it('delivery-failed-attempt → DELIVERY_FAILED, never DELIVERED (regression)', async () => {
+    const { svc, notifications } = makeService('OUT_FOR_DELIVERY');
+    await svc.processTcgEvent(trackingEvent('delivery-failed-attempt'));
+    expect(notifications.shippingDelivered).not.toHaveBeenCalled();
+    expect(notifications.shippingFailed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ShippingService.processPudoEvent (Pudo = Shiplogic, shared handler)', () => {
+  it('delegates to the shared handler — "collected-by-recipient" → DELIVERED', async () => {
+    const { svc, notifications, prisma } = makeService('OUT_FOR_DELIVERY');
+    // Pudo stores custom_tracking_reference at booking.
+    (prisma.transaction.findFirst as jest.Mock).mockImplementation(
+      ({ where }: { where: { trackingReference: string } }) =>
+        Promise.resolve(where.trackingReference === 'PUDOD000570' ? { ...TX } : null),
+    );
+    await svc.processPudoEvent({
+      custom_tracking_reference: 'PUDOD000570',
+      status: 'collected-by-recipient',
+    });
+    expect(notifications.shippingDelivered).toHaveBeenCalledTimes(1);
+    expect(notifications.sellerParcelDelivered).toHaveBeenCalledTimes(1);
+  });
+
+  it('is formatting-robust: "IN_TRANSIT" (underscored/upper) → IN_TRANSIT', async () => {
+    const { svc, notifications } = makeService(null);
+    await svc.processPudoEvent({ short_tracking_reference: 'S7GL', status: 'IN_TRANSIT' });
+    expect(notifications.shippingDispatched).toHaveBeenCalledTimes(1);
+  });
 });
