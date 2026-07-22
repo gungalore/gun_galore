@@ -15,6 +15,7 @@ import {
 } from './pudo.service';
 import { TcgService, type TcgResidentialAddress } from './tcg.service';
 import { CarrierContact, CarrierShipmentResult } from './carrier.types';
+import { shiplogicToShippingStatus } from './status-map';
 
 export type ShippingMethod = 'PUDO' | 'TCG' | 'DEALER_TRANSFER';
 
@@ -1176,7 +1177,11 @@ export class ShippingService {
   ): Promise<void> {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
 
-    const status = this.mapShiplogicStatus(payload);
+    // Single source of truth in status-map.ts (shared with the polling path)
+    // so the webhook + poll can never disagree on what a status means.
+    const status: ShippingStatus | null = shiplogicToShippingStatus(
+      String(payload.status ?? ''),
+    );
     if (!status) {
       // Not an actionable tracking status (e.g. collection-assigned, an
       // internal hub state, a note/invoice topic, or an unknown slug).
@@ -1234,69 +1239,5 @@ export class ShippingService {
     // Pudo runs on the SAME Shiplogic platform as TCG — identical tracking
     // payload (hyphenated `status` slug + custom_/short_tracking_reference).
     return this.processShiplogicWebhook(payload, 'Pudo');
-  }
-
-  // ------------------------------------------------------------------
-  // Status mapping helpers
-  // ------------------------------------------------------------------
-  // The Courier Guy + Pudo both run on Shiplogic and share ONE tracking-status
-  // vocabulary of HYPHENATED slugs (verified against TCG's official "Shipment
-  // statuses" + webhook docs and Pudo's dev.api-pudo.co.za tracking docs).
-  // Explicit allow-list → our 6 customer-facing states. Anything NOT listed
-  // (collection-assigned/-unassigned/-rejected/-exception/-failed-attempt,
-  // awaiting-dropoff, created, label-created, submitted, deposit-pending,
-  // on-hold(-internal), delivery-assigned/-unassigned/-rejected, cancelled,
-  // floor-check, …) is a pre-movement or internal state we deliberately do
-  // NOT surface to the customer → returns null (leaves shippingStatus alone).
-  //
-  // SAFETY: this replaced substring matching that mapped BOTH "out-for-delivery"
-  // and "delivery-failed-attempt" to DELIVERED (both contain "deliver"), which
-  // would have falsely told the buyer their parcel arrived — and, on a failed
-  // delivery, started the payout auto-release countdown. Only the two
-  // unambiguous "buyer has it" slugs map to DELIVERED here.
-  private mapShiplogicStatus(
-    payload: Record<string, unknown>,
-  ): ShippingStatus | null {
-    // Normalise casing/separators so IN_TRANSIT / "In Transit" / in-transit
-    // all resolve to the hyphenated key.
-    const slug = String(payload.status ?? '')
-      .trim()
-      .toLowerCase()
-      .replace(/[\s_]+/g, '-');
-    const map: Record<string, ShippingStatus> = {
-      // collected / in the network
-      collected: 'COLLECTED',
-      'dropped-off': 'COLLECTED',
-      // moving between hubs / lockers (non-terminal)
-      'in-transit': 'IN_TRANSIT',
-      'at-hub': 'IN_TRANSIT',
-      'at-destination-hub': 'IN_TRANSIT',
-      'ready-for-dispatch': 'IN_TRANSIT',
-      manifested: 'IN_TRANSIT',
-      'returned-to-hub': 'IN_TRANSIT',
-      // non-terminal exception — courier follows up; keep it "in transit" from
-      // a notification POV (matches the polling path's DELIVERY_EXCEPTION rule)
-      // rather than falsely alarming the buyer with a "delivery failed".
-      'delivery-exception': 'IN_TRANSIT',
-      exception: 'IN_TRANSIT',
-      // arrived, awaiting the recipient
-      'out-for-delivery': 'OUT_FOR_DELIVERY',
-      'ready-for-pickup': 'OUT_FOR_DELIVERY',
-      'ready-for-collection': 'OUT_FOR_DELIVERY',
-      'arrived-at-locker': 'OUT_FOR_DELIVERY',
-      'at-locker': 'OUT_FOR_DELIVERY',
-      // the buyer has it (ONLY these two trigger the payout-release gate)
-      delivered: 'DELIVERED',
-      'collected-by-recipient': 'DELIVERED',
-      // terminal failures
-      'delivery-failed-attempt': 'DELIVERY_FAILED',
-      failed: 'DELIVERY_FAILED',
-      undeliverable: 'DELIVERY_FAILED',
-      expired: 'DELIVERY_FAILED', // Pudo collection-PIN window lapsed
-      // return to sender
-      'returned-to-sender': 'RETURNED',
-      returned: 'RETURNED',
-    };
-    return map[slug] ?? null;
   }
 }
