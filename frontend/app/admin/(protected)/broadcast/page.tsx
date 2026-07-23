@@ -9,7 +9,8 @@
 // interactive (pick segment → fetch count → render); doing this with
 // query params would force a full page reload per change.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { adminFetch } from '@/lib/admin-auth';
 
 type Channel = 'email' | 'sms';
@@ -18,7 +19,8 @@ type Segment =
   | 'all-active-sellers'
   | 'kyc-pending'
   | 'kyc-stalled'
-  | 'all-buyers';
+  | 'all-buyers'
+  | 'dormant';
 type AudienceKind = 'individual' | 'segment' | 'all-users';
 
 const SEGMENT_LABEL: Record<Segment, string> = {
@@ -27,6 +29,7 @@ const SEGMENT_LABEL: Record<Segment, string> = {
   'kyc-pending': 'KYC pending (not yet verified)',
   'kyc-stalled': 'KYC stalled (>24h, not verified)',
   'all-buyers': 'All buyers (≥1 purchase)',
+  dormant: 'Dormant — 14d+ inactive, marketing opt-in (re-engagement)',
 };
 
 export default function BroadcastPage() {
@@ -43,6 +46,20 @@ export default function BroadcastPage() {
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ sent: number; skipped: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Deep-link support: /admin/broadcast?segment=dormant&channel=sms pre-selects
+  // the audience (used by the Insights "Re-engage dormant users" CTA).
+  const params = useSearchParams();
+  useEffect(() => {
+    const s = params.get('segment');
+    const c = params.get('channel');
+    if (s && s in SEGMENT_LABEL) {
+      setAudienceKind('segment');
+      setSegment(s as Segment);
+    }
+    if (c === 'sms' || c === 'email') setChannel(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function buildAudience() {
     if (audienceKind === 'individual') return { kind: 'individual', userId };

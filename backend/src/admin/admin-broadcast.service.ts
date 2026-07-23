@@ -34,7 +34,10 @@ export type BroadcastSegment =
   | 'all-active-sellers' // sellers with ≥1 ACTIVE listing
   | 'kyc-pending'        // kycRequiredAt set, not VERIFIED, not banned
   | 'kyc-stalled'        // kyc-pending + kycRequiredAt > 24h ago
-  | 'all-buyers';        // users with ≥1 transaction as buyer
+  | 'all-buyers'         // users with ≥1 transaction as buyer
+  | 'dormant';           // 14d+ inactive + MARKETING-consented (direct-marketing
+                         // re-engagement — POPIA opt-in required, unlike the
+                         // service-message segments above)
 
 export interface BroadcastDto {
   channel: BroadcastChannel;
@@ -219,6 +222,27 @@ export class AdminBroadcastService {
       case 'all-buyers':
         return this.prisma.user.findMany({
           where: { ...baseWhere, buyerTransactions: { some: {} } },
+          select: { id: true, email: true, phone: true },
+        });
+      case 'dormant':
+        // Re-engagement is DIRECT MARKETING → require an explicit marketing
+        // opt-in (marketingConsentAt), not just non-banned. Dormant = account
+        // older than 14 days with no login in the last 14 days (or never).
+        // For SMS, also require a verified phone with SMS notifications on, so
+        // the preview count reflects who we can actually (and lawfully) reach.
+        return this.prisma.user.findMany({
+          where: {
+            ...baseWhere,
+            marketingConsentAt: { not: null },
+            createdAt: { lt: new Date(Date.now() - 14 * day) },
+            OR: [
+              { lastLoginAt: null },
+              { lastLoginAt: { lt: new Date(Date.now() - 14 * day) } },
+            ],
+            ...(channel === 'sms'
+              ? { phone: { not: null }, phoneVerified: true, notifySmsEnabled: true }
+              : {}),
+          },
           select: { id: true, email: true, phone: true },
         });
       default:

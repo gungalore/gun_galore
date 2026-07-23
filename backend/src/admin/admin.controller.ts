@@ -710,6 +710,11 @@ export class AdminAnalyticsController {
     return this.analytics.userDrilldown(id);
   }
 
+  @Get('insights/dormant')
+  dormantSegment() {
+    return this.analytics.dormantSegment();
+  }
+
   @Get('insights/digest')
   latestDigest() {
     return this.digest.getLatest();

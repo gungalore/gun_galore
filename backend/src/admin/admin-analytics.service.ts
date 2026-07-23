@@ -956,4 +956,30 @@ export class AdminAnalyticsService {
       })),
     };
   }
+
+  // Dormant re-engagement segment size — total with a marketing opt-in, and
+  // the subset reachable by SMS (verified phone, SMS on). Mirrors the
+  // AdminBroadcastService 'dormant' audience so the insights CTA shows the
+  // true reachable count before the operator opens the composer.
+  async dormantSegment(): Promise<{ total: number; smsReachable: number }> {
+    const d14 = new Date(Date.now() - 14 * 86400000);
+    const base = {
+      isBanned: false,
+      marketingConsentAt: { not: null },
+      createdAt: { lt: d14 },
+      OR: [{ lastLoginAt: null }, { lastLoginAt: { lt: d14 } }],
+    };
+    const [total, smsReachable] = await Promise.all([
+      this.prisma.user.count({ where: base }),
+      this.prisma.user.count({
+        where: {
+          ...base,
+          phone: { not: null },
+          phoneVerified: true,
+          notifySmsEnabled: true,
+        },
+      }),
+    ]);
+    return { total, smsReachable };
+  }
 }

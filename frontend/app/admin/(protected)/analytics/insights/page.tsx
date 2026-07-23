@@ -208,6 +208,7 @@ export default function InsightsPage() {
   const [funnel, setFunnel] = useState<FunnelStage[]>([]);
   const [users, setUsers] = useState<ActiveUser[]>([]);
   const [drill, setDrill] = useState<Drill | null>(null);
+  const [dormant, setDormant] = useState<{ total: number; smsReachable: number } | null>(null);
 
   const load = useCallback(async () => {
     if (!requireAdminToken()) return;
@@ -230,8 +231,12 @@ export default function InsightsPage() {
 
   const loadDigest = useCallback(async () => {
     if (!requireAdminToken()) return;
-    const r = await adminFetch('/admin/analytics/insights/digest');
+    const [r, dr] = await Promise.all([
+      adminFetch('/admin/analytics/insights/digest'),
+      adminFetch('/admin/analytics/insights/dormant'),
+    ]);
     if (r.ok) setDigest(await r.json());
+    if (dr.ok) setDormant(await dr.json());
   }, []);
 
   useEffect(() => {
@@ -346,6 +351,41 @@ export default function InsightsPage() {
           <Card label="Active listings" value={pulse.activeListings} />
         </div>
       )}
+
+      {/* Dormant re-engagement CTA */}
+      {dormant && dormant.total > 0 && (() => {
+        const peak = actHeat.reduce(
+          (m, c) => (c.value > m.value ? c : m),
+          { dow: -1, hour: -1, value: 0 },
+        );
+        const bestWindow =
+          peak.dow >= 0 ? `${DAYS[peak.dow]} ${String(peak.hour).padStart(2, '0')}:00` : null;
+        return (
+          <div
+            className="rounded-[8px] p-4 mb-6 flex flex-wrap items-center gap-3 justify-between"
+            style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+          >
+            <div>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                Re-engage dormant users
+              </p>
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                {dormant.total} opted-in {dormant.total === 1 ? 'user' : 'users'} inactive 14d+
+                {' · '}
+                {dormant.smsReachable} reachable by SMS
+                {bestWindow ? ` · best send window ${bestWindow} (SA)` : ''}
+              </p>
+            </div>
+            <a
+              href="/admin/broadcast?segment=dormant&channel=sms"
+              className="px-3 py-1.5 rounded text-xs font-medium text-white"
+              style={{ background: 'var(--red)', textDecoration: 'none' }}
+            >
+              Compose SMS →
+            </a>
+          </div>
+        );
+      })()}
 
       {/* Heatmaps */}
       <div className="grid gap-4 mb-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
