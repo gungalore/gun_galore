@@ -151,19 +151,19 @@ export function PhotoDropzone({
           JPG, PNG, or WebP · {minFiles}–{maxFiles} photos · first photo is the cover · drag to reorder
         </div>
 
-        {/* `capture="environment"` hints to iOS/Android that the
-            rear-facing camera is the preferred source — when a mobile
-            user taps the dropzone the OS jumps straight to the camera
-            instead of the generic file picker. Desktop browsers ignore
-            the attribute, so behaviour is unchanged there. The
-            `multiple` attr still applies, so users can still pick
-            multiple existing photos from their gallery via the OS
-            sheet's other-source option. */}
+        {/* NO `capture` attribute — deliberately. With `capture` set,
+            iOS Safari opens the rear camera IMMEDIATELY with no other
+            option (it does NOT offer a gallery/files fallback, contrary
+            to a common misconception), which trapped mobile sellers who
+            wanted to upload existing photos. Without it, tapping the
+            dropzone shows the OS's native source sheet — Photo Library /
+            Take Photo / Choose File on iOS, and the Camera/Gallery/Files
+            chooser on Android — so the user picks the source themselves.
+            `multiple` lets them select several gallery photos at once. */}
         <input
           ref={inputRef}
           type="file"
           accept={accept}
-          capture="environment"
           multiple
           style={{ display: 'none' }}
           onChange={(e) => {
