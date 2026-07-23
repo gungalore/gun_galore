@@ -39,6 +39,10 @@ function send(events: BeaconEvent[]): void {
   )
     return;
   try {
+    // Operator exclusion: sendBeacon can't carry auth, so the server-side
+    // admin filter can never match beacon events. If this browser holds an
+    // admin token, it's the operator — don't track at all.
+    if (window.localStorage.getItem('gg_admin_token')) return;
     const body = JSON.stringify({ deviceId: getDeviceId(), events });
     const blob = new Blob([body], { type: 'application/json' });
     navigator.sendBeacon(`${API_URL}/activity`, blob);

@@ -5,7 +5,6 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
 import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ActivityService } from './activity.service';
@@ -35,9 +34,11 @@ export class ActivityController {
     'search',
   ]);
 
+  // Deliberately NOT @SkipThrottle: this is an unauthenticated write — the
+  // default per-IP rate limit is ample for legit use (~1 event per page nav)
+  // and stops anyone flooding the UserEvent table.
   @Post()
   @HttpCode(204)
-  @SkipThrottle()
   @UseGuards(OptionalClerkGuard)
   ingest(
     @CurrentUser() clerkId: string | undefined,

@@ -149,6 +149,14 @@ export class UsersService {
     lastActiveAt?: number;
   }): Promise<void> {
     if (!s.sessionId || !s.userId) return;
+    // Operator exclusion — an admin-linked Clerk id signing in is the
+    // operator, not a customer; keep the login pulse customer-only (same
+    // policy as ActivityService's admin filter on behavioural events).
+    const isAdmin = await this.prisma.adminUser.findFirst({
+      where: { clerkId: s.userId, isActive: true },
+      select: { id: true },
+    });
+    if (isAdmin) return;
     const user = await this.prisma.user.findUnique({
       where: { clerkId: s.userId },
       select: { id: true },

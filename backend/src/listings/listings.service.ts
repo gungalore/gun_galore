@@ -1164,7 +1164,7 @@ export class ListingsService {
     return listing;
   }
 
-  async browse(dto: BrowseListingsDto) {
+  async browse(dto: BrowseListingsDto, clerkId?: string) {
     const { q, sellerClerkId, ids } = dto;
 
     // `ids=cuid1,cuid2,…` — multi-ID lookup for the recently-viewed
@@ -1199,7 +1199,7 @@ export class ListingsService {
     const hasAttrFilters = Object.keys(parsedAttrs).length > 0;
 
     if ((q || hasAttrFilters) && this.search.isConnected) {
-      return this.browseViaSearch(dto, parsedAttrs);
+      return this.browseViaSearch(dto, parsedAttrs, clerkId);
     }
     return this.browseViaPrisma(dto);
   }
@@ -1798,6 +1798,7 @@ export class ListingsService {
   private async browseViaSearch(
     dto: BrowseListingsDto,
     parsedAttrs: Record<string, unknown> = {},
+    clerkId?: string,
   ) {
     const { q = '', page = 1, limit = 20, sort = 'newest' } = dto;
 
@@ -1818,11 +1819,14 @@ export class ListingsService {
     });
 
     // Insights — record only real TEXT searches (not blank browse/filter
-    // changes). Query text + result count is the best "what people want vs
-    // what we stock" signal; zero-result searches flag advertising/stock gaps.
-    if (typeof q === 'string' && q.trim().length > 0) {
+    // changes), and only PAGE 1 (paging through results of the same query
+    // is one search, not many). Query text + result count is the best "what
+    // people want vs what we stock" signal; zero-result searches flag
+    // advertising/stock gaps. Attributed when signed in (OptionalClerkGuard).
+    if (typeof q === 'string' && q.trim().length > 0 && page === 1) {
       this.activity.record({
         eventType: 'search',
+        actor: { clerkId },
         query: q.trim(),
         resultCount: result.estimatedTotalHits ?? 0,
       });

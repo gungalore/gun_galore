@@ -46,8 +46,11 @@ export class ListingsController {
 
   @Get()
   @SkipThrottle()
-  browse(@Query() dto: BrowseListingsDto) {
-    return this.listingsService.browse(dto);
+  // OptionalClerkGuard so search-insight events can attribute the searcher
+  // when signed in; anonymous browse is unaffected (guard never rejects).
+  @UseGuards(OptionalClerkGuard)
+  browse(@Query() dto: BrowseListingsDto, @CurrentUser() clerkId?: string) {
+    return this.listingsService.browse(dto, clerkId);
   }
 
   // Cross-sell ("you might also need…"). MUST stay above @Get(':id') so

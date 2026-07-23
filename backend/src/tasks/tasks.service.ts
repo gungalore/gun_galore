@@ -1474,13 +1474,14 @@ export class TasksService {
     const from = new Date(to.getTime() - 2 * 24 * 60 * 60 * 1000);
     try {
       // 0) Resolve hot-path events that only carried a raw clerkId to a
-      //    User.id, so they count in the per-user rollup.
+      //    User.id, so they count in the per-user rollup. Deliberately NOT
+      //    windowed: if the cron misses a night, older unresolved rows are
+      //    still swept up (cheap — the predicate matches few rows).
       await this.prisma.$executeRaw`
         UPDATE "UserEvent" e SET "userId" = u.id
         FROM "User" u
         WHERE e."userId" IS NULL AND e."clerkId" IS NOT NULL
-          AND u."clerkId" = e."clerkId"
-          AND e."createdAt" >= ${from} AND e."createdAt" < ${to}`;
+          AND u."clerkId" = e."clerkId"`;
 
       // 1) Per-user daily activity.
       await this.prisma.$executeRaw`
@@ -1549,6 +1550,13 @@ export class TasksService {
         total += del.count;
         if (batch.length < 5000) break;
       }
+      // LoginEvent is per-user behavioural data too — same 12-month raw
+      // retention as UserEvent (privacy policy §9). DailyUserStats keeps the
+      // aggregate login counts forever. Volume is tiny → single deleteMany.
+      const logins = await this.prisma.loginEvent.deleteMany({
+        where: { startedAt: { lt: cutoff } },
+      });
+      total += logins.count;
       if (total > 0) this.logger.log(`Pruned ${total} raw events older than 12 months`);
     } catch (err) {
       this.logger.warn(`pruneRawEvents failed: ${(err as Error).message}`);
