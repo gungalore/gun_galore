@@ -4,6 +4,8 @@
 // and held payments work, and the registered company behind it.
 // Middleware already whitelists /about as a public route.
 
+import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -85,7 +87,7 @@ export default function AboutPage() {
             support@gungalore.co.za
           </a>
           <br />
-          <strong>Phone:</strong> +27 74 303 9999
+          <strong>Phone:</strong> {SUPPORT_PHONE_DISPLAY}
         </p>
       </div>
 

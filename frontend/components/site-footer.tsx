@@ -15,6 +15,8 @@
 // route group with its own chrome) but rendered on every public
 // page. Server-rendered to keep zero JS cost.
 
+import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+
 import Link from 'next/link';
 import { GetTheAppCta } from '@/components/get-the-app-cta';
 
@@ -218,7 +220,9 @@ export function SiteFooter() {
           <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--text-tertiary-on-card)', textDecoration: 'underline' }}>
             support@gungalore.co.za
           </a>
-          {' · +27 74 303 9999 · '}
+          {' · '}
+          {SUPPORT_PHONE_DISPLAY}
+          {' · '}
           <Link href="/legal" style={{ color: 'var(--text-tertiary-on-card)', textDecoration: 'underline' }}>
             Full disclosures &amp; legal index
           </Link>

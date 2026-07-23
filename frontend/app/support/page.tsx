@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 import { useAuth } from '@clerk/nextjs';
 
 const API_URL =
@@ -149,8 +150,8 @@ export default function SupportPage() {
           </li>
           <li>
             Phone{' '}
-            <a href="tel:+27743039999" className="text-[var(--red)]">
-              +27&nbsp;74&nbsp;303&nbsp;9999
+            <a href={`tel:${SUPPORT_PHONE_TEL}`} className="text-[var(--red)]">
+              {SUPPORT_PHONE_DISPLAY}
             </a>
           </li>
           <li>We aim to respond within 2 business days.</li>

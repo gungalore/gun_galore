@@ -4,6 +4,8 @@
 // know exactly who they are dealing with. Links onward to complaints
 // handling and the full legal index.
 
+import { SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -41,8 +43,8 @@ export default function ContactPage() {
           </a>
           <br />
           <strong>Phone:</strong>{' '}
-          <a href="tel:+27743039999" style={{ color: 'var(--red)' }}>
-            +27 74 303 9999
+          <a href={`tel:${SUPPORT_PHONE_TEL}`} style={{ color: 'var(--red)' }}>
+            {SUPPORT_PHONE_DISPLAY}
           </a>
         </p>
       </div>

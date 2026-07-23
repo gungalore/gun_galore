@@ -5,6 +5,8 @@
 // points to the correct consumer, privacy, payment and firearms
 // forums — never an industry association.
 
+import { SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+
 import Link from 'next/link';
 import { LegalDocHeader } from '../legal-frame';
 
@@ -85,8 +87,8 @@ export default function ComplaintsPage() {
         </a>
         <br />
         <strong>Telephone:</strong>{' '}
-        <a href="tel:+27743039999" style={{ color: 'var(--red)' }}>
-          +27 74 303 9999
+        <a href={`tel:${SUPPORT_PHONE_TEL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_PHONE_DISPLAY}
         </a>
       </p>
       <p>

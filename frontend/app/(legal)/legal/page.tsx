@@ -3,6 +3,8 @@
 // page is to give regulators, lawyers, journalists and curious users
 // one URL where the entire compliance posture is visible.
 
+import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+
 import Link from 'next/link';
 import { LegalDocHeader } from '../legal-frame';
 
@@ -166,7 +168,7 @@ export default function LegalIndexPage() {
             support@gungalore.co.za
           </a>
           <br />
-          <strong>Phone:</strong> +27 74 303 9999
+          <strong>Phone:</strong> {SUPPORT_PHONE_DISPLAY}
           <br />
           <strong>VAT registration:</strong> Not yet registered for VAT
           <br />

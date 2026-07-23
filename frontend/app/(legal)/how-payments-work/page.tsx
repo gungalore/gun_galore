@@ -12,6 +12,8 @@
 //   NEVER use the word "escrow" — say "funds held" / "payment held".
 //   NEVER claim automated bank-account verification — it is a MANUAL review.
 
+import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -142,7 +144,7 @@ export default function HowPaymentsWorkPage() {
         <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
           support@gungalore.co.za
         </a>
-        {' '}or call +27 74 303 9999. See also our{' '}
+        {' '}or call {SUPPORT_PHONE_DISPLAY}. See also our{' '}
         <a href="/terms" style={{ color: 'var(--red)' }}>Terms of Service</a>
         {' '}and{' '}
         <a href="/legal" style={{ color: 'var(--red)' }}>Legal &amp; Company Information</a>.

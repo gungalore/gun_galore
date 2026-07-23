@@ -14,6 +14,8 @@
 //   NEVER name a payment provider here until a contract is signed (TPPP).
 //   NEVER use the word "escrow" — say "funds held" / "payment held".
 
+import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -224,7 +226,7 @@ export default function FeesPage() {
         <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
           support@gungalore.co.za
         </a>
-        {' '}or call +27 74 303 9999. See also{' '}
+        {' '}or call {SUPPORT_PHONE_DISPLAY}. See also{' '}
         <a href="/how-payments-work" style={{ color: 'var(--red)' }}>How payments work</a>
         {' '}and our{' '}
         <a href="/terms" style={{ color: 'var(--red)' }}>Terms of Service</a>.

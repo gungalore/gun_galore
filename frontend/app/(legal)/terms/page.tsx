@@ -13,6 +13,8 @@
 //     registered to operate). The funds-held mechanism is described
 //     as "payment held" or "funds held" throughout.
 
+import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -447,7 +449,7 @@ export default function TermsPage() {
           support@gungalore.co.za
         </a>
         <br />
-        <strong>Telephone:</strong> +27 74 303 9999
+        <strong>Telephone:</strong> {SUPPORT_PHONE_DISPLAY}
         <br />
         <strong>Postal:</strong> GunGalore (Pty) Ltd, 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570
       </p>
@@ -464,7 +466,7 @@ export default function TermsPage() {
         <li><strong>Director:</strong> Gerhard Johan Petrus Fourie</li>
         <li><strong>Physical address:</strong> 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa</li>
         <li><strong>Email:</strong> support@gungalore.co.za</li>
-        <li><strong>Telephone:</strong> +27 74 303 9999</li>
+        <li><strong>Telephone:</strong> {SUPPORT_PHONE_DISPLAY}</li>
         <li><strong>VAT registration:</strong> Not yet registered for VAT</li>
         <li><strong>Membership of self-regulatory bodies:</strong> None at this time</li>
       </ul>
