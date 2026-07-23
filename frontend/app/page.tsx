@@ -10,7 +10,6 @@ import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
 import { FeaturedAvailabilityBar } from '@/components/featured-availability-bar';
 import { DraggableMarquee } from '@/components/draggable-marquee';
-import { SignedInWelcome } from '@/components/signed-in-welcome';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
 import { Pagination } from '@/components/pagination';
@@ -246,7 +245,6 @@ export default async function HomePage({
       {/* Hero now carries the trust card on its right, so the competitive
           "why Gun Galore" proof lives inside <Hero /> — no separate banner. */}
       {showHero && <Hero />}
-      {showHero && <SignedInWelcome />}
 
       {/* ─── Bare landing page: featured-only grid, no rail, no filter ───
           When the user lands on "/" with no filters, the main grid

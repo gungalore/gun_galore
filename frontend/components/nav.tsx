@@ -243,7 +243,7 @@ export function Nav() {
                         <span
                           className="hidden sm:inline"
                           style={{
-                            maxWidth: 120,
+                            maxWidth: 210,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
@@ -251,6 +251,16 @@ export function Nav() {
                             color: 'var(--text-secondary)',
                           }}
                         >
+                          {/* "Welcome back," rides along on wide viewports
+                              only, so the username itself never gets
+                              ellipsed on narrower ones. Replaces the old
+                              SignedInWelcome strip on the landing page. */}
+                          <span
+                            className="hidden lg:inline"
+                            style={{ color: 'var(--text-tertiary)' }}
+                          >
+                            Welcome back,{' '}
+                          </span>
                           {displayName}
                         </span>
                         <svg
