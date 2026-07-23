@@ -190,6 +190,55 @@ export class UsersService {
     });
   }
 
+  // Username-collision healer. Clerk owns the username namespace, but our
+  // User table can hold STALE rows from the retired dev Clerk instance whose
+  // usernames squat the namespace (prod Clerk happily re-issues them — this
+  // 403'd every money action for a new signup, 2026-07-23 "generalledger").
+  // If the incoming username is held by a row with a different clerkId:
+  //   - holder's Clerk account no longer exists (404) → stale squatter:
+  //     archive-rename it and let the new user take the name;
+  //   - holder still exists in Clerk, or Clerk can't be reached → we can't
+  //     safely free it: return null so the caller creates WITHOUT a username.
+  //     Provisioning must NEVER fail on a display name — the user can pick a
+  //     new one later; a missing row blocks offers/bids/checkout entirely.
+  private async resolveUsernameConflict(
+    username: string,
+    incomingClerkId: string,
+  ): Promise<string | null> {
+    const holder = await this.prisma.user.findFirst({
+      where: { username, NOT: { clerkId: incomingClerkId } },
+      select: { id: true, clerkId: true },
+    });
+    if (!holder) return username;
+    try {
+      await this.clerk.users.getUser(holder.clerkId);
+      // Holder is a live Clerk account — genuine conflict (shouldn't happen;
+      // Clerk enforces uniqueness). Don't steal it.
+      this.logger.warn(
+        `Username "${username}" is held by live user ${holder.id} — provisioning ${incomingClerkId} without a username`,
+      );
+      return null;
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      if (status === 404) {
+        const archived = `${username}-archived-${holder.id.slice(-4)}`;
+        await this.prisma.user.update({
+          where: { id: holder.id },
+          data: { username: archived },
+        });
+        this.logger.log(
+          `Freed username "${username}" from stale row ${holder.id} (Clerk account ${holder.clerkId} gone; renamed to ${archived})`,
+        );
+        return username;
+      }
+      // Clerk unreachable — can't verify; don't block provisioning.
+      this.logger.warn(
+        `Could not verify username holder for "${username}" (${(err as Error).message}) — provisioning ${incomingClerkId} without a username`,
+      );
+      return null;
+    }
+  }
+
   async upsertFromClerk(data: {
     clerkId: string;
     email: string;
@@ -200,9 +249,12 @@ export class UsersService {
     avatarUrl?: string;
   }): Promise<User> {
     // Lowercase usernames before persisting — matches the check endpoint.
-    const username = data.username
+    let username = data.username
       ? data.username.trim().toLowerCase()
       : null;
+    if (username) {
+      username = await this.resolveUsernameConflict(username, data.clerkId);
+    }
 
     // Auto-relink returning users after a Clerk instance switch (dev→prod).
     // The production instance issues a BRAND-NEW clerkId, but the user's

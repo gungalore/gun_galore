@@ -548,7 +548,7 @@ export default function AuctionPanel({
           <div className="space-y-2">
             <button
               type="button"
-              onClick={() => setOpenModal('placeBid')}
+              onClick={() => { setError(''); setOpenModal('placeBid'); }}
               disabled={submitting}
               className="w-full py-3 rounded-[6px] text-sm font-medium"
               style={{
@@ -563,7 +563,7 @@ export default function AuctionPanel({
             </button>
             <button
               type="button"
-              onClick={() => setOpenModal('autoBid')}
+              onClick={() => { setError(''); setOpenModal('autoBid'); }}
               disabled={submitting}
               className="w-full py-3 rounded-[6px] text-sm font-medium"
               style={{
@@ -641,6 +641,7 @@ export default function AuctionPanel({
               onCancel={() => setOpenModal(null)}
               onSubmit={(cents) => submitBid(cents, true)}
               submitting={submitting}
+              error={error}
             />
           )}
           {openModal === 'autoBid' && (
@@ -650,6 +651,7 @@ export default function AuctionPanel({
               onCancel={() => setOpenModal(null)}
               onSubmit={(cents) => submitBid(cents, false)}
               submitting={submitting}
+              error={error}
             />
           )}
         </>
@@ -781,12 +783,17 @@ function BidModal({
   onCancel,
   onSubmit,
   submitting,
+  error,
 }: {
   kind: 'placeBid' | 'autoBid';
   minCents: number;
   onCancel: () => void;
   onSubmit: (cents: number) => Promise<boolean | void> | void;
   submitting: boolean;
+  // Server rejection to show INSIDE the modal. The panel renders its own
+  // error line too, but that sits UNDERNEATH this overlay — without this
+  // prop a failed bid looked like "nothing happened" (user-reported).
+  error?: string;
 }) {
   // Stepper starts at the lowest legal bid and steps in tiered
   // increments. State is local so closing the modal resets it.
@@ -839,6 +846,16 @@ function BidModal({
           onChange={setValueCents}
           minCents={minCents}
         />
+
+        {error && (
+          <p
+            className="text-xs mt-3"
+            role="alert"
+            style={{ color: 'var(--red)', lineHeight: 1.5 }}
+          >
+            {error}
+          </p>
+        )}
 
         <div className="flex gap-2 mt-5">
           <button
