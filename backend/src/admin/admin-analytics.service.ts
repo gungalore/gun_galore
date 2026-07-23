@@ -19,6 +19,60 @@ import { PrismaService } from '../prisma/prisma.service';
 export type AnalyticsPeriod = '7d' | '30d' | '90d' | '365d' | 'all';
 export type AnalyticsBucket = 'day' | 'week' | 'month';
 
+// ── Insights (Phase 3) response shapes ──────────────────────────────
+export interface InsightsPulse {
+  dau: number;
+  wau: number;
+  mau: number;
+  loginsToday: number;
+  loginsWeek: number;
+  activeListings: number;
+  newUsers7d: number;
+  salesWeek: number;
+}
+// dow: 0=Sun..6=Sat (Postgres EXTRACT(DOW)); hour: 0..23 (SA local time).
+export interface HeatCell {
+  dow: number;
+  hour: number;
+  value: number;
+}
+export interface SearchTerm {
+  term: string;
+  count: number;
+  maxResults?: number;
+}
+export interface SearchIntel {
+  topTerms: SearchTerm[];
+  zeroResult: SearchTerm[];
+}
+export interface FunnelStage {
+  key: string;
+  label: string;
+  count: number;
+  users: number;
+}
+export interface ActiveUserRow {
+  userId: string;
+  username: string | null;
+  events: number;
+  lastSeen: string;
+}
+export interface UserDrilldown {
+  userId: string;
+  username: string | null;
+  createdAt: string | null;
+  lastLoginAt: string | null;
+  logins: { day: number; week: number; month: number; total: number };
+  peakHours: { hour: number; value: number }[];
+  totalsByType: { eventType: string; count: number }[];
+  recent: {
+    eventType: string;
+    listingId: string | null;
+    query: string | null;
+    createdAt: string;
+  }[];
+}
+
 export interface TimeSeriesPoint {
   bucket: string; // ISO date — day/week/month start
   gmvCents: number;
@@ -616,6 +670,290 @@ export class AdminAnalyticsService {
       aovCents: Math.round(released._avg.buyerTotal ?? 0),
       refundRate: total > 0 ? refunded / total : 0,
       disputeRate: total > 0 ? disputed / total : 0,
+    };
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // Insights (Phase 3) — behavioural + login analytics on top of the
+  // UserEvent / LoginEvent / *Stats tables. Hours are converted to SA
+  // local time (releasedAt/createdAt are stored naive-UTC) so the "peak
+  // time" heatmaps read in the operator's clock.
+  // ══════════════════════════════════════════════════════════════════
+  private readonly TZ = "AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Johannesburg'";
+
+  private async distinctActors(since: Date): Promise<number> {
+    const r = await this.prisma.$queryRaw<{ c: bigint }[]>`
+      SELECT COUNT(DISTINCT COALESCE("userId", "clerkId", "deviceId")) AS c
+      FROM "UserEvent" WHERE "createdAt" >= ${since}`;
+    return Number(r[0]?.c ?? 0);
+  }
+
+  async insightsPulse(): Promise<InsightsPulse> {
+    const now = Date.now();
+    const d1 = new Date(now - 1 * 86400000);
+    const d7 = new Date(now - 7 * 86400000);
+    const d30 = new Date(now - 30 * 86400000);
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const [
+      dau,
+      wau,
+      mau,
+      loginsToday,
+      loginsWeek,
+      activeListings,
+      newUsers7d,
+      salesWeek,
+    ] = await Promise.all([
+      this.distinctActors(d1),
+      this.distinctActors(d7),
+      this.distinctActors(d30),
+      this.prisma.loginEvent.count({ where: { startedAt: { gte: startOfToday } } }),
+      this.prisma.loginEvent.count({ where: { startedAt: { gte: d7 } } }),
+      this.prisma.listing.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.user.count({ where: { createdAt: { gte: d7 } } }),
+      this.prisma.transaction.count({
+        where: { paymentStatus: 'RELEASED', releasedAt: { gte: d7 } },
+      }),
+    ]);
+    return {
+      dau,
+      wau,
+      mau,
+      loginsToday,
+      loginsWeek,
+      activeListings,
+      newUsers7d,
+      salesWeek,
+    };
+  }
+
+  // When do sales complete? dow × hour from released transactions.
+  async salesHeatmap(period: AnalyticsPeriod): Promise<HeatCell[]> {
+    const { from, to } = this.periodRange(period);
+    const rows = await this.prisma.$queryRawUnsafe<
+      { dow: number; hour: number; c: bigint }[]
+    >(
+      `SELECT EXTRACT(DOW FROM ("releasedAt" ${this.TZ}))::int AS dow,
+              EXTRACT(HOUR FROM ("releasedAt" ${this.TZ}))::int AS hour,
+              COUNT(*) AS c
+       FROM "Transaction"
+       WHERE "paymentStatus" = 'RELEASED' AND "releasedAt" >= $1 AND "releasedAt" < $2
+       GROUP BY 1, 2`,
+      from,
+      to,
+    );
+    return rows.map((r) => ({
+      dow: Number(r.dow),
+      hour: Number(r.hour),
+      value: Number(r.c),
+    }));
+  }
+
+  // When are users active? dow × hour from raw events.
+  async activityHeatmap(period: AnalyticsPeriod): Promise<HeatCell[]> {
+    const { from, to } = this.periodRange(period);
+    const rows = await this.prisma.$queryRawUnsafe<
+      { dow: number; hour: number; c: bigint }[]
+    >(
+      `SELECT EXTRACT(DOW FROM ("createdAt" ${this.TZ}))::int AS dow,
+              EXTRACT(HOUR FROM ("createdAt" ${this.TZ}))::int AS hour,
+              COUNT(*) AS c
+       FROM "UserEvent"
+       WHERE "createdAt" >= $1 AND "createdAt" < $2
+       GROUP BY 1, 2`,
+      from,
+      to,
+    );
+    return rows.map((r) => ({
+      dow: Number(r.dow),
+      hour: Number(r.hour),
+      value: Number(r.c),
+    }));
+  }
+
+  // Search intelligence — what people look for, and what returns nothing.
+  async searchIntel(period: AnalyticsPeriod): Promise<SearchIntel> {
+    const { from, to } = this.periodRange(period);
+    const [topTerms, zeroResult] = await Promise.all([
+      this.prisma.$queryRawUnsafe<
+        { term: string; c: bigint; maxres: number | null }[]
+      >(
+        `SELECT lower(query) AS term, COUNT(*) AS c, MAX("resultCount") AS maxres
+         FROM "UserEvent"
+         WHERE "eventType" = 'search' AND query IS NOT NULL AND query <> ''
+           AND "createdAt" >= $1 AND "createdAt" < $2
+         GROUP BY 1 ORDER BY c DESC LIMIT 20`,
+        from,
+        to,
+      ),
+      this.prisma.$queryRawUnsafe<{ term: string; c: bigint }[]>(
+        `SELECT lower(query) AS term, COUNT(*) AS c
+         FROM "UserEvent"
+         WHERE "eventType" = 'search' AND "resultCount" = 0 AND query IS NOT NULL AND query <> ''
+           AND "createdAt" >= $1 AND "createdAt" < $2
+         GROUP BY 1 ORDER BY c DESC LIMIT 15`,
+        from,
+        to,
+      ),
+    ]);
+    return {
+      topTerms: topTerms.map((r) => ({
+        term: r.term,
+        count: Number(r.c),
+        maxResults: r.maxres ?? 0,
+      })),
+      zeroResult: zeroResult.map((r) => ({ term: r.term, count: Number(r.c) })),
+    };
+  }
+
+  // Engagement funnel — view → save → offer/bid → checkout → paid.
+  async engagementFunnel(period: AnalyticsPeriod): Promise<FunnelStage[]> {
+    const { from, to } = this.periodRange(period);
+    const rows = await this.prisma.$queryRawUnsafe<
+      { eventType: string; c: bigint; u: bigint }[]
+    >(
+      `SELECT "eventType", COUNT(*) AS c,
+              COUNT(DISTINCT COALESCE("userId","clerkId","deviceId")) AS u
+       FROM "UserEvent"
+       WHERE "createdAt" >= $1 AND "createdAt" < $2
+       GROUP BY 1`,
+      from,
+      to,
+    );
+    const by = new Map(rows.map((r) => [r.eventType, r]));
+    const paid = await this.prisma.transaction.count({
+      where: { paidAt: { gte: from, lt: to } },
+    });
+    const stage = (key: string, label: string): FunnelStage => {
+      const r = by.get(key);
+      return { key, label, count: Number(r?.c ?? 0), users: Number(r?.u ?? 0) };
+    };
+    const saveOffer = stage('wishlist_add', 'Saved / offered');
+    const offer = by.get('offer_placed');
+    const bid = by.get('bid_placed');
+    const cart = by.get('cart_add');
+    return [
+      stage('listing_view', 'Viewed a listing'),
+      {
+        key: 'intent',
+        label: 'Saved · offered · bid · carted',
+        count:
+          Number(saveOffer.count) +
+          Number(offer?.c ?? 0) +
+          Number(bid?.c ?? 0) +
+          Number(cart?.c ?? 0),
+        users:
+          Number(saveOffer.users) +
+          Number(offer?.u ?? 0) +
+          Number(bid?.u ?? 0) +
+          Number(cart?.u ?? 0),
+      },
+      stage('checkout_started', 'Started checkout'),
+      { key: 'paid', label: 'Paid', count: paid, users: paid },
+    ];
+  }
+
+  // Most active users in the window — the drilldown list.
+  async topActiveUsers(
+    period: AnalyticsPeriod,
+    limit = 25,
+  ): Promise<ActiveUserRow[]> {
+    const { from, to } = this.periodRange(period);
+    const rows = await this.prisma.$queryRawUnsafe<
+      { userId: string; username: string | null; events: bigint; lastseen: Date }[]
+    >(
+      `SELECT ue."userId", u.username, COUNT(*) AS events, MAX(ue."createdAt") AS lastseen
+       FROM "UserEvent" ue JOIN "User" u ON u.id = ue."userId"
+       WHERE ue."userId" IS NOT NULL AND ue."createdAt" >= $1 AND ue."createdAt" < $2
+       GROUP BY 1, 2 ORDER BY events DESC LIMIT $3`,
+      from,
+      to,
+      limit,
+    );
+    return rows.map((r) => ({
+      userId: r.userId,
+      username: r.username,
+      events: Number(r.events),
+      lastSeen: r.lastseen.toISOString(),
+    }));
+  }
+
+  // Everything about one user — the "big brother" drilldown.
+  async userDrilldown(userId: string): Promise<UserDrilldown | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        createdAt: true,
+        lastLoginAt: true,
+      },
+    });
+    if (!user) return null;
+
+    const now = Date.now();
+    const d1 = new Date(now - 1 * 86400000);
+    const d7 = new Date(now - 7 * 86400000);
+    const d30 = new Date(now - 30 * 86400000);
+
+    const [loginDay, loginWeek, loginMonth, loginTotal, peak, totals, recent] =
+      await Promise.all([
+        this.prisma.loginEvent.count({
+          where: { userId, startedAt: { gte: d1 } },
+        }),
+        this.prisma.loginEvent.count({
+          where: { userId, startedAt: { gte: d7 } },
+        }),
+        this.prisma.loginEvent.count({
+          where: { userId, startedAt: { gte: d30 } },
+        }),
+        this.prisma.loginEvent.count({ where: { userId } }),
+        this.prisma.$queryRawUnsafe<{ hour: number; c: bigint }[]>(
+          `SELECT EXTRACT(HOUR FROM ("createdAt" ${this.TZ}))::int AS hour, COUNT(*) AS c
+           FROM "UserEvent" WHERE "userId" = $1 GROUP BY 1 ORDER BY 1`,
+          userId,
+        ),
+        this.prisma.$queryRawUnsafe<{ eventType: string; c: bigint }[]>(
+          `SELECT "eventType", COUNT(*) AS c FROM "UserEvent" WHERE "userId" = $1 GROUP BY 1 ORDER BY c DESC`,
+          userId,
+        ),
+        this.prisma.userEvent.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          take: 40,
+          select: {
+            eventType: true,
+            listingId: true,
+            query: true,
+            createdAt: true,
+          },
+        }),
+      ]);
+
+    return {
+      userId: user.id,
+      username: user.username,
+      createdAt: user.createdAt?.toISOString() ?? null,
+      lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+      logins: {
+        day: loginDay,
+        week: loginWeek,
+        month: loginMonth,
+        total: loginTotal,
+      },
+      peakHours: peak.map((r) => ({ hour: Number(r.hour), value: Number(r.c) })),
+      totalsByType: totals.map((r) => ({
+        eventType: r.eventType,
+        count: Number(r.c),
+      })),
+      recent: recent.map((r) => ({
+        eventType: r.eventType,
+        listingId: r.listingId,
+        query: r.query,
+        createdAt: r.createdAt.toISOString(),
+      })),
     };
   }
 }

@@ -670,6 +670,42 @@ export class AdminAnalyticsController {
     return this.analytics.timeToSale(this.resolvePeriod(period));
   }
 
+  // ─── Insights (Phase 3) ────────────────────────────────────────
+  @Get('insights/pulse')
+  insightsPulse() {
+    return this.analytics.insightsPulse();
+  }
+
+  @Get('insights/sales-heatmap')
+  salesHeatmap(@Query('period') period?: string) {
+    return this.analytics.salesHeatmap(this.resolvePeriod(period));
+  }
+
+  @Get('insights/activity-heatmap')
+  activityHeatmap(@Query('period') period?: string) {
+    return this.analytics.activityHeatmap(this.resolvePeriod(period));
+  }
+
+  @Get('insights/search')
+  searchIntel(@Query('period') period?: string) {
+    return this.analytics.searchIntel(this.resolvePeriod(period));
+  }
+
+  @Get('insights/funnel')
+  engagementFunnel(@Query('period') period?: string) {
+    return this.analytics.engagementFunnel(this.resolvePeriod(period));
+  }
+
+  @Get('insights/active-users')
+  activeUsers(@Query('period') period?: string) {
+    return this.analytics.topActiveUsers(this.resolvePeriod(period));
+  }
+
+  @Get('insights/user/:id')
+  userDrilldown(@Param('id') id: string) {
+    return this.analytics.userDrilldown(id);
+  }
+
   // ─── Operational Health ───────────────────────────────────────
   // Three signals: KYC funnel drop-off, dispatch SLA histogram,
   // refund-risk sellers (refund rate ≥ 2x marketplace baseline).
