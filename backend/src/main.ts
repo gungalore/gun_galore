@@ -40,16 +40,27 @@ function assertProductionConfig() {
       '⚠️  VERIFYNOW_MODE is not "production" — KYC identity checks are running against SANDBOX data. Set VERIFYNOW_MODE=production before going live.',
     );
   }
-  // WARN: Stitch credentials missing — checkout falls back to mock mode.
-  if (!process.env.STITCH_CLIENT_ID || !process.env.STITCH_CLIENT_SECRET) {
+  // WARN: Peach credentials missing — checkout falls back to mock mode.
+  if (
+    !process.env.PEACH_CLIENT_ID ||
+    !process.env.PEACH_CLIENT_SECRET ||
+    !process.env.PEACH_ENTITY_ID ||
+    !process.env.PEACH_SECRET
+  ) {
     log.error(
-      '⚠️  STITCH_CLIENT_ID / STITCH_CLIENT_SECRET not set — checkout runs in MOCK mode (no real payments). Set them before taking payments.',
+      '⚠️  PEACH_CLIENT_ID / PEACH_CLIENT_SECRET / PEACH_MERCHANT_ID / PEACH_ENTITY_ID / PEACH_SECRET not all set — Peach checkout runs in MOCK mode (no real payments). Set them (+ PEACH_ENV=live and PAYMENT_MODE=paygate, PAYMENTS_LIVE=true) before taking payments.',
     );
   }
-  // WARN: Stitch webhook secret missing — webhook verification fails closed.
-  if (!process.env.STITCH_WEBHOOK_SECRET) {
+  // WARN: Peach webhook signing secret missing — webhook verification fails closed.
+  if (!process.env.PEACH_SECRET) {
     log.error(
-      '⚠️  STITCH_WEBHOOK_SECRET is not set — incoming Stitch webhooks will be REJECTED (fail-closed). Register the webhook (POST /api/v1/webhook) and set the returned Svix secret before relying on webhooks.',
+      '⚠️  PEACH_SECRET is not set — incoming Peach webhooks will be REJECTED (fail-closed). Set the webhook signing secret from the Peach Dashboard before relying on webhooks.',
+    );
+  }
+  // WARN: Peach payout product not configured — seller disbursement disabled.
+  if (!process.env.PEACH_PAYOUT_ENTITY_ID) {
+    log.error(
+      '⚠️  PEACH_PAYOUT_ENTITY_ID is not set — seller payout disbursement (Peach Payouts) is disabled; run-payouts will log intent only.',
     );
   }
   // WARN: Clerk webhook secret missing — user.created/updated/deleted sync

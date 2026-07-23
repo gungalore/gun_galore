@@ -510,7 +510,7 @@ export class TransactionsController {
 }
 
 // ---------------------------------------------------------------
-// Stitch webhook — separate controller so path is /api/payments/...
+// Peach webhook — separate controller so path is /api/payments/...
 // ---------------------------------------------------------------
 @Controller('payments')
 export class PaymentsWebhookController {
@@ -518,41 +518,127 @@ export class PaymentsWebhookController {
 
   constructor(private readonly txService: TransactionsService) {}
 
-  // Stitch Express delivers webhooks via Svix, signed with the webhook's
-  // signing secret (STITCH_WEBHOOK_SECRET). Verification is HMAC-SHA256
-  // over the RAW body keyed by the secret, sent in the svix-id /
-  // svix-timestamp / svix-signature headers. NestFactory is created with
-  // { rawBody: true } (main.ts) so req.rawBody is the exact bytes Stitch
-  // signed — re-serialising via JSON.stringify would reorder keys and
-  // never match. The controller ALWAYS returns 200 (CLAUDE.md rule);
-  // a bad-signature drop is logged. Verification fails closed in prod.
-  @Post('webhook/stitch')
+  private publicUrl(path: string): string {
+    const base =
+      process.env.PUBLIC_API_URL ??
+      (process.env.FRONTEND_URL
+        ? `${process.env.FRONTEND_URL.replace(/\/$/, '')}/api`
+        : 'http://localhost:3001/api');
+    return `${base}${path}`;
+  }
+
+  // Peach signs webhooks either via headers (x-webhook-signature over
+  // `${ts}.${id}.${url}.${rawBody}`) or a `signature` FIELD in the body
+  // (classic result/webhook). NestFactory is created with { rawBody: true }
+  // (main.ts) so req.rawBody is the exact bytes Peach signed — re-serialising
+  // would reorder keys and never match. Checkout webhooks arrive
+  // form-urlencoded. The controller ALWAYS returns 200 (CLAUDE.md rule); a
+  // bad-signature drop is logged. Verification fails closed in prod.
+  @Post('webhook/peach')
   @HttpCode(200)
-  async stitchWebhook(
+  async peachWebhook(
     @Req() req: Request,
     @Body() body: Record<string, unknown>,
   ) {
-    this.logger.log('Stitch webhook received');
-
+    this.logger.log('Peach webhook received');
     const headers = {
-      id: req.headers['svix-id'] as string | undefined,
-      timestamp: req.headers['svix-timestamp'] as string | undefined,
-      signature: req.headers['svix-signature'] as string | undefined,
+      id: req.headers['x-webhook-id'] as string | undefined,
+      timestamp: req.headers['x-webhook-timestamp'] as string | undefined,
+      signature: req.headers['x-webhook-signature'] as string | undefined,
     };
     const rawBody =
       (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
       JSON.stringify(body);
-    const valid = this.txService.verifyStitchWebhook(rawBody, headers);
+    const valid = this.txService.verifyPeachWebhook(
+      rawBody,
+      body,
+      headers,
+      this.publicUrl('/payments/webhook/peach'),
+    );
     if (!valid) {
-      this.logger.warn('Stitch webhook signature invalid — dropping');
+      this.logger.warn('Peach webhook signature invalid — dropping');
       return { received: true };
     }
-
     try {
-      await this.txService.handleStitchWebhook(body);
+      await this.txService.handlePeachWebhook(body);
     } catch (err) {
       this.logger.error(
-        `Stitch webhook handler failed: ${(err as Error).message}`,
+        `Peach webhook handler failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
+    return { received: true };
+  }
+
+  // Peach dispute/chargeback notification (separate product/route). Same
+  // signing; routes to the money-safe dispute handler (never auto-refunds).
+  @Post('webhook/peach-dispute')
+  @HttpCode(200)
+  async peachDisputeWebhook(
+    @Req() req: Request,
+    @Body() body: Record<string, unknown>,
+  ) {
+    this.logger.log('Peach dispute webhook received');
+    const headers = {
+      id: req.headers['x-webhook-id'] as string | undefined,
+      timestamp: req.headers['x-webhook-timestamp'] as string | undefined,
+      signature: req.headers['x-webhook-signature'] as string | undefined,
+    };
+    const rawBody =
+      (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
+      JSON.stringify(body);
+    const valid = this.txService.verifyPeachWebhook(
+      rawBody,
+      body,
+      headers,
+      this.publicUrl('/payments/webhook/peach-dispute'),
+    );
+    if (!valid) {
+      this.logger.warn('Peach dispute webhook signature invalid — dropping');
+      return { received: true };
+    }
+    try {
+      await this.txService.handlePeachDispute(body);
+    } catch (err) {
+      this.logger.error(
+        `Peach dispute webhook handler failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
+    return { received: true };
+  }
+
+  // Peach payout status webhook (Processing / Successful / Failed).
+  @Post('webhook/peach-payout')
+  @HttpCode(200)
+  async peachPayoutWebhook(
+    @Req() req: Request,
+    @Body() body: Record<string, unknown>,
+  ) {
+    this.logger.log('Peach payout webhook received');
+    const headers = {
+      id: req.headers['x-webhook-id'] as string | undefined,
+      timestamp: req.headers['x-webhook-timestamp'] as string | undefined,
+      signature: req.headers['x-webhook-signature'] as string | undefined,
+    };
+    const rawBody =
+      (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
+      JSON.stringify(body);
+    const valid = this.txService.verifyPeachWebhook(
+      rawBody,
+      body,
+      headers,
+      this.publicUrl('/payments/webhook/peach-payout'),
+    );
+    if (!valid) {
+      this.logger.warn('Peach payout webhook signature invalid — dropping');
+      return { received: true };
+    }
+    try {
+      await this.txService.handlePeachPayoutWebhook(body);
+    } catch (err) {
+      this.logger.error(
+        `Peach payout webhook handler failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
     }

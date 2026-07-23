@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { FeeCalculator } from './fee.calculator';
-import { StitchService } from './stitch.service';
 import { TransactionsService } from './transactions.service';
 import { DispatchSlaService } from './dispatch-sla.service';
 import { ExperienceSlaService } from './experience-sla.service';
@@ -24,7 +23,6 @@ import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module'
   ],
   providers: [
     FeeCalculator,
-    StitchService,
     TransactionsService,
     DispatchSlaService,
     ExperienceSlaService,
@@ -33,16 +31,15 @@ import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module'
     FraudRiskService,
   ],
   controllers: [TransactionsController, PaymentsWebhookController],
-  // StitchService exported so admin / featured can issue refunds and
-  // the webhook controller can verify + confirm payments.
-  // DealerVerificationService exported so AdminModule can use it for
-  // admin-side override / re-scan.
+  // PeachService is provided globally by PeachModule — admin / featured /
+  // dispatch-SLA / manual-payments inject it directly without importing
+  // PaymentsModule. DealerVerificationService exported so AdminModule can
+  // use it for admin-side override / re-scan.
   exports: [
     FeeCalculator,
     TransactionsService,
     DispatchSlaService,
     ExperienceSlaService,
-    StitchService,
     DealerVerificationService,
   ],
 })

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { StitchService } from './stitch.service';
+import { PeachService } from './peach.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { ShippingService } from '../shipping/shipping.service';
@@ -24,7 +24,7 @@ export class DispatchSlaService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly stitch: StitchService,
+    private readonly peach: PeachService,
     private readonly notifications: NotificationsService,
     private readonly tracking: TrackingService,
     // FLOW-F1 — the auto-refund must also cancel the carrier shipment GG
@@ -165,7 +165,7 @@ export class DispatchSlaService {
         }
 
         const r = tx.peachPaymentId
-          ? await this.stitch.refundPayment(tx.peachPaymentId, tx.buyerTotal)
+          ? await this.peach.refundPayment(tx.peachPaymentId, tx.buyerTotal)
           : { success: true, resultCode: 'NO_PAYMENT_ID' };
 
         if (!r.success) {

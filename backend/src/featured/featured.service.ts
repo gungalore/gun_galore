@@ -46,7 +46,7 @@ export function applyFeaturedDiscount(
   return Math.floor((faceCents * (100 - safe)) / 100);
 }
 import { PrismaService } from '../prisma/prisma.service';
-import { StitchService } from '../payments/stitch.service';
+import { PeachService } from '../payments/peach.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
@@ -93,7 +93,7 @@ export class FeaturedService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly stitch: StitchService,
+    private readonly peach: PeachService,
     // NOT @Global — FeaturedModule imports ZohoBooksModule explicitly
     // (the SwapsModule boot-crash lesson). Posts the slot-fee Sales
     // Receipt; feature-flagged no-op until ZOHO_BOOKS_ENABLED=true.
@@ -1531,7 +1531,7 @@ export class FeaturedService {
         !!bid.peachPaymentId && !bid.peachPaymentId.startsWith('featured-');
       if (hasRealGatewayId) {
         // Paygate rail — reverse on the card via the gateway.
-        const r = await this.stitch.refundPayment(bid.peachPaymentId!, refundCents);
+        const r = await this.peach.refundPayment(bid.peachPaymentId!, refundCents);
         await this.prisma.featuredSlotBid.update({
           where: { id: bid.id },
           data: { status: 'REFUNDED' },

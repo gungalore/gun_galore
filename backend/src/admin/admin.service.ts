@@ -12,7 +12,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
-import { StitchService } from '../payments/stitch.service';
+import { PeachService } from '../payments/peach.service';
 import { SmsService } from '../sms/sms.service';
 import { TransactionsService, PAYMENT_MODE } from '../payments/transactions.service';
 import { reversalListingData } from '../payments/inventory';
@@ -31,10 +31,10 @@ export class AdminService {
     // post a Credit Note to Books reversing the original commission
     // invoice.
     private readonly zohoBooks: ZohoBooksService,
-    // PaymentsModule (imported by AdminModule) exports StitchService.
+    // PaymentsModule (imported by AdminModule) exports PeachService.
     // refundTransaction() calls it to actually move the money back to the
     // buyer before flipping the row to REFUNDED.
-    private readonly stitch: StitchService,
+    private readonly peach: PeachService,
     // PaymentsModule also exports TransactionsService — used by
     // refundTransaction() to cancel any platform-booked carrier shipment so a
     // refunded sale doesn't leave a live (already-billed) waybill (P5.2).
@@ -1716,7 +1716,7 @@ export class AdminService {
       PAYMENT_MODE === 'manual'
         ? { success: true as const, resultCode: 'MANUAL_EFT_BATCH' }
         : tx.peachPaymentId
-          ? await this.stitch.refundPayment(tx.peachPaymentId, amount)
+          ? await this.peach.refundPayment(tx.peachPaymentId, amount)
           : { success: false, resultCode: 'NO_PAYMENT_ID' };
 
     if (!refund.success) {

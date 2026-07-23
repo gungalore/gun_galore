@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, HttpCode, UseGuards } from '@nestjs/common';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { ManualPaymentsService } from './manual-payments.service';
 
@@ -12,9 +12,21 @@ import { ManualPaymentsService } from './manual-payments.service';
 export class ManualPaymentsController {
   constructor(private readonly manual: ManualPaymentsService) {}
 
-  // (GET payouts-due removed 2026-07-18 — no UI consumed it since the FNB
-  // rail was stripped. The rail-agnostic getPayoutsDue/collectDue service
-  // methods stay for the future payment provider's disbursement leg.)
+  // Preview: everything due to sellers now + rows a run would skip.
+  @Get('payouts-due')
+  payoutsDue() {
+    return this.manual.getPayoutsDuePreview();
+  }
+
+  // Operator-triggered seller payout run — disburses due payouts to seller
+  // banks via Peach Payouts (exactly-once via paidOutAt; the payout webhook
+  // reconciles). Gated on PAYMENTS_LIVE inside the service. Real money —
+  // operator action, not an automatic cron.
+  @Post('run-payouts')
+  @HttpCode(200)
+  runPayouts() {
+    return this.manual.runDuePayouts();
+  }
 
   // P1.3 — every entity whose latest Zoho Books sync FAILED, in one list.
   @Get('zoho-failed')

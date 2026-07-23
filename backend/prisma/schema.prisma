@@ -1286,6 +1286,10 @@ model Transaction {
   // Payment
   paymentStatus   PaymentStatus @default(HELD)
   peachCheckoutId String?
+  // Peach requires an 8-16 char merchantTransactionId; our cuid is 25, so
+  // we mint a short unique ref at checkout create and match webhooks by it
+  // as a fallback to peachCheckoutId.
+  peachMerchantRef String?      @unique
   // @unique: a gateway payment id can settle exactly ONE transaction.
   // Defence-in-depth against replaying one Peach success against multiple
   // orders — the second markPaid hits a unique violation. NULLs are

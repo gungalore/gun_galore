@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PAYMENT_MODE } from '../payments/transactions.service';
+import { PAYMENTS_LIVE } from '../payments/payment-mode';
+import { PeachService, PeachPayoutBeneficiary } from '../payments/peach.service';
 
 // Manual-EFT reconciliation (the inContact inbox scan + FNB statement CSV
 // upload + unmatched queue + FNB payout-batch builder) has been REMOVED with
@@ -26,7 +28,107 @@ export interface SkippedDueRow {
 export class ManualPaymentsService {
   private readonly logger = new Logger(ManualPaymentsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // PeachService is @Global (PeachModule) — no PaymentsModule import needed.
+    private readonly peach: PeachService,
+  ) {}
+
+  // ── Seller payout disbursement via Peach Payouts ────────────────────
+  // Operator-triggered (admin endpoint). Gathers the due seller payouts,
+  // disburses the payable ones to each seller's bank in ONE batch call, and
+  // stamps paidOutAt on the rows Peach ACCEPTS (exactly-once — a re-run skips
+  // already-stamped rows). The payout webhook later confirms Successful or, on
+  // Failed, clears paidOutAt so the row re-queues. Buyer refunds are NOT here:
+  // a card gateway reverses those on the original card via refundPayment.
+  async runDuePayouts(): Promise<{
+    attempted: number;
+    accepted: number;
+    failed: number;
+    totalCents: number;
+    skipped: SkippedDueRow[];
+  }> {
+    if (!PAYMENTS_LIVE) {
+      throw new Error(
+        'Payments are not live (PAYMENTS_LIVE!=true) — payout disbursement is disabled.',
+      );
+    }
+    const due = await this.getPayoutsDue();
+    const collected = await this.collectDue(due);
+    const payable = due.payouts.filter((p) =>
+      collected.payoutIds.includes(p.id),
+    );
+    if (payable.length === 0) {
+      return {
+        attempted: 0,
+        accepted: 0,
+        failed: 0,
+        totalCents: 0,
+        skipped: collected.skipped,
+      };
+    }
+
+    const childrenSum = (c?: { buyerTotal: number }[] | null) =>
+      (c ?? []).reduce((s, x) => s + x.buyerTotal, 0);
+
+    const beneficiaries: (PeachPayoutBeneficiary & { txId: string })[] =
+      payable.map((p) => ({
+        txId: p.id,
+        // merchantPayoutId = tx.id so the payout webhook maps straight back.
+        reference: p.id,
+        beneficiaryName: p.seller.bankAccountHolder ?? '',
+        bankAccountNumber: p.seller.bankAccountNumber ?? '',
+        branchCode: p.seller.bankBranchCode ?? '',
+        amountCents: Math.max(0, p.sellerPayout - childrenSum(p.refundChildren)),
+        narrative: (p.orderReference ?? p.id).slice(0, 20),
+      }));
+
+    const res = await this.peach.createPayout(beneficiaries);
+    const acceptedRefs = new Set(
+      res.results
+        .filter((r) => r.status === 'success' || r.status === 'processing')
+        .map((r) => r.reference),
+    );
+
+    // Stamp paidOutAt on accepted rows (exactly-once). CAS on paidOutAt=null
+    // so a concurrent run can't double-stamp.
+    let accepted = 0;
+    let totalCents = 0;
+    for (const b of beneficiaries) {
+      if (!acceptedRefs.has(b.reference)) continue;
+      const stamp = await this.prisma.transaction.updateMany({
+        where: { id: b.txId, paidOutAt: null },
+        data: { paidOutAt: new Date() },
+      });
+      if (stamp.count > 0) {
+        accepted += 1;
+        totalCents += b.amountCents;
+      }
+    }
+    const failed = beneficiaries.length - accepted;
+    if (failed > 0) {
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'PEACH_PAYOUT_PARTIAL',
+            referenceId: res.requestId ?? 'peach-payout',
+            urgent: true,
+            context: `Peach payout batch: ${accepted}/${beneficiaries.length} accepted, ${failed} not accepted. ${res.message ?? ''}`,
+          },
+        })
+        .catch(() => undefined);
+    }
+    this.logger.log(
+      `Peach payout run: ${accepted}/${beneficiaries.length} accepted, R${Math.round(totalCents / 100)} disbursed (request ${res.requestId ?? '—'})`,
+    );
+    return {
+      attempted: beneficiaries.length,
+      accepted,
+      failed,
+      totalCents,
+      skipped: collected.skipped,
+    };
+  }
 
   // ── P1.3 — Books failed-sync aggregate (read-only) ──────────────────
   // One place listing every entity whose latest Zoho sync FAILED, so the

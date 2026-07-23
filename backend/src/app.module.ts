@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
+import { PeachModule } from './payments/peach.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { SearchModule } from './search/search.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -68,6 +69,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
       { name: 'default', ttl: 60_000, limit: 60 },
     ]),
     PrismaModule,
+    PeachModule,
     CloudinaryModule,
     SearchModule,
     NotificationsModule,

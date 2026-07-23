@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeeCalculator, SHIPPING_HANDLING_FEE_CENTS } from './fee.calculator';
-import { StitchService, StitchPaymentResult } from './stitch.service';
+import { PeachService, PeachPaymentResult } from './peach.service';
 import { FraudRiskService } from './fraud-risk.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { estimateDeliveryDate } from '../shipping/delivery-estimate';
@@ -80,7 +80,7 @@ export class TransactionsService {
     private readonly prisma: PrismaService,
     private readonly fees: FeeCalculator,
     private readonly notifications: NotificationsService,
-    private readonly stitch: StitchService,
+    private readonly peach: PeachService,
     private readonly kyc: KycService,
     private readonly shipping: ShippingService,
     private readonly tracking: TrackingService,
@@ -116,6 +116,14 @@ export class TransactionsService {
   // multi-item order checkout (OrdersService) call this; the CALLER owns the
   // payment step (one capture per order) and, for orders, the offer→CONVERTED
   // update. Returns every local the payment step needs.
+  // Public /api origin for server-to-server callbacks (Peach notificationUrl).
+  // PUBLIC_API_URL when set, else FRONTEND_URL + '/api', else localhost.
+  private apiBaseUrl(): string {
+    if (process.env.PUBLIC_API_URL) return process.env.PUBLIC_API_URL;
+    const fe = process.env.FRONTEND_URL;
+    return fe ? `${fe.replace(/\/$/, '')}/api` : 'http://localhost:3001/api';
+  }
+
   private async reserveAndCreateLine(
     buyerClerkId: string,
     dto: CreateTransactionDto,
@@ -755,16 +763,21 @@ export class TransactionsService {
     // merchantReference. The buyer's own name is fine to send to the
     // gateway (it's their card payment, not exposed to other users).
     const resultUrl = `${frontendUrl}/checkout/complete`;
+    // Peach posts the authoritative result server-to-server to this webhook
+    // (as well as redirecting the buyer to resultUrl). apiBaseUrl points at
+    // our public /api origin.
+    const notificationUrl = `${this.apiBaseUrl()}/payments/webhook/peach`;
     const payerName =
       [buyer.firstName, buyer.lastName].filter(Boolean).join(' ') ||
       buyer.username ||
       undefined;
-    let stitchCheckout;
+    let gatewayCheckout;
     try {
-      stitchCheckout = await this.stitch.createCheckout({
+      gatewayCheckout = await this.peach.createCheckout({
         amountZarCents: buyerTotal,
         merchantTransactionId: tx.id,
         shopperResultUrl: resultUrl,
+        notificationUrl,
         shopperName: payerName,
         shopperEmail: buyer.email,
       });
@@ -784,7 +797,7 @@ export class TransactionsService {
       });
       await this.prisma.transaction.delete({ where: { id: tx.id } });
       this.logger.error(
-        `Stitch createCheckout failed for tx ${tx.id}: ${(err as Error).message}`,
+        `Peach createCheckout failed for tx ${tx.id}: ${(err as Error).message}`,
         (err as Error).stack,
       );
       throw new BadRequestException(
@@ -792,13 +805,16 @@ export class TransactionsService {
       );
     }
 
-    // Persist the Stitch payment id (reusing the peachCheckoutId column
-    // during the Peach→Stitch transition — no schema change) and mark
+    // Persist the Peach checkoutId (peachCheckoutId — the primary webhook
+    // match) + the minted 8-16 char merchant ref (fallback match) and mark
     // the offer CONVERTED if this was an offer checkout.
     const [updated] = await this.prisma.$transaction([
       this.prisma.transaction.update({
         where: { id: tx.id },
-        data: { peachCheckoutId: stitchCheckout.paymentId },
+        data: {
+          peachCheckoutId: gatewayCheckout.paymentId,
+          peachMerchantRef: gatewayCheckout.merchantReference,
+        },
       }),
       ...(offerRecord
         ? [this.prisma.offer.update({
@@ -811,11 +827,11 @@ export class TransactionsService {
     return {
       transactionId: updated.id,
       // Generic fields the frontend redirects on. paymentId carries the
-      // `mock-` prefix when Stitch isn't configured (dev), which the UI
+      // `mock-` prefix when Peach isn't configured (dev), which the UI
       // uses to render the test-mode card instead of redirecting.
-      paymentId: stitchCheckout.paymentId,
-      redirectUrl: stitchCheckout.redirectUrl,
-      provider: 'stitch' as const,
+      paymentId: gatewayCheckout.paymentId,
+      redirectUrl: gatewayCheckout.redirectUrl,
+      provider: 'peach' as const,
       breakdown: { listingPrice, commissionZar, processingFee, buyerTotal, sellerPayout },
     };
   }
@@ -1251,18 +1267,19 @@ export class TransactionsService {
     // Already processed — idempotent
     if (tx.paidAt) return { success: true, alreadyProcessed: true };
 
-    const stitchPaymentId = tx.peachCheckoutId;
-    if (!stitchPaymentId) {
+    const checkoutId = tx.peachCheckoutId;
+    if (!checkoutId) {
       throw new BadRequestException('No payment reference on this transaction');
     }
 
     try {
-      const status = await this.stitch.getPaymentStatus(stitchPaymentId);
+      const status = await this.peach.getPaymentStatus(checkoutId);
       if (status.isSuccess) {
-        // Map the Stitch result into the gateway-result shape markPaid
-        // binds on. merchantTransactionId is set to tx.id (bound by
-        // construction — see above) so a missing merchantReference echo
-        // can't break a genuine capture; the amount is the real guard.
+        // Map the Peach result into the gateway-result shape markPaid binds
+        // on. merchantTransactionId is set to tx.id (bound by construction —
+        // see above) so a missing merchantReference echo can't break a
+        // genuine capture; the amount is the real guard. status.paymentId is
+        // Peach's refundable `id`, stored as peachPaymentId in markPaid.
         const result: GatewayPaymentResult = {
           paymentId: status.paymentId,
           resultCode: status.status,
@@ -1277,7 +1294,7 @@ export class TransactionsService {
       // Not captured (yet) — leave the listing reserved; do not revert.
       return { success: false, resultCode: status.status };
     } catch (err) {
-      this.logger.error('Stitch verify failed', err);
+      this.logger.error('Peach verify failed', err);
       throw new BadRequestException('Payment verification failed');
     }
   }
@@ -1285,11 +1302,13 @@ export class TransactionsService {
   // ------------------------------------------------------------------
   // Exposed to the webhook controller — verify the Svix signature.
   // ------------------------------------------------------------------
-  verifyStitchWebhook(
+  verifyPeachWebhook(
     rawBody: string,
+    parsedBody: Record<string, unknown>,
     headers: { id?: string; timestamp?: string; signature?: string },
+    url: string,
   ): boolean {
-    return this.stitch.verifyWebhookSignature(rawBody, headers);
+    return this.peach.verifyWebhookSignature(rawBody, parsedBody, headers, url);
   }
 
   // ------------------------------------------------------------------
@@ -1300,58 +1319,61 @@ export class TransactionsService {
   // bind it in markPaid. Never reverts on a non-success (a still-settling
   // payment could be double-sold); the webhook must always 200.
   // ------------------------------------------------------------------
-  async handleStitchWebhook(body: Record<string, unknown>) {
-    const evt = this.stitch.parseWebhookEvent(body);
-    if (!evt.paymentId && !evt.merchantReference) {
-      this.logger.warn('Stitch webhook: no paymentId/merchantReference');
+  async handlePeachWebhook(body: Record<string, unknown>) {
+    const evt = this.peach.parseWebhookEvent(body);
+    if (!evt.checkoutId && !evt.merchantReference) {
+      this.logger.warn('Peach webhook: no checkoutId/merchantReference');
       return;
     }
 
-    // Chargeback / dispute / reversal events take a different path: never
-    // auto-refund (the chargeback IS the reversal) — just hold the payout
-    // and raise an admin alert for manual handling (Phase 4 P4.3).
-    if (this.isChargebackEvent(evt.type)) {
-      await this.handleChargebackEvent(evt);
-      return;
-    }
-
-    // The Stitch payment id is stored on peachCheckoutId at create() time.
-    // Match on that first; fall back to merchantReference (= our tx id).
+    // Match by Peach checkoutId (peachCheckoutId, stored at create) first,
+    // then the minted merchant ref (peachMerchantRef). Never trust the
+    // webhook body's amount — re-fetch authoritative status below.
     const tx = await this.prisma.transaction.findFirst({
-      where: evt.paymentId
-        ? { peachCheckoutId: evt.paymentId }
-        : { id: evt.merchantReference },
+      where: evt.checkoutId
+        ? { peachCheckoutId: evt.checkoutId }
+        : { peachMerchantRef: evt.merchantReference },
       include: { listing: true },
     });
     if (!tx) {
       this.logger.warn(
-        `Stitch webhook: no transaction for payment ${evt.paymentId ?? evt.merchantReference}`,
+        `Peach webhook: no transaction for ${evt.checkoutId ?? evt.merchantReference}`,
       );
       return;
     }
     if (tx.paidAt) {
-      this.logger.log(`Stitch webhook: transaction ${tx.id} already processed`);
+      this.logger.log(`Peach webhook: transaction ${tx.id} already processed`);
+      return;
+    }
+    // Only a successful lifecycle event proceeds. Pending/Cancelled/Uncertain
+    // never revert a reservation (a still-settling payment could be double-
+    // sold); they're logged and left for the buyer's return or a later event.
+    if (evt.bucket !== 'success') {
+      this.logger.log(
+        `Peach webhook: ${tx.id} bucket=${evt.bucket} (code ${evt.resultCode ?? '?'}) — no action`,
+      );
       return;
     }
 
-    const paymentId = tx.peachCheckoutId ?? evt.paymentId;
-    if (!paymentId) {
-      this.logger.warn(`Stitch webhook: transaction ${tx.id} has no payment id`);
+    const checkoutId = tx.peachCheckoutId ?? evt.checkoutId;
+    if (!checkoutId) {
+      this.logger.warn(`Peach webhook: transaction ${tx.id} has no checkout id`);
       return;
     }
 
-    let status: StitchPaymentResult;
+    // Re-fetch authoritative status (never trust the webhook amount).
+    let status: PeachPaymentResult;
     try {
-      status = await this.stitch.getPaymentStatus(paymentId);
+      status = await this.peach.getPaymentStatus(checkoutId);
     } catch (err) {
       this.logger.error(
-        `Stitch webhook: status fetch failed for ${paymentId}: ${(err as Error).message}`,
+        `Peach webhook: status fetch failed for ${checkoutId}: ${(err as Error).message}`,
       );
       return;
     }
     if (!status.isSuccess) {
       this.logger.warn(
-        `Stitch webhook: payment ${paymentId} not successful (status ${status.status})`,
+        `Peach webhook: ${checkoutId} not successful on re-fetch (status ${status.status})`,
       );
       return;
     }
@@ -1375,12 +1397,12 @@ export class TransactionsService {
       );
     } catch (err) {
       this.logger.error(
-        `Stitch webhook: markPaid rejected for ${tx.id}: ${(err as Error).message}`,
+        `Peach webhook: markPaid rejected for ${tx.id}: ${(err as Error).message}`,
       );
       await this.prisma.adminAlert
         .create({
           data: {
-            type: 'STITCH_WEBHOOK_MARKPAID_REJECTED',
+            type: 'PEACH_WEBHOOK_MARKPAID_REJECTED',
             referenceId: tx.id,
             urgent: true,
             context: `Webhook success for ${tx.id} but markPaid rejected: ${(err as Error).message}. Paid amount=${status.amountCents}c.`,
@@ -1391,19 +1413,77 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
-  // Chargeback / dispute / reversal webhook (Phase 4 P4.3)
+  // Dispute / chargeback path (rail-agnostic). Peach checkout webhooks are
+  // payment-lifecycle only; disputes arrive via a separate notification the
+  // operator wires to POST /payments/webhook/peach-dispute. Kept ready +
+  // callable so the money-safety logic below isn't lost. Matches on
+  // checkoutId/merchantRef; never auto-refunds (the chargeback IS the
+  // reversal); holds the payout → DISPUTED and alerts an admin.
   // ------------------------------------------------------------------
-  // The exact Stitch event name isn't pinned in the OpenAPI, so we match
-  // defensively on the type string. A chargeback means the buyer's bank is
-  // clawing the money back through the card/EFT scheme — it is itself the
-  // reversal, so we MUST NOT also refund (that double-pays the buyer). We
-  // hold the payout (→ DISPUTED) and raise an urgent admin alert for a
-  // human to investigate + contest or concede.
-  private isChargebackEvent(type?: string): boolean {
-    if (!type) return false;
-    return /charge.?back|dispute|reversal|reverse/i.test(type);
+  async handlePeachDispute(body: Record<string, unknown>) {
+    const evt = this.peach.parseWebhookEvent(body);
+    await this.handleChargebackEvent({
+      paymentId: evt.checkoutId,
+      merchantReference: evt.merchantReference,
+      type: `dispute:${evt.resultCode ?? 'unknown'}`,
+    });
   }
 
+  // ------------------------------------------------------------------
+  // Peach PAYOUT status webhook (Processing / Successful / Failed).
+  // runDuePayouts stamps paidOutAt when Peach ACCEPTS the batch; this
+  // reconciles the async outcome. merchantPayoutId == our transaction id.
+  //   Failed  → clear paidOutAt so the row re-queues + urgent alert.
+  //   Success → confirm (paidOutAt already set); log.
+  // Always idempotent; the webhook must 200.
+  // ------------------------------------------------------------------
+  async handlePeachPayoutWebhook(body: Record<string, unknown>) {
+    const evt = this.peach.parsePayoutWebhook(body);
+    const txId = evt.merchantPayoutId;
+    if (!txId) {
+      this.logger.warn('Peach payout webhook: no merchantPayoutId');
+      return;
+    }
+    if (evt.status === 'failed') {
+      // Un-stamp so the seller is retried next run, and alert — the seller's
+      // bank details are likely wrong (invalid account) or a transient fault.
+      const cleared = await this.prisma.transaction.updateMany({
+        where: { id: txId, releasedAt: { not: null } },
+        data: { paidOutAt: null },
+      });
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'PEACH_PAYOUT_FAILED',
+            referenceId: txId,
+            urgent: true,
+            context: `Peach payout FAILED for ${txId} (code ${evt.code ?? '?'}, payoutId ${evt.payoutId ?? '—'}). paidOutAt ${cleared.count ? 'cleared → will retry' : 'not set'}; check the seller's bank details.`,
+          },
+        })
+        .catch(() => undefined);
+      void this.tracking.recordInternal(txId, 'PAYOUT_FAILED', {
+        message: `Payout failed (code ${evt.code ?? '?'}) — retry after checking bank details.`,
+      });
+      return;
+    }
+    if (evt.status === 'success') {
+      this.logger.log(`Peach payout SUCCESS for ${txId} (payoutId ${evt.payoutId ?? '—'})`);
+      void this.tracking.recordInternal(txId, 'PAYOUT_SETTLED', {
+        message: 'Payout settled to the seller’s bank.',
+      });
+      return;
+    }
+    this.logger.log(`Peach payout processing for ${txId}`);
+  }
+
+  // ------------------------------------------------------------------
+  // Chargeback / dispute / reversal (Phase 4 P4.3) — invoked from
+  // handlePeachDispute. A chargeback means the buyer's bank is clawing the
+  // money back through the card scheme — it is itself the reversal, so we
+  // MUST NOT also refund (that double-pays the buyer). We hold the payout
+  // (→ DISPUTED) and raise an urgent admin alert to investigate + contest
+  // or concede.
+  // ------------------------------------------------------------------
   private async handleChargebackEvent(evt: {
     paymentId?: string;
     merchantReference?: string;
@@ -1412,16 +1492,16 @@ export class TransactionsService {
     const tx = await this.prisma.transaction.findFirst({
       where: evt.paymentId
         ? { peachCheckoutId: evt.paymentId }
-        : { id: evt.merchantReference },
+        : { peachMerchantRef: evt.merchantReference },
     });
     if (!tx) {
       this.logger.warn(
-        `Stitch chargeback: no transaction for ${evt.paymentId ?? evt.merchantReference} (type=${evt.type})`,
+        `Peach chargeback: no transaction for ${evt.paymentId ?? evt.merchantReference} (type=${evt.type})`,
       );
       await this.prisma.adminAlert
         .create({
           data: {
-            type: 'STITCH_CHARGEBACK_UNMATCHED',
+            type: 'CHARGEBACK_UNMATCHED',
             referenceId: evt.paymentId ?? evt.merchantReference ?? 'unknown',
             urgent: true,
             context: `Chargeback/dispute webhook (${evt.type}) could not be matched to a transaction. payment=${evt.paymentId ?? '—'} ref=${evt.merchantReference ?? '—'}.`,
@@ -1433,7 +1513,7 @@ export class TransactionsService {
 
     // Idempotent — a retried webhook on an already-DISPUTED tx is a no-op.
     if (tx.paymentStatus === 'DISPUTED') {
-      this.logger.log(`Stitch chargeback: ${tx.id} already DISPUTED — skipping`);
+      this.logger.log(`Peach chargeback: ${tx.id} already DISPUTED — skipping`);
       return;
     }
 
@@ -1444,14 +1524,14 @@ export class TransactionsService {
       await this.prisma.adminAlert
         .create({
           data: {
-            type: 'STITCH_CHARGEBACK_AFTER_REFUND',
+            type: 'CHARGEBACK_AFTER_REFUND',
             referenceId: tx.id,
             urgent: true,
             context: `Chargeback (${evt.type}) on ${tx.id}, but the order was already REFUNDED. Likely a double-claim — contest with the bank. Do NOT refund again.`,
           },
         })
         .catch(() => undefined);
-      void this.tracking.recordInternal(tx.id, 'STITCH_CHARGEBACK_RECEIVED', {
+      void this.tracking.recordInternal(tx.id, 'CHARGEBACK_RECEIVED', {
         message: `Chargeback received after refund (${evt.type}). Flagged for the bank.`,
       });
       return;
@@ -1464,14 +1544,14 @@ export class TransactionsService {
       await this.prisma.adminAlert
         .create({
           data: {
-            type: 'STITCH_CHARGEBACK_AFTER_PAYOUT',
+            type: 'CHARGEBACK_AFTER_PAYOUT',
             referenceId: tx.id,
             urgent: true,
             context: `Chargeback (${evt.type}) on ${tx.id} AFTER payout was RELEASED to the seller (${tx.buyerTotal}c). Funds already left to the seller — cannot auto-reverse. Manual recovery required.`,
           },
         })
         .catch(() => undefined);
-      void this.tracking.recordInternal(tx.id, 'STITCH_CHARGEBACK_RECEIVED', {
+      void this.tracking.recordInternal(tx.id, 'CHARGEBACK_RECEIVED', {
         message: `Chargeback received after payout (${evt.type}). Manual recovery required.`,
       });
       return;
@@ -1498,7 +1578,7 @@ export class TransactionsService {
       await this.prisma.adminAlert
         .create({
           data: {
-            type: 'STITCH_CHARGEBACK_RACE',
+            type: 'CHARGEBACK_RACE',
             referenceId: tx.id,
             urgent: true,
             context: `Chargeback (${evt.type}) on ${tx.id} arrived as the order changed state (now ${fresh?.paymentStatus ?? 'unknown'}). Could not auto-flip to DISPUTED — handle manually.`,
@@ -1506,7 +1586,7 @@ export class TransactionsService {
         })
         .catch(() => undefined);
       this.logger.warn(
-        `Stitch chargeback: ${tx.id} state changed during handling (now ${fresh?.paymentStatus}) — alerted`,
+        `Peach chargeback: ${tx.id} state changed during handling (now ${fresh?.paymentStatus}) — alerted`,
       );
       return;
     }
@@ -1514,17 +1594,17 @@ export class TransactionsService {
     await this.prisma.adminAlert
       .create({
         data: {
-          type: 'STITCH_CHARGEBACK_INITIATED',
+          type: 'CHARGEBACK_INITIATED',
           referenceId: tx.id,
           urgent: true,
           context: `Chargeback/dispute (${evt.type}) on ${tx.id}. Funds were held → moved to DISPUTED, payout blocked. Investigate + resolve (release to seller or concede the chargeback). Do NOT issue a separate refund.`,
         },
       })
       .catch(() => undefined);
-    void this.tracking.recordInternal(tx.id, 'STITCH_CHARGEBACK_RECEIVED', {
+    void this.tracking.recordInternal(tx.id, 'CHARGEBACK_RECEIVED', {
       message: `Chargeback received (${evt.type}). Order moved to DISPUTED; payout blocked.`,
     });
-    this.logger.warn(`Stitch chargeback: ${tx.id} → DISPUTED (${evt.type})`);
+    this.logger.warn(`Peach chargeback: ${tx.id} → DISPUTED (${evt.type})`);
   }
 
   // ------------------------------------------------------------------
@@ -1977,7 +2057,7 @@ export class TransactionsService {
         'Refund could not be issued automatically — support has been alerted and will resolve manually within 24h.',
       );
     }
-    const refundRes = await this.stitch.refundPayment(
+    const refundRes = await this.peach.refundPayment(
       tx.peachPaymentId,
       tx.buyerTotal,
     );
@@ -2209,7 +2289,7 @@ export class TransactionsService {
       );
     }
 
-    const refundRes = await this.stitch.refundPayment(
+    const refundRes = await this.peach.refundPayment(
       tx.peachPaymentId,
       tx.buyerTotal,
     );
