@@ -406,6 +406,9 @@ export default function NewListingPage() {
   // Delivery + pickup-address state. Lives outside `form` because the
   // shipping-methods array doesn't fit the flat string-map.
   const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>([]);
+  // Seller's consent to share phone + email with the buyer for a
+  // PRIVATE_ARRANGE firearm transfer. Required to offer that option.
+  const [paConsent, setPaConsent] = useState(false);
   // Phase M dealer-lock — where the seller plans to dealer-stock this
   // firearm/barrel. MANDATORY for firearms (2026-07-13): dealer name +
   // province + area are all required. Only collected + sent when isFirearm.
@@ -1436,6 +1439,11 @@ export default function NewListingPage() {
       // De-dupe defensively so a stale state can't ever send the API a
       // duplicate (which would fail @ArrayMaxSize(2) on the DTO).
       shippingMethods: Array.from(new Set(shippingMethods)),
+      // Seller consent to share contact for a PRIVATE_ARRANGE firearm
+      // transfer — REQUIRED by the backend when PRIVATE_ARRANGE is offered.
+      ...(shippingMethods.includes('PRIVATE_ARRANGE')
+        ? { privateArrangeConsent: paConsent }
+        : {}),
       // Phase M dealer-lock — mandatory structured planned dealer-stock
       // location for firearms (dealer name + province + area). The backend
       // composes them into the display string. Non-firearm submissions
@@ -1705,6 +1713,15 @@ export default function NewListingPage() {
     ) {
       setPublishError(
         'Firearm listings need the planned dealer-stock location — a dealer name, province, and area — in the Delivery & address step.',
+      );
+      return;
+    }
+    // Private-arrangement consent guard — offering it requires the seller
+    // to consent to sharing their contact. Catch it before the API (which
+    // also rejects) so the seller gets an instant message.
+    if (shippingMethods.includes('PRIVATE_ARRANGE') && !paConsent) {
+      setPublishError(
+        'To offer Private Arrangement, tick the consent to share your phone and email with the buyer (in the Delivery & address step).',
       );
       return;
     }
@@ -3801,6 +3818,30 @@ export default function NewListingPage() {
                       ]
                 }
               />
+              {/* PRIVATE_ARRANGE contact-sharing consent — REQUIRED to offer
+                  the option. When ticked, the buyer of a private-arrangement
+                  sale sees the seller's phone + email to coordinate the meet. */}
+              {isFirearm && shippingMethods.includes('PRIVATE_ARRANGE') && (
+                <label
+                  className="mt-3 flex items-start gap-2 rounded-[8px] p-3 cursor-pointer"
+                  style={{
+                    background: paConsent ? 'rgba(200,16,46,0.06)' : 'var(--bg-inset)',
+                    border: `0.5px solid ${paConsent ? 'var(--red)' : 'var(--border)'}`,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={paConsent}
+                    onChange={(e) => setPaConsent(e.target.checked)}
+                    style={{ marginTop: 3, flexShrink: 0 }}
+                  />
+                  <span className="text-xs" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    <strong style={{ color: 'var(--text-primary)' }}>I agree to share my phone number and email with the buyer</strong>{' '}
+                    once they&apos;ve paid, so we can arrange the in-person firearm transfer at a SAPS-licensed dealer. Required to offer private arrangement.
+                  </span>
+                </label>
+              )}
+
               {/* Phase M dealer-lock — MANDATORY planned dealer-stock
                   location for firearms/barrels (2026-07-13): dealer name +
                   province + area are all required. Buyers near that dealer

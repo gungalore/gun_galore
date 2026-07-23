@@ -566,6 +566,24 @@ export class ListingsService {
     };
   }
 
+  // Resolve the seller's PRIVATE_ARRANGE contact-sharing consent for a
+  // create/edit. Offering PRIVATE_ARRANGE REQUIRES consent — reject without
+  // it (operator decision 2026-07-23). Returns the timestamp to store:
+  // fresh consent → now; an edit that keeps PRIVATE_ARRANGE without
+  // re-ticking → the previously-stored consent; not offering it → null.
+  private resolvePrivateArrangeConsent(
+    offersPrivateArrange: boolean,
+    consent: boolean | undefined,
+    existingConsentAt: Date | null | undefined,
+  ): Date | null {
+    if (!offersPrivateArrange) return null;
+    if (consent) return new Date();
+    if (existingConsentAt) return existingConsentAt;
+    throw new BadRequestException(
+      'To offer Private Arrangement you must consent to share your phone number and email with the buyer so they can arrange the firearm transfer.',
+    );
+  }
+
   async create(clerkId: string, dto: CreateListingDto): Promise<Listing> {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not synced — try again in a moment');
@@ -1134,6 +1152,15 @@ export class ListingsService {
           : effectiveCollectionOnly
             ? [ShippingMethod.COLLECTION]
             : (dto.shippingMethods ?? []),
+        // PRIVATE_ARRANGE only survives on the non-experience/non-collection
+        // path — require + stamp the seller's contact-sharing consent there.
+        privateArrangeConsentAt: this.resolvePrivateArrangeConsent(
+          !isExperience &&
+            !effectiveCollectionOnly &&
+            !!dto.shippingMethods?.includes(ShippingMethod.PRIVATE_ARRANGE),
+          dto.privateArrangeConsent,
+          null,
+        ),
         // Firearm/barrel dealer-lock — mandatory structured location
         // (dealer name + province + area) composed into the display
         // string plannedDealerLocation. All-null for non-firearm listings.
@@ -2280,10 +2307,14 @@ export class ListingsService {
       plannedDealerProvince: _omitPdProvince,
       plannedDealerArea: _omitPdArea,
       plannedDealerLocation: _omitPdLocation,
+      // privateArrangeConsent is a boolean INTENT flag; the column is the
+      // timestamp privateArrangeConsentAt, computed below. Never pass raw.
+      privateArrangeConsent: _omitPaConsent,
       ...listingUpdate
     } = dto;
     void _omitPapers;
     void _omitAttributes;
+    void _omitPaConsent;
     void _omitTested;
     void _omitPdName;
     void _omitPdProvince;
@@ -2342,6 +2373,19 @@ export class ListingsService {
           ? {
               collectionOnly: true,
               shippingMethods: [ShippingMethod.COLLECTION],
+            }
+          : {}),
+        // Re-resolve PRIVATE_ARRANGE consent only when the seller is editing
+        // shipping options (and not being force-tightened to COLLECTION). An
+        // edit that keeps PRIVATE_ARRANGE without re-ticking reuses the
+        // existing consent; adding it fresh requires the tick.
+        ...(dto.shippingMethods !== undefined && !dgTighten
+          ? {
+              privateArrangeConsentAt: this.resolvePrivateArrangeConsent(
+                dto.shippingMethods.includes(ShippingMethod.PRIVATE_ARRANGE),
+                dto.privateArrangeConsent,
+                listing.privateArrangeConsentAt,
+              ),
             }
           : {}),
         ...(clearTestedWorkingStamp ? { testedWorkingAttestedAt: null } : {}),

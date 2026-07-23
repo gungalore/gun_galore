@@ -23,13 +23,19 @@ describe('moduleForNotification', () => {
   it('routes seller sale lifecycle to /my/sales', () => {
     expect(moduleForNotification('new_sale', 'SELLER')).toBe('/my/sales');
     expect(moduleForNotification('sale_rejected', 'SELLER')).toBe('/my/sales');
-    expect(moduleForNotification('dispatch_nudge', 'SELLER')).toBe('/my/sales');
-    expect(moduleForNotification('shipment_delivered_seller', 'SELLER')).toBe('/my/sales');
   });
 
-  it('routes buyer order lifecycle to /my/orders', () => {
-    expect(moduleForNotification('order_dispatched', 'BUYER')).toBe('/my/orders');
-    expect(moduleForNotification('shipping_delivered', 'BUYER')).toBe('/my/orders');
+  it('routes shipping/courier + firearm-transfer lifecycle to /shipping', () => {
+    expect(moduleForNotification('dispatch_nudge', 'SELLER')).toBe('/shipping');
+    expect(moduleForNotification('shipment_collected', 'SELLER')).toBe('/shipping');
+    expect(moduleForNotification('shipment_delivered_seller', 'SELLER')).toBe('/shipping');
+    expect(moduleForNotification('order_dispatched', 'BUYER')).toBe('/shipping');
+    expect(moduleForNotification('shipping_delivered', 'BUYER')).toBe('/shipping');
+    expect(moduleForNotification('collection_confirm_nudge', 'BUYER')).toBe('/shipping');
+    expect(moduleForNotification('dealer_transfer_stall_nudge', 'BUYER')).toBe('/shipping');
+  });
+
+  it('routes buyer refunds to /my/orders', () => {
     expect(moduleForNotification('refund_issued', 'BUYER')).toBe('/my/orders');
   });
 

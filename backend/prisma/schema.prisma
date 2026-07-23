@@ -894,6 +894,15 @@ model Listing {
   // on Transaction.shippingMethod.
   shippingMethods ShippingMethod[] @default([])
 
+  // Seller's consent to share their phone + email with the BUYER of a
+  // PRIVATE_ARRANGE firearm sale (so the pair can coordinate the dealer
+  // meet). Captured at listing create/edit: offering PRIVATE_ARRANGE
+  // REQUIRES this consent (listings.service rejects PRIVATE_ARRANGE
+  // without it). The Shipping module / transaction page only reveal the
+  // seller's contact when this is set. Null = never consented → contact
+  // stays hidden.
+  privateArrangeConsentAt DateTime?
+
   // Optional seller-supplied hint of where they intend to dealer-stock
   // a firearm (e.g. "Pretoria Arms, Centurion"). Only meaningful when
   // the listing is a firearm + offers DEALER_TRANSFER. Shown to buyers

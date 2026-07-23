@@ -153,6 +153,14 @@ export class CreateListingDto {
   @IsEnum(ShippingMethod, { each: true })
   shippingMethods?: ShippingMethod[];
 
+  // Seller's consent to share their phone + email with the buyer for a
+  // PRIVATE_ARRANGE firearm transfer. REQUIRED (must be true) when
+  // shippingMethods includes PRIVATE_ARRANGE — the service rejects the
+  // listing otherwise.
+  @IsOptional()
+  @IsBoolean()
+  privateArrangeConsent?: boolean;
+
   // Where the seller plans to dealer-stock a firearm/barrel. MANDATORY
   // for firearm listings (2026-07-13) — the service requires all three
   // parts for firearms and composes them into the display string

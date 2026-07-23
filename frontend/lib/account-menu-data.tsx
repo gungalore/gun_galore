@@ -125,6 +125,13 @@ const WalletIcon: IconC = () => (
     <path d="M16 12h5M3 9h18" />
   </Svg>
 );
+const TruckIcon: IconC = () => (
+  <Svg>
+    <path d="M3 6h11v9H3zM14 9h4l3 3v3h-7z" />
+    <circle cx="7" cy="18" r="1.6" />
+    <circle cx="17" cy="18" r="1.6" />
+  </Svg>
+);
 const CrownIcon: IconC = () => (
   <Svg>
     <path d="M4 17h16l1-9-5 3.5L12 6l-4 5.5L3 8l1 9z" />
@@ -175,6 +182,14 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
       { href: '/my/swaps', label: 'Swaps', Icon: SwapIcon },
       { href: '/wishlist', label: 'Wishlist', Icon: HeartIcon },
       { href: '/saved-searches', label: 'Saved searches', Icon: SearchAlertIcon },
+    ],
+  },
+  {
+    // Spans both directions — incoming (bought) + outgoing (sold) shipments
+    // and firearm hand-off — so it sits between Buying and Selling.
+    title: 'Shipping',
+    items: [
+      { href: '/shipping', label: 'Shipping', Icon: TruckIcon },
     ],
   },
   {

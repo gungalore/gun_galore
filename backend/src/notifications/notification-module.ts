@@ -54,30 +54,31 @@ export function moduleForNotification(
     return category === 'SELLER' ? '/my/sales' : '/my/orders';
   }
 
-  // Seller sale lifecycle — new sale, accept/reject/escalate, dispatch
-  // nudges, and the outbound shipment events the SELLER acts on.
+  // Shipping / courier + firearm-transfer lifecycle → the Shipping module
+  // (incoming + outgoing shipments, dealer-transfer / private-arrangement
+  // hand-off). Both buyer- and seller-side courier events live here.
   if (
-    type === 'new_sale' ||
-    type.startsWith('sale_') ||
     type === 'dispatch_nudge' ||
     type === 'shipment_booked' ||
     type === 'shipment_booking_failed' ||
     type === 'shipment_collected' ||
-    type === 'shipment_delivered_seller'
-  ) {
-    return '/my/sales';
-  }
-
-  // Buyer order lifecycle — dispatch/delivery of THEIR purchase, collection
-  // nudges, refunds, dealer-transfer stalls.
-  if (
+    type === 'shipment_delivered_seller' ||
     type === 'order_dispatched' ||
     type === 'shipping_dispatched' ||
     type === 'shipping_delivered' ||
     type === 'collection_confirm_nudge' ||
-    type === 'refund_issued' ||
     type === 'dealer_transfer_stall_nudge'
   ) {
+    return '/shipping';
+  }
+
+  // Seller sale lifecycle — new sale, accept/reject/escalate.
+  if (type === 'new_sale' || type.startsWith('sale_')) {
+    return '/my/sales';
+  }
+
+  // Buyer order lifecycle — refunds (delivery/tracking now live in Shipping).
+  if (type === 'refund_issued') {
     return '/my/orders';
   }
 
