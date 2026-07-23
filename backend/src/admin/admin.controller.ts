@@ -282,6 +282,17 @@ export class AdminUsersController {
     return this.adminService.updateUser(id, admin.sub, dto);
   }
 
+  // Clear seller reject-strikes + lift the offers suspension (after
+  // reviewing a SELLER_REJECT_STRIKE alert). Also resolves those alerts.
+  @Post(':id/clear-reject-strikes')
+  @HttpCode(200)
+  clearRejectStrikes(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+  ) {
+    return this.adminService.clearRejectStrikes(id, admin.sub);
+  }
+
   // Claude-KYC human review — decide an UNDER_REVIEW verification from
   // the dossier. Guarded transition; reason required for the audit row.
   @Post(':id/kyc-review')

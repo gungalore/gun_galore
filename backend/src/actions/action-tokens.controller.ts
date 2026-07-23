@@ -218,14 +218,18 @@ export class ActionTokensController {
 
   @Post(':token/reject-offer')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  rejectOffer(@Param('token') token: string, @Req() req: Request) {
+  rejectOffer(
+    @Param('token') token: string,
+    @Body() body: { reason?: string; note?: string },
+    @Req() req: Request,
+  ) {
     return this.tokens.runAction(
       token,
       'OFFER_DECISION',
       'offer',
       async ({ targetId, authorisedUserId }) => {
         const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.offers.reject(clerkId, targetId);
+        return this.offers.reject(clerkId, targetId, body?.reason, body?.note);
       },
       reqIp(req),
       reqUa(req),

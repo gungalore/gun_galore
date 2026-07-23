@@ -475,10 +475,12 @@ function RejectPicker({
 }) {
   const canSubmit =
     reason !== null && (reason !== 'OTHER' || freeText.trim().length >= 3);
+  // "CODE: label" — code prefix drives the seller-standing policy backend-
+  // side; label keeps the stored reason readable (same as the web panel).
   const submittable =
     reason === 'OTHER'
-      ? freeText.trim()
-      : (REJECT_REASONS.find((r) => r.value === reason)?.label ?? '');
+      ? `OTHER: ${freeText.trim()}`
+      : `${reason}: ${REJECT_REASONS.find((r) => r.value === reason)?.label ?? ''}`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

@@ -53,10 +53,15 @@ export class OffersController {
     return this.offersService.accept(clerkId, id);
   }
 
-  // Seller: reject offer
+  // Seller: reject offer — structured reason required (ticklist); note
+  // required when reason=OTHER. Reason drives the seller-standing policy.
   @Post(':id/reject')
-  reject(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.offersService.reject(clerkId, id);
+  reject(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body() body: { reason?: string; note?: string },
+  ) {
+    return this.offersService.reject(clerkId, id, body?.reason, body?.note);
   }
 
   // Seller: counter the offer

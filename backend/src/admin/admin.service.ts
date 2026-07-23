@@ -396,6 +396,41 @@ export class AdminService {
   }
 
   // ---------------------------------------------------------------
+  // Clear seller reject-strikes + lift the offers suspension (the
+  // reject-reason policy stamps offersSuspendedAt at 3 strikes). Also
+  // resolves the open SELLER_REJECT_STRIKE alerts and writes an audit
+  // row so the reset is attributable.
+  // ---------------------------------------------------------------
+  async clearRejectStrikes(userId: string, adminId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, sellerRejectStrikes: true, offersSuspendedAt: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { sellerRejectStrikes: 0, offersSuspendedAt: null },
+    });
+    await this.prisma.adminAlert.updateMany({
+      where: { type: 'SELLER_REJECT_STRIKE', referenceId: userId, resolved: false },
+      data: { resolved: true, resolvedAt: new Date() },
+    });
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'REJECT_STRIKES_CLEARED',
+      resourceType: 'User',
+      resourceId: userId,
+      oldValue: {
+        sellerRejectStrikes: user.sellerRejectStrikes,
+        offersSuspendedAt: user.offersSuspendedAt,
+      },
+      newValue: { sellerRejectStrikes: 0, offersSuspendedAt: null },
+      reason: 'Seller reject-strikes cleared after review',
+    });
+    return { cleared: true };
+  }
+
+  // ---------------------------------------------------------------
   // Claude-KYC human review — decides an UNDER_REVIEW verification
   // from the user dossier. Guarded transition (only moves a row that
   // is still UNDER_REVIEW) so two admins can't double-decide, and the

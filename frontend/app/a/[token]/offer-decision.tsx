@@ -50,9 +50,23 @@ export interface OfferDecisionPayload {
 type ViewState =
   | { kind: 'choice' }
   | { kind: 'countering'; amountCents: number }
+  // Seller declining an offer — reason ticklist required (drives the
+  // seller-standing policy; mirrors /offers/received).
+  | { kind: 'rejecting'; reason: string | null; note: string }
   | { kind: 'submitting' }
   | { kind: 'done'; outcome: 'accepted' | 'rejected' | 'countered'; amount?: number }
   | { kind: 'error'; message: string };
+
+// Mirrors OFFER_REJECT_REASONS (backend/src/common/seller-reject-policy.ts).
+const DECLINE_REASONS = [
+  { value: 'ITEM_NO_LONGER_AVAILABLE', label: 'Item is no longer available' },
+  { value: 'ITEM_DAMAGED', label: 'Item is damaged or faulty' },
+  { value: 'OFFER_TOO_LOW', label: 'Offer is too low' },
+  { value: 'BUYER_SUSPICIOUS', label: 'Concerns about the buyer' },
+  { value: 'LISTING_ERROR', label: 'Listing had an error (price/details)' },
+  { value: 'CHANGED_MIND', label: 'No longer selling' },
+  { value: 'OTHER', label: 'Other (write a reason)' },
+];
 
 export function OfferDecisionPage({
   token,
@@ -154,6 +168,7 @@ export function OfferDecisionPage({
   // ─── Default: render the offer details + action buttons ──────────
   const isSubmitting = view.kind === 'submitting';
   const isCountering = view.kind === 'countering';
+  const isRejecting = view.kind === 'rejecting';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -351,18 +366,99 @@ export function OfferDecisionPage({
 
         <ActionButton
           variant="ghost"
-          disabled={isSubmitting || isCountering}
+          disabled={isSubmitting || isCountering || isRejecting}
           onClick={() => {
-            const endpoint =
-              payload.kind === 'OFFER_DECISION'
-                ? 'reject-offer'
-                : 'reject-counter';
-            void callAction(endpoint);
+            if (payload.kind === 'OFFER_DECISION') {
+              // Seller decline needs a reason — open the ticklist.
+              setView({ kind: 'rejecting', reason: null, note: '' });
+            } else {
+              // Buyer declining a counter — no reason required.
+              void callAction('reject-counter');
+            }
           }}
         >
           Reject
         </ActionButton>
       </div>
+
+      {/* Decline-reason ticklist (seller, OFFER_DECISION only) */}
+      {isRejecting && view.kind === 'rejecting' && (
+        <div
+          style={{
+            marginTop: 14,
+            padding: 14,
+            borderRadius: 10,
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--border)',
+          }}
+        >
+          <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+            Why are you declining?
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {DECLINE_REASONS.map((r) => (
+              <label
+                key={r.value}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 14, color: 'var(--text-primary)', cursor: 'pointer' }}
+              >
+                <input
+                  type="radio"
+                  name="a-decline-reason"
+                  checked={view.reason === r.value}
+                  onChange={() => setView({ kind: 'rejecting', reason: r.value, note: view.note })}
+                  style={{ marginTop: 3 }}
+                />
+                <span>{r.label}</span>
+              </label>
+            ))}
+          </div>
+          {view.reason === 'OTHER' && (
+            <textarea
+              value={view.note}
+              onChange={(e) => setView({ kind: 'rejecting', reason: view.reason, note: e.target.value })}
+              maxLength={300}
+              rows={2}
+              placeholder="Briefly describe your reason (min 10 characters)"
+              style={{
+                width: '100%',
+                marginTop: 10,
+                padding: '8px 10px',
+                borderRadius: 6,
+                fontSize: 14,
+                background: 'var(--bg-card)',
+                border: '0.5px solid var(--border)',
+                color: 'var(--text-primary)',
+                resize: 'vertical',
+              }}
+            />
+          )}
+          <p style={{ margin: '10px 0 12px', fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+            The buyer sees this reason. Declining offers that meet your own
+            asking price, or declining over listing errors, counts against
+            your seller standing.
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <ActionButton variant="ghost" onClick={() => setView({ kind: 'choice' })}>
+              ← Back
+            </ActionButton>
+            <ActionButton
+              variant="secondary"
+              disabled={
+                !view.reason ||
+                (view.reason === 'OTHER' && view.note.trim().length < 10)
+              }
+              onClick={() => {
+                void callAction('reject-offer', {
+                  reason: view.reason,
+                  note: view.note.trim() || undefined,
+                });
+              }}
+            >
+              Confirm decline
+            </ActionButton>
+          </div>
+        </div>
+      )}
 
       {/* Counter form — slides into view when "Counter" tapped */}
       {isCountering && (

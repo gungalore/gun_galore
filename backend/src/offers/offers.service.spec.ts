@@ -72,9 +72,6 @@ function makeMocks() {
     notifyBuyerOfReject: jest
       .spyOn(service as never as Record<string, () => Promise<void>>, 'notifyBuyerOfReject' as never)
       .mockResolvedValue(undefined as never),
-    notifySellerOfAutoAccept: jest
-      .spyOn(service as never as Record<string, () => Promise<void>>, 'notifySellerOfAutoAccept' as never)
-      .mockResolvedValue(undefined as never),
     notifySellerOfWithdrawal: jest
       .spyOn(service as never as Record<string, () => Promise<void>>, 'notifySellerOfWithdrawal' as never)
       .mockResolvedValue(undefined as never),
@@ -170,10 +167,12 @@ describe('submit — resolution', () => {
     );
     expect(spies.notifyBuyerOfReject).toHaveBeenCalled();
     expect(spies.notifySellerOfOffer).not.toHaveBeenCalled();
-    expect(spies.notifySellerOfAutoAccept).not.toHaveBeenCalled();
   });
 
-  it('auto-accepts at/above the threshold: siblings declined + BOTH parties told', async () => {
+  it('threshold-meeting offer stays PENDING for seller confirmation (no instant accept)', async () => {
+    // Operator policy 2026-07-23: auto-accept never accepts instantly —
+    // the seller confirms. The offer is flagged metAutoAccept and the
+    // seller notification runs in "meets your price" mode.
     const { service, prisma, spies } = makeMocks();
     prisma.listing.findUnique.mockResolvedValue(
       tasListing({ autoAcceptThreshold: 50_000 }),
@@ -183,12 +182,13 @@ describe('submit — resolution', () => {
       offerAmount: 50_000,
     });
     await flush();
-    expect(res.autoAccepted).toBe(true);
-    expect(prisma.offer.create.mock.calls[0][0].data.status).toBe(
-      OfferStatus.ACCEPTED,
-    );
-    expect(spies.notifyBuyerOfAccept).toHaveBeenCalled();
-    expect(spies.notifySellerOfAutoAccept).toHaveBeenCalled();
+    expect(res.autoAccepted).toBe(false);
+    expect(res.meetsAutoAccept).toBe(true);
+    const created = prisma.offer.create.mock.calls[0][0].data;
+    expect(created.status).toBe(OfferStatus.PENDING);
+    expect(created.metAutoAccept).toBe(true);
+    expect(spies.notifyBuyerOfAccept).not.toHaveBeenCalled();
+    expect(spies.notifySellerOfOffer).toHaveBeenCalledWith(expect.anything(), true);
   });
 
   it('auto-decline wins when a nonsense config makes an offer match both thresholds', async () => {

@@ -143,10 +143,13 @@ export function AcceptRejectPanel({
     const canSubmit =
       view.reason !== null &&
       (view.reason !== 'OTHER' || view.freeText.trim().length >= 3);
+    // "CODE: label" — the code prefix drives the seller-standing policy on
+    // the backend (parsed before the first colon); the label keeps the
+    // stored reason readable in the admin dossier + buyer notification.
     const submittable =
       view.reason === 'OTHER'
-        ? view.freeText.trim()
-        : (REJECT_REASONS.find((r) => r.value === view.reason)?.label ?? '');
+        ? `OTHER: ${view.freeText.trim()}`
+        : `${view.reason}: ${REJECT_REASONS.find((r) => r.value === view.reason)?.label ?? ''}`;
     return (
       <div
         className="rounded-[8px] p-4"

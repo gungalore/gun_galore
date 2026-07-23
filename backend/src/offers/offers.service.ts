@@ -9,6 +9,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import { ActivityService } from '../activity/activity.service';
+import {
+  OFFER_REJECT_REASONS,
+  OFFER_REASON_LABEL,
+  type OfferRejectReason,
+  consequencesForOfferReject,
+  applySellerRejectPenalty,
+} from '../common/seller-reject-policy';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { CounterOfferDto } from './dto/counter-offer.dto';
@@ -69,6 +76,15 @@ export class OffersService {
       throw new BadRequestException('Offers can only be made on Take a Shot listings');
     }
     if (listing.sellerId === buyer.id) throw new BadRequestException('Sellers cannot offer on their own listings');
+    // Reject-strike suspension: a seller at 3+ penalty-bearing rejections
+    // stops receiving NEW offers (their Buy Now listings are unaffected)
+    // until an admin reviews + clears the strikes. Buyer-facing copy stays
+    // neutral — the suspension is between us and the seller.
+    if (listing.seller.offersSuspendedAt) {
+      throw new BadRequestException(
+        'This seller is not accepting offers at the moment.',
+      );
+    }
 
     // Single-promise rule: once ANY offer on this listing is ACCEPTED
     // the item is spoken for (buyer has a live pay window) — no new
@@ -129,14 +145,10 @@ export class OffersService {
       listing.autoAcceptThreshold !== null &&
       dto.offerAmount >= listing.autoAcceptThreshold;
 
-    const status = autoDecline
-      ? OfferStatus.REJECTED
-      : autoAccept
-        ? OfferStatus.ACCEPTED
-        : OfferStatus.PENDING;
-    const expiresAt = new Date(
-      Date.now() + (autoAccept ? COUNTER_TTL_HOURS : OFFER_TTL_HOURS) * 3_600_000,
-    );
+    // Threshold-meeting offers still go to the seller as PENDING — see the
+    // metAutoAccept comment below. Only auto-DECLINE short-circuits.
+    const status = autoDecline ? OfferStatus.REJECTED : OfferStatus.PENDING;
+    const expiresAt = new Date(Date.now() + OFFER_TTL_HOURS * 3_600_000);
 
     // Fresh round on the same row (attempt counted) or a first offer.
     const offer = existing
@@ -151,6 +163,9 @@ export class OffersService {
             sellerNote: null,
             status,
             expiresAt,
+            metAutoAccept: autoAccept,
+            rejectReason: null,
+            rejectNote: null,
             attemptCount: { increment: 1 },
           },
         })
@@ -162,6 +177,7 @@ export class OffersService {
             buyerNote: dto.buyerNote,
             status,
             expiresAt,
+            metAutoAccept: autoAccept,
           },
         });
 
@@ -177,17 +193,14 @@ export class OffersService {
       void this.notifyBuyerOfReject(offer.id);
       return { offer, autoAccepted: false, autoDeclined: true };
     }
-    if (autoAccept) {
-      // Item is now promised to this buyer: decline every other open
-      // offer (eBay behaviour) and — unlike before — TELL THE SELLER
-      // their threshold just sold the item.
-      void this.declineSiblings(listing.id, offer.id);
-      void this.notifyBuyerOfAccept(offer.id);
-      void this.notifySellerOfAutoAccept(offer.id);
-      return { offer, autoAccepted: true };
-    }
-    void this.notifySellerOfOffer(offer.id);
-    return { offer, autoAccepted: false };
+    // Operator decision 2026-07-23: an offer that meets the auto-accept
+    // threshold is NO LONGER accepted instantly — the seller always makes
+    // the final call. The threshold now only (a) flags the offer
+    // (metAutoAccept, snapshotted at submit) so the seller notification is
+    // louder, and (b) makes a later OFFER_TOO_LOW rejection penalty-bearing
+    // (the seller set that price themselves).
+    void this.notifySellerOfOffer(offer.id, autoAccept);
+    return { offer, autoAccepted: false, meetsAutoAccept: autoAccept };
   }
 
   // ----------------------------------------------------------------
@@ -258,10 +271,28 @@ export class OffersService {
   // ----------------------------------------------------------------
   // Seller rejects the offer
   // ----------------------------------------------------------------
-  async reject(sellerClerkId: string, offerId: string) {
-    const { offer } = await this.loadOfferForSeller(sellerClerkId, offerId);
+  async reject(
+    sellerClerkId: string,
+    offerId: string,
+    reasonRaw?: string,
+    noteRaw?: string,
+  ) {
+    const { offer, listing } = await this.loadOfferForSeller(sellerClerkId, offerId);
     if (offer.status !== OfferStatus.PENDING) {
       throw new BadRequestException('Offer is not pending');
+    }
+
+    // Structured reason is REQUIRED (operator policy 2026-07-23): the
+    // ticklist choice determines whether the rejection is penalty-bearing.
+    const reason = (reasonRaw ?? '').trim().toUpperCase() as OfferRejectReason;
+    if (!OFFER_REJECT_REASONS.includes(reason)) {
+      throw new BadRequestException('Please choose a reason for declining.');
+    }
+    const note = (noteRaw ?? '').trim();
+    if (reason === 'OTHER' && note.length < 10) {
+      throw new BadRequestException(
+        'Please describe your reason (at least 10 characters).',
+      );
     }
 
     // Atomic guard (same pattern as accept) — a concurrent accept /
@@ -269,12 +300,38 @@ export class OffersService {
     // silently overwritten with REJECTED.
     const guard = await this.prisma.offer.updateMany({
       where: { id: offerId, status: OfferStatus.PENDING },
-      data: { status: OfferStatus.REJECTED },
+      data: {
+        status: OfferStatus.REJECTED,
+        rejectReason: reason,
+        rejectNote: note || null,
+      },
     });
     if (guard.count === 0) {
       throw new BadRequestException('Offer is no longer pending');
     }
     const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
+
+    // Penalty per policy — fire-and-forget: the buyer notification is the
+    // critical path; a penalty write must never block the rejection.
+    void applySellerRejectPenalty(this.prisma, {
+      sellerId: listing.sellerId,
+      source: 'OFFER',
+      reason,
+      consequences: consequencesForOfferReject(reason, offer.metAutoAccept),
+      listingId: listing.id,
+      referenceId: offerId,
+      note: note || null,
+    })
+      .then((r) => {
+        if (r.struck) {
+          this.logger.warn(
+            `Seller ${listing.sellerId} reject strike (${reason}, offer ${offerId}) — total ${r.totalStrikes}${r.suspended ? ' — OFFERS SUSPENDED' : ''}`,
+          );
+        }
+      })
+      .catch((err) =>
+        this.logger.warn(`reject penalty failed: ${(err as Error).message}`),
+      );
 
     void this.notifyBuyerOfReject(offerId);
     // Seller resolved their "offer received". Buyer's new
@@ -682,27 +739,9 @@ export class OffersService {
 
   // Seller notice for an auto-accepted offer — their threshold just
   // sold the item and the buyer has 24h to pay. Previously silent.
-  private async notifySellerOfAutoAccept(offerId: string) {
-    try {
-      const offer = await this.prisma.offer.findUnique({
-        where: { id: offerId },
-        include: { listing: { include: { seller: true } }, buyer: true },
-      });
-      if (!offer) return;
-      await this.notifications.offerAutoAccepted({
-        sellerEmail: offer.listing.seller.email,
-        sellerName: offer.listing.seller.firstName ?? 'Seller',
-        sellerPhone: offer.listing.seller.phone,
-        buyerName: offer.buyer.username ?? 'A buyer',
-        listingTitle: offer.listing.title,
-        listingId: offer.listing.id,
-        amount: offer.offerAmount,
-        offerId: offer.id,
-      });
-    } catch (err) {
-      this.logger.error(`notifySellerOfAutoAccept failed: ${(err as Error).message}`);
-    }
-  }
+  // (notifySellerOfAutoAccept removed 2026-07-23 — auto-accept no longer
+  // exists as an instant acceptance; qualifying offers go through
+  // notifySellerOfOffer with meetsAutoAccept=true instead.)
 
   private async notifySellerOfWithdrawal(offerId: string) {
     try {
@@ -787,7 +826,7 @@ export class OffersService {
     }
   }
 
-  private async notifySellerOfOffer(offerId: string) {
+  private async notifySellerOfOffer(offerId: string, meetsAutoAccept = false) {
     try {
       const offer = await this.prisma.offer.findUnique({
         where: { id: offerId },
@@ -825,6 +864,7 @@ export class OffersService {
         offerAmount: offer.offerAmount,
         offerId: offer.id,
         actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
+        meetsAutoAccept,
       });
     } catch (err) {
       this.logger.error(`notifySellerOfOffer failed: ${(err as Error).message}`);
@@ -923,6 +963,9 @@ export class OffersService {
         listingTitle: offer.listing.title,
         listingId: offer.listing.id,
         offerId: offer.id,
+        reasonLabel: offer.rejectReason
+          ? OFFER_REASON_LABEL[offer.rejectReason as OfferRejectReason]
+          : undefined,
       });
     } catch (err) {
       this.logger.error(`notifyBuyerOfReject failed: ${(err as Error).message}`);

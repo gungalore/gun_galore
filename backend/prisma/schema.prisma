@@ -359,6 +359,11 @@ model User {
   // a manual review / suspension. Lives separately from auction
   // strikes because the rules + consequences are different.
   dispatchStrikes Int @default(0)
+  // Seller reject strikes — penalty-bearing rejections (offers + sales)
+  // per the reject-reason policy. At 3, offers are suspended on the
+  // seller's listings (offersSuspendedAt) pending admin review.
+  sellerRejectStrikes Int       @default(0)
+  offersSuspendedAt   DateTime?
 
   listings                Listing[]
   buyerTransactions       Transaction[]            @relation("BuyerTransactions")
@@ -1931,6 +1936,15 @@ model Offer {
   // bump the count; capped at 5 so a buyer can't pester a seller
   // indefinitely (eBay-style attempt limit).
   attemptCount Int @default(1)
+
+  // Snapshot: offer met the listing's auto-accept threshold at submit time.
+  // Auto-accept no longer accepts instantly (operator 2026-07-23) — the
+  // seller always confirms; this flag drives the louder notification and
+  // the OFFER_TOO_LOW rejection penalty.
+  metAutoAccept Boolean @default(false)
+  // Seller rejection: structured reason (ticklist) + optional note.
+  rejectReason String?
+  rejectNote   String?
 
   // buyer has 24h to respond to a counter
   expiresAt DateTime

@@ -45,6 +45,10 @@ import {
 // own internal use AND re-exported so every existing
 // `from '.../transactions.service'` importer keeps working.
 import { PAYMENT_MODE, PAYMENTS_LIVE, assertPaymentsLive } from './payment-mode';
+import {
+  applySellerRejectPenalty,
+  consequencesForSaleReject,
+} from '../common/seller-reject-policy';
 export { PAYMENT_MODE, PAYMENTS_LIVE, assertPaymentsLive };
 
 // TOK-7 — accept→dispatch state machine deadlines.
@@ -2026,6 +2030,25 @@ export class TransactionsService {
     // cancel any live carrier shipment so a rejected sale doesn't leave a
     // billed waybill. No-op when nothing was booked.
     void this.shipping.cancelForTransaction(transactionId);
+
+    // Seller-standing policy (operator 2026-07-23). The picker sends
+    // "CODE: label" (or free text for legacy/OTHER); the CODE decides the
+    // consequence — e.g. SOLD_ELSEWHERE after taking a buyer's money is a
+    // strike + the listing stays down (the DELIST CAS below flips the
+    // reactivated listing ACTIVE→CANCELLED). Fire-and-forget: the refund
+    // above is the critical path and has already committed.
+    const saleReasonCode = trimmedReason.split(':')[0].trim().toUpperCase().replace(/\s+/g, '_');
+    void applySellerRejectPenalty(this.prisma, {
+      sellerId: seller.id,
+      source: 'SALE',
+      reason: saleReasonCode,
+      consequences: consequencesForSaleReject(saleReasonCode),
+      listingId: tx.listingId,
+      referenceId: transactionId,
+      note: trimmedReason,
+    }).catch((err) =>
+      this.logger.warn(`sale-reject penalty failed: ${(err as Error).message}`),
+    );
 
     // Timeline + buyer notification + clear seller's accept-pending
     // inbox row. Fire-and-forget; UI feedback already returned to the

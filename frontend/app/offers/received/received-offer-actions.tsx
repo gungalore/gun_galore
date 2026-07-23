@@ -6,6 +6,18 @@ import { useRouter } from 'next/navigation';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
+// Mirrors OFFER_REJECT_REASONS in backend/src/common/seller-reject-policy.ts —
+// values are stored on the offer and drive the seller-standing policy.
+const DECLINE_REASONS = [
+  { value: 'ITEM_NO_LONGER_AVAILABLE', label: 'Item is no longer available' },
+  { value: 'ITEM_DAMAGED', label: 'Item is damaged or faulty' },
+  { value: 'OFFER_TOO_LOW', label: 'Offer is too low' },
+  { value: 'BUYER_SUSPICIOUS', label: 'Concerns about the buyer' },
+  { value: 'LISTING_ERROR', label: 'Listing had an error (price/details)' },
+  { value: 'CHANGED_MIND', label: 'No longer selling' },
+  { value: 'OTHER', label: 'Other (write a reason)' },
+];
+
 export default function ReceivedOfferActions({
   offerId,
   offerAmount,
@@ -28,6 +40,10 @@ export default function ReceivedOfferActions({
   // re-offer on a Take-a-Shot). Both go through a confirm modal now
   // instead of fire-on-click.
   const [confirm, setConfirm] = useState<null | 'accept' | 'reject'>(null);
+  // Decline reason ticklist — required (drives the seller-standing policy
+  // server-side; OTHER needs a short written reason).
+  const [rejectReason, setRejectReason] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
 
   function formatRand(cents: number | undefined) {
     if (cents === undefined) return '';
@@ -215,25 +231,68 @@ export default function ReceivedOfferActions({
                 ? `Accept this offer at ${formatRand(offerAmount)}?`
                 : 'Decline this offer?'}
             </p>
-            <p
-              className="text-sm mb-4"
-              style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
-            >
-              {confirm === 'accept' ? (
-                <>
-                  Accepting locks in the price{offerAmount ? ` of ${formatRand(offerAmount)}` : ''}.
-                  The buyer has 24 hours to complete checkout — if they
-                  don't, the offer expires and the listing stays active.
-                </>
-              ) : (
-                <>
-                  Declining closes the offer permanently. The buyer
-                  can't re-offer on this listing — Take-a-Shot allows
-                  one offer per buyer per listing. Consider countering
-                  if there's room to negotiate.
-                </>
-              )}
-            </p>
+            {confirm === 'accept' ? (
+              <p
+                className="text-sm mb-4"
+                style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+              >
+                Accepting locks in the price{offerAmount ? ` of ${formatRand(offerAmount)}` : ''}.
+                The buyer has 24 hours to complete checkout — if they
+                don't, the offer expires and the listing stays active.
+              </p>
+            ) : (
+              <>
+                <p
+                  className="text-sm mb-3"
+                  style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+                >
+                  Please tell us why — the buyer sees this reason.
+                  Consider countering if there&apos;s room to negotiate.
+                </p>
+                <div className="flex flex-col gap-1.5 mb-3">
+                  {DECLINE_REASONS.map((r) => (
+                    <label
+                      key={r.value}
+                      className="flex items-start gap-2 text-sm"
+                      style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
+                    >
+                      <input
+                        type="radio"
+                        name="decline-reason"
+                        checked={rejectReason === r.value}
+                        onChange={() => setRejectReason(r.value)}
+                        style={{ marginTop: 3 }}
+                      />
+                      <span>{r.label}</span>
+                    </label>
+                  ))}
+                </div>
+                {rejectReason === 'OTHER' && (
+                  <textarea
+                    value={rejectNote}
+                    onChange={(e) => setRejectNote(e.target.value)}
+                    maxLength={300}
+                    rows={2}
+                    placeholder="Briefly describe your reason (min 10 characters)"
+                    className="w-full px-3 py-2 mb-3 rounded-[6px] text-sm resize-none"
+                    style={{
+                      background: 'var(--bg-inset)',
+                      border: '0.5px solid var(--border)',
+                      color: 'var(--text-primary)',
+                    }}
+                  />
+                )}
+                <p
+                  className="text-xs mb-4"
+                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+                >
+                  Declining closes the offer permanently. Note: repeatedly
+                  declining offers that meet your own asking price, or
+                  declining because a listing was wrong, counts against your
+                  seller standing and can pause offers on your listings.
+                </p>
+              </>
+            )}
             <div className="flex gap-2">
               <button
                 type="button"
@@ -252,10 +311,24 @@ export default function ReceivedOfferActions({
               <button
                 type="button"
                 onClick={async () => {
-                  await call(confirm, confirm);
+                  if (confirm === 'reject') {
+                    await call('reject', 'reject', {
+                      reason: rejectReason,
+                      note: rejectNote.trim() || undefined,
+                    });
+                  } else {
+                    await call(confirm, confirm);
+                  }
                   setConfirm(null);
+                  setRejectReason(null);
+                  setRejectNote('');
                 }}
-                disabled={!!loading}
+                disabled={
+                  !!loading ||
+                  (confirm === 'reject' &&
+                    (!rejectReason ||
+                      (rejectReason === 'OTHER' && rejectNote.trim().length < 10)))
+                }
                 className="flex-1 py-2 rounded text-sm font-medium"
                 style={{
                   background: loading
