@@ -793,7 +793,7 @@ export default function EditListingPage() {
         <Field label="Add more photos (optional)">
           <input
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
             multiple
             onChange={(e) => setNewImages(Array.from(e.target.files ?? []))}
             style={{ ...inputStyle, padding: '6px 12px', cursor: 'pointer' }}

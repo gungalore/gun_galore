@@ -1568,7 +1568,7 @@ export default function EditProfilePage() {
             <input
               ref={photoInputRef}
               type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif"
               style={{ display: 'none' }}
               onChange={handlePhotoChange}
             />

@@ -179,7 +179,7 @@ export class DealsAdminController {
       new ParseFilePipe({
         validators: [
           new MaxFileSizeValidator({ maxSize: 8 * 1024 * 1024 }), // 8 MB
-          new FileTypeValidator({ fileType: /image\/(jpeg|png|webp)/ }),
+          new FileTypeValidator({ fileType: /image\/(jpeg|png|webp|heic|heif)/ }),
         ],
       }),
     )
