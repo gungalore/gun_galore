@@ -84,11 +84,13 @@ export default async function AccountPage() {
   const token = await getToken();
   const headers = { Authorization: `Bearer ${token}` };
 
-  const [meRes, subRes, alertsRes, ordersRes] = await Promise.all([
+  const [meRes, subRes, alertsRes, moduleCountsRes] = await Promise.all([
     fetch(`${API_URL}/users/me`, { headers, cache: 'no-store' }).catch(() => null),
     fetch(`${API_URL}/subscriptions/me`, { headers, cache: 'no-store' }).catch(() => null),
     fetch(`${API_URL}/notifications/me/active-count`, { headers, cache: 'no-store' }).catch(() => null),
-    fetch(`${API_URL}/transactions?role=buyer`, { headers, cache: 'no-store' }).catch(() => null),
+    // Same per-module notification counts the dropdown / drawer / PWA More
+    // sheet badge with, so the hub cards and the menus always agree.
+    fetch(`${API_URL}/notifications/me/module-counts`, { headers, cache: 'no-store' }).catch(() => null),
   ]);
 
   const me = await safeJson<Me | null>(meRes, null);
@@ -97,19 +99,15 @@ export default async function AccountPage() {
     null,
   );
   const alerts = await safeJson<{ total?: number } | null>(alertsRes, null);
-  const orders = await safeJson<{ paymentStatus?: string }[]>(ordersRes, []);
+  const moduleCounts = await safeJson<Record<string, number>>(moduleCountsRes, {});
 
   const unread = alerts?.total ?? 0;
-  const activeOrders = Array.isArray(orders)
-    ? orders.filter(
-        (t) =>
-          t.paymentStatus === 'HELD' || t.paymentStatus === 'PENDING_ADMIN_VERIFICATION',
-      ).length
-    : 0;
 
-  // Live count badges, keyed by the ACCOUNT_GROUPS href they annotate.
+  // Live count badges, keyed by the ACCOUNT_GROUPS href they annotate —
+  // the shared per-module notification counts, plus the overall unread
+  // total on the Notifications row itself.
   const countByHref: Record<string, number> = {
-    '/my/orders': activeOrders,
+    ...moduleCounts,
     '/notifications': unread,
   };
 
