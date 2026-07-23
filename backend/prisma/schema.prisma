@@ -342,9 +342,12 @@ model User {
   // We re-run AVS on every save (per operator decision) so this
   // always reflects the most recent confirmation.
   bankVerifiedAt    DateTime?
-  // Last raw Peach AVS response code, for audit if a payout fails
-  // and we need to trace why.
+  // Last Peach AVS outcome, for audit if a payout fails and we need to
+  // trace why: "PASS:<code>" / "MISMATCH:<code>:<flags>" / "FAILED:<code>".
   bankAvsResult     String?
+  // Pending/last Peach BANV request id — the verification webhook and the
+  // admin re-check both match the user on this.
+  bankVerificationId String? @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1290,6 +1293,9 @@ model Transaction {
   // we mint a short unique ref at checkout create and match webhooks by it
   // as a fallback to peachCheckoutId.
   peachMerchantRef String?      @unique
+  // Peach Payouts payoutId (client-minted UUIDv4, stored BEFORE the API
+  // call so the payout-status webhook can always be matched back).
+  peachPayoutId    String?      @unique
   // @unique: a gateway payment id can settle exactly ONE transaction.
   // Defence-in-depth against replaying one Peach success against multiple
   // orders — the second markPaid hits a unique violation. NULLs are

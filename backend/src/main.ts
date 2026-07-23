@@ -57,12 +57,10 @@ function assertProductionConfig() {
       '⚠️  PEACH_SECRET is not set — incoming Peach webhooks will be REJECTED (fail-closed). Set the webhook signing secret from the Peach Dashboard before relying on webhooks.',
     );
   }
-  // WARN: Peach payout product not configured — seller disbursement disabled.
-  if (!process.env.PEACH_PAYOUT_ENTITY_ID) {
-    log.error(
-      '⚠️  PEACH_PAYOUT_ENTITY_ID is not set — seller payout disbursement (Peach Payouts) is disabled; run-payouts will log intent only.',
-    );
-  }
+  // NOTE: Peach Payouts + bank-account verification (BANV) ride the same
+  // PEACH_CLIENT_ID/SECRET/MERCHANT_ID OAuth creds warned about above —
+  // until those are set, run-payouts logs intent only and BANV is skipped
+  // (the manual admin bank-ownership review remains the payout gate).
   // WARN: Clerk webhook secret missing — user.created/updated/deleted sync
   // events arrive UNVERIFIED and are dropped (the handler fails closed and
   // does not process them), so new signups won't land in our DB.

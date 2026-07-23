@@ -20,19 +20,8 @@ const API_URL =
 // branch code field when the bank is picked, no operator has to look
 // them up. Customer can still override if they're on a specific
 // branch number for some reason.
-const SA_BANKS: { name: string; universalCode: string }[] = [
-  { name: 'Standard Bank', universalCode: '051001' },
-  { name: 'ABSA', universalCode: '632005' },
-  { name: 'FNB', universalCode: '250655' },
-  { name: 'Nedbank', universalCode: '198765' },
-  { name: 'Capitec', universalCode: '470010' },
-  { name: 'TymeBank', universalCode: '678910' },
-  { name: 'Investec', universalCode: '580105' },
-  { name: 'Discovery Bank', universalCode: '679000' },
-  { name: 'African Bank', universalCode: '430000' },
-  { name: 'Bank Zero', universalCode: '888000' },
-  { name: 'Other', universalCode: '' },
-];
+// Shared payout-bank list (mirrors the Peach Payouts enum server-side).
+import { SA_BANKS } from '@/lib/sa-banks';
 
 // Hard-wall modal shown to the seller after their first listing is
 // published successfully. Collects everything we need to pay them
@@ -41,8 +30,9 @@ const SA_BANKS: { name: string; universalCode: string }[] = [
 //   - Phone: typed, no OTP (per operator decision)
 //   - Address: Google autocomplete + manual fields
 //   - SA ID number: stored encrypted at rest, decrypted at KYC time
-//   - Banking: captured as entered; reviewed manually by an admin
-//     before first payout (automated AVS was removed with Peach)
+//   - Banking: verified after save via Peach bank-account verification
+//     (account exists + open + SA-ID ownership); until that service is
+//     configured, an admin reviews the holder name before first payout
 //
 // The modal CANNOT be dismissed — no close button, Esc handler is
 // suppressed, click-outside does nothing. The seller can keep

@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PAYMENT_MODE } from '../payments/transactions.service';
 import { PAYMENTS_LIVE } from '../payments/payment-mode';
 import { PeachService, PeachPayoutBeneficiary } from '../payments/peach.service';
+import { normaliseBankName } from '../payments/peach-banks';
 
 // Manual-EFT reconciliation (the inContact inbox scan + FNB statement CSV
 // upload + unmatched queue + FNB payout-batch builder) has been REMOVED with
@@ -71,23 +73,68 @@ export class ManualPaymentsService {
     const childrenSum = (c?: { buyerTotal: number }[] | null) =>
       (c ?? []).reduce((s, x) => s + x.buyerTotal, 0);
 
-    const beneficiaries: (PeachPayoutBeneficiary & { txId: string })[] =
-      payable.map((p) => ({
+    // Peach payouts: bankName is a strict ENUM and the floor is R10 (1000c).
+    // Rows that can't be mapped/paid are skipped WITH a reason, never guessed.
+    const beneficiaries: (PeachPayoutBeneficiary & { txId: string })[] = [];
+    for (const p of payable) {
+      const amountCents = Math.max(0, p.sellerPayout - childrenSum(p.refundChildren));
+      const bank = normaliseBankName(p.seller.bankName);
+      if (!bank) {
+        collected.skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: `Seller ${p.seller.username ?? ''} bank "${p.seller.bankName ?? '—'}" is not recognised — ask them to re-pick their bank on /profile/edit`,
+        });
+        continue;
+      }
+      if (amountCents < 1000) {
+        collected.skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: `Amount R${(amountCents / 100).toFixed(2)} is below Peach's R10 payout minimum — held until combined with a later payout`,
+        });
+        continue;
+      }
+      beneficiaries.push({
         txId: p.id,
-        // merchantPayoutId = tx.id so the payout webhook maps straight back.
-        reference: p.id,
-        beneficiaryName: p.seller.bankAccountHolder ?? '',
+        payoutId: randomUUID(),
+        bankName: bank,
+        accountHolder: p.seller.bankAccountHolder ?? '',
         bankAccountNumber: p.seller.bankAccountNumber ?? '',
         branchCode: p.seller.bankBranchCode ?? '',
-        amountCents: Math.max(0, p.sellerPayout - childrenSum(p.refundChildren)),
-        narrative: (p.orderReference ?? p.id).slice(0, 20),
-      }));
+        amountCents,
+        // Beneficiary statement text (1-20 alphanumeric+space).
+        reference: (p.orderReference ?? `GG ${p.id.slice(-8)}`)
+          .replace(/[^a-zA-Z0-9 ]/g, ' ')
+          .trim()
+          .slice(0, 20),
+        proofEmail: p.seller.email,
+      });
+    }
+    if (beneficiaries.length === 0) {
+      return {
+        attempted: 0,
+        accepted: 0,
+        failed: 0,
+        totalCents: 0,
+        skipped: collected.skipped,
+      };
+    }
+
+    // Store each payoutId BEFORE calling Peach so the status webhook can
+    // always be matched back — even if our process dies mid-call.
+    for (const b of beneficiaries) {
+      await this.prisma.transaction.update({
+        where: { id: b.txId },
+        data: { peachPayoutId: b.payoutId },
+      });
+    }
 
     const res = await this.peach.createPayout(beneficiaries);
-    const acceptedRefs = new Set(
+    const acceptedIds = new Set(
       res.results
-        .filter((r) => r.status === 'success' || r.status === 'processing')
-        .map((r) => r.reference),
+        .filter((r) => ['pending', 'processing', 'successful'].includes(r.status))
+        .map((r) => r.payoutId),
     );
 
     // Stamp paidOutAt on accepted rows (exactly-once). CAS on paidOutAt=null
@@ -95,7 +142,7 @@ export class ManualPaymentsService {
     let accepted = 0;
     let totalCents = 0;
     for (const b of beneficiaries) {
-      if (!acceptedRefs.has(b.reference)) continue;
+      if (!acceptedIds.has(b.payoutId)) continue;
       const stamp = await this.prisma.transaction.updateMany({
         where: { id: b.txId, paidOutAt: null },
         data: { paidOutAt: new Date() },
@@ -107,13 +154,17 @@ export class ManualPaymentsService {
     }
     const failed = beneficiaries.length - accepted;
     if (failed > 0) {
+      const failDetail = res.results
+        .filter((r) => !acceptedIds.has(r.payoutId))
+        .map((r) => `${r.payoutId.slice(0, 8)}: ${r.error ?? r.code ?? r.status}`)
+        .join('; ');
       await this.prisma.adminAlert
         .create({
           data: {
             type: 'PEACH_PAYOUT_PARTIAL',
             referenceId: res.requestId ?? 'peach-payout',
             urgent: true,
-            context: `Peach payout batch: ${accepted}/${beneficiaries.length} accepted, ${failed} not accepted. ${res.message ?? ''}`,
+            context: `Peach payout batch: ${accepted}/${beneficiaries.length} accepted, ${failed} not accepted. ${failDetail} ${res.message ?? ''}`.trim(),
           },
         })
         .catch(() => undefined);
@@ -448,6 +499,8 @@ export class ManualPaymentsService {
             // KYC VERIFIED). collectDue skips sellers failing it.
             kycStatus: true,
             profileCompletedAt: true,
+            // Peach BANV — enforced by collectDue only when BANV is live.
+            bankVerifiedAt: true,
           },
         },
       },
@@ -559,6 +612,17 @@ export class ManualPaymentsService {
           reason: `Seller ${p.seller.username ?? '(no username)'}: ${
             p.seller.kycStatus !== 'VERIFIED' ? 'KYC not verified' : 'profile incomplete'
           } — payout held until verified`,
+        });
+        continue;
+      }
+      // Peach bank-account verification (AVS) gate — enforced only once
+      // BANV can actually run; before that the manual admin holder-name
+      // review remains the gate (pre-Peach process).
+      if (this.peach.isBanvEnabled() && !p.seller.bankVerifiedAt) {
+        skipped.push({
+          kind: 'PAYOUT',
+          ref: p.orderReference ?? p.id,
+          reason: `Seller ${p.seller.username ?? '(no username)'}: bank account not yet verified (AVS) — verification runs automatically after bank details are saved; see admin alerts if it flagged a mismatch`,
         });
         continue;
       }

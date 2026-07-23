@@ -608,6 +608,43 @@ export class PaymentsWebhookController {
     return { received: true };
   }
 
+  // Peach bank-account verification (BANV) result webhook.
+  @Post('webhook/peach-banv')
+  @HttpCode(200)
+  async peachBanvWebhook(
+    @Req() req: Request,
+    @Body() body: Record<string, unknown>,
+  ) {
+    this.logger.log('Peach BANV webhook received');
+    const headers = {
+      id: req.headers['x-webhook-id'] as string | undefined,
+      timestamp: req.headers['x-webhook-timestamp'] as string | undefined,
+      signature: req.headers['x-webhook-signature'] as string | undefined,
+    };
+    const rawBody =
+      (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ??
+      JSON.stringify(body);
+    const valid = this.txService.verifyPeachWebhook(
+      rawBody,
+      body,
+      headers,
+      this.publicUrl('/payments/webhook/peach-banv'),
+    );
+    if (!valid) {
+      this.logger.warn('Peach BANV webhook signature invalid — dropping');
+      return { received: true };
+    }
+    try {
+      await this.txService.handlePeachBanvWebhook(body);
+    } catch (err) {
+      this.logger.error(
+        `Peach BANV webhook handler failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
+    return { received: true };
+  }
+
   // Peach payout status webhook (Processing / Successful / Failed).
   @Post('webhook/peach-payout')
   @HttpCode(200)

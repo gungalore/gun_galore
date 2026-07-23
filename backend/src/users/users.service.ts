@@ -9,7 +9,8 @@ import { SmsService } from '../sms/sms.service';
 import { User, Province, NotificationCategory, Prisma } from '@prisma/client';
 import { createHash, randomInt } from 'crypto';
 import { createClerkClient } from '@clerk/backend';
-import { encryptSaIdNumber, hashSaIdNumber } from '../common/id-crypto';
+import { encryptSaIdNumber, hashSaIdNumber, decryptSaIdNumber } from '../common/id-crypto';
+import { PeachService } from '../payments/peach.service';
 
 // Address-book create/update payload (Phase 2).
 export interface AddressInput {
@@ -109,7 +110,69 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sms: SmsService,
+    // @Global PeachModule — bank-account verification (BANV) requests.
+    private readonly peach: PeachService,
   ) {}
+
+  // ── Peach bank-account verification (AVS) ─────────────────────────
+  // Fired (fire-and-forget) after EVERY bank-details save. Sends the
+  // account + the seller's SA ID to Peach BANV; the result webhook
+  // (/payments/webhook/peach-banv) stamps bankVerifiedAt on a pass or
+  // raises a BANK_VERIFY_MISMATCH alert on a fail. No-op when Peach
+  // payouts aren't configured — the manual admin review remains the
+  // gate until then. The ID number is decrypted in memory only and
+  // NEVER logged.
+  async requestBankVerification(userId: string): Promise<void> {
+    if (!this.peach.isBanvEnabled()) return;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        bankAccountNumber: true,
+        bankBranchCode: true,
+        bankAccountType: true,
+        idNumberEncrypted: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+    if (
+      !user ||
+      !user.bankAccountNumber ||
+      !user.bankBranchCode ||
+      !user.idNumberEncrypted
+    ) {
+      // No ID on file yet (buyer refund details before profile completion)
+      // — verification runs once the seller profile adds the ID.
+      return;
+    }
+    try {
+      const idNumber = decryptSaIdNumber(user.idNumberEncrypted);
+      const res = await this.peach.verifyBankAccount({
+        accountNumber: user.bankAccountNumber,
+        branchCode: user.bankBranchCode,
+        accountType: user.bankAccountType ?? 'unknown',
+        idNumber,
+        initials: user.firstName ? user.firstName.trim().charAt(0) : undefined,
+        lastName: user.lastName ?? undefined,
+      });
+      if (!res) return;
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          bankVerificationId: res.bankVerificationId,
+          bankAvsResult: `REQUESTED:${res.resultCode ?? res.status}`,
+        },
+      });
+      this.logger.log(
+        `BANV requested for user ${user.id} (verification ${res.bankVerificationId})`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `BANV request failed for user ${userId}: ${(err as Error).message}`,
+      );
+    }
+  }
 
   // Pulls the user-friendly message out of a Clerk SDK error. Clerk
   // returns structured errors with `errors[].longMessage` that's already
@@ -603,6 +666,7 @@ export class UsersService {
         bankAccountType: dto.bankAccountType,
         bankVerifiedAt: null,
         bankAvsResult: null,
+        bankVerificationId: null,
         profileCompletedAt: new Date(),
       },
     });
@@ -610,17 +674,19 @@ export class UsersService {
     this.logger.log(
       `Profile completed for ${clerkId} (bank=${dto.bankName})`,
     );
+    // Kick off Peach bank-account verification (no-op until configured).
+    void this.requestBankVerification(updated.id);
     return updated;
   }
 
   // FLOW-F2 — set/replace ONLY the banking quartet (+ account type)
-  // from /profile/edit. Refund EFTs and seller payouts are both paid
-  // to this account by the daily FNB bulk batch; refund notifications
-  // link buyers here when they have no bank details on file. Same
-  // validation rules as completeProfile's banking section. Changing
-  // details resets bankVerifiedAt/bankAvsResult — the admin re-reviews
-  // the holder name against the verified identity before the next
-  // payout (manual check that replaced automated AVS).
+  // from /profile/edit. Seller payouts (and any owed refunds) are paid
+  // to this account via Peach Payouts; refund notifications link buyers
+  // here when they have no bank details on file. Same validation rules
+  // as completeProfile's banking section. Changing details resets
+  // bankVerifiedAt/bankAvsResult/bankVerificationId and re-runs Peach
+  // bank-account verification (BANV); until BANV is configured, the
+  // manual admin holder-name review remains the pre-payout gate.
   async updateBankDetails(clerkId: string, dto: BankDetailsDto) {
     const user = await this.prisma.user.findUnique({
       where: { clerkId },
@@ -659,6 +725,7 @@ export class UsersService {
         bankAccountType: dto.bankAccountType,
         bankVerifiedAt: null,
         bankAvsResult: null,
+        bankVerificationId: null,
       },
       // Trimmed response — exactly the fields /profile/edit needs to
       // refresh its "account on file" summary. Never the whole User.
@@ -672,6 +739,9 @@ export class UsersService {
       },
     });
     this.logger.log(`Bank details updated for ${clerkId} (bank=${bankName})`);
+    // Kick off Peach bank-account verification (no-op until configured;
+    // silently skips buyers who have no SA ID on file yet).
+    void this.requestBankVerification(user.id);
     return updated;
   }
 

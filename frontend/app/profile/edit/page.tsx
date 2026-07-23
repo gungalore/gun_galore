@@ -18,6 +18,7 @@ import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { StepAccordion, type StepStatus } from '@/components/step-accordion';
 import { HelpTip } from '@/components/help-tip';
+import { SA_BANKS } from '@/lib/sa-banks';
 import { safeJson } from '@/lib/safe-json';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -1419,13 +1420,32 @@ export default function EditProfilePage() {
                 />
               </Field>
               <Field label="Bank">
-                <input
-                  type="text"
+                {/* Picker (not free text): payouts go out via Peach, whose
+                    bank list is a fixed enum — picking here guarantees the
+                    payout maps. Picking also pre-fills the universal branch
+                    code below (still editable). */}
+                <select
                   value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    setBankName(name);
+                    const entry = SA_BANKS.find((b) => b.name === name);
+                    if (entry?.universalCode) setBankBranchCode(entry.universalCode);
+                  }}
                   style={inputStyle}
-                  placeholder="e.g. FNB"
-                />
+                >
+                  <option value="">— pick your bank —</option>
+                  {/* Keep a legacy free-text value selectable so an existing
+                      saved bank name doesn't silently vanish from the form. */}
+                  {bankName && !SA_BANKS.some((b) => b.name === bankName) && (
+                    <option value={bankName}>{bankName}</option>
+                  )}
+                  {SA_BANKS.map((b) => (
+                    <option key={b.name} value={b.name}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
               </Field>
               <Field label="Account number">
                 <input

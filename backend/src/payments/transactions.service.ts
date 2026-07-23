@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { FeeCalculator, SHIPPING_HANDLING_FEE_CENTS } from './fee.calculator';
 import { PeachService, PeachPaymentResult } from './peach.service';
+import { evaluateBanvMatches, banvFlagsSummary } from './peach-banks';
 import { FraudRiskService } from './fraud-risk.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { estimateDeliveryDate } from '../shipping/delivery-estimate';
@@ -1430,23 +1431,33 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
-  // Peach PAYOUT status webhook (Processing / Successful / Failed).
-  // runDuePayouts stamps paidOutAt when Peach ACCEPTS the batch; this
-  // reconciles the async outcome. merchantPayoutId == our transaction id.
-  //   Failed  → clear paidOutAt so the row re-queues + urgent alert.
-  //   Success → confirm (paidOutAt already set); log.
+  // Peach PAYOUT status webhook: { payoutId, status, resultCode }.
+  // runDuePayouts mints + stores Transaction.peachPayoutId BEFORE calling
+  // Peach and stamps paidOutAt on ACCEPTED rows; this reconciles the async
+  // outcome (matching on peachPayoutId):
+  //   failed / cancelled / reversed → clear paidOutAt so the row re-queues
+  //     on the next operator run + urgent alert (reversed = money came BACK
+  //     after a success — flagged loudest for manual reconciliation).
+  //   successful → confirm; pending/processing → log only.
   // Always idempotent; the webhook must 200.
   // ------------------------------------------------------------------
   async handlePeachPayoutWebhook(body: Record<string, unknown>) {
     const evt = this.peach.parsePayoutWebhook(body);
-    const txId = evt.merchantPayoutId;
-    if (!txId) {
-      this.logger.warn('Peach payout webhook: no merchantPayoutId');
+    if (!evt.payoutId) {
+      this.logger.warn('Peach payout webhook: no payoutId');
       return;
     }
-    if (evt.status === 'failed') {
-      // Un-stamp so the seller is retried next run, and alert — the seller's
-      // bank details are likely wrong (invalid account) or a transient fault.
+    const tx = await this.prisma.transaction.findUnique({
+      where: { peachPayoutId: evt.payoutId },
+      select: { id: true },
+    });
+    if (!tx) {
+      this.logger.warn(`Peach payout webhook: no transaction for payout ${evt.payoutId}`);
+      return;
+    }
+    const txId = tx.id;
+
+    if (['failed', 'cancelled', 'reversed'].includes(evt.status)) {
       const cleared = await this.prisma.transaction.updateMany({
         where: { id: txId, releasedAt: { not: null } },
         data: { paidOutAt: null },
@@ -1454,26 +1465,111 @@ export class TransactionsService {
       await this.prisma.adminAlert
         .create({
           data: {
-            type: 'PEACH_PAYOUT_FAILED',
+            type: evt.status === 'reversed' ? 'PEACH_PAYOUT_REVERSED' : 'PEACH_PAYOUT_FAILED',
             referenceId: txId,
             urgent: true,
-            context: `Peach payout FAILED for ${txId} (code ${evt.code ?? '?'}, payoutId ${evt.payoutId ?? '—'}). paidOutAt ${cleared.count ? 'cleared → will retry' : 'not set'}; check the seller's bank details.`,
+            context: `Peach payout ${evt.status.toUpperCase()} for ${txId} (code ${evt.code ?? '?'}, payoutId ${evt.payoutId}). paidOutAt ${cleared.count ? 'cleared → row re-queues on the next payout run' : 'not set'}; check the seller's bank details${evt.status === 'reversed' ? ' — funds RETURNED after an earlier success, reconcile before re-running' : ''}.`,
           },
         })
         .catch(() => undefined);
       void this.tracking.recordInternal(txId, 'PAYOUT_FAILED', {
-        message: `Payout failed (code ${evt.code ?? '?'}) — retry after checking bank details.`,
+        message: `Payout ${evt.status} (code ${evt.code ?? '?'}) — will retry after bank details are checked.`,
       });
       return;
     }
-    if (evt.status === 'success') {
-      this.logger.log(`Peach payout SUCCESS for ${txId} (payoutId ${evt.payoutId ?? '—'})`);
+    if (evt.status === 'successful') {
+      this.logger.log(`Peach payout SUCCESS for ${txId} (payoutId ${evt.payoutId})`);
       void this.tracking.recordInternal(txId, 'PAYOUT_SETTLED', {
         message: 'Payout settled to the seller’s bank.',
       });
       return;
     }
-    this.logger.log(`Peach payout processing for ${txId}`);
+    this.logger.log(`Peach payout ${evt.status} for ${txId}`);
+  }
+
+  // ------------------------------------------------------------------
+  // Peach BANK-ACCOUNT VERIFICATION (BANV) webhook. Domain-wise this is
+  // user data, but it's Peach payments plumbing (same signing + always-200
+  // controller), so it lives with the other Peach handlers. Matches the
+  // user on bankVerificationId (stored at request time):
+  //   status successful → evaluate the per-field match flags:
+  //     passed   → stamp bankVerifiedAt (the payout AVS gate opens);
+  //     mismatch → bankAvsResult=MISMATCH + admin alert (payouts stay held).
+  //   status failed → bankAvsResult=FAILED + admin alert.
+  // ------------------------------------------------------------------
+  async handlePeachBanvWebhook(body: Record<string, unknown>) {
+    const evt = this.peach.parseBanvWebhook(body);
+    if (!evt.bankVerificationId) {
+      this.logger.warn('Peach BANV webhook: no bankVerificationId');
+      return;
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { bankVerificationId: evt.bankVerificationId },
+      select: { id: true, username: true, bankVerifiedAt: true },
+    });
+    if (!user) {
+      this.logger.warn(
+        `Peach BANV webhook: no user for verification ${evt.bankVerificationId}`,
+      );
+      return;
+    }
+    if (evt.status === 'pending' || evt.status === 'processing') {
+      this.logger.log(`Peach BANV ${evt.status} for user ${user.id}`);
+      return;
+    }
+
+    const flags = banvFlagsSummary(evt.matches);
+    if (evt.status === 'successful') {
+      const outcome = evaluateBanvMatches(evt.matches);
+      if (outcome === 'passed') {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            bankVerifiedAt: new Date(),
+            bankAvsResult: `PASS:${evt.resultCode ?? ''}:${flags}`,
+          },
+        });
+        this.logger.log(`Peach BANV PASSED for user ${user.id} (${flags})`);
+        return;
+      }
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          bankVerifiedAt: null,
+          bankAvsResult: `MISMATCH:${evt.resultCode ?? ''}:${flags}`,
+        },
+      });
+      await this.prisma.adminAlert
+        .create({
+          data: {
+            type: 'BANK_VERIFY_MISMATCH',
+            referenceId: user.id,
+            urgent: true,
+            context: `Bank account verification MISMATCH for ${user.username ?? user.id} (${flags}). The account exists check / ID-ownership check did not pass — payouts stay held. Ask the seller to correct their banking details (account must be in their own name).`,
+          },
+        })
+        .catch(() => undefined);
+      this.logger.warn(`Peach BANV MISMATCH for user ${user.id} (${flags})`);
+      return;
+    }
+
+    // status failed — the verification itself errored (not a mismatch).
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        bankVerifiedAt: null,
+        bankAvsResult: `FAILED:${evt.resultCode ?? ''}`,
+      },
+    });
+    await this.prisma.adminAlert
+      .create({
+        data: {
+          type: 'BANK_VERIFY_FAILED',
+          referenceId: user.id,
+          context: `Bank account verification FAILED (code ${evt.resultCode ?? '?'}) for ${user.username ?? user.id} — likely invalid branch/account details or a BANV service fault. Re-run from the user dossier or ask the seller to re-check their details.`,
+        },
+      })
+      .catch(() => undefined);
   }
 
   // ------------------------------------------------------------------

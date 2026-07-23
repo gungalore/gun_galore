@@ -13,6 +13,7 @@ import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { PeachService } from '../payments/peach.service';
+import { decryptSaIdNumber } from '../common/id-crypto';
 import { SmsService } from '../sms/sms.service';
 import { TransactionsService, PAYMENT_MODE } from '../payments/transactions.service';
 import { reversalListingData } from '../payments/inventory';
@@ -428,6 +429,70 @@ export class AdminService {
       reason: 'Seller reject-strikes cleared after review',
     });
     return { cleared: true };
+  }
+
+  // ---------------------------------------------------------------
+  // Re-run Peach bank-account verification (BANV) for a user, from the
+  // dossier — e.g. after a BANK_VERIFY_FAILED alert or when the seller
+  // says they've fixed their details bank-side. Same flow as the
+  // automatic post-save trigger (UsersService.requestBankVerification);
+  // duplicated thinly here because AdminModule doesn't import the users
+  // graph. The ID number is decrypted in memory only and never logged.
+  // ---------------------------------------------------------------
+  async rerunBankVerification(userId: string, adminId: string) {
+    if (!this.peach.isBanvEnabled()) {
+      throw new BadRequestException(
+        'Peach bank verification is not configured yet.',
+      );
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        bankAccountNumber: true,
+        bankBranchCode: true,
+        bankAccountType: true,
+        idNumberEncrypted: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.bankAccountNumber || !user.bankBranchCode) {
+      throw new BadRequestException('User has no banking details on file.');
+    }
+    if (!user.idNumberEncrypted) {
+      throw new BadRequestException(
+        'User has no SA ID on file — bank ownership cannot be verified until their seller profile is completed.',
+      );
+    }
+    const res = await this.peach.verifyBankAccount({
+      accountNumber: user.bankAccountNumber,
+      branchCode: user.bankBranchCode,
+      accountType: user.bankAccountType ?? 'unknown',
+      idNumber: decryptSaIdNumber(user.idNumberEncrypted),
+      initials: user.firstName ? user.firstName.trim().charAt(0) : undefined,
+      lastName: user.lastName ?? undefined,
+    });
+    if (!res) {
+      throw new BadRequestException('Verification request could not be submitted.');
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        bankVerifiedAt: null,
+        bankVerificationId: res.bankVerificationId,
+        bankAvsResult: `REQUESTED:${res.resultCode ?? res.status}`,
+      },
+    });
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'BANK_VERIFY_RERUN',
+      resourceType: 'User',
+      resourceId: userId,
+      reason: 'Admin re-ran Peach bank-account verification',
+    });
+    return { requested: true, bankVerificationId: res.bankVerificationId, status: res.status };
   }
 
   // ---------------------------------------------------------------

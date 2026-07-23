@@ -6,6 +6,7 @@ import {
   classifyResultCode,
   classifyPayoutCode,
 } from './peach-signature';
+import { BANV_ACCOUNT_TYPE, type BanvFlag, type BanvMatches } from './peach-banks';
 
 /**
  * PeachService — Peach Payments adapter (Checkout V2 pay-in + Payouts API
@@ -74,14 +75,31 @@ export type PeachRefundReason =
   | 'CANCELLED_PAYMENT';
 
 export interface PeachPayoutBeneficiary {
-  /** Our internal id echoed back on the payout webhook (merchantPayoutId). */
-  reference: string;
-  beneficiaryName: string;
+  /** Client-minted UUIDv4 — Peach's payoutId; the caller stores it on the
+   *  Transaction BEFORE the API call so the status webhook always matches. */
+  payoutId: string;
+  /** Peach bankName ENUM value (normaliseBankName in peach-banks.ts). */
+  bankName: string;
+  accountHolder: string;
   bankAccountNumber: string;
   branchCode: string;
+  /** Integer ZAR cents — Payouts (unlike Checkout) is minor units. */
   amountCents: number;
-  /** Free-text that appears on the beneficiary's statement (≤20 chars). */
-  narrative?: string;
+  /** Beneficiary statement reference, 1-20 alphanumeric+space. */
+  reference: string;
+  /** Peach emails the proof-of-payout here (the seller). */
+  proofEmail: string;
+}
+
+export interface PeachBanvRequest {
+  accountNumber: string;
+  branchCode: string;
+  /** Our stored type: cheque | savings | transmission (mapped to Peach's enum). */
+  accountType: string;
+  /** SA ID number (13 digits). Never logged. */
+  idNumber: string;
+  initials?: string;
+  lastName?: string;
 }
 
 const AUTH_HOST_LIVE = 'https://dashboard.peachpayments.com';
@@ -106,8 +124,6 @@ export class PeachService {
   // Signing secret ("secret token") for checkout create + refund + result
   // signature verification.
   private readonly secret = process.env.PEACH_SECRET ?? '';
-  // Payouts is a separately-onboarded product with its own entity + creds.
-  private readonly payoutEntityId = process.env.PEACH_PAYOUT_ENTITY_ID ?? '';
 
   private readonly live = process.env.PEACH_ENV === 'live';
 
@@ -124,12 +140,20 @@ export class PeachService {
     this.entityId &&
     this.secret
   );
+  // Payouts + bank-account verification (BANV) ride the same OAuth creds;
+  // the merchantId is in the URL path (no separate entity id).
   private readonly payoutsConfigured = !!(
     this.clientId &&
     this.clientSecret &&
-    this.merchantId &&
-    this.payoutEntityId
+    this.merchantId
   );
+
+  /** collectDue consults this: enforce the AVS payout gate only when the
+   *  BANV product can actually run (otherwise the manual admin review from
+   *  the pre-Peach process remains the gate). */
+  isBanvEnabled(): boolean {
+    return this.payoutsConfigured;
+  }
 
   // Cached bearer token (shared by checkout status + payouts).
   private token: { value: string; expiresAt: number } | null = null;
@@ -339,15 +363,16 @@ export class PeachService {
   }
 
   // ─── Payout (seller disbursement to their bank) ───────────────────
-  // Real per-seller third-party disbursement (unlike the old Stitch
-  // "withdrawal" which only moved OUR balance to OUR bank). Batch-capable;
-  // callers pass one or many beneficiaries.
+  // POST /api/merchants/{merchantId}/payouts — real per-seller third-party
+  // disbursement, batch-capable (payouts[] array), realtime-eft. Amounts in
+  // INTEGER CENTS (min 1000 = R10 per Peach). Contract verified 2026-07-23
+  // from Peach's OpenAPI reference.
   async createPayout(
     beneficiaries: PeachPayoutBeneficiary[],
   ): Promise<{
     success: boolean;
     requestId?: string;
-    results: { reference: string; payoutId?: string; status: string; code?: string }[];
+    results: { payoutId: string; status: string; code?: string; error?: string }[];
     message?: string;
   }> {
     if (beneficiaries.length === 0) {
@@ -360,68 +385,166 @@ export class PeachService {
       return {
         success: false,
         results: beneficiaries.map((b) => ({
-          reference: b.reference,
+          payoutId: b.payoutId,
           status: 'not_configured',
         })),
         message: 'payouts not configured',
       };
     }
-    const res = await fetch(`${this.payoutsHost}/api/payouts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${await this.getToken()}`,
+    const res = await fetch(
+      `${this.payoutsHost}/api/merchants/${encodeURIComponent(this.merchantId)}/payouts`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await this.getToken()}`,
+        },
+        body: JSON.stringify({
+          payouts: beneficiaries.map((b) => ({
+            payoutId: b.payoutId,
+            bankName: b.bankName,
+            accountNumber: b.bankAccountNumber,
+            branchCode: b.branchCode,
+            amount: Math.round(b.amountCents), // integer CENTS
+            currency: 'ZAR',
+            accountHolder: b.accountHolder.slice(0, 50),
+            reference: b.reference.slice(0, 20),
+            payoutMethod: 'realtime-eft',
+            proofOfPayout: { to: [b.proofEmail] },
+          })),
+        }),
       },
-      body: JSON.stringify({
-        entityId: this.payoutEntityId,
-        payouts: beneficiaries.map((b) => ({
-          merchantPayoutId: b.reference,
-          amount: this.centsToDecimal(b.amountCents),
-          currency: 'ZAR',
-          beneficiaryName: b.beneficiaryName,
-          bankAccountNumber: b.bankAccountNumber,
-          // Peach recommends the UNIVERSAL branch code; the caller passes
-          // the seller's stored branch code and we send it as-is.
-          branchCode: b.branchCode,
-          reference: (b.narrative ?? 'Gun Galore payout').slice(0, 20),
-        })),
-      }),
-    });
+    );
     const json = (await res.json().catch(() => ({}))) as {
-      requestId?: string;
+      payoutRequestId?: string;
       payouts?: {
-        merchantPayoutId?: string;
         payoutId?: string;
-        result?: { code?: string };
+        status?: string;
+        resultCode?: string;
+        error?: { title?: string; message?: string; code?: string };
       }[];
-      result?: { code?: string; description?: string };
+      message?: string;
     };
     if (!res.ok) {
-      this.logger.warn(
-        `Peach createPayout ${res.status}: ${json.result?.description ?? ''}`,
-      );
+      this.logger.warn(`Peach createPayout ${res.status}: ${json.message ?? ''}`);
       return {
         success: false,
         results: beneficiaries.map((b) => ({
-          reference: b.reference,
+          payoutId: b.payoutId,
           status: 'failed',
           code: String(res.status),
         })),
-        message: json.result?.description,
+        message: json.message,
       };
     }
-    const results = (json.payouts ?? []).map((p) => {
-      const status = classifyPayoutCode(p.result?.code);
-      return {
-        reference: p.merchantPayoutId ?? '',
-        payoutId: p.payoutId,
-        status,
-        code: p.result?.code,
-      };
-    });
-    // Success = the batch was ACCEPTED (processing/success); individual
-    // failures are surfaced per-row for the caller to reconcile.
-    return { success: true, requestId: json.requestId, results };
+    const results = (json.payouts ?? []).map((p) => ({
+      payoutId: p.payoutId ?? '',
+      // Peach's own lifecycle enum: pending|processing|successful|failed|
+      // cancelled|reversed — pending/processing/successful all mean ACCEPTED.
+      status: p.status ?? classifyPayoutCode(p.resultCode),
+      code: p.resultCode,
+      error: p.error ? `${p.error.code ?? ''} ${p.error.message ?? ''}`.trim() : undefined,
+    }));
+    return { success: true, requestId: json.payoutRequestId, results };
+  }
+
+  // ─── Bank account verification (BANV / AVS) ───────────────────────
+  // POST /api/merchants/{merchantId}/banv — verifies the account exists, is
+  // open, and that the SA ID matches the account holder. Result arrives via
+  // the banv webhook (or getBankVerificationResult). Runs 03:00–23:00 SAST.
+  async verifyBankAccount(req: PeachBanvRequest): Promise<{
+    bankVerificationId: string;
+    status: string;
+    resultCode?: string;
+  } | null> {
+    if (!this.payoutsConfigured) {
+      this.logger.warn('Peach BANV not configured — skipping bank verification');
+      return null;
+    }
+    const accountType = BANV_ACCOUNT_TYPE[req.accountType] ?? 'unknown';
+    const res = await fetch(
+      `${this.payoutsHost}/api/merchants/${encodeURIComponent(this.merchantId)}/banv`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await this.getToken()}`,
+        },
+        body: JSON.stringify({
+          accountNumber: req.accountNumber,
+          accountType,
+          branchCode: req.branchCode,
+          idNumber: req.idNumber,
+          ...(req.initials ? { initials: req.initials.slice(0, 5) } : {}),
+          ...(req.lastName ? { lastName: req.lastName.slice(0, 60) } : {}),
+        }),
+      },
+    );
+    const json = (await res.json().catch(() => ({}))) as {
+      bankVerificationId?: string;
+      status?: string;
+      resultCode?: string;
+      message?: string;
+    };
+    if (!res.ok || !json.bankVerificationId) {
+      // Never log the request body here — it carries the ID number.
+      throw new Error(
+        `Peach BANV create ${res.status}: ${json.message ?? json.resultCode ?? ''}`,
+      );
+    }
+    return {
+      bankVerificationId: json.bankVerificationId,
+      status: json.status ?? 'pending',
+      resultCode: json.resultCode,
+    };
+  }
+
+  /** GET /banv/{id}/status — per-field match flags + lifecycle status. */
+  async getBankVerificationResult(bankVerificationId: string): Promise<
+    ({ status: string; resultCode?: string } & BanvMatches) | null
+  > {
+    if (!this.payoutsConfigured) return null;
+    const res = await fetch(
+      `${this.payoutsHost}/api/merchants/${encodeURIComponent(this.merchantId)}/banv/${encodeURIComponent(bankVerificationId)}/status`,
+      { headers: { Authorization: `Bearer ${await this.getToken()}` } },
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      throw new Error(`Peach BANV status ${res.status}: ${await res.text()}`);
+    }
+    const j = (await res.json()) as Record<string, unknown>;
+    return {
+      status: String(j.status ?? 'pending'),
+      resultCode: j.resultCode as string | undefined,
+      accountNumber: j.accountNumber as BanvFlag,
+      idNumber: j.idNumber as BanvFlag,
+      initials: j.initials as BanvFlag,
+      lastName: j.lastName as BanvFlag,
+      accountOpen: j.accountOpen as BanvFlag,
+      accountAcceptsCredits: j.accountAcceptsCredits as BanvFlag,
+    };
+  }
+
+  /** Normalise the BANV webhook body (same shape as the status query). */
+  parseBanvWebhook(body: Record<string, unknown>): {
+    bankVerificationId?: string;
+    status: string;
+    resultCode?: string;
+    matches: BanvMatches;
+  } {
+    return {
+      bankVerificationId: body.bankVerificationId as string | undefined,
+      status: String(body.status ?? 'pending'),
+      resultCode: body.resultCode as string | undefined,
+      matches: {
+        accountNumber: body.accountNumber as BanvFlag,
+        idNumber: body.idNumber as BanvFlag,
+        initials: body.initials as BanvFlag,
+        lastName: body.lastName as BanvFlag,
+        accountOpen: body.accountOpen as BanvFlag,
+        accountAcceptsCredits: body.accountAcceptsCredits as BanvFlag,
+      },
+    };
   }
 
   // ─── Webhook verification ─────────────────────────────────────────
@@ -491,20 +614,19 @@ export class PeachService {
     };
   }
 
+  // Payout status webhook: { payoutId, status, resultCode, lastUpdated } —
+  // status is Peach's lifecycle enum, passed through verbatim.
   parsePayoutWebhook(body: Record<string, unknown>): {
-    merchantPayoutId?: string;
     payoutId?: string;
-    status: 'success' | 'processing' | 'failed';
+    status: string;
     code?: string;
   } {
     const code =
-      (body.result as { code?: string } | undefined)?.code ??
-      (body['result.code'] as string | undefined);
+      (body.resultCode as string | undefined) ??
+      (body.result as { code?: string } | undefined)?.code;
     return {
-      merchantPayoutId:
-        (body.merchantPayoutId as string) ?? (body.reference as string),
-      payoutId: body.payoutId as string,
-      status: classifyPayoutCode(code),
+      payoutId: body.payoutId as string | undefined,
+      status: String(body.status ?? classifyPayoutCode(code)),
       code,
     };
   }

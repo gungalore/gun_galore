@@ -282,6 +282,14 @@ export class AdminUsersController {
     return this.adminService.updateUser(id, admin.sub, dto);
   }
 
+  // Re-run Peach bank-account verification for this user (dossier action —
+  // e.g. after a BANK_VERIFY_FAILED/MISMATCH alert once details are fixed).
+  @Post(':id/verify-bank')
+  @HttpCode(200)
+  verifyBank(@Param('id') id: string, @CurrentAdmin() admin: { sub: string }) {
+    return this.adminService.rerunBankVerification(id, admin.sub);
+  }
+
   // Clear seller reject-strikes + lift the offers suspension (after
   // reviewing a SELLER_REJECT_STRIKE alert). Also resolves those alerts.
   @Post(':id/clear-reject-strikes')

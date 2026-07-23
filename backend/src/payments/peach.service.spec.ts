@@ -1,4 +1,5 @@
 import { PeachService } from './peach.service';
+import { evaluateBanvMatches, normaliseBankName } from './peach-banks';
 
 // No PEACH_* env in the test runner → mock mode (inert). These lock the
 // "safe when unconfigured" contract + the pure parsing/normalisation.
@@ -26,15 +27,19 @@ describe('PeachService (mock mode — unconfigured)', () => {
   it('createPayout returns not_configured for each beneficiary (no disbursement)', async () => {
     const r = await svc.createPayout([
       {
-        reference: 'TX1',
-        beneficiaryName: 'A Seller',
+        payoutId: '3f2c0d5e-1111-4222-8333-444455556666',
+        bankName: 'FNB',
+        accountHolder: 'A Seller',
         bankAccountNumber: '123456789',
         branchCode: '250655',
         amountCents: 10_000,
+        reference: 'GG 12345678',
+        proofEmail: 'seller@example.com',
       },
     ]);
     expect(r.success).toBe(false);
     expect(r.results[0].status).toBe('not_configured');
+    expect(r.results[0].payoutId).toBe('3f2c0d5e-1111-4222-8333-444455556666');
   });
 
   it('createPayout with zero beneficiaries is a no-op success', async () => {
@@ -73,22 +78,85 @@ describe('PeachService.parseWebhookEvent', () => {
 
 describe('PeachService.parsePayoutWebhook', () => {
   const svc = new PeachService();
-  it('buckets a successful payout', () => {
+  it('passes the real webhook shape through (payoutId + lifecycle status)', () => {
     const p = svc.parsePayoutWebhook({
-      merchantPayoutId: 'TX1',
-      payoutId: 'po_1',
-      result: { code: '2000.000.000' },
+      payoutId: '84920878-fc32-494f-8e30-6a2465c9a456',
+      status: 'successful',
+      resultCode: '2000.000.000',
+      lastUpdated: '2026-07-23T22:00:00.000Z',
     });
-    expect(p.status).toBe('success');
-    expect(p.merchantPayoutId).toBe('TX1');
+    expect(p.status).toBe('successful');
+    expect(p.payoutId).toBe('84920878-fc32-494f-8e30-6a2465c9a456');
+    expect(p.code).toBe('2000.000.000');
   });
-  it('buckets a failed payout', () => {
+  it('classifies from resultCode when status is absent', () => {
     const p = svc.parsePayoutWebhook({
-      reference: 'TX2',
-      result: { code: '2001.002.106' },
+      payoutId: 'po_2',
+      resultCode: '2001.002.106',
     });
     expect(p.status).toBe('failed');
-    expect(p.merchantPayoutId).toBe('TX2');
+  });
+});
+
+describe('BANV evaluation + parsing', () => {
+  const svc = new PeachService();
+  it('parses a banv webhook and PASSES on account+id+open positives', () => {
+    const evt = svc.parseBanvWebhook({
+      bankVerificationId: '6e029f3f-21bf-425d-8f65-4eef2b5d8bb2',
+      accountNumber: 'positive',
+      idNumber: 'positive',
+      accountOpen: 'positive',
+      accountAcceptsCredits: 'positive',
+      lastName: 'negative', // advisory only — must NOT block
+      status: 'successful',
+      resultCode: '2002.000.000',
+    });
+    expect(evt.bankVerificationId).toBe('6e029f3f-21bf-425d-8f65-4eef2b5d8bb2');
+    expect(evaluateBanvMatches(evt.matches)).toBe('passed');
+  });
+  it('MISMATCHES when the ID does not match the account holder', () => {
+    expect(
+      evaluateBanvMatches({
+        accountNumber: 'positive',
+        accountOpen: 'positive',
+        idNumber: 'negative',
+        accountAcceptsCredits: 'positive',
+      }),
+    ).toBe('mismatch');
+  });
+  it('MISMATCHES when the account refuses credits or does not exist', () => {
+    expect(
+      evaluateBanvMatches({
+        accountNumber: 'negative',
+        accountOpen: 'positive',
+        idNumber: 'positive',
+      }),
+    ).toBe('mismatch');
+    expect(
+      evaluateBanvMatches({
+        accountNumber: 'positive',
+        accountOpen: 'positive',
+        idNumber: 'positive',
+        accountAcceptsCredits: 'negative',
+      }),
+    ).toBe('mismatch');
+  });
+});
+
+describe('normaliseBankName', () => {
+  it('maps friendly frontend names + local spellings onto the Peach enum', () => {
+    expect(normaliseBankName('Capitec')).toBe('CAPITEC BANK');
+    expect(normaliseBankName('Standard Bank')).toBe('STANDARD BANK');
+    expect(normaliseBankName('First National Bank')).toBe('FNB');
+    expect(normaliseBankName('Bank Zero')).toBe('BANK ZERO MUTUAL BANK');
+    expect(normaliseBankName('HBZ Bank')).toBe('HBZ BANK LIMITED');
+    expect(normaliseBankName('TYMEBANK')).toBe('TYMEBANK'); // exact enum
+    expect(normaliseBankName('Ubank')).toBe('UBANK LTD');
+  });
+  it('returns null for unmappable names (payout run skips with a reason)', () => {
+    expect(normaliseBankName('Bank of Narnia')).toBeNull();
+    expect(normaliseBankName('')).toBeNull();
+    expect(normaliseBankName(null)).toBeNull();
   });
 });
 
