@@ -1505,7 +1505,14 @@ export class TransactionsService {
     }
     const user = await this.prisma.user.findUnique({
       where: { bankVerificationId: evt.bankVerificationId },
-      select: { id: true, username: true, bankVerifiedAt: true },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        firstName: true,
+        phone: true,
+        bankVerifiedAt: true,
+      },
     });
     if (!user) {
       this.logger.warn(
@@ -1529,6 +1536,13 @@ export class TransactionsService {
             bankAvsResult: `PASS:${evt.resultCode ?? ''}:${flags}`,
           },
         });
+        // Clear any open "fix your banking details" task + drop a quiet
+        // confirmation in their inbox.
+        void this.notifications.resolveByEntity('bank', user.id);
+        void this.notifications.bankVerificationPassed({
+          email: user.email,
+          userId: user.id,
+        });
         this.logger.log(`Peach BANV PASSED for user ${user.id} (${flags})`);
         return;
       }
@@ -1545,10 +1559,18 @@ export class TransactionsService {
             type: 'BANK_VERIFY_MISMATCH',
             referenceId: user.id,
             urgent: true,
-            context: `Bank account verification MISMATCH for ${user.username ?? user.id} (${flags}). The account exists check / ID-ownership check did not pass — payouts stay held. Ask the seller to correct their banking details (account must be in their own name).`,
+            context: `Bank account verification MISMATCH for ${user.username ?? user.id} (${flags}). The account exists check / ID-ownership check did not pass — payouts stay held. The seller has been notified (email+SMS+inbox) to correct their banking details (account must be in their own name).`,
           },
         })
         .catch(() => undefined);
+      // Tell the seller — email + SMS + non-dismissible inbox task.
+      void this.notifications.bankVerificationFailed({
+        email: user.email,
+        name: user.firstName ?? 'there',
+        phone: user.phone,
+        userId: user.id,
+        kind: 'mismatch',
+      });
       this.logger.warn(`Peach BANV MISMATCH for user ${user.id} (${flags})`);
       return;
     }
@@ -1566,10 +1588,17 @@ export class TransactionsService {
         data: {
           type: 'BANK_VERIFY_FAILED',
           referenceId: user.id,
-          context: `Bank account verification FAILED (code ${evt.resultCode ?? '?'}) for ${user.username ?? user.id} — likely invalid branch/account details or a BANV service fault. Re-run from the user dossier or ask the seller to re-check their details.`,
+          context: `Bank account verification FAILED (code ${evt.resultCode ?? '?'}) for ${user.username ?? user.id} — likely invalid branch/account details or a BANV service fault. The seller has been notified to re-check their details; re-run from the user dossier if it looks like a service fault instead.`,
         },
       })
       .catch(() => undefined);
+    void this.notifications.bankVerificationFailed({
+      email: user.email,
+      name: user.firstName ?? 'there',
+      phone: user.phone,
+      userId: user.id,
+      kind: 'failed',
+    });
   }
 
   // ------------------------------------------------------------------

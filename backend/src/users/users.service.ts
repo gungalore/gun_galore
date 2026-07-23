@@ -11,6 +11,7 @@ import { createHash, randomInt } from 'crypto';
 import { createClerkClient } from '@clerk/backend';
 import { encryptSaIdNumber, hashSaIdNumber, decryptSaIdNumber } from '../common/id-crypto';
 import { PeachService } from '../payments/peach.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // Address-book create/update payload (Phase 2).
 export interface AddressInput {
@@ -112,6 +113,9 @@ export class UsersService {
     private readonly sms: SmsService,
     // @Global PeachModule — bank-account verification (BANV) requests.
     private readonly peach: PeachService,
+    // @Global NotificationsModule — clears the "fix your banking details"
+    // inbox task the moment the user re-saves details.
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ── Peach bank-account verification (AVS) ─────────────────────────
@@ -674,7 +678,10 @@ export class UsersService {
     this.logger.log(
       `Profile completed for ${clerkId} (bank=${dto.bankName})`,
     );
-    // Kick off Peach bank-account verification (no-op until configured).
+    // Saving new details is the "fix" action — clear any open bank-verify
+    // task, then kick off a fresh Peach verification (no-op until
+    // configured; re-notifies if it fails again).
+    void this.notifications.resolveByEntity('bank', updated.id);
     void this.requestBankVerification(updated.id);
     return updated;
   }
@@ -739,8 +746,10 @@ export class UsersService {
       },
     });
     this.logger.log(`Bank details updated for ${clerkId} (bank=${bankName})`);
-    // Kick off Peach bank-account verification (no-op until configured;
-    // silently skips buyers who have no SA ID on file yet).
+    // Saving new details is the "fix" action — clear any open bank-verify
+    // task, then kick off a fresh Peach verification (no-op until
+    // configured; silently skips buyers who have no SA ID on file yet).
+    void this.notifications.resolveByEntity('bank', user.id);
     void this.requestBankVerification(user.id);
     return updated;
   }

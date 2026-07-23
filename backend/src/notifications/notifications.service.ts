@@ -18,7 +18,10 @@ export type NotificationLinkedType =
   | 'swapProposal'
   | 'swap'
   | 'subscription'
-  | 'featured';
+  | 'featured'
+  // Bank-account verification rows — linkedId is the USER id. Resolved
+  // when the user re-saves bank details or a later verification passes.
+  | 'bank';
 
 interface PersistOpts {
   userId: string;
@@ -1972,6 +1975,74 @@ export class NotificationsService {
         `offer-${d.offerId}`,
       );
     }
+  }
+
+  // ─── Bank-account verification (Peach BANV) ─────────────────────────
+  // Fired from the BANV result webhook when a seller's bank account could
+  // NOT be verified. Money-critical (their payouts are on hold), so it goes
+  // out on every channel: non-dismissible inbox row (force-push), email with
+  // a fix-it CTA, and SMS. The row is linked ('bank', userId) and resolves
+  // when the user re-saves banking details or a later verification passes.
+  async bankVerificationFailed(d: {
+    email: string;
+    name: string;
+    phone?: string | null;
+    userId: string;
+    /** 'mismatch' = account/ownership didn't match; 'failed' = the check
+     *  itself errored (usually wrong account number / branch code). */
+    kind: 'mismatch' | 'failed';
+  }) {
+    const fixUrl = `${this.appUrl}/profile/edit`;
+    const summary =
+      d.kind === 'mismatch'
+        ? 'We couldn’t confirm that this bank account belongs to you.'
+        : 'We couldn’t verify your bank account details.';
+    const detail =
+      d.kind === 'mismatch'
+        ? 'The account must be in your own name — the same name and ID number you verified with. A spouse’s, business partner’s or company account won’t pass. Please check the account number, branch code and account type, and make sure the account is open and in your name.'
+        : 'The account number or branch code may be mistyped, or the account type may be wrong. Please re-check your details and save them again — verification re-runs automatically.';
+
+    await this.persistByEmail(d.email, {
+      category: 'SELLER',
+      type: 'bank_verify_failed',
+      title: 'Bank account needs attention',
+      body: `${summary} Payouts are on hold until your banking details are corrected.`,
+      url: '/profile/edit',
+      iconKey: 'transaction',
+      linkedType: 'bank',
+      linkedId: d.userId,
+      dismissible: false,
+      forcePush: true,
+    });
+    const html = this.email({
+      status: { tone: 'error', label: 'Action needed' },
+      headline: 'Your bank account could not be verified',
+      body: `Hi ${b(d.name)}, ${summary} Any money owed to you stays safely held — nothing is lost — but payouts are on hold until this is fixed. ${detail}`,
+      cta: { label: 'Fix banking details', url: fixUrl },
+      preheader: 'Payouts on hold — banking details need attention',
+    });
+    await this.send(d.email, 'Action needed: bank account could not be verified', html);
+    await this.sendSms(
+      d.phone,
+      `Gun Galore: we couldn't verify your bank account — payouts are on hold. Fix your details: ${fixUrl}`,
+      `banv-${d.userId}`,
+    );
+  }
+
+  // Quiet confirmation when verification passes — inbox-only (dismissible),
+  // no email/SMS noise for the happy path.
+  async bankVerificationPassed(d: { email: string; userId: string }) {
+    await this.persistByEmail(d.email, {
+      category: 'SELLER',
+      type: 'bank_verify_passed',
+      title: 'Bank account verified',
+      body: 'Your bank account has been verified — payouts can be paid to you.',
+      url: '/profile/edit',
+      iconKey: 'transaction',
+      linkedType: 'bank',
+      linkedId: d.userId,
+      dismissible: true,
+    });
   }
 
   async offerAccepted(d: {

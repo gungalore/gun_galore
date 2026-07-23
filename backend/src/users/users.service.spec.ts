@@ -43,7 +43,7 @@ describe('UsersService — address book & notification prefs', () => {
       },
       $transaction: jest.fn(async (cb) => cb(prisma)),
     };
-    service = new UsersService(prisma as never, {} as never, { isBanvEnabled: () => false } as never);
+    service = new UsersService(prisma as never, {} as never, { isBanvEnabled: () => false } as never, { resolveByEntity: jest.fn() } as never);
   });
 
   it('makes the first saved address the default', async () => {
