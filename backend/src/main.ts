@@ -8,6 +8,21 @@
 import * as dotenv from 'dotenv';
 dotenv.config({ override: true });
 
+// ─── Prefer IPv4 for ALL outbound connections ─────────────────────────
+// This VPS has NO global IPv6 address. Apple's Web Push endpoint
+// (web.push.apple.com) — and other Akamai/Apple hosts — advertise AAAA
+// (IPv6) records, and Node 20's happy-eyeballs (autoSelectFamily, on by
+// default) was racing an IPv6 connection that can only hang → ETIMEDOUT.
+// That silently broke iOS push notifications (offers, sales, etc.) while
+// IPv4-only hosts kept working. Force IPv4-first + disable the parallel
+// family auto-select so we connect straight to the reachable IPv4 address.
+import * as dns from 'node:dns';
+import * as net from 'node:net';
+dns.setDefaultResultOrder('ipv4first');
+(
+  net as { setDefaultAutoSelectFamily?: (v: boolean) => void }
+).setDefaultAutoSelectFamily?.(false);
+
 import { HttpAdapterHost, NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';

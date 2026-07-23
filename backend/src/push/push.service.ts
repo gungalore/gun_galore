@@ -238,10 +238,20 @@ export class PushService implements OnModuleInit {
                 `Pruned dead push subscription (${status}) for user ${sub.userId}`,
               );
             } else {
+              // Log statusCode + code + body, not just message — a
+              // WebPushError's HTTP detail lives in statusCode/body, and a
+              // pre-send network error (e.g. the IPv6 ETIMEDOUT that broke
+              // iOS push) carries only .code, so message alone is empty.
+              const e = err as {
+                statusCode?: number;
+                code?: string;
+                body?: string;
+                message?: string;
+              };
               this.logger.warn(
-                `push to ${sub.endpoint.slice(0, 40)}… failed: ${
-                  err instanceof Error ? err.message : String(err)
-                }`,
+                `push to ${sub.endpoint.slice(0, 40)}… failed: ` +
+                  `status=${e.statusCode ?? '—'} code=${e.code ?? '—'} ` +
+                  `msg=${e.message || '—'} body=${(e.body ?? '').slice(0, 120)}`,
               );
             }
           }
