@@ -1,12 +1,17 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useAuth } from '@clerk/nextjs';
 import {
   ACCOUNT_GROUPS,
   LogoutIcon,
   type AccountMenuGroup,
   type AccountMenuItem,
 } from './account-menu-data';
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // Client renderer for the buyer/seller account menu.
 //
@@ -36,6 +41,33 @@ function isActive(pathname: string | null, href: string): boolean {
   return pathname.startsWith(href + '/');
 }
 
+// Per-module unresolved-notification count badge — an iOS-app-icon-style
+// red pill. Shows the number (capped "9+"). Nothing renders at 0.
+function CountBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-label={`${count} unread`}
+      style={{
+        minWidth: 18,
+        height: 18,
+        padding: '0 5px',
+        borderRadius: 9,
+        background: 'var(--red)',
+        color: '#fff',
+        fontSize: 11,
+        fontWeight: 700,
+        lineHeight: '18px',
+        textAlign: 'center',
+        flexShrink: 0,
+        fontVariantNumeric: 'tabular-nums',
+      }}
+    >
+      {count > 9 ? '9+' : count}
+    </span>
+  );
+}
+
 // ── Shared renderer used by all three surfaces ───────────────────────
 export function AccountMenuList({
   pathname,
@@ -51,6 +83,34 @@ export function AccountMenuList({
   const rowPad = compact ? '8px 12px' : '11px 16px';
   const headPad = compact ? '10px 12px 4px' : '14px 16px 6px';
   const fontSize = compact ? 13 : 15;
+
+  // Per-module unresolved counts, keyed by menu href. Fetched once when the
+  // menu opens (this component only mounts then) — the badges reflect the
+  // same "action needed" rows the bell counts. Fails silent (empty = no
+  // badges) so the menu always renders.
+  const { getToken } = useAuth();
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const r = await fetch(`${API_URL}/notifications/me/module-counts`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!r.ok) return;
+        const data = (await r.json()) as Record<string, number>;
+        if (!cancelled) setCounts(data ?? {});
+      } catch {
+        /* network blip — leave badges empty */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
 
   return (
     <>
@@ -101,6 +161,7 @@ export function AccountMenuList({
                   <item.Icon />
                 </span>
                 <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
+                <CountBadge count={counts[item.href] ?? 0} />
                 {showChevron && (
                   <svg
                     width="14"

@@ -10,6 +10,7 @@ import { Throttle } from '@nestjs/throttler';
 import { NotificationCategory, Prisma } from '@prisma/client';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { moduleForNotification } from './notification-module';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsFeedQueryDto } from './dto/notifications-feed-query.dto';
 import { DismissNotificationsDto } from './dto/dismiss.dto';
@@ -55,6 +56,35 @@ export class NotificationsFeedController {
       account,
       total: buyer + seller + account,
     };
+  }
+
+  // GET /notifications/me/module-counts
+  // Unresolved-notification counts grouped by ACCOUNT-MENU MODULE (the menu
+  // href where the user acts on them), for the per-module red badges in the
+  // account dropdown / drawer / PWA More sheet. One groupBy — cheap. Keys are
+  // menu hrefs (e.g. '/my/offers'); only modules with a non-zero count appear.
+  @Get('module-counts')
+  async moduleCounts(
+    @CurrentUser() clerkId: string,
+  ): Promise<Record<string, number>> {
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+    if (!user) return {};
+
+    const groups = await this.prisma.notification.groupBy({
+      by: ['type', 'category'],
+      where: { userId: user.id, resolvedAt: null },
+      _count: { _all: true },
+    });
+
+    const counts: Record<string, number> = {};
+    for (const g of groups) {
+      const mod = moduleForNotification(g.type, g.category);
+      if (mod) counts[mod] = (counts[mod] ?? 0) + g._count._all;
+    }
+    return counts;
   }
 
   // GET /notifications/me?category=&status=&limit=&before=
