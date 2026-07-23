@@ -397,19 +397,19 @@ export class AdminService {
 
   // ---------------------------------------------------------------
   // Clear seller reject-strikes + lift the offers suspension (the
-  // reject-reason policy stamps offersSuspendedAt at 3 strikes). Also
+  // reject-reason policy stamps sellingBannedAt at 3 strikes = LISTING BAN). Also
   // resolves the open SELLER_REJECT_STRIKE alerts and writes an audit
   // row so the reset is attributable.
   // ---------------------------------------------------------------
   async clearRejectStrikes(userId: string, adminId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, sellerRejectStrikes: true, offersSuspendedAt: true },
+      select: { id: true, sellerRejectStrikes: true, sellingBannedAt: true },
     });
     if (!user) throw new NotFoundException('User not found');
     await this.prisma.user.update({
       where: { id: userId },
-      data: { sellerRejectStrikes: 0, offersSuspendedAt: null },
+      data: { sellerRejectStrikes: 0, sellingBannedAt: null },
     });
     await this.prisma.adminAlert.updateMany({
       where: { type: 'SELLER_REJECT_STRIKE', referenceId: userId, resolved: false },
@@ -422,9 +422,9 @@ export class AdminService {
       resourceId: userId,
       oldValue: {
         sellerRejectStrikes: user.sellerRejectStrikes,
-        offersSuspendedAt: user.offersSuspendedAt,
+        sellingBannedAt: user.sellingBannedAt,
       },
-      newValue: { sellerRejectStrikes: 0, offersSuspendedAt: null },
+      newValue: { sellerRejectStrikes: 0, sellingBannedAt: null },
       reason: 'Seller reject-strikes cleared after review',
     });
     return { cleared: true };

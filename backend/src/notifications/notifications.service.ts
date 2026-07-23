@@ -1945,7 +1945,7 @@ export class NotificationsService {
       status: { tone: 'pending', label: qualifies ? 'Offer at your price' : 'New offer' },
       headline: qualifies ? 'Offer meets your asking price' : 'New offer',
       body: qualifies
-        ? `Hi ${b(d.sellerName)}, ${b(d.buyerName)} offered ${b(formatRand(d.offerAmount))} on ${b(d.listingTitle)} — at or above the auto-accept price you set. Please confirm (accept) or decline it. Note: declining an offer that meets your own asking price counts against your seller standing unless there's a valid reason.`
+        ? `Hi ${b(d.sellerName)}, ${b(d.buyerName)} offered ${b(formatRand(d.offerAmount))} on ${b(d.listingTitle)} — at or above the auto-accept price you set. Please confirm (accept) or decline it. Note: declining any offer records a strike against your seller standing (except genuine buyer concerns, which go to review). Three strikes suspends selling on your account.`
         : `Hi ${b(d.sellerName)}, ${b(d.buyerName)} has made an offer on your listing ${b(d.listingTitle)}. You can accept, reject, or make a single counter-offer. The offer expires in 48 hours.`,
       rows: [
         { label: 'Item', value: d.listingTitle },

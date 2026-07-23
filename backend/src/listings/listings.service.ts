@@ -570,6 +570,13 @@ export class ListingsService {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not synced — try again in a moment');
     if (user.isBanned) throw new ForbiddenException('Account is suspended');
+    // Firm seller-standing policy: 3 reject strikes = banned from LISTING
+    // (buying is unaffected). Lifted only by admin clear-reject-strikes.
+    if (user.sellingBannedAt) {
+      throw new ForbiddenException(
+        'Selling is suspended on your account after repeated rejected sales/offers. You can still buy. Contact support to have your account reviewed.',
+      );
+    }
 
     const category = await this.prisma.category.findUnique({
       where: { id: dto.categoryId },

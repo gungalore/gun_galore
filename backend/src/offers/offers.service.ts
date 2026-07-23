@@ -76,11 +76,10 @@ export class OffersService {
       throw new BadRequestException('Offers can only be made on Take a Shot listings');
     }
     if (listing.sellerId === buyer.id) throw new BadRequestException('Sellers cannot offer on their own listings');
-    // Reject-strike suspension: a seller at 3+ penalty-bearing rejections
-    // stops receiving NEW offers (their Buy Now listings are unaffected)
-    // until an admin reviews + clears the strikes. Buyer-facing copy stays
-    // neutral — the suspension is between us and the seller.
-    if (listing.seller.offersSuspendedAt) {
+    // Listing-banned seller (3 reject strikes): their ACTIVE listings were
+    // cancelled at ban time, so this gate is defence-in-depth for any
+    // listing that raced the ban. Buyer-facing copy stays neutral.
+    if (listing.seller.sellingBannedAt) {
       throw new BadRequestException(
         'This seller is not accepting offers at the moment.',
       );
@@ -311,33 +310,39 @@ export class OffersService {
     }
     const updated = await this.prisma.offer.findUnique({ where: { id: offerId } });
 
-    // Penalty per policy — fire-and-forget: the buyer notification is the
-    // critical path; a penalty write must never block the rejection.
-    void applySellerRejectPenalty(this.prisma, {
-      sellerId: listing.sellerId,
-      source: 'OFFER',
-      reason,
-      consequences: consequencesForOfferReject(reason, offer.metAutoAccept),
-      listingId: listing.id,
-      referenceId: offerId,
-      note: note || null,
-    })
-      .then((r) => {
-        if (r.struck) {
-          this.logger.warn(
-            `Seller ${listing.sellerId} reject strike (${reason}, offer ${offerId}) — total ${r.totalStrikes}${r.suspended ? ' — OFFERS SUSPENDED' : ''}`,
-          );
-        }
-      })
-      .catch((err) =>
-        this.logger.warn(`reject penalty failed: ${(err as Error).message}`),
-      );
+    // Penalty per the FIRM policy — awaited so the seller's response can
+    // carry the strike feedback ("strike 2 of 3"), but failure never blocks
+    // the rejection (the buyer notification below still fires).
+    let penalty = { struck: false, totalStrikes: 0, banned: false, delisted: false };
+    try {
+      penalty = await applySellerRejectPenalty(this.prisma, {
+        sellerId: listing.sellerId,
+        source: 'OFFER',
+        reason,
+        consequences: consequencesForOfferReject(reason, offer.metAutoAccept),
+        listingId: listing.id,
+        referenceId: offerId,
+        note: note || null,
+      });
+      if (penalty.struck) {
+        this.logger.warn(
+          `Seller ${listing.sellerId} reject strike (${reason}, offer ${offerId}) — total ${penalty.totalStrikes}${penalty.banned ? ' — SELLING BANNED' : ''}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`reject penalty failed: ${(err as Error).message}`);
+    }
 
     void this.notifyBuyerOfReject(offerId);
     // Seller resolved their "offer received". Buyer's new
     // "offer rejected" row is dismissible — they handle it themselves.
     void this.notifications.resolveByEntity('offer', offerId);
-    return updated;
+    return {
+      ...updated,
+      strike: penalty.struck,
+      strikes: penalty.totalStrikes,
+      sellingBanned: penalty.banned,
+    };
   }
 
   // ----------------------------------------------------------------

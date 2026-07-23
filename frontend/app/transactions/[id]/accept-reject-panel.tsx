@@ -169,7 +169,10 @@ export function AcceptRejectPanel({
           style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
         >
           The buyer will be refunded in full and notified of the reason. Pick
-          honestly — admins see this for trust-safety review.
+          honestly — admins see this for trust-safety review. Rejecting a
+          paid sale records a strike against your seller standing (genuine
+          buyer concerns go to admin review instead); three strikes suspends
+          selling on your account.
         </p>
         <div className="flex flex-col gap-2 mb-3">
           {REJECT_REASONS.map((r) => (

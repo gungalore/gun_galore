@@ -511,8 +511,9 @@ function RejectPicker({
           }}
         >
           The buyer will be refunded in full and notified of your reason.
-          The listing for &quot;{listingTitle}&quot; will go live again on
-          the marketplace.
+          Rejecting a paid sale records a strike against your seller
+          standing (genuine buyer concerns go to admin review instead) —
+          three strikes suspends selling on your account.
         </p>
         <div
           style={{

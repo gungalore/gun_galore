@@ -54,7 +54,7 @@ const MODES: {
     ],
     how: [
       'Buyers send you an offer. You can accept, decline, or counter once.',
-      'Set an optional hidden auto-accept price — offers at or above it are flagged to you for one-tap confirmation. Declining needs a reason; repeatedly declining offers that meet your own price counts against your seller standing.',
+      'Set an optional hidden auto-accept price — offers at or above it are flagged to you for one-tap confirmation. Declining any offer needs a reason and records a strike (genuine buyer concerns go to admin review instead); keep your listings accurate — three strikes suspends selling on your account. Countering is always penalty-free.',
       'As with every sale, payment is held until delivery is confirmed before it reaches you.',
     ],
   },

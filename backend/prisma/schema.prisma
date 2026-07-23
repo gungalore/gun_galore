@@ -360,10 +360,11 @@ model User {
   // strikes because the rules + consequences are different.
   dispatchStrikes Int @default(0)
   // Seller reject strikes — penalty-bearing rejections (offers + sales)
-  // per the reject-reason policy. At 3, offers are suspended on the
-  // seller's listings (offersSuspendedAt) pending admin review.
+  // per the reject-reason policy. At 3 the seller is BANNED FROM LISTING
+  // (sellingBannedAt): no new listings, active listings cancelled; buying
+  // is unaffected. Lifted only by admin clear-reject-strikes.
   sellerRejectStrikes Int       @default(0)
-  offersSuspendedAt   DateTime?
+  sellingBannedAt     DateTime?
 
   listings                Listing[]
   buyerTransactions       Transaction[]            @relation("BuyerTransactions")

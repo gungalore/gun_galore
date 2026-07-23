@@ -286,10 +286,14 @@ export default function ReceivedOfferActions({
                   className="text-xs mb-4"
                   style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
                 >
-                  Declining closes the offer permanently. Note: repeatedly
-                  declining offers that meet your own asking price, or
-                  declining because a listing was wrong, counts against your
-                  seller standing and can pause offers on your listings.
+                  Declining closes the offer permanently. <strong>Every
+                  decline records a strike</strong> against your seller
+                  standing — except genuine buyer concerns, which go to
+                  admin review instead. It&apos;s your responsibility to keep
+                  listings accurate (cancel or edit them if anything
+                  changes). <strong>Three strikes suspends selling on your
+                  account</strong> — you&apos;ll still be able to buy.
+                  Countering is always penalty-free.
                 </p>
               </>
             )}

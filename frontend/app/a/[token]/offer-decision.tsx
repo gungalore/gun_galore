@@ -433,9 +433,10 @@ export function OfferDecisionPage({
             />
           )}
           <p style={{ margin: '10px 0 12px', fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-            The buyer sees this reason. Declining offers that meet your own
-            asking price, or declining over listing errors, counts against
-            your seller standing.
+            The buyer sees this reason. Every decline records a strike
+            against your seller standing (buyer concerns go to admin review
+            instead — no strike). Three strikes suspends selling on your
+            account; buying is unaffected. Countering is always penalty-free.
           </p>
           <div style={{ display: 'flex', gap: 8 }}>
             <ActionButton variant="ghost" onClick={() => setView({ kind: 'choice' })}>
