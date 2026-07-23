@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useState, DragEvent } from 'react';
-import { normalizeImageForUpload, isHeic } from '@/lib/heic-to-jpeg';
 
 // Drag-and-drop photo dropzone with thumbnail previews, drag-to-reorder,
 // set-as-hero, and remove buttons. Files are kept in the parent's state;
@@ -24,10 +23,7 @@ interface Props {
 export function PhotoDropzone({
   files,
   onChange,
-  // HEIC/HEIF included so iPhone photos picked from the Files app (or when
-  // Safari hands over the original instead of auto-converting) are accepted —
-  // the backend validators allow them and Cloudinary converts on delivery.
-  accept = 'image/jpeg,image/png,image/webp,image/heic,image/heif',
+  accept = 'image/jpeg,image/png,image/webp',
   minFiles = 1,
   maxFiles = 5,
 }: Props) {
@@ -52,17 +48,10 @@ export function PhotoDropzone({
     setPreviews(next);
   }
 
-  async function addFiles(incoming: FileList | File[]) {
-    // Accept by MIME OR by .heic/.heif extension — the Files app sometimes
-    // hands over a HEIC with an empty type, which the MIME test alone misses.
-    const arr = Array.from(incoming).filter(
-      (f) => f.type.startsWith('image/') || isHeic(f),
-    );
+  function addFiles(incoming: FileList | File[]) {
+    const arr = Array.from(incoming).filter((f) => f.type.startsWith('image/'));
     if (arr.length === 0) return;
-    // Convert any HEIC/HEIF to JPEG up front so the preview, the pre-publish
-    // vision moderation and the upload all see a supported format.
-    const normalized = await Promise.all(arr.map(normalizeImageForUpload));
-    const merged = [...files, ...normalized].slice(0, maxFiles);
+    const merged = [...files, ...arr].slice(0, maxFiles);
     syncPreviews(merged);
     onChange(merged);
   }

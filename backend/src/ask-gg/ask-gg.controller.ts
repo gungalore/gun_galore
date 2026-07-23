@@ -207,7 +207,7 @@ export class AskGgController {
         fileIsRequired: true,
         validators: [
           new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }),
-          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp|heic|heif)$/ }),
+          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
         ],
       }),
     )
@@ -252,7 +252,7 @@ export class AskGgController {
         fileIsRequired: true,
         validators: [
           new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }),
-          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp|heic|heif)$/ }),
+          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
         ],
       }),
     )

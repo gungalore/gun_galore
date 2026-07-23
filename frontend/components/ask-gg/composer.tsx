@@ -183,7 +183,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            accept="image/jpeg,image/png,image/webp"
             capture="environment"
             multiple
             onChange={handlePickFiles}

@@ -52,7 +52,7 @@ export class ComplaintsController {
       new ParseFilePipe({
         validators: [
           new MaxFileSizeValidator({ maxSize: 8 * 1024 * 1024 }),
-          new FileTypeValidator({ fileType: /image\/(jpeg|png|webp|heic|heif)/ }),
+          new FileTypeValidator({ fileType: /image\/(jpeg|png|webp)/ }),
         ],
       }),
     )
