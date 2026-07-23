@@ -3684,3 +3684,19 @@ model HourlyPlatformStats {
   @@unique([hour, eventType])
   @@index([hour])
 }
+
+// Weekly AI-written insights digest (Phase 4). `data` is the deterministic
+// stats pack we compute ourselves (trustworthy numbers); `narrative` is
+// Claude's plain-English interpretation of that pack (null if the API was
+// unavailable — the pack still renders). Kept as history.
+model InsightsDigest {
+  id          String   @id @default(cuid())
+  generatedAt DateTime @default(now())
+  periodDays  Int
+  data        Json
+  narrative   String?
+  model       String?
+  createdAt   DateTime @default(now())
+
+  @@index([generatedAt])
+}

@@ -34,6 +34,7 @@ import {
   AnalyticsPeriod,
   AnalyticsBucket,
 } from './admin-analytics.service';
+import { InsightsDigestService } from './insights-digest.service';
 import { AdminCommandCenterService } from './admin-command-center.service';
 import { AdminTrustSafetyService } from './admin-trust-safety.service';
 import { AdminHealthService } from './admin-health.service';
@@ -612,7 +613,10 @@ export class AdminAuditController {
 @Controller('admin/analytics')
 @UseGuards(AdminJwtGuard)
 export class AdminAnalyticsController {
-  constructor(private readonly analytics: AdminAnalyticsService) {}
+  constructor(
+    private readonly analytics: AdminAnalyticsService,
+    private readonly digest: InsightsDigestService,
+  ) {}
 
   // Normaliser — falls back to 30d for anything unrecognised so the
   // dashboard always renders something.
@@ -704,6 +708,17 @@ export class AdminAnalyticsController {
   @Get('insights/user/:id')
   userDrilldown(@Param('id') id: string) {
     return this.analytics.userDrilldown(id);
+  }
+
+  @Get('insights/digest')
+  latestDigest() {
+    return this.digest.getLatest();
+  }
+
+  // Admin-triggered generate-now (so the operator doesn't wait for Monday).
+  @Post('insights/digest/generate')
+  generateDigest() {
+    return this.digest.generate(30);
   }
 
   // ─── Operational Health ───────────────────────────────────────

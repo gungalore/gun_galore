@@ -4,6 +4,7 @@ import { AdminAuthService } from './admin-auth.service';
 import { AdminService } from './admin.service';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminAnalyticsService } from './admin-analytics.service';
+import { InsightsDigestService } from './insights-digest.service';
 import { AdminCommandCenterService } from './admin-command-center.service';
 import { AdminTrustSafetyService } from './admin-trust-safety.service';
 import { AdminHealthService } from './admin-health.service';
@@ -61,6 +62,7 @@ import { SwapsModule } from '../swaps/swaps.module';
     AdminService,
     AdminAuditService,
     AdminAnalyticsService,
+    InsightsDigestService,
     AdminCommandCenterService,
     AdminTrustSafetyService,
     AdminHealthService,

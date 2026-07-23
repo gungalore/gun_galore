@@ -187,8 +187,17 @@ function Heatmap({
   );
 }
 
+interface Digest {
+  generatedAt: string;
+  periodDays: number;
+  narrative: string | null;
+  model: string | null;
+}
+
 export default function InsightsPage() {
   const [period, setPeriod] = useState('30d');
+  const [digest, setDigest] = useState<Digest | null>(null);
+  const [genBusy, setGenBusy] = useState(false);
   const [pulse, setPulse] = useState<Pulse | null>(null);
   const [salesHeat, setSalesHeat] = useState<HeatCell[]>([]);
   const [actHeat, setActHeat] = useState<HeatCell[]>([]);
@@ -219,9 +228,30 @@ export default function InsightsPage() {
     setUsers(au);
   }, [period]);
 
+  const loadDigest = useCallback(async () => {
+    if (!requireAdminToken()) return;
+    const r = await adminFetch('/admin/analytics/insights/digest');
+    if (r.ok) setDigest(await r.json());
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    void loadDigest();
+  }, [loadDigest]);
+
+  async function generateNow() {
+    setGenBusy(true);
+    try {
+      const r = await adminFetch('/admin/analytics/insights/digest/generate', {
+        method: 'POST',
+      });
+      if (r.ok) setDigest(await r.json());
+    } finally {
+      setGenBusy(false);
+    }
+  }
 
   async function openUser(id: string) {
     const res = await adminFetch(`/admin/analytics/insights/user/${id}`);
@@ -253,6 +283,55 @@ export default function InsightsPage() {
             {p.label}
           </button>
         ))}
+      </div>
+
+      {/* Weekly AI digest */}
+      <div
+        className="rounded-[8px] p-5 mb-6"
+        style={{
+          background: 'var(--bg-card)',
+          border: '0.5px solid var(--red)',
+        }}
+      >
+        <div className="flex justify-between items-start gap-3 mb-2 flex-wrap">
+          <div>
+            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              Weekly digest
+            </p>
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              {digest
+                ? `Generated ${new Date(digest.generatedAt).toLocaleString('en-ZA')}`
+                : 'Auto-generated every Monday 06:00 — or generate one now.'}
+            </p>
+          </div>
+          <button
+            onClick={generateNow}
+            disabled={genBusy}
+            className="px-3 py-1.5 rounded text-xs font-medium text-white disabled:opacity-50"
+            style={{ background: 'var(--red)' }}
+          >
+            {genBusy ? 'Generating…' : 'Generate now'}
+          </button>
+        </div>
+        {digest?.narrative ? (
+          <p
+            className="text-sm whitespace-pre-wrap"
+            style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}
+          >
+            {digest.narrative}
+          </p>
+        ) : digest ? (
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            The written summary isn&apos;t available (the AI service was
+            unreachable or out of credit) — the live numbers below are still
+            current. Top up Anthropic credit and re-generate for the narrative.
+          </p>
+        ) : (
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            No digest yet — click Generate now for a written summary of the
+            data below.
+          </p>
+        )}
       </div>
 
       {/* Pulse */}
