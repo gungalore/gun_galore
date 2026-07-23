@@ -569,7 +569,10 @@ export function Nav() {
 
             {/* Search */}
             <div className="px-4 py-4" style={{ borderBottom: '0.5px solid var(--border)' }}>
-              <LiveSearch placeholder="Search listings…" />
+              <LiveSearch
+                placeholder="Search listings…"
+                onNavigate={() => setMobileOpen(false)}
+              />
             </div>
 
             {/* Shop section */}
@@ -585,6 +588,10 @@ export function Nav() {
                   <Link
                     key={link.href}
                     href={link.href}
+                    // MUST close explicitly: most Shop links are query-string
+                    // variants of "/" (?listingType=…), so usePathname() never
+                    // changes and the route-change effect below can't fire.
+                    onClick={() => setMobileOpen(false)}
                     className="px-3 py-3 rounded-[6px] text-base"
                     style={{
                       color: 'var(--text-primary)',
@@ -670,6 +677,7 @@ export function Nav() {
               </p>
               <Link
                 href="/ask-gg"
+                onClick={() => setMobileOpen(false)}
                 className="px-3 py-3 rounded-[6px] text-base flex items-center gap-2"
                 style={{
                   color: 'var(--text-primary)',

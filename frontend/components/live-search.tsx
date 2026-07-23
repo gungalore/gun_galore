@@ -68,6 +68,7 @@ export function LiveSearch({
   className,
   style,
   variant,
+  onNavigate,
 }: {
   placeholder?: string;
   className?: string;
@@ -76,6 +77,11 @@ export function LiveSearch({
   // sit flush inside a shared bordered control (the nav's Categories+search
   // unit). Default keeps the standalone bordered box.
   variant?: 'attached';
+  // Fired whenever this search navigates. Containers that overlay the page
+  // (the mobile burger drawer) use it to close themselves — they can't rely
+  // on a route-change effect because search pushes "/?q=…", a query-only
+  // change that leaves usePathname() untouched.
+  onNavigate?: () => void;
 }) {
   const router = useRouter();
   const [q, setQ] = useState('');
@@ -146,6 +152,7 @@ export function LiveSearch({
     const term = q.trim();
     if (!term) return;
     setOpen(false);
+    onNavigate?.();
     router.push(`/?q=${encodeURIComponent(term)}`);
   }
 
@@ -223,6 +230,7 @@ export function LiveSearch({
                       onClick={() => {
                         setOpen(false);
                         setQ('');
+                        onNavigate?.();
                       }}
                       style={{
                         display: 'flex',
@@ -328,6 +336,7 @@ export function LiveSearch({
                   type="button"
                   onClick={() => {
                     setOpen(false);
+                    onNavigate?.();
                     router.push(`/?q=${encodeURIComponent(q.trim())}`);
                   }}
                   style={{
