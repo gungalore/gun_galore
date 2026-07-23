@@ -201,7 +201,7 @@ export function ListingPreviewModal({
       role="dialog"
       aria-modal
       aria-label="Listing preview"
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8"
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto p-4 sm:p-8"
       style={{ background: 'rgba(0,0,0,0.72)', opacity: 0 }}
       onClick={(e) => {
         if (e.target === e.currentTarget && !publishing) animatedClose();
@@ -545,6 +545,10 @@ export function ListingPreviewModal({
           style={{
             background: 'var(--bg-inset)',
             borderTop: '0.5px solid var(--border)',
+            // Clear the iOS home indicator: the modal now sits above the PWA
+            // bottom tab bar (z-[60]), so this row can reach the viewport
+            // bottom on a tall (firearm) preview — keep the buttons above it.
+            paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))',
           }}
         >
           <button

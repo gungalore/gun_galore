@@ -13,6 +13,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/admin-auth';
+import { useStandalone } from '@/lib/use-standalone';
 import UserActions from './user-actions';
 
 interface User {
@@ -34,6 +35,8 @@ interface User {
 
 export default function BulkUsersTable({ users }: { users: User[] }) {
   const router = useRouter();
+  // In the installed PWA, offset the sticky toolbar above the bottom tab bar.
+  const isStandalone = useStandalone();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [allChecked, setAllChecked] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -216,7 +219,7 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
         <div
           style={{
             position: 'sticky',
-            bottom: 16,
+            bottom: isStandalone ? 'calc(76px + env(safe-area-inset-bottom))' : 16,
             marginTop: 16,
             zIndex: 30,
             background: 'var(--bg-card)',

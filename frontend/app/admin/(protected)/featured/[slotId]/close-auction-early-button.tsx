@@ -67,7 +67,7 @@ export function CloseAuctionEarlyButton({
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          className="fixed inset-0 z-[60] flex items-center justify-center px-4"
           style={{ background: 'rgba(0,0,0,0.6)' }}
           onClick={() => !busy && setOpen(false)}
         >
