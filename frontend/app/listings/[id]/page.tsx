@@ -223,14 +223,18 @@ export default async function ListingDetailPage({
           dominant without the background washing the page out. */}
       <PageBackground imageSrc="/marketplace.jpg" opacity={0.18} />
 
-      {/* Layout: <FeaturedRail> sits next to the listing detail
-          column on desktop and stacks above it on mobile. Same
-          pattern as the browse surfaces — the rail's internal
-          responsive classes pick the sticky-aside vs horizontal-
-          scroller variant; we just wrap both in flex. */}
+      {/* Layout: <FeaturedRail> sits next to the listing detail column on
+          desktop; on MOBILE it stacks BELOW the product (order-2), because a
+          buyer who tapped a specific item must see that item first — not
+          other sellers' featured cards (or the "featured spots open" seller
+          advert) pushing the product photo below the fold. On lg the wrapper
+          dissolves via display:contents so the sticky desktop aside stays a
+          direct flex child, exactly as before. */}
       <div className="flex flex-col lg:flex-row gap-6">
-        <FeaturedRail />
-        <div className="flex-1 min-w-0">
+        <div className="order-2 lg:contents">
+          <FeaturedRail />
+        </div>
+        <div className="flex-1 min-w-0 order-1 lg:order-none">
 
       {/* Back link stays OUTSIDE PageReveal so it's clickable instantly.
           Uses router.back() so the user lands back on their previous

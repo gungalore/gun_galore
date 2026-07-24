@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminPageHeader } from '@/components/admin/page-header';
 
@@ -31,6 +32,7 @@ const STATUS_TABS = ['OPEN', 'UNDER_REVIEW', 'AWAITING_USER', 'RESOLVED', 'CLOSE
 export default function AdminComplaintsPage() {
   const [status, setStatus] = useState('OPEN');
   const [rows, setRows] = useState<Complaint[]>([]);
+  const router = useRouter();
   const [active, setActive] = useState<Complaint | null>(null);
   const [outcome, setOutcome] = useState('');
   const [busy, setBusy] = useState(false);
@@ -58,6 +60,18 @@ export default function AdminComplaintsPage() {
       });
       if (!res.ok)
         throw new Error((await res.json().catch(() => ({}))).message ?? 'Failed');
+      // Closing the CASE is only half the job when this complaint froze the
+      // buyer's money: the linked order is still DISPUTED and nothing else
+      // will release or refund it. Hand the admin straight to that order so
+      // the money decision happens NOW, not after someone else complains.
+      if (
+        body.status === 'RESOLVED' &&
+        active.drovePayoutHold &&
+        active.transaction?.paymentStatus === 'DISPUTED'
+      ) {
+        router.push(`/admin/transactions/${active.transaction.id}`);
+        return;
+      }
       setActive(null);
       await load();
     } catch (e) {
@@ -184,7 +198,12 @@ export default function AdminComplaintsPage() {
               className="px-4 py-2 rounded text-sm font-medium text-white disabled:opacity-50"
               style={{ background: 'var(--red)' }}
             >
-              {busy ? 'Saving…' : 'Resolve + record outcome'}
+              {busy
+                ? 'Saving…'
+                : active.drovePayoutHold &&
+                    active.transaction?.paymentStatus === 'DISPUTED'
+                  ? 'Resolve + go to held order'
+                  : 'Resolve + record outcome'}
             </button>
           </div>
         </div>

@@ -29,6 +29,8 @@ export default function UserActions({
   sellerTier,
   kycStatus,
   subscriptionTier,
+  sellerRejectStrikes = 0,
+  sellingBanned = false,
 }: {
   userId: string;
   username: string | null;
@@ -39,6 +41,10 @@ export default function UserActions({
   sellerTier: string;
   kycStatus: string;
   subscriptionTier: string;
+  // Reject-strike policy state — shows the clear-strikes action when there
+  // is anything to clear (strikes > 0 or a selling ban in force).
+  sellerRejectStrikes?: number;
+  sellingBanned?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -50,6 +56,7 @@ export default function UserActions({
     | { kind: 'tier'; value: string }
     | { kind: 'kyc'; value: string }
     | { kind: 'subscription'; value: string }
+    | { kind: 'clearStrikes' }
   >(null);
 
   function askConfirm(c: NonNullable<typeof confirm>) {
@@ -161,6 +168,21 @@ export default function UserActions({
               ))}
             </select>
           </div>
+          {(sellerRejectStrikes > 0 || sellingBanned) && (
+            <button
+              onClick={() => askConfirm({ kind: 'clearStrikes' })}
+              className="w-full px-2 py-1.5 rounded text-xs text-left"
+              style={{
+                background: 'rgba(245,158,11,0.10)',
+                border: '0.5px solid rgba(245,158,11,0.45)',
+                color: '#f59e0b',
+                cursor: 'pointer',
+              }}
+            >
+              Clear reject strikes ({sellerRejectStrikes})
+              {sellingBanned ? ' + lift selling ban' : ''}
+            </button>
+          )}
           <div className="flex gap-1">
             <button
               onClick={() =>
@@ -371,7 +393,8 @@ function ConfirmModal({
     | { kind: 'ban' | 'unban' }
     | { kind: 'tier'; value: string }
     | { kind: 'kyc'; value: string }
-    | { kind: 'subscription'; value: string };
+    | { kind: 'subscription'; value: string }
+    | { kind: 'clearStrikes' };
   userId: string;
   username: string | null;
   onClose: () => void;
@@ -387,7 +410,10 @@ function ConfirmModal({
   // reason field alone is enough friction.
   const isBan = confirm.kind === 'ban';
   const typedOk = !isBan || typedUsername.trim() === (username ?? '');
-  const reasonOk = reason.trim().length >= 3;
+  // clearStrikes posts to a dedicated endpoint that writes its own audited
+  // reason — no typed reason needed (the confirm itself is the friction).
+  const reasonOk =
+    confirm.kind === 'clearStrikes' || reason.trim().length >= 3;
   const canSubmit = typedOk && reasonOk && !busy;
 
   const title = (() => {
@@ -402,6 +428,8 @@ function ConfirmModal({
         return `Override KYC status to ${confirm.value}?`;
       case 'subscription':
         return `Set GG PRO subscription to ${confirm.value}?`;
+      case 'clearStrikes':
+        return `Clear reject strikes for @${username ?? 'this user'}?`;
     }
   })();
 
@@ -417,6 +445,8 @@ function ConfirmModal({
         return 'KYC overrides bypass VerifyNow + Home Affairs. Use only when you have independent verification of identity (manual document review).';
       case 'subscription':
         return 'Manually sets the GG PRO subscription tier without going through paid checkout — a comp / support grant. PRO unlocks Ask Boet Pro features, Load Lab, and the ballistics calculator. Reversible; recorded in the audit log.';
+      case 'clearStrikes':
+        return 'Resets seller reject-strikes to 0, lifts the selling ban if one is in force, and resolves the open strike alerts. Use after reviewing the SELLER_REJECT_STRIKE alerts. Audited.';
     }
   })();
 
@@ -424,18 +454,28 @@ function ConfirmModal({
     setBusy(true);
     setError(null);
     try {
-      const body: Record<string, unknown> = { reason: reason.trim() };
-      if (confirm.kind === 'ban') body.isBanned = true;
-      if (confirm.kind === 'unban') body.isBanned = false;
-      if (confirm.kind === 'tier') body.sellerTier = confirm.value;
-      if (confirm.kind === 'kyc') body.kycStatus = confirm.value;
-      if (confirm.kind === 'subscription') body.subscriptionTier = confirm.value;
-
-      const res = await adminFetch(`/admin/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      // clearStrikes has its own dedicated endpoint (POST, no body — the
+      // backend writes a fixed audited reason); everything else PATCHes the
+      // user with the typed reason.
+      const res =
+        confirm.kind === 'clearStrikes'
+          ? await adminFetch(`/admin/users/${userId}/clear-reject-strikes`, {
+              method: 'POST',
+            })
+          : await (async () => {
+              const body: Record<string, unknown> = { reason: reason.trim() };
+              if (confirm.kind === 'ban') body.isBanned = true;
+              if (confirm.kind === 'unban') body.isBanned = false;
+              if (confirm.kind === 'tier') body.sellerTier = confirm.value;
+              if (confirm.kind === 'kyc') body.kycStatus = confirm.value;
+              if (confirm.kind === 'subscription')
+                body.subscriptionTier = confirm.value;
+              return adminFetch(`/admin/users/${userId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+              });
+            })();
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { message?: string };
         throw new Error(data.message ?? `Error ${res.status}`);
@@ -512,28 +552,30 @@ function ConfirmModal({
           </div>
         )}
 
-        <div className="mb-4">
-          <label
-            className="text-xs mb-1 block"
-            style={{ color: 'var(--text-tertiary)' }}
-          >
-            Reason (recorded in audit log)
-          </label>
-          <textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={3}
-            placeholder="Briefly explain why — what triggered this action?"
-            className="w-full px-3 py-2 rounded text-sm outline-none"
-            style={{
-              background: 'var(--bg-inset)',
-              border: '0.5px solid var(--border)',
-              color: 'var(--text-primary)',
-              resize: 'vertical',
-            }}
-            autoFocus={!isBan}
-          />
-        </div>
+        {confirm.kind !== 'clearStrikes' && (
+          <div className="mb-4">
+            <label
+              className="text-xs mb-1 block"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              Reason (recorded in audit log)
+            </label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="Briefly explain why — what triggered this action?"
+              className="w-full px-3 py-2 rounded text-sm outline-none"
+              style={{
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                color: 'var(--text-primary)',
+                resize: 'vertical',
+              }}
+              autoFocus={!isBan}
+            />
+          </div>
+        )}
 
         {error && (
           <p

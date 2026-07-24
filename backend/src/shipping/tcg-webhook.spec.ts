@@ -64,6 +64,9 @@ function makeService(currentStatus: string | null) {
       update: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    // DELIVERY_FAILED / RETURNED raise an AdminAlert atomically in the same
+    // DB transaction as the status write.
+    adminAlert: { create: jest.fn().mockResolvedValue({}) },
   };
   const prisma = {
     // findTransactionByTrackingNumber matches on the stored short ref.
@@ -158,10 +161,17 @@ describe('ShippingService.processTcgEvent (real TCG payload)', () => {
   });
 
   it('delivery-failed-attempt → DELIVERY_FAILED, never DELIVERED (regression)', async () => {
-    const { svc, notifications } = makeService('OUT_FOR_DELIVERY');
+    const { svc, notifications, txClient } = makeService('OUT_FOR_DELIVERY');
     await svc.processTcgEvent(trackingEvent('delivery-failed-attempt'));
     expect(notifications.shippingDelivered).not.toHaveBeenCalled();
     expect(notifications.shippingFailed).toHaveBeenCalledTimes(1);
+    // Money-critical: a failed delivery must surface on the admin queue —
+    // deliveredAt never gets set so no sweep would ever find this order.
+    expect(txClient.adminAlert.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: 'SHIPMENT_DELIVERY_FAILED' }),
+      }),
+    );
   });
 });
 

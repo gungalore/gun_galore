@@ -167,6 +167,25 @@ export default async function MyListingsPage() {
                       R{(l.price / 100).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}
                     </span>
                     <div className="flex gap-2 items-center">
+                      {/* Edit — the card previously offered only Cancel/
+                          Relist; sellers wanting to fix a typo or drop the
+                          price had no visible way in. The edit page itself
+                          handles the bid/offer lock with a friendly card. */}
+                      {(l.status === 'ACTIVE' || l.status === 'PENDING_REVIEW') && (
+                        <Link
+                          href={`/listings/${l.id}/edit`}
+                          className="text-xs px-2 py-1 rounded-[6px]"
+                          style={{
+                            background: 'var(--bg-inset)',
+                            color: 'var(--text-secondary)',
+                            border: '0.5px solid var(--border)',
+                            textDecoration: 'none',
+                            fontWeight: 500,
+                          }}
+                        >
+                          Edit
+                        </Link>
+                      )}
                       {l.status === 'ACTIVE' && <CancelButton listingId={l.id} />}
                       {/* Relist CTA for terminal-no-sale auction
                           outcomes — gives the seller a clear next

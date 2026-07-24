@@ -9,19 +9,30 @@ export default function ReviewActions({ listingId }: { listingId: string }) {
   const [busy, setBusy] = useState(false);
   const [showReject, setShowReject] = useState(false);
   const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   async function doReview(action: 'APPROVE' | 'REJECT') {
     setBusy(true);
+    setError(null);
     try {
-      await adminFetch(`/admin/listings/${listingId}/review`, {
+      const res = await adminFetch(`/admin/listings/${listingId}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, reason: reason || undefined }),
       });
+      if (!res.ok) {
+        // Surface the rejection instead of silently pretending success —
+        // a moderation decision the backend refused must not look done.
+        const data = (await res.json().catch(() => ({}))) as { message?: string };
+        setError(data.message ?? `${action} failed (${res.status})`);
+        return;
+      }
+      setShowReject(false);
       router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `${action} failed`);
     } finally {
       setBusy(false);
-      setShowReject(false);
     }
   }
 
@@ -45,35 +56,43 @@ export default function ReviewActions({ listingId }: { listingId: string }) {
             Confirm reject
           </button>
           <button
-            onClick={() => setShowReject(false)}
+            onClick={() => { setShowReject(false); setError(null); }}
             className="px-2 py-1 rounded text-xs"
             style={{ color: 'var(--text-secondary)', border: '0.5px solid var(--border)' }}
           >
             Cancel
           </button>
         </div>
+        {error && (
+          <p className="text-xs" style={{ color: 'var(--red)' }}>{error}</p>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="flex gap-1.5">
-      <button
-        onClick={() => doReview('APPROVE')}
-        disabled={busy}
-        className="px-2.5 py-1 rounded text-xs font-medium"
-        style={{ background: '#22c55e18', color: '#22c55e', border: '0.5px solid #22c55e40', opacity: busy ? 0.6 : 1 }}
-      >
-        Approve
-      </button>
-      <button
-        onClick={() => setShowReject(true)}
-        disabled={busy}
-        className="px-2.5 py-1 rounded text-xs font-medium"
-        style={{ background: 'var(--red)18', color: 'var(--red)', border: '0.5px solid var(--red)40' }}
-      >
-        Reject
-      </button>
+    <div className="flex flex-col gap-1">
+      <div className="flex gap-1.5">
+        <button
+          onClick={() => doReview('APPROVE')}
+          disabled={busy}
+          className="px-2.5 py-1 rounded text-xs font-medium"
+          style={{ background: '#22c55e18', color: '#22c55e', border: '0.5px solid #22c55e40', opacity: busy ? 0.6 : 1 }}
+        >
+          Approve
+        </button>
+        <button
+          onClick={() => setShowReject(true)}
+          disabled={busy}
+          className="px-2.5 py-1 rounded text-xs font-medium"
+          style={{ background: 'var(--red)18', color: 'var(--red)', border: '0.5px solid var(--red)40' }}
+        >
+          Reject
+        </button>
+      </div>
+      {error && (
+        <p className="text-xs" style={{ color: 'var(--red)' }}>{error}</p>
+      )}
     </div>
   );
 }

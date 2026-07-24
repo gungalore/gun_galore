@@ -35,6 +35,39 @@ function timeAgo(iso: string): string {
   });
 }
 
+// Map an alert type to the admin surface where the referenced entity lives,
+// so rows are actionable instead of text-only dead ends. Types map by PREFIX
+// (backend types share families); unmapped types render no link.
+function alertLink(type: string, referenceId: string | null): string | null {
+  if (!referenceId) return null;
+  const t = type.toUpperCase();
+  // Transaction-shaped references.
+  if (
+    t.startsWith('STUCK_HELD_FUNDS') ||
+    t.startsWith('DEALER_TRANSFER') ||
+    t.startsWith('DISPATCH_SLA') ||
+    t.startsWith('SHIPMENT_') ||
+    t.startsWith('PEACH_WEBHOOK') ||
+    t.startsWith('PEACH_PAYOUT') ||
+    t.startsWith('CHARGEBACK_') ||
+    t.startsWith('SALE_REJECT') ||
+    t.startsWith('DELIVERY_')
+  ) {
+    return `/admin/transactions/${referenceId}`;
+  }
+  // User-shaped references.
+  if (
+    t.startsWith('KYC_') ||
+    t.startsWith('BANK_VERIFY') ||
+    t.startsWith('SELLER_REJECT')
+  ) {
+    return `/admin/users/${referenceId}`;
+  }
+  // Complaint alerts — no per-id admin page; land on the register.
+  if (t.startsWith('COMPLAINT')) return '/admin/complaints';
+  return null;
+}
+
 function prettyType(t: string): string {
   return t.replace(/_/g, ' ').toLowerCase();
 }
@@ -197,6 +230,25 @@ export default function AdminAlertsPage() {
                       {timeAgo(a.createdAt)}
                     </p>
                   </div>
+                  {/* Deep-link to the referenced entity so the admin can
+                      act, then come back and Resolve. */}
+                  {(() => {
+                    const href = alertLink(a.type, a.referenceId);
+                    return href ? (
+                      <a
+                        href={href}
+                        className="shrink-0 px-3 py-1.5 rounded-[6px] text-xs font-medium"
+                        style={{
+                          background: 'var(--bg-inset)',
+                          color: 'var(--text-secondary)',
+                          border: '0.5px solid var(--border)',
+                          textDecoration: 'none',
+                        }}
+                      >
+                        Open
+                      </a>
+                    ) : null;
+                  })()}
                   <button
                     type="button"
                     onClick={() => resolve(a.id)}

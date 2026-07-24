@@ -617,6 +617,69 @@ export class NotificationsService {
   // ---------------------------------------------------------------
   // Seller: new sale received (payment HELD)
   // ---------------------------------------------------------------
+  // Mid-window "clock is running" reminder to the seller on an unaccepted
+  // paid sale (and the deadline-passed notice at escalation, hoursLeft=0).
+  // The ORIGINAL new_sale inbox row is still the unresolved action-required
+  // one, so this row is dismissible but force-pushed — the phone buzzes
+  // without duplicating the actionable entry.
+  async saleAcceptReminderSeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+    /** Whole hours until the accept deadline; 0 = deadline has passed. */
+    hoursLeft: number;
+    /** One-tap accept/reject link (TRANSACTION_ACCEPT token) when minted. */
+    actionUrl?: string;
+  }) {
+    const overdue = d.hoursLeft <= 0;
+    const url = d.actionUrl ?? `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: overdue ? 'sale_accept_overdue' : 'sale_accept_reminder',
+      title: overdue
+        ? 'Sale response overdue'
+        : `~${d.hoursLeft}h left to accept your sale`,
+      body: overdue
+        ? `You didn't respond to the sale of ${d.listingTitle} in time — our team is reviewing it. Accept or decline NOW to keep the sale.`
+        : `The buyer of ${d.listingTitle} has paid and is waiting. Accept or decline before the deadline or the sale escalates to support.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'sold',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: true,
+      forcePush: true,
+    });
+    const html = this.email({
+      status: { tone: overdue ? 'error' : 'pending', label: overdue ? 'Overdue' : 'Reminder' },
+      headline: overdue
+        ? 'Your sale needs a response — now'
+        : 'Your sale is waiting for you',
+      body: overdue
+        ? `Hi ${b(d.sellerName)}, the response window for ${b(d.listingTitle)} has passed and the sale has been flagged to our team. Accept or decline immediately — unresponded sales are refunded to the buyer and count against your seller standing.`
+        : `Hi ${b(d.sellerName)}, the buyer of ${b(d.listingTitle)} has PAID and is waiting for you to accept. About ${b(String(d.hoursLeft))} hours remain — if the window lapses, the sale escalates to support and may be refunded.`,
+      cta: { label: overdue ? 'Respond now' : 'Accept or decline', url },
+      preheader: overdue
+        ? `Overdue: respond to the sale of ${d.listingTitle}`
+        : `~${d.hoursLeft}h left to accept ${d.listingTitle}`,
+    });
+    await this.send(
+      d.sellerEmail,
+      overdue
+        ? `Overdue: respond to your sale — ${d.listingTitle}`
+        : `Reminder: ~${d.hoursLeft}h left to accept — ${d.listingTitle}`,
+      html,
+    );
+    await this.sendSms(
+      d.sellerPhone,
+      overdue
+        ? `Gun Galore: your sale of ${truncate(d.listingTitle, 24)} is OVERDUE for a response. Act now: ${url}`
+        : `Gun Galore: ~${d.hoursLeft}h left to accept your sale of ${truncate(d.listingTitle, 24)}. One tap: ${url}`,
+      `accept-reminder-${d.transactionId}${overdue ? '-overdue' : ''}`,
+    );
+  }
+
   async newSaleSeller(d: SaleDetails) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
     // When TransactionsService minted a TRANSACTION_ACCEPT token we
@@ -1428,7 +1491,9 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'success', label: 'Delivered' },
       headline: 'Delivered to the buyer',
-      body: `Hi ${b(d.sellerName)}, ${b(d.listingTitle)} was delivered to the buyer. Your payment will be released once the buyer confirms receipt — or automatically after 7 days.`,
+      // NO auto-release exists (operator policy) — the real backstop is the
+      // stuck-held-funds admin follow-up. Never promise a 7-day release.
+      body: `Hi ${b(d.sellerName)}, ${b(d.listingTitle)} was delivered to the buyer. Your payment will be released once the buyer confirms receipt — if they don't confirm within a few days, our team follows up.`,
       cta: { label: 'View sale', url: txUrl },
       preheader: `${d.listingTitle} was delivered to the buyer`,
     });

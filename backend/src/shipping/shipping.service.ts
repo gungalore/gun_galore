@@ -1092,8 +1092,29 @@ export class ShippingService {
           void this.notifications.shippingFailed(buyerEmail, buyerName, title, transactionId);
           break;
         case 'RETURNED':
-          // No notification for buyer on returned — admin handles it.
+          // The parcel went BACK to the sender — tell the buyer their money
+          // is safe and support will sort delivery/refund (was fully silent).
+          void this.notifications.shippingFailed(buyerEmail, buyerName, title, transactionId);
           break;
+      }
+
+      // DELIVERY_FAILED / RETURNED are money-critical dead ends: deliveredAt
+      // never gets set, so the stuck-held-funds sweep never sees the order and
+      // the buyer's money stays HELD with ZERO admin signal. Raise an
+      // AdminAlert IN THE SAME DB TRANSACTION as the status write (atomic).
+      // The current!==newStatus guard above makes this once-per-status.
+      if (newStatus === 'DELIVERY_FAILED' || newStatus === 'RETURNED') {
+        await tx.adminAlert.create({
+          data: {
+            type:
+              newStatus === 'RETURNED'
+                ? 'SHIPMENT_RETURNED'
+                : 'SHIPMENT_DELIVERY_FAILED',
+            referenceId: transactionId,
+            urgent: newStatus === 'RETURNED',
+            context: `Courier reports ${newStatus === 'RETURNED' ? 'parcel RETURNED to sender' : 'delivery FAILED'} for "${title}" (${transactionId}). Buyer's payment is still HELD and no sweep will pick this up — decide redeliver vs refund.`,
+          },
+        });
       }
 
       // Seller-side notifications (P5.2) — the seller wants to know when the

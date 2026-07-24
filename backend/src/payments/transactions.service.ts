@@ -2529,6 +2529,74 @@ export class TransactionsService {
   // skipped on subsequent passes.
   async escalateStaleAccepts(): Promise<{ scanned: number; escalated: number }> {
     const now = new Date();
+
+    // ── Mid-window reminder pass ────────────────────────────────────
+    // ≤24h left on the 48h accept window, seller hasn't actioned, no
+    // reminder sent yet. Without this the seller hears ONE new-sale notice
+    // and then nothing until the deadline lapses into an admin case.
+    // House-deal rows are excluded — reconcileStrandedHouseDeals drives
+    // those, and the operator shouldn't get accept nags for GG's own deals.
+    const dueReminder = await this.prisma.transaction.findMany({
+      where: {
+        acceptDeadlineAt: { gt: now, lte: new Date(now.getTime() + 24 * 3600_000) },
+        acceptedAt: null,
+        rejectedAt: null,
+        acceptEscalatedAt: null,
+        acceptReminderSentAt: null,
+        paymentStatus: 'HELD',
+        listing: { isDealListing: false },
+      },
+      include: {
+        listing: { select: { title: true } },
+        seller: {
+          select: { id: true, email: true, firstName: true, username: true, phone: true },
+        },
+      },
+      take: 50,
+    });
+    for (const tx of dueReminder) {
+      try {
+        // CAS stamp first — a concurrent sweep can't double-send.
+        const claim = await this.prisma.transaction.updateMany({
+          where: { id: tx.id, acceptReminderSentAt: null },
+          data: { acceptReminderSentAt: new Date() },
+        });
+        if (claim.count === 0) continue;
+        // Fresh one-tap accept link, expiring with the deadline itself.
+        let actionUrl: string | undefined;
+        try {
+          const token = await this.tokens.mint({
+            purpose: 'TRANSACTION_ACCEPT',
+            targetType: 'transaction',
+            targetId: tx.id,
+            authorisedUserId: tx.seller.id,
+            expiresAt: tx.acceptDeadlineAt ?? new Date(now.getTime() + 24 * 3600_000),
+          });
+          actionUrl = `${process.env.FRONTEND_URL ?? 'https://gungalore.co.za'}/a/${token}`;
+        } catch {
+          /* token mint failed — the notification falls back to the web URL */
+        }
+        const hoursLeft = Math.max(
+          1,
+          Math.round(((tx.acceptDeadlineAt?.getTime() ?? 0) - now.getTime()) / 3600_000),
+        );
+        await this.notifications.saleAcceptReminderSeller({
+          sellerEmail: tx.seller.email,
+          sellerName: tx.seller.firstName ?? tx.seller.username ?? 'Seller',
+          sellerPhone: tx.seller.phone,
+          listingTitle: tx.listing.title,
+          transactionId: tx.id,
+          hoursLeft,
+          actionUrl,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `accept reminder failed for ${tx.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // ── Escalation pass (deadline passed) ───────────────────────────
     const stale = await this.prisma.transaction.findMany({
       where: {
         acceptDeadlineAt: { lte: now },
@@ -2545,6 +2613,7 @@ export class TransactionsService {
             firstName: true,
             lastName: true,
             username: true,
+            phone: true,
           },
         },
       },
@@ -2579,6 +2648,18 @@ export class TransactionsService {
               .join(' ') ||
               tx.seller.email),
         });
+        // Tell the SELLER too — previously escalation was admin-only and
+        // the seller never learned their sale had become a support case.
+        void this.notifications
+          .saleAcceptReminderSeller({
+            sellerEmail: tx.seller.email,
+            sellerName: tx.seller.firstName ?? tx.seller.username ?? 'Seller',
+            sellerPhone: tx.seller.phone,
+            listingTitle: tx.listing.title,
+            transactionId: tx.id,
+            hoursLeft: 0,
+          })
+          .catch(() => undefined);
         escalated++;
       } catch (err) {
         this.logger.warn(

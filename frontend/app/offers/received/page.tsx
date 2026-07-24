@@ -19,7 +19,17 @@ export default async function ReceivedOffersPage() {
   });
   const offers: Offer[] = res.ok ? await res.json() : [];
 
-  const pending = offers.filter((o) => o.status === 'PENDING');
+  // Pending offers auto-expire (48h from creation; re-offers refresh
+  // expiresAt) — sort the queue MOST-URGENT FIRST so the offer about to
+  // die is at the top, not buried under newer arrivals. History stays
+  // in the API's newest-first order.
+  const pending = offers
+    .filter((o) => o.status === 'PENDING')
+    .sort(
+      (a, b) =>
+        new Date(a.expiresAt ?? 0).getTime() -
+        new Date(b.expiresAt ?? 0).getTime(),
+    );
   const other = offers.filter((o) => o.status !== 'PENDING');
 
   return (
@@ -58,6 +68,48 @@ export default async function ReceivedOffersPage() {
       )}
       </PageReveal>
     </main>
+  );
+}
+
+// Server-rendered deadline chip (page is no-store, so it's fresh on every
+// load). Same urgency tiers as the buyer-side ExpiryCountdown on /my/offers.
+function ResponseDeadline({ expiresAt }: { expiresAt: string }) {
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (ms <= 0) {
+    return (
+      <p
+        className="text-xs mb-3 px-2 py-1 rounded inline-block"
+        style={{
+          background: 'rgba(200,16,46,0.10)',
+          border: '0.5px solid var(--red)',
+          color: 'var(--red)',
+        }}
+      >
+        Expiring — respond now or this offer lapses.
+      </p>
+    );
+  }
+  const hours = Math.floor(ms / 3_600_000);
+  const minutes = Math.floor((ms % 3_600_000) / 60_000);
+  const isCritical = hours < 2;
+  const isWarning = hours < 6;
+  const tone = isCritical
+    ? { bg: 'rgba(200,16,46,0.10)', border: 'var(--red)', label: 'var(--red)' }
+    : isWarning
+      ? { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.45)', label: '#f59e0b' }
+      : { bg: 'var(--bg-inset)', border: 'var(--border)', label: 'var(--text-secondary)' };
+  const left = hours >= 1 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  return (
+    <p
+      className="text-xs mb-3 px-2 py-1 rounded inline-block"
+      style={{
+        background: tone.bg,
+        border: `0.5px solid ${tone.border}`,
+        color: tone.label,
+      }}
+    >
+      ⏱ {left} left to respond — unanswered offers expire automatically.
+    </p>
   );
 }
 
@@ -115,6 +167,12 @@ function ReceivedOfferCard({ offer }: { offer: Offer }) {
         <p className="text-xs mb-3 italic" style={{ color: 'var(--text-tertiary)' }}>
           &ldquo;{offer.buyerNote}&rdquo;
         </p>
+      )}
+
+      {/* Response deadline — pending offers auto-expire; without this chip
+          sellers had no idea a clock was running. Red <2h, amber <6h. */}
+      {offer.status === 'PENDING' && offer.expiresAt && (
+        <ResponseDeadline expiresAt={offer.expiresAt} />
       )}
 
       {offer.status === 'PENDING' && (

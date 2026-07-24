@@ -1467,6 +1467,9 @@ model Transaction {
   // render, and the cron can do an indexed scan on the deadline column.
   acceptedAt         DateTime?
   acceptDeadlineAt   DateTime? // = paidAt + 48h, set when payment captured
+  // Mid-window "24h left to accept" reminder to the seller — stamped by the
+  // accept sweep so it fires exactly once per sale.
+  acceptReminderSentAt DateTime?
   dispatchDeadlineAt DateTime? // = acceptedAt + 5d, set when seller accepts
 
   // Seller rejection of the sale — instead of accepting, seller can

@@ -308,16 +308,42 @@ export function BottomTabBar() {
         });
         if (!r.ok) return; // endpoint not deployed yet → silent no-op
         const data = (await r.json()) as { total?: number };
-        if (!cancelled) setAlertsCount(data.total ?? 0);
+        if (!cancelled) {
+          const n = data.total ?? 0;
+          setAlertsCount(n);
+          // Mirror onto the home-screen APP ICON (iOS 16.4+ installed PWAs
+          // + desktop Chromium support the Badging API) — the native-app
+          // cue users expect. Best-effort; unsupported platforms no-op.
+          try {
+            const nav = navigator as Navigator & {
+              setAppBadge?: (c?: number) => Promise<void>;
+              clearAppBadge?: () => Promise<void>;
+            };
+            if (n > 0) void nav.setAppBadge?.(n);
+            else void nav.clearAppBadge?.();
+          } catch {
+            /* Badging API unsupported — ignore */
+          }
+        }
       } catch {
         // Network blip — keep last known count.
       }
     }
     poll();
     const t = setInterval(poll, 60_000);
+    // Mobile OSes suspend timers while the PWA is backgrounded — without
+    // these, a user reopening the installed app sees a STALE badge until
+    // the next tick. Re-poll the moment the app becomes visible/focused.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') poll();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
     return () => {
       cancelled = true;
       clearInterval(t);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
     };
   }, [isStandalone, isSignedIn, getToken, pathname]);
 

@@ -50,6 +50,9 @@ interface Dossier {
     totalSales: number;
     isBanned: boolean;
     bannedAt: string | null;
+    // Reject-strike policy (offers/sales declined): 3 strikes = selling ban.
+    sellerRejectStrikes: number;
+    sellingBannedAt: string | null;
     profileCompletedAt: string | null;
     bankName: string | null;
     bankAccountHolder: string | null;
@@ -276,6 +279,30 @@ export default function UserDossierPage() {
                 BANNED · {formatDate(u.bannedAt)}
               </span>
             )}
+            {/* Selling ban (3 reject-strikes) — distinct from the full ban:
+                buying still works, listing/offers are blocked. Cleared via
+                the Clear-reject-strikes action. */}
+            {u.sellingBannedAt && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full"
+                style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+              >
+                SELLING BANNED · {formatDate(u.sellingBannedAt)}
+              </span>
+            )}
+            {(u.sellerRejectStrikes ?? 0) > 0 && !u.sellingBannedAt && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full"
+                style={{
+                  background: 'rgba(245,158,11,0.14)',
+                  color: '#f59e0b',
+                  border: '0.5px solid rgba(245,158,11,0.45)',
+                  fontWeight: 500,
+                }}
+              >
+                {u.sellerRejectStrikes} reject strike{u.sellerRejectStrikes !== 1 ? 's' : ''}
+              </span>
+            )}
             <StatusChip status={u.sellerTier} />
             <StatusChip status={u.kycStatus} />
           </div>
@@ -297,6 +324,8 @@ export default function UserDossierPage() {
             sellerTier={u.sellerTier}
             kycStatus={u.kycStatus}
             subscriptionTier={u.subscriptionTier}
+            sellerRejectStrikes={u.sellerRejectStrikes ?? 0}
+            sellingBanned={!!u.sellingBannedAt}
           />
         </div>
       </div>
