@@ -60,7 +60,7 @@ export default async function MyOffersPage() {
             style={{ color: 'var(--text-tertiary)' }}
           >
             Take a Shot lets you name your own price. The seller can
-            accept, counter once, or decline — you get 48 hours to act
+            accept, counter once, or decline — you get 24 hours to act
             on a counter.
           </p>
           <Link
@@ -181,6 +181,9 @@ function OfferCard({ offer }: { offer: Offer }) {
       {/* Actions for active states */}
       {offer.status === 'COUNTERED' && (
         <div className="mt-3 pt-3" style={{ borderTop: '0.5px solid var(--border)' }}>
+          {/* Counters die in 24h (COUNTER_TTL_HOURS) — show the deadline so
+              buyers don't let a live deal quietly lapse. */}
+          <ExpiryCountdown expiresAt={offer.expiresAt} mode="respond" />
           <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>
             Seller countered at <strong>{formatPrice(offer.counterAmount!)}</strong>. Accept or decline — this is final.
           </p>
@@ -221,7 +224,15 @@ function OfferCard({ offer }: { offer: Offer }) {
 // (e.g. "12h left") is plenty for the buyer to decide whether to
 // click checkout now or come back later. Red urgency if < 2h, amber
 // if < 6h, neutral otherwise.
-function ExpiryCountdown({ expiresAt }: { expiresAt: string }) {
+function ExpiryCountdown({
+  expiresAt,
+  mode = 'pay',
+}: {
+  expiresAt: string;
+  // 'pay' — accepted offer awaiting checkout; 'respond' — a counter the
+  // buyer must accept/decline. Same urgency ramp, different verbs.
+  mode?: 'pay' | 'respond';
+}) {
   const ms = new Date(expiresAt).getTime() - Date.now();
   if (ms <= 0) {
     return (
@@ -246,8 +257,12 @@ function ExpiryCountdown({ expiresAt }: { expiresAt: string }) {
     : isWarning
       ? { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.45)', label: '#f59e0b' }
       : { bg: 'var(--bg-inset)', border: 'var(--border)', label: 'var(--text-secondary)' };
-  const left =
-    hours >= 1 ? `${hours}h ${minutes}m left to pay` : `${minutes}m left to pay`;
+  const verb = mode === 'respond' ? 'left to respond' : 'left to pay';
+  const left = hours >= 1 ? `${hours}h ${minutes}m ${verb}` : `${minutes}m ${verb}`;
+  const consequence =
+    mode === 'respond'
+      ? "if you don't answer, the counter expires and the deal is off."
+      : "if you don't pay in time, the offer expires and the listing goes back on sale.";
   return (
     <p
       className="text-xs mb-2 px-2 py-1 rounded"
@@ -257,8 +272,7 @@ function ExpiryCountdown({ expiresAt }: { expiresAt: string }) {
         color: tone.label,
       }}
     >
-      ⏱ {left} — if you don&apos;t pay in time, the offer expires and the
-      listing goes back on sale.
+      ⏱ {left} — {consequence}
     </p>
   );
 }

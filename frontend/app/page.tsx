@@ -71,10 +71,19 @@ export async function generateMetadata({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { listingType } = await searchParams;
+  const { listingType, q } = await searchParams;
   const surface = listingType
     ? (SURFACE_TITLES[listingType] ?? DEFAULT_SURFACE)
     : DEFAULT_SURFACE;
+  // Search results title takes priority — the tab should say what was
+  // searched, scoped to the surface when one is active.
+  if (q) {
+    return {
+      title: listingType
+        ? `“${q}” in ${surface.title} — Gun Galore`
+        : `Results for “${q}” — Gun Galore`,
+    };
+  }
   return {
     title: listingType
       ? `${surface.title} — Gun Galore`
@@ -137,10 +146,13 @@ export default async function HomePage({
   // with the FEATURED grid. On every other surface we keep the
   // standard browse. Both queries fire in parallel so the slower
   // doesn't block the other.
-  const [browse, categories, featuredListings, brands, facetData] =
+  const [browseRaw, categories, featuredListings, brands, facetData] =
     await Promise.all([
+    // Sentinel on failure (null) — a backend hiccup must NOT render the
+    // genuine-empty "nothing listed yet" copy; the two states get
+    // different UI below (retry card vs empty-marketplace nudge).
     apiFetch<BrowseResponse>(`/listings?${qs}`, { cache: 'no-store' }).catch(
-      () => ({ listings: [], total: 0, page: 1, limit: 24 }),
+      () => null,
     ),
     apiFetch<Category[]>('/categories', {
       next: { revalidate: 3600 },
@@ -177,6 +189,13 @@ export default async function HomePage({
           facets: {} as Record<string, Record<string, number>>,
         }),
   ]);
+
+  // null = the listings API call FAILED (network/backend) — distinct from a
+  // legitimately empty result set. Downstream consumers keep the empty shape
+  // so they all work; the render sites branch on browseFailed.
+  const browseFailed = browseRaw === null;
+  const browse: BrowseResponse =
+    browseRaw ?? { listings: [], total: 0, page: 1, limit: 24 };
 
   const currentPage = browse.page;
 
@@ -420,6 +439,25 @@ export default async function HomePage({
               NO product grid at all: real ads were only reachable via the
               nav. `browse` (24 newest, no filters) was already fetched for
               this surface; render it. */}
+          {browseFailed && (
+            /* API failure on the landing page — without this the "Latest
+               listings" grid silently vanishes and a live site reads dead. */
+            <div
+              className="mt-10 rounded-[8px] py-8 px-6 text-center"
+              style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+            >
+              <p className="text-sm mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                We couldn&apos;t load the latest listings right now.
+              </p>
+              <a
+                href="/"
+                className="inline-block text-sm px-4 py-2 rounded-[6px]"
+                style={{ background: 'var(--bg-inset)', color: 'var(--text-secondary)', border: '0.5px solid var(--border)' }}
+              >
+                Try again
+              </a>
+            </div>
+          )}
           {browse.listings.length > 0 && (
             <div className="mt-10">
               <div className="flex items-end justify-between mb-5 gap-4 flex-wrap">
@@ -509,15 +547,19 @@ export default async function HomePage({
                 letterSpacing: '-0.01em',
               }}
             >
-              {surface.title}
+              {/* Search results lead with the QUERY so the user sees what
+                  they searched (the box is also seeded via FilterBar). */}
+              {params.q
+                ? `Results for “${params.q}”`
+                : surface.title}
             </h1>
             <p
               className="text-sm mt-1"
               style={{ color: 'var(--text-tertiary)' }}
             >
-              {surface.subtitle} ·{' '}
-              {browse.total.toLocaleString('en-ZA')} item
-              {browse.total !== 1 ? 's' : ''}
+              {params.q
+                ? `${params.listingType ? `In ${surface.title.toLowerCase()} · ` : ''}${browse.total.toLocaleString('en-ZA')} result${browse.total !== 1 ? 's' : ''}`
+                : `${surface.subtitle} · ${browse.total.toLocaleString('en-ZA')} item${browse.total !== 1 ? 's' : ''}`}
             </p>
           </div>
         </div>
@@ -535,7 +577,43 @@ export default async function HomePage({
           </div>
         </div>
 
-        {browse.listings.length === 0 ? (
+        {browseFailed ? (
+          /* API failure — NOT an empty marketplace. Offer a retry (same
+             URL) instead of the "nothing listed yet" nudge. */
+          <div
+            data-reveal
+            className="rounded-[8px] py-12 px-6 text-center mt-4"
+            style={{
+              background: 'var(--bg-card)',
+              border: '0.5px solid var(--border)',
+            }}
+          >
+            <p
+              className="text-base mb-2"
+              style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+            >
+              We couldn&apos;t load listings right now
+            </p>
+            <p className="text-sm mb-5" style={{ color: 'var(--text-tertiary)' }}>
+              Something hiccuped on our side — your search and filters are
+              safe, just try again.
+            </p>
+            <a
+              href={(() => {
+                const next = new URLSearchParams();
+                for (const [k, v] of Object.entries(params)) {
+                  if (typeof v === 'string' && v) next.set(k, v);
+                }
+                const s = next.toString();
+                return s ? `/?${s}` : '/';
+              })()}
+              className="inline-block text-sm px-5 py-2.5 rounded-[6px]"
+              style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+            >
+              Try again
+            </a>
+          </div>
+        ) : browse.listings.length === 0 ? (
           <div
             data-reveal
             className="rounded-[8px] py-12 px-6 text-center mt-4"

@@ -7,7 +7,10 @@ import { PageReveal } from '@/components/page-reveal';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
+// hasReserve distinguishes "no reserve" from "reserve not met" — reserveMet
+// is false for both, and the amber chip must only show for the latter.
 interface MyBidRow {
+  hasReserve: boolean;
   bidId: string;
   listingId: string;
   listingTitle: string;
@@ -277,19 +280,27 @@ function Section({
 function BidCard({ row }: { row: MyBidRow }) {
   const ended = !!row.endedAt;
   const ahead = row.youAreHighBidder;
+  // High bidder on a live RESERVE auction where the reserve isn't met yet:
+  // "high bidder" alone reads as "winning", but the item won't sell at this
+  // price — surface it so the buyer knows to bid higher.
+  const reserveShort = !ended && ahead && row.hasReserve && !row.reserveMet;
   const statusLabel = row.isWinner
     ? 'You won'
     : ended
     ? 'Lost'
     : ahead
-    ? 'High bidder'
+    ? reserveShort
+      ? 'High bidder — reserve not met'
+      : 'High bidder'
     : 'Outbid';
   const statusColor = row.isWinner
     ? '#22c55e'
     : ended
     ? 'var(--text-tertiary)'
     : ahead
-    ? '#22c55e'
+    ? reserveShort
+      ? '#f59e0b'
+      : '#22c55e'
     : '#f59e0b';
   // Prominent Active vs Closed pill at the card head — the eye reads
   // intent instantly without parsing the detail row.

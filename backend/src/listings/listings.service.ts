@@ -2086,6 +2086,14 @@ export class ListingsService {
     // 409 if locked.
     await this.assertEditable(listing);
 
+    // Price-less types (TAKE_A_SHOT / SWOP) can never gain a listed price —
+    // mirrors the create() guard so a crafted PATCH can't sneak one on.
+    if (PRICELESS_LISTING_TYPES.has(listing.listingType) && dto.price) {
+      throw new BadRequestException(
+        `${listing.listingType === 'SWOP' ? 'Swop' : 'Take a Shot'} listings don't carry a listed price.`,
+      );
+    }
+
     // Phase M dealer-lock — if the seller is editing shippingMethods
     // on a firearm listing, DEALER_TRANSFER must still be present.
     if (

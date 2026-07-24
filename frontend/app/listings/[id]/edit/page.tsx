@@ -210,10 +210,18 @@ export default function EditListingPage() {
       const body: Record<string, unknown> = {
         title: form.title.trim(),
         description: form.description.trim(),
-        price: Math.round(parseFloat(form.price) * 100),
         condition: form.condition,
         province: form.province,
       };
+      // Price only exists on priced types — TAKE_A_SHOT and SWOP listings
+      // are price-less (buyer names a price / declared value instead), so
+      // never send `price` for them (the backend rejects it anyway).
+      if (
+        listing?.listingType === 'BUY_NOW' ||
+        listing?.listingType === 'AUCTION'
+      ) {
+        body.price = Math.round(parseFloat(form.price) * 100);
+      }
       // UX-7 — compare-at ("was") price, BUY_NOW only. Send the value when set,
       // or null to clear it (display-only; the backend re-validates).
       if (listing?.listingType === 'BUY_NOW') {
@@ -502,9 +510,16 @@ export default function EditListingPage() {
         </Field>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Price (R)">
-            <input type="number" required min={1} step="0.01" value={form.price} onChange={(e) => set('price', e.target.value)} style={inputStyle} />
-          </Field>
+          {/* Price only exists on priced types — TAKE_A_SHOT and SWOP are
+              price-less; rendering a required input for them made the form
+              unsaveable (native validation blocked Save on an empty field
+              the listing legitimately doesn't have). */}
+          {(listing.listingType === 'BUY_NOW' ||
+            listing.listingType === 'AUCTION') && (
+            <Field label="Price (R)">
+              <input type="number" required min={1} step="0.01" value={form.price} onChange={(e) => set('price', e.target.value)} style={inputStyle} />
+            </Field>
+          )}
           <Field label="Condition">
             <select value={form.condition} onChange={(e) => set('condition', e.target.value)} style={inputStyle}>
               {Object.entries(CONDITION_LABELS).map(([k, v]) => (

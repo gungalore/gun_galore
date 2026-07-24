@@ -155,7 +155,8 @@ export default async function ListingDetailPage({
             price: (ldPrice / 100).toFixed(2),
             priceCurrency: 'ZAR',
             availability:
-              listing.status === 'ACTIVE'
+              listing.status === 'ACTIVE' &&
+              !(trackedSellable !== null && trackedSellable <= 0)
                 ? 'https://schema.org/InStock'
                 : 'https://schema.org/OutOfStock',
             url: `${siteUrl}/listings/${listing.id}`,
@@ -492,21 +493,43 @@ export default async function ListingDetailPage({
                 This is your own listing
               </div>
             ) : (
+              trackedSellable !== null && trackedSellable <= 0 ? (
+                /* Sold out (tracked multi-unit) — no Buy Now / Add-to-cart
+                   dead ends. Wishlist instead: the buyer gets alerted if the
+                   seller restocks or relists. */
+                <>
+                  <div
+                    className="block w-full py-3 rounded-[6px] text-sm text-center mb-3"
+                    style={{
+                      background: 'var(--bg-inset)',
+                      color: 'var(--text-secondary)',
+                      border: '0.5px solid var(--border)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    Sold out
+                  </div>
+                  <div className="mb-5">
+                    <HelpText>
+                      Every unit has sold. Add it to your wishlist and
+                      we&apos;ll alert you if it comes back.
+                    </HelpText>
+                  </div>
+                </>
+              ) : (
               <>
                 {/* Stock line. The ≤5 "low stock" case is shown as the red
                     urgency chip beside the price (UX-1a), so here we only
-                    surface Sold out and comfortable-stock counts to avoid
-                    duplicate messaging. */}
+                    surface comfortable-stock counts (sold-out is handled by
+                    the dedicated branch above) to avoid duplicate messaging. */}
                 {listing.trackInventory &&
                   trackedSellable !== null &&
-                  (trackedSellable <= 0 || trackedSellable > 5) && (
+                  trackedSellable > 5 && (
                     <p
                       className="text-sm mb-2"
                       style={{ color: 'var(--text-secondary)' }}
                     >
-                      {trackedSellable <= 0
-                        ? 'Sold out'
-                        : `${trackedSellable} in stock`}
+                      {`${trackedSellable} in stock`}
                     </p>
                   )}
                 <Link
@@ -566,6 +589,7 @@ export default async function ListingDetailPage({
                   </HelpText>
                 </div>
               </>
+              )
             )
           ) : listing.status === 'ACTIVE' && listing.listingType === 'TAKE_A_SHOT' ? (
             <OfferPanel

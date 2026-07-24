@@ -1182,13 +1182,25 @@ export default function NewListingPage() {
       (plannedDealerName.trim().length > 0 &&
         plannedDealerProvince.length > 0 &&
         plannedDealerArea.trim().length > 0);
+    // Firearm compliance docs — serial number + serial photo + licence photo
+    // all live in Step 4; without gating here a seller could sail through to
+    // Publish and only fail at the very last click (handlePublish's guard).
+    const firearmDocsOk =
+      !isFirearm ||
+      (serialNumber.trim().length > 0 && !!serialPhoto && !!licencePhoto);
+    // Private-arrangement contact-sharing consent — same late-failure class:
+    // the checkbox is in Step 4 but publish rejects without it.
+    const paConsentOk =
+      !shippingMethods.includes('PRIVATE_ARRANGE') || paConsent;
     const step4 =
       shippingMethods.length > 0 &&
       addressFilled &&
       parcelFilled &&
       papersOk &&
       experienceOk &&
-      plannedDealerOk;
+      plannedDealerOk &&
+      firearmDocsOk &&
+      paConsentOk;
 
     return { step1, step2, step3, step4 };
   }, [
@@ -1205,6 +1217,10 @@ export default function NewListingPage() {
     requiresPapers,
     papersAttested,
     missingRequiredAttrs,
+    serialNumber,
+    serialPhoto,
+    licencePhoto,
+    paConsent,
     isExperience,
     isPlainsGameHunt,
     exp,

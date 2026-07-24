@@ -22,6 +22,11 @@ export default function OfferPanel({
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
   const [autoAccepted, setAutoAccepted] = useState(false);
+  // Backend outcome flags: autoDeclined = at/below the seller's lowball
+  // threshold, instantly REJECTED (an attempt was consumed); meetsAutoAccept
+  // = at/above their asking threshold, seller pinged to one-tap confirm.
+  const [autoDeclined, setAutoDeclined] = useState(false);
+  const [meetsAutoAccept, setMeetsAutoAccept] = useState(false);
   const [offerId, setOfferId] = useState('');
 
   if (!isLoaded) return null;
@@ -68,13 +73,52 @@ export default function OfferPanel({
     );
   }
 
+  if (done && autoDeclined) {
+    // The offer was at/below the seller's auto-decline threshold and was
+    // rejected INSTANTLY — never tell the buyer to wait 48 hours for a
+    // response that will not come. It also consumed one of their limited
+    // attempts, so say that plainly.
+    return (
+      <div className="mb-5">
+        <div
+          className="rounded-[6px] px-4 py-3 mb-2 text-sm text-center"
+          style={{ background: '#f59e0b14', border: '0.5px solid #f59e0b', color: '#f59e0b' }}
+        >
+          This offer was below the seller&apos;s minimum and was declined
+          automatically. You can try a higher offer — attempts are limited, so
+          make it count.
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setDone(false);
+            setAutoDeclined(false);
+            setSubmitting(false);
+          }}
+          className="block w-full py-2.5 rounded-[6px] text-sm text-center"
+          style={{
+            background: 'var(--bg-inset)',
+            color: 'var(--text-secondary)',
+            border: '0.5px solid var(--border)',
+            cursor: 'pointer',
+          }}
+        >
+          Try a higher offer
+        </button>
+      </div>
+    );
+  }
+
   if (done) {
     return (
       <div
         className="rounded-[6px] px-4 py-3 mb-5 text-sm text-center"
         style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
       >
-        Offer submitted — the seller has 48 hours to respond. View it in{' '}
+        {meetsAutoAccept
+          ? 'Offer submitted — it meets the seller’s asking price, so they’ve been pinged to confirm. '
+          : 'Offer submitted — the seller has 48 hours to respond. '}
+        View it in{' '}
         <a href="/my/offers" style={{ color: 'var(--red)' }}>My Offers</a>.
       </div>
     );
@@ -101,6 +145,8 @@ export default function OfferPanel({
       setDone(true);
       setOfferId(data.offer.id);
       setAutoAccepted(data.autoAccepted);
+      setAutoDeclined(!!data.autoDeclined);
+      setMeetsAutoAccept(!!data.meetsAutoAccept);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit offer');
       setSubmitting(false);

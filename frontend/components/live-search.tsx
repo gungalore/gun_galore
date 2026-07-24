@@ -69,6 +69,8 @@ export function LiveSearch({
   style,
   variant,
   onNavigate,
+  defaultValue,
+  preserveParams,
 }: {
   placeholder?: string;
   className?: string;
@@ -82,9 +84,26 @@ export function LiveSearch({
   // on a route-change effect because search pushes "/?q=…", a query-only
   // change that leaves usePathname() untouched.
   onNavigate?: () => void;
+  // Seed the box with the CURRENT query (results page) so the user sees
+  // what they searched and can edit it. The component remounts on
+  // server-rendered navigations, so a plain initial state is enough.
+  defaultValue?: string;
+  // Extra query params to KEEP when submitting a search — the FilterBar
+  // passes the active surface/filters (listingType, categoryId, …) so
+  // searching within Auctions stays within Auctions. Global boxes (nav,
+  // drawer) pass nothing and search site-wide. `page` is intentionally
+  // never preserved (a new search restarts at page 1).
+  preserveParams?: Record<string, string>;
 }) {
   const router = useRouter();
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(defaultValue ?? '');
+
+  // Build the full-results URL, carrying any preserved filters.
+  function resultsHref(term: string): string {
+    const params = new URLSearchParams(preserveParams ?? {});
+    params.set('q', term);
+    return `/?${params.toString()}`;
+  }
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -153,7 +172,7 @@ export function LiveSearch({
     if (!term) return;
     setOpen(false);
     onNavigate?.();
-    router.push(`/?q=${encodeURIComponent(term)}`);
+    router.push(resultsHref(term));
   }
 
   const finalInputStyle: React.CSSProperties =
@@ -337,7 +356,7 @@ export function LiveSearch({
                   onClick={() => {
                     setOpen(false);
                     onNavigate?.();
-                    router.push(`/?q=${encodeURIComponent(q.trim())}`);
+                    router.push(resultsHref(q.trim()));
                   }}
                   style={{
                     width: '100%',

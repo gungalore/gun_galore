@@ -22,6 +22,9 @@ import { CounterOfferDto } from './dto/counter-offer.dto';
 import { OfferStatus } from '@prisma/client';
 
 const OFFER_TTL_HOURS = 48;
+// ⚠️ Frontend copy mirrors this value — keep in sync when changing:
+//   frontend/app/my/offers/page.tsx ("24 hours to act on a counter" +
+//   the ExpiryCountdown on COUNTERED cards).
 const COUNTER_TTL_HOURS = 24;
 const CHECKOUT_TTL_HOURS = 24;
 // eBay-style attempt cap — a buyer gets this many offers per listing

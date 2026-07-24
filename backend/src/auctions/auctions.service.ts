@@ -651,6 +651,7 @@ export class AuctionsService {
             endTime: true,
             endedAt: true,
             reserveMet: true,
+            reservePrice: true, // only for hasReserve below — never exposed
             price: true,
             images: { where: { isPrimary: true }, take: 1 },
           },
@@ -676,6 +677,11 @@ export class AuctionsService {
         myLastBidAmount: b.amount,
         currentBid: b.listing.currentBid,
         reserveMet: b.listing.reserveMet,
+        // Whether a reserve EXISTS — reserveMet alone can't distinguish
+        // "no reserve" from "reserve not met" (both are false), and the
+        // /my/bids "Reserve not met" chip must only show for the latter.
+        // The reserve AMOUNT stays private.
+        hasReserve: b.listing.reservePrice !== null,
         endTime: b.listing.endTime,
         endedAt: b.listing.endedAt,
         youAreHighBidder: b.listing.currentBidderId === buyer.id,

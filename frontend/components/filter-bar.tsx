@@ -308,6 +308,25 @@ export function FilterBar({
         <LiveSearch
           placeholder="Search listings…"
           className="flex-1 min-w-[200px]"
+          // Show the active query so the user sees what they searched and
+          // can edit it in place.
+          defaultValue={currentParams.q}
+          // Keep the active surface + filters when submitting a new search —
+          // searching from the Auctions view stays within Auctions. `page`
+          // is deliberately excluded (a new search restarts at page 1).
+          preserveParams={Object.fromEntries(
+            Object.entries({
+              listingType: currentParams.listingType,
+              categoryId: currentParams.categoryId,
+              condition: currentParams.condition,
+              province: currentParams.province,
+              make: currentParams.make,
+              minPrice: currentParams.minPrice,
+              maxPrice: currentParams.maxPrice,
+              sort: currentParams.sort,
+              attrs: currentParams.attrs,
+            }).filter(([, v]) => !!v),
+          ) as Record<string, string>}
         />
       )}
 
