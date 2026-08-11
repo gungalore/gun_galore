@@ -1,11 +1,18 @@
-# Gun Galore — Claude Code Context
+# All Outdoor — Claude Code Context
 
 ## What This Is
 
-Gun Galore is South Africa's verified firearms, hunting and outdoor
-marketplace. This is a fresh rebuild — clean codebase, new GitHub
-repository, built locally and deployed to the server only once
-end-to-end testing begins.
+**All Outdoor** (formerly Gun Galore) is South Africa's new-and-secondhand
+outdoor store. Signed in, it is the full verified firearms, hunting and
+outdoor marketplace it has always been.
+
+The two audiences are the point — see **Public vs Members** below before
+touching anything a signed-out visitor can reach.
+
+Brand strings live in `frontend/lib/brand.ts` and `backend/src/common/brand.ts`.
+Never hard-code the name. `GunGalore (Pty) Ltd` is the REGISTERED entity and
+stays verbatim in the ECT § 43 footer; `gungalore.co.za` is still the live
+domain (alloutdoor.co.za migration is planned, not done).
 
 The platform is delivered as four modules, built in order. Each
 module must be fully stable before the next begins:
@@ -18,6 +25,67 @@ module must be fully stable before the next begins:
 This document is the single source of truth for Claude Code. It
 records decisions and rules — not session history. When a decision
 changes, edit the rule in place; do not append a narrative.
+
+---
+
+## Public vs Members — read before changing any public read path
+
+Meta's crawlers and moderators were blocking the site, killing WhatsApp
+Business comms. Regulated stock is now behind the login. Signed in, nothing
+changed.
+
+**This is an auth wall, NOT cloaking.** Every signed-out visitor gets identical
+content regardless of user-agent. Never branch on user-agent, never special-case
+a crawler. Serving a crawler something different from a logged-out human is what
+turns a block into a permanent ban.
+
+**The mechanism.** `Category.publicVisible` (source of truth) and
+`Listing.publicVisible` (snapshot, set at create and re-snapshotted on category
+change). Both `@default(false)` — an ALLOWLIST. A category added later is
+invisible until someone publishes it, so the failure mode is "we forgot to show
+the tents", never "we leaked the rifles". Keep it that way.
+
+**Public roots:** camping-outdoor, overlanding, fishing, optics, knives,
+hunting, archery-bowhunting, paintball, cleaning-equipment,
+outdoor-clothing-footwear.
+**Members-only roots:** firearms, gun-smithing-parts, reloading-components,
+reloading-equipment, air-rifles, self-defence, shooting-accessories, ammo.
+**Carve-outs** (`membersOnly: true` on a child of a public parent):
+archery--crossbows, optics--{rifle,handgun,rimfire-rifle,rangefinding-rifle,
+air-rifle}-scopes, hunting--shooting-sticks-and-bipods.
+
+**Rules when touching this:**
+
+- Anonymity comes from `OptionalClerkGuard` (never rejects, stamps
+  `request.clerkUserId`). A public read path with NO guard at all is a leak —
+  `categories.controller.ts` was exactly that.
+- Adding a new public read path? It must go through the same gate. Grep
+  `publicOnly(` in `listings.service.ts` for every existing site. Remember the
+  non-obvious ones: the featured rail (renders on EVERY page), seller reviews
+  (they embed listing titles), and the Ask Boet guide.
+- `findById` returns **404**, not 403 and not a "sign in to view" page — that
+  would confirm the item exists.
+- **Never `revalidate`/`force-cache` a fetch whose result varies by viewer.**
+  Next's data cache is SHARED and the browser HTTP cache keys on URL, not on the
+  auth header — either one will serve one audience's catalogue to the other. Use
+  `viewerFetch` / `useViewerFetch` (both force `no-store` and forward the token).
+- `sitemap.ts` must stay **anonymous and uncached** (`force-dynamic`). Adding a
+  token there republishes the whole firearm taxonomy. `revalidate` there is also
+  wrong for a second reason: Next's fetch cache lives in `.next/cache` and
+  survives a rebuild, so a deploy prerenders the file from a pre-deploy snapshot.
+- **No weapon word may appear in a public category name or slug.** A gate that
+  hides the Firearms tree but publishes `optics--handgun-scopes` has not done its
+  job — the scanner reads the URL, not the intent. `assertNoWeaponWordInPublic`
+  in `prisma/seed.ts` fails the seed if you try. To publish something it matches,
+  rename the category to what it actually is; do not weaken the pattern.
+- `publicVisible` must be in `STATIC_LISTING_FILTERABLE_ATTRIBUTES` or Meili
+  rejects the anonymous query outright.
+
+**Ammunition is banned outright** — never listed, sold or traded, and the site
+says so publicly. Reloading components remain listable but members-only.
+
+`backend/src/listings/public-visibility.spec.ts` locks all of this. If a change
+makes those tests fail, the change is wrong.
 
 ---
 
@@ -404,7 +472,18 @@ sub-pages we add later) wraps its `<main>` with these two components:
 
 ## Logo Rules — Never Break These
 
-- `logo.svg` uses the Industry typeface — **never modify the SVG.**
+- `logo.svg` / `logo-mark.svg` are the **All Outdoor** interim mark: a mountain
+  peak plus a text wordmark, geometry only (no webfont, so it renders identically
+  at 16px favicon size). The old Gun Galore mark set the wordmark inside a
+  **bullet/cartridge outline** — a firearm motif on every page, in the app icon
+  and in every share unfurl. Never reinstate it, and keep any replacement free of
+  weapon imagery: the logo is the one asset that appears everywhere, including in
+  contexts the auth wall does not cover.
+- The eight PNG icons in `frontend/public/` are generated from these. Regenerate
+  all of them together or the install prompt and the tab icon disagree.
+- `app/manifest.ts` has NO screenshots. The three that were there were live prod
+  captures showing the old logo and hero, displayed full size in Android's
+  install dialog. Recapture SIGNED OUT before re-adding.
 - On centred pages: width 100%, max-width 300px, never a fixed
   height (preserve the 5:1 ratio).
 - In the nav bar: 44px tall, top-left.
