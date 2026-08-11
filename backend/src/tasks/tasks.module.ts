@@ -16,6 +16,8 @@ import { SavedSearchesModule } from '../saved-searches/saved-searches.module';
 import { DealsModule } from '../deals/deals.module';
 import { RaffleModule } from '../raffle/raffle.module';
 import { RatingsModule } from '../ratings/ratings.module';
+import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module';
+import { ListingsModule } from '../listings/listings.module';
 
 @Module({
   // AdminModule is imported so we can inject AdminCreditsService into
@@ -47,6 +49,12 @@ import { RatingsModule } from '../ratings/ratings.module';
     RaffleModule,
     // Trust-score refresh cron — RatingsModule exports RatingsService.
     RatingsModule,
+    // Auction ending-soon watcher alerts — WishlistAlertsModule exports
+    // WishlistAlertsService (NOT @Global; same crash-loop rule as above).
+    WishlistAlertsModule,
+    // Stale-listing expiry + photo-less listing sweeps need ListingsService
+    // to yank a de-activated listing out of the Meilisearch index.
+    ListingsModule,
   ],
   providers: [TasksService],
 })

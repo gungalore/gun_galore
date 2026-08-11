@@ -680,6 +680,204 @@ export class NotificationsService {
     );
   }
 
+  // ---------------------------------------------------------------
+  // Offer-expiry reminder to the SELLER (~12h before a PENDING offer
+  // lapses). Reuses the OFFER_DECISION action token so the SMS stays
+  // one-tap. Dismissible + force-pushed: the original offer_received row
+  // is the unresolved action; this just buzzes the phone once.
+  // ---------------------------------------------------------------
+  async offerExpiryReminderSeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    buyerName: string;
+    listingTitle: string;
+    listingId: string;
+    offerId: string;
+    offerAmount: number;
+    hoursLeft: number;
+    actionUrl?: string;
+  }) {
+    const url = d.actionUrl ?? `${this.appUrl}/offers/received`;
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'offer_expiry_reminder',
+      title: `~${d.hoursLeft}h left to answer an offer`,
+      body: `${d.buyerName}'s ${formatRand(d.offerAmount)} offer on ${d.listingTitle} expires soon — accept, counter or decline before it lapses.`,
+      url: '/offers/received',
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+      forcePush: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Offer expiring' },
+      headline: 'An offer is about to expire',
+      body: `Hi ${b(d.sellerName)}, ${b(d.buyerName)}'s offer of ${b(formatRand(d.offerAmount))} on ${b(d.listingTitle)} expires in about ${b(String(d.hoursLeft))} hours. Accept, counter, or decline it before then — once it lapses the buyer is told you didn't respond and the sale is lost. A lapse records no strike, but responding keeps the sale.`,
+      rows: [
+        { label: 'Item', value: d.listingTitle },
+        { label: 'Offer amount', value: formatRand(d.offerAmount) },
+      ],
+      cta: { label: 'Review offer', url },
+      preheader: `~${d.hoursLeft}h left to answer ${d.buyerName}'s offer`,
+    });
+    await this.send(
+      d.sellerEmail,
+      `Reminder: an offer on ${d.listingTitle} is expiring`,
+      html,
+    );
+    if (d.actionUrl) {
+      await this.sendSms(
+        d.sellerPhone,
+        `Gun Galore: ~${d.hoursLeft}h left to answer R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 22)}. Decide: ${d.actionUrl}`,
+        `offer-reminder-${d.offerId}`,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // A PENDING offer lapsed unanswered — tell the SELLER they missed a
+  // real sale (the buyer already gets offerExpiredBuyer). Informational,
+  // dismissible; no strike is recorded for a lapse.
+  // ---------------------------------------------------------------
+  async offerExpiredSeller(d: {
+    sellerEmail: string;
+    sellerName: string;
+    buyerName?: string;
+    listingTitle: string;
+    listingId: string;
+    offerId: string;
+    offerAmount: number;
+  }) {
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'offer_expired_seller',
+      title: 'You missed an offer',
+      body: `${d.buyerName ?? 'A buyer'}'s ${formatRand(d.offerAmount)} offer on ${d.listingTitle} expired before you responded.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'offer',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Offer expired' },
+      headline: 'An offer expired unanswered',
+      body: `Hi ${b(d.sellerName)}, an offer of ${b(formatRand(d.offerAmount))} on ${b(d.listingTitle)} expired because it wasn't answered in time. Your listing is still active — responding faster next time keeps buyers from walking. No strike is recorded for a lapse.`,
+      rows: [{ label: 'Item', value: d.listingTitle }],
+      cta: {
+        label: 'View listing',
+        url: `${this.appUrl}/listings/${d.listingId}`,
+      },
+      preheader: `An offer on ${d.listingTitle} expired`,
+    });
+    await this.send(d.sellerEmail, `An offer on ${d.listingTitle} expired`, html);
+  }
+
+  // ---------------------------------------------------------------
+  // Pay-window reminder to the BUYER on an ACCEPTED offer (~6h before the
+  // 24h pay window lapses + strikes them). Reuses the CHECKOUT token so the
+  // SMS deep-links straight to checkout. Dismissible + force-pushed.
+  // ---------------------------------------------------------------
+  async offerPayReminderBuyer(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone?: string | null;
+    listingTitle: string;
+    listingId: string;
+    offerId: string;
+    amount: number;
+    hoursLeft: number;
+    actionUrl?: string;
+  }) {
+    const url = d.actionUrl ?? `${this.appUrl}/listings/${d.listingId}`;
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'offer_pay_reminder',
+      title: `~${d.hoursLeft}h left to pay`,
+      body: `Your offer on ${d.listingTitle} was accepted — pay within about ${d.hoursLeft}h to keep it.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'cart',
+      linkedType: 'offer',
+      linkedId: d.offerId,
+      dismissible: true,
+      forcePush: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Payment due' },
+      headline: 'Pay for your accepted offer',
+      body: `Hi ${b(d.buyerName)}, the seller accepted your offer of ${b(formatRand(d.amount))} on ${b(d.listingTitle)}. About ${b(String(d.hoursLeft))} hours remain to pay — if the window lapses the sale is cancelled and it counts against your buyer standing.`,
+      rows: [
+        { label: 'Item', value: d.listingTitle },
+        { label: 'Agreed price', value: formatRand(d.amount) },
+      ],
+      cta: { label: 'Pay now', url },
+      preheader: `~${d.hoursLeft}h left to pay for ${d.listingTitle}`,
+    });
+    await this.send(
+      d.buyerEmail,
+      `Reminder: pay for ${d.listingTitle} before it lapses`,
+      html,
+    );
+    await this.sendSms(
+      d.buyerPhone,
+      `Gun Galore: ~${d.hoursLeft}h left to pay for ${truncate(d.listingTitle, 26)} (your offer was accepted). Pay: ${url}`,
+      `offer-pay-reminder-${d.offerId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Pay-window reminder to an AUCTION WINNER (~6h before the 24h pay
+  // window lapses → EXPIRED + strike). Reuses a fresh CHECKOUT token so
+  // the SMS deep-links to checkout. Dismissible + force-pushed.
+  // ---------------------------------------------------------------
+  async auctionPayReminderWinner(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone?: string | null;
+    listingTitle: string;
+    listingId: string;
+    amount: number;
+    hoursLeft: number;
+    actionUrl?: string;
+  }) {
+    const url = d.actionUrl ?? `${this.appUrl}/listings/${d.listingId}`;
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'auction_pay_reminder',
+      title: `~${d.hoursLeft}h left to pay for your win`,
+      body: `You won ${d.listingTitle} — pay within about ${d.hoursLeft}h to keep it.`,
+      url: `/listings/${d.listingId}`,
+      iconKey: 'cart',
+      linkedType: 'listing',
+      linkedId: d.listingId,
+      dismissible: true,
+      forcePush: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Payment due' },
+      headline: 'Pay for your winning bid',
+      body: `Hi ${b(d.buyerName)}, you won ${b(d.listingTitle)} with a bid of ${b(formatRand(d.amount))}. About ${b(String(d.hoursLeft))} hours remain to pay — if the window lapses you lose the item and it counts against your bidding standing (three strikes suspends bidding).`,
+      rows: [
+        { label: 'Item', value: d.listingTitle },
+        { label: 'Winning bid', value: formatRand(d.amount) },
+      ],
+      cta: { label: 'Pay now', url },
+      preheader: `~${d.hoursLeft}h left to pay for ${d.listingTitle}`,
+    });
+    await this.send(
+      d.buyerEmail,
+      `Reminder: pay for your winning bid — ${d.listingTitle}`,
+      html,
+    );
+    await this.sendSms(
+      d.buyerPhone,
+      `Gun Galore: ~${d.hoursLeft}h left to pay for ${truncate(d.listingTitle, 26)} (you won it). Pay: ${url}`,
+      `auction-pay-reminder-${d.listingId}`,
+    );
+  }
+
   async newSaleSeller(d: SaleDetails) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
     // When TransactionsService minted a TRANSACTION_ACCEPT token we
@@ -1963,6 +2161,106 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // Stale-listing lifecycle (non-firearm listings, which have no licence
+  // expiry to delist them). Two kinds:
+  //   'nudge'   — 75 days old: "is this still for sale?" one-shot.
+  //   'expired' — 90 days old: flipped to EXPIRED, one-tap relist.
+  // Dead inventory made buyers waste offers on items sold elsewhere months
+  // ago — and under the reject-strike policy the seller then ate a strike
+  // for declining. Email + inbox only (no SMS — not time-critical, and
+  // SMS-ing every ageing listing would be costly noise).
+  // ---------------------------------------------------------------
+  async listingStale(d: {
+    sellerEmail: string;
+    sellerName: string;
+    listingTitle: string;
+    listingId: string;
+    kind: 'nudge' | 'expired';
+    daysOld: number;
+  }) {
+    const myListingsUrl = `${this.appUrl}/my/listings`;
+    if (d.kind === 'nudge') {
+      await this.persistByEmail(d.sellerEmail, {
+        category: 'SELLER',
+        type: 'listing_stale_nudge',
+        title: 'Still for sale?',
+        body: `${d.listingTitle} has been listed ${d.daysOld} days. Tap "Still for sale" to keep it live, or remove it — listings expire at 90 days.`,
+        url: '/my/listings',
+        iconKey: 'sold',
+        linkedType: 'listing',
+        linkedId: d.listingId,
+        dismissible: true,
+      });
+      const html = this.email({
+        status: { tone: 'pending', label: 'Still available?' },
+        headline: 'Is this still for sale?',
+        body: `Hi ${b(d.sellerName)}, your listing ${b(d.listingTitle)} has been up for ${b(String(d.daysOld) + ' days')}. If it's still available, tap <b>Still for sale</b> on your listings page and the clock resets. If you've sold it elsewhere, please remove it so buyers don't make offers you'd have to decline. Listings that reach 90 days without being renewed are expired automatically.`,
+        cta: { label: 'Confirm it’s still for sale', url: myListingsUrl },
+        preheader: `${d.listingTitle}: still for sale?`,
+      });
+      await this.send(d.sellerEmail, `Still for sale? ${d.listingTitle}`, html);
+      return;
+    }
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'listing_expired_stale',
+      title: 'Listing expired',
+      body: `${d.listingTitle} reached ${d.daysOld} days and was expired. Relist it in one tap if it's still available.`,
+      url: '/my/listings',
+      iconKey: 'sold',
+      linkedType: 'listing',
+      linkedId: d.listingId,
+      dismissible: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Expired' },
+      headline: 'Your listing expired',
+      body: `Hi ${b(d.sellerName)}, ${b(d.listingTitle)} was listed for ${b(String(d.daysOld) + ' days')} without selling, so it has been expired and removed from search. Nothing is lost — if it's still available, relist it from your listings page and it goes straight back up.`,
+      cta: { label: 'Relist it', url: myListingsUrl },
+      preheader: `${d.listingTitle} expired — relist in one tap`,
+    });
+    await this.send(d.sellerEmail, `Listing expired: ${d.listingTitle}`, html);
+  }
+
+  // ---------------------------------------------------------------
+  // A published listing ended up with ZERO photos (the seller's browser or
+  // PWA died mid-upload after moderation had already set it ACTIVE, so the
+  // client-side rollback never fired). The sweep moves it back to DRAFT
+  // rather than leaving an unsellable blank listing in search; tell the
+  // seller how to finish it.
+  // ---------------------------------------------------------------
+  async listingPhotosMissing(d: {
+    sellerEmail: string;
+    sellerName: string;
+    listingTitle: string;
+    listingId: string;
+  }) {
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'listing_photos_missing',
+      title: 'Your listing needs photos',
+      body: `${d.listingTitle} was published without photos and has been moved back to drafts — add photos and publish again.`,
+      url: '/my/listings',
+      iconKey: 'sold',
+      linkedType: 'listing',
+      linkedId: d.listingId,
+      dismissible: false,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Your listing is missing its photos',
+      body: `Hi ${b(d.sellerName)}, ${b(d.listingTitle)} was published but none of its photos finished uploading — usually a dropped connection or a closed tab mid-upload. We've moved it back to your drafts so buyers never see a blank listing. Open it, add the photos, and publish again.`,
+      cta: { label: 'Finish my listing', url: `${this.appUrl}/my/listings` },
+      preheader: `${d.listingTitle} needs photos before it can go live`,
+    });
+    await this.send(
+      d.sellerEmail,
+      `Action needed: ${d.listingTitle} is missing photos`,
+      html,
+    );
+  }
+
+  // ---------------------------------------------------------------
   // Offer notifications
   // ---------------------------------------------------------------
   async offerReceived(d: {
@@ -3215,6 +3513,56 @@ export class NotificationsService {
       d.buyerPhone,
       `Gun Galore: ${truncate(d.listingTitle, 30)} is waiting for collection. Arrange pickup (seller contact on your order page) and tap Confirm collection: ${txUrl}`,
       `collection-confirm-nudge-${d.transactionId}`,
+    );
+  }
+
+  // ---------------------------------------------------------------
+  // Courier confirm-receipt nudge (48h after DELIVERED, buyer never
+  // confirmed, funds still HELD). Sits UNDER the 72h stuck-funds admin
+  // alert — a gentle self-heal reminder so a forgetful buyer releases the
+  // seller's money without a human chasing them. Mentions the raise-an-
+  // issue alternative for the "delivered but wrong/damaged" case.
+  // ---------------------------------------------------------------
+  async confirmReceiptNudgeBuyer(d: {
+    buyerEmail: string;
+    buyerName: string;
+    buyerPhone?: string | null;
+    listingTitle: string;
+    transactionId: string;
+    hoursElapsed: number;
+  }) {
+    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
+    await this.persistByEmail(d.buyerEmail, {
+      category: 'BUYER',
+      type: 'confirm_receipt_nudge',
+      title: 'Confirm your delivery',
+      body: `${d.listingTitle} was delivered — tap Confirm receipt to release the seller's payment, or raise an issue if something's wrong.`,
+      url: `/transactions/${d.transactionId}`,
+      iconKey: 'transaction',
+      linkedType: 'transaction',
+      linkedId: d.transactionId,
+      dismissible: false,
+      forcePush: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Action needed' },
+      headline: 'Confirm you received your order',
+      body: `Hi ${b(d.buyerName)}, ${b(d.listingTitle)} was marked delivered and is waiting for you to confirm. Please tap <b>Confirm receipt</b> so the seller's payment can be released. If the item never arrived, or wasn't as described, <b>raise an issue</b> from the same page instead — don't confirm.`,
+      rows: [
+        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
+      ],
+      cta: { label: 'Confirm receipt', url: txUrl },
+      preheader: `Confirm you received ${d.listingTitle}`,
+    });
+    await this.send(
+      d.buyerEmail,
+      'Action needed: confirm you received ' + d.listingTitle,
+      html,
+    );
+    await this.sendSms(
+      d.buyerPhone,
+      `Gun Galore: ${truncate(d.listingTitle, 28)} was delivered. Tap Confirm receipt to release payment (or raise an issue if there's a problem): ${txUrl}`,
+      `confirm-receipt-nudge-${d.transactionId}`,
     );
   }
 

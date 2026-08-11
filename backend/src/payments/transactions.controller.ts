@@ -557,6 +557,7 @@ export class PaymentsWebhookController {
     );
     if (!valid) {
       this.logger.warn('Peach webhook signature invalid — dropping');
+      void this.txService.alertWebhookSignatureFailure('peach-payment');
       return { received: true };
     }
     try {
@@ -595,6 +596,7 @@ export class PaymentsWebhookController {
     );
     if (!valid) {
       this.logger.warn('Peach dispute webhook signature invalid — dropping');
+      void this.txService.alertWebhookSignatureFailure('peach-dispute');
       return { received: true };
     }
     try {
@@ -632,6 +634,7 @@ export class PaymentsWebhookController {
     );
     if (!valid) {
       this.logger.warn('Peach BANV webhook signature invalid — dropping');
+      void this.txService.alertWebhookSignatureFailure('peach-banv');
       return { received: true };
     }
     try {
@@ -669,6 +672,7 @@ export class PaymentsWebhookController {
     );
     if (!valid) {
       this.logger.warn('Peach payout webhook signature invalid — dropping');
+      void this.txService.alertWebhookSignatureFailure('peach-payout');
       return { received: true };
     }
     try {

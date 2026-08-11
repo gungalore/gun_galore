@@ -329,6 +329,17 @@ export class ListingsController {
     return this.listingsService.cancel(id, clerkId);
   }
 
+  /**
+   * "Yes, this is still for sale" — resets the stale-listing clock so the
+   * daily sweep won't expire the listing at 90 days. Answers the 75-day
+   * renewal nudge; owner-only, ACTIVE non-auction listings only.
+   */
+  @Post(':id/renew')
+  @UseGuards(ClerkGuard)
+  renew(@Param('id') id: string, @CurrentUser() clerkId: string) {
+    return this.listingsService.renew(id, clerkId);
+  }
+
   @Post(':id/images')
   @UseGuards(ClerkGuard)
   @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))

@@ -1037,6 +1037,43 @@ export class AdminHealthController {
 }
 
 // ---------------------------------------------------------------
+// Cron-freshness probe for an EXTERNAL monitor (system cron on the Vultr
+// box, or UptimeRobot/healthchecks.io — which also covers whole-VPS death
+// the in-process watchdog can't see). Deliberately OUTSIDE the AdminJwt
+// controller so a headless monitor can hit it with a shared secret instead
+// of a Clerk-minted admin JWT. Returns 200 when every monitored cron is
+// fresh, 503 with the stale keys otherwise, so the monitor alerts on non-200.
+// ---------------------------------------------------------------
+@Controller('health')
+export class HealthPingController {
+  constructor(private readonly health: AdminHealthService) {}
+
+  @Get('crons')
+  async cronFreshness(
+    @Query('key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const secret = process.env.HEALTH_PING_SECRET;
+    // Fail closed until the operator sets a secret — never expose internals
+    // unauthenticated. 503 (not 200) so a monitor wired before the secret is
+    // set flags loudly rather than reporting a false "healthy".
+    if (!secret || key !== secret) {
+      res.status(503);
+      return { ok: false, error: 'not configured' };
+    }
+    const crons = await this.health.cronStatuses();
+    const stale = crons
+      .filter((c) => c.status === 'stale')
+      .map((c) => c.name);
+    if (stale.length > 0) {
+      res.status(503);
+      return { ok: false, stale };
+    }
+    return { ok: true };
+  }
+}
+
+// ---------------------------------------------------------------
 // Trust & Safety queue — recent contact-detail filter rejections,
 // repeat offenders (≥3 hits/7d), reported Q&A.
 // ---------------------------------------------------------------

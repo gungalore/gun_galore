@@ -191,4 +191,83 @@ export class WishlistAlertsService {
       tag: `listing-sold:${listing.id}`,
     });
   }
+
+  /**
+   * Sweep ACTIVE auctions closing within the window and alert every
+   * wishlister (except the seller AND the current high bidder — they already
+   * know) that a saved auction is ending soon. This is the single
+   * highest-intent moment in an auction (final hours) and previously sent
+   * zero traffic back — a wishlister only heard "sold", too late to bid.
+   *
+   * One-shot per auction via endingSoonNotifiedAt (CAS-claimed), mirroring the
+   * priceDropNotifiedAt throttle. Called from the every-minute auction sweep;
+   * fail-open per listing. Returns how many auctions were alerted on.
+   */
+  async sweepEndingSoonAuctions(
+    withinMs = 60 * 60 * 1000,
+  ): Promise<{ scanned: number; alerted: number }> {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() + withinMs);
+    const ending = await this.prisma.listing.findMany({
+      where: {
+        listingType: 'AUCTION',
+        status: 'ACTIVE',
+        isDealListing: false,
+        endingSoonNotifiedAt: null,
+        endTime: { not: null, gt: now, lte: cutoff },
+      },
+      select: {
+        id: true,
+        title: true,
+        sellerId: true,
+        currentBidderId: true,
+        endTime: true,
+      },
+      take: 100,
+    });
+
+    let alerted = 0;
+    for (const listing of ending) {
+      try {
+        // CAS-claim the one-shot stamp so overlapping every-minute runs can't
+        // double-alert. Stamp regardless of watcher count so a watcher-less
+        // auction isn't re-scanned every minute.
+        const claim = await this.prisma.listing.updateMany({
+          where: { id: listing.id, endingSoonNotifiedAt: null },
+          data: { endingSoonNotifiedAt: now },
+        });
+        if (claim.count === 0) continue;
+
+        const userIds = await this.watcherIds(listing.id, [
+          listing.sellerId,
+          listing.currentBidderId,
+        ]);
+        if (userIds.length === 0) continue;
+
+        const minsLeft = listing.endTime
+          ? Math.max(1, Math.round((listing.endTime.getTime() - now.getTime()) / 60000))
+          : 60;
+        const timeLabel =
+          minsLeft >= 60 ? `${Math.round(minsLeft / 60)}h` : `${minsLeft} min`;
+        await this.fanOut(userIds, {
+          type: 'wishlist_auction_ending',
+          title: 'A saved auction is ending soon',
+          body: `${listing.title} closes in about ${timeLabel} — place your bid before it ends.`,
+          url: `/listings/${listing.id}`,
+          iconKey: 'auction',
+          linkedId: listing.id,
+          tag: `auction-ending:${listing.id}`,
+        });
+        alerted += 1;
+      } catch (err) {
+        this.logger.warn(
+          `ending-soon alert for ${listing.id} failed: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (alerted > 0) {
+      this.logger.log(`Auction ending-soon: alerted watchers on ${alerted} auction(s)`);
+    }
+    return { scanned: ending.length, alerted };
+  }
 }

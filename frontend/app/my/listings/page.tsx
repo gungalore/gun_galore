@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import CancelButton from './cancel-button';
+import RenewButton from './renew-button';
 import { LISTING_STATUS, resolveStatus, toneColor } from '@/lib/status-labels';
 import { PageReveal } from '@/components/page-reveal';
 
@@ -16,10 +17,25 @@ interface MyListing {
   listingType: string;
   condition: string;
   createdAt: string;
+  // Stale-listing clock. Seeded from createdAt, advanced only by an explicit
+  // "Still for sale" renew — the daily sweep nudges at 75d and expires at 90d.
+  lastRenewedAt?: string | null;
   category: { name: string };
   images: { url: string }[];
   // P5.2 — how many buyers have wishlisted this listing (seller nudge).
   _count?: { wishlistedBy?: number };
+}
+
+// Show the renew affordance once a listing enters the ageing window, so the
+// button appears exactly when the seller can act on the nudge email — not as
+// permanent chrome on every fresh listing.
+const RENEW_PROMPT_AFTER_DAYS = 60;
+
+function daysSince(iso?: string | null): number {
+  if (!iso) return 0;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 0;
+  return Math.floor((Date.now() - then) / 86_400_000);
 }
 
 export default async function MyListingsPage() {
@@ -96,6 +112,12 @@ export default async function MyListingsPage() {
             const status = resolveStatus(LISTING_STATUS, l.status);
             const color = toneColor(status.tone);
             const saved = l._count?.wishlistedBy ?? 0;
+            // Auctions end on their own endTime and are never swept.
+            const ageDays = daysSince(l.lastRenewedAt ?? l.createdAt);
+            const showRenew =
+              l.status === 'ACTIVE' &&
+              l.listingType !== 'AUCTION' &&
+              ageDays >= RENEW_PROMPT_AFTER_DAYS;
             return (
               <div
                 key={l.id}
@@ -185,6 +207,9 @@ export default async function MyListingsPage() {
                         >
                           Edit
                         </Link>
+                      )}
+                      {showRenew && (
+                        <RenewButton listingId={l.id} daysOld={ageDays} />
                       )}
                       {l.status === 'ACTIVE' && <CancelButton listingId={l.id} />}
                       {/* Relist CTA for terminal-no-sale auction

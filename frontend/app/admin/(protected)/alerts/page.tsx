@@ -39,8 +39,19 @@ function timeAgo(iso: string): string {
 // so rows are actionable instead of text-only dead ends. Types map by PREFIX
 // (backend types share families); unmapped types render no link.
 function alertLink(type: string, referenceId: string | null): string | null {
-  if (!referenceId) return null;
   const t = type.toUpperCase();
+  // System/infra alerts — no per-id target; land on the health dashboard
+  // (which shows cron freshness, service probes, and SMS state). These
+  // reference a source name or key, not an entity id, so they route here
+  // regardless of referenceId.
+  if (
+    t.startsWith('WEBHOOK_SIGNATURE') ||
+    t.startsWith('CRON_') ||
+    t.startsWith('SMS_')
+  ) {
+    return '/admin/health';
+  }
+  if (!referenceId) return null;
   // Transaction-shaped references.
   if (
     t.startsWith('STUCK_HELD_FUNDS') ||

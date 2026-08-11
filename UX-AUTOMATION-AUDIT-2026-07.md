@@ -3,6 +3,27 @@
 Whole-site sweep (10 surface reviewers + adversarial verification; 110 confirmed findings).
 Status legend: [ ] open · [x] shipped. Update as items land.
 
+## Shipped log
+
+Items are referenced by their section + number below (e.g. Q1 = Quick win #1, M7 = Medium #7).
+
+**Batch 1 — `697d7cf` 2026-07-24** (10 quick wins): Q1 search query on results page · Q2 search preserves surface/filters · Q3 browse API-failure retry card · Q4 sold-out hides Buy Now/cart · Q5 truthful auto-declined/meets-threshold offer states · Q7 Step-4 firearm serial+photo+PA-consent gate · Q8 edit page works for price-less types · Q9 24h offer counter copy + COUNTERED countdown · Q10 "reserve not met" on /my/bids.
+
+**Batch 2 — `0437cbb` 2026-07-24** (11 items, migration `20260724030000_accept_reminder`): Q6 mobile PDP rail order · Edit action on /my/listings · /offers/received urgency sort + deadline chip · PWA badge re-poll + app-icon badge · admin dossier reject-strikes + clear-strikes · Release confirm-gate + res.ok surfacing · complaint→held-order handoff · alert deep-links by type prefix · SHIPMENT_DELIVERY_FAILED/RETURNED alerts · seller mid-window accept reminder · false "7-day auto-release" copy purged.
+
+**Batch 3 — automation 2026-07-24** (migration `20260724120000_automation_batch3`, 21 new tests):
+M7/M30 offer-expiry seller reminder (12h) + seller told when an offer lapses ·
+M20 pay-window reminders before the strike lands (accepted offers 6h, auction winners 6h) ·
+M6/M19 48h buyer confirm-receipt nudge under the 72h admin backstop ·
+M21/M35/Q41 auction ending-soon alerts to wishlisters (excludes seller + high bidder) ·
+M22 in-transit stall detection (>7d no scan, incl. never-scanned parcels) ·
+M23 stale-listing lifecycle (75d nudge / 90d expire on `lastRenewedAt`, + `POST /listings/:id/renew` and a "Still for sale" button) ·
+Q31 photo-less ACTIVE listing sweep → DRAFT + de-index + seller told ·
+M15 webhook signature-failure alerts (4 Peach routes + Clerk, deduped per source) ·
+M16/Q54 cron watchdog (push CRON_STALE alerts, startup grace) + external `GET /api/health/crons` probe ·
+M40 SMS retry with attempt cap + OTP exclusion + SMSPortal outage alert ·
+alerts page routes system alerts (webhook/cron/SMS) to /admin/health.
+
 ## Quick wins (63)
 
 ### 1. Show the search query on the results page

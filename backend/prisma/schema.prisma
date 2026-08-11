@@ -968,6 +968,28 @@ model Listing {
   // window so a seller nudging the price down can't spam every watcher's inbox.
   priceDropNotifiedAt DateTime?
 
+  // Set once when the auction ending-soon sweep alerts this listing's
+  // wishlisters that a saved auction closes within the window. IS NULL fires
+  // it once per auction; mirrors the priceDropNotifiedAt throttle stamp.
+  endingSoonNotifiedAt DateTime?
+
+  // Set once when the pay-window reminder nudges an auction winner (PAYMENT_
+  // PENDING with expiresAt within 6h and no checkout started) before the
+  // sweepUnpaidWins strike. finalizeAuction stamps a fresh expiresAt so this
+  // resets naturally on relist/re-finalise. Claimed via CAS so a double-send
+  // can't race the every-minute sweep.
+  winnerRemindedAt DateTime?
+
+  // Stale-listing lifecycle (non-auction, non-deal). lastRenewedAt seeds from
+  // createdAt (backfilled at migration, now() for new rows) and advances ONLY
+  // on an explicit seller "still for sale" renew — NEVER on unrelated writes
+  // (offer counters, moderation edits touch updatedAt, which would silently
+  // keep dead listings alive forever). renewalNudgedAt guards the 75d "is this
+  // still for sale?" one-shot nudge and is cleared by a renew so the next
+  // 90-day cycle can nudge again; at 90d the daily cron expires the listing.
+  lastRenewedAt   DateTime  @default(now())
+  renewalNudgedAt DateTime?
+
   // Daily Deals (DD-1) — true when this listing is a first-party house DEAL
   // (owned by the "Gun Galore" house seller, overlaid by a Deal row). Deal
   // listings are DELIBERATELY EXCLUDED from every public marketplace surface
@@ -1431,6 +1453,20 @@ model Transaction {
   // NO auto-release — the admin reviews + manually releases via the dossier.
   // Mirrors licenceExpiryWarnedAt / dispatchNudgedAt.
   adminAlertedForStuckFundsAt DateTime?
+
+  // Set once when the 48h courier confirm-receipt nudge fires (delivered
+  // >=48h ago, buyer never confirmed, still HELD). Sits UNDER the 72h
+  // adminAlertedForStuckFundsAt backstop — a gentle self-heal reminder to
+  // the forgetful buyer before a human has to chase them. Courier legs only
+  // (PUDO/TCG); COLLECTION has its own collectionConfirmNudgedAt path.
+  buyerConfirmNudgedAt DateTime?
+
+  // Set once when the in-transit stall sweep alerts the admin that a
+  // dispatched courier parcel has had no tracking progress for >7d (carrier
+  // lost it, or the Pudo/TCG poll silently returning nothing). Distinct from
+  // adminAlertedForStuckFundsAt (which needs deliveredAt); this catches a
+  // parcel wedged BEFORE delivery. IS NULL fires it once per stalled parcel.
+  adminAlertedForTransitStallAt DateTime?
 
   // FLOW-F4 (H12/H15) — set once when the DEALER_TRANSFER stall sweep raises
   // the urgent admin alert for a firearm order whose seller accepted but never
@@ -1972,6 +2008,18 @@ model Offer {
   // buyer has 24h to respond to a counter
   expiresAt DateTime
 
+  // Set once when the offer-expiry cron sends the seller a "your offer is
+  // about to lapse" reminder (PENDING offers with expiresAt within 12h).
+  // IS NULL filter fires the reminder exactly once per offer; re-offers
+  // that reopen this row back to PENDING clear it so the fresh window can
+  // be reminded again. Mirrors acceptReminderSentAt on Transaction.
+  sellerRemindedAt DateTime?
+
+  // Set once when the ACCEPTED-offer pay-window reminder nudges the buyer
+  // (expiresAt within 6h, still ACCEPTED, no checkout) before the unpaid
+  // lapse strikes them. Cleared on re-offer. Mirrors winnerRemindedAt.
+  buyerPayRemindedAt DateTime?
+
   // link to transaction once CONVERTED
   transactionId String? @unique
 
@@ -2229,8 +2277,20 @@ model SmsLog {
   error     String?
   createdAt DateTime @default(now())
 
+  // Retry bookkeeping. SMS was one-shot (a FAILED row was dead) while email
+  // has an outbox+retry. attempts counts sends of THIS message (initial = 1).
+  // retryable is opt-in per send — PIN/waybill/refund notices set it true;
+  // time-sensitive OTP codes (phone-change) NEVER retry (a code redelivered
+  // 20min later is expired + confusing). nextRetryAt is the due time the retry
+  // cron scans; nulled when SENT or attempts exhausted.
+  attempts    Int       @default(1)
+  retryable   Boolean   @default(false)
+  nextRetryAt DateTime?
+
   @@index([reference])
   @@index([createdAt])
+  // Retry cron hot path: FAILED + retryable + due.
+  @@index([status, nextRetryAt])
 }
 
 // ---------------------------------------------------------------------------

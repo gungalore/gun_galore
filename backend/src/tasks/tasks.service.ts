@@ -19,6 +19,7 @@ import {
   AdminCreditsService,
   DEFAULT_THRESHOLDS,
 } from '../admin/admin-credits.service';
+import { AdminHealthService } from '../admin/admin-health.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
 import { PushService } from '../push/push.service';
@@ -29,6 +30,8 @@ import { DealsService } from '../deals/deals.service';
 import { RaffleService } from '../raffle/raffle.service';
 import { RatingsService } from '../ratings/ratings.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
+import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
+import { ListingsService } from '../listings/listings.service';
 import { NotificationCategory } from '@prisma/client';
 
 // Threshold-alert dedup window. Once we've fired an alert at any
@@ -78,7 +81,15 @@ export class TasksService {
     private readonly raffle: RaffleService,
     private readonly ratings: RatingsService,
     private readonly settings: SettingsService,
+    private readonly wishlistAlerts: WishlistAlertsService,
+    private readonly health: AdminHealthService,
+    private readonly listings: ListingsService,
   ) {}
+
+  // Process start time — the cron watchdog skips its first STARTUP_GRACE
+  // window so a just-restarted instance (whose fast crons haven't fired their
+  // first heartbeat yet) can't false-alarm on a pre-restart 'stale' stamp.
+  private readonly bootAt = new Date();
 
   // The manual-EFT inContact inbox-scan cron and the 09:00 FNB payout-batch
   // reminder cron have been removed with the manual-EFT rail (no reconciler,
@@ -178,6 +189,205 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('firearm-licence-expiry');
+    }
+  }
+
+  // ─── Stale-listing expiry + refresh ─────────────────────────────
+  // Only FIREARM listings were ever auto-delisted (licence-expiry cron above).
+  // Every other listing stayed ACTIVE forever: no expiry, no "is this still
+  // for sale?" check. Dead inventory accumulated, buyers wasted offers/bids on
+  // items sold elsewhere months ago — and under the reject-strike policy the
+  // seller then ate a strike for declining an offer on a listing they'd
+  // forgotten. Two daily passes, both one-shot per listing:
+  //   1. 75 days since lastRenewedAt → "still for sale?" nudge (renewalNudgedAt).
+  //   2. 90 days → EXPIRED + de-indexed + one-tap relist.
+  // Age is measured on lastRenewedAt (seeded from createdAt at migration, bumped
+  // only by an explicit renew/relist) NOT updatedAt — updatedAt is touched by
+  // unrelated writes (offer counters, moderation edits) which would silently
+  // keep dead listings alive forever. AUCTIONS are excluded (they have their own
+  // endTime lifecycle), as are house deal listings.
+  @Cron('0 4 * * *')
+  async staleListingSweep() {
+    const NUDGE_DAYS = 75;
+    const EXPIRE_DAYS = 90;
+    const now = new Date();
+    const nudgeCutoff = new Date(now.getTime() - NUDGE_DAYS * 86_400_000);
+    const expireCutoff = new Date(now.getTime() - EXPIRE_DAYS * 86_400_000);
+    const daysSince = (d: Date) =>
+      Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+    try {
+      // 1. Expire first (so a listing crossing both thresholds in one run
+      //    expires rather than being nudged about a listing we then expire).
+      const toExpire = await this.prisma.listing.findMany({
+        where: {
+          status: 'ACTIVE',
+          listingType: { not: 'AUCTION' },
+          isDealListing: false,
+          lastRenewedAt: { lte: expireCutoff },
+        },
+        select: {
+          id: true,
+          title: true,
+          lastRenewedAt: true,
+          seller: { select: { email: true, firstName: true } },
+        },
+        take: 200,
+      });
+      for (const l of toExpire) {
+        // CAS on status so a concurrent sale/edit wins over the expiry.
+        const claim = await this.prisma.listing.updateMany({
+          where: { id: l.id, status: 'ACTIVE' },
+          data: { status: 'EXPIRED' },
+        });
+        if (claim.count === 0) continue;
+        await this.listings.removeFromIndex(l.id);
+        if (l.seller?.email) {
+          await this.notifications
+            .listingStale({
+              sellerEmail: l.seller.email,
+              sellerName: l.seller.firstName ?? 'Seller',
+              listingTitle: l.title,
+              listingId: l.id,
+              kind: 'expired',
+              daysOld: daysSince(l.lastRenewedAt),
+            })
+            .catch((err) =>
+              this.logger.warn(
+                `stale-expire notify failed for ${l.id}: ${(err as Error).message}`,
+              ),
+            );
+        }
+      }
+
+      // 2. One-shot "still for sale?" nudge in the 75–90 day window.
+      const toNudge = await this.prisma.listing.findMany({
+        where: {
+          status: 'ACTIVE',
+          listingType: { not: 'AUCTION' },
+          isDealListing: false,
+          renewalNudgedAt: null,
+          lastRenewedAt: { lte: nudgeCutoff, gt: expireCutoff },
+        },
+        select: {
+          id: true,
+          title: true,
+          lastRenewedAt: true,
+          seller: { select: { email: true, firstName: true } },
+        },
+        take: 200,
+      });
+      for (const l of toNudge) {
+        const claim = await this.prisma.listing.updateMany({
+          where: { id: l.id, renewalNudgedAt: null },
+          data: { renewalNudgedAt: now },
+        });
+        if (claim.count === 0) continue;
+        if (l.seller?.email) {
+          await this.notifications
+            .listingStale({
+              sellerEmail: l.seller.email,
+              sellerName: l.seller.firstName ?? 'Seller',
+              listingTitle: l.title,
+              listingId: l.id,
+              kind: 'nudge',
+              daysOld: daysSince(l.lastRenewedAt),
+            })
+            .catch((err) =>
+              this.logger.warn(
+                `stale-nudge notify failed for ${l.id}: ${(err as Error).message}`,
+              ),
+            );
+        }
+      }
+
+      if (toExpire.length > 0 || toNudge.length > 0) {
+        this.logger.log(
+          `Stale listings: expired ${toExpire.length}, nudged ${toNudge.length}`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `staleListingSweep failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('stale-listing-sweep');
+    }
+  }
+
+  // ─── Photo-less ACTIVE listing sweep ────────────────────────────
+  // create() sets a moderation-approved listing ACTIVE before any photo has
+  // uploaded; photos then stream up one-by-one from the client. If the
+  // seller's browser/PWA dies mid-upload the client-side rollback DELETE never
+  // fires and an ACTIVE zero-photo listing sits in search indefinitely. Flip
+  // those back to DRAFT (NOT PENDING_REVIEW — that would pollute the admin
+  // review queue with non-moderation work), de-index, and tell the seller.
+  // 1h grace so a genuinely in-progress upload is never touched.
+  @Cron(CronExpression.EVERY_HOUR)
+  async photolessListingSweep() {
+    const cutoff = new Date(Date.now() - 60 * 60 * 1000);
+    try {
+      const orphans = await this.prisma.listing.findMany({
+        where: {
+          status: 'ACTIVE',
+          isDealListing: false,
+          createdAt: { lte: cutoff },
+          images: { none: {} },
+        },
+        select: {
+          id: true,
+          title: true,
+          seller: { select: { email: true, firstName: true } },
+        },
+        take: 100,
+      });
+      let fixed = 0;
+      for (const l of orphans) {
+        // CAS on status — a photo landing (or an admin action) mid-sweep wins.
+        const claim = await this.prisma.listing.updateMany({
+          where: { id: l.id, status: 'ACTIVE' },
+          data: { status: 'DRAFT' },
+        });
+        if (claim.count === 0) continue;
+        // Re-check: a photo may have landed between the findMany and the CAS.
+        const imageCount = await this.prisma.listingImage.count({
+          where: { listingId: l.id },
+        });
+        if (imageCount > 0) {
+          // False positive — put it straight back.
+          await this.prisma.listing.updateMany({
+            where: { id: l.id, status: 'DRAFT' },
+            data: { status: 'ACTIVE' },
+          });
+          continue;
+        }
+        await this.listings.removeFromIndex(l.id);
+        fixed++;
+        if (l.seller?.email) {
+          await this.notifications
+            .listingPhotosMissing({
+              sellerEmail: l.seller.email,
+              sellerName: l.seller.firstName ?? 'Seller',
+              listingTitle: l.title,
+              listingId: l.id,
+            })
+            .catch((err) =>
+              this.logger.warn(
+                `photo-less notify failed for ${l.id}: ${(err as Error).message}`,
+              ),
+            );
+        }
+      }
+      if (fixed > 0) {
+        this.logger.log(`Photo-less sweep: moved ${fixed} listing(s) to DRAFT`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `photolessListingSweep failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    } finally {
+      await this.recordCronRun('photoless-listing-sweep');
     }
   }
 
@@ -614,6 +824,13 @@ export class TasksService {
         `expireOffers failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
+    }
+    // Remind sellers/buyers BEFORE an offer lapses — separate try so an
+    // expiry failure never blocks the reminder pass and vice-versa.
+    try {
+      await this.offersService.remindExpiring();
+    } catch (err) {
+      this.logger.warn(`offer reminders failed: ${(err as Error).message}`);
     } finally {
       await this.recordCronRun('offer-expire');
     }
@@ -747,6 +964,26 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('email-outbox-retry');
+    }
+  }
+
+  // Every 10 min — re-attempt FAILED-but-retryable SMS (PIN/waybill/refund/
+  // reminder), mirroring the email outbox. OTP flows are excluded at write
+  // time. Also raises an SMSPortal-outage alert on a run of consecutive
+  // failures. Normally a no-op.
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async retryFailedSms() {
+    try {
+      const r = await this.sms.retryFailed();
+      if (r.sent > 0 || r.exhausted > 0) {
+        this.logger.log(
+          `SMS retry: ${r.sent} sent, ${r.exhausted} exhausted of ${r.retried}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`retryFailedSms failed: ${(err as Error).message}`);
+    } finally {
+      await this.recordCronRun('sms-retry');
     }
   }
 
@@ -918,6 +1155,13 @@ export class TasksService {
       if (unpaid.expired > 0) {
         this.logger.log(`Expired ${unpaid.expired} unpaid auction win(s)`);
       }
+      // Nudge winners ~6h before the pay window lapses (before the strike).
+      const reminded = await this.auctionsService.remindUnpaidWinners();
+      if (reminded.reminded > 0) {
+        this.logger.log(`Reminded ${reminded.reminded} unpaid auction winner(s)`);
+      }
+      // Alert wishlisters that a saved auction is closing within the hour.
+      await this.wishlistAlerts.sweepEndingSoonAuctions();
     } catch (err) {
       this.logger.error(
         `endAuctions failed: ${(err as Error).message}`,
@@ -1026,6 +1270,17 @@ export class TasksService {
         `Collection stall sweep failed: ${(err as Error).message}`,
       );
     }
+    // In-transit stall — dispatched courier parcels with no scan progress >7d.
+    try {
+      const transit = await this.dispatchSla.sweepStalledInTransit();
+      if (transit.alerted > 0) {
+        this.logger.log(
+          `In-transit stall: alerted ${transit.alerted} of ${transit.scanned}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`In-transit stall sweep failed: ${(err as Error).message}`);
+    }
     await this.recordCronRun('dispatch-sla');
   }
 
@@ -1069,6 +1324,21 @@ export class TasksService {
   // heartbeat in finally.
   @Cron(CronExpression.EVERY_HOUR)
   async stuckHeldFundsSweep() {
+    // 48h confirm-receipt nudge FIRST (self-heals forgetful buyers before the
+    // 72h admin alert below has to involve a human). Separate try so one pass
+    // failing never blocks the other.
+    try {
+      const nudge = await this.dispatchSla.nudgeUnconfirmedReceipt();
+      if (nudge.nudged > 0) {
+        this.logger.log(
+          `Confirm-receipt nudge: ${nudge.nudged} of ${nudge.scanned} buyer(s)`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `confirm-receipt nudge failed: ${(err as Error).message}`,
+      );
+    }
     try {
       const res = await this.dispatchSla.alertStuckHeldFunds();
       if (res.alerted > 0) {
@@ -1184,6 +1454,56 @@ export class TasksService {
       );
     } finally {
       await this.recordCronRun('dealer-verification-ageing');
+    }
+  }
+
+  // ─── Cron watchdog ──────────────────────────────────────────────
+  // The health dashboard's cron-freshness check is PULL-only — it computes
+  // stale/ok solely when an admin opens /admin/health. If a monitored sweep
+  // dies (scheduler wedged, a cron hung behind a re-entrancy guard, pm2 in a
+  // half-restart), auto-refunds / auction finalisation / payout reconciliation
+  // silently stop and nobody is told. This pass PUSHES: every 15 min it reuses
+  // AdminHealthService.cronStatuses() and raises a deduped CRON_STALE alert per
+  // stale cron. It catches hung/dropped crons that stopped heartbeating — NOT
+  // whole-process death (a dead Node can't run its own watchdog); pm2 + the
+  // external /api/health/crons probe are the outer layer, and the alert copy
+  // says so. 'never'-status rows (not yet run since deploy) are skipped, and
+  // the whole pass no-ops during a startup grace window so a fresh restart
+  // can't false-alarm before fast crons fire their first heartbeat.
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async cronWatchdog() {
+    const STARTUP_GRACE_MS = 15 * 60 * 1000;
+    try {
+      if (Date.now() - this.bootAt.getTime() < STARTUP_GRACE_MS) return;
+      const statuses = await this.health.cronStatuses();
+      const stale = statuses.filter((c) => c.status === 'stale');
+      for (const c of stale) {
+        const existing = await this.prisma.adminAlert.count({
+          where: { type: 'CRON_STALE', referenceId: c.name, resolved: false },
+        });
+        if (existing > 0) continue;
+        const lastRun = c.lastRunAt
+          ? c.lastRunAt.toISOString()
+          : 'never (since restart)';
+        await this.prisma.adminAlert.create({
+          data: {
+            type: 'CRON_STALE',
+            referenceId: c.name,
+            urgent: true,
+            context:
+              `Scheduled job "${c.name}" (${c.schedule}) has not run since ${lastRun} — ` +
+              `it is overdue by 3× its interval. The job may be hung or the scheduler is ` +
+              `down; time-sensitive automation it drives has stopped. Check pm2 + server ` +
+              `logs. (Whole-process death is caught by pm2 / the external health probe, ` +
+              `not this in-process watchdog.) Fires once per job until resolved.`,
+          },
+        });
+        this.logger.error(`CRON_STALE alert raised for "${c.name}"`);
+      }
+    } catch (err) {
+      this.logger.warn(`cronWatchdog failed: ${(err as Error).message}`);
+    } finally {
+      await this.recordCronRun('cron-watchdog');
     }
   }
 

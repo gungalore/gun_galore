@@ -28,6 +28,7 @@ import {
   AdminSearchController,
   AdminTrustSafetyController,
   AdminHealthController,
+  HealthPingController,
   AdminCreditsController,
   AdminDealersController,
   AdminCategoriesController,
@@ -89,6 +90,7 @@ import { SwapsModule } from '../swaps/swaps.module';
     AdminSearchController,
     AdminTrustSafetyController,
     AdminHealthController,
+    HealthPingController,
     AdminCreditsController,
     AdminDealersController,
     AdminCategoriesController,
@@ -100,6 +102,8 @@ import { SwapsModule } from '../swaps/swaps.module';
   // Export AdminCreditsService so TasksModule's pollCreditBalances
   // cron can inject it without us having to declare the service in
   // two places (which would create two instances + risk drift).
-  exports: [AdminCreditsService],
+  // AdminHealthService is exported for the cron watchdog (TasksService
+  // reuses cronStatuses() to detect stale/wedged crons).
+  exports: [AdminCreditsService, AdminHealthService],
 })
 export class AdminModule {}

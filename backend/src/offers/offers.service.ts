@@ -168,6 +168,9 @@ export class OffersService {
             metAutoAccept: autoAccept,
             rejectReason: null,
             rejectNote: null,
+            // Fresh window → fresh reminder eligibility.
+            sellerRemindedAt: null,
+            buyerPayRemindedAt: null,
             attemptCount: { increment: 1 },
           },
         })
@@ -643,8 +646,10 @@ export class OffersService {
       // Clear any still-open action-required inbox rows on this offer.
       void this.notifications.resolveByEntity('offer', o.id);
       if (o.status === OfferStatus.PENDING) {
-        // Seller never responded within 48h — tell the buyer.
+        // Seller never responded within 48h — tell the buyer AND the
+        // seller (who lost a real sale and was previously never told).
         void this.notifyOfferExpired(o.id);
+        void this.notifyOfferExpiredSeller(o.id);
       } else if (o.status === OfferStatus.COUNTERED) {
         // Buyer never answered the counter — tell the seller.
         void this.notifyCounterExpired(o.id);
@@ -656,6 +661,67 @@ export class OffersService {
       }
     }
     if (expired > 0) this.logger.log(`Expired ${expired} offer(s)`);
+  }
+
+  // Nudge before an offer lapses — nobody should be struck (or lose a sale)
+  // for missing a deadline they were never reminded of. Two passes, both
+  // one-shot per row via a CAS-claimed guard column:
+  //   • PENDING offers expiring within 12h → remind the SELLER (reuse the
+  //     OFFER_DECISION token so the SMS stays one-tap).
+  //   • ACCEPTED offers expiring within 6h → remind the BUYER to pay (reuse
+  //     a fresh CHECKOUT token) before the unpaid lapse strikes them.
+  // Run from the same 10-min cron slot as expireStale.
+  async remindExpiring() {
+    const now = new Date();
+    let reminded = 0;
+
+    // ── Seller: PENDING offer about to lapse ──────────────────────
+    const pendingSoon = await this.prisma.offer.findMany({
+      where: {
+        status: OfferStatus.PENDING,
+        sellerRemindedAt: null,
+        expiresAt: { gt: now, lte: new Date(now.getTime() + 12 * 3600_000) },
+      },
+      select: { id: true, expiresAt: true },
+      take: 100,
+    });
+    for (const o of pendingSoon) {
+      // CAS-claim the reminder so overlapping runs can't double-send.
+      const claim = await this.prisma.offer.updateMany({
+        where: { id: o.id, status: OfferStatus.PENDING, sellerRemindedAt: null },
+        data: { sellerRemindedAt: now },
+      });
+      if (claim.count === 0) continue;
+      reminded += 1;
+      void this.remindSellerOfferExpiring(o.id);
+    }
+
+    // ── Buyer: ACCEPTED offer, pay window about to lapse ──────────
+    const acceptedSoon = await this.prisma.offer.findMany({
+      where: {
+        status: OfferStatus.ACCEPTED,
+        buyerPayRemindedAt: null,
+        expiresAt: { gt: now, lte: new Date(now.getTime() + 6 * 3600_000) },
+      },
+      select: { id: true },
+      take: 100,
+    });
+    for (const o of acceptedSoon) {
+      const claim = await this.prisma.offer.updateMany({
+        where: {
+          id: o.id,
+          status: OfferStatus.ACCEPTED,
+          buyerPayRemindedAt: null,
+        },
+        data: { buyerPayRemindedAt: now },
+      });
+      if (claim.count === 0) continue;
+      reminded += 1;
+      void this.remindBuyerToPay(o.id);
+    }
+
+    if (reminded > 0) this.logger.log(`Reminded on ${reminded} expiring offer(s)`);
+    return { reminded };
   }
 
   // ----------------------------------------------------------------
@@ -807,6 +873,108 @@ export class OffersService {
       });
     } catch (err) {
       this.logger.error(`notifyCounterExpired failed: ${(err as Error).message}`);
+    }
+  }
+
+  // A PENDING offer lapsed unanswered — tell the SELLER (buyer is told
+  // separately by notifyOfferExpired). Best-effort.
+  private async notifyOfferExpiredSeller(offerId: string) {
+    try {
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: offerId },
+        include: { listing: { include: { seller: true } }, buyer: true },
+      });
+      if (!offer) return;
+      await this.notifications.offerExpiredSeller({
+        sellerEmail: offer.listing.seller.email,
+        sellerName: offer.listing.seller.firstName ?? 'Seller',
+        buyerName: offer.buyer.username ?? 'A buyer',
+        listingTitle: offer.listing.title,
+        listingId: offer.listing.id,
+        offerId: offer.id,
+        offerAmount: offer.offerAmount,
+      });
+    } catch (err) {
+      this.logger.error(`notifyOfferExpiredSeller failed: ${(err as Error).message}`);
+    }
+  }
+
+  // ~12h-to-lapse reminder to the seller on a PENDING offer. Mints a fresh
+  // OFFER_DECISION token (offer.expiresAt TTL) so the SMS stays one-tap.
+  private async remindSellerOfferExpiring(offerId: string) {
+    try {
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: offerId },
+        include: { listing: { include: { seller: true } }, buyer: true },
+      });
+      if (!offer || offer.status !== OfferStatus.PENDING) return;
+      const hoursLeft = Math.max(
+        1,
+        Math.round((offer.expiresAt.getTime() - Date.now()) / 3_600_000),
+      );
+      const token = await this.actionTokens
+        .mint({
+          purpose: 'OFFER_DECISION',
+          targetType: 'offer',
+          targetId: offer.id,
+          authorisedUserId: offer.listing.sellerId,
+          expiresAt: offer.expiresAt,
+        })
+        .catch(() => null);
+      await this.notifications.offerExpiryReminderSeller({
+        sellerEmail: offer.listing.seller.email,
+        sellerName: offer.listing.seller.firstName ?? 'Seller',
+        sellerPhone: offer.listing.seller.phone,
+        buyerName: offer.buyer.username ?? 'A buyer',
+        listingTitle: offer.listing.title,
+        listingId: offer.listing.id,
+        offerId: offer.id,
+        offerAmount: offer.offerAmount,
+        hoursLeft,
+        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
+      });
+    } catch (err) {
+      this.logger.error(`remindSellerOfferExpiring failed: ${(err as Error).message}`);
+    }
+  }
+
+  // ~6h-to-lapse pay reminder to the buyer on an ACCEPTED offer. Mints a
+  // fresh CHECKOUT token so the SMS deep-links to checkout.
+  private async remindBuyerToPay(offerId: string) {
+    try {
+      const offer = await this.prisma.offer.findUnique({
+        where: { id: offerId },
+        include: { listing: true, buyer: true },
+      });
+      if (!offer || offer.status !== OfferStatus.ACCEPTED) return;
+      const amount = offer.counterAmount ?? offer.offerAmount;
+      const hoursLeft = Math.max(
+        1,
+        Math.round((offer.expiresAt.getTime() - Date.now()) / 3_600_000),
+      );
+      const token = await this.actionTokens
+        .mint({
+          purpose: 'CHECKOUT',
+          targetType: 'listing',
+          targetId: offer.listing.id,
+          authorisedUserId: offer.buyerId,
+          expiresAt: offer.expiresAt,
+          metadata: { offerId: offer.id, agreedAmount: amount },
+        })
+        .catch(() => null);
+      await this.notifications.offerPayReminderBuyer({
+        buyerEmail: offer.buyer.email,
+        buyerName: offer.buyer.firstName ?? 'Buyer',
+        buyerPhone: offer.buyer.phone,
+        listingTitle: offer.listing.title,
+        listingId: offer.listing.id,
+        offerId: offer.id,
+        amount,
+        hoursLeft,
+        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
+      });
+    } catch (err) {
+      this.logger.error(`remindBuyerToPay failed: ${(err as Error).message}`);
     }
   }
 

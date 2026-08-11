@@ -306,6 +306,41 @@ export class UsersService {
     }
   }
 
+  // Raise a deduped admin alert when the Clerk webhook signature fails to
+  // verify. A dead CLERK_WEBHOOK_SECRET means no user is ever provisioned via
+  // webhook (the lazy ClerkGuard upsert is the backstop, but a silent webhook
+  // failure still hides a real misconfig). Dedup on the single source so a
+  // flood of bad events yields one unresolved alert. Fire-and-forget.
+  async alertClerkWebhookSignatureFailure(): Promise<void> {
+    try {
+      const existing = await this.prisma.adminAlert.count({
+        where: {
+          type: 'WEBHOOK_SIGNATURE_INVALID',
+          referenceId: 'clerk',
+          resolved: false,
+        },
+      });
+      if (existing > 0) return;
+      await this.prisma.adminAlert.create({
+        data: {
+          type: 'WEBHOOK_SIGNATURE_INVALID',
+          referenceId: 'clerk',
+          urgent: true,
+          context:
+            'Incoming Clerk webhook FAILED signature verification and was dropped. ' +
+            'If this repeats, CLERK_WEBHOOK_SECRET is wrong or the raw-body pipeline broke — ' +
+            'new sign-ups are not being provisioned by webhook (the sign-in backstop still runs). ' +
+            'Check the webhook secret. Fires once until resolved.',
+        },
+      });
+      this.logger.error('Clerk webhook signature failure alert raised');
+    } catch (err) {
+      this.logger.warn(
+        `alertClerkWebhookSignatureFailure failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
   async upsertFromClerk(data: {
     clerkId: string;
     email: string;

@@ -391,6 +391,140 @@ export class DispatchSlaService {
     return { scanned: stuck.length, alerted };
   }
 
+  // 48h courier confirm-receipt nudge — sits UNDER the 72h stuck-funds admin
+  // alert above. A parcel DELIVERED >=48h ago that the buyer never confirmed
+  // is usually just a forgetful buyer: one push+SMS reminder self-heals most
+  // of them without a human chasing. One-shot via buyerConfirmNudgedAt.
+  // Courier legs only (COLLECTION has its own collectionConfirmNudgedAt path).
+  async nudgeUnconfirmedReceipt(): Promise<{ scanned: number; nudged: number }> {
+    const NUDGE_AFTER_HOURS = 48;
+    const cutoff = new Date(Date.now() - NUDGE_AFTER_HOURS * 60 * 60 * 1000);
+    const due = await this.prisma.transaction.findMany({
+      where: {
+        paymentStatus: 'HELD',
+        paidAt: { not: null },
+        confirmedDeliveryAt: null,
+        deliveredAt: { not: null, lte: cutoff },
+        buyerConfirmNudgedAt: null,
+        swapId: null,
+        shippingMethod: { in: ['PUDO', 'TCG'] },
+      },
+      include: { listing: { select: { title: true } }, buyer: true },
+      take: 200,
+    });
+
+    let nudged = 0;
+    for (const tx of due) {
+      // CAS-claim the one-shot stamp so overlapping runs can't double-nudge.
+      const claim = await this.prisma.transaction.updateMany({
+        where: { id: tx.id, buyerConfirmNudgedAt: null },
+        data: { buyerConfirmNudgedAt: new Date() },
+      });
+      if (claim.count === 0) continue;
+      try {
+        const hoursElapsed = tx.deliveredAt
+          ? Math.floor((Date.now() - tx.deliveredAt.getTime()) / 3_600_000)
+          : NUDGE_AFTER_HOURS;
+        await this.notifications.confirmReceiptNudgeBuyer({
+          buyerEmail: tx.buyer.email,
+          buyerName:
+            [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') ||
+            'Buyer',
+          buyerPhone: tx.buyer.phone,
+          listingTitle: tx.listing.title,
+          transactionId: tx.id,
+          hoursElapsed,
+        });
+        nudged++;
+      } catch (err) {
+        this.logger.warn(
+          `confirm-receipt nudge failed for ${tx.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (nudged > 0) {
+      this.logger.log(`Confirm-receipt: nudged ${nudged} buyer(s)`);
+    }
+    return { scanned: due.length, nudged };
+  }
+
+  // In-transit stall detection — a dispatched courier parcel with NO scan
+  // progress for >7d (courier lost it, or the Pudo/TCG poll silently returning
+  // nothing because creds broke). The pre-dispatch SLA and stuck-funds sweep
+  // both miss this (one is pre-dispatch, the other needs deliveredAt), so a
+  // wedged parcel is polled forever with money HELD and nobody told. One-shot
+  // urgent admin alert via adminAlertedForTransitStallAt. Uses dispatchedAt as
+  // the age floor so a parcel that never got a single scan is caught too.
+  async sweepStalledInTransit(): Promise<{ scanned: number; alerted: number }> {
+    const STALL_AFTER_DAYS = 7;
+    const now = Date.now();
+    const staleCutoff = new Date(now - STALL_AFTER_DAYS * 24 * 60 * 60 * 1000);
+    const candidates = await this.prisma.transaction.findMany({
+      where: {
+        paymentStatus: 'HELD',
+        dispatchedAt: { not: null, lte: staleCutoff },
+        deliveredAt: null,
+        adminAlertedForTransitStallAt: null,
+        swapId: null,
+        shippingMethod: { in: ['PUDO', 'TCG'] },
+      },
+      select: {
+        id: true,
+        orderReference: true,
+        dispatchedAt: true,
+        trackingReference: true,
+        listing: { select: { title: true } },
+        buyer: { select: { username: true } },
+        seller: { select: { username: true } },
+        trackingEvents: {
+          select: { occurredAt: true },
+          orderBy: { occurredAt: 'desc' },
+          take: 1,
+        },
+      },
+      take: 100,
+    });
+
+    let alerted = 0;
+    for (const tx of candidates) {
+      // Last progress = latest scan, or dispatch time if it never scanned.
+      const lastProgress =
+        tx.trackingEvents[0]?.occurredAt ?? tx.dispatchedAt ?? staleCutoff;
+      if (lastProgress > staleCutoff) continue; // moved within the window
+      const daysStale = Math.floor((now - lastProgress.getTime()) / 86_400_000);
+      const neverScanned = tx.trackingEvents.length === 0;
+      try {
+        await this.prisma.$transaction([
+          this.prisma.adminAlert.create({
+            data: {
+              type: 'SHIPMENT_TRANSIT_STALL',
+              referenceId: tx.id,
+              urgent: true,
+              context:
+                `Parcel ${tx.orderReference ?? tx.id.slice(-8).toUpperCase()} (${tx.listing?.title ?? 'listing'}, ` +
+                `ref ${tx.trackingReference ?? '—'}) has had ${neverScanned ? 'NO carrier scans at all' : `no tracking progress for ${daysStale}d`} ` +
+                `since dispatch — money still HELD, buyer @${tx.buyer?.username ?? '—'}, seller @${tx.seller?.username ?? '—'}. ` +
+                `Chase the courier or resolve from the dossier.`,
+            },
+          }),
+          this.prisma.transaction.update({
+            where: { id: tx.id },
+            data: { adminAlertedForTransitStallAt: new Date() },
+          }),
+        ]);
+        alerted++;
+      } catch (err) {
+        this.logger.warn(
+          `transit-stall alert failed for ${tx.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (alerted > 0) {
+      this.logger.log(`In-transit stall: alerted admin on ${alerted} parcel(s)`);
+    }
+    return { scanned: candidates.length, alerted };
+  }
+
   // ------------------------------------------------------------------
   // FLOW-F4 (H12/H15/H16) — DEALER_TRANSFER stall backstop. A firearm sale
   // routes through a licensed dealer, so it is deliberately EXCLUDED from the

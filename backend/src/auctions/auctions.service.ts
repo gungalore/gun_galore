@@ -954,6 +954,51 @@ export class AuctionsService {
     return { expired };
   }
 
+  // Nudge an auction winner ~6h before the 24h pay window lapses (→ EXPIRED
+  // + strike). The population is exactly the sweepUnpaidWins query, one
+  // window earlier: PAYMENT_PENDING with expiresAt still set (a started
+  // checkout CAS-nulls it) means no payment began. Guard on winnerRemindedAt
+  // (CAS-claimed) so the every-minute cron sends exactly once. Mint a fresh
+  // CHECKOUT token expiring at the pay-by time so the SMS deep-links to
+  // checkout like the original 'you won' notification.
+  async remindUnpaidWinners(): Promise<{ reminded: number }> {
+    const now = new Date();
+    const soon = new Date(now.getTime() + 6 * 60 * 60 * 1000);
+    const due = await this.prisma.listing.findMany({
+      where: {
+        listingType: 'AUCTION',
+        status: 'PAYMENT_PENDING',
+        endedAt: { not: null },
+        winnerRemindedAt: null,
+        expiresAt: { not: null, gt: now, lte: soon },
+      },
+      select: { id: true, currentBidderId: true, currentBid: true },
+      take: 50,
+    });
+    let reminded = 0;
+    for (const l of due) {
+      if (!l.currentBidderId) continue;
+      // CAS-claim: only the run that flips null→now sends.
+      const claim = await this.prisma.listing.updateMany({
+        where: {
+          id: l.id,
+          status: 'PAYMENT_PENDING',
+          winnerRemindedAt: null,
+          expiresAt: { not: null, gt: now },
+        },
+        data: { winnerRemindedAt: now },
+      });
+      if (claim.count === 0) continue;
+      reminded += 1;
+      void this.notifyWinnerPayReminder(
+        l.currentBidderId,
+        l.id,
+        l.currentBid ?? 0,
+      );
+    }
+    return { reminded };
+  }
+
   // FLOW-F5 (M28) — record an unpaid-auction-win strike against the winner
   // and alert an admin once they hit the 3-strike suspension threshold the
   // place-bid gate enforces. Best-effort; a strike-write failure must never
@@ -1135,6 +1180,50 @@ export class AuctionsService {
       );
     } catch (err) {
       this.logger.warn(`auctionWon notify failed: ${(err as Error).message}`);
+    }
+  }
+
+  // ~6h-to-lapse pay reminder to an auction winner. Mints a FRESH CHECKOUT
+  // token (the original 24h one is near-expiry) whose TTL matches the
+  // remaining pay window so the SMS deep-link stays valid to the deadline.
+  private async notifyWinnerPayReminder(
+    userId: string,
+    listingId: string,
+    amount: number,
+  ) {
+    try {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      const listing = await this.prisma.listing.findUnique({
+        where: { id: listingId },
+      });
+      if (!user || !listing) return;
+      const payBy = listing.expiresAt ?? new Date(Date.now() + 6 * 3600_000);
+      const hoursLeft = Math.max(
+        1,
+        Math.round((payBy.getTime() - Date.now()) / 3_600_000),
+      );
+      const token = await this.actionTokens
+        .mint({
+          purpose: 'CHECKOUT',
+          targetType: 'listing',
+          targetId: listing.id,
+          authorisedUserId: userId,
+          expiresAt: payBy,
+          metadata: { auctionWinAmount: amount },
+        })
+        .catch(() => null);
+      await this.notifications.auctionPayReminderWinner({
+        buyerEmail: user.email,
+        buyerName: user.firstName ?? 'Bidder',
+        buyerPhone: user.phone,
+        listingTitle: listing.title,
+        listingId: listing.id,
+        amount,
+        hoursLeft,
+        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
+      });
+    } catch (err) {
+      this.logger.warn(`winner pay-reminder failed: ${(err as Error).message}`);
     }
   }
 

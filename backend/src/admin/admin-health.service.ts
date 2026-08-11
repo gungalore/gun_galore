@@ -332,6 +332,10 @@ export class AdminHealthService {
       { key: 'experience-sla', label: 'Experience SLA sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'dealer-verification-ageing', label: 'Dealer verification ageing', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'accept-escalation', label: '48h accept escalation', schedule: 'every 10 min', expectedIntervalSec: 600 },
+      { key: 'sms-retry', label: 'SMS retry + outage watch', schedule: 'every 10 min', expectedIntervalSec: 600 },
+      { key: 'cron-watchdog', label: 'Cron watchdog', schedule: 'every 10 min', expectedIntervalSec: 600 },
+      { key: 'stale-listing-sweep', label: 'Stale listing expiry', schedule: 'daily 04:00', expectedIntervalSec: 86_400 },
+      { key: 'photoless-listing-sweep', label: 'Photo-less listing sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
     ];
 
     const rows = await this.prisma.setting.findMany({

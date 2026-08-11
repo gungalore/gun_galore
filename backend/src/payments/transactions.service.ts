@@ -1312,6 +1312,44 @@ export class TransactionsService {
     return this.peach.verifyWebhookSignature(rawBody, parsedBody, headers, url);
   }
 
+  // Raise a deduped admin alert when a webhook signature fails to verify.
+  // Invalid-signature events are otherwise dropped with only a logger.warn —
+  // with the Peach raw-vs-hex HMAC key still unresolved until the first
+  // sandbox transaction, a mis-keyed secret could reject EVERY webhook (orders
+  // stuck unpaid, BANV never landing, payouts never confirming) in total
+  // silence. Dedup per source (referenceId = route name) so a flood of bad
+  // webhooks yields ONE unresolved alert per source until an admin clears it.
+  // Fire-and-forget: never let alerting block the always-200 webhook.
+  async alertWebhookSignatureFailure(source: string): Promise<void> {
+    try {
+      const existing = await this.prisma.adminAlert.count({
+        where: {
+          type: 'WEBHOOK_SIGNATURE_INVALID',
+          referenceId: source,
+          resolved: false,
+        },
+      });
+      if (existing > 0) return;
+      await this.prisma.adminAlert.create({
+        data: {
+          type: 'WEBHOOK_SIGNATURE_INVALID',
+          referenceId: source,
+          urgent: true,
+          context:
+            `Incoming "${source}" webhook FAILED signature verification and was dropped. ` +
+            `If this repeats, the signing secret is wrong or the raw-body pipeline broke — ` +
+            `${source.startsWith('peach') ? 'payments/verifications/payouts will silently stall' : 'user provisioning will silently stall'}. ` +
+            `Check the webhook secret + endpoint config. This alert fires once per source until resolved.`,
+        },
+      });
+      this.logger.error(`Webhook signature failure alert raised for "${source}"`);
+    } catch (err) {
+      this.logger.warn(
+        `alertWebhookSignatureFailure(${source}) failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
   // ------------------------------------------------------------------
   // Called from the Stitch webhook (payment.paid). Confirms the matching
   // transaction even when the buyer closed the tab before returning to

@@ -76,6 +76,7 @@ export class WebhooksController {
       }) as ClerkWebhookEvent;
     } catch (err) {
       this.logger.warn(`Clerk webhook verification failed: ${(err as Error).message}`);
+      void this.usersService.alertClerkWebhookSignatureFailure();
       return { received: false };
     }
 

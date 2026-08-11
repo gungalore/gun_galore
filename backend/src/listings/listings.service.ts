@@ -2454,6 +2454,33 @@ export class ListingsService {
     return updated;
   }
 
+  /**
+   * Seller confirms a listing is still for sale — resets the stale-listing
+   * clock (lastRenewedAt) so the daily 75d-nudge / 90d-expire sweep starts a
+   * fresh cycle, and clears renewalNudgedAt so the next cycle can nudge again.
+   * Deliberately the ONLY writer of lastRenewedAt: ordinary edits must never
+   * extend a dead listing's life (that's exactly the bug this replaces).
+   * ACTIVE non-auction listings only — auctions have their own endTime
+   * lifecycle and nothing else is at risk of the sweep.
+   */
+  async renew(id: string, clerkId: string) {
+    const listing = await this.assertOwner(id, clerkId);
+    if (listing.status !== ListingStatus.ACTIVE) {
+      throw new BadRequestException('Only an active listing can be renewed');
+    }
+    if (listing.listingType === 'AUCTION') {
+      throw new BadRequestException(
+        'Auctions end on their own schedule and never need renewing',
+      );
+    }
+    const updated = await this.prisma.listing.update({
+      where: { id },
+      data: { lastRenewedAt: new Date(), renewalNudgedAt: null },
+      select: { id: true, lastRenewedAt: true },
+    });
+    return { renewed: true, lastRenewedAt: updated.lastRenewedAt };
+  }
+
   async addImage(id: string, clerkId: string, file: Express.Multer.File) {
     const listing = await this.assertOwner(id, clerkId);
     // Photos can't change after commitment — buyers commit on the
