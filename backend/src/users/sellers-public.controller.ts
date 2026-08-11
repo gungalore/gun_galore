@@ -16,7 +16,7 @@ import { PrismaService } from '../prisma/prisma.service';
  *     rationale; the private grant-reason lives in AdminAuditEvent.
  *
  * firstName / lastName / email / phone / address / bank fields are
- * deliberately NOT selected — Gun Galore platform policy forbids
+ * deliberately NOT selected — All Outdoor platform policy forbids
  * leaking real names on public surfaces.
  */
 @Controller('sellers')

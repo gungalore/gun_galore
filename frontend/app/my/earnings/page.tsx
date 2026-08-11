@@ -92,7 +92,7 @@ export default function EarningsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'gungalore-payout-statement.csv';
+    a.download = 'all-outdoor-payout-statement.csv';
     a.click();
     URL.revokeObjectURL(url);
   }

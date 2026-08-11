@@ -51,6 +51,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
 import { useStandalone } from '@/lib/use-standalone';
+import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { useScrollDirection } from '@/lib/use-scroll-direction';
 import { PushToggleRow } from '@/components/push-opt-in-banner';
 import { AccountMenuList } from '@/lib/account-menu';
@@ -76,15 +77,23 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 // the NEXT sheet open transparently retries. An empty payload on a seeded
 // marketplace means the response was broken, not that the taxonomy is
 // empty — caching it would freeze the sheet mode-only for the session.
-let catCache: CategoryWithCount[] | null = null;
-let catInflight: Promise<CategoryWithCount[]> | null = null;
+// Keyed by viewer bucket for the same reason category-menu.tsx is: the tree
+// differs by audience, and an installed PWA keeps this module alive across
+// sign-out, so one shared cache would show the previous audience's categories.
+type ShopViewerKey = 'member' | 'anon';
+const catCache: Partial<Record<ShopViewerKey, CategoryWithCount[]>> = {};
+const catInflight: Partial<Record<ShopViewerKey, Promise<CategoryWithCount[]>>> = {};
 
-async function loadShopCategories(): Promise<CategoryWithCount[]> {
-  if (catCache) return catCache;
-  if (!catInflight) {
-    catInflight = fetch(`${API_URL}/categories/with-counts`, {
-      cache: 'force-cache',
-    })
+async function loadShopCategories(
+  key: ShopViewerKey,
+  viewerFetch: (url: string) => Promise<Response>,
+): Promise<CategoryWithCount[]> {
+  const cached = catCache[key];
+  if (cached) return cached;
+  if (!catInflight[key]) {
+    // no-store (inside viewerFetch), NOT force-cache — the browser cache keys
+    // on URL alone and would replay a member response after sign-out.
+    catInflight[key] = viewerFetch(`${API_URL}/categories/with-counts`)
       .then((r) => {
         if (!r.ok) throw new Error(`categories ${r.status}`);
         return r.json();
@@ -92,15 +101,15 @@ async function loadShopCategories(): Promise<CategoryWithCount[]> {
       .then((data: CategoryWithCount[]) => {
         const list = Array.isArray(data) ? data : [];
         if (list.length === 0) throw new Error('categories empty');
-        catCache = list;
+        catCache[key] = list;
         return list;
       })
       .catch((err) => {
-        catInflight = null; // let the next sheet open retry
+        catInflight[key] = undefined; // let the next sheet open retry
         throw err;
       });
   }
-  return catInflight;
+  return catInflight[key]!;
 }
 
 interface Tab {
@@ -883,7 +892,7 @@ function SheetHandle({ onClose }: { onClose: () => void }) {
 //      CategoryMenu flyout and this sheet was never touched.
 //   2. Or browse by how it sells — the selling-mode surfaces, demoted.
 //      A transaction-mode taxonomy only helps someone who already knows
-//      how Gun Galore sells, so it stops being the first thing you see.
+//      how All Outdoor sells, so it stops being the first thing you see.
 // Patterned after the App Store's "Today / Games / Apps / ..." selector.
 function ShopSheet({
   pathname,
@@ -904,15 +913,26 @@ function ShopSheet({
   // Categories load LAZILY on first open — the sheet is only mounted while
   // it's open (`{shopOpen && <ShopSheet/>}`), so mount === the user just
   // tapped Shop. Nothing is fetched for users who never open it.
-  const [cats, setCats] = useState<CategoryWithCount[]>(catCache ?? []);
+  const { viewerFetch, isSignedIn } = useViewerFetch();
+  const shopKey: ShopViewerKey = isSignedIn ? 'member' : 'anon';
+  const [cats, setCats] = useState<CategoryWithCount[]>(
+    catCache[shopKey] ?? [],
+  );
   const [catState, setCatState] = useState<'loading' | 'ready' | 'error'>(
-    catCache ? 'ready' : 'loading',
+    catCache[shopKey] ? 'ready' : 'loading',
   );
 
   useEffect(() => {
-    if (catCache) return; // warm module cache — nothing to do
+    const warm = catCache[shopKey];
+    if (warm) {
+      // Warm bucket — adopt it (also covers a sign-in/out swap).
+      setCats(warm);
+      setCatState('ready');
+      return;
+    }
+    setCats([]);
     let alive = true;
-    loadShopCategories().then(
+    loadShopCategories(shopKey, viewerFetch).then(
       (list) => {
         if (!alive) return;
         setCats(list);
@@ -929,7 +949,7 @@ function ShopSheet({
     return () => {
       alive = false;
     };
-  }, []);
+  }, [shopKey, viewerFetch]);
 
   // Roots only — the sheet is a launcher, not the full tree (tapping through
   // to /category/[slug] shows the children). Curated sortOrder is preserved
@@ -985,7 +1005,7 @@ function ShopSheet({
     {
       key: 'marketplace',
       href: '/?listingType=BUY_NOW',
-      title: 'Marketplace',
+      title: 'Buy Now',
       // Was "Used firearms and gear — …": gun-first copy on a general
       // outdoor surface (the sheet also fronts camping, fishing, optics).
       // Describe the MECHANIC, which is what distinguishes this surface

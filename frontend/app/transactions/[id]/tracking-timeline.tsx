@@ -33,7 +33,7 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 const SOURCE_LABEL: Record<string, string> = {
-  INTERNAL: 'Gun Galore',
+  INTERNAL: 'All Outdoor',
   PUDO: 'Pudo',
   TCG: 'The Courier Guy',
 };

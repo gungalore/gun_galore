@@ -260,7 +260,7 @@ export class BurnChartService {
       slower,
       cartridges,
       note:
-        'Burn-rate position + cross-maker equivalents from the Gun Galore powder chart (GRT burn-rate data). Equivalents share a similar burn rate but are NOT interchangeable loads — always use published data for the specific powder and start low / work up.',
+        'Burn-rate position + cross-maker equivalents from the All Outdoor powder chart (GRT burn-rate data). Equivalents share a similar burn rate but are NOT interchangeable loads — always use published data for the specific powder and start low / work up.',
     };
   }
 }

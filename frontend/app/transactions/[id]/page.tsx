@@ -1153,7 +1153,7 @@ export default async function TransactionPage({
           {/* Buyer-facing dealer details panel — shown to the BUYER
               once the verification has approved and we know where
               the firearm has been booked into stock. This is the
-              hand-off moment: Gun Galore is done with the
+              hand-off moment: All Outdoor is done with the
               transaction, the buyer contacts the seller and the
               dealer directly to arrange the inter-dealer transfer
               onwards. Surfaces alongside the released-payment block
@@ -1184,7 +1184,7 @@ export default async function TransactionPage({
                   stock-register paperwork. From here, contact the
                   seller to arrange the inter-dealer transfer to your
                   own dealer (or your preferred collection method).
-                  Gun Galore&apos;s part of this transaction is
+                  All Outdoor&apos;s part of this transaction is
                   complete.
                 </p>
                 <div

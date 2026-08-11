@@ -138,7 +138,7 @@ export function OfferDecisionPage({
         message:
           err instanceof Error
             ? err.message
-            : "Couldn't reach Gun Galore — try again in a moment.",
+            : "Couldn't reach All Outdoor — try again in a moment.",
       });
     }
   }

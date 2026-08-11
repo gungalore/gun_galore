@@ -103,6 +103,10 @@ describe('ListingsService — findById projection & owner-awareness', () => {
     id: 'l1',
     status: 'ACTIVE',
     title: 'Test listing',
+    // A non-regulated (camping/optics/fishing) listing, so anonymous callers
+    // may see it. The members-only case has its own spec —
+    // public-visibility.spec.ts — which asserts the 404.
+    publicVisible: true,
     seller: { clerkId: 'seller_1' },
     ...over,
   });

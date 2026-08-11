@@ -381,7 +381,7 @@ export default function SettingsPage() {
                   <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                     {pushHint ??
                       (!push.supported
-                        ? "This browser can't do push. On iPhone, install Gun Galore to your home screen first."
+                        ? "This browser can't do push. On iPhone, install All Outdoor to your home screen first."
                         : push.permission === 'denied'
                           ? 'Blocked for this site in your browser settings — allow notifications there to switch this on.'
                           : 'Instant alerts on this device for offers, outbids, sales and dispatch.')}

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AskGgService } from './ask-gg.service';
+import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
 import { AskGgClaudeService } from './ask-gg-claude.service';
 import { AskGgQuotaService } from './ask-gg-quota.service';
 import { AskGgKbService } from './ask-gg-kb.service';
@@ -75,6 +76,8 @@ import { AskGgGuideService } from './ask-gg-guide.service';
     AskGgLaneService,
     AskGgGuideService,
     AdminAuditService,
+    // Provided for the public /ask-gg/public/guide route's OptionalClerkGuard.
+    OptionalClerkGuard,
   ],
   exports: [AskGgService, AskGgKbService],
 })

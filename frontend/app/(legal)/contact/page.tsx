@@ -20,7 +20,7 @@ export default function ContactPage() {
       <LegalDocHeader title="Contact us" lastUpdated="Effective 16 July 2026" />
 
       <p>
-        Gun Galore is operated by GunGalore (Pty) Ltd. You can reach us
+        All Outdoor is operated by GunGalore (Pty) Ltd. You can reach us
         by email or phone using the details below. We aim to respond
         within <strong>2 business days</strong>.
       </p>
@@ -65,7 +65,7 @@ export default function ContactPage() {
           <br />
           <strong>Registration number:</strong> 2026/393321/07
           <br />
-          <strong>Trading as:</strong> Gun Galore
+          <strong>Trading as:</strong> All Outdoor
           <br />
           <strong>Director:</strong> Gerhard Johan Petrus Fourie
           <br />

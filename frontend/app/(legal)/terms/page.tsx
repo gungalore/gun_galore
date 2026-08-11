@@ -1,4 +1,4 @@
-// Terms of Service — the master contract between Gun Galore and
+// Terms of Service — the master contract between All Outdoor and
 // every user of the platform. Drafted with reference to:
 //   - Electronic Communications and Transactions Act 25 of 2002 (§ 43)
 //   - Consumer Protection Act 68 of 2008
@@ -6,10 +6,10 @@
 //   - Firearms Control Act 60 of 2000
 //
 // Conventions in this file:
-//   - "GunGalore" / "we" / "us" / "our" = GunGalore (Pty) Ltd
+//   - "All Outdoor" / "we" / "us" / "our" = GunGalore (Pty) Ltd
 //   - "you" / "your" = any user of the platform
 //   - Per the operator's policy, this document NEVER uses the word
-//     "escrow" (regulated SA financial term that GunGalore is not
+//     "escrow" (regulated SA financial term that All Outdoor is not
 //     registered to operate). The funds-held mechanism is described
 //     as "payment held" or "funds held" throughout.
 
@@ -36,8 +36,8 @@ export default function TermsPage() {
         company registered in the Republic of South Africa with its
         registered office at <strong>36 Sterappel Crescent, Langeberg
         Glen, Cape Town, 7570</strong>{' '}
-        (collectively "<strong>GunGalore</strong>", "<strong>we</strong>",
-        "<strong>us</strong>" or "<strong>our</strong>"). GunGalore
+        (collectively "<strong>All Outdoor</strong>", "<strong>we</strong>",
+        "<strong>us</strong>" or "<strong>our</strong>"). All Outdoor
         operates the website and applications available at{' '}
         <a href="https://gungalore.co.za" style={{ color: 'var(--red)' }}>
           gungalore.co.za
@@ -45,22 +45,22 @@ export default function TermsPage() {
         (the "<strong>Platform</strong>").
       </p>
 
-      <h2>2. What GunGalore does</h2>
+      <h2>2. What All Outdoor does</h2>
       <p>
-        GunGalore is an online marketplace that allows registered users
+        All Outdoor is an online marketplace that allows registered users
         ("<strong>Sellers</strong>") to list outdoor, hunting and sport
         goods — including optics, camping and fishing gear, knives,
         self-defence items, air rifles, and regulated categories such as
         firearms, ammunition and accessories — for sale or auction, and
         allows other registered users ("<strong>Buyers</strong>") to
-        purchase those goods. For marketplace listings GunGalore is a{' '}
+        purchase those goods. For marketplace listings All Outdoor is a{' '}
         <strong>platform</strong> — we do not own, stock, dispatch or
         directly sell the goods members list. The one exception is{' '}
-        <strong>Daily Deals</strong> (section 12), where GunGalore
+        <strong>Daily Deals</strong> (section 12), where All Outdoor
         itself is the seller of record. Where a transaction involves an item
         subject to the Firearms Control Act 60 of 2000, physical
         possession is transferred only through a SAPS-licensed dealer.
-        GunGalore is not a SAPS-licensed dealer and does not handle
+        All Outdoor is not a SAPS-licensed dealer and does not handle
         such items in any physical capacity.
       </p>
 
@@ -73,7 +73,7 @@ export default function TermsPage() {
         our{' '}
         <a href="/acceptable-use" style={{ color: 'var(--red)' }}>Acceptable Use Policy</a>{' '}
         and (where applicable) our{' '}
-        <a href="/firearms-compliance" style={{ color: 'var(--red)' }}>Regulated Items &amp; Compliance</a>{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items &amp; Compliance</a>{' '}
         and{' '}
         <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>.
       </p>
@@ -88,13 +88,13 @@ export default function TermsPage() {
 
       <h2>4. Eligibility</h2>
       <p>
-        To register and use GunGalore you must:
+        To register and use All Outdoor you must:
       </p>
       <ul>
         <li>be at least <strong>18 years old</strong>;</li>
         <li>be a permanent resident of, or lawfully present in, the Republic of South Africa;</li>
         <li>have the legal capacity to enter into a binding contract;</li>
-        <li>not have been previously banned by GunGalore;</li>
+        <li>not have been previously banned by All Outdoor;</li>
         <li>where you list, bid on or purchase any item subject to the Firearms Control Act 60 of 2000, hold (and continue to hold throughout the transaction) the relevant <strong>SAPS Competency Certificate</strong> and any required <strong>Possession Licence</strong>; and</li>
         <li>where applicable, complete our identity verification (KYC) process before payouts are released to you.</li>
       </ul>
@@ -107,7 +107,7 @@ export default function TermsPage() {
         <li>provide accurate, current and complete information when you register;</li>
         <li>keep your account credentials confidential and not share access with any third party;</li>
         <li>notify us immediately at <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>support@gungalore.co.za</a> of any unauthorised use of your account;</li>
-        <li>maintain a single GunGalore account (multiple accounts per natural person are not permitted); and</li>
+        <li>maintain a single All Outdoor account (multiple accounts per natural person are not permitted); and</li>
         <li>cooperate fully and truthfully with any verification, dispute or compliance request we make.</li>
       </ul>
       <p>
@@ -125,11 +125,11 @@ export default function TermsPage() {
         We reserve the right (but assume no obligation) to remove,
         modify, hide or reject any listing or content that, in our
         reasonable opinion, breaches that policy, breaches any law, or
-        is otherwise harmful to GunGalore or its users.
+        is otherwise harmful to All Outdoor or its users.
       </p>
       <p>
         You retain ownership of any content you submit. By submitting
-        content you grant GunGalore a non-exclusive, royalty-free,
+        content you grant All Outdoor a non-exclusive, royalty-free,
         worldwide licence to host, display, copy, distribute and make
         derivative works of that content for the purpose of operating
         and promoting the Platform.
@@ -145,32 +145,32 @@ export default function TermsPage() {
       <h2>7. Payments and the funds-held mechanism</h2>
       {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
-        All payments on GunGalore are processed by{' '}
+        All payments on All Outdoor are processed by{' '}
         <strong>our appointed third-party payment service provider</strong>{' '}
         (a licensed South African payment service provider). By making a
         payment you authorise the payment service provider to capture
         funds from your chosen payment instrument, and you authorise
-        GunGalore to instruct release of the seller payout in accordance
+        All Outdoor to instruct release of the seller payout in accordance
         with these Terms. All prices are quoted and charged in South
         African Rand (ZAR).
       </p>
       <p>
-        For most transactions, GunGalore operates a{' '}
+        For most transactions, All Outdoor operates a{' '}
         <strong>funds-held mechanism</strong>: the Buyer's payment is
         captured by the payment service provider at checkout and the
         resulting amount (less commission and processing fees) is held
         until the Buyer confirms delivery of the item, the Buyer's
         confirmation window elapses, or a dispute is resolved. Once one
-        of these triggers occurs, GunGalore instructs the payment
+        of these triggers occurs, All Outdoor instructs the payment
         service provider to release the seller payout to the Seller's
         verified bank account.
       </p>
       <p>
         For the avoidance of doubt: the funds-held mechanism is a{' '}
         <strong>buyer-protection mechanism</strong> and not a
-        regulated banking, savings or investment product. GunGalore is
+        regulated banking, savings or investment product. All Outdoor is
         not a bank and does not provide deposit-taking or fund-custody
-        financial services. GunGalore does not pay interest on funds held, does not
+        financial services. All Outdoor does not pay interest on funds held, does not
         guarantee the availability of those funds against the
         insolvency of the payment service provider, and is not a registered financial
         services provider.
@@ -187,7 +187,7 @@ export default function TermsPage() {
 
       <h2>8. Fees, commission and payouts</h2>
       <p>
-        GunGalore charges Sellers a <strong>banded commission</strong>{' '}
+        All Outdoor charges Sellers a <strong>banded commission</strong>{' '}
         on the listing price of each completed sale, plus a{' '}
         <strong>processing fee</strong> charged by the payment service
         provider (passed through to the Seller in full). The exact
@@ -229,15 +229,15 @@ export default function TermsPage() {
       <p>
         The Seller must dispatch within 48 hours of payment being
         confirmed. If dispatch is not confirmed within that window,
-        GunGalore will send a reminder; if dispatch is still not
-        confirmed within a further extended period, GunGalore reserves
+        All Outdoor will send a reminder; if dispatch is still not
+        confirmed within a further extended period, All Outdoor reserves
         the right to cancel the transaction and refund the Buyer in
         full.
       </p>
 
       <h2>10. Auctions, Take-a-Shot offers and Buy Now</h2>
       <p>
-        GunGalore supports three sale modes: <strong>Buy Now</strong>{' '}
+        All Outdoor supports three sale modes: <strong>Buy Now</strong>{' '}
         (fixed-price purchase), <strong>Auction</strong> (timed bidding
         with optional reserve and snipe-protection extension) and{' '}
         <strong>Take-a-Shot</strong> (buyer-initiated price offer with
@@ -275,7 +275,7 @@ export default function TermsPage() {
       <h2>12. Daily Deals</h2>
       <p>
         <strong>Daily Deals</strong> are limited-time offers in which
-        GunGalore itself is the seller of record: your purchase
+        All Outdoor itself is the seller of record: your purchase
         contract for a Daily Deal is with GunGalore (Pty) Ltd, not
         with a marketplace member. Deal purchases are delivered by
         courier from our supplier's warehouse within the delivery
@@ -315,7 +315,7 @@ export default function TermsPage() {
         — for example, an item arrived damaged or never arrived — you
         may raise a dispute within the time limits set out in our{' '}
         <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>.
-        Disputes are reviewed by the GunGalore admin team within{' '}
+        Disputes are reviewed by the All Outdoor admin team within{' '}
         <strong>48 hours of receipt</strong>, and outcomes may include
         full refund, partial refund, release to Seller or referral to
         the appropriate authorities. Nothing in these Terms limits the
@@ -348,7 +348,7 @@ export default function TermsPage() {
       <h2>16. Intellectual property</h2>
       <p>
         The Platform (including its software, design, brand, written
-        content and structure) is owned by GunGalore (or its licensors)
+        content and structure) is owned by All Outdoor (or its licensors)
         and is protected by South African and international copyright,
         trade mark and other intellectual-property laws. Except as
         expressly permitted by these Terms, you may not copy, modify,
@@ -358,14 +358,14 @@ export default function TermsPage() {
 
       <h2>17. Limitation of liability</h2>
       <p>
-        To the maximum extent permitted by South African law, GunGalore
+        To the maximum extent permitted by South African law, All Outdoor
         will not be liable to you for any indirect, incidental,
         consequential, special or punitive damages (including but not
         limited to loss of profits, loss of goodwill or loss of data)
         arising out of or in connection with your use of the Platform.
       </p>
       <p>
-        GunGalore's aggregate liability to you in respect of any
+        All Outdoor's aggregate liability to you in respect of any
         transaction or series of related transactions is limited to
         the lesser of (a) the amount actually paid by you in respect
         of that transaction or (b) R10,000.
@@ -379,7 +379,7 @@ export default function TermsPage() {
 
       <h2>18. Indemnity</h2>
       <p>
-        You agree to indemnify, defend and hold harmless GunGalore,
+        You agree to indemnify, defend and hold harmless All Outdoor,
         its directors, officers, employees and agents from and against
         any third-party claim, action, demand, loss, damage, fine,
         penalty or expense (including reasonable legal fees) arising
@@ -405,7 +405,7 @@ export default function TermsPage() {
       <p>
         Notices to you will be sent to the email address registered on
         your account and, where appropriate, by SMS to your verified
-        phone number. Notices to GunGalore must be sent to{' '}
+        phone number. Notices to All Outdoor must be sent to{' '}
         <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
           support@gungalore.co.za
         </a>{' '}
@@ -423,7 +423,7 @@ export default function TermsPage() {
       <h2>22. Governing law and jurisdiction</h2>
       <p>
         These Terms are governed by and construed in accordance with
-        the laws of the Republic of South Africa. You and GunGalore
+        the laws of the Republic of South Africa. You and All Outdoor
         irrevocably submit to the exclusive jurisdiction of the High
         Court of South Africa (Western Cape Division, Cape Town) over
         any dispute arising out of or in connection with these Terms.
@@ -462,7 +462,7 @@ export default function TermsPage() {
       <ul>
         <li><strong>Full registered name:</strong> GunGalore (Pty) Ltd</li>
         <li><strong>Registration number:</strong> 2026/393321/07</li>
-        <li><strong>Trading as:</strong> Gun Galore</li>
+        <li><strong>Trading as:</strong> All Outdoor</li>
         <li><strong>Director:</strong> Gerhard Johan Petrus Fourie</li>
         <li><strong>Physical address:</strong> 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa</li>
         <li><strong>Email:</strong> support@gungalore.co.za</li>

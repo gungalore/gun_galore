@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { BRAND_NAME } from '@/lib/brand';
 import { SignInButton } from '@clerk/nextjs';
 import { IconSparkles } from './icons';
 import { KbHitsRow } from './kb-hits';
@@ -57,14 +58,13 @@ export function AskGgSignedOut() {
           <IconSparkles />
         </span>
         <p style={{ margin: 0, fontSize: 14, color: 'var(--text-primary)', fontWeight: 600 }}>
-          Ask Boet — Gun Galore&apos;s assistant
+          Ask Boet — {BRAND_NAME}&apos;s assistant
         </p>
       </div>
       <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-        Instant answers about buying, selling, fees, shipping and firearms
-        rules — try a question below. Sign in to chat with Ask Boet about
-        anything outdoors: gear advice, reloading data, live stock and
-        your own orders.
+        Instant answers about buying, selling, fees, shipping and how the
+        store works — try a question below. Sign in to chat with Ask Boet
+        about anything outdoors: gear advice, live stock and your own orders.
       </p>
 
       <input

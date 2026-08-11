@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
+import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatPrice } from '@/lib/utils';
@@ -130,6 +131,7 @@ export function LiveSearch({
   preserveParams?: Record<string, string>;
 }) {
   const router = useRouter();
+  const { viewerFetch } = useViewerFetch();
   const [q, setQ] = useState(defaultValue ?? '');
 
   // Build the full-results URL, carrying any preserved filters.
@@ -202,7 +204,11 @@ export function LiveSearch({
       abortRef.current = ctrl;
       try {
         const url = `${API_URL}/listings?q=${encodeURIComponent(term)}&limit=6`;
-        const res = await fetch(url, { signal: ctrl.signal });
+        // Forward the session: search is the easiest way to reach a
+        // members-only listing (calibre and category name are searchable), so
+        // the backend filters it for anonymous callers — and a signed-in member
+        // must not be quietly restricted to the public catalogue.
+        const res = await viewerFetch(url, { signal: ctrl.signal });
         if (!res.ok) {
           setHits([]);
           return;
@@ -218,7 +224,10 @@ export function LiveSearch({
         setBusy(false);
       }
     }, 180);
-  }, [q]);
+    // viewerFetch is a useCallback keyed on Clerk's getToken, so signing in
+    // or out re-runs the search with the right catalogue rather than leaving
+    // stale public-only results on screen.
+  }, [q, viewerFetch]);
 
   // A new result set invalidates the old highlight — index 2 of the previous
   // query is a different listing now, and a shrinking list could leave

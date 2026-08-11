@@ -101,7 +101,7 @@ export default function DealsPage() {
         }
         description={
           <>
-            First-party <strong style={{ color: 'var(--text-primary)' }}>Gun Galore</strong>{' '}
+            First-party <strong style={{ color: 'var(--text-primary)' }}>All Outdoor</strong>{' '}
             deals — you create every listing, buyers purchase on the normal rails.
             Deals never appear in the public marketplace and the storefront isn&apos;t
             live yet, so everything here is safe to draft and stage.

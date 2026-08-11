@@ -265,9 +265,9 @@ self.addEventListener('push', (event) => {
   } catch {
     // Plain-text fallback — backend always sends JSON but defend
     // against partner-injected pushes anyway.
-    payload = { title: 'Gun Galore', body: e.data.text() };
+    payload = { title: 'All Outdoor', body: e.data.text() };
   }
-  const title = payload.title ?? 'Gun Galore';
+  const title = payload.title ?? 'All Outdoor';
   const body = payload.body ?? '';
   const url = payload.url ?? '/';
   e.waitUntil(

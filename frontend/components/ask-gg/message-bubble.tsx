@@ -276,7 +276,7 @@ export function ListingCardsRow({ cards }: { cards: AskGgListingCard[] }) {
           marginBottom: 6,
         }}
       >
-        On Gun Galore now
+        On All Outdoor now
       </span>
       <div
         style={{

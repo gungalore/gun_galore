@@ -12,7 +12,7 @@ import { DealsService } from './deals.service';
  * killswitch: with Daily Deals turned off the list returns
  * `{enabled:false, deals:[]}` and the detail 404s, so this surface ships
  * INERT and flips live the instant the operator toggles the flag — no
- * deploy. Deals are first-party (Gun Galore is the seller); the buyer buys
+ * deploy. Deals are first-party (All Outdoor is the seller); the buyer buys
  * through the existing cart / checkout rails unchanged (the DD-2 money path
  * branches on Listing.isDealListing). @SkipThrottle because SSR fans these
  * reads out from a single localhost IP (same reasoning as GET /listings).

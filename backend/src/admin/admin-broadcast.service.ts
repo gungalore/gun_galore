@@ -267,5 +267,5 @@ function wrapAsHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/\n/g, '<br>');
-  return `<div style="font-family:sans-serif;line-height:1.5;color:#222;max-width:560px">${escaped}<hr style="margin-top:24px;border:none;border-top:1px solid #ddd"><p style="font-size:12px;color:#888">Sent by Gun Galore. Reply to this email if you have any questions.</p></div>`;
+  return `<div style="font-family:sans-serif;line-height:1.5;color:#222;max-width:560px">${escaped}<hr style="margin-top:24px;border:none;border-top:1px solid #ddd"><p style="font-size:12px;color:#888">Sent by All Outdoor. Reply to this email if you have any questions.</p></div>`;
 }

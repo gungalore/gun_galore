@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
- * System Health monitor — pings every external service Gun Galore
+ * System Health monitor — pings every external service All Outdoor
  * depends on + reports cron last-run timestamps + a few internal queue
  * depths. Used by /admin/health to give the operator a one-screen
  * answer to "is everything still up?".

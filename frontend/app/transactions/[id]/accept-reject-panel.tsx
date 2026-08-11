@@ -314,7 +314,7 @@ export function AcceptRejectPanel({
         className="text-xs mb-4"
         style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
       >
-        The buyer has paid and the funds are being held by Gun Galore. Tap{' '}
+        The buyer has paid and the funds are being held by All Outdoor. Tap{' '}
         <strong style={{ color: 'var(--text-primary)' }}>Accept</strong> to
         commit —{' '}
         {isCollection ? (

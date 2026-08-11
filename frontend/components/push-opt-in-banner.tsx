@@ -89,7 +89,7 @@ export function PushOptInBanner() {
         }}
       >
         <span style={{ flex: 1 }}>
-          Install Gun Galore to your home screen first, then enable
+          Install All Outdoor to your home screen first, then enable
           push notifications from this page.
         </span>
         <button

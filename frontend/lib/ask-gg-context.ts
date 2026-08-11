@@ -94,7 +94,7 @@ export const CONTEXTUAL_STARTER_PROMPTS: Partial<
     },
     {
       title: 'What else do I need?',
-      prompt: 'If I buy this, what accessories or extras should I get with it? Only suggest items actually for sale on Gun Galore.',
+      prompt: 'If I buy this, what accessories or extras should I get with it? Only suggest items actually for sale on All Outdoor.',
     },
   ],
   'sell-form': [
@@ -142,7 +142,7 @@ export const CONTEXTUAL_STARTER_PROMPTS: Partial<
   orders: [
     {
       title: 'Track an order',
-      prompt: 'How do I track my orders and deliveries on Gun Galore?',
+      prompt: 'How do I track my orders and deliveries on All Outdoor?',
     },
     {
       title: 'When do sellers get paid?',

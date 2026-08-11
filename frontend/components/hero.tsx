@@ -138,7 +138,7 @@ export function Hero() {
               fontWeight: 500,
             }}
           >
-            South Africa&apos;s outdoor &amp; sport marketplace
+            South Africa&apos;s outdoor store
           </p>
 
           {/* Headline. text-shadow gives the white letters a crisp
@@ -163,10 +163,10 @@ export function Hero() {
               textWrap: 'balance',
             }}
           >
-            Buy, sell, bid and{' '}
-            <span style={{ color: 'var(--red)' }}>trade</span>
-            {' '}outdoor, hunting &amp;{' '}
-            <span style={{ whiteSpace: 'nowrap' }}>sport gear.</span>
+            New &amp; secondhand{' '}
+            <span style={{ color: 'var(--red)' }}>outdoor gear</span>
+            {' '}for the{' '}
+            <span style={{ whiteSpace: 'nowrap' }}>whole trip.</span>
           </h1>
 
           {/* Subhead. The previous color (var(--text-secondary) =
@@ -184,8 +184,8 @@ export function Hero() {
               textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
             }}
           >
-            Optics, camping, fishing, knives and more. Verified sellers,
-            payment protection on every transaction.
+            Camping, overlanding, fishing, optics, knives and clothing.
+            Verified sellers, payment held until delivery is confirmed.
           </p>
 
           {/* Primary CTA — drops the user straight into the Marketplace
@@ -200,7 +200,7 @@ export function Hero() {
               textDecoration: 'none',
             }}
           >
-            Browse marketplace
+            Browse the store
           </Link>
         </div>
 

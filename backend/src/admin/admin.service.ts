@@ -729,7 +729,7 @@ export class AdminService {
           await this.sms.sendSms({
             to: user.phone,
             message:
-              'Gun Galore: Your identity has been verified. Your pending sale can now proceed.',
+              'All Outdoor: Your identity has been verified. Your pending sale can now proceed.',
             reference: `kyc-approved-${user.id}`,
           });
         }
@@ -745,7 +745,7 @@ export class AdminService {
         if (user.phone) {
           await this.sms.sendSms({
             to: user.phone,
-            message: `Gun Galore: ${msg}`,
+            message: `All Outdoor: ${msg}`,
             reference: `kyc-review-rejected-${user.id}`,
           });
         }
@@ -1711,7 +1711,7 @@ export class AdminService {
 
     return {
       csv: toCsv([header, ...body]),
-      filename: `gungalore-orders-${d(from)}-to-${d(to)}.csv`,
+      filename: `all-outdoor-orders-${d(from)}-to-${d(to)}.csv`,
     };
   }
 
@@ -1747,7 +1747,7 @@ export class AdminService {
     // (schema: paymentStatus @default(HELD), paidAt null), so a courier order
     // sits HELD-with-paidAt-null for the whole 24h EFT window BEFORE any money
     // arrives. Releasing such a row would queue a real seller payout in the
-    // next FNB batch for funds Gun Galore never received. paidAt is the single
+    // next FNB batch for funds All Outdoor never received. paidAt is the single
     // proof-of-payment marker on BOTH rails (markPaid sets it for the card
     // gateway; confirmManualPayment→markPaid sets it on the manual EFT rail),
     // so refuse to release anything the buyer hasn't actually funded. Mirrors
@@ -2379,7 +2379,7 @@ export class AdminService {
     });
     if (!linkedUser) {
       throw new BadRequestException(
-        `No Gun Galore account found for ${email}. Ask them to sign up at /sign-up first, then promote them.`,
+        `No All Outdoor account found for ${email}. Ask them to sign up at /sign-up first, then promote them.`,
       );
     }
 

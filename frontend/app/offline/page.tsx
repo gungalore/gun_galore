@@ -10,7 +10,7 @@ import Link from 'next/link';
 // available, even on the very first offline visit after install.
 
 export const metadata = {
-  title: 'Offline — Gun Galore',
+  title: 'Offline — All Outdoor',
 };
 
 // Self-heal: the moment the browser reports connectivity is back, reload
@@ -33,7 +33,7 @@ export default function OfflinePage() {
       <div style={{ maxWidth: 400, textAlign: 'center' }}>
         <Image
           src="/logo.svg"
-          alt="Gun Galore"
+          alt="All Outdoor"
           width={200}
           height={40}
           priority
@@ -58,7 +58,7 @@ export default function OfflinePage() {
             marginBottom: 28,
           }}
         >
-          Gun Galore needs a network connection to show fresh listings,
+          All Outdoor needs a network connection to show fresh listings,
           bids and prices. Check your Wi-Fi or mobile data and try
           again.
         </p>
@@ -86,7 +86,7 @@ export default function OfflinePage() {
           }}
         >
           We&apos;ll reconnect automatically the moment your connection
-          returns. Tip: install Gun Galore to your home screen and core
+          returns. Tip: install All Outdoor to your home screen and core
           interface assets will be cached for faster repeat visits.
         </p>
       </div>

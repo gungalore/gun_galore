@@ -139,7 +139,7 @@ export default function SupportPage() {
       <div className="max-w-2xl mx-auto px-4 py-6">
         <h1 className="text-xl font-semibold text-[var(--text-primary)]">Support</h1>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">
-          We&apos;re here to help. The quickest ways to reach the Gun Galore team:
+          We&apos;re here to help. The quickest ways to reach the All Outdoor team:
         </p>
         <ul className="mt-4 space-y-1.5 text-sm text-[var(--text-secondary)]">
           <li>
@@ -198,7 +198,7 @@ export default function SupportPage() {
               }}
             >
               <p className="text-xs mb-1" style={{ color: r.fromAdmin ? 'var(--accent, #2563eb)' : 'var(--text-tertiary)' }}>
-                {r.fromAdmin ? 'Gun Galore support' : 'You'} · {new Date(r.createdAt).toLocaleString('en-ZA')}
+                {r.fromAdmin ? 'All Outdoor support' : 'You'} · {new Date(r.createdAt).toLocaleString('en-ZA')}
               </p>
               <p className="text-[var(--text-primary)] whitespace-pre-wrap">{r.body}</p>
             </div>

@@ -18,20 +18,33 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import type { CategoryWithCount } from '@/lib/types';
+import { useViewerFetch } from '@/lib/use-viewer-fetch';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
-let cache: CategoryWithCount[] | null = null;
-let inflight: Promise<CategoryWithCount[]> | null = null;
+// Keyed by viewer bucket. The category tree now DIFFERS by audience (members
+// see the regulated trees), so a single shared cache would show one audience
+// the other's menu — and after sign-out that means members-only categories on
+// an anonymous session.
+type ViewerKey = 'member' | 'anon';
+const cache: Partial<Record<ViewerKey, CategoryWithCount[]>> = {};
+const inflight: Partial<Record<ViewerKey, Promise<CategoryWithCount[]>>> = {};
 
 // Rejects on ANY unusable outcome so the caller can show a retry instead of a
 // silent empty menu. Previously a 4xx/5xx resolved to `[]`, that `[]` was
 // written to the module cache, and every later open short-circuited on it —
 // one bad response left "Categories" permanently dead for the whole session.
-async function loadCategories(): Promise<CategoryWithCount[]> {
-  if (cache) return cache;
-  if (!inflight) {
-    inflight = fetch(`${API_URL}/categories/with-counts`, { cache: 'force-cache' })
+async function loadCategories(
+  key: ViewerKey,
+  viewerFetch: (url: string) => Promise<Response>,
+): Promise<CategoryWithCount[]> {
+  const cached = cache[key];
+  if (cached) return cached;
+  if (!inflight[key]) {
+    // no-store, NOT force-cache: the browser HTTP cache keys on URL only, so a
+    // force-cached member response would be replayed to the same browser after
+    // sign-out.
+    inflight[key] = viewerFetch(`${API_URL}/categories/with-counts`)
       .then((r) => {
         // Throw on HTTP errors: only the network-error path used to clear
         // `inflight`, so a 500 was never retried.
@@ -44,21 +57,23 @@ async function loadCategories(): Promise<CategoryWithCount[]> {
         // response was broken (or the taxonomy is mid-migration), and caching
         // it would freeze the flyout empty until a full page reload.
         if (list.length === 0) throw new Error('categories empty');
-        cache = list;
+        cache[key] = list;
         return list;
       })
       .catch((err) => {
-        inflight = null; // let a later open retry
+        inflight[key] = undefined; // let a later open retry
         throw err;
       });
   }
-  return inflight;
+  return inflight[key]!;
 }
 
 export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }) {
   const isSearch = variant === 'search';
+  const { viewerFetch, isSignedIn } = useViewerFetch();
+  const viewerKey: ViewerKey = isSignedIn ? 'member' : 'anon';
   const [open, setOpen] = useState(false);
-  const [cats, setCats] = useState<CategoryWithCount[]>(cache ?? []);
+  const [cats, setCats] = useState<CategoryWithCount[]>([]);
   // Tells "still fetching" apart from "fetch failed" — without it an open
   // flyout with no categories renders nothing at all and the button reads as
   // broken (the exact bug on a cold cache / slow network).
@@ -74,14 +89,21 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
     // Concurrent calls (hover-intent then click) share the module `inflight`
     // promise, so re-entry costs no extra request; after a failure `inflight`
     // is cleared, which is what makes the retry button actually re-fetch.
-    loadCategories().then(
+    loadCategories(viewerKey, viewerFetch).then(
       (list) => {
         setCats(list);
         setLoadState('idle');
       },
       () => setLoadState('error'),
     );
-  }, [cats.length]);
+  }, [cats.length, viewerKey, viewerFetch]);
+
+  // Sign-in / sign-out swaps which catalogue this menu should show. Drop the
+  // rendered list so the next open re-reads from the correct bucket rather
+  // than leaving the previous audience's categories on screen.
+  useEffect(() => {
+    setCats(cache[viewerKey] ?? []);
+  }, [viewerKey]);
 
   // Outside-click + Escape close.
   useEffect(() => {

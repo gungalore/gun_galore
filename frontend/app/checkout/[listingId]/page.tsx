@@ -14,8 +14,8 @@ export async function generateMetadata({
 }) {
   const { listingId } = await params;
   const listing = await apiFetch<Listing>(`/listings/${listingId}`, { cache: 'no-store' }).catch(() => null);
-  if (!listing) return { title: 'Checkout — Gun Galore' };
-  return { title: `Buy ${listing.title} — Gun Galore` };
+  if (!listing) return { title: 'Checkout — All Outdoor' };
+  return { title: `Buy ${listing.title} — All Outdoor` };
 }
 
 export default async function CheckoutPage({

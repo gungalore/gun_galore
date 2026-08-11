@@ -24,17 +24,17 @@ export async function generateMetadata(): Promise<Metadata> {
   const { enabled, deals } = await loadDeals();
   const live = enabled && deals.length > 0;
   return {
-    title: 'Daily Deals — Gun Galore',
+    title: 'Daily Deals — All Outdoor',
     description:
-      'Hand-picked outdoor & sport gear sold directly by Gun Galore at a deal price — limited stock, limited time.',
+      'Hand-picked outdoor & sport gear sold directly by All Outdoor at a deal price — limited stock, limited time.',
     alternates: { canonical: '/deals' },
     // Keep the inert storefront out of the index; let crawlers in only once
     // real deals are live so we never surface an empty "Daily Deals" page.
     robots: live ? undefined : { index: false, follow: true },
     openGraph: {
-      title: 'Daily Deals — Gun Galore',
+      title: 'Daily Deals — All Outdoor',
       description:
-        'Hand-picked outdoor & sport gear sold directly by Gun Galore at a deal price — limited stock, limited time.',
+        'Hand-picked outdoor & sport gear sold directly by All Outdoor at a deal price — limited stock, limited time.',
       url: '/deals',
       type: 'website',
     },
@@ -63,13 +63,13 @@ export default async function DealsPage() {
                 fontWeight: 600,
               }}
             >
-              Sold by Gun Galore
+              Sold by All Outdoor
             </span>
           </div>
           <p className="text-sm" style={{ color: 'var(--text-secondary)', maxWidth: 640 }}>
             Hand-picked outdoor &amp; sport gear, sold directly by us at a deal
             price. Limited stock, limited time — when it&apos;s gone, it&apos;s
-            gone. Every deal ships from Gun Galore with the same buyer
+            gone. Every deal ships from All Outdoor with the same buyer
             protection as the rest of the marketplace.
           </p>
         </header>

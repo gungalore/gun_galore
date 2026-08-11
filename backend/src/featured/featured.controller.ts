@@ -11,6 +11,7 @@ import {
 import { SkipThrottle } from '@nestjs/throttler';
 import { FeaturedService } from './featured.service';
 import { ClerkGuard } from '../auth/clerk.guard';
+import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { CurrentAdmin } from '../admin/decorators/current-admin.decorator';
@@ -31,20 +32,24 @@ import {
 // 60 req/min bucket would trip and render 404s.
 @Controller('featured')
 @SkipThrottle()
+// OptionalClerkGuard (never rejects): the rail renders on every page, so a
+// members-only occupant must fall back to an open-slot placeholder for
+// signed-out visitors instead of putting a firearm card site-wide.
+@UseGuards(OptionalClerkGuard)
 export class FeaturedPublicController {
   constructor(private readonly featured: FeaturedService) {}
 
   // Used by the <FeaturedRail> on every browse page.
   @Get('rail')
-  rail() {
-    return this.featured.getRail();
+  rail(@CurrentUser() clerkId?: string) {
+    return this.featured.getRail(clerkId);
   }
 
   // Just the featured listings (no slot metadata). Drives the
   // homepage main grid where the live-listings browse used to be.
   @Get('listings')
-  listings() {
-    return this.featured.getFeaturedListings();
+  listings(@CurrentUser() clerkId?: string) {
+    return this.featured.getFeaturedListings(clerkId);
   }
 
   // Availability summary for the homepage "Featured spots" bar — open /

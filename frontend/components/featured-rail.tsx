@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import Link from 'next/link';
 import Image from 'next/image';
 import { DraggableMarquee } from '@/components/draggable-marquee';
@@ -91,6 +92,7 @@ export function FeaturedRail({
    *  shows. */
   hideEmptyNudge?: boolean;
 } = {}) {
+  const { viewerFetch } = useViewerFetch();
   const [slots, setSlots] = useState<RailSlot[] | null>(null);
 
   // Initial fetch + revalidate every 30s so the rail drops a just-sold /
@@ -102,9 +104,11 @@ export function FeaturedRail({
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch(`${API_URL}/featured/rail`, {
-          cache: 'no-store',
-        });
+        // A featured slot renders on EVERY page, so a members-only occupant
+        // would put a firearm card in front of every anonymous visitor. The
+        // backend blanks the slot for signed-out callers; forward the session
+        // so members still see the real occupant.
+        const res = await viewerFetch(`${API_URL}/featured/rail`);
         if (!res.ok) return;
         const data = (await res.json()) as RailSlot[];
         if (!cancelled) setSlots(data);
@@ -118,7 +122,7 @@ export function FeaturedRail({
       cancelled = true;
       clearInterval(t);
     };
-  }, []);
+  }, [viewerFetch]);
 
   if (!slots) {
     // First-paint: don't reserve space. The grid the rail sits next

@@ -66,12 +66,12 @@ function IdVerifiedBadge({
 }: {
   dim: { px: string; py: string; fontSize: string; gap: string };
 }) {
-  // Blue "ID verified" tick — the seller passed Gun Galore's identity
+  // Blue "ID verified" tick — the seller passed All Outdoor's identity
   // (KYC) check. Blue distinguishes it from the green Expert badge and
   // the red GG+ pill. Boolean trust signal only; no name or ID shown.
   return (
     <span
-      title="Identity verified — this seller passed Gun Galore's KYC identity check"
+      title="Identity verified — this seller passed All Outdoor's KYC identity check"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -150,7 +150,7 @@ function ExpertBadge({
       title={
         reason
           ? `Verified Expert — ${reason}`
-          : 'Verified Expert — recognised contributor on Gun Galore'
+          : 'Verified Expert — recognised contributor on All Outdoor'
       }
       style={{
         display: 'inline-flex',
@@ -199,7 +199,7 @@ export function UserBadgesWithTooltip({
       />
       {hasExpert && (
         <HelpTip title="Verified Expert" side="bottom">
-          Awarded by Gun Galore staff after this seller has contributed
+          Awarded by All Outdoor staff after this seller has contributed
           5+ verified entries to the Ask Boet knowledge base. Their answers
           on listings + Q&A carry extra weight.
           {expertBadgeReason ? (

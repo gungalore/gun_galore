@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { apiFetch } from '@/lib/api';
+import { viewerFetch } from '@/lib/api-viewer';
 import { browseMetaDescription } from '@/lib/seo';
 import { BrowseResponse, Category, SoldComps } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
@@ -18,9 +18,9 @@ interface CategoryTree {
 const PAGE_SIZE = 24;
 
 async function getTree(slug: string): Promise<CategoryTree | null> {
-  return apiFetch<CategoryTree>(`/categories/${encodeURIComponent(slug)}`, {
-    next: { revalidate: 600 },
-  } as RequestInit).catch(() => null);
+  return viewerFetch<CategoryTree>(
+    `/categories/${encodeURIComponent(slug)}`,
+  ).catch(() => null);
 }
 
 export async function generateMetadata({
@@ -30,9 +30,9 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const tree = await getTree(slug);
-  if (!tree) return { title: 'Category not found — Gun Galore' };
+  if (!tree) return { title: 'Category not found — All Outdoor' };
   const { category } = tree;
-  const title = `${category.name} for sale — Gun Galore`;
+  const title = `${category.name} for sale — All Outdoor`;
   // Shared blurb (lib/seo.ts) — this description is stamped onto EVERY
   // category's SERP snippet, so it must not lead with "firearms" on the
   // Fishing and Camping pages.
@@ -67,15 +67,17 @@ export default async function CategoryPage({
     page: String(page),
     limit: String(PAGE_SIZE),
   });
-  const browse = await apiFetch<BrowseResponse>(`/listings?${qs}`, {
-    cache: 'no-store',
-  }).catch(() => ({ listings: [], total: 0, page, limit: PAGE_SIZE }));
+  const browse = await viewerFetch<BrowseResponse>(`/listings?${qs}`).catch(() => ({
+    listings: [],
+    total: 0,
+    page,
+    limit: PAGE_SIZE,
+  }));
 
   // P5.6 — sold-price comps for this category (aggregate, POPIA-safe). Cached
   // briefly; renders nothing below the server's min-comps gate.
-  const comps = await apiFetch<SoldComps>(
+  const comps = await viewerFetch<SoldComps>(
     `/listings/sold-comps?categorySlug=${encodeURIComponent(slug)}`,
-    { next: { revalidate: 3600 } } as RequestInit,
   ).catch(() => null);
 
   const totalPages = Math.max(1, Math.ceil(browse.total / PAGE_SIZE));

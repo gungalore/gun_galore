@@ -500,7 +500,7 @@ export class PudoService {
           submitted_width_cm: String(parcel.widthCm),
           submitted_height_cm: String(parcel.heightCm),
           submitted_weight_kg: String(parcel.weightGrams / 1000),
-          parcel_description: 'Gun Galore marketplace parcel',
+          parcel_description: 'All Outdoor marketplace parcel',
           alternative_tracking_reference: '',
         },
       ],

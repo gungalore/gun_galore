@@ -30,6 +30,11 @@ const STATIC_LISTING_FILTERABLE_ATTRIBUTES = [
   // first-party house deals never appear in search. Must be filterable or
   // Meili rejects the clause.
   'isDealListing',
+  // Signed-out search filters `publicVisible = true` so members-only stock
+  // (firearms, gun parts, reloading, air rifles, self-defence, shooting
+  // accessories) never comes back to an anonymous ?q=. Same rule as above:
+  // it must be filterable or Meili rejects the whole query.
+  'publicVisible',
 ];
 
 @Injectable()

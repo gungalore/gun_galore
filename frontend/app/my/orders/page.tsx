@@ -273,7 +273,7 @@ export default async function MyOrdersPage() {
             className="text-sm mb-5"
             style={{ color: 'var(--text-tertiary)' }}
           >
-            When you buy something on Gun Galore, your order will show
+            When you buy something on All Outdoor, your order will show
             up here with shipping updates and dispatch details.
           </p>
           <Link

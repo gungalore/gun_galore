@@ -539,7 +539,7 @@ function Header() {
           letterSpacing: '-0.025em',
         }}
       >
-        Gun Galore{' '}
+        All Outdoor{' '}
         <span style={{ color: GG.muted, fontWeight: 500 }}>on iPhone</span>
       </div>
     </div>

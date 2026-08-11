@@ -37,7 +37,7 @@ export class SellerToolsController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="gungalore-payout-statement-${new Date().toISOString().slice(0, 10)}.csv"`,
+      `attachment; filename="all-outdoor-payout-statement-${new Date().toISOString().slice(0, 10)}.csv"`,
     );
     res.send(csv);
   }

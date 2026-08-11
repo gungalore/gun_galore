@@ -643,7 +643,7 @@ function VerifyKycPageInner() {
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <Image
             src="/logo.svg"
-            alt="Gun Galore"
+            alt="All Outdoor"
             width={180}
             height={36}
             priority
@@ -687,7 +687,7 @@ function VerifyKycPageInner() {
           <div
             style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}
           >
-            Required to release your payout on Gun Galore
+            Required to release your payout on All Outdoor
           </div>
         </div>
 
@@ -769,7 +769,7 @@ function VerifyKycPageInner() {
               >
                 {flow === 'CLAUDE' ? (
                   <>
-                    I consent to Gun Galore verifying my identity using my SA
+                    I consent to All Outdoor verifying my identity using my SA
                     ID number, date of birth, ID document and a selfie. The ID
                     number is checked against official records by VerifyNow
                     (Pty) Ltd; the document and selfie are assessed by Gun
@@ -778,7 +778,7 @@ function VerifyKycPageInner() {
                   </>
                 ) : (
                   <>
-                    I consent to Gun Galore verifying my identity using my SA
+                    I consent to All Outdoor verifying my identity using my SA
                     ID number and a selfie. This check is performed by
                     VerifyNow (Pty) Ltd in accordance with POPIA.
                   </>
@@ -1407,7 +1407,7 @@ function VerifyKycPageInner() {
 
 // Rendered on the selfie step when the user's device has no camera.
 // Shows a QR code that opens /kyc/verify on whatever device scans it —
-// the user signs in to Gun Galore on their phone and finishes the live
+// the user signs in to All Outdoor on their phone and finishes the live
 // capture there. Liveness preserved (the selfie still comes from a
 // real camera at the time of capture). File upload is intentionally
 // NOT offered as a workaround.

@@ -56,7 +56,7 @@ export function ActionTokenError({ status }: { status: number }) {
           minWidth: 200,
         }}
       >
-        Sign in to Gun Galore
+        Sign in to All Outdoor
       </Link>
     </div>
   );

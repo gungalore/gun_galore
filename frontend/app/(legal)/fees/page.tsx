@@ -21,7 +21,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Fees',
   description:
-    'What GunGalore charges — seller commission, payment processing, payouts and optional extras.',
+    'What All Outdoor charges — seller commission, payment processing, payouts and optional extras.',
 };
 
 export default function FeesPage() {
@@ -55,7 +55,7 @@ export default function FeesPage() {
 
       <h2>1. Seller commission</h2>
       <p>
-        When your item sells, GunGalore keeps a commission on the sale
+        When your item sells, All Outdoor keeps a commission on the sale
         price. It is charged in bands, so only the portion of the price
         that falls inside each band is charged at that band's rate:
       </p>
@@ -117,7 +117,7 @@ export default function FeesPage() {
 
       <h2>3. When the seller is paid</h2>
       <p>
-        GunGalore holds the buyer's payment until the sale has safely
+        All Outdoor holds the buyer's payment until the sale has safely
         completed, then releases the seller's proceeds — the sale price
         less commission — to the seller's bank account. Payout is
         released:

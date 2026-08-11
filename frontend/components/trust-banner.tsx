@@ -1,5 +1,5 @@
 // Trust card — the competitive proof panel that lives on the RIGHT of the
-// homepage hero. Four "why Gun Galore" points reveal one after another on a
+// homepage hero. Four "why All Outdoor" points reveal one after another on a
 // gentle loop so the eye is drawn to them. Square-ish card so it sits neatly
 // beside the headline on desktop and stacks under it on mobile.
 //

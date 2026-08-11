@@ -15,6 +15,7 @@
 // ACTIVE listings), so this never surfaces powder / primers / live ammo.
 
 import { useEffect, useState } from 'react';
+import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import Image from 'next/image';
 import Link from 'next/link';
 import { formatPrice } from '@/lib/utils';
@@ -42,6 +43,7 @@ export function CrossSellRow({
   excludeIds,
   title = 'You might also need…',
 }: Props) {
+  const { viewerFetch } = useViewerFetch();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -59,9 +61,11 @@ export function CrossSellRow({
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(
+        // Cross-sell delegates to browse server-side, so the visibility gate
+        // applies — but only if the session rides along, else members get
+        // public-only complements.
+        const r = await viewerFetch(
           `${API_URL}/listings/cross-sell?${params.toString()}`,
-          { cache: 'no-store' },
         );
         if (!r.ok) {
           if (!cancelled) {
@@ -85,7 +89,7 @@ export function CrossSellRow({
     return () => {
       cancelled = true;
     };
-  }, [fromCategoryId, listingId, q, excludeIds]);
+  }, [fromCategoryId, listingId, q, excludeIds, viewerFetch]);
 
   // Self-hide when there's nothing to suggest.
   if (!loaded) return null;
@@ -115,7 +119,7 @@ export function CrossSellRow({
             margin: '2px 0 0',
           }}
         >
-          Related items from across Gun Galore
+          Related items from across All Outdoor
         </p>
       </header>
       <div

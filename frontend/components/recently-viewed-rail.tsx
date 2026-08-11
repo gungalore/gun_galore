@@ -17,6 +17,7 @@
 //     back to)
 
 import { useEffect, useState } from 'react';
+import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRecentlyViewed } from '@/lib/use-recently-viewed';
@@ -40,6 +41,7 @@ export function RecentlyViewedRail({
   excludeId,
 }: Props) {
   const { ids, clear } = useRecentlyViewed();
+  const { viewerFetch } = useViewerFetch();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -53,9 +55,12 @@ export function RecentlyViewedRail({
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(
+        // The id list lives in localStorage and survives sign-out, so a
+        // member who viewed a firearm and then signed out would otherwise see
+        // it again here. The backend drops members-only ids for anonymous
+        // callers; forward the token so members keep their real history.
+        const r = await viewerFetch(
           `${API_URL}/listings?ids=${encodeURIComponent(wanted.join(','))}`,
-          { cache: 'no-store' },
         );
         if (!r.ok) {
           if (!cancelled) {
@@ -79,7 +84,9 @@ export function RecentlyViewedRail({
     return () => {
       cancelled = true;
     };
-  }, [ids, excludeId]);
+    // viewerFetch in deps: signing out must re-fetch so a members-only item
+    // drops out of the rail immediately rather than lingering from state.
+  }, [ids, excludeId, viewerFetch]);
 
   // Self-hide when nothing meaningful to show.
   if (!loaded) return null;

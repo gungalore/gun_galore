@@ -626,7 +626,7 @@ export default function HeldFundsAdminPage() {
       <section className="rounded-[8px] p-5 mb-5" style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}>
         <h2 className="text-base font-medium mb-1">Held funds — client money position</h2>
         <p className="text-xs mb-3 text-[var(--text-tertiary)]">
-          How much of the bank balance belongs to members, not Gun Galore. The
+          How much of the bank balance belongs to members, not All Outdoor. The
           bank balance should always be at least the total below.
         </p>
         {!heldFunds ? (

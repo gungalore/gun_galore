@@ -66,7 +66,7 @@ export function ShareListingButton({ title, text, url }: Props) {
       (typeof window !== 'undefined' ? window.location.href : '');
     const shareTitle =
       title ??
-      (typeof document !== 'undefined' ? document.title : 'Gun Galore');
+      (typeof document !== 'undefined' ? document.title : 'All Outdoor');
 
     // Web Share API check — `navigator.share` is undefined on desktop
     // browsers. `canShare` gates the data shape on iOS.

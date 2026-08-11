@@ -2,13 +2,13 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'How selling works — Gun Galore',
+  title: 'How selling works — All Outdoor',
   // "Four", not three: Swop / Trade has been a live selling mode since the
   // S-module shipped and is rendered below with the other three. The count
   // is stated in three places (here, the intro line, and the sell-flow
   // HelpTip on /listings/new) — keep them in step.
   description:
-    'The four ways to sell on Gun Galore — Marketplace (Buy Now), Auction, Take a Shot and Swop / Trade — what each one is, who it suits, and how it works, so you list your item the right way.',
+    'The four ways to sell on All Outdoor — Marketplace (Buy Now), Auction, Take a Shot and Swop / Trade — what each one is, who it suits, and how it works, so you list your item the right way.',
   alternates: { canonical: '/how-selling-works' },
 };
 
@@ -30,7 +30,7 @@ const MODES: {
     ],
     how: [
       'You set one price. The buyer taps Buy and pays — no waiting, no negotiation.',
-      'Payment is held by Gun Galore until the buyer confirms delivery, then released to you.',
+      'Payment is held by All Outdoor until the buyer confirms delivery, then released to you.',
       'List more than one unit by setting the quantity; the listing stays up until every unit is sold.',
     ],
   },
@@ -72,7 +72,7 @@ const MODES: {
     ],
     how: [
       'You list the item you want to trade — no price. Buyers browse and propose a swap: their item, plus optional cash in either direction.',
-      'You accept, decline, or counter the cash once. Gun Galore arranges both couriers and any cash is held until both parcels are delivered, then released.',
+      'You accept, decline, or counter the cash once. All Outdoor arranges both couriers and any cash is held until both parcels are delivered, then released.',
       'Firearms can be swapped too — each side transfers through a SAPS-licensed dealer, exactly like a normal firearm sale.',
     ],
   },
@@ -92,7 +92,7 @@ export default function HowSellingWorksPage() {
         How selling works
       </h1>
       <p className="text-sm mt-2" style={{ color: 'var(--text-tertiary)' }}>
-        There are four ways to list an item on Gun Galore. Pick the one that
+        There are four ways to list an item on All Outdoor. Pick the one that
         fits what you&apos;re selling — you can always change it before it goes
         live.
       </p>
@@ -172,7 +172,7 @@ export default function HowSellingWorksPage() {
           be couriered — it&apos;s transferred through a SAPS-licensed dealer and the
           buyer collects there once the paperwork is done. You&apos;ll capture the
           serial and licence details when you list. See{' '}
-          <Link href="/firearms-compliance" style={{ color: 'var(--red)', textDecoration: 'underline' }}>
+          <Link href="/members/regulated-items" style={{ color: 'var(--red)', textDecoration: 'underline' }}>
             Firearms Compliance
           </Link>{' '}
           for the full process.

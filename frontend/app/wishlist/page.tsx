@@ -46,7 +46,7 @@ interface WishlistRow {
 }
 
 export const metadata = {
-  title: 'Wishlist — Gun Galore',
+  title: 'Wishlist — All Outdoor',
 };
 
 export default async function WishlistPage() {

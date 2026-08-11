@@ -41,7 +41,7 @@ export default function ExperiencesCancellationPolicyPage() {
       >
         <p style={{ margin: 0 }}>
           <strong>In short:</strong> a hunting package or experience is a
-          service run by the outfitter, not by Gun Galore. You may cancel a
+          service run by the outfitter, not by All Outdoor. You may cancel a
           booking at any time, but the closer you cancel to the event date the
           more of the price is retained — the outfitter has held that date for
           you. Cancel earlier and you keep more of your money.

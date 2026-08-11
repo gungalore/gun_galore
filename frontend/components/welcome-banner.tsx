@@ -180,7 +180,7 @@ export function WelcomeBanner() {
           ✕
         </button>
 
-        <p className="ggw-eyebrow ggw-stage">Welcome to Gun Galore</p>
+        <p className="ggw-eyebrow ggw-stage">Welcome to All Outdoor</p>
 
         <h2 className="ggw-headline ggw-stage ggw-sheen" id="ggw-headline">
           {headline}

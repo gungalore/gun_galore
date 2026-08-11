@@ -165,7 +165,7 @@ export function shiplogicToShippingStatus(
 // doesn't send an explicit description. Keyed by collapsed status.
 export const STATUS_LABEL: Record<string, string> = {
   // Internal milestones
-  PAYMENT_RECEIVED: 'Payment received — funds held by Gun Galore',
+  PAYMENT_RECEIVED: 'Payment received — funds held by All Outdoor',
   AWAITING_SELLER_DISPATCH: 'Awaiting seller dispatch',
   SELLER_DISPATCHED: 'Seller marked the parcel as dispatched',
   BUYER_CONFIRMED_DELIVERY: 'Buyer confirmed delivery',

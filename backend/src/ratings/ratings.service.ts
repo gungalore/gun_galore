@@ -208,12 +208,29 @@ export class RatingsService {
     return recent.length;
   }
 
-  async findForSeller(sellerClerkId: string) {
+  async findForSeller(sellerClerkId: string, clerkId?: string) {
     const user = await this.prisma.user.findUnique({ where: { clerkId: sellerClerkId } });
     if (!user) throw new NotFoundException('User not found');
 
     return this.prisma.rating.findMany({
-      where: { ratedId: user.id },
+      where: {
+        ratedId: user.id,
+        // A review embeds the listing TITLE ("Great seller - Glock 19 arrived
+        // fast") and the reviewer's free-text comment, so a seller profile was
+        // a back door onto members-only stock. Signed out, drop reviews that
+        // belong to a members-only listing entirely rather than blanking the
+        // title — the comment is user-authored and would leak the same thing.
+        //
+        // Consequence, accepted deliberately: the public review LIST can be
+        // shorter than the cached averageRating was computed over. A rating
+        // count that differs from a star average is a cosmetic inconsistency;
+        // a firearm model name on a public page is the thing we are fixing.
+        // Rating.transaction is a REQUIRED relation, so every rating has one —
+        // no null branch needed.
+        ...(clerkId
+          ? {}
+          : { transaction: { listing: { publicVisible: true } } }),
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         // Username only — reviews are publicly visible on the seller

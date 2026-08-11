@@ -49,7 +49,7 @@ export default function PaiaPage() {
         <br />
         <strong>Registration number:</strong> 2026/393321/07
         <br />
-        <strong>Trading as:</strong> Gun Galore
+        <strong>Trading as:</strong> All Outdoor
         <br />
         <strong>Registered office:</strong> 36 Sterappel Crescent,
         Langeberg Glen, Cape Town, 7570, South Africa
@@ -221,8 +221,8 @@ export default function PaiaPage() {
         <li>a breach of a duty of confidence owed to a third party;</li>
         <li>a risk to the safety of an individual or to the protection of property;</li>
         <li>the disclosure of a record that is privileged from production in legal proceedings;</li>
-        <li>the disclosure of commercial or confidential information of GunGalore itself, including our own trade secrets and financial or technical information; or</li>
-        <li>the disclosure of protected research information of a third party or of GunGalore.</li>
+        <li>the disclosure of commercial or confidential information of All Outdoor itself, including our own trade secrets and financial or technical information; or</li>
+        <li>the disclosure of protected research information of a third party or of All Outdoor.</li>
       </ul>
       <p>
         Where only part of a record may be refused, we will grant access

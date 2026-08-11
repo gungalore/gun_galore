@@ -218,7 +218,7 @@ export class DispatchSlaService {
             fresh?.listing?.listingType,
           ),
         });
-        // DD-2 — a Daily Deals house deal is sold BY Gun Galore. If GG fails
+        // DD-2 — a Daily Deals house deal is sold BY All Outdoor. If GG fails
         // to dispatch in time the buyer is STILL auto-refunded above (payment
         // protection is unconditional), but we must NOT strike / threshold-
         // suspend GG's own house-seller account. Restock only for a house

@@ -77,7 +77,7 @@ export function getListingDeliveryEstimate(
 // two sides can coordinate. So the buyer may send their own transporter; this
 // helper only decides whether we are allowed to SAY so.
 //
-// Honesty guard: Gun Galore books nothing and insures nothing on that leg.
+// Honesty guard: All Outdoor books nothing and insures nothing on that leg.
 // Copy consuming FREIGHT_OK must stay "arrange your own", never an offered
 // service, and must never imply a quoted/booked freight rail exists.
 //

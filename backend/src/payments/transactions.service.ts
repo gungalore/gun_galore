@@ -247,7 +247,7 @@ export class TransactionsService {
         dto.experienceRisksAccepted !== true
       ) {
         throw new BadRequestException(
-          'To book this experience you must confirm all of: you are 18+, you hold a firearm licence/competency or will hunt under the outfitter’s supervision, you understand Gun Galore is a payment-protection intermediary and the outfitter is the supplier, you accept the cancellation policy, and you accept the hunting risks.',
+          'To book this experience you must confirm all of: you are 18+, you hold a firearm licence/competency or will hunt under the outfitter’s supervision, you understand All Outdoor is a payment-protection intermediary and the outfitter is the supplier, you accept the cancellation policy, and you accept the hunting risks.',
         );
       }
       experienceStampAt = new Date();

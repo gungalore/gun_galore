@@ -12,6 +12,7 @@ import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { CurrentAdmin } from '../admin/decorators/current-admin.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RatingsService } from './ratings.service';
+import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
 import { CreateRatingDto } from './dto/create-rating.dto';
 
 @Controller('transactions/:transactionId/rating')
@@ -83,15 +84,20 @@ export class RatingsDashboardController {
   }
 }
 
-// Public — no guard. Used by /sellers/[clerkId] page (SSR fetch, no
-// auth token) so any visitor can see a seller's reviews.
+// Public, but OptionalClerkGuard (never rejects): a review embeds the listing
+// title, so signed-out callers get only reviews on publicly-visible listings.
+// Used by /sellers/[clerkId] (SSR) and the listing page.
 @Controller('ratings')
+@UseGuards(OptionalClerkGuard)
 export class RatingsPublicController {
   constructor(private readonly ratingsService: RatingsService) {}
 
   // Seller's public ratings (used on listing pages + /sellers/[clerkId]).
   @Get('seller/:clerkId')
-  forSeller(@Param('clerkId') clerkId: string) {
-    return this.ratingsService.findForSeller(clerkId);
+  forSeller(
+    @Param('clerkId') sellerClerkId: string,
+    @CurrentUser() viewerClerkId?: string,
+  ) {
+    return this.ratingsService.findForSeller(sellerClerkId, viewerClerkId);
   }
 }

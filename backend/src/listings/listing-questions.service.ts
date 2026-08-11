@@ -30,7 +30,7 @@ const AUTO_ANSWER_FRESHNESS_DAYS = 30;
 
 // ─── Prompts ────────────────────────────────────────────────────────────────
 
-const MODERATION_PROMPT = `You are the pre-purchase Q&A moderator for Gun Galore, a South African firearms and outdoor marketplace.
+const MODERATION_PROMPT = `You are the pre-purchase Q&A moderator for All Outdoor, a South African firearms and outdoor marketplace.
 
 You only see one question at a time. Decide if it should reach the seller.
 

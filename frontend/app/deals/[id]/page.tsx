@@ -14,7 +14,7 @@ import { PageReveal } from '@/components/page-reveal';
 // The deal-chrome PDP for a single first-party house deal. Mirrors the
 // marketplace listing PDP's two-column shell (gallery left, buy column right)
 // but is deal-native: was/now price + save%, a live "ends in" banner,
-// scarcity, per-customer limit, and a "sold & shipped by Gun Galore"
+// scarcity, per-customer limit, and a "sold & shipped by All Outdoor"
 // first-party trust block. The MONEY path is unchanged — the Buy Now link and
 // AddToCartButton feed the exact same /checkout/[listingId] + cart rails the
 // rest of the site uses; DD-2 already zeroes commission/payout + auto-accepts
@@ -33,8 +33,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const deal = await loadDeal(id);
-  if (!deal) return { title: 'Deal not found — Gun Galore' };
-  const title = `${deal.title} — Daily Deal — Gun Galore`;
+  if (!deal) return { title: 'Deal not found — All Outdoor' };
+  const title = `${deal.title} — Daily Deal — All Outdoor`;
   const description = deal.description.slice(0, 160);
   const primary = deal.images?.find((i) => i.isPrimary) ?? deal.images?.[0];
   return {
@@ -206,7 +206,7 @@ export default async function DealDetailPage({
                       // First-party: the seller is the house account. Username
                       // only — never the house seller's real identity.
                       sellerId: deal.seller?.clerkId ?? '',
-                      sellerUsername: deal.seller?.username ?? 'Gun Galore',
+                      sellerUsername: deal.seller?.username ?? 'All Outdoor',
                       isFirearm: false, // deals never include firearms
                       shippingMethods: deal.shippingMethods,
                     }}
@@ -247,7 +247,7 @@ export default async function DealDetailPage({
               style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', color: 'var(--text-secondary)', lineHeight: 1.6 }}
             >
               <p style={{ color: 'var(--text-primary)', fontWeight: 600, marginBottom: 4 }}>
-                Sold &amp; shipped by Gun Galore
+                Sold &amp; shipped by All Outdoor
               </p>
               <p style={{ margin: 0 }}>
                 Ships in {shipsIn} working day{deal.shipsInDaysMax === 1 ? '' : 's'} ·

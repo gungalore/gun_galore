@@ -47,7 +47,7 @@ describe('AdminService.exportTransactionsCsv', () => {
     expect(lines[0]).toContain('Order ref,Created');
     expect(lines[1]).toContain('"Scope, with comma"'); // comma escaped
     expect(lines[1]).toContain('890.00'); // net payout rands
-    expect(filename).toMatch(/^gungalore-orders-/);
+    expect(filename).toMatch(/^all-outdoor-orders-/);
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'TRANSACTIONS_EXPORT' }),
     );

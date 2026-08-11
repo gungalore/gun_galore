@@ -20,6 +20,7 @@ import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ClerkGuard } from '../auth/clerk.guard';
+import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AskGgService } from './ask-gg.service';
 import { AskGgKbService } from './ask-gg-kb.service';
@@ -359,7 +360,15 @@ export class AskGgPublicController {
    */
   @Get('guide')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  getGuide(@Query('path') path?: string, @Query('listingId') listingId?: string) {
-    return this.guide.getGuide({ path, listingId });
+  // OptionalClerkGuard (never rejects) so a signed-in member still gets live
+  // auction state on a members-only listing, while anonymous callers get the
+  // generic guide with no live state at all.
+  @UseGuards(OptionalClerkGuard)
+  getGuide(
+    @Query('path') path?: string,
+    @Query('listingId') listingId?: string,
+    @CurrentUser() clerkId?: string,
+  ) {
+    return this.guide.getGuide({ path, listingId, clerkId });
   }
 }

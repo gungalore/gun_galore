@@ -54,7 +54,7 @@ export const PAYMENT_STATUS: Record<string, StatusEntry> = {
     // the honest fallback for surfaces that don't.
     label: 'Payment held',
     tone: 'pending',
-    hint: "Funds are held securely by Gun Galore while the sale completes. They're released to the seller once the hand-over is confirmed — usually within a few days.",
+    hint: "Funds are held securely by All Outdoor while the sale completes. They're released to the seller once the hand-over is confirmed — usually within a few days.",
   },
   PENDING_ADMIN_VERIFICATION: {
     label: 'Verifying',
@@ -95,13 +95,13 @@ export function paymentStatusHint(
 ): string | undefined {
   if (code === 'HELD') {
     if (shippingMethod === 'DEALER_TRANSFER') {
-      return "Funds are held securely by Gun Galore. A firearm has no delivery confirmation step — payment is released once we've verified the firearm is booked into the receiving dealer's stock.";
+      return "Funds are held securely by All Outdoor. A firearm has no delivery confirmation step — payment is released once we've verified the firearm is booked into the receiving dealer's stock.";
     }
     if (shippingMethod === 'COLLECTION') {
-      return 'Funds are held securely by Gun Galore until the buyer confirms they have collected the item in person.';
+      return 'Funds are held securely by All Outdoor until the buyer confirms they have collected the item in person.';
     }
     if (shippingMethod === 'ON_SITE_SERVICE') {
-      return 'Funds are held securely by Gun Galore until the buyer confirms the booking went ahead.';
+      return 'Funds are held securely by All Outdoor until the buyer confirms the booking went ahead.';
     }
   }
   return resolveStatus(PAYMENT_STATUS, code).hint;

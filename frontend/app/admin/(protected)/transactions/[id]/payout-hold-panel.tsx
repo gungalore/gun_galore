@@ -137,7 +137,7 @@ export default function PayoutHoldPanel({
         <div className="mt-3 space-y-2">
           <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
             {mode === 'hold'
-              ? 'Withholds this already-released payout from the daily bank batch until you release the hold — use it if fraud is alleged after release. Money stays with Gun Galore. Reason recorded in the audit log.'
+              ? 'Withholds this already-released payout from the daily bank batch until you release the hold — use it if fraud is alleged after release. Money stays with All Outdoor. Reason recorded in the audit log.'
               : 'Returns this payout to the due queue; it will be included in the next daily bank batch. Reason recorded in the audit log.'}
           </p>
           <textarea

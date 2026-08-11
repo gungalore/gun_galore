@@ -1064,7 +1064,7 @@ function SignInRequiredCard() {
             textDecoration: 'none',
           }}
         >
-          Browse marketplace
+          Browse the store
         </Link>
       </div>
     </div>
@@ -1173,7 +1173,7 @@ function UpgradeCard() {
             textDecoration: 'none',
           }}
         >
-          Browse marketplace
+          Browse the store
         </Link>
       </div>
     </div>

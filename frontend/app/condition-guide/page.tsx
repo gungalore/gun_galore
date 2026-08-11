@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Condition guide — Gun Galore',
+  title: 'Condition guide — All Outdoor',
   description:
-    'What NEW, LIKE NEW, GOOD, FAIR and POOR actually mean on Gun Galore, plus what to check before you grade optics, electronics, tents, packs and firearms. Grade honestly and your listing sells faster with fewer disputes.',
+    'What NEW, LIKE NEW, GOOD, FAIR and POOR actually mean on All Outdoor, plus what to check before you grade optics, electronics, tents, packs and firearms. Grade honestly and your listing sells faster with fewer disputes.',
   alternates: { canonical: '/condition-guide' },
 };
 

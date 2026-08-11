@@ -129,7 +129,7 @@ export class TcgService {
           submitted_height_cm: parcel.heightCm,
           submitted_weight_kg: parcel.weightKg,
           parcel_description:
-            parcel.description ?? 'Gun Galore marketplace parcel',
+            parcel.description ?? 'All Outdoor marketplace parcel',
         },
       ],
       declared_value: Math.max(0, Math.round(declaredValueCents / 100)),
@@ -230,7 +230,7 @@ export class TcgService {
           submitted_height_cm: input.parcel.heightCm,
           submitted_weight_kg: input.parcel.weightKg,
           parcel_description:
-            input.parcel.description ?? 'Gun Galore marketplace parcel',
+            input.parcel.description ?? 'All Outdoor marketplace parcel',
         },
       ],
       declared_value: Math.max(0, Math.round(input.declaredValueCents / 100)),

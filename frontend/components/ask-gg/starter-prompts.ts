@@ -10,7 +10,7 @@ export interface StarterPrompt {
 }
 
 export const GENERIC_STARTER_PROMPTS: StarterPrompt[] = [
-  { title: 'Find gear', desc: 'Tell me what you need and I’ll search the marketplace for live stock.', prompt: "I'm looking for a rooftop tent under R15,000 — what's available on Gun Galore?" },
+  { title: 'Find gear', desc: 'Tell me what you need and I’ll search the marketplace for live stock.', prompt: "I'm looking for a rooftop tent under R15,000 — what's available on All Outdoor?" },
   { title: 'Identify it', desc: 'Snap a photo of any gear — a part, reel, fridge or headstamp — and ask what it is.', prompt: "Help me identify this piece of gear — I'll attach a photo." },
   { title: 'Plan a trip', desc: 'Kit lists, seasons and gear for a hunt, camp or overland trip.', prompt: 'What should I pack for a 3-day overland trip to the Kgalagadi in winter?' },
   { title: 'Hunting & shooting', desc: 'Ammo, optics, zeroing, shot placement and ethical-range guidance.', prompt: "What scope and zero distance suit a .308 hunting rifle, and what's the ethical range for kudu?" },

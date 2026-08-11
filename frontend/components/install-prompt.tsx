@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { InstallAnimation } from './install-animation';
 import { useInstallPrompt } from '@/lib/use-install-prompt';
 
-// "Get the Gun Galore app" install popup + the shared install-help modal.
+// "Get the All Outdoor app" install popup + the shared install-help modal.
 //
 // Install state (native event capture, installed-detection, iOS) lives in
 // useInstallPrompt() so the nav drawer's manual "Install app" button shares it.
@@ -228,7 +228,7 @@ export function InstallPrompt() {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Get the Gun Galore app"
+            aria-label="Get the All Outdoor app"
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'relative',
@@ -273,7 +273,7 @@ export function InstallPrompt() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/icon-192.png"
-              alt="Gun Galore"
+              alt="All Outdoor"
               width={56}
               height={56}
               style={{
@@ -426,7 +426,7 @@ export function InstallPrompt() {
               to { opacity: 1; transform: translateY(0) scale(1); }
             }
             @media (prefers-reduced-motion: reduce) {
-              [aria-label="Get the Gun Galore app"] { animation: none !important; }
+              [aria-label="Get the All Outdoor app"] { animation: none !important; }
             }
           `}</style>
         </div>
@@ -483,7 +483,7 @@ function InstallHelpModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="How to install Gun Galore"
+      aria-label="How to install All Outdoor"
       onClick={onClose}
       style={{
         position: 'fixed',
@@ -519,7 +519,7 @@ function InstallHelpModal({
           <>
             <div>
               <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
-                Open Gun Galore in Safari to install
+                Open All Outdoor in Safari to install
               </p>
               <p
                 style={{
@@ -531,7 +531,7 @@ function InstallHelpModal({
               >
                 On iPhone, home-screen apps can only be added from{' '}
                 <strong>Safari</strong>. You&rsquo;re in another browser — open
-                Gun Galore in Safari, then add it to your home screen.
+                All Outdoor in Safari, then add it to your home screen.
               </p>
             </div>
             <button
@@ -598,7 +598,7 @@ function InstallHelpModal({
             </div>
             <div>
               <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
-                Add Gun Galore to your home screen
+                Add All Outdoor to your home screen
               </p>
               <p
                 style={{
@@ -617,8 +617,8 @@ function InstallHelpModal({
           <div>
             <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
               {canInstall || isDesktop
-                ? 'Install the Gun Galore app'
-                : 'Add Gun Galore to your home screen'}
+                ? 'Install the All Outdoor app'
+                : 'Add All Outdoor to your home screen'}
             </p>
             {canInstall ? (
               <p
@@ -629,7 +629,7 @@ function InstallHelpModal({
                   margin: '0 0 4px',
                 }}
               >
-                Tap <strong>Install</strong> below to add Gun Galore to your home
+                Tap <strong>Install</strong> below to add All Outdoor to your home
                 screen.
               </p>
             ) : isDesktop ? (
@@ -652,7 +652,7 @@ function InstallHelpModal({
                   </li>
                   <li>
                     Don&rsquo;t see it? Open the browser menu (<strong>⋮</strong>,
-                    top-right) → <strong>Install Gun Galore…</strong>.
+                    top-right) → <strong>Install All Outdoor…</strong>.
                   </li>
                   <li>
                     Click <strong>Install</strong> to confirm.
@@ -666,7 +666,7 @@ function InstallHelpModal({
                     margin: '8px 0 0',
                   }}
                 >
-                  Gun Galore opens in its own window and lives in your taskbar /
+                  All Outdoor opens in its own window and lives in your taskbar /
                   apps — no store needed.
                 </p>
               </>
@@ -702,7 +702,7 @@ function InstallHelpModal({
                   }}
                 >
                   On some phones only &ldquo;Add to Home screen&rdquo; is
-                  available — that still puts a Gun Galore icon on your home
+                  available — that still puts a All Outdoor icon on your home
                   screen; it just opens in your browser.
                 </p>
               </>

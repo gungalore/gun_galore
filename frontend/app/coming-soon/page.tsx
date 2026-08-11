@@ -15,7 +15,7 @@
  */
 
 export const metadata = {
-  title: 'Coming Soon — Gun Galore',
+  title: 'Coming Soon — All Outdoor',
   // Outdoor-first, same framing as the root layout and manifest. This gate
   // is the ONLY page a gated visitor (or a crawler that hits us while the
   // gate is on) ever sees, so a "marketplace for firearms" line here quietly
@@ -44,7 +44,7 @@ export default function ComingSoonPage() {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/logo-mark.svg"
-        alt="Gun Galore"
+        alt="All Outdoor"
         style={{ width: 96, height: 96, marginBottom: '2rem' }}
       />
       <h1
@@ -83,7 +83,7 @@ export default function ComingSoonPage() {
             lineHeight: 1.5,
           }}
         >
-          Gun Galore (Pty) Ltd
+          All Outdoor (Pty) Ltd
           <br />
           info@gungalore.co.za
         </p>

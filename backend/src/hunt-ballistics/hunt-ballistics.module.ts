@@ -5,7 +5,7 @@ import { InfoCentreModule } from './info-centre/info-centre.module';
 
 /**
  * Hunt Ballistics — aggregator module for the standalone Hunt Ballistics
- * iOS app's backend endpoints. These live alongside the Gun Galore
+ * iOS app's backend endpoints. These live alongside the All Outdoor
  * marketplace but are namespaced under /api/hunt-ballistics/* so the
  * two products' surfaces never collide.
  *

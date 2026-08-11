@@ -5,21 +5,21 @@
 import Link from 'next/link';
 
 export const metadata = {
-  title: 'GG PRO prize draw — competition rules | Gun Galore',
+  title: 'GG PRO prize draw — competition rules | All Outdoor',
 };
 
 const RULES: Array<{ h: string; p: string }> = [
   {
     h: '1. The promoter',
-    p: 'The GG PRO prize draw is a promotional competition run by Gun Galore (Pty) Ltd ("Gun Galore") to promote the Gun Galore PRO subscription. It is conducted in accordance with section 36 of the Consumer Protection Act 68 of 2008.',
+    p: 'The GG PRO prize draw is a promotional competition run by All Outdoor (Pty) Ltd ("All Outdoor") to promote the All Outdoor PRO subscription. It is conducted in accordance with section 36 of the Consumer Protection Act 68 of 2008.',
   },
   {
     h: '2. Who is entered',
-    p: 'Every natural person 18 years or older who holds an active, paid-up Gun Galore PRO subscription at the moment of the draw is entered automatically, once per draw. Entry is free: it is an automatic benefit of the subscription at its ordinary price, and no additional payment, purchase or action is required to enter or to win. Complimentary (non-paying) accounts, employees and directors of Gun Galore and their immediate families, and suspended accounts are excluded.',
+    p: 'Every natural person 18 years or older who holds an active, paid-up All Outdoor PRO subscription at the moment of the draw is entered automatically, once per draw. Entry is free: it is an automatic benefit of the subscription at its ordinary price, and no additional payment, purchase or action is required to enter or to win. Complimentary (non-paying) accounts, employees and directors of All Outdoor and their immediate families, and suspended accounts are excluded.',
   },
   {
     h: '3. The prize',
-    p: 'The prize for each draw is the specific item displayed on the draw page for that cycle, together with its stated value. One winner is drawn per cycle. Any winner may choose to exchange their prize for an alternative of equal value. Where a prize is of a kind whose transfer requires a statutory licence, permit or other legal prerequisite, transfer will only take place through the lawful channel; a winner who cannot, or prefers not to, meet such a prerequisite will be offered the equal-value exchange instead. Prizes are not transferable for cash unless Gun Galore elects otherwise.',
+    p: 'The prize for each draw is the specific item displayed on the draw page for that cycle, together with its stated value. One winner is drawn per cycle. Any winner may choose to exchange their prize for an alternative of equal value. Where a prize is of a kind whose transfer requires a statutory licence, permit or other legal prerequisite, transfer will only take place through the lawful channel; a winner who cannot, or prefers not to, meet such a prerequisite will be offered the equal-value exchange instead. Prizes are not transferable for cash unless All Outdoor elects otherwise.',
   },
   {
     h: '4. The draw',
@@ -27,11 +27,11 @@ const RULES: Array<{ h: string; p: string }> = [
   },
   {
     h: '5. Winners',
-    p: 'The winner is notified directly and announced on the draw page by username only. Gun Galore will contact the winner within two business days to arrange delivery or handover. If a winner does not respond within 30 days of notification, the prize may be carried over or re-drawn. Winners are never required to pay anything to receive a prize; delivery within South Africa is at Gun Galore’s cost.',
+    p: 'The winner is notified directly and announced on the draw page by username only. All Outdoor will contact the winner within two business days to arrange delivery or handover. If a winner does not respond within 30 days of notification, the prize may be carried over or re-drawn. Winners are never required to pay anything to receive a prize; delivery within South Africa is at All Outdoor’s cost.',
   },
   {
     h: '6. General',
-    p: 'Gun Galore may cancel or amend a draw before its draw date where required by law or for reasons beyond its reasonable control; a prize already drawn will always be honoured. By holding a PRO subscription you consent to your username being published if you win. These rules, together with the Gun Galore Terms of Service, govern the competition. Queries: support@gungalore.co.za.',
+    p: 'All Outdoor may cancel or amend a draw before its draw date where required by law or for reasons beyond its reasonable control; a prize already drawn will always be honoured. By holding a PRO subscription you consent to your username being published if you win. These rules, together with the All Outdoor Terms of Service, govern the competition. Queries: support@gungalore.co.za.',
   },
 ];
 

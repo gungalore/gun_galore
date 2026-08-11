@@ -5,6 +5,7 @@ import { SmsService } from '../sms/sms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../push/push.service';
 import { Saps534Service, Saps534Data } from '../payments/saps534.service';
+import { EMAIL_FROM } from '../common/brand';
 
 // Compile-time list of the entity types we can link a Notification
 // row to. Used by resolveByEntity() callers so typos don't sit silently
@@ -51,7 +52,13 @@ interface PersistOpts {
 
 // Fails open — emails are fire-and-forget; never block the main flow.
 
-const FROM = 'Gun Galore <noreply@gungalore.co.za>';
+// Single source — see backend/src/common/brand.ts. The 80-odd SMS templates
+// below still inline "All Outdoor:" rather than importing SMS_PREFIX: they are
+// literal message copy, and threading a constant through every one would add
+// churn without making the next rename any safer (the rename is a sweep either
+// way). The From header is different — it also carries the sending DOMAIN,
+// which changes at the domain migration.
+const FROM = EMAIL_FROM;
 
 // Card-refund settlement window, quoted to buyers. ONE constant because the
 // same promise was being made in three different ways — emails said "5–10
@@ -147,7 +154,7 @@ function renderEmail(c: EmailContent, logoUrl: string): string {
   <!--[if mso]>
   <noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
   <![endif]-->
-  <title>Gun Galore</title>
+  <title>All Outdoor</title>
   <style type="text/css">
     /* Aggressive dark-mode lockdown. Even with all of this, Gmail
        may strip the style block on some configs — inline styles
@@ -196,10 +203,10 @@ function renderEmail(c: EmailContent, logoUrl: string): string {
         <tr>
           <td align="center" style="background-color:${TOKEN.bgPage} !important;padding:28px 32px;border-bottom:1px solid ${TOKEN.border};">
             <!--[if mso]>
-            <span style="font-family:Arial,sans-serif;font-size:20px;font-weight:700;color:#ffffff;letter-spacing:0.12em;">GUN GALORE</span>
+            <span style="font-family:Arial,sans-serif;font-size:20px;font-weight:700;color:#ffffff;letter-spacing:0.12em;">ALL OUTDOOR</span>
             <![endif]-->
             <!--[if !mso]><!-->
-            <img src="${logoUrl}" alt="Gun Galore" width="180" height="36"
+            <img src="${logoUrl}" alt="All Outdoor" width="180" height="36"
                  style="display:block;margin:0 auto;border:0;outline:none;text-decoration:none;height:36px;width:180px;" />
             <!--<![endif]-->
           </td>
@@ -230,10 +237,10 @@ function renderEmail(c: EmailContent, logoUrl: string): string {
           <td style="padding:0 24px 40px;background-color:${TOKEN.bgPage} !important;">
             <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border-top:1px solid ${TOKEN.border};">
               <tr><td style="height:24px;font-size:0;line-height:0;">&nbsp;</td></tr>
-              <tr><td align="center"><p style="margin:0;font-size:12px;color:${TOKEN.textTertiary} !important;line-height:1.5;">Gun Galore (Pty) Ltd &middot; South Africa</p></td></tr>
+              <tr><td align="center"><p style="margin:0;font-size:12px;color:${TOKEN.textTertiary} !important;line-height:1.5;">All Outdoor (Pty) Ltd &middot; South Africa</p></td></tr>
               <tr><td align="center" style="padding-top:6px;"><a href="mailto:support@gungalore.co.za" style="font-size:12px;color:${TOKEN.red} !important;text-decoration:none;">support@gungalore.co.za</a></td></tr>
-              <tr><td align="center" style="padding-top:10px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">Transactional email related to your Gun Galore account.</p></td></tr>
-              <tr><td align="center" style="padding-top:4px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">&copy; ${new Date().getFullYear()} Gun Galore. All rights reserved.</p></td></tr>
+              <tr><td align="center" style="padding-top:10px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">Transactional email related to your All Outdoor account.</p></td></tr>
+              <tr><td align="center" style="padding-top:4px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">&copy; ${new Date().getFullYear()} All Outdoor. All rights reserved.</p></td></tr>
             </table>
           </td>
         </tr>
@@ -582,8 +589,8 @@ export class NotificationsService {
     await this.sendSms(
       d.buyerPhone,
       isCollection
-        ? `Gun Galore: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. Collection item — seller contact is on your order page; tap Confirm collection when you have it.`
-        : `Gun Galore: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. We'll SMS again when it's dispatched.`,
+        ? `All Outdoor: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. Collection item — seller contact is on your order page; tap Confirm collection when you have it.`
+        : `All Outdoor: Order confirmed for ${truncate(d.listingTitle, 40)}. Total paid ${formatRand(d.buyerTotal)}. We'll SMS again when it's dispatched.`,
       `order-confirmed-${d.transactionId}`,
     );
   }
@@ -621,7 +628,7 @@ export class NotificationsService {
     }
     await this.sendSms(
       d.buyerPhone,
-      `Gun Galore: Order confirmed (${items}). Total paid ${formatRand(d.buyerTotal)}. We'll SMS again as items are dispatched.`,
+      `All Outdoor: Order confirmed (${items}). Total paid ${formatRand(d.buyerTotal)}. We'll SMS again as items are dispatched.`,
       `order-confirmed-multi-${d.orderId}`,
     );
   }
@@ -686,8 +693,8 @@ export class NotificationsService {
     await this.sendSms(
       d.sellerPhone,
       overdue
-        ? `Gun Galore: your sale of ${truncate(d.listingTitle, 24)} is OVERDUE for a response. Act now: ${url}`
-        : `Gun Galore: ~${d.hoursLeft}h left to accept your sale of ${truncate(d.listingTitle, 24)}. One tap: ${url}`,
+        ? `All Outdoor: your sale of ${truncate(d.listingTitle, 24)} is OVERDUE for a response. Act now: ${url}`
+        : `All Outdoor: ~${d.hoursLeft}h left to accept your sale of ${truncate(d.listingTitle, 24)}. One tap: ${url}`,
       `accept-reminder-${d.transactionId}${overdue ? '-overdue' : ''}`,
     );
   }
@@ -742,7 +749,7 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.sellerPhone,
-        `Gun Galore: ~${d.hoursLeft}h left to answer R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 22)}. Decide: ${d.actionUrl}`,
+        `All Outdoor: ~${d.hoursLeft}h left to answer R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 22)}. Decide: ${d.actionUrl}`,
         `offer-reminder-${d.offerId}`,
       );
     }
@@ -834,7 +841,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `Gun Galore: ~${d.hoursLeft}h left to pay for ${truncate(d.listingTitle, 26)} (your offer was accepted). Pay: ${url}`,
+      `All Outdoor: ~${d.hoursLeft}h left to pay for ${truncate(d.listingTitle, 26)} (your offer was accepted). Pay: ${url}`,
       `offer-pay-reminder-${d.offerId}`,
     );
   }
@@ -885,7 +892,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `Gun Galore: ~${d.hoursLeft}h left to pay for ${truncate(d.listingTitle, 26)} (you won it). Pay: ${url}`,
+      `All Outdoor: ~${d.hoursLeft}h left to pay for ${truncate(d.listingTitle, 26)} (you won it). Pay: ${url}`,
       `auction-pay-reminder-${d.listingId}`,
     );
   }
@@ -941,7 +948,7 @@ export class NotificationsService {
         : `<p style="margin: 0 0 14px;"><b>First — confirm you can fulfil this sale within 48 hours.</b> Tap the Accept button below to lock the sale in. After accepting you have 5 days to dispatch.</p>`
       : '';
     const bodyText = isDealerTransfer
-      ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by Gun Galore. Once you transfer the firearm to the chosen dealer, you'll need to upload 3 photos so we can verify the stock-in before releasing your payout:
+      ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by All Outdoor. Once you transfer the firearm to the chosen dealer, you'll need to upload 3 photos so we can verify the stock-in before releasing your payout:
 <ol style="margin: 12px 0; padding-left: 22px; line-height: 1.7;">
   <li>The completed <b>SAPS 534</b> form (<b>BLOCK LETTERS ONLY</b> — our verification bot can't read cursive)</li>
   <li>The <b>last line</b> of the dealer's stock register (only your entry — no other customers' details)</li>
@@ -949,8 +956,8 @@ export class NotificationsService {
 </ol>
 <p style="margin: 8px 0; font-size: 13px; color: #666;">Ask the dealer to print in BLOCK LETTERS — that lets our automated check pass instantly. Cursive or unclear writing means a 48-hour human review before payout.</p>`
       : isCollection
-        ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by Gun Galore. This is a <b>collection</b> sale — the buyer collects in person. Their contact details are on the sale page, so arrange the handover with them. Your payment is released as soon as the buyer confirms collection.`
-        : `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by Gun Galore — pack and dispatch as soon as possible. Once the buyer confirms delivery, payment will be released to you automatically.`;
+        ? `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by All Outdoor. This is a <b>collection</b> sale — the buyer collects in person. Their contact details are on the sale page, so arrange the handover with them. Your payment is released as soon as the buyer confirms collection.`
+        : `${acceptLede}Hi ${b(d.sellerName)}, someone has bought your listing ${b(d.listingTitle)}. Payment is being held safely by All Outdoor — pack and dispatch as soon as possible. Once the buyer confirms delivery, payment will be released to you automatically.`;
 
     const html = this.email({
       status: { tone: 'success', label: 'New sale' },
@@ -982,15 +989,15 @@ export class NotificationsService {
     // no token, fall back to the legacy "see email" copy.
     const smsBody = hasAcceptToken
       ? isDealerTransfer
-        ? `Gun Galore: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (then 5d to dispatch): ${acceptUrl}`
+        ? `All Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (then 5d to dispatch): ${acceptUrl}`
         : isCollection
-          ? `Gun Galore: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (collection - arrange pickup): ${acceptUrl}`
-          : `Gun Galore: New sale ${truncate(d.listingTitle, 28)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h: ${acceptUrl}`
+          ? `All Outdoor: New sale ${truncate(d.listingTitle, 24)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h (collection - arrange pickup): ${acceptUrl}`
+          : `All Outdoor: New sale ${truncate(d.listingTitle, 28)} - R${(d.sellerPayout / 100).toFixed(0)}. Accept within 48h: ${acceptUrl}`
       : isDealerTransfer
-        ? `Gun Galore: New sale ${truncate(d.listingTitle, 30)} - R${(d.sellerPayout / 100).toFixed(0)}. After dealer transfer, upload 3 photos (SAPS 534 BLOCK LETTERS) to release payout. See email.`
+        ? `All Outdoor: New sale ${truncate(d.listingTitle, 30)} - R${(d.sellerPayout / 100).toFixed(0)}. After dealer transfer, upload 3 photos (SAPS 534 BLOCK LETTERS) to release payout. See email.`
         : isCollection
-          ? `Gun Galore: New sale! ${truncate(d.listingTitle, 36)} - R${(d.sellerPayout / 100).toFixed(0)}. Collection sale - arrange pickup with the buyer. See email.`
-          : `Gun Galore: New sale! ${truncate(d.listingTitle, 40)} - R${(d.sellerPayout / 100).toFixed(0)} payout pending dispatch. Check email for details.`;
+          ? `All Outdoor: New sale! ${truncate(d.listingTitle, 36)} - R${(d.sellerPayout / 100).toFixed(0)}. Collection sale - arrange pickup with the buyer. See email.`
+          : `All Outdoor: New sale! ${truncate(d.listingTitle, 40)} - R${(d.sellerPayout / 100).toFixed(0)} payout pending dispatch. Check email for details.`;
     await this.sendSms(
       d.sellerPhone,
       smsBody,
@@ -1054,7 +1061,7 @@ export class NotificationsService {
 <ol style="margin: 12px 0; padding-left: 22px; line-height: 1.7;">
   <li><b>Check</b> the pre-filled details and complete anything that's blank (in <b>BLOCK LETTERS</b>).</li>
   <li><b>Sign</b> the form and take it to your SAPS-licensed dealer to be completed and stamped when you hand over the firearm.</li>
-  <li><b>Upload</b> a clear photo of the completed, stamped form back to Gun Galore so we can verify the stock-in and release your payment.</li>
+  <li><b>Upload</b> a clear photo of the completed, stamped form back to All Outdoor so we can verify the stock-in and release your payment.</li>
 </ol>
 <p style="margin: 8px 0; font-size: 13px; color: #666;">Pre-filled fields are a convenience only — please double-check every value against your licence before signing. Sections for the police and the dealer have been left blank on purpose.</p>`,
         rows: [
@@ -1188,10 +1195,10 @@ export class NotificationsService {
     await this.sendSms(
       d.buyerPhone,
       d.isCollection
-        ? `Gun Galore: Seller accepted ${truncate(d.listingTitle, 40)}. Collection item — arrange pickup (seller contact is on your order page) and tap Confirm collection.`
+        ? `All Outdoor: Seller accepted ${truncate(d.listingTitle, 40)}. Collection item — arrange pickup (seller contact is on your order page) and tap Confirm collection.`
         : shipsWindow
-          ? `Gun Galore: Order confirmed ${truncate(d.listingTitle, 40)}. Ships in ${shipsWindow} days — we'll SMS the tracking ref when it's on its way.`
-          : `Gun Galore: Seller accepted ${truncate(d.listingTitle, 40)}. Dispatch within 5 days — we'll SMS the tracking ref when it ships.`,
+          ? `All Outdoor: Order confirmed ${truncate(d.listingTitle, 40)}. Ships in ${shipsWindow} days — we'll SMS the tracking ref when it's on its way.`
+          : `All Outdoor: Seller accepted ${truncate(d.listingTitle, 40)}. Dispatch within 5 days — we'll SMS the tracking ref when it ships.`,
       `sale-accepted-${d.transactionId}`,
     );
   }
@@ -1271,8 +1278,8 @@ export class NotificationsService {
     await this.sendSms(
       d.buyerPhone,
       d.needsBankDetails
-        ? `Gun Galore: Seller cancelled ${truncate(d.listingTitle, 30)}. Add your bank details at gungalore.co.za/profile/edit so we can EFT your R${(d.buyerTotal / 100).toFixed(0)} refund.`
-        : `Gun Galore: Seller cancelled ${truncate(d.listingTitle, 30)}. R${(d.buyerTotal / 100).toFixed(0)} refund on the way (${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}).`,
+        ? `All Outdoor: Seller cancelled ${truncate(d.listingTitle, 30)}. Add your bank details at gungalore.co.za/profile/edit so we can EFT your R${(d.buyerTotal / 100).toFixed(0)} refund.`
+        : `All Outdoor: Seller cancelled ${truncate(d.listingTitle, 30)}. R${(d.buyerTotal / 100).toFixed(0)} refund on the way (${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}).`,
       `sale-rejected-${d.transactionId}`,
     );
   }
@@ -1353,13 +1360,13 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: Dealer stock-in approved for ${truncate(d.listingTitle, 30)}. Payout R${(d.sellerPayout / 100).toFixed(0)} on the way (2-3 days).`,
+      `All Outdoor: Dealer stock-in approved for ${truncate(d.listingTitle, 30)}. Payout R${(d.sellerPayout / 100).toFixed(0)} on the way (2-3 days).`,
       `dv-approved-${d.transactionId}`,
     );
   }
 
   // ---------------------------------------------------------------
-  // Buyer: firearm stocked at dealer — Gun Galore's job is done.
+  // Buyer: firearm stocked at dealer — All Outdoor's job is done.
   // Sent the moment dealer verification approves. Includes the
   // dealer's name + address + phone so the buyer knows where their
   // firearm is and can arrange the inter-dealer transfer (or
@@ -1380,7 +1387,7 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'success', label: 'Dealer-stocked' },
       headline: 'Your firearm has been booked into stock',
-      body: `Hi ${b(d.buyerName)}, the seller (${b(d.sellerName)}) has dropped ${b(d.listingTitle)} with their SAPS-licensed dealer and we've verified the SAPS 534 + stock-register paperwork. The firearm is now legally in the dealer's stock register at the address below. We've released the funds to the seller — Gun Galore's part of this transaction is done. From here, please liaise with the seller directly to arrange the inter-dealer transfer to your own dealer (or your preferred collection method).`,
+      body: `Hi ${b(d.buyerName)}, the seller (${b(d.sellerName)}) has dropped ${b(d.listingTitle)} with their SAPS-licensed dealer and we've verified the SAPS 534 + stock-register paperwork. The firearm is now legally in the dealer's stock register at the address below. We've released the funds to the seller — All Outdoor's part of this transaction is done. From here, please liaise with the seller directly to arrange the inter-dealer transfer to your own dealer (or your preferred collection method).`,
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
         { label: 'Dealer name', value: d.dealerName },
@@ -1397,7 +1404,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `Gun Galore: Your ${truncate(d.listingTitle, 25)} is booked into stock at ${truncate(d.dealerName, 30)} (${d.dealerPhone}). Contact the seller to arrange your transfer.`,
+      `All Outdoor: Your ${truncate(d.listingTitle, 25)} is booked into stock at ${truncate(d.dealerName, 30)} (${d.dealerPhone}). Contact the seller to arrange your transfer.`,
       `stocked-${d.transactionId}`,
     );
   }
@@ -1445,7 +1452,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: Dealer photos rejected for ${truncate(d.listingTitle, 28)}. Most common cause: SAPS 534 not in BLOCK LETTERS. Reshoot needed.`,
+      `All Outdoor: Dealer photos rejected for ${truncate(d.listingTitle, 28)}. Most common cause: SAPS 534 not in BLOCK LETTERS. Reshoot needed.`,
       `dv-rejected-${d.transactionId}`,
     );
   }
@@ -1490,7 +1497,7 @@ export class NotificationsService {
     // a single 160-char segment even with a long tracking reference.
     await this.sendSms(
       d.buyerPhone,
-      `Gun Galore: ${truncate(d.listingTitle, 30)} dispatched.${d.trackingReference ? ' Ref: ' + d.trackingReference + '.' : ''} Track: ${txUrl}`,
+      `All Outdoor: ${truncate(d.listingTitle, 30)} dispatched.${d.trackingReference ? ' Ref: ' + d.trackingReference + '.' : ''} Track: ${txUrl}`,
       `dispatched-${d.transactionId}`,
     );
   }
@@ -1538,7 +1545,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: Payout of R${(d.sellerPayout / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} is on the way. Allow 2-3 business days.`,
+      `All Outdoor: Payout of R${(d.sellerPayout / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} is on the way. Allow 2-3 business days.`,
       `payout-${d.transactionId}`,
     );
   }
@@ -1630,8 +1637,8 @@ export class NotificationsService {
     await this.sendSms(
       d.sellerPhone,
       supplier
-        ? `Gun Galore: Collection booked from ${supplier} — The Courier Guy will collect. Waybill ${d.trackingReference}.`
-        : `Gun Galore: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
+        ? `All Outdoor: Collection booked from ${supplier} — The Courier Guy will collect. Waybill ${d.trackingReference}.`
+        : `All Outdoor: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
       `booked-${d.transactionId}`,
       // Waybill + Pudo PIN are delivery-essential — without them the
       // parcel physically can't be handed over. Bypasses the SMS mute.
@@ -1671,7 +1678,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Collected — ' + d.listingTitle, html);
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: ${truncate(d.listingTitle, 40)} was collected by the courier. We'll notify you on delivery.`,
+      `All Outdoor: ${truncate(d.listingTitle, 40)} was collected by the courier. We'll notify you on delivery.`,
       `seller-collected-${d.transactionId}`,
     );
   }
@@ -1710,7 +1717,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Delivered — ' + d.listingTitle, html);
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: ${truncate(d.listingTitle, 38)} was delivered to the buyer. Payout follows once confirmed.`,
+      `All Outdoor: ${truncate(d.listingTitle, 38)} was delivered to the buyer. Payout follows once confirmed.`,
       `seller-delivered-${d.transactionId}`,
     );
   }
@@ -1750,7 +1757,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Action needed — arrange dispatch for ' + d.listingTitle, html);
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: We couldn't auto-book the courier for ${truncate(d.listingTitle, 30)}. Please arrange dispatch + add the tracking number: ${txUrl}`,
+      `All Outdoor: We couldn't auto-book the courier for ${truncate(d.listingTitle, 30)}. Please arrange dispatch + add the tracking number: ${txUrl}`,
       `booking-failed-${d.transactionId}`,
     );
   }
@@ -1827,8 +1834,8 @@ export class NotificationsService {
       await this.sendSms(
         d.buyerPhone,
         d.needsBankDetails
-          ? `Gun Galore: R${(d.buyerTotal / 100).toFixed(0)} refund approved for ${truncate(d.listingTitle, 30)}. Add your bank details on your profile so we can pay it: ${this.appUrl}/profile/edit`
-          : `Gun Galore: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow ${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}.`,
+          ? `All Outdoor: R${(d.buyerTotal / 100).toFixed(0)} refund approved for ${truncate(d.listingTitle, 30)}. Add your bank details on your profile so we can pay it: ${this.appUrl}/profile/edit`
+          : `All Outdoor: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow ${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}.`,
         `refund-${d.transactionId}`,
       );
     }
@@ -1875,7 +1882,7 @@ export class NotificationsService {
     if (d.phone) {
       await this.sendSms(
         d.phone,
-        `Gun Galore: your GG+ ${d.tier} subscription is active until ${until}. No auto-renew - we'll remind you before it ends.`,
+        `All Outdoor: your GG+ ${d.tier} subscription is active until ${until}. No auto-renew - we'll remind you before it ends.`,
         `sub-active-${d.email}-${d.periodEnd.getTime()}`,
       );
     }
@@ -1919,7 +1926,7 @@ export class NotificationsService {
     if (d.phone) {
       await this.sendSms(
         d.phone,
-        `Gun Galore: your GG+ ${d.tier} ends on ${until}. Renew at ${this.appUrl}/subscribe to keep your perks - new days stack on top, none lost.`,
+        `All Outdoor: your GG+ ${d.tier} ends on ${until}. Renew at ${this.appUrl}/subscribe to keep your perks - new days stack on top, none lost.`,
         `sub-expiring-${d.email}-${d.periodEnd.getTime()}`,
       );
     }
@@ -1955,7 +1962,7 @@ export class NotificationsService {
     if (d.phone) {
       await this.sendSms(
         d.phone,
-        `Gun Galore: your GG+ ${d.tier} subscription has ended - you're back on the free tier. Re-subscribe any time: ${this.appUrl}/subscribe`,
+        `All Outdoor: your GG+ ${d.tier} subscription has ended - you're back on the free tier. Re-subscribe any time: ${this.appUrl}/subscribe`,
         `sub-lapsed-${d.email}-${d.tier}`,
       );
     }
@@ -2018,8 +2025,8 @@ export class NotificationsService {
       await this.sendSms(
         d.phone,
         d.bound
-          ? `Gun Galore: R${(d.amountCents / 100).toFixed(0)} slot fee received - your listing is now featured on the homepage${until ? ` until ${until}` : ''}.`
-          : `Gun Galore: R${(d.amountCents / 100).toFixed(0)} slot fee received, but your chosen listing is no longer available. Pick another at ${this.appUrl}/featured/bid - your slot is paid and reserved.`,
+          ? `All Outdoor: R${(d.amountCents / 100).toFixed(0)} slot fee received - your listing is now featured on the homepage${until ? ` until ${until}` : ''}.`
+          : `All Outdoor: R${(d.amountCents / 100).toFixed(0)} slot fee received, but your chosen listing is no longer available. Pick another at ${this.appUrl}/featured/bid - your slot is paid and reserved.`,
         `featured-paid-${d.email}-${d.amountCents}`,
       );
     }
@@ -2345,8 +2352,8 @@ export class NotificationsService {
       await this.sendSms(
         d.sellerPhone,
         qualifies
-          ? `Gun Galore: R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 24)} MEETS your asking price. Confirm: ${d.actionUrl}`
-          : `Gun Galore: ${truncate(d.buyerName, 20)} offered R${Math.round(d.offerAmount / 100)} on ${truncate(d.listingTitle, 28)}. Decide: ${d.actionUrl}`,
+          ? `All Outdoor: R${Math.round(d.offerAmount / 100)} offer on ${truncate(d.listingTitle, 24)} MEETS your asking price. Confirm: ${d.actionUrl}`
+          : `All Outdoor: ${truncate(d.buyerName, 20)} offered R${Math.round(d.offerAmount / 100)} on ${truncate(d.listingTitle, 28)}. Decide: ${d.actionUrl}`,
         `offer-${d.offerId}`,
       );
     }
@@ -2399,7 +2406,7 @@ export class NotificationsService {
     await this.send(d.email, 'Action needed: bank account could not be verified', html);
     await this.sendSms(
       d.phone,
-      `Gun Galore: we couldn't verify your bank account — payouts are on hold. Fix your details: ${fixUrl}`,
+      `All Outdoor: we couldn't verify your bank account — payouts are on hold. Fix your details: ${fixUrl}`,
       `banv-${d.userId}`,
     );
   }
@@ -2463,7 +2470,7 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.buyerPhone,
-        `Gun Galore: Your offer R${Math.round(d.acceptedAmount / 100)} on ${truncate(d.listingTitle, 30)} was accepted. Pay within 24h: ${d.actionUrl}`,
+        `All Outdoor: Your offer R${Math.round(d.acceptedAmount / 100)} on ${truncate(d.listingTitle, 30)} was accepted. Pay within 24h: ${d.actionUrl}`,
         `offer-acc-${d.offerId}`,
       );
     }
@@ -2557,7 +2564,7 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.buyerPhone,
-        `Gun Galore: Seller countered at R${Math.round(d.counterAmount / 100)} on ${truncate(d.listingTitle, 28)}. 24h to respond: ${d.actionUrl}`,
+        `All Outdoor: Seller countered at R${Math.round(d.counterAmount / 100)} on ${truncate(d.listingTitle, 28)}. 24h to respond: ${d.actionUrl}`,
         `counter-${d.offerId}`,
       );
     }
@@ -2676,7 +2683,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Sold at your auto-accept price — ' + d.listingTitle, html);
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: ${truncate(d.listingTitle, 30)} auto-accepted at R${Math.round(d.amount / 100)}. Buyer has 24h to pay.`,
+      `All Outdoor: ${truncate(d.listingTitle, 30)} auto-accepted at R${Math.round(d.amount / 100)}. Buyer has 24h to pay.`,
       `offer-auto-acc-${d.offerId}`,
     );
   }
@@ -2819,7 +2826,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Buyer never paid — ' + d.listingTitle, sellerHtml);
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: The accepted offer on ${truncate(d.listingTitle, 30)} wasn't paid in 24h. Your listing is active again.`,
+      `All Outdoor: The accepted offer on ${truncate(d.listingTitle, 30)} wasn't paid in 24h. Your listing is active again.`,
       `offer-lapse-s-${d.offerId}`,
     );
     // Buyer side
@@ -2870,7 +2877,7 @@ export class NotificationsService {
     if (sellerPhone) {
       await this.sendSms(
         sellerPhone,
-        `Gun Galore: New bid R${(amount / 100).toFixed(0)} on ${truncate(listingTitle, 40)}.`,
+        `All Outdoor: New bid R${(amount / 100).toFixed(0)} on ${truncate(listingTitle, 40)}.`,
         `bid-${listingId ?? 'x'}-${amount}`,
       );
     }
@@ -2920,8 +2927,8 @@ export class NotificationsService {
     await this.send(buyerEmail, 'Outbid on: ' + listingTitle, html);
     if (buyerPhone) {
       const smsBody = actionUrl
-        ? `Gun Galore: Outbid on ${truncate(listingTitle, 26)} — high R${(newAmount / 100).toFixed(0)}. Raise: ${actionUrl}`
-        : `Gun Galore: Outbid on ${truncate(listingTitle, 30)} — current bid R${(newAmount / 100).toFixed(0)}.`;
+        ? `All Outdoor: Outbid on ${truncate(listingTitle, 26)} — high R${(newAmount / 100).toFixed(0)}. Raise: ${actionUrl}`
+        : `All Outdoor: Outbid on ${truncate(listingTitle, 30)} — current bid R${(newAmount / 100).toFixed(0)}.`;
       await this.sendSms(
         buyerPhone,
         smsBody,
@@ -2993,7 +3000,7 @@ export class NotificationsService {
     if (winnerPhone) {
       await this.sendSms(
         winnerPhone,
-        `Gun Galore: Your win on ${truncate(listingTitle, 26)} was cancelled — the 24h payment window passed.`,
+        `All Outdoor: Your win on ${truncate(listingTitle, 26)} was cancelled — the 24h payment window passed.`,
         `auction-lapsed-${listingId}`,
       );
     }
@@ -3040,7 +3047,7 @@ export class NotificationsService {
     if (winnerPhone) {
       await this.sendSms(
         winnerPhone,
-        `Gun Galore: You WON ${truncate(listingTitle, 26)} for R${(amount / 100).toFixed(0)}. 24h to pay: ${url}`,
+        `All Outdoor: You WON ${truncate(listingTitle, 26)} for R${(amount / 100).toFixed(0)}. 24h to pay: ${url}`,
         `auction-won-${listingId ?? 'x'}`,
       );
     }
@@ -3148,12 +3155,12 @@ export class NotificationsService {
     if (sellerPhone) {
       const smsBody =
         outcome === 'WON'
-          ? `Gun Galore: Your auction ${truncate(listingTitle, 24)} SOLD for R${(amount / 100).toFixed(0)}. Buyer has 24h to pay.`
+          ? `All Outdoor: Your auction ${truncate(listingTitle, 24)} SOLD for R${(amount / 100).toFixed(0)}. Buyer has 24h to pay.`
           : outcome === 'WINNER_UNPAID'
-            ? `Gun Galore: The winner of ${truncate(listingTitle, 22)} didn't pay in time. You can relist it: ${ctaUrl}`
+            ? `All Outdoor: The winner of ${truncate(listingTitle, 22)} didn't pay in time. You can relist it: ${ctaUrl}`
             : outcome === 'NO_RESERVE'
-              ? `Gun Galore: ${truncate(listingTitle, 22)} closed at R${(amount / 100).toFixed(0)} — below your reserve. Relist: ${ctaUrl}`
-              : `Gun Galore: ${truncate(listingTitle, 24)} ended with no bids. Relist: ${ctaUrl}`;
+              ? `All Outdoor: ${truncate(listingTitle, 22)} closed at R${(amount / 100).toFixed(0)} — below your reserve. Relist: ${ctaUrl}`
+              : `All Outdoor: ${truncate(listingTitle, 24)} ended with no bids. Relist: ${ctaUrl}`;
       await this.sendSms(sellerPhone, smsBody, `auction-ended-${outcome.toLowerCase()}-${listingId ?? 'x'}`);
     }
   }
@@ -3216,7 +3223,7 @@ export class NotificationsService {
     // High-value SMS — the buyer wants to be home for it.
     await this.sendSms(
       buyerPhone,
-      `Gun Galore: ${truncate(listingTitle, 34)} is out for delivery today.`,
+      `All Outdoor: ${truncate(listingTitle, 34)} is out for delivery today.`,
       `buyer-out-for-delivery-${transactionId}`,
     );
   }
@@ -3255,7 +3262,7 @@ export class NotificationsService {
     // High-value SMS — nudges the buyer to confirm, which releases the payout.
     await this.sendSms(
       buyerPhone,
-      `Gun Galore: ${truncate(listingTitle, 30)} was delivered. Confirm receipt so the seller can be paid: ${url}`,
+      `All Outdoor: ${truncate(listingTitle, 30)} was delivered. Confirm receipt so the seller can be paid: ${url}`,
       `buyer-delivered-${transactionId}`,
     );
   }
@@ -3368,7 +3375,7 @@ export class NotificationsService {
 
     // SMS body — kept under 160 chars for single-segment delivery so
     // the alarm reaches the operator's lock screen without truncation.
-    return `Gun Galore: ${friendlyService} credits at ${d.balance} ${d.unit}. Top up: ${url}`;
+    return `All Outdoor: ${friendlyService} credits at ${d.balance} ${d.unit}. Top up: ${url}`;
   }
 
   // ---------------------------------------------------------------
@@ -3420,7 +3427,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: ${truncate(d.listingTitle, 30)} still not dispatched (${d.hoursElapsed}h). Auto-refund in ${d.autoRefundDays}d. Ship now: ${txUrl}`,
+      `All Outdoor: ${truncate(d.listingTitle, 30)} still not dispatched (${d.hoursElapsed}h). Auto-refund in ${d.autoRefundDays}d. Ship now: ${txUrl}`,
       `dispatch-nudge-${d.transactionId}`,
     );
   }
@@ -3472,7 +3479,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: ${truncate(d.listingTitle, 30)} — buyer paid ${d.daysElapsed}d ago. Complete the dealer transfer to release your payment: ${txUrl}`,
+      `All Outdoor: ${truncate(d.listingTitle, 30)} — buyer paid ${d.daysElapsed}d ago. Complete the dealer transfer to release your payment: ${txUrl}`,
       `dt-stall-nudge-${d.transactionId}`,
     );
   }
@@ -3523,7 +3530,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `Gun Galore: ${truncate(d.listingTitle, 30)} is waiting for collection. Arrange pickup (seller contact on your order page) and tap Confirm collection: ${txUrl}`,
+      `All Outdoor: ${truncate(d.listingTitle, 30)} is waiting for collection. Arrange pickup (seller contact on your order page) and tap Confirm collection: ${txUrl}`,
       `collection-confirm-nudge-${d.transactionId}`,
     );
   }
@@ -3581,7 +3588,7 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.sellerPhone,
-        `Gun Galore: winner didn't pay for ${truncate(d.listingTitle, 22)}. Next bidder offered R${Math.round(d.amount / 100)}. Sell to them? ${d.actionUrl}`,
+        `All Outdoor: winner didn't pay for ${truncate(d.listingTitle, 22)}. Next bidder offered R${Math.round(d.amount / 100)}. Sell to them? ${d.actionUrl}`,
         `runner-up-${d.listingId}`,
       );
     }
@@ -3668,8 +3675,8 @@ export class NotificationsService {
       await this.sendSms(
         d.phone,
         needsUser
-          ? `Gun Galore: we need more info on complaint ${d.referenceNumber}. Reply here: ${url}`
-          : `Gun Galore: complaint ${d.referenceNumber} is now ${pretty}. Details: ${url}`,
+          ? `All Outdoor: we need more info on complaint ${d.referenceNumber}. Reply here: ${url}`
+          : `All Outdoor: complaint ${d.referenceNumber} is now ${pretty}. Details: ${url}`,
         `complaint-status-${d.referenceNumber}`,
       );
     }
@@ -3720,7 +3727,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `Gun Galore: ${truncate(d.listingTitle, 28)} was delivered. Tap Confirm receipt to release payment (or raise an issue if there's a problem): ${txUrl}`,
+      `All Outdoor: ${truncate(d.listingTitle, 28)} was delivered. Tap Confirm receipt to release payment (or raise an issue if there's a problem): ${txUrl}`,
       `confirm-receipt-nudge-${d.transactionId}`,
     );
   }
@@ -3778,7 +3785,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: a client paid for ${truncate(d.listingTitle, 30)}. Please confirm the booking: ${txUrl}`,
+      `All Outdoor: a client paid for ${truncate(d.listingTitle, 30)}. Please confirm the booking: ${txUrl}`,
       `experience-booking-nudge-${d.transactionId}`,
     );
   }
@@ -3838,7 +3845,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.recipientPhone,
-      `Gun Galore: reminder — ${truncate(d.listingTitle, 30)} is on ${when}. Details: ${txUrl}`,
+      `All Outdoor: reminder — ${truncate(d.listingTitle, 30)} is on ${when}. Details: ${txUrl}`,
       `experience-pre-event-${d.role.toLowerCase()}-${d.transactionId}`,
     );
   }
@@ -3886,7 +3893,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyerPhone,
-      `Gun Galore: did your booking for ${truncate(d.listingTitle, 30)} go ahead? Confirm it happened (or raise an issue) here: ${txUrl}`,
+      `All Outdoor: did your booking for ${truncate(d.listingTitle, 30)} go ahead? Confirm it happened (or raise an issue) here: ${txUrl}`,
       `experience-post-event-nudge-${d.transactionId}`,
     );
   }
@@ -3956,8 +3963,8 @@ export class NotificationsService {
     await this.sendSms(
       d.buyer.phone,
       d.needsBankDetails
-        ? `Gun Galore: ${truncate(d.listingTitle, 30)} not dispatched — refund approved. Add your bank details at gungalore.co.za/profile/edit so we can pay it.`
-        : `Gun Galore: ${truncate(d.listingTitle, 30)} not dispatched. Refunded ${formatRand(d.buyerTotal)}${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
+        ? `All Outdoor: ${truncate(d.listingTitle, 30)} not dispatched — refund approved. Add your bank details at gungalore.co.za/profile/edit so we can pay it.`
+        : `All Outdoor: ${truncate(d.listingTitle, 30)} not dispatched. Refunded ${formatRand(d.buyerTotal)}${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
       `auto-refund-buyer-${d.transactionId}`,
     );
 
@@ -3978,7 +3985,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.seller.phone,
-      `Gun Galore: ${truncate(d.listingTitle, 30)} auto-refunded (no dispatch). Strike added.`,
+      `All Outdoor: ${truncate(d.listingTitle, 30)} auto-refunded (no dispatch). Strike added.`,
       `auto-refund-seller-${d.transactionId}`,
     );
   }
@@ -4049,8 +4056,8 @@ export class NotificationsService {
     await this.sendSms(
       d.buyer.phone,
       d.needsBankDetails
-        ? `Gun Galore: order for ${truncate(d.listingTitle, 30)} cancelled. Add your bank details at gungalore.co.za/profile/edit so we can EFT your ${formatRand(d.buyerTotal)} refund.`
-        : `Gun Galore: order for ${truncate(d.listingTitle, 30)} cancelled. ${formatRand(d.buyerTotal)} refunded${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
+        ? `All Outdoor: order for ${truncate(d.listingTitle, 30)} cancelled. Add your bank details at gungalore.co.za/profile/edit so we can EFT your ${formatRand(d.buyerTotal)} refund.`
+        : `All Outdoor: order for ${truncate(d.listingTitle, 30)} cancelled. ${formatRand(d.buyerTotal)} refunded${d.manualEft ? ' by EFT (1-3 business days)' : ' to your card'}.`,
       `buyer-cancel-buyer-${d.transactionId}`,
     );
 
@@ -4068,7 +4075,7 @@ export class NotificationsService {
     await this.send(d.seller.email, 'Buyer cancelled: ' + d.listingTitle, sellerHtml);
     await this.sendSms(
       d.seller.phone,
-      `Gun Galore: buyer cancelled ${truncate(d.listingTitle, 30)} before dispatch. It's back on the marketplace. No strike.`,
+      `All Outdoor: buyer cancelled ${truncate(d.listingTitle, 30)} before dispatch. It's back on the marketplace. No strike.`,
       `buyer-cancel-seller-${d.transactionId}`,
     );
   }
@@ -4102,7 +4109,7 @@ export class NotificationsService {
     await this.send(d.sellerEmail, 'Order refunded: ' + d.listingTitle, html);
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: the order for ${truncate(d.listingTitle, 30)} was refunded by support. It's back on the marketplace. No strike.`,
+      `All Outdoor: the order for ${truncate(d.listingTitle, 30)} was refunded by support. It's back on the marketplace. No strike.`,
       `admin-refund-seller-${d.transactionId}`,
     );
   }
@@ -4162,7 +4169,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.buyer.phone,
-      `Gun Galore: Contact ${sellerName}${d.seller.phone ? ' on ' + d.seller.phone : ''} to arrange the dealer meet for ${truncate(d.listingTitle, 30)}.`,
+      `All Outdoor: Contact ${sellerName}${d.seller.phone ? ' on ' + d.seller.phone : ''} to arrange the dealer meet for ${truncate(d.listingTitle, 30)}.`,
       `pa-buyer-${d.transactionId}`,
     );
 
@@ -4190,7 +4197,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.seller.phone,
-      `Gun Galore: ${truncate(d.listingTitle, 30)} sold to ${buyerName}${d.buyer.phone ? ' (' + d.buyer.phone + ')' : ''}. Payment released. Arrange the dealer meet.`,
+      `All Outdoor: ${truncate(d.listingTitle, 30)} sold to ${buyerName}${d.buyer.phone ? ' (' + d.buyer.phone + ')' : ''}. Payment released. Arrange the dealer meet.`,
       `pa-seller-${d.transactionId}`,
     );
 
@@ -4242,7 +4249,7 @@ export class NotificationsService {
     );
     await this.sendSms(
       d.sellerPhone,
-      `Gun Galore: New question on ${truncate(d.listingTitle, 30)}. Reply: ${url}`,
+      `All Outdoor: New question on ${truncate(d.listingTitle, 30)}. Reply: ${url}`,
       `listing-question-${d.listingId}`,
     );
   }
@@ -4273,7 +4280,7 @@ export class NotificationsService {
       cta: { label: 'Go to dashboard', url: `${this.appUrl}/dashboard` },
       preheader: 'Your identity has been verified',
     });
-    await this.send(sellerEmail, 'Identity verified — Gun Galore', html);
+    await this.send(sellerEmail, 'Identity verified — All Outdoor', html);
   }
 
   // Face-match failed — link them back so they can retry with better
@@ -4365,7 +4372,7 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.ownerPhone,
-        `Gun Galore: ${truncate(d.proposerName, 16)} wants to swap their ${truncate(d.offeredTitle, 20)} for your ${truncate(d.wantedTitle, 20)}. Decide: ${d.actionUrl}`,
+        `All Outdoor: ${truncate(d.proposerName, 16)} wants to swap their ${truncate(d.offeredTitle, 20)} for your ${truncate(d.wantedTitle, 20)}. Decide: ${d.actionUrl}`,
         `swap-${d.proposalId}`,
       );
     }
@@ -4416,7 +4423,7 @@ export class NotificationsService {
     if (d.actionUrl) {
       await this.sendSms(
         d.proposerPhone,
-        `Gun Galore: The owner countered your swap for ${truncate(d.wantedTitle, 26)}. Decide: ${d.actionUrl}`,
+        `All Outdoor: The owner countered your swap for ${truncate(d.wantedTitle, 26)}. Decide: ${d.actionUrl}`,
         `swap-counter-${d.proposalId}`,
       );
     }
@@ -4457,7 +4464,7 @@ export class NotificationsService {
     await this.send(d.email, 'Swap agreed — next steps coming', html);
     await this.sendSms(
       d.phone,
-      `Gun Galore: Your swap with ${truncate(d.counterpartyName, 18)} is agreed — both items reserved. Funding + shipping details to follow.`,
+      `All Outdoor: Your swap with ${truncate(d.counterpartyName, 18)} is agreed — both items reserved. Funding + shipping details to follow.`,
       `swap-agreed-${d.swapId}`,
     );
   }
@@ -4563,7 +4570,7 @@ export class NotificationsService {
     if (d.phone) {
       await this.sendSms(
         d.phone,
-        `Gun Galore: congratulations — you WON the GG PRO prize draw (${d.prizeTitle}). We'll contact you to arrange delivery.`,
+        `All Outdoor: congratulations — you WON the GG PRO prize draw (${d.prizeTitle}). We'll contact you to arrange delivery.`,
         'raffle-winner',
       );
     }
@@ -4663,7 +4670,7 @@ export class NotificationsService {
     await this.send(d.email, 'Fund your swap — ' + d.reference, html);
     await this.sendSms(
       d.phone,
-      `Gun Galore: Fund your swap — pay R${Math.round(d.amountCents / 100)} ref ${d.reference} by EFT. Details: ${this.appUrl}/my/swaps`,
+      `All Outdoor: Fund your swap — pay R${Math.round(d.amountCents / 100)} ref ${d.reference} by EFT. Details: ${this.appUrl}/my/swaps`,
       `swap-fund-${d.swapId}-${d.reference}`,
     );
   }
@@ -4695,7 +4702,7 @@ export class NotificationsService {
     await this.send(d.email, 'Swap locked in — couriers next', html);
     await this.sendSms(
       d.phone,
-      `Gun Galore: Your swap is funded by both sides and locked in. Courier details to follow.`,
+      `All Outdoor: Your swap is funded by both sides and locked in. Courier details to follow.`,
       `swap-locked-${d.swapId}`,
     );
   }
@@ -4750,14 +4757,14 @@ export class NotificationsService {
       headline: 'Your swap is complete',
       body: gotCash
         ? `Hi ${b(d.name)}, both items have been delivered and the swap is closed. Your ${b(formatRand(d.cashPayoutCents))} cash top-up will be paid to your registered bank account in the next payout run.`
-        : `Hi ${b(d.name)}, both items have been delivered and the swap is closed. Thanks for trading on Gun Galore!`,
+        : `Hi ${b(d.name)}, both items have been delivered and the swap is closed. Thanks for trading on All Outdoor!`,
       preheader: 'Swap complete',
     });
     await this.send(d.email, 'Swap complete', html);
     if (gotCash) {
       await this.sendSms(
         d.phone,
-        `Gun Galore: Your swap is complete. Your ${formatRand(d.cashPayoutCents)} top-up will be paid to your bank in the next payout run.`,
+        `All Outdoor: Your swap is complete. Your ${formatRand(d.cashPayoutCents)} top-up will be paid to your bank in the next payout run.`,
         `swap-completed-${d.swapId}`,
       );
     }

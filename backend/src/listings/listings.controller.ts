@@ -58,8 +58,9 @@ export class ListingsController {
   // browse (SSR fans these out from one IP).
   @Get('cross-sell')
   @SkipThrottle()
-  crossSell(@Query() dto: CrossSellDto) {
-    return this.listingsService.crossSell(dto);
+  @UseGuards(OptionalClerkGuard)
+  crossSell(@Query() dto: CrossSellDto, @CurrentUser() clerkId?: string) {
+    return this.listingsService.crossSell(dto, clerkId);
   }
 
   // Brand/make facet values for the storefront filter. MUST stay above
@@ -67,8 +68,9 @@ export class ListingsController {
   // SkipThrottle like browse (SSR fans these out from one IP).
   @Get('brands')
   @SkipThrottle()
-  brands() {
-    return this.listingsService.listBrands();
+  @UseGuards(OptionalClerkGuard)
+  brands(@CurrentUser() clerkId?: string) {
+    return this.listingsService.listBrands(60, clerkId);
   }
 
   // ACTIVE listing ids + lastModified for the XML sitemap. MUST stay above
@@ -94,8 +96,9 @@ export class ListingsController {
   // these out from one IP) → SkipThrottle like browse.
   @Get('facets')
   @SkipThrottle()
-  facets(@Query() dto: BrowseListingsDto) {
-    return this.listingsService.facets(dto);
+  @UseGuards(OptionalClerkGuard)
+  facets(@Query() dto: BrowseListingsDto, @CurrentUser() clerkId?: string) {
+    return this.listingsService.facets(dto, clerkId);
   }
 
   // P5.6 — sold-price comps for a category ("similar items recently sold for
@@ -103,16 +106,21 @@ export class ListingsController {
   // a minimum sale count. MUST stay above @Get(':id'). Public read → SkipThrottle.
   @Get('sold-comps')
   @SkipThrottle()
-  soldComps(@Query() dto: { categorySlug?: string; categoryId?: string }) {
-    return this.listingsService.soldComps(dto);
+  @UseGuards(OptionalClerkGuard)
+  soldComps(
+    @Query() dto: { categorySlug?: string; categoryId?: string },
+    @CurrentUser() clerkId?: string,
+  ) {
+    return this.listingsService.soldComps(dto, clerkId);
   }
 
   // P5.7 — folded, gated brand list for the /brands index + XML sitemap.
   // MUST stay above @Get(':id'). Public read → SkipThrottle.
   @Get('brand-index')
   @SkipThrottle()
-  brandIndex() {
-    return this.listingsService.listBrandsWithCounts();
+  @UseGuards(OptionalClerkGuard)
+  brandIndex(@CurrentUser() clerkId?: string) {
+    return this.listingsService.listBrandsWithCounts(undefined, clerkId);
   }
 
   // P5.7 — resolve a brand slug to its display label + count (or 404 when the
@@ -121,8 +129,16 @@ export class ListingsController {
   // segments so it can't shadow @Get(':id'), but kept here for clarity.
   @Get('brand/:slug')
   @SkipThrottle()
-  async brandBySlug(@Param('slug') slug: string) {
-    const b = await this.listingsService.resolveBrandSlug(slug);
+  @UseGuards(OptionalClerkGuard)
+  async brandBySlug(
+    @Param('slug') slug: string,
+    @CurrentUser() clerkId?: string,
+  ) {
+    const b = await this.listingsService.resolveBrandSlug(
+      slug,
+      undefined,
+      clerkId,
+    );
     if (!b) throw new NotFoundException('Brand not found');
     return { slug: b.slug, label: b.label, count: b.count };
   }

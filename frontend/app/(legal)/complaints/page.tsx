@@ -13,7 +13,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Complaints',
   description:
-    'How to raise a complaint with GunGalore, our resolution timeframes, and where to escalate if we cannot resolve it.',
+    'How to raise a complaint with All Outdoor, our resolution timeframes, and where to escalate if we cannot resolve it.',
 };
 
 export default function ComplaintsPage() {

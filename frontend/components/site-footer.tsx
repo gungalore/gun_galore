@@ -58,10 +58,10 @@ export function SiteFooter() {
               marginBottom: 8,
             }}
           >
-            Gun Galore
+            All Outdoor
           </p>
           <p style={{ color: 'var(--text-tertiary-on-card)', lineHeight: 1.6, margin: 0 }}>
-            South Africa&apos;s outdoor, hunting and sport marketplace.
+            South Africa&apos;s new and secondhand outdoor store.
             Seller identity verified before payout · Buyer / Seller
             Protection System on every deal — payment held until delivery
             is confirmed.
@@ -80,7 +80,7 @@ export function SiteFooter() {
             Shop
           </p>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, lineHeight: 1.9 }}>
-            <li><Link href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Marketplace</Link></li>
+            <li><Link href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Buy Now</Link></li>
             <li><Link href="/?listingType=AUCTION" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Auctions</Link></li>
             <li><Link href="/?listingType=TAKE_A_SHOT" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Take a Shot</Link></li>
             <li><Link href="/?listingType=SWOP" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Swop / Trade</Link></li>
@@ -108,7 +108,6 @@ export function SiteFooter() {
             <li><Link href="/privacy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Privacy Policy</Link></li>
             <li><Link href="/acceptable-use" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Acceptable Use</Link></li>
             <li><Link href="/refund-policy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Refund &amp; Disputes</Link></li>
-            <li><Link href="/firearms-compliance" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Regulated Items &amp; Compliance</Link></li>
             <li><Link href="/aml-policy" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>AML Policy</Link></li>
             <li><Link href="/cookies" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Cookie Policy</Link></li>
             <li><Link href="/paia" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>PAIA Manual</Link></li>

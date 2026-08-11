@@ -111,7 +111,7 @@ export function SwapDecisionPage({
     } catch (err) {
       setView({
         kind: 'error',
-        message: err instanceof Error ? err.message : "Couldn't reach Gun Galore — try again.",
+        message: err instanceof Error ? err.message : "Couldn't reach All Outdoor — try again.",
       });
     }
   }

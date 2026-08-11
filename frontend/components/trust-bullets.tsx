@@ -45,7 +45,7 @@ export function TrustBullets({
               ✓
             </span>
             <Link
-              href="/firearms-compliance"
+              href="/members/regulated-items"
               style={{
                 color: 'var(--text-secondary)',
                 fontSize: 13,

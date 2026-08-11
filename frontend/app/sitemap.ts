@@ -3,8 +3,16 @@ import { apiFetch } from '@/lib/api';
 import type { Category, BrandSummary } from '@/lib/types';
 
 // Emits a real sitemap: the static top-of-funnel + legal routes PLUS every
-// ACTIVE listing and every category landing page, so Google can crawl the
-// money pages directly instead of relying on internal links alone.
+// PUBLICLY-VISIBLE ACTIVE listing and category landing page, so Google can
+// crawl the money pages directly instead of relying on internal links alone.
+//
+// LOAD-BEARING: every fetch below uses apiFetch (anonymous), NEVER viewerFetch.
+// The backend returns members-only categories/listings/brands only to a caller
+// holding a session, so staying anonymous is exactly what keeps regulated
+// stock out of the sitemap. Adding a token here would re-publish the firearm
+// taxonomy to every crawler — which is how 111 of 207 URLs were weapon-adjacent
+// before this change. `revalidate` is safe for the same reason: there is only
+// one audience for this file.
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ??
@@ -36,7 +44,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     '/aml-policy',
     '/refund-policy',
     '/acceptable-use',
-    '/firearms-compliance',
+    // '/firearms-compliance' deliberately ABSENT — it is the members-only
+    // Regulated Items Annex now (see /members/regulated-items). A sign-in-walled
+    // URL in a sitemap reads as broken to a crawler and to a bank reviewer.
     '/cookies',
     '/paia',
     '/legal',
@@ -45,6 +55,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Dynamic entries — fetched from the API; fall back to the static set if
   // the backend is unreachable at build/revalidate time.
   const [listings, categories, brands] = await Promise.all([
+    // Anonymous by design — see the file header.
     apiFetch<{ id: string; updatedAt: string }[]>('/listings/sitemap', {
       next: { revalidate: 3600 },
     } as RequestInit).catch(() => [] as { id: string; updatedAt: string }[]),

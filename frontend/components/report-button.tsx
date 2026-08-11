@@ -130,7 +130,7 @@ export function ReportButton({
                   Report this {kind}
                 </p>
                 <p className="text-xs mb-4" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-                  Tell us what&apos;s wrong. Reports are confidential and help keep Gun Galore safe.
+                  Tell us what&apos;s wrong. Reports are confidential and help keep All Outdoor safe.
                 </p>
 
                 {!isSignedIn ? (

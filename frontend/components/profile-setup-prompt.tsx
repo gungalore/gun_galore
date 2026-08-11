@@ -290,7 +290,7 @@ export function ProfileSetupPrompt() {
             margin: 0,
           }}
         >
-          Welcome to Gun Galore
+          Welcome to All Outdoor
         </p>
         <h2
           id="gg-profile-setup-title"

@@ -873,7 +873,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
               transporter — it doesn&apos;t have to be you at the gate. After
               you pay, we&apos;ll share contact details so you can arrange the
               pickup. Your payment is held until you confirm the item is with
-              you. Gun Galore doesn&apos;t arrange, quote or insure that
+              you. All Outdoor doesn&apos;t arrange, quote or insure that
               transport.
             </p>
           ) : (
@@ -1895,7 +1895,7 @@ function DeliveringToChip({
 
 // Dealer-transfer explainer + soft consent.
 //
-// Gun Galore's role in a firearm DEALER_TRANSFER ends at:
+// All Outdoor's role in a firearm DEALER_TRANSFER ends at:
 //   1. holding the buyer's funds
 //   2. verifying the seller's SAPS 534 + stock-register + firearm
 //      photos via Claude vision (instant for clear photos, human
@@ -1972,7 +1972,7 @@ function DealerTransferConsent({
           <li>
             You pay now — your funds are{' '}
             <strong style={{ color: 'var(--text-primary)' }}>
-              held by Gun Galore
+              held by All Outdoor
             </strong>
             .
           </li>
@@ -1987,7 +1987,7 @@ function DealerTransferConsent({
             <strong style={{ color: 'var(--text-primary)' }}>
               3 photos
             </strong>{' '}
-            on Gun Galore — the completed SAPS 534, the dealer&apos;s
+            on All Outdoor — the completed SAPS 534, the dealer&apos;s
             stock-register last line, and the firearm with its serial
             visible. Our AI checks the documents; if anything&apos;s
             unclear a human reviewer steps in.
@@ -2001,7 +2001,7 @@ function DealerTransferConsent({
             held funds to the seller.
           </li>
           <li>
-            Gun Galore&apos;s job in the transaction ends there. You
+            All Outdoor&apos;s job in the transaction ends there. You
             and the seller arrange the inter-dealer transfer to your
             own dealer (or your preferred collection method) between
             yourselves.
@@ -2038,7 +2038,7 @@ function DealerTransferConsent({
           style={{ marginTop: 3, accentColor: 'var(--red)' }}
         />
         <span style={{ color: 'var(--text-secondary)' }}>
-          I understand Gun Galore holds my funds until the
+          I understand All Outdoor holds my funds until the
           seller&apos;s dealer stock-in is verified, after which Gun
           Galore notifies me which dealer has the firearm and
           releases the funds — the inter-dealer transfer onwards is
@@ -2106,7 +2106,7 @@ function PrivateArrangeConsent({
           fontWeight: 600,
         }}
       >
-        Private arrangement — you waive Gun Galore&apos;s payment protection
+        Private arrangement — you waive All Outdoor&apos;s payment protection
       </p>
 
       <p style={{ color: 'var(--text-secondary)' }}>
@@ -2351,7 +2351,7 @@ function ExperienceAttestations({
           style={rowStyle}
         />
         <span style={{ color: 'var(--text-secondary)' }}>
-          I understand Gun Galore is a payment-protection intermediary — the
+          I understand All Outdoor is a payment-protection intermediary — the
           outfitter is the supplier of this experience.
         </span>
       </label>

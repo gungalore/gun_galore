@@ -52,7 +52,7 @@ export default function RefundPolicyPage() {
       <h2>1. How payment held works</h2>
       {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
-        For most transactions, GunGalore holds the buyer's payment
+        For most transactions, All Outdoor holds the buyer's payment
         through our appointed third-party payment service provider (a
         licensed South African payment service provider) until delivery
         is confirmed:
@@ -159,12 +159,12 @@ export default function RefundPolicyPage() {
       </p>
       <ul>
         <li><strong>Section 55</strong> — the right to safe, good-quality goods that are reasonably suitable for the purposes for which they are generally intended, are of good quality, in good working order and free of any defects.</li>
-        <li><strong>Section 56</strong> — an implied warranty of quality lasting <strong>6 months</strong> from the date of delivery; if the goods fail to meet the standards in Section 55 within that period, you may require the supplier (the seller) to repair them, replace them or refund the price. (For private-individual sellers, GunGalore acts only as facilitator; for goods sold by SAPS-licensed dealer Sellers, Section 56 applies directly to that dealer.)</li>
+        <li><strong>Section 56</strong> — an implied warranty of quality lasting <strong>6 months</strong> from the date of delivery; if the goods fail to meet the standards in Section 55 within that period, you may require the supplier (the seller) to repair them, replace them or refund the price. (For private-individual sellers, All Outdoor acts only as facilitator; for goods sold by SAPS-licensed dealer Sellers, Section 56 applies directly to that dealer.)</li>
         <li><strong>Section 17</strong> — the right to cancel an advance reservation within reasonable terms.</li>
         <li><strong>Section 19</strong> — the right to delivery at the agreed time and place.</li>
       </ul>
       <p>
-        Where a dispute cannot be resolved by GunGalore and falls
+        Where a dispute cannot be resolved by All Outdoor and falls
         within the jurisdiction of the National Consumer Commission or
         the Consumer Goods and Services Ombud, you may escalate it
         directly to them:
@@ -199,18 +199,18 @@ export default function RefundPolicyPage() {
         </li>
       </ul>
 
-      <h2>7. Items sold directly by Gun Galore (Daily Deals)</h2>
+      <h2>7. Items sold directly by All Outdoor (Daily Deals)</h2>
       <p>
         Most listings on the platform are sold by independent sellers, with
-        GunGalore acting as facilitator. <strong>Daily Deals are
+        All Outdoor acting as facilitator. <strong>Daily Deals are
         different</strong>: these are first-party sales where{' '}
-        <strong>Gun Galore is the seller</strong> and supplier. Because we are
+        <strong>All Outdoor is the seller</strong> and supplier. Because we are
         the supplier for a Daily Deal, the following apply to us directly:
       </p>
       <ul>
         <li>
           <strong>6-month CPA warranty (Sections 55 &amp; 56)</strong> — the
-          implied warranty of quality runs against Gun Galore as supplier. If a
+          implied warranty of quality runs against All Outdoor as supplier. If a
           Daily Deal item fails to be of good quality, in good working order and
           free of defects within 6 months of delivery, you may return it to us
           for repair, replacement or refund, at your election, at no charge.
@@ -247,7 +247,7 @@ export default function RefundPolicyPage() {
       <h2>8. Chargebacks</h2>
       <p>
         If you initiate a chargeback through your bank or card
-        provider without first raising a dispute with GunGalore, your
+        provider without first raising a dispute with All Outdoor, your
         account may be suspended while the chargeback is investigated.
         We strongly prefer the in-platform dispute route — it is
         faster, your seller is protected from punitive chargeback

@@ -1149,7 +1149,7 @@ export default function EditProfilePage() {
             </div>
           )}
 
-          {/* Step 2 — enter OTP. Branded with the Gun Galore logo. */}
+          {/* Step 2 — enter OTP. Branded with the All Outdoor logo. */}
           {phoneMode === 'entering-code' && (
             <div className="rounded-[8px] p-5 sm:p-6 text-center"
               style={{
@@ -1159,7 +1159,7 @@ export default function EditProfilePage() {
             >
               <Image
                 src="/logo.svg"
-                alt="Gun Galore"
+                alt="All Outdoor"
                 width={180}
                 height={36}
                 priority

@@ -61,8 +61,11 @@ const RESERVED = new Set([
   'help',
   'staff',
   'system',
+  // Old trading name kept reserved so nobody can squat it post-rebrand.
   'gungalore',
   'gun_galore',
+  'alloutdoor',
+  'all_outdoor',
   'official',
   'moderator',
   'sales',

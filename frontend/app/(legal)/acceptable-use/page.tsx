@@ -8,7 +8,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Acceptable Use Policy',
   description:
-    'What is and is not allowed on GunGalore — listings, content and behaviour rules.',
+    'What is and is not allowed on All Outdoor — listings, content and behaviour rules.',
 };
 
 export default function AcceptableUsePage() {
@@ -22,7 +22,7 @@ export default function AcceptableUsePage() {
       <h2>1. Who this applies to</h2>
       <p>
         This Acceptable Use Policy ("<strong>AUP</strong>") applies to
-        every person who creates an account on GunGalore, uses the
+        every person who creates an account on All Outdoor, uses the
         Platform as a visitor, lists or transacts goods, or submits
         any kind of content. The AUP is incorporated by reference into
         our{' '}
@@ -32,23 +32,23 @@ export default function AcceptableUsePage() {
 
       <h2>2. What you can list</h2>
       <p>
-        You may list goods on GunGalore where all of the following are
+        You may list goods on All Outdoor where all of the following are
         true:
       </p>
       <ul>
         <li>You own the item (or have express authority from the owner to sell it on their behalf).</li>
         <li>The item is lawful to sell, possess and transfer in South Africa.</li>
-        <li>The item fits one of GunGalore's category trees (optics, hunting, outdoor, camping, fishing, ranges, accessories, ammunition, firearms, etc.).</li>
+        <li>The item fits one of All Outdoor's category trees (optics, hunting, outdoor, camping, fishing, ranges, accessories, ammunition, firearms, etc.).</li>
         <li>The item is accurately described, with the correct condition (New, Like New, Good, Fair or Poor) and clear, recent photographs showing the actual item.</li>
         <li>For licence- and age-restricted items subject to the Firearms Control Act 60 of 2000, both you and the buyer hold the relevant SAPS Competency Certificate and the transfer is routed through a SAPS-licensed dealer — see our{' '}
-          <a href="/firearms-compliance" style={{ color: 'var(--red)' }}>Regulated Items &amp; Compliance</a>.
+          <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items &amp; Compliance</a>.
         </li>
       </ul>
 
       <h2>3. What you cannot list</h2>
       <p>
         The following are <strong>never</strong> permitted on
-        GunGalore. Listing any of these will result in immediate
+        All Outdoor. Listing any of these will result in immediate
         removal and may result in account suspension:
       </p>
       <ul>
@@ -79,7 +79,7 @@ export default function AcceptableUsePage() {
 
       <h2>5. What your listing description, questions and notes must NOT contain</h2>
       <p>
-        Across <strong>every</strong> freeform field on GunGalore
+        Across <strong>every</strong> freeform field on All Outdoor
         (listing title, description, pre-purchase Q&amp;A, offer
         notes, counter-offer notes, rating comments and any future
         message channel), the following are never permitted:

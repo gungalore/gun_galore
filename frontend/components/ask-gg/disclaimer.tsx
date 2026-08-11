@@ -98,7 +98,7 @@ export function AskGgDisclaimer({
             color: 'var(--text-secondary)',
           }}
         >
-          To the fullest extent permitted by law, <strong>Gun Galore accepts
+          To the fullest extent permitted by law, <strong>All Outdoor accepts
           no liability</strong> for any loss, injury or damage arising from use
           of Ask Boet. By continuing you confirm that you are{' '}
           <strong>18 years or older</strong> and that you accept these terms.

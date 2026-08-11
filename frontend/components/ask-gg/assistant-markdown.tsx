@@ -9,7 +9,7 @@ import remarkGfm from 'remark-gfm';
 /** Renders assistant-message content as Markdown. Claude's answers
  *  use `**bold**`, `## headers`, `- bullet lists`, fenced code, and
  *  inline `code` — without proper rendering they show as literals.
- *  Custom components apply Gun Galore's text-tertiary/primary
+ *  Custom components apply All Outdoor's text-tertiary/primary
  *  colour tokens + tight spacing so the chat bubble doesn't bloat.
  *  GFM enabled for tables (load-data tables benefit) + autolinks. */
 export function AssistantMarkdown({ content }: { content: string }) {

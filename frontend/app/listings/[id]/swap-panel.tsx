@@ -722,7 +722,7 @@ function ProposeForm({
         style={inputStyle}
       />
       <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-        No phone numbers, emails, or social handles — Gun Galore arranges both
+        No phone numbers, emails, or social handles — All Outdoor arranges both
         couriers and holds any cash until both parcels are delivered.
       </p>
 

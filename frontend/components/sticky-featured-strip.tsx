@@ -21,6 +21,7 @@
 // behind the strip).
 
 import { useEffect, useState } from 'react';
+import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
@@ -112,6 +113,7 @@ export function StickyFeaturedStrip() {
   // 80px from the top).
   const hideChrome = scrollDir === 'down';
 
+  const { viewerFetch } = useViewerFetch();
   const [slots, setSlots] = useState<RailSlot[] | null>(null);
 
   // Fetch + revalidate every 30s — same cadence as FeaturedRail so a
@@ -122,9 +124,11 @@ export function StickyFeaturedStrip() {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch(`${API_URL}/featured/rail`, {
-          cache: 'no-store',
-        });
+        // A featured slot renders on EVERY page, so a members-only occupant
+        // would put a firearm card in front of every anonymous visitor. The
+        // backend blanks the slot for signed-out callers; forward the session
+        // so members still see the real occupant.
+        const res = await viewerFetch(`${API_URL}/featured/rail`);
         if (!res.ok) return;
         const data = (await res.json()) as RailSlot[];
         if (!cancelled) setSlots(data);
@@ -138,7 +142,7 @@ export function StickyFeaturedStrip() {
       cancelled = true;
       clearInterval(t);
     };
-  }, [eligible]);
+  }, [eligible, viewerFetch]);
 
   // ALWAYS visible above the navbar on eligible pages (operator
   // 2026-07-20: "it must be above the navbar on the PWA always"). It no

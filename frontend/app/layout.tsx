@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { BRAND_NAME, BRAND_BLURB } from '@/lib/brand';
 import { Suspense } from 'react';
 import { ClerkProvider } from '@clerk/nextjs';
 import { PublicNav, PublicFooter } from '@/components/public-chrome';
@@ -72,14 +73,22 @@ const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ??
   'https://gungalore.co.za';
 
+// The single sentence a crawler, a WhatsApp unfurl and a Google result all
+// read first. STORE framing, public catalogue only: this is the site's own
+// description of itself, and it must match what a signed-out visitor can
+// actually browse. Regulated categories are members-only and are deliberately
+// not advertised here.
+const PUBLIC_DESCRIPTION =
+  `${BRAND_BLURB} — camping, overlanding, fishing, optics, knives and outdoor clothing. New and used, with every payment held until delivery is confirmed.`;
+
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Gun Galore — Outdoor, Hunting & Sport Marketplace',
-    template: '%s — Gun Galore',
+    default: `${BRAND_NAME} — New & Secondhand Outdoor Gear`,
+    template: `%s — ${BRAND_NAME}`,
   },
   description:
-    "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Seller identity verified before payout; every payment held until delivery is confirmed.",
+    PUBLIC_DESCRIPTION,
   // AUDIT M29 — Open Graph + Twitter Card metadata. Without this,
   // every link shared on WhatsApp / Facebook / X unfurls blank, which
   // for a share-driven SA marketplace suppresses organic referral.
@@ -96,25 +105,25 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_ZA',
-    siteName: 'Gun Galore',
-    title: 'Gun Galore — Outdoor, Hunting & Sport Marketplace',
+    siteName: BRAND_NAME,
+    title: `${BRAND_NAME} — New & Secondhand Outdoor Gear`,
     description:
-      "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Seller identity verified before payout; every payment held until delivery is confirmed.",
+      PUBLIC_DESCRIPTION,
     url: SITE_URL,
     images: [
       {
         url: '/og-default.jpg',
         width: 1200,
         height: 630,
-        alt: 'Gun Galore — South Africa’s outdoor, hunting and sport marketplace',
+        alt: `${BRAND_NAME} — ${BRAND_BLURB}`,
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Gun Galore — Outdoor, Hunting & Sport Marketplace',
+    title: `${BRAND_NAME} — New & Secondhand Outdoor Gear`,
     description:
-      "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Seller identity verified before payout; every payment held until delivery is confirmed.",
+      PUBLIC_DESCRIPTION,
     // summary_large_image needs a landscape image or X falls back to the
     // small card — same 1200x630 asset as Open Graph.
     images: ['/og-default.jpg'],
@@ -129,10 +138,10 @@ export const metadata: Metadata = {
   // mode and uses apple-mobile-web-app-capable instead).
   appleWebApp: {
     capable: true,
-    title: 'Gun Galore',
+    title: BRAND_NAME,
     statusBarStyle: 'black-translucent',
   },
-  applicationName: 'Gun Galore',
+  applicationName: BRAND_NAME,
   formatDetection: {
     telephone: false,
   },
@@ -306,7 +315,7 @@ export default function RootLayout({
           <Suspense fallback={null}>
             <BottomTabBar />
           </Suspense>
-          {/* Floating "Install Gun Galore" CTA — listens for
+          {/* Floating "Install All Outdoor" CTA — listens for
               beforeinstallprompt on Android/desktop, shows an iOS
               "Share → Add to Home Screen" hint on iOS Safari. 14-day
               dismissal stored in localStorage. Already standalone-

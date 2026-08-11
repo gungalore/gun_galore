@@ -11,7 +11,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Legal',
   description:
-    'All GunGalore legal documents and statutory disclosures in one place.',
+    'All All Outdoor legal documents and statutory disclosures in one place.',
 };
 
 const DOCS: { href: string; title: string; description: string }[] = [
@@ -19,7 +19,7 @@ const DOCS: { href: string; title: string; description: string }[] = [
     href: '/terms',
     title: 'Terms of Service',
     description:
-      'The master contract governing your use of the GunGalore platform.',
+      'The master contract governing your use of the All Outdoor platform.',
   },
   {
     href: '/privacy',
@@ -31,7 +31,7 @@ const DOCS: { href: string; title: string; description: string }[] = [
     href: '/acceptable-use',
     title: 'Acceptable Use Policy',
     description:
-      'What you may and may not list, post or do on GunGalore — and how we enforce it.',
+      'What you may and may not list, post or do on All Outdoor — and how we enforce it.',
   },
   {
     href: '/refund-policy',
@@ -40,7 +40,7 @@ const DOCS: { href: string; title: string; description: string }[] = [
       'When refunds happen, how disputes are reviewed, and your statutory rights under the CPA.',
   },
   {
-    href: '/firearms-compliance',
+    href: '/members/regulated-items',
     title: 'Regulated Items & Compliance',
     description:
       'Our role and your obligations for licence- and age-restricted categories, including firearms under the Firearms Control Act 60 of 2000.',
@@ -156,7 +156,7 @@ export default function LegalIndexPage() {
           <br />
           <strong>Registration number:</strong> 2026/393321/07
           <br />
-          <strong>Trading as:</strong> Gun Galore
+          <strong>Trading as:</strong> All Outdoor
           <br />
           <strong>Director:</strong> Gerhard Johan Petrus Fourie
           <br />

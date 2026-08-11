@@ -119,7 +119,7 @@ function formatRelative(iso: string): string {
 }
 
 export const metadata = {
-  title: 'My profile — Gun Galore',
+  title: 'My profile — All Outdoor',
 };
 
 // Parse a fetch Response safely: null on a missing/non-OK response or an

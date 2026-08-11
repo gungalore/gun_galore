@@ -146,7 +146,7 @@ export default function ExperienceOrderPanel({
               className="text-xs mb-4"
               style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
             >
-              The guest has paid and the funds are held by Gun Galore. Accept to
+              The guest has paid and the funds are held by All Outdoor. Accept to
               confirm the booking, or decline for a full refund. Your payout is
               released after the guest confirms the experience happened.
             </p>
@@ -250,7 +250,7 @@ export default function ExperienceOrderPanel({
             Awaiting outfitter confirmation
           </p>
           <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            Your payment is held safely by Gun Galore. The outfitter will
+            Your payment is held safely by All Outdoor. The outfitter will
             confirm your booking shortly. If they decline, you&apos;re refunded
             in full.
           </p>

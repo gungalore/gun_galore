@@ -103,6 +103,10 @@ function build(opts: { userExists?: boolean; auctionListing?: boolean } = {}) {
           ? {
               listingType: 'AUCTION',
               status: 'ACTIVE',
+              // Public category — the guide's live auction state is withheld
+              // from anonymous callers on members-only listings (see
+              // public-visibility.spec.ts), which is not what this test is about.
+              publicVisible: true,
               isExperience: false,
               currentBid: 1_500_000,
               endTime: future,

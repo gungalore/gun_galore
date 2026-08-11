@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { BrowseRailShell } from '@/components/browse-rail-shell';
 import type { Metadata } from 'next';
-import { apiFetch } from '@/lib/api';
+import { viewerFetch } from '@/lib/api-viewer';
 import { browseMetaDescription } from '@/lib/seo';
 import type { BrandSummary } from '@/lib/types';
 
@@ -9,7 +9,7 @@ import type { BrandSummary } from '@/lib/types';
 // both shoppers and crawlers can reach the per-brand landing pages.
 
 export const metadata: Metadata = {
-  title: 'Shop by brand — Gun Galore',
+  title: 'Shop by brand — All Outdoor',
   // Shared blurb (lib/seo.ts) so the brand index, brand pages and category
   // pages all describe the marketplace the same outdoor-first way.
   description: browseMetaDescription('gear by brand'),
@@ -17,9 +17,11 @@ export const metadata: Metadata = {
 };
 
 export default async function BrandsPage() {
-  const brands = await apiFetch<BrandSummary[]>('/listings/brand-index', {
-    next: { revalidate: 600 },
-  } as RequestInit).catch(() => [] as BrandSummary[]);
+  const brands = await // Brand folding now varies by viewer (firearm makes are members-only), so
+  // this can no longer sit in Next's SHARED data cache.
+  viewerFetch<BrandSummary[]>('/listings/brand-index').catch(
+    () => [] as BrandSummary[],
+  );
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-8">

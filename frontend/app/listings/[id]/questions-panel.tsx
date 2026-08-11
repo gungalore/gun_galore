@@ -66,7 +66,7 @@ function whoAsked(q: PublicQuestion): string {
 }
 
 function whoAnswered(q: PublicQuestion): string {
-  if (q.status === 'AUTO_ANSWERED') return 'Gun Galore AI';
+  if (q.status === 'AUTO_ANSWERED') return 'All Outdoor AI';
   return q.answeredByUser?.username ?? 'Seller';
 }
 

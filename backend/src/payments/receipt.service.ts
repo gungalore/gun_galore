@@ -7,13 +7,13 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { PrismaService } from '../prisma/prisma.service';
 
 // ────────────────────────────────────────────────────────────────────
-// Buyer purchase receipt (Phase 2). Gun Galore-issued proof of purchase —
+// Buyer purchase receipt (Phase 2). All Outdoor-issued proof of purchase —
 // NOT an accounting/tax document (sellers get the Zoho commission invoice;
 // the platform isn't VAT-registered). Generated on demand from the
 // Transaction snapshot, so there's no stored file or extra schema field.
 //
 // PRIVACY: the receipt deliberately shows the seller's @username only (a
-// public identifier) and Gun Galore's own contact — never the seller's
+// public identifier) and All Outdoor's own contact — never the seller's
 // real name / email / phone. Mirrors the POPIA strip in
 // TransactionsService.findById.
 // ────────────────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ export class ReceiptService {
     };
 
     // Header
-    text('GUN GALORE', { size: 22, b: true, color: NAVY });
+    text('ALL OUTDOOR', { size: 22, b: true, color: NAVY });
     y -= 18;
     text('Purchase receipt', { size: 12, color: GREY });
     y -= 30;
@@ -121,7 +121,7 @@ export class ReceiptService {
       y -= 16;
     }
     text('Seller', { b: true, color: GREY });
-    right(tx.seller.username ? `@${tx.seller.username}` : 'Gun Galore seller');
+    right(tx.seller.username ? `@${tx.seller.username}` : 'All Outdoor seller');
     y -= 28;
 
     // Divider
@@ -189,17 +189,17 @@ export class ReceiptService {
       // A firearm DEALER_TRANSFER release is gated on SAPS-534 dealer
       // verification, not a buyer delivery confirmation.
       note(
-        'Your payment is held by Gun Galore and released to the seller once the SAPS 534 dealer transfer is verified.',
+        'Your payment is held by All Outdoor and released to the seller once the SAPS 534 dealer transfer is verified.',
       );
     } else {
       note(
-        'Your payment is held by Gun Galore and released to the seller once delivery is confirmed.',
+        'Your payment is held by All Outdoor and released to the seller once delivery is confirmed.',
       );
     }
     note(
       'This is a proof-of-purchase receipt, not a tax invoice. Questions: support@gungalore.co.za',
     );
-    note('Gun Galore — gungalore.co.za');
+    note('All Outdoor — gungalore.co.za');
 
     const pdf = await doc.save();
     return { pdf, filename: `gun-galore-receipt-${ref}.pdf` };

@@ -165,17 +165,17 @@ export class ActionTokensService {
     }
     if (row.invalidAttempts >= MAX_INVALID_ATTEMPTS) {
       throw new ForbiddenException(
-        'This link has been locked after too many invalid attempts. Please request a fresh link from your Gun Galore dashboard.',
+        'This link has been locked after too many invalid attempts. Please request a fresh link from your All Outdoor dashboard.',
       );
     }
     if (row.usedAt) {
       throw new GoneException(
-        'This link has already been used. You can view the outcome in your Gun Galore account.',
+        'This link has already been used. You can view the outcome in your All Outdoor account.',
       );
     }
     if (row.expiresAt.getTime() <= Date.now()) {
       throw new GoneException(
-        'This link has expired. The action it covered is no longer available — check your Gun Galore account for the current state.',
+        'This link has expired. The action it covered is no longer available — check your All Outdoor account for the current state.',
       );
     }
     return {

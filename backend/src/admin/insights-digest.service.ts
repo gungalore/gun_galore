@@ -138,7 +138,7 @@ export class InsightsDigestService {
         model: MODEL,
         max_tokens: 1400,
         system:
-          'You are a marketplace analyst for Gun Galore, a South African online ' +
+          'You are a marketplace analyst for All Outdoor, a South African online ' +
           'marketplace for outdoor, hunting and sport goods (firearms transfer via ' +
           'licensed dealers). You write a short weekly operator digest. Use ONLY the ' +
           'numbers in the JSON provided — never invent figures. Be specific and ' +
@@ -157,7 +157,7 @@ export class InsightsDigestService {
           {
             role: 'user',
             content:
-              'This week\'s Gun Galore data (JSON):\n\n' +
+              'This week\'s All Outdoor data (JSON):\n\n' +
               JSON.stringify(data, null, 2),
           },
         ],

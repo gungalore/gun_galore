@@ -39,7 +39,7 @@ export default function GlobalError({
       <div style={{ maxWidth: 480, textAlign: 'center' }}>
         <Image
           src="/logo.svg"
-          alt="Gun Galore"
+          alt="All Outdoor"
           width={200}
           height={40}
           priority

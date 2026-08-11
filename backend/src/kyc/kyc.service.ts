@@ -119,7 +119,7 @@ export class KycService {
     // Hash the SA ID FIRST so we can refuse a duplicate before burning
     // a VerifyNow credit. We never persist the raw idNumber — only the
     // salted SHA-256 hash. If another user already has this hash on
-    // their record, hard-block here: one ID = one Gun Galore account.
+    // their record, hard-block here: one ID = one All Outdoor account.
     const idHash = hashSaIdNumber(idNumber);
     const existing = await this.prisma.user.findUnique({
       where: { kycIdHash: idHash },
@@ -127,7 +127,7 @@ export class KycService {
     });
     if (existing && existing.id !== user.id) {
       throw new BadRequestException(
-        'This SA ID number is already linked to another Gun Galore account. Contact support if this is an error.',
+        'This SA ID number is already linked to another All Outdoor account. Contact support if this is an error.',
       );
     }
 
@@ -324,7 +324,7 @@ export class KycService {
         await this.sms.sendSms({
           to: user.phone,
           message:
-            'Gun Galore: Your identity has been verified. Your pending sale can now proceed.',
+            'All Outdoor: Your identity has been verified. Your pending sale can now proceed.',
           reference: `kyc-approved-${user.id}`,
         });
       }
@@ -350,7 +350,7 @@ export class KycService {
     if (user.phone) {
       await this.sms.sendSms({
         to: user.phone,
-        message: `Gun Galore: ${retryMessage}`,
+        message: `All Outdoor: ${retryMessage}`,
         reference: `kyc-failed-${user.id}-${newAttempts}`,
       });
     }
@@ -483,7 +483,7 @@ export class KycService {
       (Date.now() - dobDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
     if (age < 18) {
       throw new BadRequestException(
-        'You must be at least 18 to sell on Gun Galore.',
+        'You must be at least 18 to sell on All Outdoor.',
       );
     }
 
@@ -495,7 +495,7 @@ export class KycService {
     });
     if (existing && existing.id !== user.id) {
       throw new BadRequestException(
-        'This SA ID number is already linked to another Gun Galore account. Contact support if this is an error.',
+        'This SA ID number is already linked to another All Outdoor account. Contact support if this is an error.',
       );
     }
 
@@ -788,7 +788,7 @@ export class KycService {
         await this.sms.sendSms({
           to: user.phone,
           message:
-            'Gun Galore: Your identity has been verified. Your pending sale can now proceed.',
+            'All Outdoor: Your identity has been verified. Your pending sale can now proceed.',
           reference: `kyc-approved-${user.id}`,
         });
       }
@@ -844,7 +844,7 @@ export class KycService {
     if (user.phone) {
       await this.sms.sendSms({
         to: user.phone,
-        message: `Gun Galore: ${retryMessage}`,
+        message: `All Outdoor: ${retryMessage}`,
         reference: `kyc-failed-${user.id}-${newAttempts}`,
       });
     }
@@ -898,7 +898,7 @@ export class KycService {
     });
     await this.sms.sendSms({
       to: user.phone,
-      message: `Gun Galore: Continue your identity verification on your phone: ${appUrl}/a/${token}`,
+      message: `All Outdoor: Continue your identity verification on your phone: ${appUrl}/a/${token}`,
       reference: `kyc-handoff-${user.id}`,
     });
 
@@ -1109,7 +1109,7 @@ export class KycService {
       if (seller.phone) {
         await this.sms.sendSms({
           to: seller.phone,
-          message: `Gun Galore: You have a pending sale. Verify your identity to release the payout: ${kycUrl}`,
+          message: `All Outdoor: You have a pending sale. Verify your identity to release the payout: ${kycUrl}`,
           reference: `kyc-required-${seller.id}`,
         });
       }
@@ -1296,7 +1296,7 @@ export class KycService {
         if (phone) {
           await this.sms.sendSms({
             to: phone,
-            message: `Gun Galore: VerifyNow credits at ${available} (threshold ${LOW_BALANCE_THRESHOLD}). Top up to keep KYC running.`,
+            message: `All Outdoor: VerifyNow credits at ${available} (threshold ${LOW_BALANCE_THRESHOLD}). Top up to keep KYC running.`,
             reference: `verifynow-low-${admin.id}`,
           });
         }

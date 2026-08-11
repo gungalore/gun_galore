@@ -131,13 +131,13 @@ export interface ListingModerationResult {
   publicReason?: string;
 }
 
-// Deliberately small prompt — Gun Galore moderation only catches TWO
+// Deliberately small prompt — All Outdoor moderation only catches TWO
 // things. Anything else is the seller's business or the admin queue's
 // problem. Earlier versions tried to enforce SA firearm law, photo
 // quality, category matching, confidence thresholds etc — most of those
 // produced false positives that frustrated good sellers. We rolled them
 // all back per the operator's call: "Claude needs to relax."
-const SYSTEM_PROMPT = `You are the listing moderator for Gun Galore — a South African marketplace.
+const SYSTEM_PROMPT = `You are the listing moderator for All Outdoor — a South African marketplace.
 
 You only check for TWO things. Anything else: APPROVE.
 
@@ -346,7 +346,7 @@ export class ListingModerationService {
       return { enhanced: description, changed: false, specsAdded: false };
     }
 
-    const system = `You are a listing assistant for Gun Galore, a South African used marketplace for firearms, accessories, and outdoor equipment.
+    const system = `You are a listing assistant for All Outdoor, a South African used marketplace for firearms, accessories, and outdoor equipment.
 Your job is to polish the seller's own draft AND append researched specs as a SEPARATE section below.
 
 Output exactly this structure:

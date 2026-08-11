@@ -44,9 +44,23 @@ interface ParentCat {
   // to Listing.isExperience; drives Buy Now/Auction-only + PENDING_REVIEW.
   isExperience?: boolean;
   isActive?: boolean;
+  // Visible to signed-out visitors + crawlers. OMITTED = members-only, because
+  // Category.publicVisible defaults to false and this is an allowlist: a tree
+  // added later stays hidden until someone opts it in. See the schema comment.
+  publicVisible?: boolean;
   sortOrder: number;
 }
 
+// PUBLIC vs MEMBERS-ONLY (2026-08 repositioning).
+//
+// The signed-out storefront presents as a new-and-secondhand OUTDOOR store.
+// Regulated and weapon-adjacent trees are members-only: firearms, gun-smithing
+// parts, reloading components + equipment, air rifles/airsoft, self-defence and
+// shooting accessories. They still work exactly as before once you sign in.
+//
+// `publicVisible: true` is opt-in per root. Anything without it is hidden —
+// including anything added in future. Do not "fix" a missing flag by changing
+// the default; add the flag to the root you actually meant to publish.
 const categories: ParentCat[] = [
   { name: 'Air Rifles', slug: 'air-rifles', sortOrder: 1 },
   // Live ammunition disabled entirely (isActive:false) — the platform is
@@ -55,28 +69,28 @@ const categories: ParentCat[] = [
   // and powder have no category at all, so they cannot be listed. Re-enable
   // only once proper dealer-ammo licensing is in place.
   { name: 'Ammo', slug: 'ammo', sortOrder: 2, availableSecondhand: false, availableNewStore: false, isActive: false },
-  { name: 'Cleaning Equipment', slug: 'cleaning-equipment', sortOrder: 3, availableNewStore: true },
+  { name: 'Cleaning Equipment', slug: 'cleaning-equipment', sortOrder: 3, availableNewStore: true, publicVisible: true },
   // The Firearms parent — all sub-categories require dealer transfer.
   { name: 'Firearms', slug: 'firearms', sortOrder: 4, isFirearm: true, requiresLicence: true },
   { name: 'Gun Smithing & Parts', slug: 'gun-smithing-parts', sortOrder: 5, availableNewStore: true },
-  { name: 'Optics', slug: 'optics', sortOrder: 6, availableNewStore: true },
+  { name: 'Optics', slug: 'optics', sortOrder: 6, availableNewStore: true, publicVisible: true },
   { name: 'Reloading Components', slug: 'reloading-components', sortOrder: 7, availableNewStore: true },
   { name: 'Shooting Accessories', slug: 'shooting-accessories', sortOrder: 8, availableNewStore: true },
-  { name: 'Fishing', slug: 'fishing', sortOrder: 9, availableNewStore: true },
-  { name: 'Camping & Outdoor', slug: 'camping-outdoor', sortOrder: 10, availableNewStore: true },
-  { name: 'Knives', slug: 'knives', sortOrder: 11, availableNewStore: true },
+  { name: 'Fishing', slug: 'fishing', sortOrder: 9, availableNewStore: true, publicVisible: true },
+  { name: 'Camping & Outdoor', slug: 'camping-outdoor', sortOrder: 10, availableNewStore: true, publicVisible: true },
+  { name: 'Knives', slug: 'knives', sortOrder: 11, availableNewStore: true, publicVisible: true },
   { name: 'Self Defence', slug: 'self-defence', sortOrder: 12, availableNewStore: true },
-  { name: 'Paintball', slug: 'paintball', sortOrder: 13, availableNewStore: true },
+  { name: 'Paintball', slug: 'paintball', sortOrder: 13, availableNewStore: true, publicVisible: true },
   { name: 'Reloading Equipment', slug: 'reloading-equipment', sortOrder: 14, availableNewStore: true },
   // ─── Outdoor expansion (P3) — full outdoor marketplace tree ───────────
-  { name: 'Overlanding & 4x4', slug: 'overlanding', sortOrder: 15, availableNewStore: true },
-  { name: 'Hunting', slug: 'hunting', sortOrder: 16, availableNewStore: true },
-  { name: 'Outdoor Clothing & Footwear', slug: 'outdoor-clothing-footwear', sortOrder: 17, availableNewStore: true },
-  { name: 'Archery & Bowhunting', slug: 'archery-bowhunting', sortOrder: 18, availableNewStore: true },
+  { name: 'Overlanding & 4x4', slug: 'overlanding', sortOrder: 15, availableNewStore: true, publicVisible: true },
+  { name: 'Hunting', slug: 'hunting', sortOrder: 16, availableNewStore: true, publicVisible: true },
+  { name: 'Outdoor Clothing & Footwear', slug: 'outdoor-clothing-footwear', sortOrder: 17, availableNewStore: true, publicVisible: true },
+  { name: 'Archery & Bowhunting', slug: 'archery-bowhunting', sortOrder: 18, availableNewStore: true, publicVisible: true },
   // Hunting Packages & Experiences (EXP module) — future-dated on-site SERVICE
   // (guided hunts / range days), no shipping. Buy Now or Auction only; every
   // listing routes to PENDING_REVIEW for supplier-doc review.
-  { name: 'Hunting Packages & Experiences', slug: 'hunting-packages-experiences', sortOrder: 19, isExperience: true },
+  { name: 'Hunting Packages & Experiences', slug: 'hunting-packages-experiences', sortOrder: 19, isExperience: true, publicVisible: true },
 ];
 
 // Sub-categories keyed by parent slug. Each child inherits the parent's
@@ -88,6 +102,11 @@ interface SubCat {
   collectionOnly?: boolean; // Override — in-person collection only (no courier)
   requiresPapers?: boolean; // Override — NaTIS registration / roadworthy attestation
   showTestedWorkingAttestation?: boolean; // P5.4 — offer the "tested & working" seller claim
+  // Override — keep this child members-only even though its parent tree is
+  // public. Used where one child is a weapon and its siblings are not
+  // (Crossbows under Archery). One-way only: a child can be pulled OUT of the
+  // public tree, never pushed into one.
+  membersOnly?: boolean;
 }
 
 const subCategories: Record<string, SubCat[]> = {
@@ -259,7 +278,10 @@ const subCategories: Record<string, SubCat[]> = {
   'archery-bowhunting': [
     { name: 'Compound Bows' },
     { name: 'Recurve & Traditional Bows' },
-    { name: 'Crossbows' },
+    // Crossbows are classified as weapons by the major platforms even though
+    // bows are not, so this one child stays members-only while the rest of
+    // archery is a public outdoor category.
+    { name: 'Crossbows', membersOnly: true },
     { name: 'Arrows & Bolts' },
     { name: 'Broadheads & Points' },
     { name: 'Releases & Sights' },
@@ -508,12 +530,17 @@ async function main() {
       const childSlug = `${parentSlug}--${slugify(child.name)}`;
       const isFirearm = child.licenced ? true : parent.isFirearm;
       const requiresLicence = child.licenced ? true : parent.requiresLicence;
+      // Public visibility inherits DOWN only, and `membersOnly` can pull a
+      // single child back out. A child under a members-only parent can never
+      // become public by accident.
+      const publicVisible = child.membersOnly ? false : parent.publicVisible;
       const data = {
         name: child.name,
         slug: childSlug,
         parentId: parent.id,
         isFirearm,
         requiresLicence,
+        publicVisible,
         availableSecondhand: parent.availableSecondhand,
         availableNewStore: parent.availableNewStore,
         collectionOnly: child.collectionOnly ?? false,

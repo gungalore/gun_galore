@@ -223,11 +223,11 @@ export default function ExperiencePanel({
             You attend on the event date
           </strong>{' '}
           — there is no courier or parcel. Once you book, your payment is held
-          by Gun Galore and released to the outfitter after you confirm the
+          by All Outdoor and released to the outfitter after you confirm the
           experience happened.
         </p>
         <p style={{ color: 'var(--text-tertiary)' }}>
-          Gun Galore is a payment-protection intermediary; the outfitter is the
+          All Outdoor is a payment-protection intermediary; the outfitter is the
           supplier. Bookings are covered by our{' '}
           <Link
             href="/experiences-cancellation-policy"

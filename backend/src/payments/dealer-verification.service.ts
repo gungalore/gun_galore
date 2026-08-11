@@ -26,7 +26,7 @@ import { sanitizePromptValue } from '../common/prompt-sanitize';
  *      customers' details are exposed.
  *
  *   3. The firearm itself with its serial number visible, next to a
- *      slip of paper showing the Gun Galore order reference.
+ *      slip of paper showing the All Outdoor order reference.
  *
  * Claude vision (Sonnet — same model the listing moderator uses)
  * scans all three in a single call and returns a structured JSON
@@ -384,7 +384,7 @@ export class DealerVerificationService {
     // already told them "we're reviewing".
     if (status === 'APPROVED') {
       void this.sendOutcomeEmail(transactionId, 'APPROVED');
-      // Per the new flow: APPROVED means Gun Galore's job is done.
+      // Per the new flow: APPROVED means All Outdoor's job is done.
       // Release the held funds to the seller AND notify the buyer
       // with the dealer's contact details. We fire-and-forget so a
       // notification or payout failure doesn't break the upload
@@ -482,7 +482,7 @@ export class DealerVerificationService {
   // -------------------------------------------------------------------
   // Fires whenever a transaction's dealer-verification status becomes
   // APPROVED (either via auto-Claude or admin override). This is the
-  // moment Gun Galore is done with the transaction: the seller gets
+  // moment All Outdoor is done with the transaction: the seller gets
   // their payout, the buyer gets the dealer's contact details so they
   // can arrange the inter-dealer transfer themselves.
   //
@@ -638,7 +638,7 @@ export class DealerVerificationService {
 
       // Buyer notification with the dealer contact details — this
       // is the moment they find out where the firearm has been
-      // booked into stock + that Gun Galore is now hands-off.
+      // booked into stock + that All Outdoor is now hands-off.
       const buyerName =
         [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') ||
         'Buyer';
@@ -664,7 +664,7 @@ export class DealerVerificationService {
       void this.notifications.resolveByEntity('transaction', transactionId);
 
       // ── Zoho Books accounting hooks ──────────────────────────────
-      // Create the commission invoice (Gun Galore → Seller) and
+      // Create the commission invoice (All Outdoor → Seller) and
       // immediately mark it paid from Client Funds Payable. Both
       // are gated by ZOHO_BOOKS_ENABLED — feature-flagged so we
       // can deploy this code without affecting Books until you're
@@ -906,12 +906,12 @@ export class DealerVerificationService {
   }): Promise<DealerVerificationFindings> {
     if (!this.client) throw new Error('Anthropic client not configured');
 
-    const systemPrompt = `You are the dealer stock-in verifier for Gun Galore, a South African firearms marketplace.
+    const systemPrompt = `You are the dealer stock-in verifier for All Outdoor, a South African firearms marketplace.
 
 You will be shown THREE documents in order:
   1. A completed SAP 534 form (Transfer of Firearm Ownership, s125(2)(a)(iii)) stamped or signed by a SAPS-licensed dealer. This may be a multi-page PDF or a photo — read every page.
   2. The last line of the dealer's stock register (FCA Reg. 86) — only ONE line should be visible to protect other customers' privacy.
-  3. The firearm itself with its serial number visible, next to a slip of paper showing the Gun Galore order reference.
+  3. The firearm itself with its serial number visible, next to a slip of paper showing the All Outdoor order reference.
 
 Your job is to score each photo against a rubric and return a single JSON object. Score every numeric field 0-100 where 100 = confident the criterion is met, 0 = confident it is not. Be honest — if a field is illegible or the photo is blurry, score it 50 or lower.
 
@@ -922,7 +922,7 @@ Schema:
   "saps534": {
     "all_fields_filled": <0-100>,
     "dealer_stamp_or_signature": <0-100>,   // stamp OR (signature + printed dealer name + date) is acceptable
-    "block_letters": <0-100>,               // handwriting is in block capitals — Gun Galore requires this
+    "block_letters": <0-100>,               // handwriting is in block capitals — All Outdoor requires this
     "dealer_licence_visible": <0-100>,
     "extracted_dealer_licence": "<string or null>",  // what you read on the form
     "extracted_dealer_name": "<the receiving dealer's business/trading name exactly as printed on the form, or null>",

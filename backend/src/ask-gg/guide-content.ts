@@ -56,7 +56,7 @@ export interface AskGgGuide {
 export const GUIDES: Record<string, AskGgGuide> = {
   home: {
     key: 'home',
-    title: 'Welcome — here’s how Gun Galore works',
+    title: 'Welcome — here’s how All Outdoor works',
     intro:
       'A South African marketplace for firearms, hunting, shooting, fishing, camping and the outdoors — with your payment protected on every deal.',
     points: [
@@ -67,7 +67,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'Stuck? I’m on every page — ask me anything about the site, your orders, or the gear itself.',
     ],
     ctas: [
-      { label: 'How does buying work?', ask: 'Walk me through buying something on Gun Galore from start to finish, including how my payment is protected.' },
+      { label: 'How does buying work?', ask: 'Walk me through buying something on All Outdoor from start to finish, including how my payment is protected.' },
       { label: 'Start selling', href: '/listings/new' },
       { label: 'Browse the marketplace', href: '/listings' },
     ],
@@ -113,7 +113,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     ctas: [
       { label: 'Is this a fair price?', ask: 'Is this listing fairly priced? Check it against sold comparables for me.' },
       { label: 'What will shipping cost?', ask: 'What would shipping cost me for this item, and which options are available?' },
-      { label: 'What else do I need?', ask: 'If I buy this, what accessories or extras should I get with it? Only suggest items actually for sale on Gun Galore.' },
+      { label: 'What else do I need?', ask: 'If I buy this, what accessories or extras should I get with it? Only suggest items actually for sale on All Outdoor.' },
     ],
   },
 
@@ -128,7 +128,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'When it ends, the highest qualifying bid wins and pays through normal checkout, with your payment held until delivery. Firearms complete via a licensed-dealer transfer.',
     ],
     ctas: [
-      { label: 'How does auto-bidding work?', ask: 'How exactly does auto-bidding (setting a maximum) work on a Gun Galore auction, and how does it help me win?' },
+      { label: 'How does auto-bidding work?', ask: 'How exactly does auto-bidding (setting a maximum) work on a All Outdoor auction, and how does it help me win?' },
       { label: 'Explain the reserve', ask: 'What is a reserve price on this auction and how do I know if it has been met?' },
     ],
   },
@@ -143,7 +143,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'Firearm swaps still route each firearm through a licensed dealer.',
     ],
     ctas: [
-      { label: 'Walk me through a swop', ask: 'Walk me through how a Swop works on Gun Galore from proposal to completion.' },
+      { label: 'Walk me through a swop', ask: 'Walk me through how a Swop works on All Outdoor from proposal to completion.' },
     ],
   },
 
@@ -298,7 +298,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'Your banking details are only ever shown to you — I never handle or repeat them.',
     ],
     ctas: [
-      { label: 'Why do you need my banking?', ask: 'Why does Gun Galore need my banking details, and how are they kept safe?' },
+      { label: 'Why do you need my banking?', ask: 'Why does All Outdoor need my banking details, and how are they kept safe?' },
     ],
   },
 
@@ -483,7 +483,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'Selling is free to list; firearms complete through a licensed-dealer transfer.',
     ],
     ctas: [
-      { label: 'What can you do?', ask: 'What can you help me with on Gun Galore?' },
+      { label: 'What can you do?', ask: 'What can you help me with on All Outdoor?' },
     ],
   },
 };

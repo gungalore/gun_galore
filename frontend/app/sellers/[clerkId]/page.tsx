@@ -7,7 +7,7 @@ import { ReportButton } from '@/components/report-button';
 import { ClickableAvatar } from '@/components/avatar-lightbox';
 import { FilterBar } from '@/components/filter-bar';
 import { Pagination } from '@/components/pagination';
-import { apiFetch } from '@/lib/api';
+import { viewerFetch } from '@/lib/api-viewer';
 import { auth } from '@clerk/nextjs/server';
 import type { BrowseResponse, PublicSellerProfile, Category } from '@/lib/types';
 
@@ -74,29 +74,39 @@ export default async function SellerProfilePage({
   if (sp.attrs) qs.set('attrs', sp.attrs);
   qs.set('limit', '24');
 
+  // Forwarded to the reviews call below so a member still sees every review.
+  const viewerToken = await (await auth()).getToken().catch(() => null);
+
   const [profileRes, ratingsRes, browse, categories, brands, facetData] =
     await Promise.all([
       // Phase E1 — public seller profile with badge fields. 404 here
       // is the canonical "no such seller" so we propagate it to the
       // page's notFound() below.
       fetch(`${API_URL}/sellers/${clerkId}`, { cache: 'no-store' }),
-      fetch(`${API_URL}/ratings/seller/${clerkId}`, { cache: 'no-store' }),
+      // Reviews embed the listing TITLE, so this response varies by viewer:
+      // signed out, reviews on members-only listings are withheld. Raw fetch
+      // (not viewerFetch) because the page needs the Response to distinguish
+      // a 404 seller from an empty review list.
+      fetch(`${API_URL}/ratings/seller/${clerkId}`, {
+        cache: 'no-store',
+        headers: viewerToken
+          ? { Authorization: `Bearer ${viewerToken}` }
+          : undefined,
+      }),
       // Scope by sellerClerkId + the active filters. Same browse assembly the
       // homepage uses (24/page). The backend routes sellerClerkId to the
       // Prisma path with every other filter applied.
-      apiFetch<BrowseResponse>(`/listings?${qs}`, { cache: 'no-store' }).catch(
-        () => ({ listings: [], total: 0, page: 1, limit: 24 }),
-      ),
-      apiFetch<Category[]>('/categories', { next: { revalidate: 3600 } } as RequestInit).catch(
-        () => [] as Category[],
-      ),
-      apiFetch<string[]>('/listings/brands', { next: { revalidate: 3600 } } as RequestInit).catch(
-        () => [] as string[],
-      ),
+      viewerFetch<BrowseResponse>(`/listings?${qs}`).catch(() => ({
+        listings: [],
+        total: 0,
+        page: 1,
+        limit: 24,
+      })),
+      viewerFetch<Category[]>('/categories').catch(() => [] as Category[]),
+      viewerFetch<string[]>('/listings/brands').catch(() => [] as string[]),
       sp.categoryId
-        ? apiFetch<{ facets: Record<string, Record<string, number>> }>(
+        ? viewerFetch<{ facets: Record<string, Record<string, number>> }>(
             `/listings/facets?${qs}`,
-            { cache: 'no-store' },
           ).catch(() => ({ facets: {} }))
         : Promise.resolve({ facets: {} as Record<string, Record<string, number>> }),
     ]);

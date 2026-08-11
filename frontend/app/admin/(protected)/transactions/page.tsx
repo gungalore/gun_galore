@@ -61,7 +61,7 @@ export default function AdminTransactionsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'gungalore-orders.csv';
+      a.download = 'all-outdoor-orders.csv';
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {

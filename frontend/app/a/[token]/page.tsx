@@ -132,7 +132,7 @@ export default async function ActionTokenPage({
 /**
  * Mobile-only chrome — single column, centered, max ~480px wide.
  * The logo bar at the top serves as the visual anchor + reassurance
- * ("yes you're really on Gun Galore"). No nav, no footer beyond the
+ * ("yes you're really on All Outdoor"). No nav, no footer beyond the
  * fine print, no Clerk wrapper, no PWA install prompt — just the
  * action page.
  */
@@ -168,7 +168,7 @@ function LogoHeader() {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/logo-mark.svg"
-        alt="Gun Galore"
+        alt="All Outdoor"
         style={{ width: 56, height: 56, display: 'inline-block' }}
       />
     </div>
@@ -186,7 +186,7 @@ function PageFootnote() {
         marginTop: 12,
       }}
     >
-      This is a single-use link from Gun Galore. It expires after use
+      This is a single-use link from All Outdoor. It expires after use
       and does not sign you into your account.
       <br />
       Need full account access?{' '}

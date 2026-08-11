@@ -554,7 +554,7 @@ function LoadDataPanel({
         <UpgradeNudge
           reason={
             loads.upgradeReason ??
-            `You're previewing 3 of ${loads.totalLoads} published loads. Gun Galore PRO unlocks all of them.`
+            `You're previewing 3 of ${loads.totalLoads} published loads. All Outdoor PRO unlocks all of them.`
           }
         />
       )}
@@ -925,7 +925,7 @@ function UpgradeNudge({ reason }: { reason: string }) {
         }}
       >
         {reason ||
-          'The Load Data browser is a Gun Galore PRO perk. Upgrade to browse published manual load data by calibre — every powder, charge, velocity and manual citation.'}
+          'The Load Data browser is a All Outdoor PRO perk. Upgrade to browse published manual load data by calibre — every powder, charge, velocity and manual citation.'}
       </span>
       <Link
         href="/ask-gg"

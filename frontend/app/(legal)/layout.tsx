@@ -16,7 +16,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
         className="text-xs inline-block mb-6"
         style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }}
       >
-        ← Back to Gun Galore
+        ← Back to All Outdoor
       </Link>
       <article
         className="prose prose-invert"

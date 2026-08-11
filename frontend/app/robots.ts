@@ -36,6 +36,11 @@ export default function robots(): MetadataRoute.Robots {
           '/a/', // token-gated single-action pages
           '/offline',
           '/preview/',
+          // Members area — regulated-item terms and anything else that only
+          // exists behind sign-in. Belt and braces: these routes already 307
+          // to /sign-in via middleware, but a Disallow keeps them out of the
+          // crawl budget and out of "indexed, though blocked" reports.
+          '/members/',
         ],
       },
     ],

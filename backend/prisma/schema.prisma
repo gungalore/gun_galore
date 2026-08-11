@@ -591,6 +591,17 @@ model Category {
   // True when this category contains items legally classified as firearms
   // (the Firearms parent + all its children, plus Barrels under Gun Smithing).
   isFirearm                    Boolean    @default(false)
+  // Whether this category is visible to a SIGNED-OUT visitor (and therefore
+  // to crawlers). Regulated and weapon-adjacent trees — firearms, gun-smithing
+  // parts, reloading components/equipment, air rifles, self-defence and
+  // shooting accessories — stay members-only; camping, fishing, optics,
+  // clothing and the rest of the outdoor catalogue are public.
+  //
+  // DEFAULT FALSE IS DELIBERATE. This is an allowlist, not a blocklist: a
+  // category added later is invisible until someone marks it public, so the
+  // failure mode is "we forgot to show the tents", never "we leaked the
+  // rifles". Never flip this default.
+  publicVisible                Boolean    @default(false)
   // Subset of isFirearm — these MUST ship via licensed-dealer transfer.
   // SAPS regulation: firearms + barrels cannot move between individuals
   // without dealer paperwork.
@@ -750,6 +761,15 @@ model Listing {
   province               Province
 
   isFirearm               Boolean   @default(false)
+  // Snapshotted from Category.publicVisible at create time. Denormalised for
+  // exactly the reason isDealListing is: every public-discovery query filters
+  // on it, and the Meilisearch document can only carry scalars — a join to
+  // Category is not available inside a Meili filter clause.
+  //
+  // Kept in sync by (a) create/update when the category changes, and (b) the
+  // admin category-visibility resync. Default false = a row that somehow
+  // misses the snapshot is hidden, not leaked.
+  publicVisible           Boolean   @default(false)
   // Snapshotted from Category.collectionOnly at create time (like
   // isFirearm). When true the only shipping method is COLLECTION — no
   // courier rate is quoted and the buyer collects in person.
@@ -1040,6 +1060,9 @@ model Listing {
   @@index([status, listedAt])
   // Daily Deals — every public listing query filters `isDealListing: false`.
   @@index([isDealListing])
+  // Signed-out discovery — every anonymous browse adds `publicVisible: true`
+  // on top of the status filter, so index the pair.
+  @@index([status, publicVisible])
 }
 
 model ListingImage {

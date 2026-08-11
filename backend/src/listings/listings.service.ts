@@ -74,6 +74,11 @@ export const PUBLIC_LISTING_SELECT = {
   condition: true,
   province: true,
   isFirearm: true,
+  // Needed by findById to decide whether an ANONYMOUS caller may see this row
+  // at all (members-only categories 404 without a session). Harmless to
+  // expose: by the time a caller holds this object they are either signed in
+  // or looking at a publicly-visible listing anyway.
+  publicVisible: true,
   // DD-3 — non-sensitive boolean flag. A first-party Daily Deal listing is
   // reachable by id on the generic PDP endpoint once ACTIVE; the frontend PDP
   // reads this to redirect to the deal-chrome /deals/:id page (canonical). Safe
@@ -1095,6 +1100,11 @@ export class ListingsService {
         condition: dto.condition,
         province: dto.province,
         isFirearm: category.isFirearm,
+        // Snapshot the signed-out visibility of the chosen category. Every
+        // public-discovery query and the Meili document filter on this column,
+        // so it must be written at create — a listing that misses it defaults
+        // to false and is simply members-only, which is the safe direction.
+        publicVisible: category.publicVisible,
         // P3 — snapshot the collection-only + papers flags from the category
         // (like isFirearm) so downstream shipping / checkout logic never has
         // to re-join the category. papersAttestedAt is the seller's create-
@@ -1204,6 +1214,21 @@ export class ListingsService {
     return listing;
   }
 
+  /**
+   * THE VISIBILITY GATE. A signed-out caller only ever sees listings whose
+   * category is marked publicVisible; a signed-in member sees everything, as
+   * before. Spread into every public-discovery Prisma `where` alongside the
+   * `isDealListing: false` chokepoint.
+   *
+   * Anonymity is decided ONLY by the presence of a verified Clerk id supplied
+   * by OptionalClerkGuard — never by a header, a query param or a user-agent.
+   * Serving different content to a crawler than to a logged-out human is
+   * cloaking; this returns the same thing to both.
+   */
+  private publicOnly(clerkId?: string): { publicVisible?: true } {
+    return clerkId ? {} : { publicVisible: true };
+  }
+
   async browse(dto: BrowseListingsDto, clerkId?: string) {
     const { q, sellerClerkId, ids } = dto;
 
@@ -1212,14 +1237,14 @@ export class ListingsService {
     // (preserves the recency stack the client maintains). All other
     // filters are ignored on this path because the client has
     // already chosen the exact listings it wants.
-    if (ids) return this.browseByIds(ids);
+    if (ids) return this.browseByIds(ids, clerkId);
 
     // Seller-scoped browses always go via Prisma — the Meilisearch
     // index stores sellerId (our internal cuid), not sellerClerkId, so
     // matching a Clerk ID against it would need a pre-resolve step.
     // The seller-profile page never combines q with a sellerClerkId
     // in practice, so this is the cleaner path.
-    if (sellerClerkId) return this.browseViaPrisma(dto);
+    if (sellerClerkId) return this.browseViaPrisma(dto, clerkId);
 
     // P5.7 — brand-scoped browses always go via Prisma. The brand fold
     // (slug → all stored make casings → `make IN (...)`) lives ONLY in
@@ -1228,7 +1253,7 @@ export class ListingsService {
     // silently drop the brand constraint and return every brand's q-matches.
     // Force Prisma so the brand filter is always honoured (q is ignored on
     // this path, which is the safe degradation — brand-scoped, not global).
-    if (dto.brandSlug) return this.browseViaPrisma(dto);
+    if (dto.brandSlug) return this.browseViaPrisma(dto, clerkId);
 
     // P4.3a — per-category attribute filters (JSON-encoded in dto.attrs).
     // Parsed defensively; a malformed blob is silently ignored. Attribute
@@ -1241,7 +1266,7 @@ export class ListingsService {
     if ((q || hasAttrFilters) && this.search.isConnected) {
       return this.browseViaSearch(dto, parsedAttrs, clerkId);
     }
-    return this.browseViaPrisma(dto);
+    return this.browseViaPrisma(dto, clerkId);
   }
 
   /**
@@ -1269,10 +1294,17 @@ export class ListingsService {
    * the storefront brand facet (GET /listings/brands). Capped so the dropdown
    * stays usable; blank/whitespace makes are dropped.
    */
-  async listBrands(limit = 60): Promise<string[]> {
+  async listBrands(limit = 60, clerkId?: string): Promise<string[]> {
     const rows = await this.prisma.listing.groupBy({
       by: ['make'],
-      where: { status: 'ACTIVE', isDealListing: false, make: { not: null } },
+      // Signed-out, brand folding must not surface firearm makes (Glock, CZ,
+      // Sako…) as public brand slugs, landing pages and sitemap entries.
+      where: {
+        status: 'ACTIVE',
+        isDealListing: false,
+        make: { not: null },
+        ...this.publicOnly(clerkId),
+      },
       _count: { make: true },
       orderBy: { _count: { make: 'desc' } },
       take: limit,
@@ -1292,10 +1324,16 @@ export class ListingsService {
    */
   async listBrandsWithCounts(
     minCount = BRAND_MIN_LISTINGS,
+    clerkId?: string,
   ): Promise<{ slug: string; label: string; count: number }[]> {
     const rows = await this.prisma.listing.groupBy({
       by: ['make'],
-      where: { status: 'ACTIVE', isDealListing: false, make: { not: null } },
+      where: {
+        status: 'ACTIVE',
+        isDealListing: false,
+        make: { not: null },
+        ...this.publicOnly(clerkId),
+      },
       _count: { make: true },
     });
     const folded = new Map<
@@ -1335,6 +1373,7 @@ export class ListingsService {
   async resolveBrandSlug(
     slug: string,
     minCount = BRAND_MIN_LISTINGS,
+    clerkId?: string,
   ): Promise<{
     slug: string;
     label: string;
@@ -1345,7 +1384,12 @@ export class ListingsService {
     if (!target) return null;
     const rows = await this.prisma.listing.groupBy({
       by: ['make'],
-      where: { status: 'ACTIVE', isDealListing: false, make: { not: null } },
+      where: {
+        status: 'ACTIVE',
+        isDealListing: false,
+        make: { not: null },
+        ...this.publicOnly(clerkId),
+      },
       _count: { make: true },
     });
     let count = 0;
@@ -1376,7 +1420,10 @@ export class ListingsService {
    * of sales can't be reverse-engineered into a single seller's take. POPIA:
    * returns ONLY price + coarse month — never buyer, seller or listing IDs.
    */
-  async soldComps(dto: { categorySlug?: string; categoryId?: string }) {
+  async soldComps(
+    dto: { categorySlug?: string; categoryId?: string },
+    clerkId?: string,
+  ) {
     const categoryFilter = dto.categorySlug
       ? { OR: [{ slug: dto.categorySlug }, { parent: { slug: dto.categorySlug } }] }
       : dto.categoryId
@@ -1390,7 +1437,14 @@ export class ListingsService {
         refundOfId: null,
         // Exclude first-party Daily Deals — deep house-deal discounts must not
         // drag the public comp range down.
-        listing: { status: 'SOLD', isDealListing: false, category: categoryFilter },
+        listing: {
+          status: 'SOLD',
+          isDealListing: false,
+          category: categoryFilter,
+          // ?categorySlug=firearms would otherwise hand realised firearm sale
+          // prices to an anonymous caller.
+          ...this.publicOnly(clerkId),
+        },
       },
       select: { listingPrice: true, quantity: true },
       orderBy: { paidAt: 'desc' },
@@ -1443,7 +1497,9 @@ export class ListingsService {
     limit = 5000,
   ): Promise<{ id: string; updatedAt: Date }[]> {
     return this.prisma.listing.findMany({
-      where: { status: 'ACTIVE', isDealListing: false },
+      // publicVisible unconditionally — a sitemap is BY DEFINITION read by
+      // crawlers, so there is no signed-in variant of this feed.
+      where: { status: 'ACTIVE', isDealListing: false, publicVisible: true },
       select: { id: true, updatedAt: true },
       orderBy: { updatedAt: 'desc' },
       take: limit,
@@ -1462,12 +1518,15 @@ export class ListingsService {
    * live ammunition — Ammo is ineligible AND can't be an active P2P listing
    * — can never surface here.
    */
-  async crossSell(dto: {
-    listingId?: string;
-    fromCategoryId?: string;
-    q?: string;
-    excludeIds?: string;
-  }): Promise<{ suggestions: unknown[]; reason: string | null }> {
+  async crossSell(
+    dto: {
+      listingId?: string;
+      fromCategoryId?: string;
+      q?: string;
+      excludeIds?: string;
+    },
+    clerkId?: string,
+  ): Promise<{ suggestions: unknown[]; reason: string | null }> {
     const exclude = new Set(
       (dto.excludeIds ?? '')
         .split(',')
@@ -1535,12 +1594,19 @@ export class ListingsService {
         signal =
           vehicleModel ?? vehicleMake ?? make ?? calibre ?? (dto.q || undefined);
       }
-      const res = await this.browse({
-        categoryId: rel.toCategoryId,
-        q: signal,
-        limit: 8,
-        sort: 'newest',
-      } as BrowseListingsDto);
+      // Forward the caller's identity: crossSell delegates to browse, so the
+      // visibility gate applies for free — but only if clerkId rides along.
+      // Without it every cross-sell row would be publicly filtered even for
+      // signed-in members.
+      const res = await this.browse(
+        {
+          categoryId: rel.toCategoryId,
+          q: signal,
+          limit: 8,
+          sort: 'newest',
+        } as BrowseListingsDto,
+        clerkId,
+      );
       const picks = (res.listings as { id: string }[]).filter(
         (l) => !exclude.has(l.id),
       );
@@ -1638,7 +1704,7 @@ export class ListingsService {
   // displays more than ~20 anyway. SOLD / CANCELLED / EXPIRED
   // listings get filtered out so a stale ID in the client's
   // localStorage doesn't render a "gone" card on the rail.
-  private async browseByIds(rawIds: string) {
+  private async browseByIds(rawIds: string, clerkId?: string) {
     const ids = rawIds
       .split(',')
       .map((s) => s.trim())
@@ -1650,7 +1716,15 @@ export class ListingsService {
     const rows = await this.prisma.listing.findMany({
       // isDealListing:false — a viewed deal PDP must not resurface as a normal
       // recently-viewed card in the public rail.
-      where: { id: { in: ids }, status: 'ACTIVE', isDealListing: false },
+      where: {
+        id: { in: ids },
+        status: 'ACTIVE',
+        isDealListing: false,
+        // A members-only listing must not come back through the
+        // recently-viewed rail either — the client holds the ids in
+        // localStorage, which survives sign-out.
+        ...this.publicOnly(clerkId),
+      },
       include: {
         images: { where: { isPrimary: true }, take: 1 },
         category: { select: { id: true, name: true, slug: true } },
@@ -1683,6 +1757,7 @@ export class ListingsService {
   private buildActiveListingFilter(
     dto: BrowseListingsDto,
     parsedAttrs: Record<string, unknown> = {},
+    clerkId?: string,
   ): string[] {
     const {
       categoryId,
@@ -1699,6 +1774,11 @@ export class ListingsService {
     // search/facets (they live only on /deals). Requires 'isDealListing' in
     // STATIC_LISTING_FILTERABLE_ATTRIBUTES (search.service.ts) + on the Meili doc.
     const filterParts: string[] = ['status = "ACTIVE"', 'isDealListing = false'];
+    // Signed-out search must not reach members-only stock. `calibre` and
+    // `categoryName` are searchable attributes, so without this a plain
+    // ?q=glock returns firearm rows to anyone. Requires 'publicVisible' in
+    // STATIC_LISTING_FILTERABLE_ATTRIBUTES + on the indexed document.
+    if (!clerkId) filterParts.push('publicVisible = true');
     // Parent-category rollup (mirrors browseViaPrisma): a parent id/slug
     // must match its own leaf listings OR any child's, via the indexed
     // parentId/parentSlug. Wrapped in parens so the outer AND-join stays
@@ -1778,7 +1858,10 @@ export class ListingsService {
    * suppresses counts on the facet the user is actively filtering (that facet
    * collapses to the chosen value), so no misleading zeros are shown.
    */
-  async facets(dto: BrowseListingsDto): Promise<{
+  async facets(
+    dto: BrowseListingsDto,
+    clerkId?: string,
+  ): Promise<{
     facets: Record<string, Record<string, number>>;
   }> {
     const { categoryId, categorySlug } = dto;
@@ -1787,7 +1870,9 @@ export class ListingsService {
     }
 
     const parsedAttrs = this.parseAttrFilters(dto.attrs);
-    const filterParts = this.buildActiveListingFilter(dto, parsedAttrs);
+    // Same clerkId as the browse, so a facet count can never advertise stock
+    // the signed-out grid refuses to show ("Glock (3)" over an empty result).
+    const filterParts = this.buildActiveListingFilter(dto, parsedAttrs, clerkId);
 
     // Static enum facets the FilterBar renders (make/condition/province/type).
     const facetFields = ['make', 'condition', 'province', 'listingType'];
@@ -1842,7 +1927,7 @@ export class ListingsService {
   ) {
     const { q = '', page = 1, limit = 20, sort = 'newest' } = dto;
 
-    const filterParts = this.buildActiveListingFilter(dto, parsedAttrs);
+    const filterParts = this.buildActiveListingFilter(dto, parsedAttrs, clerkId);
 
     const sortBy =
       sort === 'price_asc'
@@ -1927,7 +2012,7 @@ export class ListingsService {
     };
   }
 
-  private async browseViaPrisma(dto: BrowseListingsDto) {
+  private async browseViaPrisma(dto: BrowseListingsDto, clerkId?: string) {
     const {
       page = 1,
       limit = 20,
@@ -1948,7 +2033,13 @@ export class ListingsService {
     // category pages, /brand/[slug], seller grids, cross-sell and Ask GG's
     // searchMarketplace/getComplements all flow through here; excluding Daily
     // Deals once keeps them off every public grid. They surface only on /deals.
-    const where: Record<string, unknown> = { status: 'ACTIVE', isDealListing: false };
+    const where: Record<string, unknown> = {
+      status: 'ACTIVE',
+      isDealListing: false,
+      // …and publicVisible for signed-out callers: the same chokepoint, one
+      // audience narrower. Regulated stock stays fully functional for members.
+      ...this.publicOnly(clerkId),
+    };
     // P5.7 — brand landing page. Fold the slug back to its stored `make`
     // variants and filter to all of them. An unknown/too-thin slug resolves
     // to null → match nothing (the page 404s before it ever calls browse, but
@@ -2083,6 +2174,16 @@ export class ListingsService {
       throw new NotFoundException('Listing not found');
     }
 
+    // Members-only category + no session → 404, deliberately identical to a
+    // missing row. A "sign in to view this item" response would confirm that a
+    // firearm exists at this id, which is exactly what the gate is for; the
+    // 404 page carries the friendly "some listings are members-only" line
+    // instead. Note this is keyed on having ANY verified session, not on
+    // ownership — every signed-in member sees the full catalogue.
+    if (!clerkId && !listing.publicVisible) {
+      throw new NotFoundException('Listing not found');
+    }
+
     return listing;
   }
 
@@ -2174,6 +2275,9 @@ export class ListingsService {
     // showing on a listing the operator never enabled the claim for — a CPA
     // s41 gate bypass). Recomputed below inside the category-change block.
     let clearTestedWorkingStamp = false;
+    // Set only when the category actually changes; undefined leaves the
+    // existing snapshot untouched.
+    let nextPublicVisible: boolean | undefined;
     if (dto.categoryId !== undefined && dto.categoryId !== listing.categoryId) {
       const newCategory = await this.prisma.category.findUnique({
         where: { id: dto.categoryId },
@@ -2183,6 +2287,7 @@ export class ListingsService {
           availableSecondhand: true,
           collectionOnly: true,
           showTestedWorkingAttestation: true,
+          publicVisible: true,
         },
       });
       if (!newCategory || !newCategory.isActive) {
@@ -2214,6 +2319,11 @@ export class ListingsService {
       if (!newCategory.showTestedWorkingAttestation) {
         clearTestedWorkingStamp = true;
       }
+      // Re-snapshot signed-out visibility. Unlike isFirearm this boundary IS
+      // crossable (Optics is public, Shooting Accessories is members-only), so
+      // a stale snapshot would leave a members-only listing publicly visible —
+      // exactly the leak this whole change exists to prevent.
+      nextPublicVisible = newCategory.publicVisible;
     }
 
     // FCA gate (review finding) — UpdateListingDto is PartialType(Create),
@@ -2414,6 +2524,9 @@ export class ListingsService {
             }
           : {}),
         ...(clearTestedWorkingStamp ? { testedWorkingAttestedAt: null } : {}),
+        ...(nextPublicVisible !== undefined
+          ? { publicVisible: nextPublicVisible }
+          : {}),
       },
       include: { images: true, category: true },
     });
@@ -2787,6 +2900,10 @@ export class ListingsService {
         // Always present on indexed docs (deals are skipped above), so the
         // browse/facets `isDealListing = false` filter has an attribute to match.
         isDealListing: listing.isDealListing,
+        // Signed-out search filters on this. Read from the listing's own
+        // snapshot rather than the joined category so the indexed value can
+        // never disagree with what the Prisma browse returns.
+        publicVisible: listing.publicVisible,
         status: listing.status,
         listingType: listing.listingType,
         condition: listing.condition,

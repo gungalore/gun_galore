@@ -12,7 +12,7 @@ import { ActionTokensService } from '../actions/action-tokens.service';
 
 /**
  * Dual-auth guard for the KYC endpoints: accepts EITHER a Clerk session
- * bearer OR a Gun Galore KYC_VERIFY action token via ?t=<token>.
+ * bearer OR a All Outdoor KYC_VERIFY action token via ?t=<token>.
  *
  * Mirrors ClerkOrTokenGuard but scoped to the KYC_VERIFY purpose so the
  * seller can complete identity verification straight from the SMS link

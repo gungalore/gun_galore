@@ -4,7 +4,7 @@ import type { MetadataRoute } from 'next';
 // file is present in the app dir. The combination of this manifest +
 // the meta tags in layout.tsx is enough for browsers (Chrome, Edge,
 // Samsung Internet, Safari) to surface "Add to Home Screen" and
-// launch Gun Galore in standalone mode without browser chrome.
+// launch All Outdoor in standalone mode without browser chrome.
 //
 // Phase C additions:
 //   * `id` — explicit PWA identity, recommended so browsers don't
@@ -18,10 +18,10 @@ import type { MetadataRoute } from 'next';
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: '/',
-    name: 'Gun Galore',
-    short_name: 'Gun Galore',
+    name: 'All Outdoor',
+    short_name: 'All Outdoor',
     description:
-      'South Africa’s verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more.',
+      'South Africa’s new and secondhand outdoor store — camping, overlanding, fishing, optics, knives and clothing.',
     start_url: '/',
     scope: '/',
     display: 'standalone',
@@ -44,9 +44,9 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       {
-        name: 'Browse marketplace',
+        name: 'Browse the store',
         short_name: 'Browse',
-        description: 'Browse current listings',
+        description: 'Browse everything in stock',
         url: '/',
         icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
       },
@@ -79,31 +79,17 @@ export default function manifest(): MetadataRoute.Manifest {
         icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
       },
     ],
-    // Android's richer install dialog shows these preview cards. Captured
-    // from prod at 390×844 @2x (780×1688), narrow form factor.
-    screenshots: [
-      {
-        src: '/screenshot-home.png',
-        sizes: '780x1688',
-        type: 'image/png',
-        form_factor: 'narrow',
-        label: 'Browse South Africa’s outdoor & sport marketplace',
-      },
-      {
-        src: '/screenshot-listing.png',
-        sizes: '780x1688',
-        type: 'image/png',
-        form_factor: 'narrow',
-        label: 'Every deal protected — payment held until delivery',
-      },
-      {
-        src: '/screenshot-raffle.png',
-        sizes: '780x1688',
-        type: 'image/png',
-        form_factor: 'narrow',
-        label: 'The GG PRO members’ prize draw',
-      },
-    ],
+    // SCREENSHOTS REMOVED at the All Outdoor rebrand.
+    //
+    // These were live prod captures, so they still showed the old GUN-GALORE
+    // bullet logo, the old "outdoor & sport marketplace" hero and the previous
+    // copy — rendered full size inside Android's install dialog, which is
+    // exactly the surface a reviewer looks at. A stale screenshot is worse
+    // than none: Android just falls back to a plainer dialog without them.
+    //
+    // TO RESTORE: recapture at 390x844 @2x (780x1688), narrow form factor,
+    // signed OUT so the public storefront is what appears, then re-add with
+    // fresh labels. The old PNGs are still in /public for reference.
     icons: [
       {
         src: '/icon-192.png',

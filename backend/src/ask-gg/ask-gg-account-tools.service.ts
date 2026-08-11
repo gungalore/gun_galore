@@ -530,7 +530,7 @@ function nextActionFor(
 ): string {
   if (t.paymentStatus === 'REFUNDED') return 'This sale was refunded.';
   if (t.paymentStatus === 'DISPUTED')
-    return 'This sale is in dispute — the Gun Galore team is on it.';
+    return 'This sale is in dispute — the All Outdoor team is on it.';
   if (!t.paidAt)
     return role === 'buyer'
       ? 'Payment is outstanding — complete it from the order page.'

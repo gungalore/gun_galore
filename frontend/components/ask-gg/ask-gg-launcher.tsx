@@ -45,7 +45,7 @@ const API_URL =
 // robotically — the first line does the full intro, the rest are short
 // hellos in his voice.
 const HELLO_TEXTS = [
-  "Howzit 👋 I'm Boet, your Gun Galore guide. Can I help you find something?",
+  "Howzit 👋 I'm Boet, your All Outdoor guide. Can I help you find something?",
   'Hi again 👋 Need a hand finding something?',
   "👋 I'm right here if you need anything — just give me a tap.",
   'Howzit! Looking for something specific? I can help.',
@@ -344,7 +344,7 @@ export function AskGgLauncher({
           type="button"
           id="askgg-fab"
           onClick={() => open()}
-          aria-label="Open Ask Boet — your Gun Galore assistant"
+          aria-label="Open Ask Boet — your All Outdoor assistant"
           className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm"
           style={{
             background: 'var(--bg-card)',
@@ -463,7 +463,7 @@ export function AskGgLauncher({
           type="button"
           id="askgg-fab"
           onClick={() => open()}
-          aria-label="Open Ask Boet — your Gun Galore assistant"
+          aria-label="Open Ask Boet — your All Outdoor assistant"
           className="block w-full"
           style={{
             background: 'none',

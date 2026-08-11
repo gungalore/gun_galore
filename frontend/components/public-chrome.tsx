@@ -24,8 +24,8 @@ function CheckoutHeader() {
   return (
     <div style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--bg-deep)' }}>
       <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center justify-between">
-        <Link href="/" aria-label="Gun Galore" className="flex items-center shrink-0">
-          <Image src="/logo.svg" alt="Gun Galore" width={180} height={36} priority style={{ height: 36, width: 'auto' }} />
+        <Link href="/" aria-label="All Outdoor" className="flex items-center shrink-0">
+          <Image src="/logo.svg" alt="All Outdoor" width={180} height={36} priority style={{ height: 36, width: 'auto' }} />
         </Link>
         <span className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
           <span aria-hidden>🔒</span> Secure checkout

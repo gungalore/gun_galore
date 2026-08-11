@@ -736,7 +736,7 @@ export class ShippingService {
             // parcel label + reference so the warehouse knows what TCG is
             // collecting; ordinary sales keep TCG's default description.
             description: isDeal
-              ? `Gun Galore Daily Deal collection${dealRef ? ` (ref ${dealRef})` : ''}: ${L.title}`.slice(
+              ? `All Outdoor Daily Deal collection${dealRef ? ` (ref ${dealRef})` : ''}: ${L.title}`.slice(
                   0,
                   120,
                 )
@@ -746,7 +746,7 @@ export class ShippingService {
           collectionContact,
           deliveryContact,
           specialInstructions: isDeal
-            ? `Collection for Gun Galore Daily Deal${dealRef ? ` — ref ${dealRef}` : ''}.`
+            ? `Collection for All Outdoor Daily Deal${dealRef ? ` — ref ${dealRef}` : ''}.`
             : undefined,
         });
       }

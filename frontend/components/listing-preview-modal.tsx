@@ -249,7 +249,7 @@ export function ListingPreviewModal({
               className="text-xs uppercase mb-1"
               style={{ color: verdictColor, letterSpacing: '0.12em', fontWeight: 500 }}
             >
-              Gun Galore review · {Math.round(preview.confidence * 100)}% confident
+              All Outdoor review · {Math.round(preview.confidence * 100)}% confident
             </p>
             <h2
               className="text-lg sm:text-xl"

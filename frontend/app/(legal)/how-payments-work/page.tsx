@@ -19,7 +19,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'How Payments Work',
   description:
-    'How GunGalore holds a buyer\'s payment until the sale completes, then releases it to the seller — and how firearms, refunds and disputes are handled.',
+    'How All Outdoor holds a buyer\'s payment until the sale completes, then releases it to the seller — and how firearms, refunds and disputes are handled.',
 };
 
 export default function HowPaymentsWorkPage() {
@@ -31,8 +31,8 @@ export default function HowPaymentsWorkPage() {
       />
 
       <p>
-        GunGalore is a managed marketplace. When you buy something, your
-        payment is <strong>held by GunGalore</strong> until the sale has
+        All Outdoor is a managed marketplace. When you buy something, your
+        payment is <strong>held by All Outdoor</strong> until the sale has
         safely completed, and only then released to the seller. That single
         step is what protects both sides of every sale — the buyer isn't
         paying a stranger directly, and the seller knows the money is
@@ -54,7 +54,7 @@ export default function HowPaymentsWorkPage() {
         <li>
           <strong>The buyer pays.</strong> At checkout the payment is taken
           and the transaction moves to <strong>Payment held</strong>. The
-          money sits with GunGalore — it is <em>not</em> paid straight to
+          money sits with All Outdoor — it is <em>not</em> paid straight to
           the seller.
         </li>
         <li>
@@ -85,7 +85,7 @@ export default function HowPaymentsWorkPage() {
         <strong>SAPS 534 dealer transfer is verified</strong> — not merely
         until the parcel is handed over. Only after that verification is the
         seller paid. See our{' '}
-        <a href="/firearms-compliance" style={{ color: 'var(--red)' }}>Regulated Items &amp; Compliance</a>
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items &amp; Compliance</a>
         {' '}page for the full firearm process.
       </p>
 
@@ -100,7 +100,7 @@ export default function HowPaymentsWorkPage() {
         make sure money is only ever paid to the verified account holder.
       </p>
       <p>
-        GunGalore earns a <strong>commission</strong> on completed sales and
+        All Outdoor earns a <strong>commission</strong> on completed sales and
         nothing more — we do not take a spread on the buyer's money and we
         do not earn interest that belongs to sellers. The full fee schedule
         is on our{' '}
@@ -133,7 +133,7 @@ export default function HowPaymentsWorkPage() {
 
       <h2>6. Where we operate</h2>
       <p>
-        GunGalore serves <strong>South Africa only</strong>, and all
+        All Outdoor serves <strong>South Africa only</strong>, and all
         payments are made and held in <strong>South African Rand (ZAR)</strong>.
         We do not support cross-border payments or other currencies.
       </p>

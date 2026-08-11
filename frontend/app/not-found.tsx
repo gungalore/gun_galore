@@ -5,7 +5,7 @@ import Link from 'next/link';
 // calls (so it renders even for signed-out users hitting bad URLs).
 
 export const metadata = {
-  title: 'Page not found — Gun Galore',
+  title: 'Page not found — All Outdoor',
 };
 
 export default function NotFound() {
@@ -23,7 +23,7 @@ export default function NotFound() {
       <div style={{ maxWidth: 480, textAlign: 'center' }}>
         <Image
           src="/logo.svg"
-          alt="Gun Galore"
+          alt="All Outdoor"
           width={200}
           height={40}
           priority
@@ -83,7 +83,7 @@ export default function NotFound() {
               textDecoration: 'none',
             }}
           >
-            Browse marketplace
+            Browse the store
           </Link>
           <Link
             href="/?listingType=AUCTION"

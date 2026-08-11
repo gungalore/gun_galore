@@ -160,7 +160,7 @@ export class FeaturedService {
   // The listing payload (when present) matches the marketplace browse
   // response shape so the homepage can render with the same
   // <ListingCard> component.
-  async getFeaturedListings() {
+  async getFeaturedListings(clerkId?: string) {
     const slots = await this.prisma.featuredSlot.findMany({
       orderBy: { slotNumber: 'asc' },
       select: { slotNumber: true, status: true, currentListingId: true },
@@ -181,6 +181,10 @@ export class FeaturedService {
             id: { in: ids },
             status: ListingStatus.ACTIVE,
             offers: { none: { status: 'ACCEPTED' } },
+            // This feed drives the homepage main grid, so a members-only
+            // featured listing would be the first thing an anonymous visitor
+            // (or crawler) sees. Same guard as the rail.
+            ...(clerkId ? {} : { publicVisible: true }),
           },
           include: {
             images: { where: { isPrimary: true }, take: 1 },
@@ -275,7 +279,7 @@ export class FeaturedService {
   // The 10 slots — what's currently featured (for the rail) + which
   // slot has an OPEN auction (for the bid page). Sorted by slotNumber
   // so the rail order is stable.
-  async getRail() {
+  async getRail(clerkId?: string) {
     const slots = await this.prisma.featuredSlot.findMany({
       orderBy: { slotNumber: 'asc' },
       include: {
@@ -289,6 +293,11 @@ export class FeaturedService {
             // shows the slot as an open "bid for a spot" placeholder instead
             // of a dead card.
             status: true,
+            // Drives the signed-out visibility guard below. A featured slot is
+            // rendered on EVERY page, so a members-only occupant would put a
+            // firearm card in front of every anonymous visitor and crawler —
+            // the single widest leak of the lot.
+            publicVisible: true,
             offers: {
               where: { status: 'ACCEPTED' },
               take: 1,
@@ -326,9 +335,18 @@ export class FeaturedService {
       const cl = s.currentListing;
       if (!cl) return s;
       const unavailable =
-        cl.status !== ListingStatus.ACTIVE || cl.offers.length > 0;
+        cl.status !== ListingStatus.ACTIVE ||
+        cl.offers.length > 0 ||
+        // Signed out + members-only occupant → render the slot as an open
+        // placeholder, exactly as it already does for a sold occupant.
+        (!clerkId && !cl.publicVisible);
       if (unavailable) return { ...s, currentListing: null };
-      const { status: _status, offers: _offers, ...listing } = cl;
+      const {
+        status: _status,
+        offers: _offers,
+        publicVisible: _publicVisible,
+        ...listing
+      } = cl;
       return { ...s, currentListing: listing };
     });
   }

@@ -160,7 +160,7 @@ export class PriceEstimateService {
           basis: 'sold-comps',
           soldCount,
           activeCount: 0,
-          note: `Based on ${soldCount} recent sales of similar items on Gun Galore.`,
+          note: `Based on ${soldCount} recent sales of similar items on All Outdoor.`,
           disclaimer: DISCLAIMER,
         };
       }

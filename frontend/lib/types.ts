@@ -102,7 +102,7 @@ export interface CategoryWithCount {
 export interface ListingSeller {
   id: string;
   clerkId: string;
-  // Public-facing handle. Gun Galore platform policy: we DON'T
+  // Public-facing handle. All Outdoor platform policy: we DON'T
   // display real names anywhere on public listings. Use this in
   // listing-detail / card / Q&A / seller-profile views. firstName/
   // lastName are kept on the payload for internal flows (order
@@ -279,6 +279,12 @@ export interface Listing {
   condition: Condition;
   province: Province;
   isFirearm: boolean;
+  // False for a members-only (regulated / weapon-adjacent) listing. The API
+  // 404s these for anonymous callers, so a listing carrying `false` here has
+  // by definition been served to a signed-in member — the flag exists so the
+  // page can suppress SEO output (Product JSON-LD, indexable metadata) that
+  // would be meaningless or harmful for stock the public cannot see.
+  publicVisible?: boolean;
   // DD-3 — true for a first-party Daily Deal listing. Present on the public
   // GET /listings/:id payload so the generic PDP can redirect to the
   // deal-chrome /deals/[id] page. Absent (undefined) on browse payloads.

@@ -31,9 +31,9 @@ export default function PrivacyPage() {
       <h2>1. Who we are</h2>
       <p>
         This Privacy Policy explains how <strong>GunGalore (Pty) Ltd</strong>{' '}
-        ("<strong>GunGalore</strong>", "<strong>we</strong>",
+        ("<strong>All Outdoor</strong>", "<strong>we</strong>",
         "<strong>us</strong>") collects, uses, shares and protects your
-        personal information when you use the GunGalore platform at{' '}
+        personal information when you use the All Outdoor platform at{' '}
         <a href="https://gungalore.co.za" style={{ color: 'var(--red)' }}>
           gungalore.co.za
         </a>{' '}
@@ -41,7 +41,7 @@ export default function PrivacyPage() {
       </p>
       <p>
         For the purposes of the Protection of Personal Information Act
-        4 of 2013 (<strong>"POPIA"</strong>), GunGalore is the{' '}
+        4 of 2013 (<strong>"POPIA"</strong>), All Outdoor is the{' '}
         <strong>responsible party</strong> in respect of personal
         information processed through the Platform.
       </p>
@@ -94,7 +94,7 @@ export default function PrivacyPage() {
       <ul>
         <li>South African ID number (stored encrypted at rest with AES-GCM; we also derive a salted SHA-256 hash for duplicate-registration checks. As a firearms marketplace we retain the encrypted ID — see &ldquo;How long we keep your information&rdquo; below — because it must be reproduced on the SAP 534 firearm-transfer form if one of your firearms later sells)</li>
         <li>VerifyNow Home Affairs lookup result (full name, date of birth, status)</li>
-        <li>Selfie image captured during face-match verification (image not retained by GunGalore — only the match score)</li>
+        <li>Selfie image captured during face-match verification (image not retained by All Outdoor — only the match score)</li>
         <li>Number of face-match attempts and outcome</li>
       </ul>
 
@@ -130,7 +130,7 @@ export default function PrivacyPage() {
       <p>
         To understand how the Platform is used, improve it, and decide what
         to feature and promote, we collect first-party analytics about your
-        activity on GunGalore. This includes the pages and listings you view,
+        activity on All Outdoor. This includes the pages and listings you view,
         the searches you run, items you save or make offers/bids on, and when
         and how often you sign in. Where you are signed in, this activity is
         linked to your account; where you are signed out, it is linked to a
@@ -245,7 +245,7 @@ export default function PrivacyPage() {
         <li><strong>Listings, ratings and Q&amp;A:</strong> for the lifetime of your account (kept for public-history integrity); permanently de-identified within 90 days of account deletion.</li>
         <li><strong>KYC ID hash:</strong> retained while your account is active, plus 12 months after deletion to prevent duplicate registration.</li>
         <li><strong>Encrypted SA ID number:</strong> retained (AES-GCM encrypted at rest) while your account is active, under our firearms-transfer compliance obligations, so we can complete a SAP 534 form if one of your firearms sells; kept for the period required by law after any such transfer, and otherwise deleted on account closure.</li>
-        <li><strong>KYC selfie:</strong> not retained by GunGalore; only the match score is kept.</li>
+        <li><strong>KYC selfie:</strong> not retained by All Outdoor; only the match score is kept.</li>
         <li><strong>Email and SMS logs:</strong> 90 days.</li>
         <li><strong>Usage analytics (raw activity events):</strong> up to 12 months, after which they are deleted; we keep only aggregated, de-identified statistics beyond that period.</li>
         <li><strong>Banking details:</strong> retained while your account is active; deleted on account closure unless there is an unresolved transaction or legal-hold reason to retain.</li>
@@ -271,7 +271,7 @@ export default function PrivacyPage() {
 
       <h2>11. Direct marketing</h2>
       <p>
-        GunGalore sends two kinds of communications:
+        All Outdoor sends two kinds of communications:
       </p>
       <ul>
         <li><strong>Transactional</strong> — order updates, dispatch confirmations, dispute outcomes, account-security alerts. These are necessary to operate the Platform and are sent regardless of your marketing preferences.</li>

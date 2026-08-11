@@ -1719,7 +1719,7 @@ export default function NewListingPage() {
 
   // RVE — fetch an indicative resale-price range for this item. Uses the
   // title + category + condition the seller has entered so far; the server
-  // leads with recent Gun Galore sales and falls back to a web-anchored SA
+  // leads with recent All Outdoor sales and falls back to a web-anchored SA
   // retail price depreciated for condition when local data is thin.
   async function handleEstimatePrice() {
     if (estimating) return;
@@ -2480,7 +2480,7 @@ export default function NewListingPage() {
             fontWeight: 500,
           }}
         >
-          Sell on Gun Galore
+          Sell on All Outdoor
         </p>
         <h1
           className="text-3xl sm:text-4xl mb-2"
@@ -3333,7 +3333,7 @@ export default function NewListingPage() {
                   publishing the item you want to trade — buyers browse, then
                   propose a swap (their item, plus optional cash either way) on
                   your listing. You review each proposal and accept, decline, or
-                  counter the cash. Gun Galore arranges both couriers and the
+                  counter the cash. All Outdoor arranges both couriers and the
                   funds are held until both parcels are delivered.
                 </div>
               </Field>
@@ -3991,7 +3991,7 @@ export default function NewListingPage() {
                     style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
                   >
                     Every experience listing is reviewed before it goes live.
-                    You are the supplier of this package — Gun Galore is a
+                    You are the supplier of this package — All Outdoor is a
                     payment-protection intermediary. Provide your registration
                     and public-liability cover so buyers know they’re booking
                     with a bona-fide outfitter.
@@ -4117,7 +4117,7 @@ export default function NewListingPage() {
                       >
                         I will disclose the material risks of this activity to
                         every guest and run it to accepted safety standards. I
-                        understand Gun Galore is a payment-protection
+                        understand All Outdoor is a payment-protection
                         intermediary, not the supplier.
                       </span>
                     </label>
@@ -4221,7 +4221,7 @@ export default function NewListingPage() {
 
             {/* P5.4 — OPTIONAL "tested & working" seller attestation for
                 electronics/appliances. Never gates publish. Worded as the
-                SELLER'S own claim, explicitly NOT a Gun Galore test (CPA s41). */}
+                SELLER'S own claim, explicitly NOT a All Outdoor test (CPA s41). */}
             {showTestedWorking && (
               <div
                 className="rounded-[6px] p-4 text-sm space-y-2 mb-4"

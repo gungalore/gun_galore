@@ -55,7 +55,10 @@ const isPublicRoute = createRouteMatcher([
   '/aml-policy',
   '/acceptable-use',
   '/refund-policy',
-  '/firearms-compliance',
+  // '/firearms-compliance' REMOVED — the Regulated Items Annex is
+  // members-only now and lives at /members/regulated-items. The old path
+  // still exists as a 308 for indexed/bookmarked links, but it is gated so
+  // an anonymous follower lands on /sign-in rather than the document.
   '/cookies',
   '/legal',              // index of all legal docs + ECT § 43 disclosures
   '/a/(.*)',             // SMS-link action pages — token in the URL IS the

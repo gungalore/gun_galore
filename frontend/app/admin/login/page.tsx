@@ -63,7 +63,7 @@ export default function AdminLoginPage() {
         style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
       >
         <p className="text-xs font-semibold uppercase tracking-widest mb-6" style={{ color: 'var(--red)' }}>
-          Gun Galore Admin
+          All Outdoor Admin
         </p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

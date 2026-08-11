@@ -124,7 +124,7 @@ export class AskGgPlatformToolsService {
         serviceFeeRand: rand(b.serviceFee),
         cashContributionRand: rand(b.cashContribution),
         partyTotalRand: rand(b.partyTotal),
-        note: 'Each party funds the leg they send: courier rate + the flat Gun Galore service fee (R50 courier leg / R100 firearm dealer-transfer leg) + any agreed cash top-up.',
+        note: 'Each party funds the leg they send: courier rate + the flat All Outdoor service fee (R50 courier leg / R100 firearm dealer-transfer leg) + any agreed cash top-up.',
       };
     }
 

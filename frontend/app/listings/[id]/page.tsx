@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@clerk/nextjs/server';
 import { apiFetch } from '@/lib/api';
+import { BRAND_NAME } from '@/lib/brand';
 import { Listing, CategoryAttributeDef } from '@/lib/types';
 import { AddToCartButton } from '@/components/add-to-cart-button';
 import {
@@ -58,9 +59,24 @@ export async function generateMetadata({
     cache: 'no-store',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   }).catch(() => null);
-  if (!listing) return { title: 'Listing not found — Gun Galore' };
+  if (!listing) return { title: `Listing not found — ${BRAND_NAME}` };
   const url = `/listings/${id}`;
-  const title = `${listing.title} — Gun Galore`;
+
+  // Members-only stock. An ANONYMOUS caller never reaches this branch — the
+  // API 404s the listing and `listing` is null above — so getting here means a
+  // signed-in member is viewing it. Emit nothing indexable anyway: this is the
+  // page whose OG tags used to publish the seller's raw title, 160 characters
+  // of their description and the photograph of the item itself to anything
+  // that fetched the URL. Defence in depth costs one branch.
+  if (listing.publicVisible === false) {
+    return {
+      title: `Members-only listing — ${BRAND_NAME}`,
+      robots: { index: false, follow: false },
+      alternates: { canonical: url },
+    };
+  }
+
+  const title = `${listing.title} — ${BRAND_NAME}`;
   const description = listing.description.slice(0, 160);
   const primary =
     listing.images?.find((i) => i.isPrimary) ?? listing.images?.[0];
@@ -257,11 +273,19 @@ export default async function ListingDetailPage({
       className="relative max-w-[1280px] mx-auto px-4 py-6"
       style={{ zIndex: 1 }}
     >
-      {/* Product/Offer structured data for search engines (not visible). */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(productLd) }}
-      />
+      {/* Product/Offer structured data for search engines (not visible).
+          Suppressed for members-only stock: the schema publishes name,
+          description, up to six photos and the CATEGORY ("Pistols",
+          "Centerfire Rifles") as machine-readable product data. A crawler can
+          never reach this page anonymously (the API 404s it), but emitting
+          rich-result markup for something the public cannot buy is pointless
+          at best and a signal we do not want at worst. */}
+      {listing.publicVisible !== false && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(productLd) }}
+        />
+      )}
 
       {/* House standard scenery — marketplace.jpg ties the listing
           detail to the marketplace index visually. opacity:0.18
@@ -374,7 +398,7 @@ export default async function ListingDetailPage({
                 attests:" and the tooltip makes the source explicit. */}
             {listing.testedWorkingAttestedAt && (
               <span
-                title="This is the seller's own statement, not a Gun Galore test or guarantee."
+                title="This is the seller's own statement, not a All Outdoor test or guarantee."
                 className="text-xs px-2 py-0.5 rounded-[3px]"
                 style={{
                   background: 'rgba(0,160,60,0.10)',
@@ -476,7 +500,7 @@ export default async function ListingDetailPage({
                     {compareAtPct}% off
                   </span>
                   <HelpTip title="Original price">
-                    Original price stated by the seller — Gun Galore does not
+                    Original price stated by the seller — All Outdoor does not
                     verify it.
                   </HelpTip>
                 </span>
@@ -498,7 +522,7 @@ export default async function ListingDetailPage({
                 <>
                   Transfer via licensed dealer —{' '}
                   <Link
-                    href="/firearms-compliance"
+                    href="/members/regulated-items"
                     style={{
                       color: 'var(--text-secondary)',
                       textDecoration: 'underline',
@@ -707,7 +731,7 @@ export default async function ListingDetailPage({
             <WishlistButton listingId={listing.id} variant="inline" />
             <ShareListingButton
               title={listing.title}
-              text={`Check out this listing on Gun Galore: ${listing.title}`}
+              text={`Check out this listing on All Outdoor: ${listing.title}`}
             />
           </div>
 
@@ -869,7 +893,7 @@ export default async function ListingDetailPage({
                       removes is imaginary: the buyer never has to be the
                       person who arrives, and the hold releases on THEIR
                       confirmation either way. Deliberately worded as the
-                      buyer's own arrangement — Gun Galore quotes, books and
+                      buyer's own arrangement — All Outdoor quotes, books and
                       insures nothing on that leg, and there is no freight
                       shipping method to sell them. */}
                   {collectionMode === 'FREIGHT_OK' && (
@@ -880,7 +904,7 @@ export default async function ListingDetailPage({
                       collect in person, or send your own transporter or
                       freight company to fetch it — the seller just hands it
                       over. Your payment stays held either way until you
-                      confirm the item is with you. Gun Galore doesn&apos;t
+                      confirm the item is with you. All Outdoor doesn&apos;t
                       arrange, quote or insure that transport; it&apos;s
                       between you and whoever you hire.
                     </p>
@@ -913,7 +937,7 @@ export default async function ListingDetailPage({
                 <>
                   <p className="mb-1.5">
                     <strong style={{ color: 'var(--text-primary)' }}>
-                      Payment held by Gun Galore
+                      Payment held by All Outdoor
                     </strong>{' '}
                     until the firearm is stocked at a licensed dealer
                     and verified — funds release automatically once
@@ -938,7 +962,7 @@ export default async function ListingDetailPage({
                       <strong>Private arrangement</strong> is also
                       offered — you and the seller pick a dealer
                       together and do the licence transfer in person.
-                      You waive Gun Galore&apos;s payment protection
+                      You waive All Outdoor&apos;s payment protection
                       (no platform-held funds, no dispute or refund
                       via us). Use only if you know the seller.
                     </p>
@@ -948,7 +972,7 @@ export default async function ListingDetailPage({
                 <>
                   <p className="mb-1.5">
                     <strong style={{ color: 'var(--text-primary)' }}>
-                      Payment held by Gun Galore
+                      Payment held by All Outdoor
                     </strong>{' '}
                     until you confirm the item arrived. If anything goes
                     wrong before delivery, we hold the funds — neither

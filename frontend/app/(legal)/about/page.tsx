@@ -1,4 +1,4 @@
-// /about — a short, honest description of what Gun Galore is, who
+// /about — a short, honest description of what All Outdoor is, who
 // operates it and where to find the detail. Kept factual (no
 // marketing claims): what the platform does, how firearm transfers
 // and held payments work, and the registered company behind it.
@@ -11,22 +11,22 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'About',
   description:
-    'What Gun Galore is, how it works, and the company that operates it.',
+    'What All Outdoor is, how it works, and the company that operates it.',
 };
 
 export default function AboutPage() {
   return (
     <>
-      <LegalDocHeader title="About Gun Galore" lastUpdated="Effective 16 July 2026" />
+      <LegalDocHeader title="About All Outdoor" lastUpdated="Effective 16 July 2026" />
 
-      <h2>What Gun Galore is</h2>
+      <h2>What All Outdoor is</h2>
       {/* "Ammunition" removed on purpose — the Ammo category is seeded
           isActive:false (live ammo, primers and powder cannot be listed
           here), so naming it advertised a product line the platform has
           deliberately switched off. Reloading components stay: that
           category is live and holds bullets and brass only. */}
       <p>
-        Gun Galore is a South African online marketplace for the
+        All Outdoor is a South African online marketplace for the
         outdoor, hunting and sport-shooting community — camping and
         overlanding gear, fishing, optics, knives, clothing, ranges,
         accessories and reloading components, alongside firearms. You
@@ -39,7 +39,7 @@ export default function AboutPage() {
         Firearms are never couriered to a home address. By law they are
         transferred through a SAPS-licensed dealer, and you collect
         them there once the required paperwork is complete. For every
-        order, your payment is held by Gun Galore and only released to
+        order, your payment is held by All Outdoor and only released to
         the seller after delivery is confirmed — or, for firearms,
         after the dealer transfer is verified — so you are not out of
         pocket if something goes wrong. Non-firearm gear ships via our
@@ -54,7 +54,7 @@ export default function AboutPage() {
         </a>
         , and for the rules around licence- and age-restricted
         categories see{' '}
-        <a href="/firearms-compliance" style={{ color: 'var(--red)' }}>
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
           Regulated Items &amp; Compliance
         </a>
         .
@@ -62,7 +62,7 @@ export default function AboutPage() {
 
       <h2>Who runs it</h2>
       <p>
-        Gun Galore is operated by GunGalore (Pty) Ltd, a South African
+        All Outdoor is operated by GunGalore (Pty) Ltd, a South African
         private company, directed by Gerhard Johan Petrus Fourie.
       </p>
       <div
@@ -80,7 +80,7 @@ export default function AboutPage() {
           <br />
           <strong>Registration number:</strong> 2026/393321/07
           <br />
-          <strong>Trading as:</strong> Gun Galore
+          <strong>Trading as:</strong> All Outdoor
           <br />
           <strong>Director:</strong> Gerhard Johan Petrus Fourie
           <br />

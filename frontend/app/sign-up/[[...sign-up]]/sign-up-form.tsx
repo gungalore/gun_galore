@@ -381,10 +381,10 @@ export default function SignUpForm() {
     <div className="w-full max-w-[480px]">
       {/* Logo / brand — centred wordmark, 5:1 aspect locked. */}
       <div className="flex justify-center mb-6">
-        <Link href="/" aria-label="Gun Galore">
+        <Link href="/" aria-label="All Outdoor">
           <img
             src="/logo.svg"
-            alt="Gun Galore"
+            alt="All Outdoor"
             style={{ height: 48, width: 'auto' }}
           />
         </Link>

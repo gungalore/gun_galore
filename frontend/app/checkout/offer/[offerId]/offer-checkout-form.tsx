@@ -468,7 +468,7 @@ function DealerTransferConsent({
           <li>
             You pay now — your funds are{' '}
             <strong style={{ color: 'var(--text-primary)' }}>
-              held by Gun Galore
+              held by All Outdoor
             </strong>
             .
           </li>
@@ -483,7 +483,7 @@ function DealerTransferConsent({
             <strong style={{ color: 'var(--text-primary)' }}>
               3 photos
             </strong>{' '}
-            on Gun Galore — the completed SAPS 534, the dealer&apos;s
+            on All Outdoor — the completed SAPS 534, the dealer&apos;s
             stock-register last line, and the firearm with its serial
             visible. Our AI checks the documents; if anything&apos;s
             unclear a human reviewer steps in.
@@ -497,7 +497,7 @@ function DealerTransferConsent({
             held funds to the seller.
           </li>
           <li>
-            Gun Galore&apos;s job in the transaction ends there. You
+            All Outdoor&apos;s job in the transaction ends there. You
             and the seller arrange the inter-dealer transfer to your
             own dealer (or your preferred collection method) between
             yourselves.
@@ -534,7 +534,7 @@ function DealerTransferConsent({
           style={{ marginTop: 3, accentColor: 'var(--red)' }}
         />
         <span style={{ color: 'var(--text-secondary)' }}>
-          I understand Gun Galore holds my funds until the
+          I understand All Outdoor holds my funds until the
           seller&apos;s dealer stock-in is verified, after which Gun
           Galore notifies me which dealer has the firearm and
           releases the funds — the inter-dealer transfer onwards is

@@ -80,7 +80,7 @@ export default function AwaitingAcceptChip({
           <>
             We&apos;ve received your payment and the funds are{' '}
             <strong style={{ color: 'var(--text-primary)' }}>held safely</strong>{' '}
-            by Gun Galore. The seller has 48 hours to confirm they can fulfil.
+            by All Outdoor. The seller has 48 hours to confirm they can fulfil.
             If they don&apos;t, our team steps in and refunds you in full.
           </>
         )}

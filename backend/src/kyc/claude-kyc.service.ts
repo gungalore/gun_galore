@@ -79,7 +79,7 @@ export interface KycScanInput {
   haPhotoBase64?: string;
 }
 
-const SYSTEM_PROMPT = `You are the identity-verification scanner for Gun Galore, a South African online marketplace. You will be shown:
+const SYSTEM_PROMPT = `You are the identity-verification scanner for All Outdoor, a South African online marketplace. You will be shown:
 1. A South African identity document — a smart ID card or a green ID book — as a photo or PDF.
 2. A live selfie of the person submitting it, captured moments ago by their webcam or phone camera.
 3. Sometimes, a third reference photograph labelled "official record photo".

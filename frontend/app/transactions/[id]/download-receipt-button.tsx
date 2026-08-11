@@ -8,7 +8,7 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   'http://localhost:3001/api';
 
-// Buyer downloads their Gun Galore purchase receipt (PDF). The endpoint is
+// Buyer downloads their All Outdoor purchase receipt (PDF). The endpoint is
 // Clerk-guarded, so we fetch with the session token and trigger a blob
 // download (a plain <a href> wouldn't carry the Authorization header).
 export function DownloadReceiptButton({

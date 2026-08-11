@@ -8,7 +8,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Cookie Policy',
   description:
-    'What cookies GunGalore uses, why, and how to manage them.',
+    'What cookies All Outdoor uses, why, and how to manage them.',
 };
 
 export default function CookiesPage() {
@@ -35,7 +35,7 @@ export default function CookiesPage() {
         them you can't sign in, your basket can't survive a page
         navigation and your dispute submission can't be matched back
         to your account. You can't disable these and continue to use
-        GunGalore.
+        All Outdoor.
       </p>
       <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 16 }}>
         <thead>
@@ -50,8 +50,8 @@ export default function CookiesPage() {
           {[
             ['__session', 'Clerk', 'Your authenticated session — keeps you signed in across pages', 'Session (deleted when you sign out)'],
             ['__client_uat', 'Clerk', 'Helps Clerk detect when your session was last active', 'Up to 30 days'],
-            ['gg_admin_sess', 'GunGalore', 'Admin-only — JWT for the admin panel session', 'Up to 8 hours'],
-            ['theme', 'GunGalore', 'Remembers your light/dark theme preference', 'Up to 1 year'],
+            ['gg_admin_sess', 'All Outdoor', 'Admin-only — JWT for the admin panel session', 'Up to 8 hours'],
+            ['theme', 'All Outdoor', 'Remembers your light/dark theme preference', 'Up to 1 year'],
             ['NEXT_LOCALE', 'Next.js', 'Remembers the language variant you selected', 'Up to 1 year'],
           ].map(([cookie, by, purpose, retention], i) => (
             <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
@@ -126,7 +126,7 @@ export default function CookiesPage() {
       <p>You can manage cookies in two ways:</p>
       <ul>
         <li><strong>Browser settings</strong> — every modern browser lets you block all cookies, block third-party cookies, or delete cookies on exit. Check your browser's "Privacy" or "Site Settings" page for details. Blocking strictly necessary cookies will prevent you from signing in.</li>
-        <li><strong>Clear site data</strong> — to fully reset GunGalore in your browser, open DevTools → Application → Storage → Clear site data. You'll be signed out, your drafts will be lost and you'll have to opt back in to any preferences.</li>
+        <li><strong>Clear site data</strong> — to fully reset All Outdoor in your browser, open DevTools → Application → Storage → Clear site data. You'll be signed out, your drafts will be lost and you'll have to opt back in to any preferences.</li>
       </ul>
 
       <h2>4. Third-party cookies</h2>

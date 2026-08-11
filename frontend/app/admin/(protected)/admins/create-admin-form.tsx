@@ -9,7 +9,7 @@ import { adminFetch } from '@/lib/admin-auth';
 // belt-and-braces check.
 //
 // Email → Clerk-linked User lookup: the backend refuses unknown emails,
-// so the admin enters the user's existing Gun Galore email and gets an
+// so the admin enters the user's existing All Outdoor email and gets an
 // error if they haven't signed up yet.
 export default function CreateAdminForm() {
   const router = useRouter();
@@ -76,7 +76,7 @@ export default function CreateAdminForm() {
             className="block text-xs mb-1.5"
             style={{ color: 'var(--text-secondary)' }}
           >
-            Existing Gun Galore email
+            Existing All Outdoor email
           </label>
           <input
             type="email"

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { apiFetch } from '@/lib/api';
+import { viewerFetch } from '@/lib/api-viewer';
 import { browseMetaDescription } from '@/lib/seo';
 import { BrowseResponse, BrandSummary } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
@@ -16,9 +16,9 @@ const PAGE_SIZE = 24;
 // into one page.
 
 async function getBrand(slug: string): Promise<BrandSummary | null> {
-  return apiFetch<BrandSummary>(`/listings/brand/${encodeURIComponent(slug)}`, {
-    next: { revalidate: 600 },
-  } as RequestInit).catch(() => null);
+  return viewerFetch<BrandSummary>(
+    `/listings/brand/${encodeURIComponent(slug)}`,
+  ).catch(() => null);
 }
 
 export async function generateMetadata({
@@ -28,8 +28,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const brand = await getBrand(slug);
-  if (!brand) return { title: 'Brand not found — Gun Galore' };
-  const title = `${brand.label} for sale — Gun Galore`;
+  if (!brand) return { title: 'Brand not found — All Outdoor' };
+  const title = `${brand.label} for sale — All Outdoor`;
   // Shared blurb (lib/seo.ts) — brand pages cover camp fridges and rods as
   // often as rifles, so the snippet leads outdoor like every other surface.
   const description = browseMetaDescription(`${brand.label} gear for sale`);
@@ -60,9 +60,12 @@ export default async function BrandPage({
     page: String(page),
     limit: String(PAGE_SIZE),
   });
-  const browse = await apiFetch<BrowseResponse>(`/listings?${qs}`, {
-    cache: 'no-store',
-  }).catch(() => ({ listings: [], total: 0, page, limit: PAGE_SIZE }));
+  const browse = await viewerFetch<BrowseResponse>(`/listings?${qs}`).catch(() => ({
+    listings: [],
+    total: 0,
+    page,
+    limit: PAGE_SIZE,
+  }));
 
   const totalPages = Math.max(1, Math.ceil(browse.total / PAGE_SIZE));
   const pageHref = (p: number) => `/brand/${brand.slug}?page=${p}`;

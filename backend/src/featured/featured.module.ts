@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { FeaturedService } from './featured.service';
+import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
 import {
   FeaturedAdminController,
   FeaturedPublicController,
@@ -20,7 +21,9 @@ import { ZohoBooksModule } from '../zoho/zoho-books.module';
     FeaturedSellerController,
     FeaturedAdminController,
   ],
-  providers: [FeaturedService, AdminJwtGuard],
+  // OptionalClerkGuard must be PROVIDED, not just referenced by the
+  // controller — otherwise Nest crash-loops at boot while tsc stays green.
+  providers: [FeaturedService, AdminJwtGuard, OptionalClerkGuard],
   exports: [FeaturedService],
 })
 export class FeaturedModule {}

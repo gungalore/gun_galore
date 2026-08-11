@@ -94,7 +94,7 @@ export class LoadLabController {
       groups: firstGroup,
       demo: true,
       upgradeReason:
-        'You are previewing 3 of the published loads for this calibre. Gun Galore PRO unlocks all of them, with source manual + page citations.',
+        'You are previewing 3 of the published loads for this calibre. All Outdoor PRO unlocks all of them, with source manual + page citations.',
     };
   }
 
@@ -136,7 +136,7 @@ export class LoadLabController {
       return {
         upgradeRequired: true,
         reason:
-          'Recommended loads are a Gun Galore PRO feature. Upgrade to see published manual loads.',
+          'Recommended loads are a All Outdoor PRO feature. Upgrade to see published manual loads.',
       };
     }
     const w = parseFloat(bulletWeightGr);

@@ -12,7 +12,7 @@ import { verifyClerkToken } from './clerk-verify';
 
 /**
  * Dual-auth guard: accepts EITHER a Clerk session bearer token OR
- * a Gun Galore CHECKOUT-scoped action token via ?t=<token>.
+ * a All Outdoor CHECKOUT-scoped action token via ?t=<token>.
  *
  * Used on endpoints that need to work from BOTH the normal
  * Clerk-authed app AND from an SMS-link checkout flow:

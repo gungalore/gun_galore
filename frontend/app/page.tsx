@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { apiFetch } from '@/lib/api';
+import { BRAND_NAME } from '@/lib/brand';
+import { viewerFetch } from '@/lib/api-viewer';
 import { BrowseResponse, Category, CategoryWithCount } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { CategoryCurtain } from '@/components/category-curtain';
@@ -39,7 +40,7 @@ const SURFACE_TITLES: Record<string, { title: string; subtitle: string }> = {
   BUY_NOW: {
     // "Marketplace" is the user-facing label for the BUY_NOW surface — these
     // are used-gear listings priced and ready to ship.
-    title: 'Marketplace',
+    title: 'Buy Now',
     subtitle: 'Gear, optics & outdoor kit — pay the listed price and go',
   },
   AUCTION: {
@@ -63,7 +64,7 @@ const DEFAULT_SURFACE = {
 // everything chronologically rather than a curated landing.
 const ALL_LISTINGS_SURFACE = {
   title: 'All listings',
-  subtitle: 'Everything on the marketplace — Marketplace, Auctions and Take a Shot combined',
+  subtitle: 'Everything in stock — Buy Now, Auctions and Take a Shot combined',
 };
 
 // Per-page metadata so the browser tab + Open Graph reflect the surface.
@@ -81,14 +82,14 @@ export async function generateMetadata({
   if (q) {
     return {
       title: listingType
-        ? `“${q}” in ${surface.title} — Gun Galore`
-        : `Results for “${q}” — Gun Galore`,
+        ? `“${q}” in ${surface.title} — All Outdoor`
+        : `Results for “${q}” — All Outdoor`,
     };
   }
   return {
     title: listingType
-      ? `${surface.title} — Gun Galore`
-      : 'Gun Galore — Outdoor, Hunting & Sport Marketplace',
+      ? `${surface.title} — ${BRAND_NAME}`
+      : `${BRAND_NAME} — New & Secondhand Outdoor Gear`,
   };
 }
 
@@ -171,20 +172,19 @@ export default async function HomePage({
     // Sentinel on failure (null) — a backend hiccup must NOT render the
     // genuine-empty "nothing listed yet" copy; the two states get
     // different UI below (retry card vs empty-marketplace nudge).
-    apiFetch<BrowseResponse>(`/listings?${qs}`, { cache: 'no-store' }).catch(
-      () => null,
-    ),
-    apiFetch<Category[]>('/categories', {
-      next: { revalidate: 3600 },
-    } as RequestInit).catch(() => [] as Category[]),
+    viewerFetch<BrowseResponse>(`/listings?${qs}`).catch(() => null),
+    // viewerFetch, NOT a revalidated apiFetch: the category list now varies by
+    // viewer (members see the regulated trees), and Next's data cache is shared
+    // across users — a cached member response would leak into anonymous pages.
+    viewerFetch<Category[]>('/categories').catch(() => [] as Category[]),
     showHero
-      ? apiFetch<
+      ? viewerFetch<
           {
             slotNumber: number;
             status: 'VACANT' | 'AUCTION_RUNNING' | 'BIND_WINDOW' | 'OCCUPIED';
             listing: import('@/lib/types').Listing | null;
           }[]
-        >('/featured/listings', { cache: 'no-store' }).catch(() => [])
+        >('/featured/listings').catch(() => [])
       : Promise.resolve(
           [] as {
             slotNumber: number;
@@ -193,17 +193,14 @@ export default async function HomePage({
           }[],
         ),
     // Brand/make facet values for the FilterBar (most-listed first).
-    apiFetch<string[]>('/listings/brands', {
-      next: { revalidate: 3600 },
-    } as RequestInit).catch(() => [] as string[]),
+    viewerFetch<string[]>('/listings/brands').catch(() => [] as string[]),
     // P4-polish — FilterBar facet counts ("Toyota (12)"). Only meaningful when
     // a category is scoped (the surface that renders attr facets); the backend
     // returns {} otherwise, so skip the call entirely on non-category surfaces.
     // On failure the FilterBar just renders options without counts.
     params.categoryId
-      ? apiFetch<{ facets: Record<string, Record<string, number>> }>(
+      ? viewerFetch<{ facets: Record<string, Record<string, number>> }>(
           `/listings/facets?${qs}`,
-          { cache: 'no-store' },
         ).catch(() => ({ facets: {} }))
       : Promise.resolve({
           facets: {} as Record<string, Record<string, number>>,
@@ -214,9 +211,9 @@ export default async function HomePage({
     // under-reports. Only the hero view renders the grid, so every filtered
     // surface skips the round-trip entirely. Failure degrades to no section.
     showHero
-      ? apiFetch<CategoryWithCount[]>('/categories/with-counts', {
-          next: { revalidate: 3600 },
-        } as RequestInit).catch(() => [] as CategoryWithCount[])
+      ? viewerFetch<CategoryWithCount[]>('/categories/with-counts').catch(
+          () => [] as CategoryWithCount[],
+        )
       : Promise.resolve([] as CategoryWithCount[]),
   ]);
 
@@ -309,7 +306,7 @@ export default async function HomePage({
       )}
 
       {/* Hero now carries the trust card on its right, so the competitive
-          "why Gun Galore" proof lives inside <Hero /> — no separate banner. */}
+          "why All Outdoor" proof lives inside <Hero /> — no separate banner. */}
       {showHero && <Hero />}
 
       {/* ─── Bare landing page: featured-only grid, no rail, no filter ───

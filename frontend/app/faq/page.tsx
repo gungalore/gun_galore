@@ -1,40 +1,47 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { BRAND_NAME } from '@/lib/brand';
 
 export const metadata: Metadata = {
-  title: 'Help & FAQ — Gun Galore',
+  title: `Help & FAQ — ${BRAND_NAME}`,
   description:
-    'Answers to common questions about buying and selling on Gun Galore: how payment is held until delivery, how firearm dealer transfers work, KYC, refunds and disputes, fees, and delivery.',
+    'Answers to common questions about buying and selling on All Outdoor: how payment is held until delivery, KYC, refunds and disputes, fees, and delivery.',
   alternates: { canonical: '/faq' },
 };
 
 // Curated, indexable FAQ. Plain data so we can also emit FAQPage JSON-LD.
 // Keep answers accurate to current platform behaviour. NOTE: never use the
-// word "escrow" — Gun Galore is not registered for it; say "funds held".
+// word "escrow" — we are not registered for it; say "funds held".
+//
+// PUBLIC SURFACE — this array feeds FAQPage structured data that Google can
+// lift straight into the SERP, so it is one of the most crawler-visible things
+// on the site. Regulated categories are members-only, so their rules live in
+// the Regulated Items Annex (members) and NOT here. Do not reintroduce
+// firearm, ammunition or dealer-transfer answers to this array: it would
+// re-publish exactly the content the members-only gate exists to withhold,
+// and it would describe a process the reader cannot actually reach.
 const FAQS: { q: string; a: string }[] = [
   {
-    q: 'What is Gun Galore?',
-    // Answer 1 is the single most-read sentence on the site (it also feeds
-    // the FAQPage JSON-LD Google can lift straight into the SERP), so it
-    // leads with the full catalogue rather than firearms — a camper reading
-    // "marketplace for firearms" concludes the site is not for them.
-    // Firearms stay named, last: they are a real part of the catalogue.
-    // "Ammunition" was removed deliberately — the Ammo category is seeded
-    // isActive:false (live ammo, primers and powder cannot be listed), so
-    // advertising it was both misleading and a compliance own-goal.
-    a: 'Gun Galore is a South African online marketplace for outdoor, hunting and sport gear — camping and overlanding kit, fishing tackle, optics, knives, clothing, reloading components and firearms. You can buy at a set price, bid in auctions, make an offer ("Take a Shot"), or swop item for item. Sellers are private individuals and licensed dealers.',
+    q: 'What is All Outdoor?',
+    // Answer 1 is the single most-read sentence on the site and it feeds the
+    // FAQPage JSON-LD Google lifts into the SERP, so it describes the PUBLIC
+    // store: the outdoor catalogue a signed-out visitor can actually browse.
+    // Regulated stock is members-only and is not advertised here.
+    a: 'All Outdoor is a South African new and secondhand outdoor store — camping and overlanding kit, fishing tackle, optics, knives, clothing and outdoor gear. You can buy at a set price, bid in auctions, make an offer ("Take a Shot"), or swop item for item. Some regulated categories are available to registered members only.',
   },
   {
     q: 'How does payment protection work?',
-    a: 'When you pay for an order, the funds are held by Gun Galore and only released to the seller after delivery is confirmed (or, for firearms, after the dealer-transfer is verified). If something goes wrong before then, you can raise a dispute and request a refund. This protects buyers from paying for items that never arrive.',
+    a: 'When you pay for an order, the funds are held by All Outdoor and only released to the seller after delivery is confirmed. If something goes wrong before then, you can raise a dispute and request a refund. This protects buyers from paying for items that never arrive.',
   },
   {
-    q: 'How do I buy a firearm — can it be couriered to my door?',
-    a: 'No. By law, firearms are transferred through a SAPS-licensed dealer, not couriered to a home address. After payment, the firearm is sent to a dealer; you collect it there once the transfer paperwork (including your competency and licence application where applicable) is complete. Gun Galore holds your payment until the dealer transfer is verified.',
+    // The operator's hard line, stated plainly where buyers and platform
+    // reviewers both look. Enforced in code at listing-create, not just here.
+    q: 'Do you sell ammunition?',
+    a: 'No. All Outdoor does not sell ammunition. Live ammunition may not be listed, sold or traded on this platform under any circumstances, by anyone, and listings that attempt it are removed.',
   },
   {
     q: 'Do I need to verify my identity (KYC)?',
-    a: 'Sellers complete identity verification (KYC) before they can receive payouts — this keeps the marketplace trustworthy. Buyers create a standard account; for firearm purchases, your identity, competency and licence are handled as part of the regulated dealer-transfer process.',
+    a: 'Sellers complete identity verification (KYC) before they can receive payouts — this keeps the store trustworthy for everyone. Buyers create a standard account.',
   },
   {
     q: 'How do refunds and disputes work?',
@@ -49,20 +56,19 @@ const FAQS: { q: string; a: string }[] = [
     a: 'Secure card payments are launching soon. You can browse, bid and list in the meantime — card checkout switches on as soon as it is ready. Whichever method you use, your payment is held until delivery is confirmed.',
   },
   {
-    // Framed as "how is my order delivered", not "how is NON-FIREARM gear
-    // delivered" — the old wording made couriered outdoor gear read as the
-    // exception on a site where it is the majority of the catalogue. The
-    // dealer-transfer rule for firearms is unchanged and still stated
-    // plainly; that part is legally load-bearing.
+    // Regulated-category delivery rules (dealer transfer) are legally
+    // load-bearing but they belong to members-only stock, so they live in the
+    // Regulated Items Annex rather than the public FAQ. Nothing here is
+    // softened — it simply describes the catalogue this page's reader can buy.
     q: 'How is my order delivered?',
-    a: 'Most items ship via our courier partners — Pudo locker-to-locker or The Courier Guy door-to-door — with live rate quotes at checkout and tracking on the order page. Firearms are the exception: by law they always route through a SAPS-licensed dealer instead of to your door.',
+    a: 'Most items ship via our courier partners — Pudo locker-to-locker or The Courier Guy door-to-door — with live rate quotes at checkout and tracking on the order page. Bulky items are collected, or you can arrange your own transporter; either way your payment is held until you confirm you have the item.',
   },
   {
-    q: 'How do I sell on Gun Galore?',
+    q: 'How do I sell on All Outdoor?',
     // Four selling modes, matching /how-selling-works and the sell form —
     // Swop was live long before this answer was written and kept being left
     // out, which is why sellers never discovered it.
-    a: 'Create a listing from the Sell page — add photos, a description and a price (or set it up as an auction, a Take-a-Shot, or a Swop / Trade). Listings are checked before going live. Complete seller verification (KYC) to receive payouts. For firearms you will capture the serial and licence details required by law.',
+    a: 'Create a listing from the Sell page — add photos, a description and a price (or set it up as an auction, a Take-a-Shot, or a Swop / Trade). Listings are checked before going live. Complete seller verification (KYC) to receive payouts. Registered members listing in a regulated category are asked for the extra details the law requires.',
   },
   {
     q: 'Is my personal information safe?',
@@ -99,7 +105,7 @@ export default function FaqPage() {
         Help &amp; FAQ
       </h1>
       <p className="text-sm mt-2" style={{ color: 'var(--text-tertiary)' }}>
-        Common questions about buying and selling on Gun Galore. Still stuck?{' '}
+        Common questions about buying and selling on All Outdoor. Still stuck?{' '}
         <a
           href="mailto:support@gungalore.co.za"
           style={{ color: 'var(--red)', textDecoration: 'underline' }}
@@ -152,13 +158,11 @@ export default function FaqPage() {
           Refund &amp; Dispute Policy
         </Link>{' '}
         and{' '}
-        <Link
-          href="/firearms-compliance"
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          Firearms Compliance
+        <Link href="/acceptable-use" style={{ color: 'var(--text-secondary)' }}>
+          Acceptable Use Policy
         </Link>{' '}
-        pages.
+        pages. Rules for regulated categories live in the Regulated Items
+        Annex, available to registered members.
       </p>
     </main>
   );

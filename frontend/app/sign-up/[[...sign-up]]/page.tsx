@@ -15,7 +15,7 @@
 import SignUpForm from './sign-up-form';
 
 export const metadata = {
-  title: 'Create your account — Gun Galore',
+  title: 'Create your account — All Outdoor',
 };
 
 export default function SignUpPage() {

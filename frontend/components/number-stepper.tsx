@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef } from 'react';
 //     Windows, fast on macOS) — inconsistent.
 //   - Touch users have no spinner at all on mobile browsers; they
 //     have to use the keyboard. Our buttons are tap-friendly.
-//   - Matches the rest of Gun Galore's hand-rolled controls.
+//   - Matches the rest of All Outdoor's hand-rolled controls.
 export interface NumberStepperProps {
   /** Controlled value. Use empty string for "in progress / cleared". */
   value: string;

@@ -244,7 +244,13 @@ export class AskGgGuideService {
 
   /** The guide for the given page. Never throws — falls back to a generic
    *  guide on anything unexpected. */
-  async getGuide(input: { path?: string; listingId?: string }): Promise<AskGgGuide> {
+  async getGuide(input: {
+    path?: string;
+    listingId?: string;
+    /** Verified Clerk id when the caller is signed in. Signed-out callers get
+     *  no live state for members-only listings. */
+    clerkId?: string;
+  }): Promise<AskGgGuide> {
     const path =
       typeof input.path === 'string' && input.path.startsWith('/')
         ? input.path
@@ -266,7 +272,7 @@ export class AskGgGuideService {
 
     if (listingId) {
       try {
-        return await this.listingGuide(listingId);
+        return await this.listingGuide(listingId, input.clerkId);
       } catch {
         return this.resolveGuide('listing-buy-now');
       }
@@ -504,7 +510,10 @@ export class AskGgGuideService {
     return 'generic';
   }
 
-  private async listingGuide(listingId: string): Promise<AskGgGuide> {
+  private async listingGuide(
+    listingId: string,
+    clerkId?: string,
+  ): Promise<AskGgGuide> {
     const l = await this.prisma.listing.findUnique({
       where: { id: listingId },
       select: {
@@ -514,12 +523,17 @@ export class AskGgGuideService {
         currentBid: true,
         endTime: true,
         reservePrice: true, // compared server-side; NEVER emitted
+        publicVisible: true,
       },
     });
     // Non-public / terminal / missing → the plain generic guide with NO live
     // state and NO status note, so the public endpoint can't be used to probe
     // the existence or state of unpublished (DRAFT / PENDING_REVIEW) listings.
     if (!l || l.status !== 'ACTIVE') return this.resolveGuide('listing-buy-now');
+    // Members-only listing + no session → the generic guide, same as an
+    // unpublished one. Otherwise this endpoint leaks the live bid, reserve-met
+    // state and time-left of a firearm auction to anyone with the id.
+    if (!clerkId && !l.publicVisible) return this.resolveGuide('listing-buy-now');
 
     // AUCTION wins the guide (the "how to win" playbook is what a bidder needs)
     // even when the item is an experience; otherwise experiences get the

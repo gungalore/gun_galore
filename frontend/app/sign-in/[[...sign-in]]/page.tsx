@@ -7,8 +7,8 @@ export default function SignInPage() {
       className="flex min-h-screen flex-col items-center justify-center gap-6 px-4"
       style={{ background: 'var(--bg-deep)' }}
     >
-      <Link href="/" aria-label="Gun Galore">
-        <img src="/logo.svg" alt="Gun Galore" style={{ height: 44, width: 'auto' }} />
+      <Link href="/" aria-label="All Outdoor">
+        <img src="/logo.svg" alt="All Outdoor" style={{ height: 44, width: 'auto' }} />
       </Link>
       <SignIn
         signUpUrl="/sign-up"

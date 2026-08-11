@@ -37,7 +37,9 @@ describe('CategoriesService — findBySlugTree', () => {
       .mockResolvedValueOnce(parent); // parent lookup
     prisma.category.findMany.mockResolvedValue(children);
 
-    const tree = await service.findBySlugTree('rifles');
+    // Signed-in member: this test is about the returned tree SHAPE. The
+    // signed-out visibility gate has its own spec (public-visibility.spec.ts).
+    const tree = await service.findBySlugTree('rifles', 'clerk_member');
     expect(tree).toEqual({ category: cat, parent, children });
     expect(prisma.category.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { parentId: 'c2', isActive: true } }),
@@ -49,7 +51,7 @@ describe('CategoriesService — findBySlugTree', () => {
     prisma.category.findUnique.mockResolvedValueOnce(cat);
     prisma.category.findMany.mockResolvedValue([]);
 
-    const tree = await service.findBySlugTree('optics');
+    const tree = await service.findBySlugTree('optics', 'clerk_member');
     expect(tree?.parent).toBeNull();
     expect(prisma.category.findUnique).toHaveBeenCalledTimes(1);
   });

@@ -347,7 +347,7 @@ export class FirearmLicenceService {
   }): Promise<FirearmLicenceFindings> {
     if (!this.client) throw new Error('Anthropic client not configured');
 
-    const systemPrompt = `You are the firearm-listing licence verifier for Gun Galore, a South African firearms marketplace.
+    const systemPrompt = `You are the firearm-listing licence verifier for All Outdoor, a South African firearms marketplace.
 
 You will be shown TWO photos in order:
   1. A close-up of the SERIAL NUMBER stamped on a firearm or barrel.
