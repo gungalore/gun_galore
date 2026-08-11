@@ -2718,7 +2718,41 @@ export default function NewListingPage() {
               />
             </Field>
 
-            <Field label="Condition" required>
+            <Field
+              label="Condition"
+              required
+              tipTitle="What the grades mean"
+              tip={
+                <>
+                  Buyers here buy sight-unseen, so a grade is a promise —
+                  these are the definitions we hold everyone to.
+                  <br />
+                  <br />
+                  <strong>New:</strong> unused, sealed or tagged. <br />
+                  <strong>Like New:</strong> a handful of uses, no wear you
+                  would notice in a photo. <br />
+                  <strong>Good:</strong> honest use, visible marks, everything
+                  works — the normal secondhand grade. <br />
+                  <strong>Fair:</strong> a fault, a missing part, or heavy
+                  wear. Describe it in full. <br />
+                  <strong>Poor:</strong> for parts or a project; do not expect
+                  it to work.
+                  <br />
+                  <br />
+                  An accurate <strong>Fair</strong> with the fault described
+                  sells faster than an optimistic <strong>Good</strong> that
+                  arrives and disappoints.{' '}
+                  <a
+                    href="/condition-guide"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'var(--red)' }}
+                  >
+                    Full guide + per-category checklists →
+                  </a>
+                </>
+              }
+            >
               <PillGroup
                 value={form.condition as keyof typeof CONDITION_LABELS}
                 onChange={(v) => set('condition', v)}

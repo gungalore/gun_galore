@@ -29,6 +29,10 @@ const isPublicRoute = createRouteMatcher([
                    // without auth (mirrors /category above).
   '/faq',          // public help/FAQ page
   '/how-selling-works', // public "how selling works" explainer (linked from sell flow)
+  '/condition-guide', // public grading rubric — linked from the sell form and
+                   // every listing's condition chip, and it is the definition
+                   // buyers are held to, so it must be readable signed-out
+                   // (and crawlable) rather than 307ing to sign-in.
   '/how-payments-work', // public "how payments work" explainer
   '/contact',      // public contact page
   '/support',      // public support page

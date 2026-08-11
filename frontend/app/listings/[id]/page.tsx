@@ -325,16 +325,24 @@ export default async function ListingDetailPage({
             >
               {listing.category.name}
             </Link>
-            <span
+            {/* Condition links to the grading rubric. The grade is a promise
+                the seller is held to, and until /condition-guide existed
+                nothing on the site defined what any of these words meant —
+                which is exactly how "Good" becomes a dispute. */}
+            <Link
+              href="/condition-guide"
+              title="What do these condition grades mean?"
               className="text-xs px-2 py-0.5 rounded-[3px]"
               style={{
                 background: 'var(--bg-inset)',
                 color: 'var(--text-tertiary)',
                 border: '0.5px solid var(--border)',
+                textDecoration: 'none',
               }}
             >
               {CONDITION_LABELS[listing.condition]}
-            </span>
+              <span aria-hidden> ⓘ</span>
+            </Link>
             {/* Collection-only badge — trailers / caravans are collected
                 in person, no courier. Sits alongside category/condition. */}
             {listing.collectionOnly && (
