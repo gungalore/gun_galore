@@ -255,35 +255,36 @@ export default function AdminRafflePage() {
                 </td>
                 <td className="px-4 py-2">{d.winner?.username ?? '—'}</td>
                 <td className="px-4 py-2">
+                  {/* Inline forms, not window.prompt: native prompts are
+                      blocked in installed-PWA/standalone contexts and on iOS
+                      read as a browser bug. The old cancel prompt also
+                      silently did nothing on an empty reason (prompt returns
+                      '' which is falsy), so the admin thought it had failed. */}
                   {d.status === 'DRAWN' && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        const note = window.prompt(
-                          'Fulfilment note (optional — e.g. "exchanged for equal-value alternative"):',
-                        );
-                        if (note !== null) void act(`/admin/raffle/${d.id}/fulfil`, { note });
-                      }}
-                      className="text-xs px-2 py-1 rounded-[4px]"
-                      style={{ background: 'var(--red)', color: '#fff' }}
-                    >
-                      Mark fulfilled
-                    </button>
+                    <DrawAction
+                      label="Mark fulfilled"
+                      placeholder="Fulfilment note (optional)"
+                      confirmLabel="Save"
+                      requireText={false}
+                      busy={busy}
+                      tone="primary"
+                      onConfirm={(note) =>
+                        act(`/admin/raffle/${d.id}/fulfil`, { note })
+                      }
+                    />
                   )}
                   {d.status === 'LIVE' && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        const reason = window.prompt('Reason for cancelling this draw:');
-                        if (reason) void act(`/admin/raffle/${d.id}/cancel`, { reason });
-                      }}
-                      className="text-xs px-2 py-1 rounded-[4px]"
-                      style={{ background: 'transparent', border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
-                    >
-                      Cancel
-                    </button>
+                    <DrawAction
+                      label="Cancel"
+                      placeholder="Reason for cancelling this draw"
+                      confirmLabel="Confirm cancel"
+                      requireText
+                      busy={busy}
+                      tone="secondary"
+                      onConfirm={(reason) =>
+                        act(`/admin/raffle/${d.id}/cancel`, { reason })
+                      }
+                    />
                   )}
                 </td>
               </tr>
@@ -298,6 +299,109 @@ export default function AdminRafflePage() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// Expanding inline row action — replaces window.prompt for the two
+// draw actions that need a note/reason. Collapsed it is a single button;
+// expanded it is an input + confirm, with confirm disabled until the text
+// rule is satisfied so an empty required reason can never silently no-op.
+function DrawAction({
+  label,
+  placeholder,
+  confirmLabel,
+  requireText,
+  busy,
+  tone,
+  onConfirm,
+}: {
+  label: string;
+  placeholder: string;
+  confirmLabel: string;
+  /** Cancel needs a reason; fulfilment explicitly allows an empty note. */
+  requireText: boolean;
+  busy: boolean;
+  tone: 'primary' | 'secondary';
+  onConfirm: (text: string) => Promise<void> | void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+
+  const primaryStyle =
+    tone === 'primary'
+      ? { background: 'var(--red)', color: '#fff', border: 'none' }
+      : {
+          background: 'transparent',
+          border: '0.5px solid var(--border)',
+          color: 'var(--text-secondary)',
+        };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => setOpen(true)}
+        className="text-xs px-2 py-1 rounded-[4px]"
+        style={primaryStyle}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  const ready = !requireText || text.trim().length > 0;
+
+  return (
+    <div className="flex items-center gap-1.5 min-w-[260px]">
+      <input
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        className="flex-1 px-2 py-1 rounded-[4px] text-xs outline-none"
+        style={{
+          background: 'var(--bg-inset)',
+          border: '0.5px solid var(--border)',
+          color: 'var(--text-primary)',
+        }}
+      />
+      <button
+        type="button"
+        disabled={busy || !ready}
+        onClick={() => {
+          void onConfirm(text.trim());
+          setOpen(false);
+          setText('');
+        }}
+        className="text-xs px-2 py-1 rounded-[4px] shrink-0"
+        style={{
+          background: 'var(--red)',
+          color: '#fff',
+          border: 'none',
+          opacity: busy || !ready ? 0.5 : 1,
+          cursor: busy || !ready ? 'not-allowed' : 'pointer',
+        }}
+      >
+        {confirmLabel}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(false);
+          setText('');
+        }}
+        className="text-xs px-2 py-1 rounded-[4px] shrink-0"
+        style={{
+          background: 'transparent',
+          border: '0.5px solid var(--border)',
+          color: 'var(--text-tertiary)',
+        }}
+      >
+        Back
+      </button>
     </div>
   );
 }

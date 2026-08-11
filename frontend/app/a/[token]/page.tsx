@@ -8,6 +8,7 @@ import {
   type TransactionAcceptPayload,
 } from './transaction-accept';
 import { SwapDecisionPage, type SwapDecisionPayload } from './swap-decision';
+import { RunnerUpPage, type RunnerUpPayload } from './runner-up';
 
 /**
  * Universal SMS-link landing page. URL pattern: `/a/<token>`.
@@ -37,7 +38,8 @@ type ResolvedPayload =
   | CheckoutPayload
   | KycVerifyPayload
   | TransactionAcceptPayload
-  | SwapDecisionPayload;
+  | SwapDecisionPayload
+  | RunnerUpPayload;
 
 interface CheckoutPayload {
   kind: 'CHECKOUT';
@@ -118,6 +120,8 @@ export default async function ActionTokenPage({
       ) : payload.kind === 'SWAP_PROPOSAL_DECISION' ||
         payload.kind === 'SWAP_COUNTER_DECISION' ? (
         <SwapDecisionPage token={token} payload={payload} />
+      ) : payload.kind === 'AUCTION_RUNNER_UP' ? (
+        <RunnerUpPage token={token} payload={payload} />
       ) : (
         <ActionTokenError status={500} />
       )}

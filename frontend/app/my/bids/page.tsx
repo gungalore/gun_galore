@@ -24,6 +24,12 @@ interface MyBidRow {
   endedAt: string | null;
   youAreHighBidder: boolean;
   isWinner: boolean;
+  // NOT currently sent by /auctions/me/bids — the 24h pay deadline lives on
+  // the listing's expiresAt and is read off the public listing detail below.
+  // Declared optional so that the moment the backend adds it to the row
+  // (auctions.service.ts getMyBids select), the extra fetch is skipped with
+  // no further frontend change.
+  payByAt?: string | null;
 }
 
 interface MyFeaturedBidRow {
@@ -47,6 +53,67 @@ interface MyFeaturedBidRow {
   createdAt: string;
 }
 
+// Server-rendered static deadline chip for a WON auction awaiting payment —
+// the same shape as the buyer-side ExpiryCountdown on /my/offers, with the
+// auction consequence spelled out. This is load-bearing, not decoration:
+// sweepUnpaidWins() flips the listing to EXPIRED **and** records a
+// non-payment strike against the winner (3 strikes = no more bidding), so a
+// winner who never saw the clock gets punished for a deadline nobody showed
+// them. No live tick — the page is a server component (no-store), same
+// accepted limitation as the offers-side countdown; a reload re-evaluates.
+function PayDeadline({ payByAt }: { payByAt: string }) {
+  const ms = new Date(payByAt).getTime() - Date.now();
+  if (ms <= 0) {
+    // Past due but not yet swept (the sweep runs on a cron, so there's a
+    // gap). Never say "expired" — the win is still claimable until the
+    // sweep lands, and telling them it's dead would stop them paying.
+    return (
+      <p
+        className="text-xs mb-2 px-2 py-1 rounded"
+        style={{
+          background: 'rgba(200,16,46,0.10)',
+          border: '0.5px solid var(--red)',
+          color: 'var(--red)',
+        }}
+      >
+        ⏱ Your payment window has closed — this win lapses at any moment and
+        counts against your account. Pay now if you still want the item.
+      </p>
+    );
+  }
+  const hours = Math.floor(ms / 3_600_000);
+  const minutes = Math.floor((ms % 3_600_000) / 60_000);
+  const isCritical = hours < 2;
+  const isWarning = hours < 6;
+  const tone = isCritical
+    ? { bg: 'rgba(200,16,46,0.10)', border: 'var(--red)', label: 'var(--red)' }
+    : isWarning
+      ? {
+          bg: 'rgba(245,158,11,0.10)',
+          border: 'rgba(245,158,11,0.45)',
+          label: '#f59e0b',
+        }
+      : {
+          bg: 'var(--bg-inset)',
+          border: 'var(--border)',
+          label: 'var(--text-secondary)',
+        };
+  const left = hours >= 1 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  return (
+    <p
+      className="text-xs mb-2 px-2 py-1 rounded"
+      style={{
+        background: tone.bg,
+        border: `0.5px solid ${tone.border}`,
+        color: tone.label,
+      }}
+    >
+      ⏱ {left} left to pay — miss it and the sale lapses and counts against
+      your account.
+    </p>
+  );
+}
+
 function remaining(endTime: string | null): string {
   if (!endTime) return '';
   const ms = new Date(endTime).getTime() - Date.now();
@@ -58,6 +125,20 @@ function remaining(endTime: string | null): string {
   if (days > 0) return `${days}d ${hours}h left`;
   if (hours > 0) return `${hours}h ${mins}m left`;
   return `${mins}m left`;
+}
+
+// Time pressure has to LOOK like time pressure — "5m left" rendered in muted
+// tertiary grey next to the bid amounts read as a footnote. Red under an hour,
+// amber under six. This page is a server component with no polling, so the
+// tone is correct as of render (same accepted limitation as the offers-side
+// ExpiryCountdown); a reload re-evaluates it.
+function remainingColor(endTime: string | null): string {
+  if (!endTime) return 'var(--text-tertiary)';
+  const ms = new Date(endTime).getTime() - Date.now();
+  if (ms <= 0) return 'var(--text-tertiary)';
+  if (ms < 3_600_000) return 'var(--red)';
+  if (ms < 6 * 3_600_000) return '#f59e0b';
+  return 'var(--text-tertiary)';
 }
 
 export default async function MyBidsPage() {
@@ -97,6 +178,32 @@ export default async function MyBidsPage() {
     (b) =>
       !live.includes(b) && !won.includes(b) && !purchased.includes(b),
   );
+
+  // Pay-by clock for the "Won — pay now" rows. /auctions/me/bids does NOT
+  // return it, but the listing's `expiresAt` IS the 24h pay deadline while
+  // the listing sits in PAYMENT_PENDING (sweepUnpaidWins reads exactly that
+  // field) and it's part of the PUBLIC listing projection — so read it off
+  // the public detail endpoint rather than leaving winners blind. Only the
+  // handful of won-and-unpaid rows are fetched, and a failed fetch degrades
+  // to "no chip" instead of throwing the page.
+  //
+  // NOTE: a null expiresAt is meaningful, not missing — starting checkout
+  // CAS-nulls it, so a winner mid-checkout must NOT be shown a deadline.
+  const payByEntries = await Promise.all(
+    won.map(async (b) => {
+      // Row already carries it (future backend) — don't spend a request.
+      if (b.payByAt !== undefined) return [b.listingId, b.payByAt] as const;
+      const r = await fetch(`${API_URL}/listings/${b.listingId}`, {
+        cache: 'no-store',
+      }).catch(() => null);
+      if (!r || !r.ok) return [b.listingId, null] as const;
+      const l = (await r
+        .json()
+        .catch(() => null)) as { expiresAt?: string | null } | null;
+      return [b.listingId, l?.expiresAt ?? null] as const;
+    }),
+  );
+  const payByAt = new Map<string, string | null>(payByEntries);
 
   // Featured bids split: still bidding / won the slot (BIND_WINDOW) /
   // everything else (auction closed-and-lost, refunded, etc.).
@@ -187,7 +294,11 @@ export default async function MyBidsPage() {
       {won.length > 0 && (
         <div data-reveal><Section title="Won — pay now">
           {won.map((b) => (
-            <BidCard key={b.bidId} row={b} />
+            <BidCard
+              key={b.bidId}
+              row={b}
+              payByAt={payByAt.get(b.listingId) ?? null}
+            />
           ))}
         </Section></div>
       )}
@@ -277,7 +388,16 @@ function Section({
   );
 }
 
-function BidCard({ row }: { row: MyBidRow }) {
+function BidCard({
+  row,
+  payByAt = null,
+}: {
+  row: MyBidRow;
+  // Only the "Won — pay now" section passes this (ISO pay-by timestamp);
+  // null means either not-a-win or checkout already started (which nulls
+  // the listing's expiresAt server-side).
+  payByAt?: string | null;
+}) {
   const ended = !!row.endedAt;
   const ahead = row.youAreHighBidder;
   // High bidder on a live RESERVE auction where the reserve isn't met yet:
@@ -305,6 +425,13 @@ function BidCard({ row }: { row: MyBidRow }) {
   // Prominent Active vs Closed pill at the card head — the eye reads
   // intent instantly without parsing the detail row.
   const isActive = !ended && !row.isWinner;
+  // Being outbid is the single highest-intent moment on this page and it was
+  // the only state with no button at all. Gate on listingStatus ACTIVE too
+  // (not just !endedAt) so a cancelled or already-sold listing never gets a
+  // CTA pointing at a dead auction — that mirrors the `live` bucket exactly.
+  const canIncrease = !ended && !ahead && row.listingStatus === 'ACTIVE';
+  const timeColor = remainingColor(row.endTime);
+  const timeUrgent = timeColor !== 'var(--text-tertiary)';
 
   return (
     <div
@@ -389,7 +516,10 @@ function BidCard({ row }: { row: MyBidRow }) {
             {!ended && row.endTime && (
               <span
                 className="text-xs"
-                style={{ color: 'var(--text-tertiary)' }}
+                style={{
+                  color: timeColor,
+                  fontWeight: timeUrgent ? 500 : undefined,
+                }}
               >
                 {remaining(row.endTime)}
               </span>
@@ -398,11 +528,34 @@ function BidCard({ row }: { row: MyBidRow }) {
         </div>
       </div>
 
+      {canIncrease && (
+        <div
+          className="mt-3 pt-3"
+          style={{ borderTop: '0.5px solid var(--border)' }}
+        >
+          <Link
+            href={`/listings/${row.listingId}`}
+            className="block w-full py-2.5 rounded-[6px] text-sm text-center"
+            style={{
+              background: 'var(--red)',
+              color: '#fff',
+              fontWeight: 500,
+              textDecoration: 'none',
+            }}
+          >
+            Increase your bid →
+          </Link>
+        </div>
+      )}
+
       {row.isWinner && row.listingStatus === 'PAYMENT_PENDING' && (
         <div
           className="mt-3 pt-3"
           style={{ borderTop: '0.5px solid var(--border)' }}
         >
+          {/* Deadline sits ABOVE the checkout button — it is the reason to
+              press it. Absent while checkout is already underway. */}
+          {payByAt && <PayDeadline payByAt={payByAt} />}
           <a
             href={`/checkout/${row.listingId}`}
             className="block w-full py-2.5 rounded-[6px] text-sm text-center"

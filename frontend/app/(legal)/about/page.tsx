@@ -20,13 +20,18 @@ export default function AboutPage() {
       <LegalDocHeader title="About Gun Galore" lastUpdated="Effective 16 July 2026" />
 
       <h2>What Gun Galore is</h2>
+      {/* "Ammunition" removed on purpose — the Ammo category is seeded
+          isActive:false (live ammo, primers and powder cannot be listed
+          here), so naming it advertised a product line the platform has
+          deliberately switched off. Reloading components stay: that
+          category is live and holds bullets and brass only. */}
       <p>
         Gun Galore is a South African online marketplace for the
-        outdoor, hunting and sport-shooting community — optics,
-        hunting and camping gear, fishing, ranges, accessories,
-        ammunition and reloading components, alongside firearms. You
-        can buy at a set price, bid in auctions, or make an offer, from
-        both private sellers and licensed dealers.
+        outdoor, hunting and sport-shooting community — camping and
+        overlanding gear, fishing, optics, knives, clothing, ranges,
+        accessories and reloading components, alongside firearms. You
+        can buy at a set price, bid in auctions, make an offer, or swop
+        item for item, from both private sellers and licensed dealers.
       </p>
 
       <h2>How it works</h2>

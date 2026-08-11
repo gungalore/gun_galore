@@ -28,6 +28,27 @@ const TIER_LABEL: Record<SellerTier, string> = {
   DEALER: 'Dealer',
 };
 
+// Retry budget enforced by backend/src/kyc/kyc.service.ts — at 3 recorded
+// attempts getStatus() returns nextStep:'failed' and the account is flagged
+// for admin review. Mirrored here only to render "x of 3 used".
+const KYC_MAX_ATTEMPTS = 3;
+
+// The slice of GET /kyc/status this page uses (the endpoint returns more —
+// consent/verified timestamps, flow, phoneMasked — that the banner doesn't
+// need). nextStep is the wizard's save-&-resume pointer.
+interface KycStatusDetail {
+  kycStatus: string;
+  kycAttempts: number;
+  nextStep:
+    | 'consent'
+    | 'details'
+    | 'document'
+    | 'selfie'
+    | 'review'
+    | 'done'
+    | 'failed';
+}
+
 const KYC_TONE: Record<string, { label: string; colour: string }> = {
   NONE: { label: 'Not verified', colour: 'var(--text-tertiary)' },
   PENDING: { label: 'Verification pending', colour: '#f59e0b' },
@@ -128,7 +149,7 @@ export default async function ProfilePage() {
   // (a 200 with an empty/partial body → "Unexpected end of JSON input"). Either
   // failure degrades to null instead of 500-ing the whole page — matching the
   // resilience the /account page already has.
-  const [meRes, trustRes] = await Promise.all([
+  const [meRes, trustRes, kycRes] = await Promise.all([
     fetch(`${API_URL}/users/me`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',
@@ -137,9 +158,36 @@ export default async function ProfilePage() {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',
     }).catch(() => null),
+    // /users/me carries kycStatus but NOT the retry state. GET /kyc/status
+    // adds kycAttempts + nextStep — the difference between "you can fix
+    // this yourself right now" and "a human has to unlock it", which is
+    // exactly what the rejected banner below has to decide.
+    fetch(`${API_URL}/kyc/status`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    }).catch(() => null),
   ]);
   const me: Me | null = await safeJson<Me>(meRes);
   const trust: TrustDashboard | null = await safeJson<TrustDashboard>(trustRes);
+  const kycStatusDetail = await safeJson<KycStatusDetail>(kycRes);
+  // Attempts are capped at 3 server-side (kyc.service.ts flags the account
+  // for admin review at 3 and getStatus then returns nextStep:'failed').
+  const kycAttemptsUsed = kycStatusDetail?.kycAttempts ?? 0;
+  const kycRetriesLeft = Math.max(0, KYC_MAX_ATTEMPTS - kycAttemptsUsed);
+  // Fail CLOSED on a missing status payload: if we can't prove retries
+  // remain, don't promise the seller a retry that the wizard will refuse.
+  const kycCanRetry =
+    !!kycStatusDetail &&
+    kycStatusDetail.nextStep !== 'failed' &&
+    kycRetriesLeft > 0;
+  // Only claim "you've used all your attempts" when the status endpoint
+  // actually said so — a transient fetch failure must not put a false
+  // fact about the seller's own account on screen.
+  const kycExhausted = !!kycStatusDetail && !kycCanRetry;
+  // A rejected seller who already has an ID document on file resumes at the
+  // selfie step — the wizard has no way back to re-upload the document, so
+  // the banner must not tell them to re-shoot it.
+  const kycResumeAtSelfie = kycStatusDetail?.nextStep === 'selfie';
 
   const displayName =
     [me?.firstName, me?.lastName].filter(Boolean).join(' ') ||
@@ -285,12 +333,15 @@ export default async function ProfilePage() {
             </span>
           </div>
 
-          {/* KYC-rejected recovery banner — when the seller is in the
-              REJECTED state they were previously stuck with a red
-              chip and no explanation of what to do. Surfaces the
-              consequence (payouts blocked) and an explicit support
-              contact path. Manual re-submit isn't available via the
-              VerifyNow stub yet, so support handles it. */}
+          {/* KYC-rejected recovery banner. Used to dead-end at "email
+              support" — a human bottleneck on the one path that gates
+              seller money. The verification wizard is actually resumable
+              after a rejection (kyc.service.ts guards its writes on
+              kycStatus IN (PENDING, REJECTED)), so while retries remain
+              the seller fixes this themselves in one tap. Only a truly
+              exhausted budget needs a person, and that case is ALREADY
+              auto-flagged to admin (KYC_REPEATED_FAILURE alert) — the copy
+              says so rather than making them beg by email. */}
           {me?.kycStatus === 'REJECTED' && (
             <div
               className="mt-3 rounded-[6px] px-3 py-2.5 text-xs"
@@ -305,20 +356,122 @@ export default async function ProfilePage() {
               <p style={{ color: 'var(--red)', fontWeight: 600, marginBottom: 4 }}>
                 Identity verification was rejected
               </p>
-              <p style={{ color: 'var(--text-secondary)' }}>
-                Your payouts are blocked until your identity is verified.
-                Common causes: blurry ID photo, glare, face not centred,
-                or document type not accepted. We don&apos;t auto-retry
-                — email{' '}
-                <a
-                  href="mailto:support@gungalore.co.za?subject=KYC%20rejected%20%E2%80%94%20help%20resubmitting"
-                  style={{ color: 'var(--red)', textDecoration: 'underline' }}
-                >
-                  support@gungalore.co.za
-                </a>{' '}
-                and we&apos;ll reset the verification so you can try
-                again with a fresh photo.
-              </p>
+              {kycCanRetry ? (
+                <>
+                  <p style={{ color: 'var(--text-secondary)' }}>
+                    Your payouts stay held until your identity is verified —
+                    you can try again right now, no email needed.
+                  </p>
+                  {/* Name the fixable causes, and ONLY the ones this retry
+                      can actually fix. A resume at the selfie step keeps
+                      the stored ID document, so telling that seller to
+                      re-shoot their ID would send them in circles. */}
+                  <ul
+                    style={{
+                      color: 'var(--text-secondary)',
+                      listStyle: 'disc',
+                      paddingLeft: 18,
+                      margin: '6px 0 8px',
+                    }}
+                  >
+                    <li>
+                      Bright, even light on your face — no glare, no strong
+                      backlight, no shadow.
+                    </li>
+                    <li>
+                      Look straight at the camera. No hat, no sunglasses,
+                      nothing covering your face.
+                    </li>
+                    <li>Hold still until the capture finishes.</li>
+                    {!kycResumeAtSelfie && (
+                      <li>
+                        Whole ID in frame, all four corners visible, ID
+                        number and date of birth readable — SA smart ID
+                        card (photo side) or green ID book (photo page).
+                      </li>
+                    )}
+                  </ul>
+                  <Link
+                    href="/kyc/verify?returnTo=/profile"
+                    className="inline-block px-3 py-1.5 rounded-[6px]"
+                    style={{
+                      background: 'var(--red)',
+                      color: '#fff',
+                      fontWeight: 500,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    Try verification again
+                  </Link>
+                  <p
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      marginTop: 6,
+                    }}
+                  >
+                    {kycAttemptsUsed} of {KYC_MAX_ATTEMPTS} attempts used.
+                    After {KYC_MAX_ATTEMPTS} a person has to review it by
+                    hand.
+                    {kycResumeAtSelfie && (
+                      <>
+                        {' '}
+                        You&apos;ll pick up at the selfie step — the ID you
+                        already uploaded is kept. If that ID photo was the
+                        problem, email{' '}
+                        <a
+                          href="mailto:support@gungalore.co.za?subject=KYC%20%E2%80%94%20reset%20my%20ID%20document%20step"
+                          style={{
+                            color: 'var(--red)',
+                            textDecoration: 'underline',
+                          }}
+                        >
+                          support@gungalore.co.za
+                        </a>{' '}
+                        and we&apos;ll reset that step.
+                      </>
+                    )}
+                  </p>
+                </>
+              ) : kycExhausted ? (
+                <p style={{ color: 'var(--text-secondary)' }}>
+                  Your payouts stay held until your identity is verified.
+                  You&apos;ve used all {KYC_MAX_ATTEMPTS} automatic
+                  attempts, so the retry is locked and one of our team has
+                  to unlock it — your account is already queued for that
+                  review and we&apos;ll SMS you the outcome. To chase it,
+                  email{' '}
+                  <a
+                    href="mailto:support@gungalore.co.za?subject=KYC%20rejected%20%E2%80%94%20help%20resubmitting"
+                    style={{ color: 'var(--red)', textDecoration: 'underline' }}
+                  >
+                    support@gungalore.co.za
+                  </a>
+                  .
+                </p>
+              ) : (
+                /* Status endpoint didn't answer — we don't know whether
+                   retries remain, so offer the wizard (it decides) instead
+                   of asserting either outcome. */
+                <p style={{ color: 'var(--text-secondary)' }}>
+                  Your payouts stay held until your identity is verified.
+                  Open{' '}
+                  <Link
+                    href="/kyc/verify?returnTo=/profile"
+                    style={{ color: 'var(--red)', textDecoration: 'underline' }}
+                  >
+                    identity verification
+                  </Link>{' '}
+                  to try again — most rejections are a lighting or focus
+                  problem. If it won&apos;t let you continue, email{' '}
+                  <a
+                    href="mailto:support@gungalore.co.za?subject=KYC%20rejected%20%E2%80%94%20help%20resubmitting"
+                    style={{ color: 'var(--red)', textDecoration: 'underline' }}
+                  >
+                    support@gungalore.co.za
+                  </a>
+                  .
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -404,13 +557,21 @@ export default async function ProfilePage() {
           label="Tier"
           value={TIER_LABEL[tier]}
           hint="Auto-upgrades with sales"
+          // Copy mirrors the real ladder in
+          // backend/src/ratings/ratings.service.ts → calcTier. The old text
+          // named a "VERIFIED" tier that doesn't exist in the SellerTier enum
+          // and skipped Established / Top Seller — the two tiers most sellers
+          // actually land on. Trust-score minimums (50 / 70 / 85) stay
+          // implicit as "with good ratings" rather than exposing a private
+          // number sellers can't see on this card.
           tip={
             <>
-              Tiers reflect your seller experience: NEW (just signed
-              up), VERIFIED (KYC complete + first sale), TRUSTED
-              (10+ clean sales), DEALER (licensed firearms dealer).
-              Higher tiers get faster payouts, lower fees on featured
-              slots, and higher listing limits.
+              Tiers reflect your selling record: New (just signed up),
+              Established (3+ clean sales), Trusted (10+ clean sales
+              with good ratings), Top Seller (25+ sales with top
+              ratings), Dealer (licensed firearms dealer). Higher tiers
+              earn buyer confidence, and Top Seller gets a commission
+              discount.
             </>
           }
         />

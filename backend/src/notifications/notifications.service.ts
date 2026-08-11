@@ -21,7 +21,10 @@ export type NotificationLinkedType =
   | 'featured'
   // Bank-account verification rows — linkedId is the USER id. Resolved
   // when the user re-saves bank details or a later verification passes.
-  | 'bank';
+  | 'bank'
+  // Complaint status/outcome rows — linkedId is the CO-case number (the
+  // reference the user actually sees), not the cuid.
+  | 'complaint';
 
 interface PersistOpts {
   userId: string;
@@ -49,6 +52,15 @@ interface PersistOpts {
 // Fails open — emails are fire-and-forget; never block the main flow.
 
 const FROM = 'Gun Galore <noreply@gungalore.co.za>';
+
+// Card-refund settlement window, quoted to buyers. ONE constant because the
+// same promise was being made in three different ways — emails said "5–10
+// business days", SMS said "5-10", parts of the site said "3–7 working days",
+// and the published /refund-policy page says 3–7 business days. The policy
+// page is the one the buyer can hold us to, so everything matches it.
+// (frontend/lib/status-labels.ts carries the UI-side twin, REFUND_ETA_COPY.)
+const REFUND_ETA = '3–7 business days';
+const REFUND_ETA_SMS = '3-7 business days'; // plain hyphen — GSM-7 safe
 
 // ─── Brand tokens (matched to the site theme) ─────────────────────────
 const TOKEN = {
@@ -1228,7 +1240,7 @@ export class NotificationsService {
       ? `A full refund of ${b(formatRand(d.buyerTotal))} has been approved — but we don't have your bank details yet, so we can't pay it out. Add your bank account under Profile → Banking details and the refund goes into the next daily payment run.`
       : d.manualEft
         ? `A full refund of ${b(formatRand(d.buyerTotal))} will be paid by EFT to your bank account in the next daily payment run — allow 1–3 business days.`
-        : `A full refund of ${b(formatRand(d.buyerTotal))} has been issued back to your card — allow 5–10 business days for it to reflect.`;
+        : `A full refund of ${b(formatRand(d.buyerTotal))} has been issued back to your card — allow ${REFUND_ETA} for it to reflect.`;
     const html = this.email({
       status: { tone: 'error', label: 'Cancelled' },
       headline: d.needsBankDetails
@@ -1260,7 +1272,7 @@ export class NotificationsService {
       d.buyerPhone,
       d.needsBankDetails
         ? `Gun Galore: Seller cancelled ${truncate(d.listingTitle, 30)}. Add your bank details at gungalore.co.za/profile/edit so we can EFT your R${(d.buyerTotal / 100).toFixed(0)} refund.`
-        : `Gun Galore: Seller cancelled ${truncate(d.listingTitle, 30)}. R${(d.buyerTotal / 100).toFixed(0)} refund on the way (${d.manualEft ? '1-3' : '5-10'} business days).`,
+        : `Gun Galore: Seller cancelled ${truncate(d.listingTitle, 30)}. R${(d.buyerTotal / 100).toFixed(0)} refund on the way (${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}).`,
       `sale-rejected-${d.transactionId}`,
     );
   }
@@ -1770,7 +1782,7 @@ export class NotificationsService {
       title: d.needsBankDetails ? 'Refund approved — add your bank details' : 'Refund issued',
       body: d.needsBankDetails
         ? `${formatRand(d.buyerTotal)} refund approved for ${d.listingTitle}. Add your banking details so we can pay it by EFT.`
-        : `${formatRand(d.buyerTotal)} refunded for ${d.listingTitle}. Allow ${d.manualEft ? '1–3' : '5–10'} business days.`,
+        : `${formatRand(d.buyerTotal)} refunded for ${d.listingTitle}. Allow ${d.manualEft ? '1–3 business days' : REFUND_ETA}.`,
       url: d.needsBankDetails ? '/profile/edit' : `/transactions/${d.transactionId}`,
       iconKey: 'transaction',
       linkedType: 'transaction',
@@ -1780,7 +1792,7 @@ export class NotificationsService {
     const body = d.needsBankDetails
       ? `Hi ${b(d.buyerName)}, a refund of ${b(formatRand(d.buyerTotal))} for ${b(d.listingTitle)} has been approved. We pay refunds by EFT into your bank account, and we don't have your banking details yet — please add them under Profile → Edit so the refund can be paid in the next payout run.` +
         (d.note ? `<br><br>Note from admin: ${b(d.note)}` : '')
-      : `Hi ${b(d.buyerName)}, a refund of ${b(formatRand(d.buyerTotal))} for ${b(d.listingTitle)} has been issued. Please allow ${d.manualEft ? '1–3' : '5–10'} business days for it to appear on your statement.` +
+      : `Hi ${b(d.buyerName)}, a refund of ${b(formatRand(d.buyerTotal))} for ${b(d.listingTitle)} has been issued. Please allow ${d.manualEft ? '1–3 business days' : REFUND_ETA} for it to appear on your statement.` +
         (d.note ? `<br><br>Note from admin: ${b(d.note)}` : '');
     const html = this.email({
       status: d.needsBankDetails
@@ -1816,7 +1828,7 @@ export class NotificationsService {
         d.buyerPhone,
         d.needsBankDetails
           ? `Gun Galore: R${(d.buyerTotal / 100).toFixed(0)} refund approved for ${truncate(d.listingTitle, 30)}. Add your bank details on your profile so we can pay it: ${this.appUrl}/profile/edit`
-          : `Gun Galore: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow ${d.manualEft ? '1-3' : '5-10'} business days.`,
+          : `Gun Galore: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow ${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}.`,
         `refund-${d.transactionId}`,
       );
     }
@@ -3517,6 +3529,153 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
+  // An auction winner blew the 24h pay window — offer the SELLER the chance
+  // to hand it to the runner-up at that bidder's own highest bid, one tap,
+  // no sign-in. Previously the seller was just told to relist and start a
+  // fresh 7-day auction to reach a buyer the platform already had.
+  // Action-required (not dismissible): there is a real decision to make and
+  // a short window to make it in.
+  // ---------------------------------------------------------------
+  async auctionRunnerUpAvailable(d: {
+    sellerEmail: string;
+    sellerName: string;
+    sellerPhone?: string | null;
+    listingTitle: string;
+    listingId: string;
+    amount: number;
+    /** The runner-up's USERNAME — never their real name. */
+    bidderName: string;
+    hoursToDecide: number;
+    actionUrl?: string;
+  }) {
+    const url = d.actionUrl ?? `${this.appUrl}/my/listings`;
+    await this.persistByEmail(d.sellerEmail, {
+      category: 'SELLER',
+      type: 'auction_runner_up_available',
+      title: 'Offer it to the next bidder?',
+      body: `The winner of ${d.listingTitle} didn't pay. ${d.bidderName} bid ${formatRand(d.amount)} — offer it to them instead of relisting.`,
+      url: d.actionUrl ?? '/my/listings',
+      iconKey: 'auction',
+      linkedType: 'listing',
+      linkedId: d.listingId,
+      dismissible: false,
+      forcePush: true,
+    });
+    const html = this.email({
+      status: { tone: 'pending', label: 'Decision needed' },
+      headline: 'Your auction has a second buyer waiting',
+      body: `Hi ${b(d.sellerName)}, the winning bidder on ${b(d.listingTitle)} didn't pay within the 24-hour window, so the sale lapsed and a strike was recorded against them. You don't have to start over: ${b(d.bidderName)} bid ${b(formatRand(d.amount))} on the same item. Offer it to them at that price and they get the usual 24 hours to pay — if they don't, nothing is lost and you can still relist. You have about ${b(String(d.hoursToDecide) + ' hours')} to decide.`,
+      rows: [
+        { label: 'Item', value: d.listingTitle },
+        { label: 'Next-highest bid', value: formatRand(d.amount) },
+        { label: 'Bidder', value: d.bidderName },
+      ],
+      cta: { label: 'Review and decide', url },
+      preheader: `${d.bidderName} bid ${formatRand(d.amount)} on ${d.listingTitle}`,
+    });
+    await this.send(
+      d.sellerEmail,
+      `Second buyer for ${d.listingTitle} — offer it to them?`,
+      html,
+    );
+    if (d.actionUrl) {
+      await this.sendSms(
+        d.sellerPhone,
+        `Gun Galore: winner didn't pay for ${truncate(d.listingTitle, 22)}. Next bidder offered R${Math.round(d.amount / 100)}. Sell to them? ${d.actionUrl}`,
+        `runner-up-${d.listingId}`,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Complaint status/outcome changed — tell the person who lodged it.
+  // adminUpdate used to record the verdict and resolve the admin alert but
+  // never contact the user, so a buyer whose payout-affecting complaint froze
+  // an order only learned the result if they happened to revisit /complaints.
+  // On a marketplace where the complaint held someone's money, silence reads
+  // as being ignored and comes back as a second ticket.
+  // ---------------------------------------------------------------
+  async complaintStatusChanged(d: {
+    email: string;
+    name: string;
+    /** Only passed for payout-affecting cases — those get an SMS too. */
+    phone?: string | null;
+    referenceNumber: string;
+    subject: string;
+    status: string;
+    outcome?: string | null;
+    heldPayout: boolean;
+  }) {
+    const resolved = d.status === 'RESOLVED' || d.status === 'CLOSED';
+    const needsUser = d.status === 'AWAITING_USER';
+    const url = `${this.appUrl}/complaints`;
+    const pretty = d.status.replace(/_/g, ' ').toLowerCase();
+
+    await this.persistByEmail(d.email, {
+      category: 'ACCOUNT',
+      type: 'complaint_status_changed',
+      title: needsUser
+        ? `We need more info on ${d.referenceNumber}`
+        : `Complaint ${d.referenceNumber} ${resolved ? 'resolved' : 'updated'}`,
+      body: needsUser
+        ? `We've replied to your complaint about ${d.subject} and need something from you to continue.`
+        : `Your complaint about ${d.subject} is now ${pretty}.`,
+      url: '/complaints',
+      iconKey: 'transaction',
+      linkedType: 'complaint',
+      linkedId: d.referenceNumber,
+      // Awaiting-user is a real to-do; a verdict is informational.
+      dismissible: !needsUser,
+      forcePush: needsUser || d.heldPayout,
+    });
+
+    const html = this.email({
+      status: {
+        tone: needsUser ? 'pending' : resolved ? 'success' : 'pending',
+        label: needsUser ? 'Action needed' : resolved ? 'Resolved' : 'Updated',
+      },
+      headline: needsUser
+        ? 'We need a bit more from you'
+        : `Your complaint is ${pretty}`,
+      body: needsUser
+        ? `Hi ${b(d.name)}, we're working on ${b(d.referenceNumber)} (${b(d.subject)}) and need more information from you before we can finish. Open your complaints page to see what we've asked for and reply there.`
+        : `Hi ${b(d.name)}, your complaint ${b(d.referenceNumber)} about ${b(d.subject)} is now ${b(pretty)}.` +
+          (d.outcome ? ` Outcome: ${b(d.outcome)}` : '') +
+          (d.heldPayout
+            ? ` This case was holding the payment on the related order; that hold is reviewed as part of the outcome.`
+            : '') +
+          ` If you don't think this is right, reply to this email and we'll take another look.`,
+      rows: [
+        { label: 'Case', value: d.referenceNumber },
+        { label: 'Status', value: pretty },
+      ],
+      cta: { label: 'View my complaints', url },
+      preheader: needsUser
+        ? `${d.referenceNumber} needs more information`
+        : `${d.referenceNumber} is now ${pretty}`,
+    });
+    await this.send(
+      d.email,
+      needsUser
+        ? `Action needed on complaint ${d.referenceNumber}`
+        : `Complaint ${d.referenceNumber} — ${pretty}`,
+      html,
+    );
+
+    // SMS reserved for cases that froze money (or need the user to act) —
+    // a status change on an ordinary account complaint doesn't warrant one.
+    if (d.phone && (d.heldPayout || needsUser)) {
+      await this.sendSms(
+        d.phone,
+        needsUser
+          ? `Gun Galore: we need more info on complaint ${d.referenceNumber}. Reply here: ${url}`
+          : `Gun Galore: complaint ${d.referenceNumber} is now ${pretty}. Details: ${url}`,
+        `complaint-status-${d.referenceNumber}`,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------
   // Courier confirm-receipt nudge (48h after DELIVERED, buyer never
   // confirmed, funds still HELD). Sits UNDER the 72h stuck-funds admin
   // alert — a gentle self-heal reminder so a forgetful buyer releases the
@@ -3756,7 +3915,7 @@ export class NotificationsService {
       ? `A refund of ${b(formatRand(d.buyerTotal))} has been approved — but we don't have your bank details yet, so we can't pay it out. Add your bank account under Profile → Banking details and the refund goes into the next daily payment run.`
       : d.manualEft
         ? `We've refunded ${b(formatRand(d.buyerTotal))} — it will be paid by EFT to your bank account in the next daily payment run (1–3 business days).`
-        : `We've refunded ${b(formatRand(d.buyerTotal))} back to your card. The funds should reflect in 3–7 working days.`;
+        : `We've refunded ${b(formatRand(d.buyerTotal))} back to your card. The funds should reflect in ${REFUND_ETA}.`;
     if (d.needsBankDetails) {
       await this.persistByEmail(d.buyer.email, {
         category: 'BUYER',
@@ -3849,7 +4008,7 @@ export class NotificationsService {
       ? `Your refund of ${b(formatRand(d.buyerTotal))} is approved — but we don't have your bank details yet, so we can't pay it out. Add your bank account under Profile → Banking details and it goes into the next daily payment run.`
       : d.manualEft
         ? `We've refunded ${b(formatRand(d.buyerTotal))} — it will be paid by EFT to your bank account in the next daily payment run (1–3 business days).`
-        : `We've refunded ${b(formatRand(d.buyerTotal))} to your card. Allow 3–7 working days for it to reflect.`;
+        : `We've refunded ${b(formatRand(d.buyerTotal))} to your card. Allow ${REFUND_ETA} for it to reflect.`;
     if (d.needsBankDetails) {
       await this.persistByEmail(d.buyer.email, {
         category: 'BUYER',

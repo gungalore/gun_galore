@@ -175,7 +175,6 @@ describe('AuctionsService.remindUnpaidWinners', () => {
       {} as never,
       { mint: jest.fn().mockResolvedValue('tok') } as never,
       { record: jest.fn() } as never,
-      { fanOut: jest.fn() } as never,
     );
     const notify = jest
       .spyOn(
@@ -244,9 +243,6 @@ describe('DispatchSlaService.nudgeUnconfirmedReceipt', () => {
       prisma as never,
       {} as never,
       notifications as never,
-      {} as never,
-      {} as never,
-      {} as never,
       {} as never,
       {} as never,
     );
@@ -522,5 +518,121 @@ describe('SmsService retry eligibility + outage alert', () => {
     const svc = new SmsService(prisma as never);
     await svc.retryFailed();
     expect(prisma.adminAlert.create).not.toHaveBeenCalled();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────
+// Auctions: offer an expired win to the runner-up (BIG-2). This
+// PROMOTES a listing back into a payable state with a different buyer
+// and a fresh money window, so the guards matter more than the copy.
+// ───────────────────────────────────────────────────────────────────
+describe('AuctionsService.offerToRunnerUp', () => {
+  function makeService(over: {
+    listing?: Record<string, unknown> | null;
+    bidder?: Record<string, unknown> | null;
+    claimCount?: number;
+  } = {}) {
+    const prisma = {
+      listing: {
+        findUnique: jest.fn().mockResolvedValue(
+          over.listing === undefined
+            ? { id: 'L1', status: 'EXPIRED', sellerId: 'S1' }
+            : over.listing,
+        ),
+        updateMany: jest
+          .fn()
+          .mockResolvedValue({ count: over.claimCount ?? 1 }),
+      },
+      user: {
+        findUnique: jest.fn().mockResolvedValue(
+          over.bidder === undefined
+            ? { id: 'U2', isBanned: false, auctionStrikes: 0 }
+            : over.bidder,
+        ),
+      },
+      bid: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new AuctionsService(
+      prisma as never,
+      {} as never,
+      { mint: jest.fn().mockResolvedValue('tok') } as never,
+      { record: jest.fn() } as never,
+    );
+    const notify = jest
+      .spyOn(
+        service as never as Record<string, () => Promise<void>>,
+        'notifyAuctionWon' as never,
+      )
+      .mockResolvedValue(undefined as never);
+    return { service, prisma, notify };
+  }
+
+  it('promotes EXPIRED → PAYMENT_PENDING with the runner-up and a fresh window', async () => {
+    const { service, prisma, notify } = makeService();
+    const res = await service.offerToRunnerUp('L1', 'S1', 'U2', 250000);
+    await flush();
+    expect(res.offered).toBe(true);
+    const call = prisma.listing.updateMany.mock.calls[0][0] as {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    };
+    // CAS on EXPIRED: a relist racing the accept, or a double-tap of the
+    // SMS link, can only ever produce ONE promotion.
+    expect(call.where).toMatchObject({ id: 'L1', status: 'EXPIRED' });
+    expect(call.data).toMatchObject({
+      status: 'PAYMENT_PENDING',
+      currentBidderId: 'U2',
+      currentBid: 250000,
+      // Fresh window ⇒ the pay-window nudge must be eligible again.
+      winnerRemindedAt: null,
+    });
+    expect(call.data.expiresAt).toBeInstanceOf(Date);
+    // Reuses the normal win machinery so sweepUnpaidWins polices window 2.
+    expect(notify).toHaveBeenCalledWith('U2', 'L1', 250000);
+  });
+
+  it('refuses when the seller already relisted (status no longer EXPIRED)', async () => {
+    const { service, prisma, notify } = makeService({
+      listing: { id: 'L1', status: 'ACTIVE', sellerId: 'S1' },
+    });
+    const res = await service.offerToRunnerUp('L1', 'S1', 'U2', 1000);
+    expect(res.offered).toBe(false);
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('refuses a caller who is not the seller', async () => {
+    const { service, prisma } = makeService();
+    const res = await service.offerToRunnerUp('L1', 'SOMEONE_ELSE', 'U2', 1000);
+    expect(res.offered).toBe(false);
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+
+  // Promoting a banned or struck-out bidder would create a sale they are
+  // barred from paying for — re-checked at ACCEPT time, not just at send.
+  it('refuses a banned runner-up', async () => {
+    const { service, prisma } = makeService({
+      bidder: { id: 'U2', isBanned: true, auctionStrikes: 0 },
+    });
+    const res = await service.offerToRunnerUp('L1', 'S1', 'U2', 1000);
+    expect(res.offered).toBe(false);
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('refuses a runner-up already at the 3-strike bidding ban', async () => {
+    const { service, prisma } = makeService({
+      bidder: { id: 'U2', isBanned: false, auctionStrikes: 3 },
+    });
+    const res = await service.offerToRunnerUp('L1', 'S1', 'U2', 1000);
+    expect(res.offered).toBe(false);
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('notifies nobody when the CAS claim is lost', async () => {
+    const { service, notify } = makeService({ claimCount: 0 });
+    const res = await service.offerToRunnerUp('L1', 'S1', 'U2', 1000);
+    await flush();
+    expect(res.offered).toBe(false);
+    expect(notify).not.toHaveBeenCalled();
   });
 });

@@ -79,14 +79,20 @@ export default async function ShippingPage() {
   const token = await getToken();
 
   let data: { incoming: Shipment[]; outgoing: Shipment[] } = { incoming: [], outgoing: [] };
+  // Track the failure instead of swallowing it. An empty list and an
+  // unreachable API look identical once you catch into `{ incoming: [] }`,
+  // and "No incoming shipments right now." told to a buyer tracking a
+  // firearm transfer reads as lost data, not as an outage.
+  let errored = false;
   try {
     const r = await fetch(`${API_URL}/my-shipments/me`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',
     });
     if (r.ok) data = await r.json();
+    else errored = true;
   } catch {
-    /* leave empty */
+    errored = true;
   }
 
   return (
@@ -106,6 +112,7 @@ export default async function ShippingPage() {
             subtitle="Items you bought, on their way to you"
             shipments={data.incoming}
             emptyMsg="No incoming shipments right now."
+            errored={errored}
           />
           <div style={{ height: 24 }} />
           <Section
@@ -113,6 +120,7 @@ export default async function ShippingPage() {
             subtitle="Items you sold, to send or hand over"
             shipments={data.outgoing}
             emptyMsg="Nothing to send right now."
+            errored={errored}
           />
         </PageReveal>
       </main>
@@ -125,20 +133,29 @@ function Section({
   subtitle,
   shipments,
   emptyMsg,
+  errored,
 }: {
   title: string;
   subtitle: string;
   shipments: Shipment[];
   emptyMsg: string;
+  /** The /my-shipments/me fetch failed — say so instead of claiming zero. */
+  errored: boolean;
 }) {
   return (
     <section>
       <h2 className="text-sm" style={{ color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
         {title}{' '}
-        <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>· {shipments.length}</span>
+        {/* "· 0" would be the same lie as the empty-state copy, so the
+            count goes to a dash while we don't actually know it. */}
+        <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>· {errored ? '—' : shipments.length}</span>
       </h2>
       <p className="text-xs mt-0.5 mb-3" style={{ color: 'var(--text-tertiary)' }}>{subtitle}</p>
-      {shipments.length === 0 ? (
+      {errored ? (
+        <p className="text-sm rounded-[8px] px-4 py-6 text-center" style={{ color: 'var(--text-secondary)', background: 'var(--bg-inset)', border: '0.5px solid var(--red)' }}>
+          We couldn&apos;t load your shipments — please refresh. Your orders are safe.
+        </p>
+      ) : shipments.length === 0 ? (
         <p className="text-sm rounded-[8px] px-4 py-6 text-center" style={{ color: 'var(--text-tertiary)', background: 'var(--bg-inset)', border: '0.5px solid var(--border)' }}>
           {emptyMsg}
         </p>

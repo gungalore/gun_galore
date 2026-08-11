@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@clerk/nextjs';
 import { formatPrice } from '@/lib/utils';
+import { SHIPPING_STATUS, resolveStatus } from '@/lib/status-labels';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -30,6 +31,9 @@ interface OrderDetail {
   orderReference: string | null;
   itemsSubtotal: number;
   shippingSubtotal: number;
+  // P6.4 — per-waybill handling, billed apart from shipping. The backend
+  // GET /orders/:id spreads the whole Order row, so this is always present.
+  handlingSubtotal: number;
   processingFee: number;
   buyerTotal: number;
   paidAt: string | null;
@@ -143,7 +147,11 @@ export default function OrderDetailPage() {
                   : li.transaction?.shippingMethod === 'PRIVATE_ARRANGE'
                     ? ' · Arranged in person'
                     : li.transaction?.shippingStatus
-                      ? ` · ${li.transaction.shippingStatus}`
+                      ? /* Never print the raw enum here — "OUT_FOR_DELIVERY"
+                           is dev language. The shared table is the same one
+                           /my/orders + /my/sales render from, so a line item
+                           reads identically wherever the buyer sees it. */
+                        ` · ${resolveStatus(SHIPPING_STATUS, li.transaction.shippingStatus).label}`
                       : ''}
               </p>
             </div>
@@ -162,6 +170,32 @@ export default function OrderDetailPage() {
           <span style={{ color: 'var(--text-tertiary)' }}>Shipping</span>
           <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{formatPrice(order.shippingSubtotal)}</span>
         </div>
+        {order.handlingSubtotal > 0 && (
+          <div className="flex justify-between text-sm py-1">
+            <span style={{ color: 'var(--text-tertiary)' }}>Handling</span>
+            <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{formatPrice(order.handlingSubtotal)}</span>
+          </div>
+        )}
+        {/* Processing fee is only a BUYER line when the seller passes it on
+            (it's per-transaction passFeeToBuyer, which the order rollup
+            doesn't expose). Deriving it as the leftover of buyerTotal keeps
+            the column honest either way: it equals the passed-through fee
+            when the buyer pays it and 0 when the seller absorbs it — so
+            Items + Shipping + Handling + this always foots to Total, which
+            is the whole point of showing it on a money screen. */}
+        {order.buyerTotal - order.itemsSubtotal - order.shippingSubtotal - order.handlingSubtotal > 0 && (
+          <div className="flex justify-between text-sm py-1">
+            <span style={{ color: 'var(--text-tertiary)' }}>Processing fee</span>
+            <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+              {formatPrice(
+                order.buyerTotal -
+                  order.itemsSubtotal -
+                  order.shippingSubtotal -
+                  order.handlingSubtotal,
+              )}
+            </span>
+          </div>
+        )}
         <div className="flex justify-between text-sm py-2 mt-1" style={{ borderTop: '0.5px solid var(--border)' }}>
           <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Total</span>
           <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{formatPrice(order.buyerTotal)}</span>

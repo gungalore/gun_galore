@@ -18,7 +18,7 @@
  * chip flips to REFUNDED.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 
@@ -126,17 +126,32 @@ export function AcceptRejectPanel({
     }
   }
 
-  // Countdown text — shown in the header pill.
+  // Countdown text — shown in the header pill. Ticks on a 60s interval:
+  // computed once at mount it froze at the render timestamp, so a seller with
+  // the page open (or an installed PWA resumed hours later) saw a stale
+  // deadline on the one screen that decides whether they keep the sale. Under
+  // an hour it counts minutes rather than flooring to a panic-inducing "0H"
+  // while the window is genuinely still open. Mirrors the buyer-side
+  // AwaitingAcceptChip.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   const deadlineMs = acceptDeadlineAt
     ? new Date(acceptDeadlineAt).getTime()
     : null;
-  const msLeft = deadlineMs ? deadlineMs - Date.now() : null;
+  const msLeft =
+    deadlineMs != null && !Number.isNaN(deadlineMs) ? deadlineMs - nowMs : null;
   const hoursLeft = msLeft != null ? Math.floor(msLeft / 3_600_000) : null;
   const expired = msLeft != null && msLeft <= 0;
   const headerText = expired
     ? 'ACCEPT WINDOW EXPIRED'
     : hoursLeft != null
-      ? `ACCEPT WITHIN ${hoursLeft}H`
+      ? hoursLeft >= 1
+        ? `ACCEPT WITHIN ${hoursLeft}H`
+        : `ACCEPT WITHIN ${Math.max(1, Math.ceil(msLeft! / 60_000))}M`
       : 'ACTION NEEDED';
 
   if (view.kind === 'rejecting') {

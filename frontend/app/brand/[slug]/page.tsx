@@ -3,6 +3,7 @@ import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
+import { browseMetaDescription } from '@/lib/seo';
 import { BrowseResponse, BrandSummary } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { Pagination } from '@/components/pagination';
@@ -29,7 +30,9 @@ export async function generateMetadata({
   const brand = await getBrand(slug);
   if (!brand) return { title: 'Brand not found — Gun Galore' };
   const title = `${brand.label} for sale — Gun Galore`;
-  const description = `Browse ${brand.label} gear for sale on Gun Galore — South Africa's marketplace for firearms, optics, hunting and outdoor equipment. Buy, bid, or make an offer with payment held until delivery.`;
+  // Shared blurb (lib/seo.ts) — brand pages cover camp fridges and rods as
+  // often as rifles, so the snippet leads outdoor like every other surface.
+  const description = browseMetaDescription(`${brand.label} gear for sale`);
   return {
     title,
     description,

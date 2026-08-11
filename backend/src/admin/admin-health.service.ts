@@ -61,6 +61,10 @@ export interface QueueDepth {
   count: number;
   thresholdWarn: number;
   thresholdAlarm: number;
+  /** Admin page + filter that reproduces EXACTLY this count, so the card is
+   *  clickable straight into the work it is counting. Omitted where no admin
+   *  surface lists that queue yet (a wrong link is worse than none). */
+  href?: string;
 }
 
 const PROBE_TIMEOUT_MS = 5000;
@@ -387,10 +391,15 @@ export class AdminHealthService {
         }),
       ]);
 
+    // Each href reproduces its own count exactly (the transactions
+    // 'dispatch-overdue' and users 'kyc-outstanding' filters were added to
+    // AdminService for precisely this). The questions queue has no admin
+    // surface listing AWAITING_SELLER_ANSWER, so that card stays unlinked
+    // rather than dumping the operator somewhere that shows different rows.
     return [
-      { label: 'Listings pending admin review', count: pendingListings, thresholdWarn: 10, thresholdAlarm: 30 },
-      { label: 'HELD payments past dispatch SLA (24h+)', count: heldNoDispatch, thresholdWarn: 5, thresholdAlarm: 20 },
-      { label: 'Users with KYC outstanding', count: kycPending, thresholdWarn: 20, thresholdAlarm: 60 },
+      { label: 'Listings pending admin review', count: pendingListings, thresholdWarn: 10, thresholdAlarm: 30, href: '/admin/listings?status=PENDING_REVIEW' },
+      { label: 'HELD payments past dispatch SLA (24h+)', count: heldNoDispatch, thresholdWarn: 5, thresholdAlarm: 20, href: '/admin/transactions?status=HELD&filter=dispatch-overdue' },
+      { label: 'Users with KYC outstanding', count: kycPending, thresholdWarn: 20, thresholdAlarm: 60, href: '/admin/users?filter=kyc-outstanding' },
       { label: 'Listing questions awaiting seller answer', count: listingsAwaitingAnswer, thresholdWarn: 25, thresholdAlarm: 75 },
     ];
   }

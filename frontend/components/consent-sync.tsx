@@ -15,6 +15,7 @@
 
 import { useEffect } from 'react';
 import { useAuth } from '@clerk/nextjs';
+import { readCampaignAttrib, clearCampaignAttrib } from '@/lib/campaign-attrib';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 const KEY = 'gg_pending_consent';
@@ -75,6 +76,45 @@ export default function ConsentSync() {
         if (data.recorded) clear();
       } catch {
         // Network/transient — keep the record for a later attempt.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn, getToken]);
+
+  // Campaign attribution flush — same shape, separate concern. The email
+  // signup path already carries the key in Clerk unsafeMetadata; OAuth
+  // cannot (authenticateWithRedirect takes no metadata), so the key parked by
+  // the welcome banner is flushed here once the session exists. Safe to run on
+  // both paths: the backend is first-touch, so a duplicate is a no-op.
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const key = readCampaignAttrib();
+    if (!key) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token || cancelled) return;
+        const res = await fetch(`${API_URL}/users/me/campaign`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ key }),
+        });
+        if (!res.ok) return; // keep for retry on next load
+        const data = (await res.json().catch(() => ({}))) as {
+          recorded?: boolean;
+        };
+        // recorded=false means the User row wasn't provisioned yet — keep the
+        // key so the next load retries rather than losing the attribution.
+        if (data.recorded) clearCampaignAttrib();
+      } catch {
+        // Network/transient — keep it for a later attempt.
       }
     })();
     return () => {

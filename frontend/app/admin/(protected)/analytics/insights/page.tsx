@@ -7,8 +7,14 @@
 // doesn't couple to the URL-driven Sales page.
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminPageHeader } from '@/components/admin/page-header';
+import {
+  AdminCsvButton,
+  csvPeriodSlug,
+  type CsvColumn,
+} from '@/components/admin/csv-export';
 import AnalyticsTabs from '../../analytics-tabs';
 
 const PERIODS = [
@@ -67,6 +73,41 @@ interface Drill {
     createdAt: string;
   }[];
 }
+
+// ── CSV column maps ─────────────────────────────────────────────────
+// Defined at module scope (not inline in JSX) so they're allocated once and
+// so the exported shape of each table is reviewable in one place. Counts stay
+// numeric — the operator sorts and sums these in Excel before sending a
+// stock-gap list to a supplier.
+const TOP_SEARCH_CSV: CsvColumn<SearchTerm>[] = [
+  { header: 'Search term', value: (t) => t.term },
+  { header: 'Searches', value: (t) => t.count },
+  // maxResults is only present on the top-terms payload; blank means the
+  // backend didn't report a result count for that term.
+  { header: 'Best result count', value: (t) => t.maxResults ?? null },
+];
+
+const ZERO_RESULT_CSV: CsvColumn<SearchTerm>[] = [
+  { header: 'Search term', value: (t) => t.term },
+  { header: 'Searches', value: (t) => t.count },
+  // Constant 0 kept as a column so the file still says what it is once it's
+  // been forwarded and renamed by someone else.
+  { header: 'Results returned', value: () => 0 },
+];
+
+const FUNNEL_CSV: CsvColumn<FunnelStage>[] = [
+  { header: 'Stage', value: (f) => f.label },
+  { header: 'Events', value: (f) => f.count },
+  { header: 'People', value: (f) => f.users },
+];
+
+const ACTIVE_USER_CSV: CsvColumn<ActiveUser>[] = [
+  // Mirrors what the table shows: username, or the id tail when a row has no
+  // username yet. Never the full id — these files get forwarded.
+  { header: 'User', value: (u) => u.username ?? u.userId.slice(-8) },
+  { header: 'Events', value: (u) => u.events },
+  { header: 'Last seen', value: (u) => new Date(u.lastSeen) },
+];
 
 // ── inline primitives ───────────────────────────────────────────────
 function Card({
@@ -396,7 +437,17 @@ export default function InsightsPage() {
       {/* Funnel + Search */}
       <div className="grid gap-4 mb-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
         <div className="rounded-[8px] p-5" style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}>
-          <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>Engagement funnel</p>
+          <div className="flex items-start justify-between gap-2 mb-3">
+            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Engagement funnel</p>
+            {/* An all-zero funnel exports nothing useful — the button hides
+                itself in the same state the card shows "no activity yet". */}
+            <AdminCsvButton
+              rows={funnel.some((f) => f.count > 0) ? funnel : undefined}
+              columns={FUNNEL_CSV}
+              table="engagement funnel"
+              range={csvPeriodSlug(period)}
+            />
+          </div>
           {funnel.every((f) => f.count === 0) ? (
             <p className="text-xs py-4" style={{ color: 'var(--text-tertiary)' }}>No activity in this period yet.</p>
           ) : (
@@ -417,8 +468,18 @@ export default function InsightsPage() {
         </div>
 
         <div className="rounded-[8px] p-5" style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}>
-          <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Top searches</p>
-          <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>What people look for</p>
+          <div className="flex items-start justify-between gap-2 mb-3">
+            <div>
+              <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Top searches</p>
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>What people look for</p>
+            </div>
+            <AdminCsvButton
+              rows={search?.topTerms}
+              columns={TOP_SEARCH_CSV}
+              table="top searches"
+              range={csvPeriodSlug(period)}
+            />
+          </div>
           {!search || search.topTerms.length === 0 ? (
             <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>No searches recorded yet.</p>
           ) : (
@@ -435,7 +496,19 @@ export default function InsightsPage() {
           )}
           {search && search.zeroResult.length > 0 && (
             <>
-              <p className="text-xs font-medium mt-4 mb-1" style={{ color: 'var(--red)' }}>Searched but found nothing (stock/ad gaps)</p>
+              {/* This list is the procurement shopping list — demand we took
+                  money off the table on. It's the one export the operator
+                  actually sends to suppliers, so it gets its own button
+                  rather than being folded into the top-searches file. */}
+              <div className="flex items-center justify-between gap-2 mt-4 mb-1">
+                <p className="text-xs font-medium" style={{ color: 'var(--red)' }}>Searched but found nothing (stock/ad gaps)</p>
+                <AdminCsvButton
+                  rows={search.zeroResult}
+                  columns={ZERO_RESULT_CSV}
+                  table="zero-result searches"
+                  range={csvPeriodSlug(period)}
+                />
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {search.zeroResult.map((t) => (
                   <span key={t.term} className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-inset)', color: 'var(--text-secondary)' }}>
@@ -450,7 +523,15 @@ export default function InsightsPage() {
 
       {/* Active users → drilldown */}
       <div className="rounded-[8px] p-5" style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}>
-        <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>Most active users — click to drill down</p>
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Most active users — click to drill down</p>
+          <AdminCsvButton
+            rows={users}
+            columns={ACTIVE_USER_CSV}
+            table="most active users"
+            range={csvPeriodSlug(period)}
+          />
+        </div>
         {users.length === 0 ? (
           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>No user activity in this period yet.</p>
         ) : (
@@ -505,6 +586,21 @@ export default function InsightsPage() {
                   <span style={{ color: 'var(--text-secondary)' }}>
                     {r.eventType.replace(/_/g, ' ')}
                     {r.query ? ` "${r.query}"` : ''}
+                    {/* The drilldown already fetches listingId for every event
+                        but never rendered it, so a row read "LISTING VIEW" with
+                        no way to see WHICH listing — the exact question the
+                        admin opened the drilldown to answer. */}
+                    {r.listingId && (
+                      <>
+                        {' — '}
+                        <Link
+                          href={`/admin/listings/${r.listingId}`}
+                          style={{ color: 'var(--red)', textDecoration: 'none' }}
+                        >
+                          view listing →
+                        </Link>
+                      </>
+                    )}
                   </span>
                   <span style={{ color: 'var(--text-tertiary)' }}>{new Date(r.createdAt).toLocaleString('en-ZA')}</span>
                 </div>

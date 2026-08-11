@@ -11,7 +11,9 @@
 //
 // Categories are lazy-loaded once (module cache) the first time the menu is
 // opened or hovered, then shared across every Nav mount / route change — the
-// same /categories/with-counts call the homepage curtain makes.
+// same /categories/with-counts call the homepage curtain makes. A failed or
+// empty load is never cached: the flyout shows a loading line, then a retry
+// card, so the button is never a silent no-op.
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
@@ -22,18 +24,32 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 let cache: CategoryWithCount[] | null = null;
 let inflight: Promise<CategoryWithCount[]> | null = null;
 
+// Rejects on ANY unusable outcome so the caller can show a retry instead of a
+// silent empty menu. Previously a 4xx/5xx resolved to `[]`, that `[]` was
+// written to the module cache, and every later open short-circuited on it —
+// one bad response left "Categories" permanently dead for the whole session.
 async function loadCategories(): Promise<CategoryWithCount[]> {
   if (cache) return cache;
   if (!inflight) {
     inflight = fetch(`${API_URL}/categories/with-counts`, { cache: 'force-cache' })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: CategoryWithCount[]) => {
-        cache = Array.isArray(data) ? data : [];
-        return cache;
+      .then((r) => {
+        // Throw on HTTP errors: only the network-error path used to clear
+        // `inflight`, so a 500 was never retried.
+        if (!r.ok) throw new Error(`categories ${r.status}`);
+        return r.json();
       })
-      .catch(() => {
+      .then((data: CategoryWithCount[]) => {
+        const list = Array.isArray(data) ? data : [];
+        // Never cache an empty payload — on a seeded marketplace it means the
+        // response was broken (or the taxonomy is mid-migration), and caching
+        // it would freeze the flyout empty until a full page reload.
+        if (list.length === 0) throw new Error('categories empty');
+        cache = list;
+        return list;
+      })
+      .catch((err) => {
         inflight = null; // let a later open retry
-        return [] as CategoryWithCount[];
+        throw err;
       });
   }
   return inflight;
@@ -43,13 +59,28 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
   const isSearch = variant === 'search';
   const [open, setOpen] = useState(false);
   const [cats, setCats] = useState<CategoryWithCount[]>(cache ?? []);
+  // Tells "still fetching" apart from "fetch failed" — without it an open
+  // flyout with no categories renders nothing at all and the button reads as
+  // broken (the exact bug on a cold cache / slow network).
+  const [loadState, setLoadState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [activeRoot, setActiveRoot] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const ensureLoaded = useCallback(() => {
-    if (cats.length === 0) loadCategories().then(setCats);
+    if (cats.length > 0) return;
+    setLoadState('loading');
+    // Concurrent calls (hover-intent then click) share the module `inflight`
+    // promise, so re-entry costs no extra request; after a failure `inflight`
+    // is cleared, which is what makes the retry button actually re-fetch.
+    loadCategories().then(
+      (list) => {
+        setCats(list);
+        setLoadState('idle');
+      },
+      () => setLoadState('error'),
+    );
   }, [cats.length]);
 
   // Outside-click + Escape close.
@@ -189,6 +220,59 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
           <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
+
+      {/* Nothing to render in the grid yet. Previously the panel was gated on
+          `roots.length > 0`, so a cold cache / slow network / failed fetch
+          drew NOTHING and the button read as broken. Same retry-card idiom as
+          the browse surface (app/page.tsx), at flyout scale. */}
+      {open && roots.length === 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute left-0 mt-2 rounded-[8px] z-50"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+            padding: '14px 16px',
+            minWidth: 240,
+          }}
+        >
+          {loadState === 'error' ? (
+            <>
+              <p
+                className="m-0 mb-2.5"
+                style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}
+              >
+                We couldn&apos;t load categories
+              </p>
+              <button
+                type="button"
+                onClick={() => ensureLoaded()}
+                className="rounded-[6px]"
+                style={{
+                  background: 'var(--bg-inset)',
+                  color: 'var(--text-secondary)',
+                  border: '0.5px solid var(--border)',
+                  cursor: 'pointer',
+                  font: 'inherit',
+                  fontSize: 13,
+                  padding: '6px 12px',
+                }}
+              >
+                Try again
+              </button>
+            </>
+          ) : (
+            <p className="m-0" style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
+              {loadState === 'loading'
+                ? 'Loading categories…'
+                : /* Loaded fine but every root is inactive — rare, still not a
+                     reason to render a blank box. */
+                  'No categories to show right now.'}
+            </p>
+          )}
+        </div>
+      )}
 
       {open && roots.length > 0 && (
         <div

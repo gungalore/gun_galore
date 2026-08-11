@@ -48,7 +48,12 @@ export default async function MyListingsPage() {
     cache: 'no-store',
   });
 
-  const listings: MyListing[] = res.ok ? await res.json() : [];
+  // A backend blip must NEVER read as "you have no listings". Folding !res.ok
+  // into an empty array told a seller with live auctions that they had listed
+  // nothing — the most alarming possible lie to tell the audience trusting us
+  // with firearm sales. Branch the failure explicitly instead.
+  const failed = !res.ok;
+  const listings: MyListing[] = failed ? [] : await res.json();
 
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
@@ -66,7 +71,44 @@ export default async function MyListingsPage() {
         </Link>
       </div>
 
-      {listings.length === 0 ? (
+      {failed ? (
+        /* Fetch failed — say so plainly and give a real control to retry.
+           This is a Server Component, so the retry has to be a full-page
+           anchor (a client-side <Link> to the current route can be served
+           from the router cache and would appear to do nothing). */
+        <div
+          data-reveal
+          className="rounded-[8px] py-12 px-6 text-center"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--red)',
+          }}
+        >
+          <p
+            className="text-base mb-2"
+            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+          >
+            We couldn&apos;t load your listings
+          </p>
+          <p className="text-sm mb-5" style={{ color: 'var(--text-tertiary)' }}>
+            This is a problem on our side, not with your account — your
+            listings are still live and unchanged. Pull to refresh, or
+            tap below to try again.
+          </p>
+          <a
+            href="/my/listings"
+            className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+            style={{
+              background: 'var(--red)',
+              color: '#fff',
+              fontWeight: 500,
+              textDecoration: 'none',
+            }}
+          >
+            Try again
+          </a>
+        </div>
+      ) : listings.length === 0 ? (
         <div
           data-reveal
           className="rounded-[8px] py-12 px-6 text-center"

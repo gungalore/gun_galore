@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useSignUp } from '@clerk/nextjs/legacy';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { isClerkAPIResponseError } from '@clerk/nextjs/errors';
+import { readCampaignAttrib, clearCampaignAttrib } from '@/lib/campaign-attrib';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -250,8 +251,18 @@ export default function SignUpForm() {
         unsafeMetadata: {
           phone: phoneToE164(form.phone),
           consent: consentPayload(marketing),
+          // Campaign attribution — the key parked by the welcome banner when
+          // this visit arrived on a marketing SMS link. Rides the same
+          // per-user unsafeMetadata channel as consent so it can never attach
+          // to the wrong account. Undefined when the visit wasn't campaign-led.
+          ...(readCampaignAttrib()
+            ? { campaignKey: readCampaignAttrib() }
+            : {}),
         },
       });
+      // Attributed — don't let a second signup in the same session claim the
+      // same blast.
+      clearCampaignAttrib();
 
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
       setStep('verify');
@@ -394,7 +405,8 @@ export default function SignUpForm() {
           Create your account
         </h1>
         <p className="text-sm mb-6" style={{ color: 'var(--text-tertiary)' }}>
-          South Africa&apos;s firearms marketplace — sign up to buy or sell.
+          South Africa&apos;s outdoor, hunting and sport marketplace — sign up
+          to buy or sell.
         </p>
 
         {/* Top-level form error (announced + focus-managed) */}

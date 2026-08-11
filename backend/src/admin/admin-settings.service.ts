@@ -24,7 +24,29 @@ export interface SettingFlag {
   group: string;
   type: SettingFlagType;
   default: string; // stored as string for parity with the underlying table
+  /**
+   * Go-live switch: flipping this changes what the PUBLIC sees, spends
+   * real money, or turns off a safety net — as opposed to the tuning
+   * knobs (thresholds, hours, caps) that only nudge behaviour. The
+   * admin UI renders danger rows with a red rail + a "go-live switch"
+   * chip and refuses to unlock Save until the operator types the flag
+   * key back, so a stray checkbox click can't ship a module.
+   *
+   * Server-side we ALSO demand a longer reason for these (below) —
+   * the typed-key gate is UI-only and a curl with the admin JWT would
+   * sail straight past it.
+   */
+  danger?: true;
 }
+
+/**
+ * Minimum audit reason length. Ordinary knobs keep the historic 3
+ * chars; danger flags need a real sentence, because the audit trail is
+ * the only record of WHY a module went live and "asd" tells a future
+ * reader (or a regulator) nothing.
+ */
+const REASON_MIN = 3;
+const DANGER_REASON_MIN = 15;
 
 const FLAGS: SettingFlag[] = [
   // ─── Moderation ───────────────────────────────────────────────
@@ -35,6 +57,9 @@ const FLAGS: SettingFlag[] = [
     group: 'Moderation',
     type: 'boolean',
     default: 'true',
+    // Turning this OFF removes the automated safety net in front of
+    // every public listing and dumps the whole queue on a human.
+    danger: true,
   },
   {
     key: 'claude_confidence_threshold',
@@ -82,6 +107,9 @@ const FLAGS: SettingFlag[] = [
     group: 'Deals',
     type: 'boolean',
     default: 'false',
+    // Flipping ON exposes the Daily Deals storefront to the public and
+    // is gated on real suppliers + a live payments rail.
+    danger: true,
   },
   {
     key: 'deal_drop_hour',
@@ -122,6 +150,9 @@ const FLAGS: SettingFlag[] = [
     group: 'Deals',
     type: 'boolean',
     default: 'false',
+    // Flipping ON sends real purchase orders to real third parties —
+    // an outbound commercial commitment, not a display toggle.
+    danger: true,
   },
 
   // ─── Verification ─────────────────────────────────────────────
@@ -140,6 +171,9 @@ const FLAGS: SettingFlag[] = [
     group: 'Verification',
     type: 'boolean',
     default: 'false',
+    // Switches the identity-verification rail every new seller runs
+    // through — an FICA/AML-relevant control, not a cost knob.
+    danger: true,
   },
   {
     key: 'kyc_anchored_threshold_cents',
@@ -181,9 +215,15 @@ export class AdminSettingsService {
       throw new BadRequestException(`Unknown setting key: ${key}`);
     }
     const trimmedReason = (reason ?? '').trim();
-    if (trimmedReason.length < 3) {
+    // Danger (go-live) flags demand a real explanation — see the
+    // DANGER_REASON_MIN note. The admin UI enforces the same minimum so
+    // the operator is never surprised by a 400 here.
+    const minReason = flag.danger ? DANGER_REASON_MIN : REASON_MIN;
+    if (trimmedReason.length < minReason) {
       throw new BadRequestException(
-        'Reason of ≥3 chars is required when editing a marketplace setting.',
+        flag.danger
+          ? `"${flag.label}" is a go-live switch — give a reason of at least ${DANGER_REASON_MIN} characters for the audit log.`
+          : `Reason of ≥${REASON_MIN} chars is required when editing a marketplace setting.`,
       );
     }
     // Type validation

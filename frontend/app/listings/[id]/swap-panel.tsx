@@ -11,6 +11,7 @@
 // arranged after both sides agree (S3+). This panel is negotiation only.
 
 import { useEffect, useState, useCallback, FormEvent } from 'react';
+import Link from 'next/link';
 import { useUser, useAuth, SignInButton } from '@clerk/nextjs';
 
 const API_URL =
@@ -594,12 +595,28 @@ function ProposeForm({
     );
   }
   if (offerable.length === 0) {
+    // Dead end until now: the viewer was told to go list something with no
+    // way to get there. The sell form does NOT read a ?type= param (it only
+    // seeds from ?relistFrom), so the link is plain and the copy names the
+    // selling mode they must pick instead of pretending it is pre-selected.
     return (
-      <p className="text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-        To propose a swap you first need an active{' '}
-        <strong>Swop / Trade</strong> listing of your own to offer. List the item
-        you’d trade, then come back here.
-      </p>
+      <div>
+        <p className="text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+          To propose a swap you first need an active{' '}
+          <strong>Swop / Trade</strong> listing of your own to offer.
+        </p>
+        <Link
+          href="/listings/new?type=SWOP"
+          className="block w-full py-3 mt-3 rounded-[6px] text-sm font-medium text-center"
+          style={{ background: 'var(--red)', color: '#fff', textDecoration: 'none' }}
+        >
+          List an item to trade
+        </Link>
+        <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+          The sell form opens on the <strong>Swop / Trade</strong> selling
+          mode — publish your item, then come back here to propose the swap.
+        </p>
+      </div>
     );
   }
 

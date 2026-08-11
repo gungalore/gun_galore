@@ -17,10 +17,11 @@
 //     old bottom-tab wishlist behaviour)
 //   - Active when the user is on /wishlist (red border)
 //
-// Standalone-only by design — it's mounted inside MobileSearchBar
-// which already self-gates to standalone mode. Browser-mobile and
-// desktop users keep their existing wishlist entry points (the
-// hamburger drawer's Account section + the desktop nav dropdown).
+// Standalone-only by design. MobileSearchBar now renders for mobile-web
+// visitors too (they had no visible search bar at all), so the gate is
+// explicit at that call site rather than implied by the parent. Browser-mobile
+// and desktop users keep their existing wishlist entry points (the hamburger
+// drawer's Account section + the desktop nav dropdown).
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';

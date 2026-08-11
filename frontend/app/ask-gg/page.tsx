@@ -604,10 +604,10 @@ function EmptyState({
           Welcome to Ask <span style={{ color: 'var(--red)' }}>Boet</span>
         </h2>
         <p style={{ margin: '8px 0 0', fontSize: 13.5, lineHeight: 1.55 }}>
-          Your firearms-knowledgeable assistant for South African shooters,
-          hunters and reloaders. Ask in plain language, attach photos, and get
-          clear answers — plus a PRO <strong>Load Lab</strong> for internal
-          ballistics, downrange trajectory and published load lookups.
+          Your hunting, shooting and outdoor assistant for South Africa —
+          gear, kit and firearms alike. Ask in plain language, attach photos,
+          and get clear answers — plus a PRO <strong>Load Lab</strong> for
+          internal ballistics, downrange trajectory and published load lookups.
         </p>
       </div>
 

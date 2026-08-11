@@ -18,7 +18,10 @@ export default function ReviewActions({ listingId }: { listingId: string }) {
       const res = await adminFetch(`/admin/listings/${listingId}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, reason: reason || undefined }),
+        body: JSON.stringify({
+          action,
+          reason: reason.trim() || undefined,
+        }),
       });
       if (!res.ok) {
         // Surface the rejection instead of silently pretending success —
@@ -36,22 +39,35 @@ export default function ReviewActions({ listingId }: { listingId: string }) {
     }
   }
 
+  // A rejection ALWAYS emails the seller, so it must always carry a why.
+  // Same >=5-char rule the bulk-actions table already enforces, and now the
+  // backend enforces it too (a bare "your listing was rejected" email is what
+  // this prevents).
+  const reasonOk = reason.trim().length >= 5;
+
   if (showReject) {
     return (
       <div className="flex flex-col gap-1.5 min-w-[180px]">
         <input
           className="px-2 py-1 rounded text-xs outline-none"
           style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
-          placeholder="Reason (optional)"
+          placeholder="Reason — sent to the seller"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
+          aria-label="Rejection reason, sent to the seller"
         />
         <div className="flex gap-1">
           <button
             onClick={() => doReview('REJECT')}
-            disabled={busy}
+            disabled={busy || !reasonOk}
+            title={reasonOk ? undefined : 'Give the seller a reason (at least 5 characters)'}
             className="flex-1 px-2 py-1 rounded text-xs font-medium"
-            style={{ background: 'var(--red)', color: '#fff', opacity: busy ? 0.6 : 1 }}
+            style={{
+              background: 'var(--red)',
+              color: '#fff',
+              opacity: busy || !reasonOk ? 0.5 : 1,
+              cursor: busy || !reasonOk ? 'not-allowed' : 'pointer',
+            }}
           >
             Confirm reject
           </button>

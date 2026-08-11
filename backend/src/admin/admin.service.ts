@@ -49,12 +49,136 @@ export class AdminService {
   // Alerts inbox — list + resolve AdminAlert rows. The command-center
   // card counts them; this is where the admin actually works them.
   // ---------------------------------------------------------------
-  async listAlerts(resolved?: boolean, limit = 100) {
+  // Filters exist because triage after a noisy sweep is otherwise unworkable:
+  // one cron pass can raise 30 STUCK_HELD_FUNDS rows, and the operator needs
+  // to isolate that family (or just the urgent ones) instead of scrolling a
+  // flat list. `cursor` is the id of the last row already on the operator's
+  // screen — the inbox APPENDS the next page rather than re-fetching, which
+  // matters here specifically because the ordering puts fresh unresolved
+  // alerts at the TOP: offset paging would re-show rows already worked and
+  // silently skip others as new alerts land mid-triage.
+  async listAlerts(
+    resolved?: boolean,
+    limit = 100,
+    filters: { type?: string; urgent?: boolean; cursor?: string } = {},
+  ) {
+    const where: Prisma.AdminAlertWhereInput = {};
+    if (resolved !== undefined) where.resolved = resolved;
+    // Exact type match, never a prefix/contains: the inbox chips are built
+    // from real stored types, and a "starts with KYC" match would fuse
+    // KYC_REVIEW (needs a human verdict) with KYC_REPEATED_FAILURE (fraud
+    // signal) into one undifferentiated pile.
+    if (filters.type) where.type = filters.type;
+    if (filters.urgent !== undefined) where.urgent = filters.urgent;
+    // skip:1 steps past the cursor row itself — it is already on screen.
+    const page: Pick<Prisma.AdminAlertFindManyArgs, 'cursor' | 'skip'> =
+      filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {};
     return this.prisma.adminAlert.findMany({
-      where: resolved === undefined ? {} : { resolved },
-      orderBy: [{ resolved: 'asc' }, { createdAt: 'desc' }],
+      where,
+      // id is the tie-break that makes the cursor deterministic — a cron
+      // sweep inserts a batch of alerts inside the same millisecond, so
+      // createdAt alone is not a stable sort key to page against.
+      orderBy: [{ resolved: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
       take: Math.min(Math.max(limit, 1), 200),
+      ...page,
     });
+  }
+
+  // Distinct alert types + unresolved counts, for the inbox filter chips.
+  // Served separately from the list so the chips stay complete while a
+  // filter is applied (deriving them from the filtered page would leave the
+  // operator with a single chip and no way back to the other families).
+  async alertTypeFacets(): Promise<{ type: string; unresolved: number }[]> {
+    const rows = await this.prisma.adminAlert.groupBy({
+      by: ['type'],
+      where: { resolved: false },
+      _count: { _all: true },
+    });
+    // Sorted in JS (not via groupBy orderBy) — the set is tiny (~45 known
+    // types) and this keeps the busiest family at the front of the chip row.
+    return rows
+      .map((r) => ({ type: r.type, unresolved: r._count._all }))
+      .sort(
+        (a, b) => b.unresolved - a.unresolved || a.type.localeCompare(b.type),
+      );
+  }
+
+  // Bulk resolve — clearing a 30-row cron sweep one button at a time (with a
+  // full list reload between each) was the slowest job on the admin surface.
+  //
+  // Deliberately a LOOP over the single-alert resolveAlert rather than one
+  // updateMany, because both of that method's properties must survive per
+  // alert: the CAS guard (`resolved: false` in the where — so two admins
+  // triaging the same burst can't double-resolve) and the audit row (the
+  // audit log is per-resource; a single bulk entry would leave 29 alerts with
+  // no recorded who/why). Never throws on a partial batch — the caller is
+  // told exactly how many landed so the UI can't claim success it didn't get.
+  async bulkResolveAlerts(
+    adminId: string,
+    alertIds: string[],
+    reason?: string,
+  ): Promise<{
+    resolved: number;
+    skipped: number;
+    skippedIds: string[];
+    failed: { id: string; message: string }[];
+  }> {
+    const ids = Array.from(
+      new Set(
+        (alertIds ?? []).filter(
+          (id): id is string => typeof id === 'string' && id.trim().length > 0,
+        ),
+      ),
+    );
+    if (ids.length === 0) {
+      throw new BadRequestException('Select at least one alert to resolve.');
+    }
+    // Matches the list cap — a request bigger than one page of the inbox is
+    // a script, not an operator, and each id costs an update + an audit row.
+    if (ids.length > 200) {
+      throw new BadRequestException('Resolve at most 200 alerts at a time.');
+    }
+
+    const skippedIds: string[] = [];
+    const failed: { id: string; message: string }[] = [];
+    let resolved = 0;
+    for (const id of ids) {
+      try {
+        await this.resolveAlert(
+          adminId,
+          id,
+          reason?.trim() || 'Bulk-resolved from the alerts inbox',
+        );
+        resolved += 1;
+      } catch (err) {
+        if (err instanceof BadRequestException) {
+          // The CAS found nothing to update: the row is gone or another
+          // admin got there first. Not a batch failure — just report it.
+          skippedIds.push(id);
+          continue;
+        }
+        // Anything else (DB blip mid-batch) is recorded and the loop
+        // continues, so the operator gets a truthful tally instead of an
+        // exception that hides the alerts that DID resolve.
+        failed.push({
+          id,
+          message: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }
+    }
+    return { resolved, skipped: skippedIds.length, skippedIds, failed };
+  }
+
+  // Cheap poll target for the sidebar badge — two indexed counts instead of
+  // pulling 100 alert rows every 60s just to length them. An operator working
+  // in Listings or Transactions for an hour otherwise never learns that a new
+  // urgent alert (chargeback, stuck funds, complaint) arrived.
+  async alertCounts(): Promise<{ unresolved: number; urgent: number }> {
+    const [unresolved, urgent] = await Promise.all([
+      this.prisma.adminAlert.count({ where: { resolved: false } }),
+      this.prisma.adminAlert.count({ where: { resolved: false, urgent: true } }),
+    ]);
+    return { unresolved, urgent };
   }
 
   async resolveAlert(adminId: string, alertId: string, reason?: string) {
@@ -105,6 +229,21 @@ export class AdminService {
     if (listing.status !== 'PENDING_REVIEW')
       throw new BadRequestException('Listing is not pending review');
 
+    // A rejection ALWAYS emails the seller, so it must always carry a why.
+    // Previously reason was optional here and the seller received a bare
+    // "your listing was rejected" — contradicting the operator's own policy
+    // and generating avoidable support tickets. Enforced server-side (not
+    // just in the review UI) so the bulk endpoint and any direct API call
+    // are covered too. Mirrors every other destructive admin action.
+    if (
+      dto.action === ReviewAction.REJECT &&
+      (dto.reason ?? '').trim().length < 5
+    ) {
+      throw new BadRequestException(
+        'A rejection reason is required — it is sent to the seller',
+      );
+    }
+
     const newStatus = dto.action === ReviewAction.APPROVE ? 'ACTIVE' : 'CANCELLED';
     const updated = await this.prisma.listing.update({
       where: { id: listingId },
@@ -121,6 +260,11 @@ export class AdminService {
           ? {
               expiresAt: new Date(Date.now() + 60 * 24 * 3600_000),
               listedAt: listing.listedAt ?? new Date(),
+              // Stale-listing clock starts when the listing actually becomes
+              // discoverable, not when the draft row was created — otherwise a
+              // listing that sat a week in review is a week closer to the 90-day
+              // auto-expiry before a single buyer ever saw it.
+              lastRenewedAt: new Date(),
             }
           : {}),
       },
@@ -231,6 +375,16 @@ export class AdminService {
           kycRequiredAt: { not: null, lt: new Date(Date.now() - day) },
           kycStatus: { not: 'VERIFIED' },
           isBanned: false,
+        };
+      }
+      // Health-page queue-depth deep-link: KYC required but not yet verified,
+      // with NO 24h grace — mirrors AdminHealthService.queueDepths' kycPending
+      // count exactly so the card lands on the rows it counted ('kyc-stalled'
+      // above is the narrower >24h view used by the command centre).
+      if (filter === 'kyc-outstanding') {
+        return {
+          kycRequiredAt: { not: null },
+          kycStatus: { not: 'VERIFIED' },
         };
       }
       if (filter === 'banned') return { isBanned: true };
@@ -651,6 +805,8 @@ export class AdminService {
       ratingsGiven,
       auditEvents,
       systemAlerts,
+      complaintsLodged,
+      complaintsAgainst,
     ] = await Promise.all([
       this.prisma.listing.findMany({
         where: { sellerId: userId },
@@ -773,6 +929,44 @@ export class AdminService {
           createdAt: true,
         },
       }),
+      // Complaints THIS user lodged. Before banning someone or adjudicating
+      // a dispute the admin needs the pattern ("this buyer has lodged four
+      // NOT_ARRIVED complaints") without cross-referencing /admin/complaints
+      // by hand — the dossier's whole promise is one place.
+      this.prisma.complaint.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        select: {
+          id: true,
+          referenceNumber: true,
+          category: true,
+          subject: true,
+          status: true,
+          drovePayoutHold: true,
+          createdAt: true,
+          transactionId: true,
+        },
+      }),
+      // Complaints lodged AGAINST this user — i.e. on orders where they are
+      // the counterparty seller. The mirror image of the above: a seller
+      // accumulating complaints is exactly what a ban review needs to see.
+      this.prisma.complaint.findMany({
+        where: { transaction: { sellerId: userId } },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        select: {
+          id: true,
+          referenceNumber: true,
+          category: true,
+          subject: true,
+          status: true,
+          drovePayoutHold: true,
+          createdAt: true,
+          transactionId: true,
+          user: { select: { username: true } },
+        },
+      }),
     ]);
 
     return {
@@ -786,6 +980,8 @@ export class AdminService {
       ratingsGiven,
       auditEvents,
       systemAlerts,
+      complaintsLodged,
+      complaintsAgainst,
     };
   }
 
@@ -1256,7 +1452,31 @@ export class AdminService {
       },
     });
 
-    return { transaction: tx, auditEvents };
+    // Complaints driving this order. A complaint can flip the order to
+    // DISPUTED, and THIS page is where the admin holds the release/refund
+    // buttons — but the case itself lived only on /admin/complaints, so the
+    // adjudicator had to eyeball-match the case in another tab and decide
+    // without the evidence photos in front of them. Ship the whole case here.
+    const complaints = await this.prisma.complaint.findMany({
+      where: { transactionId: txId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        referenceNumber: true,
+        category: true,
+        subject: true,
+        body: true,
+        status: true,
+        outcome: true,
+        drovePayoutHold: true,
+        createdAt: true,
+        resolvedAt: true,
+        user: { select: { id: true, username: true } },
+        photos: { select: { id: true, url: true } },
+      },
+    });
+
+    return { transaction: tx, auditEvents, complaints };
   }
 
   // ---------------------------------------------------------------
@@ -1357,6 +1577,13 @@ export class AdminService {
       where.acceptEscalatedAt = { not: null };
       where.acceptedAt = null;
       where.rejectedAt = null;
+    }
+    // Health-page queue-depth deep-link: paid >24h ago and still not
+    // dispatched. Mirrors AdminHealthService.queueDepths' heldNoDispatch
+    // count EXACTLY, so clicking the card lands on the same rows it counted.
+    if (filter === 'dispatch-overdue') {
+      where.dispatchedAt = null;
+      where.paidAt = { lt: new Date(Date.now() - 24 * 3600_000) };
     }
     const [transactions, total] = await Promise.all([
       this.prisma.transaction.findMany({

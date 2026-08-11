@@ -11,6 +11,7 @@
 // prefers-reduced-motion support. Scoped under #ggw-root so nothing leaks.
 
 import { useEffect, useRef, useState } from 'react';
+import { storeCampaignAttrib } from '@/lib/campaign-attrib';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -65,6 +66,15 @@ export function WelcomeBanner() {
         } | null;
         if (!cancelled && data?.campaign) {
           sessionStorage.setItem(seenKey, '1');
+          // Park the key for signup attribution. The banner counts arrivals;
+          // this is what lets the campaigns page answer the question the
+          // operator actually pays for — "did anyone JOIN off that blast?".
+          // Separate key from `seen` because the seen flag is per-campaign and
+          // set even when the banner is dismissed instantly. TTL'd so a
+          // browser tab left open for days can't attribute an unrelated
+          // signup weeks later. OAuth needs this handoff regardless:
+          // authenticateWithRedirect cannot carry unsafeMetadata.
+          storeCampaignAttrib(key);
           setHeadline(data.campaign.headline || DEFAULT_HEADLINE);
           setVisible(true);
         }

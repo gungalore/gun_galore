@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { PhotoDropzone } from '@/components/photo-dropzone';
 
@@ -47,6 +48,8 @@ export default function NewComplaintPage() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
 
   const [category, setCategory] = useState('ITEM_NOT_AS_DESCRIBED');
+  // Order to preselect, sent by the raise-a-dispute flow on a transaction.
+  const preselectTx = useSearchParams().get('tx');
   const [transactionId, setTransactionId] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -103,7 +106,18 @@ export default function NewComplaintPage() {
             amount: `R${(t.buyerTotal / 100).toFixed(0)}`,
             group,
           }));
-        setOrders([...fmt(buys, 'Purchases'), ...fmt(sales, 'Sales')]);
+        const all = [...fmt(buys, 'Purchases'), ...fmt(sales, 'Sales')];
+        setOrders(all);
+        // ?tx=<id> preselect. The dispute flow on a transaction page sends the
+        // buyer here to attach evidence to THAT order — making them re-find it
+        // in a list of every order they've ever placed is exactly the friction
+        // that stops evidence being uploaded at all. Only honoured once the
+        // orders have loaded and only for an order that is genuinely theirs,
+        // so a hand-crafted ?tx= can't attach a complaint to someone else's
+        // order (the backend re-checks party membership regardless).
+        if (preselectTx && all.some((o) => o.id === preselectTx)) {
+          setTransactionId((current) => current || preselectTx);
+        }
       } catch {
         /* picker is optional — silent */
       }
@@ -111,7 +125,7 @@ export default function NewComplaintPage() {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, authed]);
+  }, [isLoaded, isSignedIn, authed, preselectTx]);
 
   const purchases = orders.filter((o) => o.group === 'Purchases');
   const sales = orders.filter((o) => o.group === 'Sales');

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import type { Address } from '@/lib/types';
 import { PROVINCE_LABELS } from '@/lib/utils';
 import { safeJson } from '@/lib/safe-json';
+import { usePush } from '@/lib/use-push';
 
 const API_URL =
   process.env.INTERNAL_API_URL ??
@@ -67,6 +68,12 @@ export default function SettingsPage() {
   // weight shown in kg, dims in cm.
   const [ship, setShip] = useState({ weightKg: '', lengthCm: '', widthCm: '', heightCm: '' });
   const [shipSaved, setShipSaved] = useState(false);
+  // Push lives on the DEVICE, not on the user record — so it isn't part of
+  // the /users/me notification prefs above. Same hook the /notifications
+  // banner and the PWA More-sheet toggle use, so all three stay in sync
+  // instead of this page growing a second subscribe path.
+  const push = usePush();
+  const [pushHint, setPushHint] = useState<string | null>(null);
 
   const authed = useCallback(
     async (path: string, init?: RequestInit) => {
@@ -132,6 +139,30 @@ export default function SettingsPage() {
       setEmailOn(prevEmail);
       setSmsOn(prevSms);
       setError(e instanceof Error ? e.message : 'Could not save preference');
+    }
+  }
+
+  // Flip web push for this device. enable() prompts for permission and then
+  // registers the subscription with the backend; a false return means either
+  // the prompt was declined or the POST failed, so we tell the user which.
+  // Notification.permission is read live rather than from the hook's state —
+  // the value captured in this render is still the pre-prompt one.
+  async function togglePush() {
+    if (push.busy) return;
+    setPushHint(null);
+    if (push.enabled) {
+      await push.disable();
+      return;
+    }
+    const ok = await push.enable();
+    if (!ok) {
+      const denied =
+        typeof Notification !== 'undefined' && Notification.permission === 'denied';
+      setPushHint(
+        denied
+          ? 'Notifications are blocked for this site in your browser settings — allow them there, then try again.'
+          : "Couldn't turn push on right now. Try again in a moment.",
+      );
     }
   }
 
@@ -213,11 +244,23 @@ export default function SettingsPage() {
     }
   }
 
-  const Toggle = ({ on, onClick }: { on: boolean; onClick: () => void }) => (
+  // `label` is the accessible name — the visible wording sits in a separate
+  // <p> beside the switch, so without it a screen reader announces a bare
+  // "switch, on".
+  const Toggle = ({
+    on,
+    onClick,
+    label,
+  }: {
+    on: boolean;
+    onClick: () => void;
+    label: string;
+  }) => (
     <button
       type="button"
       role="switch"
       aria-checked={on}
+      aria-label={label}
       onClick={onClick}
       style={{
         width: 44,
@@ -294,7 +337,11 @@ export default function SettingsPage() {
                   Order updates, offers and account emails.
                 </p>
               </div>
-              <Toggle on={emailOn} onClick={() => savePrefs({ emailEnabled: !emailOn })} />
+              <Toggle
+                on={emailOn}
+                onClick={() => savePrefs({ emailEnabled: !emailOn })}
+                label="Email notifications"
+              />
             </div>
             <div
               className="flex items-center justify-between py-2"
@@ -308,8 +355,54 @@ export default function SettingsPage() {
                   Time-sensitive texts (sale, dispatch, payment).
                 </p>
               </div>
-              <Toggle on={smsOn} onClick={() => savePrefs({ smsEnabled: !smsOn })} />
+              <Toggle
+                on={smsOn}
+                onClick={() => savePrefs({ smsEnabled: !smsOn })}
+                label="SMS notifications"
+              />
             </div>
+
+            {/* Push — the channel that matters most in the installed app,
+                previously only reachable from the /notifications banner (which
+                self-dismisses for 14 days) or the PWA More sheet, which
+                browser and desktop users never see. Device-scoped, hence the
+                "(this device)" label. The whole row hides until the probe is
+                done and the backend actually has VAPID keys, so we never show
+                a switch that can't do anything. */}
+            {push.ready && push.vapidReady && (
+              <div
+                className="flex items-center justify-between gap-3 py-2"
+                style={{ borderTop: '0.5px solid var(--border)' }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                    Push notifications (this device)
+                  </p>
+                  <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    {pushHint ??
+                      (!push.supported
+                        ? "This browser can't do push. On iPhone, install Gun Galore to your home screen first."
+                        : push.permission === 'denied'
+                          ? 'Blocked for this site in your browser settings — allow notifications there to switch this on.'
+                          : 'Instant alerts on this device for offers, outbids, sales and dispatch.')}
+                  </p>
+                </div>
+                {push.supported && push.permission !== 'denied' ? (
+                  <Toggle
+                    on={push.enabled}
+                    onClick={() => void togglePush()}
+                    label="Push notifications on this device"
+                  />
+                ) : (
+                  <span
+                    className="text-xs"
+                    style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}
+                  >
+                    Unavailable
+                  </span>
+                )}
+              </div>
+            )}
           </section>
 
           {/* ─── Default parcel size (Phase 6 P6.3) ─── */}
@@ -375,12 +468,17 @@ export default function SettingsPage() {
                 onClick={saveShippingDefaults}
                 disabled={busy}
                 className="text-sm px-3 py-1.5 rounded-md"
-                style={{ background: 'var(--accent, #2563eb)', color: '#fff', opacity: busy ? 0.6 : 1 }}
+                // House red, not --accent: that variable is defined nowhere in
+                // the dark theme, so the fallback made this the only blue
+                // primary button in the app. Same for the success green below,
+                // which now matches the KYC-verified chips on /account
+                // and /profile.
+                style={{ background: 'var(--red)', color: '#fff', border: 'none', cursor: 'pointer', opacity: busy ? 0.6 : 1 }}
               >
                 {busy ? 'Saving…' : 'Save defaults'}
               </button>
               {shipSaved && (
-                <span className="text-xs" style={{ color: 'var(--green, #16a34a)' }}>Saved ✓</span>
+                <span className="text-xs" style={{ color: '#22c55e' }}>Saved ✓</span>
               )}
             </div>
           </section>

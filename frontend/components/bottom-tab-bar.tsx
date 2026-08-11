@@ -43,7 +43,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
 import { useStandalone } from '@/lib/use-standalone';
 import { useScrollDirection } from '@/lib/use-scroll-direction';
@@ -260,6 +260,82 @@ export function BottomTabBar() {
   const sheetOpen = shopOpen || moreOpen;
   const hideChrome = scrollDir === 'down' && !sheetOpen;
 
+  // ── Hardware BACK closes the sheet ────────────────────────────────
+  // In the installed PWA the Android back gesture was leaving the page
+  // (or exiting the app from the home screen) while a sheet was open —
+  // the most jarring non-native behaviour in the app. Fix: opening a
+  // sheet pushes a throwaway history entry at the SAME url, so back pops
+  // that entry instead of navigating, and our popstate handler closes the
+  // sheet. The ref tracks whether that entry is still ours to consume so
+  // we never pop somebody else's page.
+  const sheetHistoryRef = useRef(false);
+
+  const openSheet = useCallback((which: 'shop' | 'more') => {
+    if (!sheetHistoryRef.current) {
+      try {
+        // Spread the CURRENT state and keep the CURRENT url: the App
+        // Router keeps its own bookkeeping in history.state, and pushing a
+        // bare object would strand the new entry without it. Same url =
+        // no navigation, just a stack entry for back to eat.
+        window.history.pushState(
+          { ...(window.history.state ?? {}), ggSheet: which },
+          '',
+          window.location.href,
+        );
+        sheetHistoryRef.current = true;
+      } catch {
+        // pushState can throw under exotic sandboxing — the sheet still
+        // opens, it just won't intercept back.
+      }
+    }
+    if (which === 'shop') setShopOpen(true);
+    else setMoreOpen(true);
+  }, []);
+
+  // Dismiss (backdrop tap, Escape, swipe-down, handle tap). Consumes our
+  // history entry so the stack is left exactly as we found it.
+  const dismissSheet = useCallback(() => {
+    setShopOpen(false);
+    setMoreOpen(false);
+    if (sheetHistoryRef.current) {
+      sheetHistoryRef.current = false;
+      window.history.back();
+    }
+  }, []);
+
+  // Closing because the user is NAVIGATING away (a link inside the sheet).
+  // Deliberately does NOT pop: the router is about to push its own entry
+  // and racing history.back() against it cancels the navigation. The
+  // leftover entry is same-url, so back from the destination still lands
+  // the user on the page they came from.
+  const closeSheetForNavigation = useCallback(() => {
+    sheetHistoryRef.current = false;
+    setShopOpen(false);
+    setMoreOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const onPop = () => {
+      // The browser already unwound our entry — just close. Calling
+      // history.back() here would eat the user's real previous page.
+      sheetHistoryRef.current = false;
+      setShopOpen(false);
+      setMoreOpen(false);
+    };
+    // Escape for the desktop/keyboard path (nav.tsx's drawer already has
+    // this; the sheets never did despite aria-modal).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') dismissSheet();
+    };
+    window.addEventListener('popstate', onPop);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [sheetOpen, dismissSheet]);
+
   useEffect(() => {
     if (hideChrome) {
       document.body.dataset.bottomChromeHidden = 'true';
@@ -269,8 +345,11 @@ export function BottomTabBar() {
   }, [hideChrome]);
 
   // Auto-close any open sheet on route change (mirrors the mobile-drawer
-  // behaviour in nav.tsx).
+  // behaviour in nav.tsx). Drops the history claim WITHOUT popping — the
+  // navigation itself is what closed the sheet, so there is nothing of
+  // ours left to unwind (see closeSheetForNavigation).
   useEffect(() => {
+    sheetHistoryRef.current = false;
     setShopOpen(false);
     setMoreOpen(false);
   }, [pathname]);
@@ -339,11 +418,20 @@ export function BottomTabBar() {
     };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
+    // Dismissing a notification elsewhere in the app must drop the badge NOW,
+    // not up to 60s later — a badge still showing "3" after the user cleared
+    // the last item reads as broken. notifications-list fires this event on
+    // both the optimistic dismiss and its rollback, so the count re-syncs
+    // either way. Repolling (rather than decrementing locally) keeps this the
+    // single source of truth, and re-syncs the app-icon badge for free.
+    const onAlertsChanged = () => void poll();
+    window.addEventListener('gg:alerts-changed', onAlertsChanged);
     return () => {
       cancelled = true;
       clearInterval(t);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
+      window.removeEventListener('gg:alerts-changed', onAlertsChanged);
     };
   }, [isStandalone, isSignedIn, getToken, pathname]);
 
@@ -545,8 +633,8 @@ export function BottomTabBar() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (tab.action === 'shop') setShopOpen(true);
-                      else if (tab.action === 'more') setMoreOpen(true);
+                      if (tab.action === 'shop') openSheet('shop');
+                      else if (tab.action === 'more') openSheet('more');
                       else if (tab.action === 'ask') {
                         // Open the in-place panel; fall back to the
                         // full page where the panel is suppressed.
@@ -601,7 +689,8 @@ export function BottomTabBar() {
         <ShopSheet
           pathname={pathname}
           searchParams={searchParams}
-          onClose={() => setShopOpen(false)}
+          onClose={dismissSheet}
+          onNavigate={closeSheetForNavigation}
         />
       )}
 
@@ -611,10 +700,15 @@ export function BottomTabBar() {
           username={user?.username ?? user?.firstName ?? null}
           email={user?.primaryEmailAddress?.emailAddress ?? null}
           imageUrl={user?.imageUrl ?? null}
-          onClose={() => setMoreOpen(false)}
+          onClose={dismissSheet}
+          onNavigate={closeSheetForNavigation}
           onSignOut={() => {
             void signOut(() => {
-              setMoreOpen(false);
+              // Release the sheet's history claim WITHOUT popping — after a
+              // sign-out we can't be sure our throwaway entry is still on
+              // top, and an unwanted history.back() would yank the user off
+              // the page Clerk just landed them on.
+              closeSheetForNavigation();
             });
           }}
         />
@@ -626,6 +720,108 @@ export function BottomTabBar() {
 // (SearchSheet removed — search now lives as the sticky MobileSearchBar
 // at the top of every applicable page in standalone mode.)
 
+// ─── Swipe-down-to-dismiss for the bottom sheets ───────────────────
+// The drag-handle pill used to be pure decoration ("doesn't actually
+// drag"), so the flick-down gesture every native sheet teaches did
+// nothing. This follows the finger and dismisses past a threshold.
+//
+// Touch-only on purpose: the gesture is a phone idiom, and the pointer
+// path already has the backdrop + Escape. Drag only starts when the
+// sheet's own scroller is at the top — otherwise a downward swipe means
+// "scroll this list", which is what the user expects mid-list.
+const SHEET_DISMISS_PX = 90;
+
+function useSwipeDown(onDismiss: () => void) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const startY = useRef<number | null>(null);
+  const [dragY, setDragY] = useState(0);
+  // Once a drag has happened the entry animation must stay off: it also
+  // animates transform, so re-enabling it on snap-back would replay the
+  // whole slide-up. By drag time the entry animation is long finished, so
+  // dropping it is invisible.
+  const [dragged, setDragged] = useState(false);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    if ((panelRef.current?.scrollTop ?? 0) > 0) {
+      startY.current = null;
+      return;
+    }
+    startY.current = e.touches[0]?.clientY ?? null;
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (startY.current === null) return;
+    const dy = (e.touches[0]?.clientY ?? startY.current) - startY.current;
+    if (dy > 0 && !dragged) setDragged(true);
+    // Never track upward movement — the sheet is already at its rest
+    // position, so a negative offset would tear it off the screen edge.
+    setDragY(dy > 0 ? dy : 0);
+  };
+  const onTouchEnd = () => {
+    if (startY.current === null) return;
+    const travelled = dragY;
+    startY.current = null;
+    setDragY(0);
+    if (travelled > SHEET_DISMISS_PX) onDismiss();
+  };
+
+  return {
+    panelRef,
+    // Spread onto the sheet panel.
+    dragHandlers: {
+      onTouchStart,
+      onTouchMove,
+      onTouchEnd,
+      onTouchCancel: onTouchEnd,
+    },
+    // Merge into the panel's inline style.
+    dragStyle: {
+      transform: dragY ? `translateY(${dragY}px)` : undefined,
+      // No transition while the finger is down (the transform IS the
+      // finger position); ease back on release.
+      transition: dragY ? 'none' : 'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+      animation: dragged
+        ? undefined
+        : 'gg-sheet-up 240ms cubic-bezier(0.4, 0, 0.2, 1)',
+      // Keep an over-drag from scroll-chaining into the page behind.
+      overscrollBehavior: 'contain' as const,
+    },
+  };
+}
+
+// The grab-handle: a REAL button so it is keyboard-focusable and
+// screen-reader announced, wrapping the pill that used to be an
+// aria-hidden div. Tap-to-close is the discoverable fallback for anyone
+// who doesn't try the swipe.
+function SheetHandle({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      aria-label="Close"
+      style={{
+        display: 'block',
+        width: '100%',
+        padding: '8px 0',
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          display: 'block',
+          width: 44,
+          height: 4,
+          borderRadius: 2,
+          background: 'var(--border-hover)',
+          margin: '0 auto',
+        }}
+      />
+    </button>
+  );
+}
+
 // ─── Shop sheet — picker for the 5 shopping surfaces ──────────────
 // Replaces the old separate Browse + Auctions tabs with one entry
 // point that surfaces all four shopping modes (plus the unfiltered
@@ -635,11 +831,17 @@ function ShopSheet({
   pathname,
   searchParams,
   onClose,
+  onNavigate,
 }: {
   pathname: string;
   searchParams: URLSearchParams;
+  // Dismiss (backdrop / handle / Escape / swipe) — unwinds the sheet's
+  // history entry. onNavigate closes without touching history because the
+  // router is about to push its own entry.
   onClose: () => void;
+  onNavigate: () => void;
 }) {
+  const { panelRef, dragHandlers, dragStyle } = useSwipeDown(onClose);
   // Source of truth for the picker. Order = how prominent we want
   // each surface to be. Taglines mirror those in app/page.tsx
   // (SURFACE_TITLES) so the picker and the destination header speak
@@ -783,7 +985,9 @@ function ShopSheet({
       }}
     >
       <div
+        ref={panelRef}
         onClick={(e) => e.stopPropagation()}
+        {...dragHandlers}
         role="dialog"
         aria-label="Shop"
         aria-modal="true"
@@ -797,19 +1001,10 @@ function ShopSheet({
           borderTopRightRadius: 16,
           paddingTop: 6,
           paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
-          animation: 'gg-sheet-up 240ms cubic-bezier(0.4, 0, 0.2, 1)',
+          ...dragStyle,
         }}
       >
-        <div
-          aria-hidden
-          style={{
-            width: 44,
-            height: 4,
-            borderRadius: 2,
-            background: 'var(--border-hover)',
-            margin: '8px auto 8px',
-          }}
-        />
+        <SheetHandle onClose={onClose} />
         <p
           style={{
             padding: '4px 20px 12px',
@@ -829,7 +1024,7 @@ function ShopSheet({
             <li key={s.key} style={{ marginBottom: 6 }}>
               <Link
                 href={s.href}
-                onClick={onClose}
+                onClick={onNavigate}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -896,6 +1091,17 @@ function ShopSheet({
           ))}
         </ul>
       </div>
+
+      {/* The gg-sheet-up keyframes used to live ONLY inside MoreSheet, so
+          the Shop sheet's slide-up silently did nothing unless the More
+          sheet happened to be mounted. Same rule, declared where it's
+          used (duplicate @keyframes of identical content are harmless). */}
+      <style>{`
+        @keyframes gg-sheet-up {
+          from { transform: translateY(100%); }
+          to   { transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }
@@ -926,15 +1132,20 @@ function MoreSheet({
   email,
   imageUrl,
   onClose,
+  onNavigate,
   onSignOut,
 }: {
   isSignedIn: boolean;
   username: string | null;
   email: string | null;
   imageUrl: string | null;
+  // onClose = dismiss (unwinds the sheet's history entry);
+  // onNavigate = the router is taking over, leave history alone.
   onClose: () => void;
+  onNavigate: () => void;
   onSignOut: () => void;
 }) {
+  const { panelRef, dragHandlers, dragStyle } = useSwipeDown(onClose);
   // Secondary destinations — order = discoverability priority
   // (most-likely-used first).
   //
@@ -984,7 +1195,9 @@ function MoreSheet({
       }}
     >
       <div
+        ref={panelRef}
         onClick={(e) => e.stopPropagation()}
+        {...dragHandlers}
         role="dialog"
         aria-label="More"
         aria-modal="true"
@@ -998,20 +1211,13 @@ function MoreSheet({
           borderTopRightRadius: 16,
           paddingTop: 6,
           paddingBottom: 'calc(80px + env(safe-area-inset-bottom))',
-          animation: 'gg-sheet-up 240ms cubic-bezier(0.4, 0, 0.2, 1)',
+          ...dragStyle,
         }}
       >
-        {/* Drag-handle pill — pure visual cue, doesn't actually drag */}
-        <div
-          aria-hidden
-          style={{
-            width: 44,
-            height: 4,
-            borderRadius: 2,
-            background: 'var(--border-hover)',
-            margin: '8px auto 12px',
-          }}
-        />
+        {/* Grab handle — now really does drag (swipe down to dismiss) and
+            closes on tap/Enter for anyone who doesn't try the gesture. */}
+        <SheetHandle onClose={onClose} />
+        <div style={{ height: 4 }} />
 
         {/* Profile header. Signed-in users see avatar + username + an
             "Account overview" chevron — tapping the whole card opens the
@@ -1022,7 +1228,7 @@ function MoreSheet({
         {isSignedIn ? (
           <Link
             href="/account"
-            onClick={onClose}
+            onClick={onNavigate}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -1133,7 +1339,7 @@ function MoreSheet({
                 from the shared source of truth — same on every surface. */}
             <AccountMenuList
               pathname={pathname}
-              onNavigate={onClose}
+              onNavigate={onNavigate}
               showChevron
             />
             <ul
@@ -1177,7 +1383,7 @@ function MoreSheet({
               key={l.href}
               href={l.href}
               label={l.label}
-              onNavigate={onClose}
+              onNavigate={onNavigate}
             />
           ))}
         </Section>
@@ -1188,7 +1394,7 @@ function MoreSheet({
               key={l.href}
               href={l.href}
               label={l.label}
-              onNavigate={onClose}
+              onNavigate={onNavigate}
             />
           ))}
         </Section>

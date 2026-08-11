@@ -349,6 +349,11 @@ export class UsersService {
     lastName?: string;
     phone?: string;
     avatarUrl?: string;
+    /** MarketingCampaign.key this signup arrived on, from the signup form's
+     *  Clerk unsafeMetadata. FIRST-TOUCH: only ever written when the column
+     *  is still null, so a later session on a different campaign link can't
+     *  re-attribute an existing member and inflate a blast's numbers. */
+    campaignKey?: string;
   }): Promise<User> {
     // Lowercase usernames before persisting — matches the check endpoint.
     let username = data.username
@@ -393,7 +398,9 @@ export class UsersService {
       }
     }
 
-    return this.prisma.user.upsert({
+    const campaignKey = data.campaignKey?.trim().slice(0, 40) || undefined;
+
+    const user = await this.prisma.user.upsert({
       where: { clerkId: data.clerkId },
       create: {
         clerkId: data.clerkId,
@@ -403,6 +410,7 @@ export class UsersService {
         lastName: data.lastName,
         phone: data.phone,
         avatarUrl: data.avatarUrl,
+        campaignKey,
       },
       update: {
         email: data.email,
@@ -420,6 +428,22 @@ export class UsersService {
         // both our DB and Clerk).
       },
     });
+
+    // First-touch attribution. Deliberately NOT in the upsert's `update`
+    // block: that runs on every Clerk sync, so a returning member who later
+    // clicks a different campaign SMS would be silently re-attributed and
+    // every blast's "sign-ups" figure would drift upward over time. The CAS
+    // (campaignKey: null) writes it exactly once, on the first sync that
+    // carries a key. Best-effort — attribution must never fail provisioning.
+    if (campaignKey && !user.campaignKey) {
+      await this.prisma.user
+        .updateMany({
+          where: { id: user.id, campaignKey: null },
+          data: { campaignKey },
+        })
+        .catch(() => undefined);
+    }
+    return user;
   }
 
   // Lazy-provision backstop: a request carries a VALID Clerk session but the
@@ -442,6 +466,7 @@ export class UsersService {
       if (!email) return null;
       const unsafe = (cu.unsafeMetadata ?? {}) as {
         phone?: string;
+        campaignKey?: string;
         consent?: {
           terms?: boolean;
           privacy?: boolean;
@@ -458,6 +483,7 @@ export class UsersService {
         lastName: cu.lastName ?? undefined,
         phone: cu.phoneNumbers?.[0]?.phoneNumber ?? unsafe.phone,
         avatarUrl: cu.imageUrl ?? undefined,
+        campaignKey: unsafe.campaignKey,
       });
       this.logger.log(
         `Lazy-provisioned user row for ${clerkId} (valid session, no DB row)`,
@@ -484,6 +510,35 @@ export class UsersService {
   // moment. Age affirmation + Terms + Privacy are captured together at sign-up;
   // marketing is a separate, explicit opt-in (only stamped when true, and
   // cleared to null when the user later opts out).
+  /**
+   * Attribute a member to the marketing campaign they arrived on. FIRST-TOUCH
+   * and idempotent: the updateMany only matches while campaignKey is null, so
+   * replaying this endpoint (or a returning member clicking a later blast)
+   * can never re-attribute an account or inflate a campaign's sign-up count.
+   * Returns false when there was nothing to write — the caller uses that to
+   * decide whether to keep retrying (User row not provisioned yet) or stop.
+   */
+  async recordCampaignAttribution(
+    clerkId: string,
+    key?: string,
+  ): Promise<boolean> {
+    const campaignKey = key?.trim().slice(0, 40);
+    if (!campaignKey) return false;
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true, campaignKey: true },
+    });
+    // No row yet (create-race): report false so the client retries later.
+    if (!user) return false;
+    // Already attributed — nothing to do, but the client should stop retrying.
+    if (user.campaignKey) return true;
+    await this.prisma.user.updateMany({
+      where: { id: user.id, campaignKey: null },
+      data: { campaignKey },
+    });
+    return true;
+  }
+
   async recordSignupConsent(
     clerkId: string,
     dto: {

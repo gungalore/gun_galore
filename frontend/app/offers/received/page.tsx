@@ -40,9 +40,56 @@ export default async function ReceivedOffersPage() {
       </h1>
 
       {offers.length === 0 && (
-        <p data-reveal className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-          No offers received yet.
-        </p>
+        /* Teach-style empty state, matching the buyer-side /my/offers card.
+           The bare "No offers received yet." line was a dead end: sellers land
+           here expecting offers without knowing offers only exist on Take a
+           Shot listings, so the copy names the cause and the two next steps. */
+        <div
+          data-reveal
+          className="rounded-[8px] py-12 px-6 text-center"
+          style={{
+            background: 'var(--bg-card)',
+            border: '0.5px dashed var(--border)',
+          }}
+        >
+          <p
+            className="text-base mb-2"
+            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+          >
+            No offers yet
+          </p>
+          <p className="text-sm mb-5" style={{ color: 'var(--text-tertiary)' }}>
+            Offers arrive when buyers Take a Shot at your listings — list an
+            item with Take a Shot pricing to invite offers. You can accept,
+            counter once, or decline each one.
+          </p>
+          <div className="flex gap-2 justify-center flex-wrap">
+            <Link
+              href="/listings/new"
+              className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+              style={{
+                background: 'var(--red)',
+                color: '#fff',
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
+            >
+              List an item →
+            </Link>
+            <Link
+              href="/my/listings"
+              className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+              style={{
+                background: 'var(--bg-inset)',
+                color: 'var(--text-secondary)',
+                border: '0.5px solid var(--border)',
+                textDecoration: 'none',
+              }}
+            >
+              View my listings
+            </Link>
+          </div>
+        </div>
       )}
 
       {pending.length > 0 && (

@@ -3,8 +3,12 @@ import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'How selling works — Gun Galore',
+  // "Four", not three: Swop / Trade has been a live selling mode since the
+  // S-module shipped and is rendered below with the other three. The count
+  // is stated in three places (here, the intro line, and the sell-flow
+  // HelpTip on /listings/new) — keep them in step.
   description:
-    'The three ways to sell on Gun Galore — Marketplace (Buy Now), Auction, and Take a Shot — what each one is, who it suits, and how it works, so you list your item the right way.',
+    'The four ways to sell on Gun Galore — Marketplace (Buy Now), Auction, Take a Shot and Swop / Trade — what each one is, who it suits, and how it works, so you list your item the right way.',
   alternates: { canonical: '/how-selling-works' },
 };
 
@@ -88,7 +92,7 @@ export default function HowSellingWorksPage() {
         How selling works
       </h1>
       <p className="text-sm mt-2" style={{ color: 'var(--text-tertiary)' }}>
-        There are three ways to list an item on Gun Galore. Pick the one that
+        There are four ways to list an item on Gun Galore. Pick the one that
         fits what you&apos;re selling — you can always change it before it goes
         live.
       </p>
@@ -155,7 +159,7 @@ export default function HowSellingWorksPage() {
         ))}
       </div>
 
-      {/* Firearms note — a method, not a 4th selling style. */}
+      {/* Firearms note — a delivery method, not a fifth selling style. */}
       <div
         className="rounded-[10px] p-5 mt-4"
         style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)' }}

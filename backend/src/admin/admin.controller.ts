@@ -127,14 +127,62 @@ export class AdminAlertsController {
 
   // List alerts, unresolved first. ?resolved=true shows the handled
   // history; default returns everything (the page groups client-side).
+  // ?type= / ?urgent= narrow a noisy burst down to one family; ?cursor= is
+  // the id of the last row already rendered and pages forward from it
+  // (see AdminService.listAlerts for why this is a cursor, not an offset).
   @Get()
   listAlerts(
     @Query('resolved') resolved?: string,
     @Query('limit') limit?: string,
+    @Query('type') type?: string,
+    @Query('urgent') urgent?: string,
+    @Query('cursor') cursor?: string,
   ) {
     return this.adminService.listAlerts(
       resolved === undefined ? undefined : resolved === 'true',
       Number(limit) || 100,
+      {
+        type: type?.trim() || undefined,
+        // Absent/empty means "don't filter" — only an explicit true/false
+        // narrows, so ?urgent= from a cleared toggle behaves like no filter.
+        urgent:
+          urgent === undefined || urgent.trim() === ''
+            ? undefined
+            : urgent === 'true',
+        cursor: cursor?.trim() || undefined,
+      },
+    );
+  }
+
+  // Sidebar badge poll — {unresolved, urgent}. Must stay above the
+  // parameterised routes so 'count' is never swallowed as an :id.
+  @Get('count')
+  alertCounts() {
+    return this.adminService.alertCounts();
+  }
+
+  // Distinct types + unresolved counts, powering the inbox filter chips.
+  // Literal path, declared above the parameterised routes for the same
+  // reason 'count' is.
+  @Get('types')
+  alertTypes() {
+    return this.adminService.alertTypeFacets();
+  }
+
+  // Bulk resolve from the inbox's selection bar. Literal path kept above
+  // POST :id/resolve so 'bulk-resolve' can never be read as an alert id.
+  // Returns a per-alert tally ({resolved, skipped, failed}) rather than a
+  // bare ok — the UI reports what actually landed.
+  @Post('bulk-resolve')
+  @HttpCode(200)
+  bulkResolveAlerts(
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { alertIds?: string[]; reason?: string },
+  ) {
+    return this.adminService.bulkResolveAlerts(
+      admin.sub,
+      body?.alertIds ?? [],
+      body?.reason,
     );
   }
 

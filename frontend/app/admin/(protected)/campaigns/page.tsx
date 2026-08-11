@@ -17,6 +17,11 @@ interface Campaign {
   hits: number;
   lastHitAt: string | null;
   createdAt: string;
+  // Conversion attribution (first-touch, captured at signup). `hits` only ever
+  // counted banner impressions, which could not answer whether a paid blast
+  // actually produced members — or supply.
+  signups?: number;
+  sellers?: number;
 }
 
 const SITE = 'https://gungalore.co.za';
@@ -101,8 +106,12 @@ export default function CampaignsPage() {
         </h1>
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
           Each campaign is a short key you put in an SMS link (<code>?c=KEY</code>). Arriving
-          with an active key shows the welcome banner once per visitor; hits = banner
-          impressions per blast. Plain visits never see the banner.
+          with an active key shows the welcome banner once per visitor. <strong>Hits</strong> = banner
+          impressions, <strong>Sign-ups</strong> = accounts created off that link, and{' '}
+          <strong>Listed</strong> = how many of those members went on to list something.
+          Attribution is first-touch and captured at sign-up, so a member is only ever
+          counted against the first campaign that brought them in. Plain visits never see
+          the banner.
         </p>
       </div>
 
@@ -139,6 +148,8 @@ export default function CampaignsPage() {
               <th className="px-4 py-2 text-xs font-normal">Campaign</th>
               <th className="px-4 py-2 text-xs font-normal">SMS link</th>
               <th className="px-4 py-2 text-xs font-normal">Hits</th>
+              <th className="px-4 py-2 text-xs font-normal">Sign-ups</th>
+              <th className="px-4 py-2 text-xs font-normal">Listed</th>
               <th className="px-4 py-2 text-xs font-normal">Status</th>
               <th className="px-4 py-2 text-xs font-normal">Actions</th>
             </tr>
@@ -164,6 +175,19 @@ export default function CampaignsPage() {
                   </button>
                 </td>
                 <td className="px-4 py-2" style={{ color: 'var(--text-primary)' }}>{c.hits.toLocaleString('en-ZA')}</td>
+                {/* Sign-ups / Listed are the conversion half. Attribution
+                    starts from the day it shipped, so campaigns that ran
+                    before it will honestly read 0 rather than guess. */}
+                <td className="px-4 py-2" style={{ color: 'var(--text-primary)' }}>
+                  {(c.signups ?? 0).toLocaleString('en-ZA')}
+                </td>
+                <td
+                  className="px-4 py-2"
+                  style={{ color: 'var(--text-secondary)' }}
+                  title="Attributed members who have listed at least one item"
+                >
+                  {(c.sellers ?? 0).toLocaleString('en-ZA')}
+                </td>
                 <td className="px-4 py-2">
                   <span style={{ color: c.active ? 'var(--red)' : 'var(--text-tertiary)' }}>
                     {c.active ? 'Active' : 'Off'}
@@ -184,7 +208,7 @@ export default function CampaignsPage() {
             ))}
             {rows && rows.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-sm" colSpan={5} style={{ color: 'var(--text-tertiary)' }}>
+                <td className="px-4 py-4 text-sm" colSpan={7} style={{ color: 'var(--text-tertiary)' }}>
                   No campaigns yet — create one above, then put its link in your next SMS blast.
                 </td>
               </tr>

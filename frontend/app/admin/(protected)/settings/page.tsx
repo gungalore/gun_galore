@@ -12,6 +12,10 @@ interface Flag {
   type: 'boolean' | 'number' | 'text' | 'percent';
   default: string;
   currentValue: string;
+  // Go-live switch (backend SettingFlag.danger) — the editor renders these
+  // with a red rail + typed-key confirmation. Declared here too so this
+  // interface doesn't drift from the one in settings-editor.tsx.
+  danger?: boolean;
 }
 
 export default function SettingsPage() {

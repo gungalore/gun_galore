@@ -11,6 +11,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { adminFetch } from '@/lib/admin-auth';
 
 interface NavItem {
   href: string;
@@ -37,7 +38,9 @@ const GROUPS: NavGroup[] = [
       { href: '/admin/orders', label: 'Orders' },
       { href: '/admin/swaps', label: 'Swaps' },
       { href: '/admin/users', label: 'Users' },
-      { href: '/admin/manual-payments', label: 'Held Funds' },
+      // Renamed: the page is no longer read-only — the daily payout run
+      // (preview + confirm-gated "Run payouts now") lives here.
+      { href: '/admin/manual-payments', label: 'Payouts & Held Funds' },
     ],
   },
   {
@@ -94,6 +97,12 @@ const GROUPS: NavGroup[] = [
 
 const STORE_KEY = 'gg-admin-nav-open';
 
+// Unresolved-alert poll. An operator who spends an hour in Listings or
+// Transactions previously never learned that a chargeback, stuck-funds or
+// complaint alert had landed — Alerts was a plain link with no signal.
+// 60s against two indexed counts (GET /admin/alerts/count) is cheap.
+const ALERT_POLL_MS = 60_000;
+
 function itemActive(item: NavItem, pathname: string): boolean {
   const hrefs = [item.href, ...(item.aliases ?? [])];
   return hrefs.some((h) => pathname === h || pathname.startsWith(h + '/'));
@@ -111,6 +120,39 @@ export default function SidebarNav() {
   const [open, setOpen] = useState<Set<string>>(
     () => new Set(activeGroupKey ? [activeGroupKey] : []),
   );
+
+  // Unresolved alert counts for the sidebar pill. Fails silently — a badge
+  // that can't load must never break navigation.
+  const [alerts, setAlerts] = useState<{ unresolved: number; urgent: number }>({
+    unresolved: 0,
+    urgent: 0,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await adminFetch('/admin/alerts/count');
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          unresolved?: number;
+          urgent?: number;
+        };
+        setAlerts({
+          unresolved: data.unresolved ?? 0,
+          urgent: data.urgent ?? 0,
+        });
+      } catch {
+        /* badge is best-effort */
+      }
+    };
+    void poll();
+    const id = setInterval(() => void poll(), ALERT_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -172,6 +214,16 @@ export default function SidebarNav() {
               <span className="text-[11px] font-semibold uppercase tracking-wider">
                 {g.label}
               </span>
+              {/* Mirror the alert count onto the System header so it is still
+                  visible when the group is collapsed — the whole point is to
+                  reach an operator who is working elsewhere. */}
+              {g.key === 'system' && !isOpen && alerts.unresolved > 0 && (
+                <AlertPill
+                  count={alerts.unresolved}
+                  urgent={alerts.urgent > 0}
+                  className="ml-auto mr-2"
+                />
+              )}
               <svg
                 width="12"
                 height="12"
@@ -201,6 +253,14 @@ export default function SidebarNav() {
                     item={it}
                     active={itemActive(it, pathname)}
                     indent
+                    badge={
+                      it.href === '/admin/alerts' && alerts.unresolved > 0 ? (
+                        <AlertPill
+                          count={alerts.unresolved}
+                          urgent={alerts.urgent > 0}
+                        />
+                      ) : null
+                    }
                   />
                 ))}
               </div>
@@ -216,15 +276,18 @@ function NavLink({
   item,
   active,
   indent,
+  badge,
 }: {
   item: NavItem;
   active: boolean;
   indent?: boolean;
+  /** Optional trailing count pill (unresolved alerts). */
+  badge?: React.ReactNode;
 }) {
   return (
     <Link
       href={item.href}
-      className="py-1.5 rounded-[6px] transition-colors"
+      className="py-1.5 rounded-[6px] transition-colors flex items-center gap-2"
       style={{
         paddingLeft: indent ? '18px' : '8px',
         paddingRight: '8px',
@@ -235,7 +298,37 @@ function NavLink({
         textDecoration: 'none',
       }}
     >
-      {item.label}
+      <span className="flex-1 min-w-0 truncate">{item.label}</span>
+      {badge}
     </Link>
+  );
+}
+
+// Count pill. Red for anything urgent (chargeback / stuck funds / stalled
+// verification), neutral-amber otherwise — an operator should be able to tell
+// "needs me now" from "needs me today" without opening the page.
+function AlertPill({
+  count,
+  urgent,
+  className,
+}: {
+  count: number;
+  urgent: boolean;
+  className?: string;
+}) {
+  const colour = urgent ? 'var(--red)' : '#f59e0b';
+  return (
+    <span
+      className={`text-[10px] leading-none px-1.5 py-0.5 rounded-full shrink-0 ${className ?? ''}`}
+      title={`${count} unresolved alert${count === 1 ? '' : 's'}${urgent ? ' — some urgent' : ''}`}
+      style={{
+        background: `${colour}20`,
+        color: colour,
+        border: `0.5px solid ${colour}55`,
+        fontWeight: 600,
+      }}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
   );
 }

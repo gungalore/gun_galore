@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
-import { BrowseResponse, Category } from '@/lib/types';
+import { BrowseResponse, Category, CategoryWithCount } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
+import { CategoryCurtain } from '@/components/category-curtain';
 import { FilterBar } from '@/components/filter-bar';
 import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
@@ -114,6 +115,19 @@ export default async function HomePage({
   const showHero =
     !params.listingType && !params.q && !params.categoryId && !params.sort;
 
+  // Which URL params actually NARROW the result set — the only ones a
+  // "Clear filters" button can meaningfully remove. listingType is the
+  // shopping surface itself, q is the search term (it gets its own Clear
+  // search button), and sort/page change ordering and paging rather than
+  // matching. Computed once so the empty-state COPY and the empty-state
+  // BUTTON can never disagree again: they used to use two different
+  // expressions, so "?q=teleskoop" alone said "try clearing some filters"
+  // while rendering no such button.
+  const NON_FILTER_PARAMS = new Set(['listingType', 'q', 'sort', 'page']);
+  const hasNonQFilters = Object.entries(params).some(
+    ([k, v]) => Boolean(v) && !NON_FILTER_PARAMS.has(k),
+  );
+
   // Per-surface background scenery + reveal animation.
   // Each surface that opts in gets its own photo + reveal variant so the
   // feel matches the buying mode:
@@ -146,8 +160,14 @@ export default async function HomePage({
   // with the FEATURED grid. On every other surface we keep the
   // standard browse. Both queries fire in parallel so the slower
   // doesn't block the other.
-  const [browseRaw, categories, featuredListings, brands, facetData] =
-    await Promise.all([
+  const [
+    browseRaw,
+    categories,
+    featuredListings,
+    brands,
+    facetData,
+    categoryCounts,
+  ] = await Promise.all([
     // Sentinel on failure (null) — a backend hiccup must NOT render the
     // genuine-empty "nothing listed yet" copy; the two states get
     // different UI below (retry card vs empty-marketplace nudge).
@@ -188,6 +208,16 @@ export default async function HomePage({
       : Promise.resolve({
           facets: {} as Record<string, Record<string, number>>,
         }),
+    // Category tiles for the landing-page "Shop by category" curtain. Same
+    // /categories/with-counts the nav flyout uses — counts arrive rolled up
+    // (a root = its own actives + its children's), so a tile never
+    // under-reports. Only the hero view renders the grid, so every filtered
+    // surface skips the round-trip entirely. Failure degrades to no section.
+    showHero
+      ? apiFetch<CategoryWithCount[]>('/categories/with-counts', {
+          next: { revalidate: 3600 },
+        } as RequestInit).catch(() => [] as CategoryWithCount[])
+      : Promise.resolve([] as CategoryWithCount[]),
   ]);
 
   // null = the listings API call FAILED (network/backend) — distinct from a
@@ -199,6 +229,12 @@ export default async function HomePage({
 
   const currentPage = browse.page;
 
+  // Empty page N of a non-empty result set — a bookmarked deep page whose
+  // items have all sold, or a hand-edited ?page=. The generic "nothing
+  // matches" copy is a lie here (there ARE matches, just not on this page),
+  // and with no pagination rendered below an empty grid it's a dead end.
+  const stalePage = currentPage > 1 && browse.total > 0;
+
   // Cross-sell context — a SECONDARY "you might also need…" row shown below
   // the results on a real search/filter (never the bare landing page).
   // Drawn from the dominant category of the current results (or the active
@@ -209,6 +245,17 @@ export default async function HomePage({
   // landing page — a wall of "Featured spot available" placeholders reads
   // as a dead site to buyers; sellers get one compact bid link instead.
   const occupiedFeatured = featuredListings.filter((s) => s.listing);
+
+  // Root-level tiles for the "Shop by category" curtain. Roots only: the
+  // grid is a breadth entry point and every child is one click deeper on
+  // /category/[slug]. The endpoint already orders by sortOrder then name, so
+  // filter without re-sorting to keep the curated taxonomy order. Empty on
+  // every non-hero surface (we don't fetch there) — the section self-hides.
+  // CategoryWithCount is a superset of CurtainTile, so it passes straight in.
+  const curtainTiles = categoryCounts.filter(
+    (c) => c.parentId === null && c.isActive,
+  );
+
   const crossSellFromCategoryId =
     params.categoryId ??
     (() => {
@@ -429,6 +476,30 @@ export default async function HomePage({
               </Link>
             </div>
           )}
+          {/* Shop by category — the landing page's only breadth entry
+              point. Without it discovery leaned entirely on the nav
+              flyout (desktop-hover) and /category/[slug] got no homepage
+              links at all. Tiles fall into place column-by-column as the
+              grid scrolls into view; CategoryCurtain handles
+              reduced-motion and JS-off itself. Self-hides when the
+              taxonomy call failed or returned nothing rather than
+              leaving a bare heading over empty space. */}
+          {curtainTiles.length > 0 && (
+            <div className="mt-10">
+              <h2
+                className="text-2xl sm:text-3xl m-0 mb-5"
+                style={{
+                  color: 'var(--text-primary)',
+                  fontWeight: 500,
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                Shop by category
+              </h2>
+              <CategoryCurtain tiles={curtainTiles} />
+            </div>
+          )}
+
           {/* Recently viewed — self-hides if the user has < 2 entries
               on this device, so cold-start visitors don't see an empty
               rail. Sits below the featured marquee so returning users
@@ -626,23 +697,59 @@ export default async function HomePage({
               className="text-base mb-2"
               style={{ color: 'var(--text-primary)', fontWeight: 500 }}
             >
-              Nothing matches {surface.title.toLowerCase()} yet
+              {/* Lead with the thing that came up empty. A searcher who
+                  sees "Nothing matches live listings yet" can't tell
+                  whether the term or the whole site is the problem. */}
+              {stalePage
+                ? `Nothing left on page ${currentPage}`
+                : params.q
+                  ? `No results for “${params.q}”${params.listingType ? ` in ${surface.title}` : ''}`
+                  : `Nothing matches ${surface.title.toLowerCase()} yet`}
             </p>
             <p
               className="text-sm mb-5"
               style={{ color: 'var(--text-tertiary)' }}
             >
-              {Object.keys(params).filter((k) => params[k as keyof SearchParams] && k !== 'listingType').length > 0
-                ? 'Try clearing some filters — or save this search and we’ll alert you the moment something matches.'
-                : 'Nothing listed here yet — got one lying in the safe or the garage? Yours could be the first.'}
+              {/* Every branch below must describe an action the buttons
+                  underneath actually offer — the old copy told a
+                  search-only visitor to "clear some filters" while
+                  rendering no Clear-filters button at all. */}
+              {stalePage
+                ? `There are still ${browse.total.toLocaleString('en-ZA')} matches — items on this page have just sold or been pulled.`
+                : params.q && hasNonQFilters
+                  ? 'Your filters may be too tight for that search — clear them, or drop the search term and browse the rest.'
+                  : params.q
+                    ? 'Check the spelling or try a broader term — or save this search and we’ll alert you the moment something matches.'
+                    : hasNonQFilters
+                      ? 'Try clearing some filters — or save this search and we’ll alert you the moment something matches.'
+                      : 'Nothing listed here yet — got one lying in the safe or the garage? Yours could be the first.'}
             </p>
             <div className="flex gap-2 justify-center flex-wrap">
-              {Object.keys(params).filter((k) => params[k as keyof SearchParams] && k !== 'listingType' && k !== 'q').length > 0 && (
+              {stalePage && (
+                /* A bookmarked / stale ?page=N whose items have all sold
+                   is a hard dead end otherwise: the results exist, the
+                   user just can't see them from here. */
+                <a
+                  href={pageHref(1)}
+                  className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+                  style={{
+                    background: 'var(--red)',
+                    color: '#fff',
+                    fontWeight: 500,
+                    textDecoration: 'none',
+                  }}
+                >
+                  Back to page 1 →
+                </a>
+              )}
+              {hasNonQFilters && (
                 /* Clear filters preserves both the listingType (the
                    shopping surface the user is on) AND the search
                    query (the term they typed). Only the constraints
                    that narrow the result set further — category,
-                   province, condition, sort — get stripped. */
+                   province, condition, attributes — get stripped.
+                   Gated on the SAME hasNonQFilters the copy uses, so the
+                   promise and the button can't drift apart. */
                 <a
                   href={(() => {
                     const next = new URLSearchParams();
@@ -660,6 +767,33 @@ export default async function HomePage({
                   }}
                 >
                   Clear filters →
+                </a>
+              )}
+              {params.q && (
+                /* The button the search-only dead end was missing. Drops
+                   the term (and any stale page cursor) but keeps the
+                   surface AND every filter the user deliberately set —
+                   the label says "clear search", so it must clear only
+                   the search. */
+                <a
+                  href={(() => {
+                    const next = new URLSearchParams();
+                    for (const [k, v] of Object.entries(params)) {
+                      if (k === 'q' || k === 'page') continue;
+                      if (typeof v === 'string' && v) next.set(k, v);
+                    }
+                    const qs = next.toString();
+                    return qs ? `/?${qs}` : '/';
+                  })()}
+                  className="inline-block py-2.5 px-5 rounded-[6px] text-sm"
+                  style={{
+                    background: 'var(--red)',
+                    color: '#fff',
+                    fontWeight: 500,
+                    textDecoration: 'none',
+                  }}
+                >
+                  Clear search →
                 </a>
               )}
               <a

@@ -49,14 +49,21 @@ export default function NotificationsPage() {
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
     let cancelled = false;
-    (async () => {
+    const refresh = async () => {
       const token = await getToken();
       if (!token) return;
       const c = await fetchActiveCount(token);
       if (!cancelled) setActiveCount(c);
-    })();
+    };
+    void refresh();
+    // Dismissing a row inside NotificationsList must decrement the tab badge
+    // on THIS render, not on the next tab switch — the counts sit in a
+    // sibling component, so the list broadcasts and we re-read.
+    const onAlertsChanged = () => void refresh();
+    window.addEventListener('gg:alerts-changed', onAlertsChanged);
     return () => {
       cancelled = true;
+      window.removeEventListener('gg:alerts-changed', onAlertsChanged);
     };
   }, [isLoaded, isSignedIn, getToken, current, showResolved]);
 

@@ -85,6 +85,14 @@ export const metadata: Metadata = {
   // for a share-driven SA marketplace suppresses organic referral.
   // Listing pages can override openGraph.images per-listing with the
   // first Cloudinary photo via their own generateMetadata().
+  //
+  // The share card is /og-default.jpg — a 1200x630 crop of the same
+  // outdoor hero the homepage uses. It replaced /icon-512.png, which was
+  // a 512x512 square: WhatsApp and Facebook render a square that small as
+  // a thumbnail chip, so every non-listing share unfurled as a tiny logo
+  // instead of a card. 1200x630 (1.91:1) is the size both platforms
+  // expand to a full-width image. JPEG on purpose — a PNG of the same
+  // photo runs >1 MB and WhatsApp silently drops oversized previews.
   openGraph: {
     type: 'website',
     locale: 'en_ZA',
@@ -95,10 +103,10 @@ export const metadata: Metadata = {
     url: SITE_URL,
     images: [
       {
-        url: '/icon-512.png',
-        width: 512,
-        height: 512,
-        alt: 'Gun Galore',
+        url: '/og-default.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'Gun Galore — South Africa’s outdoor, hunting and sport marketplace',
       },
     ],
   },
@@ -107,7 +115,9 @@ export const metadata: Metadata = {
     title: 'Gun Galore — Outdoor, Hunting & Sport Marketplace',
     description:
       "South Africa's verified outdoor, hunting and sport marketplace — optics, camping, fishing, knives and more. Seller identity verified before payout; every payment held until delivery is confirmed.",
-    images: ['/icon-512.png'],
+    // summary_large_image needs a landscape image or X falls back to the
+    // small card — same 1200x630 asset as Open Graph.
+    images: ['/og-default.jpg'],
   },
   alternates: {
     canonical: SITE_URL,

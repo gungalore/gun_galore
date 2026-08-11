@@ -14,7 +14,15 @@ export const metadata: Metadata = {
 const FAQS: { q: string; a: string }[] = [
   {
     q: 'What is Gun Galore?',
-    a: 'Gun Galore is a South African online marketplace for firearms, optics, hunting and outdoor gear, ammunition and reloading components. You can buy at a set price, bid in auctions, or make an offer ("Take a Shot"). Sellers are private individuals and licensed dealers.',
+    // Answer 1 is the single most-read sentence on the site (it also feeds
+    // the FAQPage JSON-LD Google can lift straight into the SERP), so it
+    // leads with the full catalogue rather than firearms — a camper reading
+    // "marketplace for firearms" concludes the site is not for them.
+    // Firearms stay named, last: they are a real part of the catalogue.
+    // "Ammunition" was removed deliberately — the Ammo category is seeded
+    // isActive:false (live ammo, primers and powder cannot be listed), so
+    // advertising it was both misleading and a compliance own-goal.
+    a: 'Gun Galore is a South African online marketplace for outdoor, hunting and sport gear — camping and overlanding kit, fishing tackle, optics, knives, clothing, reloading components and firearms. You can buy at a set price, bid in auctions, make an offer ("Take a Shot"), or swop item for item. Sellers are private individuals and licensed dealers.',
   },
   {
     q: 'How does payment protection work?',
@@ -41,12 +49,20 @@ const FAQS: { q: string; a: string }[] = [
     a: 'Secure card payments are launching soon. You can browse, bid and list in the meantime — card checkout switches on as soon as it is ready. Whichever method you use, your payment is held until delivery is confirmed.',
   },
   {
-    q: 'How is non-firearm gear delivered?',
-    a: 'Non-firearm items ship via our courier partners — Pudo locker-to-locker or The Courier Guy door-to-door — with live rate quotes at checkout and tracking on the order page. Firearms always route through a licensed dealer instead.',
+    // Framed as "how is my order delivered", not "how is NON-FIREARM gear
+    // delivered" — the old wording made couriered outdoor gear read as the
+    // exception on a site where it is the majority of the catalogue. The
+    // dealer-transfer rule for firearms is unchanged and still stated
+    // plainly; that part is legally load-bearing.
+    q: 'How is my order delivered?',
+    a: 'Most items ship via our courier partners — Pudo locker-to-locker or The Courier Guy door-to-door — with live rate quotes at checkout and tracking on the order page. Firearms are the exception: by law they always route through a SAPS-licensed dealer instead of to your door.',
   },
   {
     q: 'How do I sell on Gun Galore?',
-    a: 'Create a listing from the Sell page — add photos, a description and a price (or set it up as an auction or Take-a-Shot). Listings are checked before going live. Complete seller verification (KYC) to receive payouts. For firearms you will capture the serial and licence details required by law.',
+    // Four selling modes, matching /how-selling-works and the sell form —
+    // Swop was live long before this answer was written and kept being left
+    // out, which is why sellers never discovered it.
+    a: 'Create a listing from the Sell page — add photos, a description and a price (or set it up as an auction, a Take-a-Shot, or a Swop / Trade). Listings are checked before going live. Complete seller verification (KYC) to receive payouts. For firearms you will capture the serial and licence details required by law.',
   },
   {
     q: 'Is my personal information safe?',

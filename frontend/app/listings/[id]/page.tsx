@@ -126,6 +126,40 @@ export default async function ListingDetailPage({
   // shipping shape; no extra fetch).
   const deliveryEstimate = getListingDeliveryEstimate(listing);
 
+  // UX-28 — sticky mobile buy bar. On a phone the price + CTA live in the
+  // right-hand column, which stacks BELOW the gallery, badges, title, rating
+  // and moderation block; by the time a buyer has read the description, Q&A
+  // and shipping they have no way to act without scrolling all the way back
+  // up. The bar is suppressed in exactly the cases where the inline CTA is
+  // also suppressed, so it can never offer an action the page refuses:
+  //   • the seller viewing their own listing (self-buy is rejected anyway),
+  //   • anything not ACTIVE (sold / cancelled / expired / payment-pending),
+  //   • sold-out inventory-tracked listings (wishlist is the only CTA there),
+  //   • fixed-price experiences, which render their own Book CTA.
+  const soldOut = trackedSellable !== null && trackedSellable <= 0;
+  const showBuyBar =
+    listing.status === 'ACTIVE' &&
+    !isOwnListing &&
+    !soldOut &&
+    !(listing.isExperience && listing.listingType !== 'AUCTION');
+  // The bar stays DUMB for auctions: the live figure comes from the polled
+  // auction state, not listing.price (which is only the starting bid), so it
+  // shows a label and scrolls to the panel rather than quoting a stale number.
+  const buyBarPrice =
+    listing.listingType === 'AUCTION'
+      ? 'Live auction'
+      : listing.price != null
+        ? formatPrice(listing.price)
+        : LISTING_TYPE_LABELS[listing.listingType];
+  const buyBarLabel =
+    listing.listingType === 'BUY_NOW'
+      ? 'Buy Now'
+      : listing.listingType === 'TAKE_A_SHOT'
+        ? 'Make an offer'
+        : listing.listingType === 'AUCTION'
+          ? 'Place a bid'
+          : 'Propose a swap';
+
   // UX-7 — compare-at ("was") price discount, BUY_NOW only. Display-only.
   const compareAtPct =
     listing.listingType === 'BUY_NOW'
@@ -479,7 +513,10 @@ export default async function ListingDetailPage({
             <ExperiencePanel listing={listing} isOwnListing={isOwnListing} />
           )}
 
-          {/* CTA */}
+          {/* CTA — wrapped so the sticky mobile buy bar (UX-28) has a stable
+              in-page anchor to scroll to for the non-checkout listing types.
+              scrollMarginTop clears the sticky top nav on landing. */}
+          <div id="buy-panel" style={{ scrollMarginTop: 88 }}>
           {listing.isExperience && listing.listingType !== 'AUCTION' ? null : listing.status === 'ACTIVE' && listing.listingType === 'BUY_NOW' ? (
             isOwnListing ? (
               // Self-buy guard. Backend rejects the purchase anyway,
@@ -624,6 +661,7 @@ export default async function ListingDetailPage({
               {listing.status === 'SOLD' ? 'Sold' : 'Not available'}
             </div>
           ) : null}
+          </div>
 
           {/* UX-1d — trust bullets under the CTA, on every listing type.
               Point-of-decision reassurance; house-rule-safe copy (never
@@ -1000,6 +1038,105 @@ export default async function ListingDetailPage({
         title="More from your recent views"
         excludeId={listing.id}
       />
+
+      {/* ── UX-28 · sticky mobile buy bar ──────────────────────────────
+          Rendered inside <main> ON PURPOSE. <main> is position:relative
+          z-index:1, i.e. its own stacking context, so nothing in here can
+          out-paint the installed-app bottom tab bar (z-index 55, mounted in
+          the root layout) whatever z-index we pick. Instead of fighting that
+          we stay out of its way GEOMETRICALLY: in standalone the bar is
+          offset a full tab-bar height up, so the two never overlap and the
+          "renders under the tab bar" failure can't happen. Within <main> the
+          bar sits at 58 — above the page content, still below the auction
+          BidModal's z-[60] — and the :has() rule below hides it outright
+          while any blocking overlay is mounted, since a modal inside the
+          PageReveal wrapper gets its own stacking context and z-index alone
+          would not be enough. */}
+      {showBuyBar && (
+        <>
+          {/* Spacer so the last content on the page can always be scrolled
+              clear of the fixed bar. lg:hidden mirrors the bar itself. */}
+          <div aria-hidden className="lg:hidden" style={{ height: 84 }} />
+          <style
+            dangerouslySetInnerHTML={{
+              __html: [
+                // Browser mode: hug the bottom edge, pad past the home
+                // indicator. Standalone: sit on top of the 60pt tab bar
+                // (which owns the safe-area inset itself).
+                `[data-listing-buy-bar]{bottom:0;padding-bottom:calc(10px + env(safe-area-inset-bottom));}`,
+                `html[data-standalone='true'] [data-listing-buy-bar]{bottom:calc(60px + env(safe-area-inset-bottom));padding-bottom:10px;}`,
+                // Any blocking overlay (currently the auction BidModal) wins.
+                `body:has([data-blocking-overlay]) [data-listing-buy-bar]{display:none;}`,
+                // Lift Boet's dock clear of the bar so the mascot never
+                // covers the CTA. Same trick globals.css already uses for
+                // the install prompt — and we defer to that rule when both
+                // are on screen, because its lift is the taller one.
+                `@media (max-width:1023px){html:not([data-standalone='true']) body:not([data-install-prompt='true']):has([data-listing-buy-bar]) #askgg-dock{bottom:calc(84px + env(safe-area-inset-bottom));}}`,
+              ].join(''),
+            }}
+          />
+          <div
+            data-listing-buy-bar="true"
+            className="flex items-center gap-3 lg:hidden"
+            style={{
+              position: 'fixed',
+              left: 0,
+              right: 0,
+              zIndex: 58,
+              paddingLeft: 16,
+              paddingRight: 16,
+              paddingTop: 10,
+              background: 'var(--bg-deep)',
+              borderTop: '0.5px solid var(--border)',
+            }}
+          >
+            <div className="min-w-0 flex-1">
+              <p
+                className="text-xs truncate"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                {listing.title}
+              </p>
+              <p
+                className="text-base"
+                style={{ color: 'var(--red)', fontWeight: 500 }}
+              >
+                {buyBarPrice}
+              </p>
+            </div>
+            {listing.listingType === 'BUY_NOW' ? (
+              <Link
+                href={`/checkout/${listing.id}`}
+                className="py-2.5 px-5 rounded-[6px] text-sm flex-shrink-0"
+                style={{
+                  background: 'var(--red)',
+                  color: '#fff',
+                  fontWeight: 500,
+                  textDecoration: 'none',
+                }}
+              >
+                {buyBarLabel}
+              </Link>
+            ) : (
+              /* Plain in-page anchor — no JS, works with keyboard and with
+                 the router untouched. The panel it lands on is the single
+                 source of truth for price + state. */
+              <a
+                href="#buy-panel"
+                className="py-2.5 px-5 rounded-[6px] text-sm flex-shrink-0"
+                style={{
+                  background: 'var(--red)',
+                  color: '#fff',
+                  fontWeight: 500,
+                  textDecoration: 'none',
+                }}
+              >
+                {buyBarLabel}
+              </a>
+            )}
+          </div>
+        </>
+      )}
     </main>
   );
 }

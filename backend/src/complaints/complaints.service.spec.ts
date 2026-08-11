@@ -18,12 +18,17 @@ function makeService(over: { tx?: unknown; heldCount?: number } = {}) {
   };
   const reference = { allocate: jest.fn().mockResolvedValue('CO000001') };
   const cloudinary = { uploadImage: jest.fn() };
+  // adminUpdate now tells the complainant when their case moves.
+  const notifications = {
+    complaintStatusChanged: jest.fn().mockResolvedValue(undefined),
+  };
   const svc = new ComplaintsService(
     prisma as never,
     reference as never,
     cloudinary as never,
+    notifications as never,
   );
-  return { svc, prisma };
+  return { svc, prisma, notifications };
 }
 
 const HELD_TX = {

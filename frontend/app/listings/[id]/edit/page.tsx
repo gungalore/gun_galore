@@ -19,6 +19,30 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
 };
 
+// Pull a human reason out of a failed photo request. Nest sends
+// { message: string | string[] } on 4xx/5xx, but a 413 is usually killed by
+// the reverse proxy and comes back as HTML — so we special-case the size
+// limit and otherwise fall back to the bare status, which at least gives the
+// seller something concrete to quote at support.
+async function failureReason(res: Response): Promise<string> {
+  if (res.status === 413) return 'the file is too big (8 MB is the limit)';
+  const body: unknown = await res.json().catch(() => null);
+  const msg = (body as { message?: string | string[] } | null)?.message;
+  if (Array.isArray(msg) && msg.length > 0) return msg.join(', ');
+  if (typeof msg === 'string' && msg.trim()) {
+    // Nest's ParseFilePipe reports the two validators on POST /listings/:id
+    // /images as a regex dump ("expected type is image/(jpeg|png|webp)") —
+    // meaningless to a seller, so translate them.
+    if (msg.startsWith('Validation failed')) {
+      return msg.includes('expected size')
+        ? 'the file is too big (8 MB is the limit)'
+        : "that file type isn't supported — use JPEG, PNG or WebP";
+    }
+    return msg;
+  }
+  return `error ${res.status}`;
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -40,6 +64,20 @@ export default function EditListingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newImages, setNewImages] = useState<File[]>([]);
+  // Per-photo failure surfaces. Photo work runs AFTER the listing PATCH has
+  // already committed, so a failure here can't be reported as "save failed" —
+  // that would send the seller back to re-edit text that is safely stored.
+  // Instead we name the photo that broke, keep only the outstanding work
+  // queued, and stay on the form so Save retries exactly what's left.
+  // Non-empty only ever after a submit whose PATCH succeeded (both are
+  // cleared at the top of handleSubmit), which is what lets the banner below
+  // state "your listing details were saved" with confidence.
+  const [uploadFailures, setUploadFailures] = useState<
+    { name: string; reason: string }[]
+  >([]);
+  const [deleteFailures, setDeleteFailures] = useState<
+    { label: string; reason: string }[]
+  >([]);
   // Lock state — fetched in parallel with the listing. When canEdit
   // is false, render the friendly "listing locked" card below
   // instead of the form. Backend GET /listings/:id/edit-lock
@@ -191,6 +229,11 @@ export default function EditListingPage() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    // Clear last attempt's photo failures up front — the partial-save banner
+    // reads them to decide whether the PATCH already landed, so stale entries
+    // would claim a save that hasn't happened yet.
+    setUploadFailures([]);
+    setDeleteFailures([]);
     // Firearm planned dealer-stock guard — dealer name + province + area
     // are all mandatory. Abort with a clear message before the API 400.
     if (
@@ -309,27 +352,110 @@ export default function EditListingPage() {
         throw new Error(err.message ?? `Error ${res.status}`);
       }
 
+      // Photo work runs once the listing itself is saved. Both loops used to
+      // swallow their failures — deletes behind a bare .catch(), uploads with
+      // no res.ok check at all — and we redirected regardless. A 413/415 or a
+      // moderation reject therefore dropped the seller on a listing missing
+      // the photos they'd just added, with no error and nothing to retry.
+
       // Delete photos that the seller removed in this session.
+      const nextDeleteFailures: { label: string; reason: string }[] = [];
+      const deletedIds: string[] = [];
       for (const imageId of removedImageIds) {
-        await fetch(`${API_URL}/listings/${id}/images/${imageId}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => {
-          // Best-effort — if a delete fails, the listing edit still
-          // succeeds; the seller can retry the photo deletion from
-          // the listing detail page.
+        // Number the photo the way the seller sees it in the strip above, so
+        // "Photo 2" points at something they can actually identify (we only
+        // hold ids here, never file names, for photos already on the listing).
+        const position = listing
+          ? listing.images.findIndex((im) => im.id === imageId) + 1
+          : 0;
+        const label = position > 0 ? `Photo ${position}` : 'A photo';
+        try {
+          // Fresh token per request — deleting several photos over a slow
+          // mobile connection can outlive the token minted before the PATCH.
+          const delToken = await getToken();
+          const del = await fetch(
+            `${API_URL}/listings/${id}/images/${imageId}`,
+            {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${delToken}` },
+            },
+          );
+          // 204 on success, no body. A 404 means the row is already gone —
+          // count that as done, otherwise the seller gets a failure they can
+          // never clear no matter how many times they press Save.
+          if (del.ok || del.status === 404) {
+            deletedIds.push(imageId);
+          } else {
+            nextDeleteFailures.push({
+              label,
+              reason: await failureReason(del),
+            });
+          }
+        } catch {
+          nextDeleteFailures.push({ label, reason: 'the connection dropped' });
+        }
+      }
+      // Drop the ones that really went, so the thumbnail strip is honest and
+      // a second Save doesn't re-DELETE them (a 404 would read as a fresh
+      // failure). Only the failures stay queued for that retry.
+      if (deletedIds.length > 0) {
+        setListing((prev) =>
+          prev
+            ? {
+                ...prev,
+                images: prev.images.filter((im) => !deletedIds.includes(im.id)),
+              }
+            : prev,
+        );
+        setRemovedImageIds((prev) => {
+          const next = new Set(prev);
+          for (const done of deletedIds) next.delete(done);
+          return next;
         });
       }
+      setDeleteFailures(nextDeleteFailures);
 
-      // Upload any new images
+      // Upload any new images. Unlike the create flow (which halts on the
+      // first failure because it has to roll the whole listing back), we try
+      // every file: these uploads are independent, so one rejected HEIC
+      // shouldn't force the seller to re-pick the photos that were fine.
+      const nextUploadFailures: { name: string; reason: string }[] = [];
+      const stillQueued: File[] = [];
       for (const file of newImages) {
         const fd = new FormData();
         fd.append('image', file);
-        await fetch(`${API_URL}/listings/${id}/images`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: fd,
-        });
+        try {
+          const upToken = await getToken();
+          const up = await fetch(`${API_URL}/listings/${id}/images`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${upToken}` },
+            body: fd,
+          });
+          if (!up.ok) {
+            nextUploadFailures.push({
+              name: file.name,
+              reason: await failureReason(up),
+            });
+            stillQueued.push(file);
+          }
+        } catch {
+          nextUploadFailures.push({
+            name: file.name,
+            reason: 'the connection dropped',
+          });
+          stillQueued.push(file);
+        }
+      }
+      // Keep only the files that didn't land staged, so pressing Save again
+      // retries exactly those and can't upload the successful ones twice.
+      setNewImages(stillQueued);
+      setUploadFailures(nextUploadFailures);
+
+      if (nextUploadFailures.length > 0 || nextDeleteFailures.length > 0) {
+        // Never redirect on photo trouble — the listing page would show the
+        // saved text and none of the photo changes, which reads as success.
+        setSubmitting(false);
+        return;
       }
 
       router.push(`/listings/${id}`);
@@ -399,6 +525,20 @@ export default function EditListingPage() {
 
   const isFirearm = listing.category.isFirearm;
 
+  // Summary line for the partial-save banner. Built from the two failure
+  // lists so it always matches the detail blocks further down the form.
+  const photoTrouble: string[] = [];
+  if (uploadFailures.length > 0) {
+    photoTrouble.push(
+      `${uploadFailures.length} photo${uploadFailures.length === 1 ? " didn't" : "s didn't"} upload`,
+    );
+  }
+  if (deleteFailures.length > 0) {
+    photoTrouble.push(
+      `${deleteFailures.length} photo${deleteFailures.length === 1 ? " couldn't" : "s couldn't"} be removed`,
+    );
+  }
+
   return (
     <main className="max-w-[640px] mx-auto px-4 py-8">
       <h1 className="text-xl mb-2" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
@@ -429,6 +569,30 @@ export default function EditListingPage() {
       {error && (
         <div className="mb-4 px-4 py-3 rounded-[6px] text-sm" style={{ background: 'rgba(200,16,46,0.08)', border: '0.5px solid var(--red)', color: 'var(--red)' }}>
           {error}
+        </div>
+      )}
+
+      {/* Partial-save banner. The listing PATCH commits before any photo
+          work, so when a photo fails the text changes ARE saved — a red
+          "save failed" would be a lie and would push the seller into
+          re-editing details that are safely stored. Amber, and it explains
+          why they weren't redirected to their listing. */}
+      {photoTrouble.length > 0 && (
+        <div
+          role="status"
+          className="mb-4 px-4 py-3 rounded-[6px] text-sm"
+          style={{
+            background: 'rgba(245,158,11,0.08)',
+            border: '0.5px solid #f59e0b',
+            color: 'var(--text-secondary)',
+            lineHeight: 1.55,
+          }}
+        >
+          <strong style={{ color: 'var(--text-primary)' }}>
+            Your listing details were saved
+          </strong>{' '}
+          — but {photoTrouble.join(' and ')}. See the notes below, then press{' '}
+          <strong>Save changes</strong> again to retry just those.
         </div>
       )}
 
@@ -482,7 +646,13 @@ export default function EditListingPage() {
               {removedImageIds.size} photo{removedImageIds.size === 1 ? '' : 's'} marked for delete on save.{' '}
               <button
                 type="button"
-                onClick={() => setRemovedImageIds(new Set())}
+                onClick={() => {
+                  // Un-queueing everything also retires last attempt's delete
+                  // failures — nothing is marked for delete any more, so the
+                  // "still marked for delete" note would be stale.
+                  setRemovedImageIds(new Set());
+                  setDeleteFailures([]);
+                }}
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -496,6 +666,37 @@ export default function EditListingPage() {
                 Undo
               </button>
             </p>
+          )}
+
+          {/* Per-photo delete failures. These stay queued (they're still in
+              removedImageIds), so the seller's next Save retries them —
+              silently dropping them used to leave the photo live on a
+              listing the seller believed they had cleaned up. */}
+          {deleteFailures.length > 0 && (
+            <div
+              className="mt-2 px-3 py-2 rounded-[6px] text-xs"
+              style={{
+                background: 'rgba(200,16,46,0.08)',
+                border: '0.5px solid var(--red)',
+                color: 'var(--text-secondary)',
+                lineHeight: 1.5,
+              }}
+            >
+              <p style={{ color: 'var(--red)' }}>
+                Still on the listing — the delete didn&apos;t go through:
+              </p>
+              <ul className="mt-1" style={{ listStyle: 'disc', paddingLeft: 16 }}>
+                {deleteFailures.map((f) => (
+                  <li key={f.label}>
+                    {f.label} — {f.reason}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1">
+                They&apos;re still marked for delete. Save again to retry, or
+                Undo above to keep them.
+              </p>
+            </div>
           )}
         </div>
       )}
@@ -810,13 +1011,49 @@ export default function EditListingPage() {
             type="file"
             accept="image/jpeg,image/png,image/webp"
             multiple
-            onChange={(e) => setNewImages(Array.from(e.target.files ?? []))}
+            onChange={(e) => {
+              // Picking again replaces the queue, so last attempt's per-file
+              // errors no longer describe what's staged — drop them.
+              setNewImages(Array.from(e.target.files ?? []));
+              setUploadFailures([]);
+            }}
             style={{ ...inputStyle, padding: '6px 12px', cursor: 'pointer' }}
           />
           {newImages.length > 0 && (
             <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
               {newImages.length} new file{newImages.length !== 1 ? 's' : ''} to upload
             </p>
+          )}
+
+          {/* Per-file upload failures. The files that failed are still staged
+              in newImages (the ones that landed were dropped), so the seller
+              can fix the offending photo or just press Save to retry —
+              nothing gets uploaded twice. */}
+          {uploadFailures.length > 0 && (
+            <div
+              className="mt-2 px-3 py-2 rounded-[6px] text-xs"
+              style={{
+                background: 'rgba(200,16,46,0.08)',
+                border: '0.5px solid var(--red)',
+                color: 'var(--text-secondary)',
+                lineHeight: 1.5,
+              }}
+            >
+              <p style={{ color: 'var(--red)' }}>
+                These photos weren&apos;t added:
+              </p>
+              <ul className="mt-1" style={{ listStyle: 'disc', paddingLeft: 16 }}>
+                {uploadFailures.map((f, i) => (
+                  <li key={`${f.name}-${i}`}>
+                    {f.name} — {f.reason}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1">
+                They&apos;re still queued. Save again to retry, or pick
+                different files (JPEG, PNG or WebP, up to 8 MB each).
+              </p>
+            </div>
           )}
         </Field>
 

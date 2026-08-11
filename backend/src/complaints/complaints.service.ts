@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // The complaint categories the intake form offers. Kept as plain strings
 // (stored on Complaint.category) so adding one is a one-line change with no
@@ -49,6 +50,10 @@ export class ComplaintsService {
     private readonly prisma: PrismaService,
     private readonly reference: ReferenceNumberService,
     private readonly cloudinary: CloudinaryService,
+    // NotificationsModule is @Global — no module import needed. Used to tell
+    // the complainant when their case moves; silence on a case that froze
+    // someone's money reads as being ignored.
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -335,7 +340,15 @@ export class ComplaintsService {
   ) {
     const complaint = await this.prisma.complaint.findUnique({
       where: { id: complaintId },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        status: true,
+        subject: true,
+        drovePayoutHold: true,
+        user: {
+          select: { email: true, firstName: true, phone: true },
+        },
+      },
     });
     if (!complaint) throw new NotFoundException('Complaint not found');
 
@@ -352,6 +365,34 @@ export class ComplaintsService {
       },
       select: { id: true, referenceNumber: true, status: true, outcome: true },
     });
+
+    // Tell the complainant their case moved. Only on the transitions that
+    // mean something to them — resolved/closed (the verdict) and
+    // awaiting-user (we need something from them, so silence stalls the
+    // case). Skipped when the status didn't actually change, so re-saving
+    // an assignee or editing the outcome note doesn't re-notify. SMS only
+    // for cases that froze money — everything else is email + inbox.
+    // Fire-and-forget: a notification failure must never fail the admin's
+    // update or leave the case in a half-written state.
+    const statusChanged = !!status && status !== complaint.status;
+    if (statusChanged && (closing || status === 'AWAITING_USER')) {
+      void this.notifications
+        .complaintStatusChanged({
+          email: complaint.user.email,
+          name: complaint.user.firstName ?? 'there',
+          phone: complaint.drovePayoutHold ? complaint.user.phone : null,
+          referenceNumber: updated.referenceNumber,
+          subject: complaint.subject,
+          status: updated.status,
+          outcome: updated.outcome,
+          heldPayout: complaint.drovePayoutHold,
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `complaint status notify failed for ${updated.referenceNumber}: ${(err as Error).message}`,
+          ),
+        );
+    }
 
     // Resolve the alert when the case closes so the inbox count clears.
     if (closing) {

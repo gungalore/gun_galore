@@ -26,6 +26,14 @@ export interface StatusEntry {
   hint?: string;
 }
 
+// Card-refund turnaround, as published on /refund-policy ("typically 3–7
+// business days"). Two order surfaces used to quote different numbers
+// (5–10 business days on the seller-rejected block, 3–7 working days on the
+// buyer-cancel panel) for the exact same rail — a buyer who saw both learnt
+// to trust neither. Every buyer-facing refund promise now interpolates this
+// one string; the refund-policy page stays the source of truth it matches.
+export const REFUND_ETA_COPY = '3–7 business days';
+
 const TONE_COLOR: Record<StatusTone, string> = {
   success: '#00a03c',
   pending: '#d49a3a',
@@ -37,9 +45,16 @@ const TONE_COLOR: Record<StatusTone, string> = {
 // PaymentStatus on the Transaction model.
 export const PAYMENT_STATUS: Record<string, StatusEntry> = {
   HELD: {
+    // Generic (method-agnostic) wording. The old copy promised "once the
+    // buyer confirms delivery", which is simply untrue on a firearm
+    // DEALER_TRANSFER (no confirm button exists — release happens on
+    // dealer stock-in verification) and slightly off for in-person
+    // collection. Render sites that know the shipping method should call
+    // paymentStatusHint() below for the precise sentence; this stays as
+    // the honest fallback for surfaces that don't.
     label: 'Payment held',
     tone: 'pending',
-    hint: "Funds are securely held while we verify the sale. They'll clear to the seller once the buyer confirms delivery — usually within a few days.",
+    hint: "Funds are held securely by Gun Galore while the sale completes. They're released to the seller once the hand-over is confirmed — usually within a few days.",
   },
   PENDING_ADMIN_VERIFICATION: {
     label: 'Verifying',
@@ -62,6 +77,35 @@ export const PAYMENT_STATUS: Record<string, StatusEntry> = {
     hint: 'The buyer was refunded in full.',
   },
 };
+
+/** Payment-status hint that knows how the item actually changes hands.
+ *
+ * Only HELD differs by shipping method — that's the status whose static
+ * hint told a firearm buyer to wait for a "confirm delivery" button that
+ * never renders for them (DEALER_TRANSFER releases on dealer stock-in
+ * verification), and told a collection buyer about "delivery" when they're
+ * driving out to fetch the item. Every other status reads the same on all
+ * paths, so we fall through to the static table entry.
+ *
+ * Wording stays third-person ("the buyer") because the same pill is shown
+ * on both /my/orders and /my/sales. */
+export function paymentStatusHint(
+  code: string | null | undefined,
+  shippingMethod?: string | null,
+): string | undefined {
+  if (code === 'HELD') {
+    if (shippingMethod === 'DEALER_TRANSFER') {
+      return "Funds are held securely by Gun Galore. A firearm has no delivery confirmation step — payment is released once we've verified the firearm is booked into the receiving dealer's stock.";
+    }
+    if (shippingMethod === 'COLLECTION') {
+      return 'Funds are held securely by Gun Galore until the buyer confirms they have collected the item in person.';
+    }
+    if (shippingMethod === 'ON_SITE_SERVICE') {
+      return 'Funds are held securely by Gun Galore until the buyer confirms the booking went ahead.';
+    }
+  }
+  return resolveStatus(PAYMENT_STATUS, code).hint;
+}
 
 // ListingStatus on the Listing model.
 export const LISTING_STATUS: Record<string, StatusEntry> = {

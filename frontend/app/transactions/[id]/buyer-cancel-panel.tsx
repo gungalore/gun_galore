@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
+import { REFUND_ETA_COPY } from '@/lib/status-labels';
 
 const API_URL =
   process.env.INTERNAL_API_URL ??
@@ -74,7 +75,7 @@ export default function BuyerCancelPanel({
         </p>
         <p className="text-xs text-[var(--text-tertiary)] mb-3">
           This item hasn&apos;t been dispatched yet. You can cancel now for a
-          full refund of {buyerTotalRand} (3–7 working days back to your card).
+          full refund of {buyerTotalRand} ({REFUND_ETA_COPY} back to your card).
         </p>
         <button
           type="button"

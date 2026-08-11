@@ -98,6 +98,8 @@ export class ActionTokensController {
         return this.buildOfferPayload(resolved, user);
       case 'AUCTION_BID':
         return this.buildAuctionPayload(resolved, user);
+      case 'AUCTION_RUNNER_UP':
+        return this.buildRunnerUpPayload(resolved, user);
       case 'CHECKOUT':
         return this.buildCheckoutPayload(resolved, user);
       case 'KYC_VERIFY':
@@ -128,6 +130,43 @@ export class ActionTokensController {
       async ({ targetId, authorisedUserId }) => {
         const clerkId = await this.clerkIdFor(authorisedUserId);
         return this.transactions.acceptTransaction(targetId, clerkId);
+      },
+      reqIp(req),
+      reqUa(req),
+    );
+  }
+
+  // ─── Auction runner-up (BIG-2) ──────────────────────────────────
+  // Seller's one-tap "yes, offer it to the next bidder" after a winner blew
+  // the pay window. The runner-up id + amount come from the TOKEN's metadata,
+  // never from the request body — otherwise anyone holding the link could
+  // nominate an arbitrary buyer at an arbitrary price. Both are re-validated
+  // against live state inside offerToRunnerUp.
+  @Post(':token/offer-runner-up')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  offerRunnerUp(@Param('token') token: string, @Req() req: Request) {
+    return this.tokens.runAction(
+      token,
+      'AUCTION_RUNNER_UP',
+      'listing',
+      async ({ targetId, authorisedUserId, metadata }) => {
+        const bidderId = metadata?.runnerUpBidderId;
+        const amount = metadata?.runnerUpAmount;
+        if (typeof bidderId !== 'string' || typeof amount !== 'number') {
+          throw new BadRequestException('This offer link is incomplete');
+        }
+        const result = await this.auctions.offerToRunnerUp(
+          targetId,
+          authorisedUserId,
+          bidderId,
+          amount,
+        );
+        // A refusal (already relisted, bidder now banned) must NOT burn the
+        // token silently as if it worked — surface it so the page can explain.
+        if (!result.offered) {
+          throw new BadRequestException(result.reason ?? 'Could not offer it');
+        }
+        return result;
       },
       reqIp(req),
       reqUa(req),
@@ -617,6 +656,70 @@ export class ActionTokensController {
         currentBid: listing.currentBid,
       },
       auction: state,
+    };
+  }
+
+  // BIG-2 — the seller's "offer it to the runner-up?" page. targetId is the
+  // EXPIRED listing; metadata carries the runner-up snapshot taken when the
+  // SMS was sent. Both are re-validated in offerToRunnerUp at accept time, so
+  // this payload is purely what the page needs to render the decision.
+  private async buildRunnerUpPayload(
+    resolved: ResolvedToken,
+    user: { username: string | null; firstName: string | null },
+  ) {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: resolved.targetId },
+      select: {
+        id: true,
+        title: true,
+        referenceNumber: true,
+        status: true,
+        images: { where: { isPrimary: true }, take: 1, select: { url: true } },
+      },
+    });
+    if (!listing) throw new NotFoundException('Listing no longer exists');
+
+    const meta = resolved.metadata ?? {};
+    const runnerUpBidderId =
+      typeof meta.runnerUpBidderId === 'string' ? meta.runnerUpBidderId : null;
+    const amount =
+      typeof meta.runnerUpAmount === 'number' ? meta.runnerUpAmount : null;
+
+    // Show the bidder's USERNAME only — never their real name, same rule as
+    // every other public-facing surface.
+    const bidder = runnerUpBidderId
+      ? await this.prisma.user.findUnique({
+          where: { id: runnerUpBidderId },
+          select: { username: true, isBanned: true, auctionStrikes: true },
+        })
+      : null;
+
+    // The window may have closed under the seller (they relisted, or the
+    // bidder has since been banned/struck out). Tell the page so it renders
+    // an explanation instead of a button that will just fail.
+    const stillAvailable =
+      listing.status === 'EXPIRED' &&
+      !!bidder &&
+      !bidder.isBanned &&
+      bidder.auctionStrikes < 3 &&
+      !!amount;
+
+    return {
+      kind: 'AUCTION_RUNNER_UP',
+      expiresAt: resolved.expiresAt.toISOString(),
+      greeting: user.firstName ?? user.username ?? 'there',
+      listing: {
+        id: listing.id,
+        title: listing.title,
+        reference: listing.referenceNumber,
+        primaryImageUrl: listing.images[0]?.url ?? null,
+        status: listing.status,
+      },
+      runnerUp: {
+        username: bidder?.username ?? null,
+        amount,
+      },
+      stillAvailable,
     };
   }
 

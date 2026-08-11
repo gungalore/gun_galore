@@ -43,10 +43,46 @@ export class MarketingService {
 
   // ── Admin ────────────────────────────────────────────────────────
   async adminList() {
-    return this.prisma.marketingCampaign.findMany({
+    const campaigns = await this.prisma.marketingCampaign.findMany({
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
+
+    // Conversions, not just impressions. `hits` counts banner arrivals, which
+    // never answered the question the operator is actually paying per-SMS
+    // for: did anyone JOIN, and did they list anything? Two grouped counts
+    // over indexed columns, joined in memory against at most 100 campaigns.
+    const [signupRows, listerRows] = await Promise.all([
+      this.prisma.user.groupBy({
+        by: ['campaignKey'],
+        where: { campaignKey: { not: null } },
+        _count: { _all: true },
+      }),
+      // Distinct campaign-attributed users who have listed at least once —
+      // the real signal that a blast brought SUPPLY, not just signups.
+      this.prisma.listing.findMany({
+        where: { seller: { campaignKey: { not: null } } },
+        select: { sellerId: true, seller: { select: { campaignKey: true } } },
+        distinct: ['sellerId'],
+        take: 5000,
+      }),
+    ]);
+
+    const signupsByKey = new Map(
+      signupRows.map((r) => [r.campaignKey as string, r._count._all]),
+    );
+    const listersByKey = new Map<string, number>();
+    for (const l of listerRows) {
+      const k = l.seller?.campaignKey;
+      if (!k) continue;
+      listersByKey.set(k, (listersByKey.get(k) ?? 0) + 1);
+    }
+
+    return campaigns.map((c) => ({
+      ...c,
+      signups: signupsByKey.get(c.key) ?? 0,
+      sellers: listersByKey.get(c.key) ?? 0,
+    }));
   }
 
   async adminCreate(dto: { key?: string; name?: string; headline?: string }) {

@@ -17,6 +17,9 @@ interface ClerkUserData {
   // version) as the durable POPIA record, attached to this specific Clerk user.
   unsafe_metadata?: {
     phone?: string;
+    // MarketingCampaign.key the signup arrived on — lets the campaigns page
+    // report sign-ups per blast, not just banner impressions.
+    campaignKey?: string;
     consent?: {
       terms?: boolean;
       privacy?: boolean;
@@ -117,6 +120,7 @@ export class WebhooksController {
           lastName: data.last_name ?? undefined,
           phone: phone ?? undefined,
           avatarUrl: data.image_url ?? undefined,
+          campaignKey: data.unsafe_metadata?.campaignKey,
         });
 
         // Stamp the durable POPIA sign-up consent (email path attaches it to

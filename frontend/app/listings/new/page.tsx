@@ -53,7 +53,7 @@ const COMMISSION_BANDS: { limit: number; rate: number; label: string }[] = [
 ];
 const MIN_COMMISSION_CENTS = 3_000; // R30 floor — see backend fee.calculator.ts
 
-// The three ways to list — rendered as descriptive choice cards in Step 3
+// The four ways to list — rendered as descriptive choice cards in Step 3
 // so sellers can compare and know where to list before picking. Copy mirrors
 // the /how-selling-works help page.
 const SELL_MODES: {
@@ -87,6 +87,25 @@ const SELL_MODES: {
     bestFor: ['Upgrading your kit', 'No cash to spare', 'Item-for-item, ± a top-up'],
   },
 ];
+
+// Every delivery method the sell form knows how to render. Used to sanitise
+// the shippingMethods array that comes back from a relisted listing — the API
+// hands them over as plain strings, and an unknown / retired value dropped
+// straight into state would render as a phantom pill and then be rejected on
+// publish.
+const SHIPPING_METHOD_VALUES: ShippingMethod[] = [
+  'PUDO',
+  'TCG',
+  'DEALER_TRANSFER',
+  'PRIVATE_ARRANGE',
+  'COLLECTION',
+  'ON_SITE_SERVICE',
+];
+
+// Auction durations the Step-3 picker actually offers. A relisted auction
+// whose duration isn't one of these (a legacy 10-day run) keeps the form
+// default rather than selecting nothing at all.
+const RELISTABLE_DURATIONS = ['3', '5', '7', '14'];
 
 // Common SA plains-game species for the PLAINS_GAME_HUNT multi-select.
 // The seller ticks whatever the package includes; sent as speciesList[].
@@ -136,6 +155,27 @@ function formatRand(cents: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+// Coerce a stored attribute map — from a relisted listing's `attributes`
+// JSON or from a restored localStorage draft — back into the string/boolean
+// shape the AttributeField inputs actually render. NUMBER attributes come
+// back as real numbers, and the text/select branches only render when
+// `typeof value === 'string'`, so without this a relisted item's numeric
+// specs came back blank. Anything else (null, nested objects) is dropped —
+// no input can render it and the backend would reject it anyway.
+function normaliseAttrValues(
+  raw: Record<string, unknown>,
+): Record<string, string | boolean> {
+  const out: Record<string, string | boolean> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'boolean' || typeof value === 'string') {
+      out[key] = value;
+    } else if (typeof value === 'number' && Number.isFinite(value)) {
+      out[key] = String(value);
+    }
+  }
+  return out;
 }
 
 // ─────────────────────────── Shared styles ───────────────────────────
@@ -399,8 +439,26 @@ export default function NewListingPage() {
   const [auditResult, setAuditResult] = useState<PreviewResult | null>(null);
   const [auditing, setAuditing] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
+  // Bumped every time the moderated text (title / description) changes.
+  // runAudit captures it before its request and refuses to cache a verdict
+  // once the value has moved on — without this, an audit already in flight
+  // when the seller starts typing would quietly re-fill the cache that the
+  // text-change effect below just cleared, and we'd be back to previewing a
+  // verdict computed from words the listing no longer contains.
+  const auditGenerationRef = useRef(0);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  // Publish progress. Uploads run one photo at a time (plus the firearm /
+  // supplier docs before the create), which on a slow mobile connection is a
+  // minute-plus of the modal button just saying "Publishing…". A seller who
+  // reads that as frozen and closes the PWA mid-upload is exactly how an
+  // ACTIVE photo-less listing gets stranded, so we narrate every step.
+  // `done` / `total` drive the bar and are photo counts (0/0 before the loop).
+  const [publishProgress, setPublishProgress] = useState<{
+    label: string;
+    done: number;
+    total: number;
+  } | null>(null);
   const [previousAttemptHashes, setPreviousAttemptHashes] = useState<string[]>([]);
 
   // Delivery + pickup-address state. Lives outside `form` because the
@@ -509,6 +567,31 @@ export default function NewListingPage() {
   const [attrValues, setAttrValues] = useState<Record<string, string | boolean>>(
     {},
   );
+  // Attribute values waiting to be re-applied once the category they belong
+  // to is selected. Both restore paths (localStorage draft + Relist prefill)
+  // set the categoryId and the attribute values in the same tick, but the
+  // category effect below reacts to that categoryId change by clearing
+  // attrValues and refetching the defs — so a plain setAttrValues() is wiped
+  // milliseconds later. Instead both paths PARK their values here, keyed by
+  // the category the values were captured under, and the category effect
+  // claims them. Keyed (not a bare map) so a seller who restores a draft and
+  // then switches category doesn't drag the old category's answers along.
+  const pendingAttrValuesRef = useRef<{
+    categoryId: string;
+    values: Record<string, string | boolean>;
+  } | null>(null);
+  // Delivery picks waiting for their category to land — the same problem
+  // pendingAttrValuesRef solves, one section further down the form. A restore
+  // (draft or Relist) sets shippingMethods and the categoryId in one tick, but
+  // the isFirearm reset effect below fires on that category transition and
+  // stamps the DEFAULT pick over the restored one: a relisted firearm silently
+  // lost the PRIVATE_ARRANGE option the seller had offered last time. Keyed by
+  // category so picks from a category the seller has since left are dropped
+  // rather than dragged into an incompatible method set.
+  const pendingShippingRef = useRef<{
+    categoryId: string;
+    methods: ShippingMethod[];
+  } | null>(null);
 
   const [form, setForm] = useState({
     title: '',
@@ -543,6 +626,19 @@ export default function NewListingPage() {
     buyNowPrice: '',
   });
 
+  // Furthest step the seller has explicitly advanced to via the Continue
+  // button (or Fill form / Continue inside the Step 1 AI helper). Header
+  // clicks can navigate BACK to any earlier step, but never FORWARD — the
+  // only way to unlock a future step is the explicit Continue action.
+  // This is what the operator asked for: "Only the continue or fill form
+  // button can jump to the next box."
+  //
+  // Declared up here, above the accordion state it belongs with, because the
+  // two restore paths below (localStorage draft + Relist prefill) need to
+  // re-open the steps they just filled in. The rule still holds: a restored
+  // seller HAD clicked Continue — the page just forgot it.
+  const [furthestStep, setFurthestStep] = useState<1 | 2 | 3 | 4>(1);
+
   // ─── Draft persistence ──────────────────────────────────────────
   // Multi-step accordion + photo upload + Claude moderation = the
   // form is a long-haul commitment for sellers. Without this an
@@ -566,16 +662,65 @@ export default function NewListingPage() {
   const searchParams = useSearchParams();
   const relistFromId = searchParams.get('relistFrom');
   const relistDoneRef = useRef(false);
+  // Whether a saved draft already existed when the page mounted. MUST be
+  // captured on the relist effect's first pass: that effect now waits for
+  // Clerk (see below), and by the time Clerk resolves the save effect further
+  // down has already written this session's own — empty — form to the same
+  // localStorage key. Re-reading the key at that point would always look like
+  // a live draft and the relist would silently seed nothing at all. Effects
+  // run in declaration order, and this one is declared above the save effect,
+  // so the first read is the honest one.
+  const draftAtMountRef = useRef<boolean | null>(null);
+  // True once a relist actually seeded the form. Drives the "details carried
+  // over" notice AND the step-lock exception below — without a visible cue,
+  // a seller who lands on a form where Steps 2-4 are already open and filled
+  // has no idea where the answers came from or what still needs their eyes.
+  const [relistPrefilled, setRelistPrefilled] = useState(false);
+
+  // ?type=<mode> seed. Surfaces that send a seller here for a SPECIFIC selling
+  // mode (the swap panel's "list an item to trade" CTA) can pre-pick it, so the
+  // seller lands on a form already set to what they clicked instead of having
+  // to rediscover the mode they just asked for. One-shot, and a saved draft or
+  // a relist prefill always wins. Unknown values are ignored — the Step-3 gate
+  // still requires a deliberate choice.
+  const typeParam = searchParams.get('type');
+  const typeSeedRef = useRef(false);
+  useEffect(() => {
+    if (typeSeedRef.current || !typeParam || relistFromId) return;
+    const allowed = ['BUY_NOW', 'AUCTION', 'TAKE_A_SHOT', 'SWOP'] as const;
+    const match = allowed.find((t) => t === typeParam.toUpperCase());
+    if (!match) return;
+    typeSeedRef.current = true;
+    if (typeof window !== 'undefined' && localStorage.getItem(draftKey)) return;
+    setForm((f) => (f.listingType ? f : { ...f, listingType: match }));
+  }, [typeParam, relistFromId, draftKey]);
   useEffect(() => {
     if (relistDoneRef.current || !relistFromId) return;
+    // Snapshot the draft key before anything else — see draftAtMountRef.
+    if (draftAtMountRef.current === null && typeof window !== 'undefined') {
+      draftAtMountRef.current = !!localStorage.getItem(draftKey);
+    }
+    // Hold until Clerk resolves. The detail fetch below now carries the
+    // seller's token: reservePrice / autoAcceptThreshold / autoDeclineThreshold
+    // are OWNER-gated on GET /listings/:id, so the old anonymous call quietly
+    // received the public projection and the reserve seeding this code has
+    // always claimed to do never populated anything. The effect re-runs the
+    // moment isLoaded flips, so this costs the seller a tick, not a step.
+    if (!isLoaded || !isSignedIn) return;
     relistDoneRef.current = true;
-    if (typeof window !== 'undefined' && localStorage.getItem(draftKey)) {
+    if (draftAtMountRef.current) {
       // A saved draft takes precedence — never overwrite in-progress work.
       return;
     }
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/listings/${relistFromId}`);
+        const token = await getToken().catch(() => null);
+        const res = await fetch(`${API_URL}/listings/${relistFromId}`, {
+          // Owner-specific fields come back here — never let this response
+          // sit in a shared cache.
+          cache: 'no-store',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         if (!res.ok) return;
         const l = (await res.json()) as {
           title?: string;
@@ -584,9 +729,85 @@ export default function NewListingPage() {
           condition?: string;
           province?: string;
           price?: number; // cents
-          reservePrice?: number | null; // cents
-          attributes?: Record<string, string | boolean> | null;
+          reservePrice?: number | null; // cents — owner-only field
+          autoAcceptThreshold?: number | null; // cents — owner-only field
+          autoDeclineThreshold?: number | null; // cents — owner-only field
+          listingType?: string;
+          durationDays?: number | null;
+          declaredValueCents?: number | null;
+          buyNowPrice?: number | null;
+          // Delivery + parcel — all public on the detail response, and all of
+          // it work the seller already did once.
+          shippingMethods?: string[] | null;
+          weightGrams?: number | null;
+          lengthCm?: number | null;
+          widthCm?: number | null;
+          heightCm?: number | null;
+          plannedDealerName?: string | null;
+          plannedDealerProvince?: string | null;
+          plannedDealerArea?: string | null;
+          // Unknown-valued: NUMBER attributes arrive as numbers, so the map
+          // is normalised (not spread) before it reaches the inputs.
+          attributes?: Record<string, unknown> | null;
         };
+        // Park the source listing's specifications BEFORE setForm — the
+        // categoryId change setForm triggers makes the category effect clear
+        // attrValues, so a direct setAttrValues here was silently wiped and
+        // the seller had to retype every spec on a relist. The ref is read
+        // synchronously by that same effect. Values are stringified because
+        // the inputs are string-driven (booleans stay boolean for checkboxes).
+        if (l.attributes && typeof l.attributes === 'object' && l.categoryId) {
+          pendingAttrValuesRef.current = {
+            categoryId: l.categoryId,
+            values: normaliseAttrValues(l.attributes),
+          };
+        }
+        // Delivery methods arrive as plain strings — keep only the ones this
+        // form renders. Parked as well as set, for the same reason the specs
+        // are: a firearm relist flips isFirearm, and that effect would stamp
+        // the bare ['DEALER_TRANSFER'] default over the seller's real picks.
+        const methods = Array.isArray(l.shippingMethods)
+          ? l.shippingMethods.filter((m): m is ShippingMethod =>
+              SHIPPING_METHOD_VALUES.includes(m as ShippingMethod),
+            )
+          : [];
+        if (methods.length > 0) {
+          if (l.categoryId) {
+            pendingShippingRef.current = {
+              categoryId: l.categoryId,
+              methods,
+            };
+          }
+          setShippingMethods(methods);
+        }
+        // Parcel — the seller measured and weighed this box once already.
+        // Stored server-side as grams + whole cm; the inputs are kg + cm
+        // strings. Functional update so a profile-default prefill that landed
+        // first is overwritten by the real numbers, not the other way round.
+        setParcel((p) => ({
+          weightKg:
+            l.weightGrams != null ? String(l.weightGrams / 1000) : p.weightKg,
+          lengthCm: l.lengthCm != null ? String(l.lengthCm) : p.lengthCm,
+          widthCm: l.widthCm != null ? String(l.widthCm) : p.widthCm,
+          heightCm: l.heightCm != null ? String(l.heightCm) : p.heightCm,
+        }));
+        // Planned dealer-stock location (firearms/barrels only — the fields
+        // simply don't render for anything else, so seeding them is inert).
+        if (l.plannedDealerName) setPlannedDealerName(l.plannedDealerName);
+        if (l.plannedDealerProvince) {
+          setPlannedDealerProvince(l.plannedDealerProvince);
+        }
+        if (l.plannedDealerArea) setPlannedDealerArea(l.plannedDealerArea);
+        // Selling mode — only one of the four the Step-3 cards render. Anything
+        // else leaves it blank so the step still demands a deliberate choice.
+        const relistType = SELL_MODES.some((m) => m.value === l.listingType)
+          ? (l.listingType as string)
+          : '';
+        const relistDuration = RELISTABLE_DURATIONS.includes(
+          String(l.durationDays ?? ''),
+        )
+          ? String(l.durationDays)
+          : null;
         setForm((f) => ({
           ...f,
           title: l.title ?? f.title,
@@ -600,15 +821,42 @@ export default function NewListingPage() {
             l.reservePrice != null
               ? String(l.reservePrice / 100)
               : f.reservePrice,
+          // "How are you selling?" — asked and answered last time round.
+          listingType: relistType || f.listingType,
+          durationDays: relistDuration ?? f.durationDays,
+          // Each mode's own required number, so seeding the mode doesn't drop
+          // the seller into a step that's suddenly incomplete: SWOP needs a
+          // declared value, Take a Shot carries the offer thresholds, and an
+          // auction's Buy Now stays opted-in with its price.
+          declaredValue:
+            l.declaredValueCents != null
+              ? String(l.declaredValueCents / 100)
+              : f.declaredValue,
+          autoAcceptThreshold:
+            l.autoAcceptThreshold != null
+              ? String(l.autoAcceptThreshold / 100)
+              : f.autoAcceptThreshold,
+          autoDeclineThreshold:
+            l.autoDeclineThreshold != null
+              ? String(l.autoDeclineThreshold / 100)
+              : f.autoDeclineThreshold,
+          offerBuyNow: l.buyNowPrice != null ? true : f.offerBuyNow,
+          buyNowPrice:
+            l.buyNowPrice != null
+              ? String(l.buyNowPrice / 100)
+              : f.buyNowPrice,
         }));
-        if (l.attributes && typeof l.attributes === 'object') {
-          setAttrValues((prev) => ({ ...prev, ...l.attributes! }));
-        }
+        // Steps 2-4 are now full of the seller's own answers — open their
+        // headers instead of making them click Continue three times through
+        // boxes they already filled in a previous listing. Publish is still
+        // gated on stepComplete (photos included), so nothing skips validation.
+        setFurthestStep(4);
+        setRelistPrefilled(true);
       } catch {
         // Source gone / network — fall through to a blank form.
       }
     })();
-  }, [relistFromId]);
+  }, [relistFromId, isLoaded, isSignedIn, getToken, draftKey]);
 
   // Restore on mount (one-shot ref so a re-render doesn't loop).
   const restoredRef = useRef(false);
@@ -631,12 +879,45 @@ export default function NewListingPage() {
         plannedDealerName?: string;
         plannedDealerProvince?: string;
         plannedDealerArea?: string;
+        // Everything below used to be left out of the draft, which meant a
+        // PWA reload silently reset it: required specifications came back
+        // blank, a multi-unit seller's quantity fell back to 1 (they could
+        // publish single-stock without noticing), and a firearm seller had
+        // to retype the serial. All of it is plain serialisable data — only
+        // File objects (photos, licence/serial/supplier docs) can't survive.
+        attrValues?: Record<string, unknown>;
+        stock?: string;
+        serialNumber?: string;
+        paConsent?: boolean;
+        papersAttested?: boolean;
+        // How far the seller had explicitly Continue'd. Without it every box
+        // below Step 1 came back locked and the restore felt broken.
+        furthestStep?: number;
       };
+      // Park the specs BEFORE setForm — see pendingAttrValuesRef. setForm
+      // changes categoryId, which makes the category effect wipe attrValues,
+      // so restoring them directly here would lose them again.
+      if (d.attrValues && d.form?.categoryId) {
+        pendingAttrValuesRef.current = {
+          categoryId: d.form.categoryId,
+          values: normaliseAttrValues(d.attrValues),
+        };
+      }
       if (d.form) setForm(d.form);
       if (d.parcel) setParcel(d.parcel);
       if (d.pickupAddress) setPickupAddress(d.pickupAddress);
       if (d.pickupLat !== undefined) setPickupLat(d.pickupLat);
       if (d.pickupLng !== undefined) setPickupLng(d.pickupLng);
+      // Park the delivery picks as well as setting them — see
+      // pendingShippingRef. The restored categoryId makes isFirearm flip a
+      // commit or two later (once /categories resolves), and that reset effect
+      // would otherwise stamp the default pick over what's restored here.
+      if (d.shippingMethods?.length && d.form?.categoryId) {
+        pendingShippingRef.current = {
+          categoryId: d.form.categoryId,
+          methods: d.shippingMethods,
+        };
+      }
       if (d.shippingMethods) setShippingMethods(d.shippingMethods);
       if (d.plannedDealerName !== undefined) {
         setPlannedDealerName(d.plannedDealerName);
@@ -646,6 +927,31 @@ export default function NewListingPage() {
       }
       if (d.plannedDealerArea !== undefined) {
         setPlannedDealerArea(d.plannedDealerArea);
+      }
+      if (typeof d.stock === 'string') setStock(d.stock);
+      if (typeof d.serialNumber === 'string') setSerialNumber(d.serialNumber);
+      // Consents restore as the seller left them — same device, same seller,
+      // and both are still visibly ticked next to their wording, with the
+      // publish-time guards unchanged.
+      if (typeof d.paConsent === 'boolean') setPaConsent(d.paConsent);
+      if (typeof d.papersAttested === 'boolean') {
+        setPapersAttested(d.papersAttested);
+      }
+      // Re-open the steps the seller had already Continue'd through. The
+      // operator's "only Continue unlocks the next box" rule is intact — they
+      // DID click it last session, the draft just forgot. Without this the
+      // restore handed them four filled-in boxes with three of them locked and
+      // no way forward except clicking Continue through work already done.
+      // We deliberately do NOT restore which step was expanded: photos are the
+      // one thing a draft can never carry (File objects don't serialise), so
+      // Step 1 is always the real next action — and every step below it is now
+      // one header click away.
+      if (
+        typeof d.furthestStep === 'number' &&
+        d.furthestStep >= 1 &&
+        d.furthestStep <= 4
+      ) {
+        setFurthestStep(Math.floor(d.furthestStep) as 1 | 2 | 3 | 4);
       }
       setDraftRestored(true);
     } catch {
@@ -671,6 +977,18 @@ export default function NewListingPage() {
           plannedDealerName,
           plannedDealerProvince,
           plannedDealerArea,
+          // Specifications / quantity / serial / consents — all plain data,
+          // all previously lost on a reload. attrValues is saved as-is
+          // (strings + booleans) and re-applied via pendingAttrValuesRef on
+          // restore, since the category effect clears it on the way in.
+          attrValues,
+          stock,
+          serialNumber,
+          paConsent,
+          papersAttested,
+          // Progress, not data — but losing it is what made a restore feel
+          // like starting over. See the restore branch above.
+          furthestStep,
         }),
       );
     } catch {
@@ -686,6 +1004,12 @@ export default function NewListingPage() {
     plannedDealerName,
     plannedDealerProvince,
     plannedDealerArea,
+    attrValues,
+    stock,
+    serialNumber,
+    paConsent,
+    papersAttested,
+    furthestStep,
   ]);
 
   // Discard the draft (lets the seller force a clean slate).
@@ -870,16 +1194,33 @@ export default function NewListingPage() {
   // keys (the backend drops unknown keys anyway, but no point sending them).
   useEffect(() => {
     const categoryId = form.categoryId;
-    // No category picked yet — clear any prior defs/values.
+    // No category picked yet — clear any prior defs/values. Parked values are
+    // deliberately LEFT ALONE here: on mount this effect runs with the
+    // still-empty categoryId one commit BEFORE the restored/relisted category
+    // lands, so clearing the ref here would throw the restore away.
     if (!categoryId) {
       setAttrDefs([]);
       setAttrValues({});
       return;
     }
     let cancelled = false;
+    // Claim any values parked for THIS category by the draft restore or the
+    // Relist prefill (see pendingAttrValuesRef). We deliberately do NOT clear
+    // the ref on a match: React 19 strict mode (and fast refresh) re-runs this
+    // effect, and a one-shot claim would blank the seller's restored specs on
+    // the second pass. Values parked for a category the seller has since
+    // moved away from ARE dropped, so old answers can't leak into a new
+    // attribute set.
+    const parked = pendingAttrValuesRef.current;
+    const restored =
+      parked && parked.categoryId === categoryId ? parked.values : null;
+    if (parked && parked.categoryId !== categoryId) {
+      pendingAttrValuesRef.current = null;
+    }
     // Clear stale values immediately so the previous category's inputs don't
-    // flash while the new defs load.
-    setAttrValues({});
+    // flash while the new defs load (restored values, when present, take
+    // their place — the fields read them the moment the defs land).
+    setAttrValues(restored ?? {});
     setAttrDefs([]);
     (async () => {
       try {
@@ -1014,9 +1355,20 @@ export default function NewListingPage() {
   useEffect(() => {
     if (lastIsFirearm.current !== isFirearm) {
       lastIsFirearm.current = isFirearm;
-      setShippingMethods(isFirearm ? ['DEALER_TRANSFER'] : []);
+      // A restore (draft or Relist) parked the seller's real picks for THIS
+      // category — honour them instead of stamping the default over the top.
+      // This transition always fires on a firearm restore (isFirearm can only
+      // become true once /categories resolves, which is after the restore),
+      // which is how a relisted firearm used to lose its PRIVATE_ARRANGE
+      // offer. Claimed once and cleared: the transition can't repeat for the
+      // same category, so nothing resurrects a pick the seller later drops.
+      const parked = pendingShippingRef.current;
+      const restored =
+        parked && parked.categoryId === form.categoryId ? parked.methods : null;
+      if (restored) pendingShippingRef.current = null;
+      setShippingMethods(restored ?? (isFirearm ? ['DEALER_TRANSFER'] : []));
     }
-  }, [isFirearm]);
+  }, [isFirearm, form.categoryId]);
   // Defensive: even if DEALER_TRANSFER somehow gets stripped (e.g.
   // pill-group bug, hot-reload race), force it back in for firearms.
   useEffect(() => {
@@ -1253,13 +1605,16 @@ export default function NewListingPage() {
   const [expandedStep, setExpandedStep] = useState<1 | 2 | 3 | 4 | null>(1);
   const isOpen = (n: number) => expandedStep === n;
 
-  // Furthest step the seller has explicitly advanced to via the Continue
-  // button (or Fill form / Continue inside the Step 1 AI helper). Header
-  // clicks can navigate BACK to any earlier step, but never FORWARD — the
-  // only way to unlock a future step is the explicit Continue action.
-  // This is what the operator asked for: "Only the continue or fill form
-  // button can jump to the next box."
-  const [furthestStep, setFurthestStep] = useState<1 | 2 | 3 | 4>(1);
+  // `furthestStep` lives further up the file (next to the draft-persistence
+  // block) so the draft-restore and Relist-prefill effects can re-open the
+  // steps they just filled in. Everything that reads it lives here.
+
+  // Both restore paths hand the seller a form full of their own answers with
+  // ONE unavoidable hole: the photos. File objects don't serialise into a
+  // draft and can't be carried across a relist, so Step 1 is guaranteed
+  // incomplete on those paths. statusFor uses this to stop that single gap
+  // from re-locking the steps behind it.
+  const stepsPreUnlocked = draftRestored || relistPrefilled;
 
   function toggleStep(n: 1 | 2 | 3 | 4) {
     // Hard gate: can't jump forward via header click. Have to use the
@@ -1300,6 +1655,13 @@ export default function NewListingPage() {
     const key = `step${n}` as keyof typeof stepComplete;
     if (stepComplete[key]) return 'complete';
     for (let i = 1; i < n; i++) {
+      // Exception for a restored draft / relist: the missing photos (see
+      // stepsPreUnlocked) would otherwise dim every step behind them, so the
+      // seller would be looking at three greyed-out boxes full of their own
+      // work with no way in — exactly the "feels broken" the restore is meant
+      // to fix. Preview / Publish still gates on stepComplete.step1, so a
+      // photo-less listing can't slip out this way.
+      if (i === 1 && stepsPreUnlocked) continue;
       if (!stepComplete[`step${i}` as keyof typeof stepComplete]) return 'locked';
     }
     return 'active';
@@ -1634,6 +1996,9 @@ export default function NewListingPage() {
     // step numbers were re-ordered (Photos first, basics second) so
     // the basics gate is now step2, not step1.
     if (!stepComplete.step2) return null;
+    // Snapshot of which version of the text this audit is about — compared
+    // again before we cache the verdict (see auditGenerationRef).
+    const generation = auditGenerationRef.current;
     setAuditing(true);
     setAuditError(null);
     try {
@@ -1661,7 +2026,13 @@ export default function NewListingPage() {
         throw new Error(msg);
       }
       const result = data as PreviewResult;
-      setAuditResult(result);
+      // Only cache a verdict that still describes the current text. If the
+      // seller edited the title/description while this was in flight, the
+      // caller (handlePreview) still gets this result to show once, but the
+      // cache stays empty so the next Preview re-checks the new wording.
+      if (auditGenerationRef.current === generation) {
+        setAuditResult(result);
+      }
       return result;
     } catch (err) {
       setAuditError(
@@ -1782,6 +2153,7 @@ export default function NewListingPage() {
     }
     setSubmitting(true);
     setPublishError(null);
+    setPublishProgress({ label: 'Preparing your listing…', done: 0, total: 0 });
     let createdListingId: string | null = null;
     try {
       const body = buildListingPayload();
@@ -1801,6 +2173,11 @@ export default function NewListingPage() {
       // created. Mirrors the Authorization header pattern used by the
       // /users/me fetch and the per-image upload below.
       if (isFirearm && serialPhoto && licencePhoto) {
+        setPublishProgress({
+          label: 'Uploading your serial and licence photos…',
+          done: 0,
+          total: 0,
+        });
         const docsForm = new FormData();
         docsForm.append('serialPhoto', serialPhoto);
         docsForm.append('licencePhoto', licencePhoto);
@@ -1835,6 +2212,11 @@ export default function NewListingPage() {
       // no listing is created. The returned Cloudinary URLs are attached to
       // the create body.
       if (isExperience && supplierInsuranceDoc && supplierRegDoc) {
+        setPublishProgress({
+          label: 'Uploading your supplier documents…',
+          done: 0,
+          total: 0,
+        });
         const docsForm = new FormData();
         docsForm.append('insuranceDoc', supplierInsuranceDoc);
         docsForm.append('registrationDoc', supplierRegDoc);
@@ -1871,6 +2253,11 @@ export default function NewListingPage() {
       // the time the upload request arrived → 401 "Unauthorized" on
       // "Photo 1". getToken() returns the cached token while valid and
       // only refreshes near expiry, so calling it per request is cheap.
+      setPublishProgress({
+        label: 'Creating your listing…',
+        done: 0,
+        total: images.length,
+      });
       const createToken = await getToken();
       const res = await fetch(`${API_URL}/listings`, {
         method: 'POST',
@@ -1896,6 +2283,13 @@ export default function NewListingPage() {
       // message points at the right one.
       let uploaded = 0;
       for (const file of images) {
+        // Narrate BEFORE the request, not after — the seller needs to see
+        // "photo 3 of 6" while photo 3 is actually in flight.
+        setPublishProgress({
+          label: `Uploading photo ${uploaded + 1} of ${images.length}…`,
+          done: uploaded,
+          total: images.length,
+        });
         const fd = new FormData();
         // IMPORTANT: backend FileInterceptor expects the multipart
         // field name `image` (see backend ListingsController). The
@@ -1923,6 +2317,14 @@ export default function NewListingPage() {
           );
         }
         uploaded += 1;
+        setPublishProgress({
+          label:
+            uploaded === images.length
+              ? 'Photos uploaded — finishing up…'
+              : `Uploading photo ${uploaded + 1} of ${images.length}…`,
+          done: uploaded,
+          total: images.length,
+        });
       }
 
       // Successful publish — clear the localStorage draft so the
@@ -1946,6 +2348,7 @@ export default function NewListingPage() {
       ) {
         setPendingRedirectId(listing.id);
         setSubmitting(false);
+        setPublishProgress(null);
         return;
       }
       router.push(`/listings/${listing.id}`);
@@ -1978,6 +2381,10 @@ export default function NewListingPage() {
           : baseMsg,
       );
       setSubmitting(false);
+      // Drop the progress line — the modal's error block is now the thing
+      // the seller must read, and a frozen "Uploading photo 4 of 6…" next
+      // to it would read as if the upload were still running.
+      setPublishProgress(null);
     }
   }
 
@@ -2025,6 +2432,22 @@ export default function NewListingPage() {
     // to complete.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images]);
+
+  // Drop the cached audit the moment the moderated text changes. The cache is
+  // only refreshed on a Step-2 Continue or a photo change, so a seller who
+  // goes BACK to Step 2, edits the title/description and then leaves via a
+  // header click (no Continue) left auditResult pointing at the old words:
+  // handlePreview's `auditResult ?? runAudit()` then opened the modal with a
+  // stale verdict, a stale issue count and — worse — a cleanedDescription
+  // built from text that no longer exists. Someone who fixed the flagged
+  // wording still saw the old issues; someone who ADDED a phone number sailed
+  // past the preview and only got caught by the server on create. Clearing
+  // here forces handlePreview to re-audit the current text. The photo effect
+  // above and the Continue handler still cover their own cases.
+  useEffect(() => {
+    auditGenerationRef.current += 1;
+    setAuditResult(null);
+  }, [form.title, form.description]);
 
   // Reveal handled by <PageReveal> below — same house-standard 0.5s
   // delay + 1.0s duration we use on every other page. The previous
@@ -2088,9 +2511,12 @@ export default function NewListingPage() {
       </header>
 
       {/* Draft restored notice — appears when a previous session's
-          form data was loaded from localStorage. Reminds the seller
-          that photos still need to be re-selected (File objects don't
-          serialise). Dismiss button discards the draft. */}
+          form data was loaded from localStorage. The draft now also carries
+          the specifications, quantity, serial number and consents, so the
+          only things genuinely lost are the File uploads (photos, and for a
+          firearm/experience the licence, serial or supplier documents) —
+          say exactly that rather than "photos", which used to leave sellers
+          hunting for what else had quietly reset. Dismiss discards the draft. */}
       {draftRestored && (
         <div
           className="mb-6 px-4 py-3 rounded-[6px] text-sm max-w-[760px]"
@@ -2107,8 +2533,13 @@ export default function NewListingPage() {
         >
           <span>
             <strong style={{ color: '#2f9e6b' }}>Draft restored</strong> —
-            your previously typed details are back. You&apos;ll need to
-            re-select photos before you can publish.
+            your typed details are back, including specifications, quantity
+            and anything you&apos;d ticked, and every step you&apos;d already
+            worked through is open again. Uploads can&apos;t be saved on
+            this device, so re-select your photos
+            {isFirearm ? ' and your serial and licence photos' : ''}
+            {isExperience ? ' and your supplier documents' : ''} before you
+            publish.
           </span>
           <button
             type="button"
@@ -2126,6 +2557,34 @@ export default function NewListingPage() {
           >
             Discard draft
           </button>
+        </div>
+      )}
+
+      {/* Relist notice — the seller came from the Relist CTA, so the form
+          arrived pre-filled from their previous listing and Steps 2-4 are
+          already unlocked. Without saying so, a form that mysteriously knows
+          your parcel dimensions reads as a bug. Suppressed when a draft
+          restore also fired: that notice already explains the same thing, and
+          a live draft wins over the relist seed anyway. */}
+      {relistPrefilled && !draftRestored && (
+        <div
+          className="mb-6 px-4 py-3 rounded-[6px] text-sm max-w-[760px]"
+          style={{
+            background: 'rgba(47,158,107,0.10)',
+            border: '0.5px solid rgba(47,158,107,0.45)',
+            color: 'var(--text-primary)',
+            lineHeight: 1.5,
+          }}
+        >
+          <strong style={{ color: '#2f9e6b' }}>Details carried over</strong> —
+          your previous listing&apos;s description, specifications, selling
+          type, price and delivery options are already filled in, so every step
+          is open for review. Check each one, adjust your price if it
+          didn&apos;t sell last time, then add fresh photos before you publish.
+          {/* Compliance capture is deliberately never carried over: the serial
+              and the licence/serial photos are re-verified on every publish. */}
+          {isFirearm &&
+            ' Your serial number and the serial and licence photos always have to be captured again.'}
         </div>
       )}
 
@@ -2461,7 +2920,13 @@ export default function NewListingPage() {
           <StepAccordion
             number={3}
             title="How are you selling?"
-            description="Each option has different rules. You can always change later."
+            // "You can always change later" was untrue and expensive: the
+            // edit page locks the listing type (and auction duration) the
+            // moment a listing publishes, and locks the whole listing once a
+            // bid or offer lands. A seller who picked Auction on that
+            // reassurance had to cancel — and eat the bidder-trust hit — to
+            // change anything.
+            description="Each option has different rules. The listing type is locked once published, so pick the one that fits."
             status={statusFor(3)}
             expanded={isOpen(3)}
             onToggle={() => toggleStep(3)}
@@ -2484,7 +2949,7 @@ export default function NewListingPage() {
             <Field
               label="Listing type"
               required
-              tipTitle="Three ways to sell"
+              tipTitle="Four ways to sell"
               tip={
                 <>
                   <strong>Marketplace:</strong> fixed price, buyer hits Buy
@@ -2498,6 +2963,11 @@ export default function NewListingPage() {
                   <strong>Swop / Trade:</strong> buyers propose trading their
                   item for yours, with optional cash either way. Good when
                   you&apos;d rather upgrade than sell.
+                  <br />
+                  <br />
+                  Whichever you pick is locked once the listing publishes —
+                  changing it later means cancelling and relisting, so take the
+                  extra minute here.
                 </>
               }
             >
@@ -4311,6 +4781,64 @@ export default function NewListingPage() {
           onEdit={handleClosePreview}
           onPublish={handlePublish}
         />
+      )}
+
+      {/* Publish progress. The preview modal's button only ever says
+          "Publishing…", so six photos on a slow mobile connection look
+          identical to a frozen page — and a seller who force-closes the PWA
+          mid-upload is precisely how an ACTIVE photo-less listing gets
+          stranded. This sits ABOVE the modal (z-[70]; the modal is z-[60],
+          the PWA tab bar z-55), counts the photo currently in flight, and
+          says in as many words not to close the page. role="status" so
+          screen readers get each step without stealing focus. */}
+      {submitting && publishProgress && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed left-1/2 z-[70] rounded-[8px] px-4 py-3"
+          style={{
+            // Width in the style object rather than an arbitrary Tailwind
+            // class: `calc()` needs real spaces around the minus, which the
+            // class syntax can't carry cleanly.
+            width: 'calc(100% - 32px)',
+            maxWidth: 420,
+            bottom: 'calc(20px + env(safe-area-inset-bottom))',
+            transform: 'translateX(-50%)',
+            background: 'var(--bg-card)',
+            border: '0.5px solid var(--border)',
+          }}
+        >
+          <p
+            className="text-sm"
+            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+          >
+            {publishProgress.label}
+          </p>
+          {/* Determinate bar only once we know the photo count — before the
+              create call there's nothing honest to fill it with. */}
+          {publishProgress.total > 0 && (
+            <div
+              className="mt-2 rounded-[2px] overflow-hidden"
+              style={{ height: 4, background: 'var(--bg-inset)' }}
+            >
+              <div
+                style={{
+                  width: `${Math.round((publishProgress.done / publishProgress.total) * 100)}%`,
+                  height: '100%',
+                  background: 'var(--red)',
+                  transition: 'width 200ms linear',
+                }}
+              />
+            </div>
+          )}
+          <p
+            className="text-xs mt-2"
+            style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+          >
+            Keep this page open until it finishes — closing it mid-upload can
+            leave your listing live with photos missing.
+          </p>
+        </div>
       )}
 
       {/* Post-publish profile-completion gate. Pops when the listing

@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminPageHeader } from '@/components/admin/page-header';
+import { AdminCsvButton, type CsvColumn } from '@/components/admin/csv-export';
 
 interface PnlDeal {
   id: string;
@@ -48,6 +49,27 @@ interface PnlReport {
   totals: PnlTotals;
   deals: PnlDeal[];
 }
+
+// Money exported as PLAIN RAND NUMBERS, not the en-ZA display strings — the
+// on-screen formatter emits a non-breaking space that Excel imports as text,
+// which silently breaks the accountant's SUM on the column that matters most.
+const rands = (cents: number) => Number((cents / 100).toFixed(2));
+
+const PNL_CSV: CsvColumn<PnlDeal>[] = [
+  { header: 'Deal', value: (d) => d.title },
+  { header: 'Status', value: (d) => d.status },
+  { header: 'Drop date', value: (d) => d.dropDate?.slice(0, 10) ?? '' },
+  { header: 'Units sold', value: (d) => d.unitsSold },
+  { header: 'Initial stock', value: (d) => d.initialStock },
+  { header: 'Sell-through %', value: (d) => d.sellThroughPct },
+  { header: 'Cost price ZAR', value: (d) => rands(d.costPriceCents) },
+  { header: 'Deal price ZAR', value: (d) => rands(d.dealPriceCents) },
+  { header: 'Product sales ZAR', value: (d) => rands(d.grossSalesCents) },
+  { header: 'Refunds ZAR', value: (d) => rands(d.refundsCents) },
+  { header: 'COGS ZAR', value: (d) => rands(d.cogsCents) },
+  { header: 'Gross profit ZAR', value: (d) => rands(d.grossProfitCents) },
+  { header: 'Margin %', value: (d) => d.grossMarginPct },
+];
 
 function formatRand(cents: number, compact = false): string {
   const rand = cents / 100;
@@ -256,13 +278,26 @@ export default function DealsPnlPage() {
             className="rounded-[8px] overflow-hidden"
             style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
           >
-            <div className="px-4 py-3" style={{ borderBottom: '0.5px solid var(--border)' }}>
-              <p className="text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                Per-deal breakdown
-              </p>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                Best performers first (by gross profit).
-              </p>
+            <div
+              className="px-4 py-3 flex items-start justify-between gap-3"
+              style={{ borderBottom: '0.5px solid var(--border)' }}
+            >
+              <div>
+                <p className="text-sm" style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                  Per-deal breakdown
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                  Best performers first (by gross profit).
+                </p>
+              </div>
+              {/* The accountant conversation runs off this table — exporting it
+                  beats retyping figures out of a dark-themed screenshot. */}
+              <AdminCsvButton
+                rows={deals}
+                columns={PNL_CSV}
+                table="deals p and l"
+                range={from && to ? `${from}-to-${to}` : undefined}
+              />
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm" style={{ minWidth: 720 }}>

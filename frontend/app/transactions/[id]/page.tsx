@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { Transaction, PaymentStatus, ShippingStatus } from '@/lib/types';
 import { formatPrice, PROVINCE_LABELS } from '@/lib/utils';
+import { REFUND_ETA_COPY, paymentStatusHint } from '@/lib/status-labels';
 import { DispatchButton } from './dispatch-button';
 import { ConfirmDeliveryButton } from './confirm-delivery-button';
 import { DownloadReceiptButton } from './download-receipt-button';
@@ -15,6 +16,7 @@ import { AcceptRejectPanel } from './accept-reject-panel';
 import BuyerCancelPanel from './buyer-cancel-panel';
 import PodProofSection from './pod-proof-section';
 import ExperienceOrderPanel from './experience-order-panel';
+import AwaitingAcceptChip from './awaiting-accept-chip';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -190,10 +192,30 @@ export default async function TransactionPage({
     !txRating.sellerRespondedAt &&
     Date.now() - new Date(txRating.createdAt).getTime() < 30 * 86_400_000;
 
+  // Most buyers land here from an SMS/email deep link, so "← Back" pointing
+  // at "/" dumped them on the homepage with no route to the rest of their
+  // orders. Send each side to the list they came from instead: a cart line
+  // (orderId set) back to its parent order, otherwise buyer → My Orders,
+  // seller → My Sales. lib/types.ts doesn't declare orderId yet (that file
+  // belongs to another slice of this batch) but the API returns the full
+  // Transaction row, so read it through a narrow cast.
+  const orderId =
+    (tx as unknown as { orderId?: string | null }).orderId ?? null;
+  const backHref = isBuyer
+    ? orderId
+      ? `/orders/${orderId}`
+      : '/my/orders'
+    : '/my/sales';
+  const backLabel = isBuyer
+    ? orderId
+      ? 'Back to this order'
+      : 'My orders'
+    : 'My sales';
+
   return (
     <main className="max-w-[1280px] mx-auto px-4 py-6">
-      <Link href="/" className="text-sm inline-block mb-6" style={{ color: 'var(--text-tertiary)' }}>
-        ← Back
+      <Link href={backHref} className="text-sm inline-block mb-6" style={{ color: 'var(--text-tertiary)' }}>
+        ← {backLabel}
       </Link>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 items-start">
@@ -823,62 +845,11 @@ export default async function TransactionPage({
           {/* FLOW-F4 (M14) — never show the "awaiting seller accept" countdown
               (which decays into a false auto-refund promise) for PRIVATE_ARRANGE:
               PA has no accept step and funds are already released. Mirrors canAccept. */}
-          {isBuyer && isPaidAwaitingAccept && !isPrivateArrange && !isExperience && tx.acceptDeadlineAt && (() => {
-            const deadline = new Date(tx.acceptDeadlineAt).getTime();
-            const msLeft = deadline - Date.now();
-            const hoursLeft = Math.max(0, Math.floor(msLeft / 3_600_000));
-            const expired = msLeft <= 0;
-            return (
-              <div
-                className="rounded-[8px] px-4 py-3"
-                style={{
-                  background: expired
-                    ? 'rgba(200,16,46,0.10)'
-                    : 'rgba(245,158,11,0.08)',
-                  border: `0.5px solid ${
-                    expired ? 'var(--red)' : 'rgba(245,158,11,0.45)'
-                  }`,
-                  lineHeight: 1.55,
-                }}
-              >
-                <p
-                  className="text-xs uppercase mb-1"
-                  style={{
-                    color: expired ? 'var(--red)' : '#f59e0b',
-                    letterSpacing: '0.06em',
-                    fontWeight: 600,
-                  }}
-                >
-                  {expired
-                    ? 'Seller missed accept window — admin reviewing'
-                    : `Awaiting seller accept · ${hoursLeft}h left`}
-                </p>
-                <p
-                  className="text-xs"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {expired ? (
-                    <>
-                      The seller didn&apos;t confirm in time. Our team has
-                      been alerted and will follow up — you don&apos;t need
-                      to do anything. If they can&apos;t fulfil, your
-                      payment is refunded automatically.
-                    </>
-                  ) : (
-                    <>
-                      We&apos;ve received your payment and the funds are{' '}
-                      <strong style={{ color: 'var(--text-primary)' }}>
-                        held safely
-                      </strong>{' '}
-                      by Gun Galore. The seller has 48 hours to confirm
-                      they can fulfil. If they don&apos;t, you&apos;ll be
-                      refunded automatically.
-                    </>
-                  )}
-                </p>
-              </div>
-            );
-          })()}
+          {/* The countdown itself lives in a client component so it ticks —
+              rendered here it froze at the server-render timestamp. */}
+          {isBuyer && isPaidAwaitingAccept && !isPrivateArrange && !isExperience && tx.acceptDeadlineAt && (
+            <AwaitingAcceptChip acceptDeadlineAt={tx.acceptDeadlineAt} />
+          )}
 
           {/* Rejected state — final, both buyer and seller see this. */}
           {isRejected && (
@@ -908,8 +879,11 @@ export default async function TransactionPage({
               >
                 {isBuyer ? (
                   <>
+                    {/* One refund ETA across the whole product — this block
+                        used to say 5–10 business days while the cancel panel
+                        said 3–7, for the identical card reversal. */}
                     The seller couldn&apos;t fulfil this order. Your refund
-                    is on the way — allow 5–10 business days to reflect on
+                    is on the way — allow {REFUND_ETA_COPY} to reflect on
                     your card. The listing has been re-activated if you
                     want to try with a different one.
                   </>
@@ -1278,7 +1252,12 @@ export default async function TransactionPage({
           </p>
 
           {/* Status badge */}
+          {/* `title` mirrors the /my/orders pill: hover on desktop,
+              long-press on iOS. The hint is method-aware because a firearm
+              DEALER_TRANSFER buyer has no confirm-delivery button to look
+              for — release hangs off the dealer stock-in check instead. */}
           <div
+            title={paymentStatusHint(tx.paymentStatus, tx.shippingMethod)}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium mb-4"
             style={{
               background: `${PAYMENT_STATUS_COLOR[tx.paymentStatus]}18`,

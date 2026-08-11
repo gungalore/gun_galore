@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { BrowseRailShell } from '@/components/browse-rail-shell';
 import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
+import { browseMetaDescription } from '@/lib/seo';
 import type { BrandSummary } from '@/lib/types';
 
 // P5.7 — brand index. Lists every brand that clears the min-listings gate so
@@ -9,8 +10,9 @@ import type { BrandSummary } from '@/lib/types';
 
 export const metadata: Metadata = {
   title: 'Shop by brand — Gun Galore',
-  description:
-    "Browse gear by brand on Gun Galore — South Africa's marketplace for firearms, optics, hunting and outdoor equipment.",
+  // Shared blurb (lib/seo.ts) so the brand index, brand pages and category
+  // pages all describe the marketplace the same outdoor-first way.
+  description: browseMetaDescription('gear by brand'),
   alternates: { canonical: '/brands' },
 };
 

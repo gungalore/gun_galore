@@ -3,7 +3,12 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Transaction } from '@/lib/types';
-import { PAYMENT_STATUS, resolveStatus, toneColor } from '@/lib/status-labels';
+import {
+  PAYMENT_STATUS,
+  resolveStatus,
+  toneColor,
+  paymentStatusHint,
+} from '@/lib/status-labels';
 import { PageReveal } from '@/components/page-reveal';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -68,7 +73,11 @@ export default async function MySalesPage() {
           </p>
           <span
             className="text-xs px-2 py-0.5 rounded-full"
-            title={status.hint ?? status.label}
+            title={
+              paymentStatusHint(tx.paymentStatus, tx.shippingMethod) ??
+              status.hint ??
+              status.label
+            }
             style={{
               color,
               background: `${color}18`,

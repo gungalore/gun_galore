@@ -149,6 +149,24 @@ interface TransactionDossier {
     createdAt: string;
     adminUser: { email: string };
   }[];
+  // Complaints lodged against THIS order. A complaint can flip the order to
+  // DISPUTED and this page holds the release/refund buttons, so the case and
+  // its evidence belong here — previously the adjudicator had to eyeball-match
+  // it on /admin/complaints in another tab.
+  complaints: {
+    id: string;
+    referenceNumber: string;
+    category: string;
+    subject: string;
+    body: string;
+    status: string;
+    outcome: string | null;
+    drovePayoutHold: boolean;
+    createdAt: string;
+    resolvedAt: string | null;
+    user: { id: string; username: string | null };
+    photos: { id: string; url: string }[];
+  }[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -331,6 +349,136 @@ export default function TransactionDossierPage() {
             )}
           </div>
         </div>
+
+        {/* Complaints driving this order — rendered immediately above the
+            money buttons so the admin adjudicates WITH the evidence in view,
+            not from memory of another tab. */}
+        {(d.complaints?.length ?? 0) > 0 && (
+          <div
+            className="mt-4 pt-4"
+            style={{ borderTop: '0.5px solid var(--border)' }}
+          >
+            <p
+              className="text-xs uppercase tracking-wider mb-2"
+              style={{ color: 'var(--text-tertiary)' }}
+            >
+              Complaints on this order
+            </p>
+            <div className="flex flex-col gap-3">
+              {d.complaints.map((c) => (
+                <div
+                  key={c.id}
+                  className="rounded-[8px] p-3"
+                  style={{
+                    background: 'var(--bg-inset)',
+                    border: `0.5px solid ${c.drovePayoutHold ? 'var(--red)' : 'var(--border)'}`,
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                    <span
+                      className="text-xs"
+                      style={{
+                        fontFamily: 'ui-monospace, monospace',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      {c.referenceNumber}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {c.drovePayoutHold && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded-full"
+                          style={{
+                            background: 'rgba(200,16,46,0.12)',
+                            color: 'var(--red)',
+                            fontWeight: 600,
+                          }}
+                          title="Lodging this complaint put the order on hold"
+                        >
+                          HOLDING PAYOUT
+                        </span>
+                      )}
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded-full"
+                        style={{
+                          background: 'var(--bg-card)',
+                          border: '0.5px solid var(--border)',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        {c.status.replace(/_/g, ' ')}
+                      </span>
+                    </span>
+                  </div>
+                  <p
+                    className="text-sm mb-1"
+                    style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+                  >
+                    {c.subject}
+                  </p>
+                  <p
+                    className="text-xs mb-2"
+                    style={{ color: 'var(--text-tertiary)' }}
+                  >
+                    {c.category.replace(/_/g, ' ')} · lodged by{' '}
+                    {c.user.username ?? '—'} ·{' '}
+                    {new Date(c.createdAt).toLocaleDateString('en-ZA')}
+                  </p>
+                  <p
+                    className="text-xs whitespace-pre-wrap"
+                    style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+                  >
+                    {c.body}
+                  </p>
+                  {c.photos.length > 0 && (
+                    <div className="flex gap-2 mt-2 flex-wrap">
+                      {c.photos.map((p) => (
+                        <a
+                          key={p.id}
+                          href={p.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open full size"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={p.url}
+                            alt="Complaint evidence"
+                            style={{
+                              width: 64,
+                              height: 64,
+                              objectFit: 'cover',
+                              borderRadius: 4,
+                              border: '0.5px solid var(--border)',
+                            }}
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {c.outcome && (
+                    <p
+                      className="text-xs mt-2"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      <strong style={{ color: 'var(--text-primary)' }}>
+                        Outcome:
+                      </strong>{' '}
+                      {c.outcome}
+                    </p>
+                  )}
+                  <Link
+                    href="/admin/complaints"
+                    className="text-xs inline-block mt-2"
+                    style={{ color: 'var(--red)', textDecoration: 'none' }}
+                  >
+                    Open in complaints register →
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Action surface — release / refund / resolve dispute. Picks
             the correct controls based on paymentStatus. Every action

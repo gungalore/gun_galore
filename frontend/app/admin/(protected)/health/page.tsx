@@ -7,7 +7,8 @@
 // (and other admin pages going forward) does its own client-side
 // auth + fetch.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminSection as Section } from '@/components/admin/section';
 import AnalyticsTabs from '../analytics-tabs';
@@ -35,7 +36,15 @@ interface QueueDepth {
   count: number;
   thresholdWarn: number;
   thresholdAlarm: number;
+  /** Admin page + filter reproducing exactly this count. Absent where no
+   *  admin surface lists that queue — the card then stays unclickable. */
+  href?: string;
 }
+
+// How often the page re-probes on its own. 60s matches the credits page and
+// is well under the shortest cron interval, so an incident watcher sees a
+// service or cron recover without touching the keyboard.
+const POLL_MS = 60_000;
 
 function ago(iso: string | null): string {
   if (!iso) return 'never';
@@ -72,27 +81,48 @@ export default function HealthPage() {
   const [crons, setCrons] = useState<CronStatus[] | null>(null);
   const [queues, setQueues] = useState<QueueDepth[] | null>(null);
   const [loading, setLoading] = useState(true);
+  // Timestamp of the last completed probe sweep + a ticking clock, so the
+  // header can say how old the numbers are. During an incident "updated 4s
+  // ago" is the difference between trusting the page and hammering F5.
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [, setNowTick] = useState(0);
+  // Guards against overlapping sweeps: each probe has a 5s server-side
+  // timeout, so a slow round must not have a second one pile up behind it.
+  const inFlight = useRef(false);
 
-  useEffect(() => {
-    if (!requireAdminToken()) return; // redirects if no token
-
-    let cancelled = false;
-    (async () => {
+  const load = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
       const [sRes, cRes, qRes] = await Promise.all([
         adminFetch('/admin/health/services'),
         adminFetch('/admin/health/crons'),
         adminFetch('/admin/health/queues'),
       ]);
-      if (cancelled) return;
+      // Only overwrite on success — a failed refresh must leave the previous
+      // (still useful) reading on screen rather than blanking the page.
       if (sRes.ok) setServices(await sRes.json());
       if (cRes.ok) setCrons(await cRes.json());
       if (qRes.ok) setQueues(await qRes.json());
+      setLastUpdated(Date.now());
+    } finally {
+      inFlight.current = false;
       setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    }
   }, []);
+
+  useEffect(() => {
+    if (!requireAdminToken()) return; // redirects if no token
+    void load();
+    const poll = setInterval(() => void load(), POLL_MS);
+    // Re-tick every 10s purely so the "updated Xs ago" label stays honest
+    // between polls.
+    const tick = setInterval(() => setNowTick((n) => n + 1), 10_000);
+    return () => {
+      clearInterval(poll);
+      clearInterval(tick);
+    };
+  }, [load]);
 
   // Group services by category for easier visual scanning.
   const byCategory = new Map<string, Service[]>();
@@ -118,11 +148,29 @@ export default function HealthPage() {
         <h1 className="text-lg font-medium" style={{ color: 'var(--text-primary)' }}>
           System Health
         </h1>
-        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          {loading
-            ? 'Loading live probes...'
-            : 'Live probes · 5s timeout each · refresh by reloading the page'}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            {loading
+              ? 'Loading live probes...'
+              : `Live probes · 5s timeout each · auto-refreshes every 60s · updated ${ago(
+                  lastUpdated ? new Date(lastUpdated).toISOString() : null,
+                )}`}
+          </p>
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            className="text-xs px-2.5 py-1 rounded-[6px]"
+            style={{
+              background: 'var(--bg-card)',
+              color: 'var(--text-secondary)',
+              border: '0.5px solid var(--border)',
+              cursor: loading ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {loading ? 'Refreshing…' : 'Refresh now'}
+          </button>
+        </div>
       </div>
 
       <AnalyticsTabs />
@@ -298,13 +346,28 @@ export default function HealthPage() {
                   : q.count >= q.thresholdWarn
                     ? 'warn'
                     : 'ok';
-              return (
+              const card = (
                 <SummaryCard
-                  key={q.label}
                   label={q.label}
                   value={q.count}
                   tone={tone}
+                  actionable={!!q.href}
                 />
+              );
+              // The whole point of the card is "work waiting to be done" —
+              // make it open that work. Cards without an href (no admin
+              // surface lists that queue) stay as plain read-outs.
+              return q.href ? (
+                <Link
+                  key={q.label}
+                  href={q.href}
+                  style={{ textDecoration: 'none' }}
+                  aria-label={`${q.label}: ${q.count} — open queue`}
+                >
+                  {card}
+                </Link>
+              ) : (
+                <div key={q.label}>{card}</div>
               );
             })}
           </div>
@@ -318,10 +381,13 @@ function SummaryCard({
   label,
   value,
   tone,
+  actionable,
 }: {
   label: string;
   value: number;
   tone: 'ok' | 'warn' | 'alarm';
+  /** Rendered inside a Link — add the affordance so it reads as clickable. */
+  actionable?: boolean;
 }) {
   const colour =
     tone === 'alarm'
@@ -344,6 +410,11 @@ function SummaryCard({
       </p>
       <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
         {label}
+        {actionable && (
+          <span style={{ color: 'var(--text-tertiary)' }} aria-hidden>
+            {' →'}
+          </span>
+        )}
       </p>
     </div>
   );

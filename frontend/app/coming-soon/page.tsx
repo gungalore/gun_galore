@@ -16,7 +16,12 @@
 
 export const metadata = {
   title: 'Coming Soon — Gun Galore',
-  description: "South Africa's marketplace for firearms is launching soon.",
+  // Outdoor-first, same framing as the root layout and manifest. This gate
+  // is the ONLY page a gated visitor (or a crawler that hits us while the
+  // gate is on) ever sees, so a "marketplace for firearms" line here quietly
+  // repositioned the whole site back to guns.
+  description:
+    "South Africa's outdoor, hunting and sport marketplace is launching soon.",
 };
 
 export default function ComingSoonPage() {
@@ -61,8 +66,8 @@ export default function ComingSoonPage() {
           marginBottom: '2.5rem',
         }}
       >
-        South Africa&apos;s marketplace for buying and selling firearms is
-        almost ready.
+        South Africa&apos;s marketplace for buying and selling outdoor,
+        hunting and sport gear is almost ready.
       </p>
       <div
         style={{

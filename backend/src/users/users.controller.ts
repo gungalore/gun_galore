@@ -353,6 +353,27 @@ export class UsersController {
     return { recorded };
   }
 
+  // ───────────────── Campaign attribution (post-signup) ──────────────
+  // Marks which marketing campaign this member arrived on. The email signup
+  // path already carries the key through Clerk unsafeMetadata; OAuth cannot
+  // (authenticateWithRedirect takes no metadata), so the client flushes it
+  // here once the session is live — the same handoff the consent record uses.
+  // FIRST-TOUCH: the service only writes when the column is still null, so a
+  // returning member clicking a later blast can never be re-attributed and
+  // no campaign's numbers can be inflated by replaying this endpoint.
+  @Post('me/campaign')
+  @UseGuards(ClerkGuard)
+  async recordCampaign(
+    @CurrentUser() clerkId: string,
+    @Body() body: { key?: string },
+  ) {
+    const recorded = await this.users.recordCampaignAttribution(
+      clerkId,
+      body?.key,
+    );
+    return { recorded };
+  }
+
   // ─────────────────── Phone change: request OTP ─────────────────────
   // Body: { phone: "0820000000" | "+27820000000" }
   // Sends a 4-digit code to the new number. Returns { sent: true } on

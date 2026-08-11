@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 
@@ -44,6 +44,41 @@ export default function ReceivedOfferActions({
   // server-side; OTHER needs a short written reason).
   const [rejectReason, setRejectReason] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
+  // Price context for the counter form. Take a Shot listings carry NO
+  // listed price by design (the backend refuses one), so the only anchor
+  // the seller has is the instant-accept price they set on the listing —
+  // GET /offers/:id returns it to the SELLER only. Fetched lazily when the
+  // counter form opens; null just means "no anchor to show".
+  const [instantAccept, setInstantAccept] = useState<number | null>(null);
+  const [contextLoaded, setContextLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!showCounter || contextLoaded) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await fetch(`${API_URL}/offers/${offerId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const d = (await res.json()) as {
+          listing?: { autoAcceptThreshold?: number | null };
+        };
+        if (!cancelled) setInstantAccept(d.listing?.autoAcceptThreshold ?? null);
+      } catch {
+        // Context is a nicety — the form still works without it.
+      } finally {
+        // Mark loaded either way so a failing fetch doesn't retry on
+        // every keystroke-driven re-render.
+        if (!cancelled) setContextLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showCounter, contextLoaded, getToken, offerId]);
 
   function formatRand(cents: number | undefined) {
     if (cents === undefined) return '';
@@ -75,14 +110,55 @@ export default function ReceivedOfferActions({
     }
   }
 
+  // ── Counter sanity checks ────────────────────────────────────────
+  // The form used to be a bare "R" box with a min-R1 check, so the two
+  // ways to get this wrong both cost a round trip (or a real sale):
+  // a counter at/below the buyer's own offer is refused server-side
+  // (offers.service.ts counter()), and a fat-fingered R200-for-R2000
+  // sailed straight through and got sent to the buyer.
+  const parsed =
+    counterAmount.trim() === '' ? NaN : Math.round(parseFloat(counterAmount) * 100);
+  const counterCents = Number.isFinite(parsed) ? parsed : null;
+
+  // Blocking — refuse to send. Mirrors the server's own wording so the
+  // seller never sees two different phrasings of the same rule.
+  let counterBlocked: string | null = null;
+  if (counterCents !== null) {
+    if (counterCents < 100) {
+      counterBlocked = 'Minimum counter is R1.00';
+    } else if (offerAmount !== undefined && counterCents <= offerAmount) {
+      counterBlocked =
+        "A counter must be higher than the buyer's offer of " +
+        `${formatRand(offerAmount)} — if you're happy with their price, use Accept.`;
+    }
+  }
+
+  // Soft — warn but still allow. A high counter is the seller's right;
+  // a 10× counter is almost always a missing decimal.
+  let counterWarning: string | null = null;
+  if (!counterBlocked && counterCents !== null) {
+    if (offerAmount && counterCents >= offerAmount * 10) {
+      counterWarning = `That is ${Math.round(
+        counterCents / offerAmount,
+      )}× the buyer's offer — check you didn't add a zero.`;
+    } else if (instantAccept && counterCents > instantAccept) {
+      counterWarning = `That is above your instant-accept price of ${formatRand(
+        instantAccept,
+      )} — you can only counter once, so buyers often walk at that point.`;
+    }
+  }
+
   async function submitCounter() {
-    const cents = Math.round(parseFloat(counterAmount) * 100);
-    if (!cents || cents < 100) {
-      setError('Minimum counter is R1.00');
+    if (counterCents === null) {
+      setError('Enter the amount you want to counter with.');
+      return;
+    }
+    if (counterBlocked) {
+      setError(counterBlocked);
       return;
     }
     await call('counter', 'counter', {
-      counterAmount: cents,
+      counterAmount: counterCents,
       sellerNote: sellerNote || undefined,
     });
   }
@@ -90,6 +166,32 @@ export default function ReceivedOfferActions({
   if (showCounter) {
     return (
       <div className="space-y-2">
+        {/* Price context — the seller was countering from memory. Take a
+            Shot listings have no listed asking price, so the anchors that
+            DO exist are the buyer's number and (when set) the price the
+            seller said they'd take instantly. */}
+        <div
+          className="flex flex-wrap gap-x-4 gap-y-1 px-2.5 py-2 rounded-[6px] text-xs"
+          style={{
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--border)',
+          }}
+        >
+          <span style={{ color: 'var(--text-tertiary)' }}>
+            Buyer offered{' '}
+            <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+              {formatRand(offerAmount) || '—'}
+            </span>
+          </span>
+          {instantAccept !== null && (
+            <span style={{ color: 'var(--text-tertiary)' }}>
+              Your instant-accept price{' '}
+              <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                {formatRand(instantAccept)}
+              </span>
+            </span>
+          )}
+        </div>
         <div className="relative">
           <span
             className="absolute left-3 top-1/2 -translate-y-1/2 text-sm"
@@ -104,14 +206,30 @@ export default function ReceivedOfferActions({
             value={counterAmount}
             onChange={(e) => setCounterAmount(e.target.value)}
             placeholder="Counter amount"
+            aria-label="Counter amount in rand"
+            aria-invalid={!!counterBlocked}
             className="w-full pl-7 pr-3 py-2 rounded-[6px] text-sm"
             style={{
               background: 'var(--bg-inset)',
-              border: '0.5px solid var(--border)',
+              // Red rim the moment the number can't be sent — the seller
+              // shouldn't have to press Send to find out.
+              border: `0.5px solid ${
+                counterBlocked ? 'var(--red)' : 'var(--border)'
+              }`,
               color: 'var(--text-primary)',
             }}
           />
         </div>
+        {counterBlocked && (
+          <p className="text-xs" style={{ color: 'var(--red)' }}>
+            {counterBlocked}
+          </p>
+        )}
+        {counterWarning && (
+          <p className="text-xs" style={{ color: '#f59e0b' }}>
+            {counterWarning}
+          </p>
+        )}
         <textarea
           value={sellerNote}
           onChange={(e) => setSellerNote(e.target.value)}
@@ -131,11 +249,17 @@ export default function ReceivedOfferActions({
         <div className="flex gap-2">
           <button
             onClick={submitCounter}
-            disabled={!!loading}
+            disabled={!!loading || !!counterBlocked || counterCents === null}
             className="flex-1 py-2 rounded-[6px] text-sm font-medium"
             style={{
-              background: loading ? 'var(--bg-inset)' : '#3b82f6',
-              color: loading ? 'var(--text-tertiary)' : '#fff',
+              background:
+                loading || counterBlocked || counterCents === null
+                  ? 'var(--bg-inset)'
+                  : '#3b82f6',
+              color:
+                loading || counterBlocked || counterCents === null
+                  ? 'var(--text-tertiary)'
+                  : '#fff',
             }}
           >
             {loading === 'counter' ? 'Sending…' : 'Send counter'}

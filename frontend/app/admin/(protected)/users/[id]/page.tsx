@@ -140,6 +140,23 @@ interface Dossier {
     resolved: boolean;
     createdAt: string;
   }[];
+  // The dossier's promise is "everything about this user in one place", and
+  // complaints were the gap: before banning someone or adjudicating a dispute
+  // the pattern matters — four NOT_ARRIVED complaints lodged, or three
+  // complaints against their sales — and it required a manual cross-reference.
+  complaintsLodged: ComplaintRow[];
+  complaintsAgainst: (ComplaintRow & { user?: { username: string | null } })[];
+}
+
+interface ComplaintRow {
+  id: string;
+  referenceNumber: string;
+  category: string;
+  subject: string;
+  status: string;
+  drovePayoutHold: boolean;
+  createdAt: string;
+  transactionId: string | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -379,6 +396,26 @@ export default function UserDossierPage() {
                 )}
               </div>
             ))}
+          </div>
+        </Section>
+      )}
+
+      {/* ─── Complaints (lodged by + against) ───────────────────── */}
+      {((d.complaintsLodged?.length ?? 0) > 0 ||
+        (d.complaintsAgainst?.length ?? 0) > 0) && (
+        <Section
+          title="Complaints"
+          subtitle="Cases this user lodged, and cases lodged against their sales"
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ComplaintColumn
+              heading={`Lodged by this user (${d.complaintsLodged?.length ?? 0})`}
+              rows={d.complaintsLodged ?? []}
+            />
+            <ComplaintColumn
+              heading={`Against their sales (${d.complaintsAgainst?.length ?? 0})`}
+              rows={d.complaintsAgainst ?? []}
+            />
           </div>
         </Section>
       )}
@@ -767,6 +804,64 @@ function DataList({ rows }: { rows: [string, string][] }) {
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// One side of the complaints panel. Rows deep-link to the order dossier when
+// the complaint is attached to one (that page now carries the full case +
+// evidence); account-level complaints with no order fall back to the register.
+function ComplaintColumn({
+  heading,
+  rows,
+}: {
+  heading: string;
+  rows: ComplaintRow[];
+}) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-wider mb-2" style={{ color: 'var(--text-tertiary)' }}>
+        {heading}
+      </p>
+      {rows.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          None.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((c) => (
+            <Link
+              key={c.id}
+              href={c.transactionId ? `/admin/transactions/${c.transactionId}` : '/admin/complaints'}
+              className="block rounded-[6px] p-3"
+              style={{
+                background: 'var(--bg-card)',
+                border: `0.5px solid ${c.drovePayoutHold ? 'var(--red)' : 'var(--border)'}`,
+                textDecoration: 'none',
+              }}
+            >
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span
+                  className="text-xs"
+                  style={{ fontFamily: 'ui-monospace, monospace', color: 'var(--text-primary)' }}
+                >
+                  {c.referenceNumber}
+                </span>
+                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  {formatDateTime(c.createdAt)}
+                </span>
+              </div>
+              <p className="text-xs" style={{ color: 'var(--text-primary)' }}>
+                {c.subject}
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                {c.category.replace(/_/g, ' ')} · {c.status.replace(/_/g, ' ')}
+                {c.drovePayoutHold ? ' · held payout' : ''}
+              </p>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

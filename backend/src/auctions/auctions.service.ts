@@ -23,6 +23,11 @@ import { Prisma } from '@prisma/client';
 const APP_URL = () => process.env.FRONTEND_URL ?? 'http://localhost:3000';
 const AUCTION_WIN_CHECKOUT_TTL_HOURS = 24;
 
+// How long the seller has to decide whether to offer an expired-win auction
+// to the runner-up. Short on purpose: the runner-up's interest (and the
+// relevance of their bid) decays fast once the auction is over.
+const RUNNER_UP_DECISION_HOURS = 48;
+
 // Tiered bid increments per CLAUDE.md (M2 Auction System).
 // Each entry is [upper bound (exclusive, ZAR cents), increment (ZAR cents)].
 const INCREMENT_TIERS: ReadonlyArray<[number, number]> = [
@@ -652,6 +657,12 @@ export class AuctionsService {
             endedAt: true,
             reserveMet: true,
             reservePrice: true, // only for hasReserve below — never exposed
+            // Pay-by time on a won auction (finalizeAuction stamps
+            // expiresAt = win + 24h; starting checkout CAS-nulls it). Needed
+            // so /my/bids can show the deadline on a "Won — pay now" card
+            // WITHOUT fetching each listing individually — that fallback fired
+            // a phantom listing_view insights event per won row on every render.
+            expiresAt: true,
             price: true,
             images: { where: { isPrimary: true }, take: 1 },
           },
@@ -684,6 +695,10 @@ export class AuctionsService {
         hasReserve: b.listing.reservePrice !== null,
         endTime: b.listing.endTime,
         endedAt: b.listing.endedAt,
+        // Null once checkout starts (or when the listing isn't awaiting
+        // payment), which is exactly when the deadline chip should disappear.
+        payByAt:
+          b.listing.status === 'PAYMENT_PENDING' ? b.listing.expiresAt : null,
         youAreHighBidder: b.listing.currentBidderId === buyer.id,
         isWinner: b.isWinner,
       }));
@@ -950,8 +965,185 @@ export class AuctionsService {
         // stuck 'pay within 24h' inbox row and tell them the sale lapsed.
         void this.notifyWinnerLapsed(l.currentBidderId, l.id, l.currentBid ?? 0);
       }
+      // BIG-2 — the second-highest bidder is a proven, priced-in buyer sitting
+      // in the Bid table. Until now the seller was just told to relist and
+      // restart a 7-day auction to reach someone we already had. Offer it to
+      // the runner-up — SELLER-CONFIRMED, never automatic (same policy as
+      // offers: the platform never sells on someone's behalf).
+      void this.inviteRunnerUpOffer(l.id, l.currentBidderId);
     }
     return { expired };
+  }
+
+  // Ask the seller whether to offer an expired-win auction to the runner-up.
+  // Best-effort tail work on the sweep: a failure here must never affect the
+  // EXPIRED flip that already committed.
+  private async inviteRunnerUpOffer(
+    listingId: string,
+    unpaidWinnerId: string | null,
+  ) {
+    try {
+      const runnerUp = await this.findRunnerUp(listingId, unpaidWinnerId);
+      if (!runnerUp) return;
+      const listing = await this.prisma.listing.findUnique({
+        where: { id: listingId },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          sellerId: true,
+          seller: { select: { email: true, firstName: true, phone: true } },
+        },
+      });
+      // Only while the listing is still sitting EXPIRED — if the seller has
+      // already relisted or cancelled it in the gap, stay quiet.
+      if (!listing || listing.status !== 'EXPIRED') return;
+
+      // The seller's decision window. Deliberately short: the runner-up's
+      // interest is perishable and the bid amount is only meaningful while
+      // the auction is fresh in their mind.
+      const expiresAt = new Date(
+        Date.now() + RUNNER_UP_DECISION_HOURS * 3600_000,
+      );
+      const token = await this.actionTokens
+        .mint({
+          purpose: 'AUCTION_RUNNER_UP',
+          targetType: 'listing',
+          targetId: listing.id,
+          authorisedUserId: listing.sellerId,
+          expiresAt,
+          metadata: {
+            runnerUpBidderId: runnerUp.bidderId,
+            runnerUpAmount: runnerUp.amount,
+          },
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `AUCTION_RUNNER_UP token mint failed: ${(err as Error).message}`,
+          );
+          return null;
+        });
+
+      await this.notifications.auctionRunnerUpAvailable({
+        sellerEmail: listing.seller.email,
+        sellerName: listing.seller.firstName ?? 'Seller',
+        sellerPhone: listing.seller.phone,
+        listingTitle: listing.title,
+        listingId: listing.id,
+        amount: runnerUp.amount,
+        bidderName: runnerUp.username ?? 'the next bidder',
+        hoursToDecide: RUNNER_UP_DECISION_HOURS,
+        actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
+      });
+    } catch (err) {
+      this.logger.warn(`runner-up invite failed: ${(err as Error).message}`);
+    }
+  }
+
+  // Highest bid from someone OTHER than the defaulting winner. Distinct by
+  // bidder (a proxy war leaves many rows per person) and taking the highest
+  // per bidder, so "runner-up" means the second-highest PERSON, not the
+  // winner's own second-highest bid.
+  private async findRunnerUp(
+    listingId: string,
+    excludeBidderId: string | null,
+  ): Promise<{ bidderId: string; amount: number; username: string | null } | null> {
+    const bids = await this.prisma.bid.findMany({
+      where: {
+        listingId,
+        ...(excludeBidderId ? { bidderId: { not: excludeBidderId } } : {}),
+      },
+      orderBy: { amount: 'desc' },
+      select: {
+        bidderId: true,
+        amount: true,
+        bidder: { select: { username: true, isBanned: true, auctionStrikes: true } },
+      },
+      take: 25,
+    });
+    for (const b of bids) {
+      // Never hand a second chance to a banned account, or to a bidder the
+      // strike system has already suspended — the place-bid gate refuses them
+      // at 3 strikes, so promoting them would create an unpayable sale.
+      if (b.bidder?.isBanned) continue;
+      if ((b.bidder?.auctionStrikes ?? 0) >= 3) continue;
+      return {
+        bidderId: b.bidderId,
+        amount: b.amount,
+        username: b.bidder?.username ?? null,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Seller accepts: offer the expired auction to the runner-up at their own
+   * highest bid. CAS EXPIRED→PAYMENT_PENDING carrying the runner-up as the
+   * winner with a fresh 24h pay window, then reuse the exact auction-win
+   * notification machinery (CHECKOUT token + email/SMS). sweepUnpaidWins then
+   * polices this second window for free — including the strike if they too
+   * fail to pay — because the row is indistinguishable from a normal win.
+   */
+  async offerToRunnerUp(
+    listingId: string,
+    sellerId: string,
+    runnerUpBidderId: string,
+    amount: number,
+  ): Promise<{ offered: boolean; reason?: string }> {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+      select: { id: true, status: true, sellerId: true },
+    });
+    if (!listing) return { offered: false, reason: 'Listing no longer exists' };
+    if (listing.sellerId !== sellerId) {
+      return { offered: false, reason: 'Not your listing' };
+    }
+    if (listing.status !== 'EXPIRED') {
+      // Seller relisted / cancelled / it sold another way in the meantime.
+      return {
+        offered: false,
+        reason: 'This auction is no longer waiting — nothing was changed',
+      };
+    }
+    // Re-check the bidder is still eligible at accept time, not just when the
+    // SMS was sent (they could have been banned or struck out since).
+    const bidder = await this.prisma.user.findUnique({
+      where: { id: runnerUpBidderId },
+      select: { id: true, isBanned: true, auctionStrikes: true },
+    });
+    if (!bidder || bidder.isBanned || bidder.auctionStrikes >= 3) {
+      return {
+        offered: false,
+        reason: 'That bidder can no longer be offered the item',
+      };
+    }
+
+    const now = new Date();
+    const claim = await this.prisma.listing.updateMany({
+      // CAS on EXPIRED: two taps of the same SMS link, or a relist racing the
+      // accept, can only ever produce ONE promotion.
+      where: { id: listingId, status: 'EXPIRED' },
+      data: {
+        status: 'PAYMENT_PENDING',
+        currentBidderId: runnerUpBidderId,
+        currentBid: amount,
+        expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+        // Fresh window ⇒ fresh reminder eligibility (the pay-window nudge
+        // guard is one-shot per stamp).
+        winnerRemindedAt: null,
+      },
+    });
+    if (claim.count === 0) {
+      return { offered: false, reason: 'This auction has already moved on' };
+    }
+
+    this.logger.log(
+      `Auction ${listingId}: offered to runner-up ${runnerUpBidderId} at ${amount}c`,
+    );
+    // Same machinery as a first-place win — the buyer gets the identical
+    // "you won, pay within 24h" flow with a CHECKOUT deep link.
+    void this.notifyAuctionWon(runnerUpBidderId, listingId, amount);
+    return { offered: true };
   }
 
   // Nudge an auction winner ~6h before the 24h pay window lapses (→ EXPIRED

@@ -163,10 +163,8 @@ export default function AdminListingsPage() {
                         admin queue. Falls back to a short cuid for legacy
                         rows that haven't been back-filled. */}
                     <td className="px-4 py-3">
-                      <a
-                        href={`/listings/${l.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <Link
+                        href={`/admin/listings/${l.id}`}
                         style={{
                           fontFamily: 'ui-monospace, monospace',
                           fontSize: 12,
@@ -179,13 +177,16 @@ export default function AdminListingsPage() {
                         }}
                       >
                         {l.referenceNumber ?? l.id.slice(-8)}
-                      </a>
+                      </Link>
                     </td>
                     <td className="px-4 py-3" style={{ color: 'var(--text-primary)' }}>
-                      <a
-                        href={`/listings/${l.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      {/* Ref + title link to the ADMIN dossier, not the public
+                          page. The public endpoint blocks DRAFT / PENDING_REVIEW
+                          / CANCELLED for non-owners, so on those tabs every one
+                          of these links used to 404 — the admin could not open
+                          the very rows the tab was showing. */}
+                      <Link
+                        href={`/admin/listings/${l.id}`}
                         className="font-medium"
                         style={{
                           color: 'var(--text-primary)',
@@ -193,7 +194,7 @@ export default function AdminListingsPage() {
                         }}
                       >
                         {l.title}
-                      </a>
+                      </Link>
                       {l.category.isFirearm && (
                         <span
                           className="text-xs ml-2"
@@ -266,15 +267,13 @@ export default function AdminListingsPage() {
                       {new Date(l.createdAt).toLocaleDateString('en-ZA')}
                     </td>
                     <td className="px-4 py-3">
-                      {/* "View" always available so admins can open the
-                          public listing detail page in a new tab — handy
-                          for ACTIVE / CANCELLED queues where the
-                          Approve/Reject actions aren't shown. */}
+                      {/* Primary action is the admin dossier, which opens for
+                          ANY status. The public page is offered as a secondary
+                          link only for statuses the public endpoint actually
+                          serves (PUBLICLY_VISIBLE_STATUSES) — otherwise it 404s. */}
                       <div className="flex flex-col gap-2 items-start">
-                        <a
-                          href={`/listings/${l.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <Link
+                          href={`/admin/listings/${l.id}`}
                           className="text-xs"
                           style={{
                             color: 'var(--text-secondary)',
@@ -285,7 +284,23 @@ export default function AdminListingsPage() {
                           }}
                         >
                           View →
-                        </a>
+                        </Link>
+                        {['ACTIVE', 'PAYMENT_PENDING', 'SOLD', 'EXPIRED'].includes(
+                          status,
+                        ) && (
+                          <a
+                            href={`/listings/${l.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs"
+                            style={{
+                              color: 'var(--text-tertiary)',
+                              textDecoration: 'none',
+                            }}
+                          >
+                            View public page →
+                          </a>
+                        )}
                         {status === 'PENDING_REVIEW' && (
                           <ReviewActions listingId={l.id} />
                         )}

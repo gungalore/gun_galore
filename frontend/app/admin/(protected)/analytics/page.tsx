@@ -4,6 +4,11 @@ import { useEffect, useState } from 'react';
 import AnalyticsTabs from '../analytics-tabs';
 import { useSearchParams } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
+import {
+  AdminCsvButton,
+  csvPeriodSlug,
+  type CsvColumn,
+} from '@/components/admin/csv-export';
 import PeriodSwitcher from './period-switcher';
 import {
   KpiCard,
@@ -81,6 +86,38 @@ function formatPercent(p: number): string {
 function formatCount(n: number): string {
   return n.toLocaleString('en-ZA');
 }
+
+// ─── CSV exports ────────────────────────────────────────────────────
+// Money goes out as a plain Rand NUMBER (1234.5), never the display string
+// ("R1 234"): the on-screen formatter uses en-ZA grouping — a non-breaking
+// space — which Excel imports as text, so an accountant's SUM would silently
+// return 0. Cents → Rand with 2dp, kept numeric.
+function randValue(cents: number): number {
+  return Number((cents / 100).toFixed(2));
+}
+
+const TOP_MAKE_MODEL_CSV: CsvColumn<TopMakeModel>[] = [
+  { header: 'Make', value: (r) => r.make },
+  { header: 'Model', value: (r) => r.model },
+  { header: 'Sales', value: (r) => r.count },
+  { header: 'Avg price (ZAR)', value: (r) => randValue(r.avgPriceCents) },
+  { header: 'GMV (ZAR)', value: (r) => randValue(r.gmvCents) },
+];
+
+const TIME_TO_SALE_CSV: CsvColumn<TimeToSale>[] = [
+  { header: 'Category', value: (r) => r.categoryName },
+  { header: 'Sales', value: (r) => r.sold },
+  { header: 'Median days to sale', value: (r) => r.medianDays },
+];
+
+const TIME_SERIES_CSV: CsvColumn<TimeSeriesPoint>[] = [
+  // bucket is a full ISO timestamp (date_trunc'd); the date part is what the
+  // operator actually reconciles against, and Excel reads it as a date.
+  { header: 'Period start', value: (p) => p.bucket.slice(0, 10) },
+  { header: 'GMV (ZAR)', value: (p) => randValue(p.gmvCents) },
+  { header: 'Platform revenue (ZAR)', value: (p) => randValue(p.revenueCents) },
+  { header: 'Sales', value: (p) => p.txCount },
+];
 
 // ─── Page ───────────────────────────────────────────────────────────
 
@@ -198,9 +235,18 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      {/* Time-series — full width */}
+      {/* Time-series — full width. The export sits above the chart rather
+          than inside it so the shared chart component stays presentational. */}
       {timeSeries && (
         <div className="mb-4">
+          <div className="flex justify-end mb-1.5">
+            <AdminCsvButton
+              rows={timeSeries}
+              columns={TIME_SERIES_CSV}
+              table={`gmv by ${bucket}`}
+              range={csvPeriodSlug(period)}
+            />
+          </div>
           <TimeSeriesChart points={timeSeries} bucket={bucket as 'day' | 'week' | 'month'} />
         </div>
       )}
@@ -217,13 +263,24 @@ export default function AnalyticsPage() {
           className="rounded-[8px] overflow-hidden mb-4"
           style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
         >
-          <div className="px-5 py-3" style={{ borderBottom: '0.5px solid var(--border)' }}>
-            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-              Top makes &amp; models
-            </p>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-              Most-sold guns by make + model — basis for a future public price index
-            </p>
+          <div
+            className="px-5 py-3 flex items-start justify-between gap-3"
+            style={{ borderBottom: '0.5px solid var(--border)' }}
+          >
+            <div>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                Top makes &amp; models
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                Most-sold guns by make + model — basis for a future public price index
+              </p>
+            </div>
+            <AdminCsvButton
+              rows={topMakes}
+              columns={TOP_MAKE_MODEL_CSV}
+              table="top makes and models"
+              range={csvPeriodSlug(period)}
+            />
           </div>
           <table className="w-full text-sm">
             <thead>
@@ -278,13 +335,24 @@ export default function AnalyticsPage() {
           className="rounded-[8px] overflow-hidden mb-4"
           style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
         >
-          <div className="px-5 py-3" style={{ borderBottom: '0.5px solid var(--border)' }}>
-            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-              Median time-to-sale by category
-            </p>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-              How long a listing sits before it sells. Categories with fewer than 3 sales are hidden.
-            </p>
+          <div
+            className="px-5 py-3 flex items-start justify-between gap-3"
+            style={{ borderBottom: '0.5px solid var(--border)' }}
+          >
+            <div>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                Median time-to-sale by category
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                How long a listing sits before it sells. Categories with fewer than 3 sales are hidden.
+              </p>
+            </div>
+            <AdminCsvButton
+              rows={timeToSale}
+              columns={TIME_TO_SALE_CSV}
+              table="time to sale by category"
+              range={csvPeriodSlug(period)}
+            />
           </div>
           <table className="w-full text-sm">
             <thead>

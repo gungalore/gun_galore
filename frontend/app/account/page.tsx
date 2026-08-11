@@ -93,6 +93,15 @@ export default async function AccountPage() {
     fetch(`${API_URL}/notifications/me/module-counts`, { headers, cache: 'no-store' }).catch(() => null),
   ]);
 
+  // Distinguish "the backend answered and this is your real state" from
+  // "we couldn't reach the backend". safeJson degrades both to null, and
+  // rendering the fallback as fact is actively misleading here: a verified
+  // seller would be shown "ID not verified" and a paying PRO subscriber the
+  // "Get GG PRO" upsell, and neither has any way to tell it's a blip.
+  // Each fetch is judged on its own so one outage doesn't blank the other.
+  const meFailed = !meRes || !meRes.ok;
+  const subFailed = !subRes || !subRes.ok;
+
   const me = await safeJson<Me | null>(meRes, null);
   const sub = await safeJson<{ tier?: string; periodEnd?: string | null } | null>(
     subRes,
@@ -100,6 +109,10 @@ export default async function AccountPage() {
   );
   const alerts = await safeJson<{ total?: number } | null>(alertsRes, null);
   const moduleCounts = await safeJson<Record<string, number>>(moduleCountsRes, {});
+
+  // A 200 with an empty/unparseable body is just as unusable as a non-OK
+  // one — /users/me always returns a record for a synced user.
+  const identityUnknown = meFailed || !me;
 
   const unread = alerts?.total ?? 0;
 
@@ -152,21 +165,27 @@ export default async function AccountPage() {
               {username}
             </h1>
             <div className="flex items-center gap-2 mt-2 flex-wrap">
-              {/* KYC status chip */}
-              <span
-                className="text-xs px-2 py-0.5 rounded-[4px]"
-                style={{
-                  color: kyc.colour,
-                  background: 'var(--bg-inset)',
-                  border: `0.5px solid ${kyc.colour}`,
-                }}
-              >
-                {kyc.label}
-              </span>
+              {/* KYC status chip — hidden when we couldn't load the user, so
+                  a verified seller is never told "ID not verified" by an
+                  outage (that reads as a broken account, not a broken fetch). */}
+              {!identityUnknown && (
+                <span
+                  className="text-xs px-2 py-0.5 rounded-[4px]"
+                  style={{
+                    color: kyc.colour,
+                    background: 'var(--bg-inset)',
+                    border: `0.5px solid ${kyc.colour}`,
+                  }}
+                >
+                  {kyc.label}
+                </span>
+              )}
               {/* GG PRO tier chip (or an upgrade nudge — the single paid
                   tier since 2026-07-19; legacy MEMBER rows show their own
-                  label until they lapse). */}
-              {ggPlus ? (
+                  label until they lapse). Suppressed entirely when the
+                  subscription fetch failed: showing the upsell to a paying
+                  subscriber is the worst of the two wrong answers. */}
+              {subFailed ? null : ggPlus ? (
                 <span
                   className="text-xs px-2 py-0.5 rounded-[4px]"
                   style={{ color: 'var(--red)', background: 'rgba(200,16,46,0.10)', border: '0.5px solid var(--red)' }}
@@ -195,6 +214,18 @@ export default async function AccountPage() {
                 </span>
               )}
             </div>
+            {/* Transient-failure notice. Neutral tone on purpose — this is
+                our problem, not a problem with their account, and the chips
+                above are absent rather than wrong while it shows. */}
+            {(identityUnknown || subFailed) && (
+              <p
+                className="text-xs"
+                style={{ color: 'var(--text-tertiary)', margin: '8px 0 0' }}
+              >
+                Couldn&apos;t load your account status — refresh to try again.
+                Everything else on this page still works.
+              </p>
+            )}
           </div>
           <Link
             href="/profile"

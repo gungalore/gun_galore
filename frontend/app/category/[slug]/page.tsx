@@ -3,6 +3,7 @@ import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { apiFetch } from '@/lib/api';
+import { browseMetaDescription } from '@/lib/seo';
 import { BrowseResponse, Category, SoldComps } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { Pagination } from '@/components/pagination';
@@ -32,7 +33,12 @@ export async function generateMetadata({
   if (!tree) return { title: 'Category not found — Gun Galore' };
   const { category } = tree;
   const title = `${category.name} for sale — Gun Galore`;
-  const description = `Browse ${category.name.toLowerCase()} listings on Gun Galore — South Africa's marketplace for firearms, optics, hunting and outdoor gear. Buy, bid, or make an offer with payment held until delivery.`;
+  // Shared blurb (lib/seo.ts) — this description is stamped onto EVERY
+  // category's SERP snippet, so it must not lead with "firearms" on the
+  // Fishing and Camping pages.
+  const description = browseMetaDescription(
+    `${category.name.toLowerCase()} listings`,
+  );
   return {
     title,
     description,

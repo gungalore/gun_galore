@@ -201,6 +201,12 @@ model User {
   id                String     @id @default(cuid())
   clerkId           String     @unique
   email             String     @unique
+  // MarketingCampaign.key this user arrived on, captured at sign-up. The
+  // campaigns page could previously only show banner impressions ("hits"),
+  // so a paid SMS blast could not be judged on whether anyone actually
+  // JOINED — the only question that matters when you pay per message.
+  // Set once at provisioning and never overwritten (first-touch attribution).
+  campaignKey       String?
   // Public-facing handle. Lowercased + unique. Optional until first set so we
   // can backfill existing Clerk-only users without breaking them.
   username          String?    @unique
@@ -508,6 +514,9 @@ model User {
   askGgConversations AskGgConversation[]
   askGgKbEntries     AskGgKbEntry[]      @relation("KbAuthor")
   askGgUsage         AskGgUsage[]
+
+  // Campaign attribution rollup: groupBy(campaignKey) on the admin page.
+  @@index([campaignKey])
 }
 
 // =====================================================================

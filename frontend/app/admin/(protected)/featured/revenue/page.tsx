@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { FeaturedTabs } from '../tabs';
+import { AdminCsvButton, type CsvColumn } from '@/components/admin/csv-export';
 
 interface RevenueSummary {
   totalCents: number;
@@ -12,6 +13,15 @@ interface RevenueSummary {
   awardedAuctions: number;
   fillRate: number; // 0..1
 }
+
+// Username only — the platform rule is that a member is identified by handle,
+// and an exported spreadsheet is the easiest thing in the world to forward to
+// someone who should never have had the email. Spend is a plain number so it
+// sums in Excel (the en-ZA display string carries a non-breaking space).
+const TOP_BIDDERS_CSV: CsvColumn<RevenueSummary['topBidders'][number]>[] = [
+  { header: 'Username', value: (b) => b.user.username ?? '—' },
+  { header: 'Total spend ZAR', value: (b) => Number((b.totalCents / 100).toFixed(2)) },
+];
 
 function formatRand(cents: number): string {
   return `R${(cents / 100).toLocaleString('en-ZA', {
@@ -85,7 +95,7 @@ export default function AdminFeaturedRevenuePage() {
             }}
           >
             <div
-              className="px-4 py-3"
+              className="px-4 py-3 flex items-center justify-between gap-3"
               style={{ borderBottom: '0.5px solid var(--border)' }}
             >
               <p
@@ -98,6 +108,11 @@ export default function AdminFeaturedRevenuePage() {
               >
                 Top bidders by spend
               </p>
+              <AdminCsvButton
+                rows={summary.topBidders}
+                columns={TOP_BIDDERS_CSV}
+                table="featured top bidders"
+              />
             </div>
             {summary.topBidders.length === 0 ? (
               <p

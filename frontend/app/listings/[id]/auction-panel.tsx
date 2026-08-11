@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useUser, useAuth, SignInButton } from '@clerk/nextjs';
 import { HelpTip } from '@/components/help-tip';
 import { HelpText } from '@/components/help-text';
@@ -112,6 +113,17 @@ export default function AuctionPanel({
   // it, the visible countdown jumps and looks like a glitch.
   const prevEndTimeRef = useRef<string | null>(null);
   const [extendedBannerUntil, setExtendedBannerUntil] = useState(0);
+  // Consecutive failed loads of GET /auctions/:id. Two different failure
+  // shapes need two different treatments on a live-money surface:
+  //   • no state yet + ≥1 failure → nothing to show, so render an error card
+  //     with a Retry button instead of "Loading auction…" forever;
+  //   • state exists + ≥3 failures → the numbers on screen are going stale,
+  //     so warn quietly rather than letting a frozen countdown read as live.
+  const [pollFailures, setPollFailures] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  // Guards a fetch that is still in flight when the component unmounts (or
+  // the listing changes) from writing into dead state.
+  const aliveRef = useRef(true);
 
   // Which modal is open. The three CTAs each open their own; only one
   // is ever visible at a time. null = closed.
@@ -128,60 +140,110 @@ export default function AuctionPanel({
   // Poll auction state every 5s so other bidders' actions show up,
   // and fetch the signed-in user's proxy state in parallel so the
   // Auto Bid button can display the active max.
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const token = user ? await getToken() : null;
-        const [stateRes, mineRes] = await Promise.all([
-          fetch(`${API_URL}/auctions/${listingId}`, { cache: 'no-store' }),
-          token
-            ? fetch(`${API_URL}/auctions/${listingId}/me`, {
-                headers: { Authorization: `Bearer ${token}` },
-                cache: 'no-store',
-              })
-            : Promise.resolve(null),
-        ]);
-        if (stateRes.ok) {
-          const data = await stateRes.json();
-          if (!cancelled) {
-            // Detect snipe-protection extension: if the new endTime
-            // is ≥30s further out than the last one we saw, the
-            // backend extended the auction. Show a transient banner
-            // for 8s so the bidder knows why the timer jumped.
-            const prev = prevEndTimeRef.current;
-            if (
-              prev &&
-              data.endTime &&
-              new Date(data.endTime).getTime() - new Date(prev).getTime() >= 30_000
-            ) {
-              setExtendedBannerUntil(Date.now() + 8_000);
-            }
-            prevEndTimeRef.current = data.endTime ?? null;
-            setState(data);
-          }
+  // Hoisted out of the effect (useCallback) so the error card's Retry
+  // button can re-run exactly the same load.
+  const load = useCallback(async () => {
+    try {
+      const token = user ? await getToken() : null;
+      const [stateRes, mineRes] = await Promise.all([
+        fetch(`${API_URL}/auctions/${listingId}`, { cache: 'no-store' }),
+        token
+          ? fetch(`${API_URL}/auctions/${listingId}/me`, {
+              headers: { Authorization: `Bearer ${token}` },
+              cache: 'no-store',
+            })
+          : Promise.resolve(null),
+      ]);
+      // A non-2xx is a failure too, not "keep waiting" — the old code
+      // silently ignored it, which is what left the panel stuck on
+      // "Loading auction…" whenever the very first request 4xx/5xx'd.
+      if (!stateRes.ok) throw new Error(`Auction fetch failed (${stateRes.status})`);
+      const data = await stateRes.json();
+      if (aliveRef.current) {
+        // Detect snipe-protection extension: if the new endTime
+        // is ≥30s further out than the last one we saw, the
+        // backend extended the auction. Show a transient banner
+        // for 8s so the bidder knows why the timer jumped.
+        const prev = prevEndTimeRef.current;
+        if (
+          prev &&
+          data.endTime &&
+          new Date(data.endTime).getTime() - new Date(prev).getTime() >= 30_000
+        ) {
+          setExtendedBannerUntil(Date.now() + 8_000);
         }
-        if (mineRes && mineRes.ok) {
-          const mine = (await mineRes.json()) as MyBidState | null;
-          if (!cancelled) setMyBid(mine);
-        } else if (!user) {
-          if (!cancelled) setMyBid(null);
-        }
-      } catch {
-        /* network blip — keep last state */
+        prevEndTimeRef.current = data.endTime ?? null;
+        setState(data);
+        setPollFailures(0);
       }
+      if (mineRes && mineRes.ok) {
+        const mine = (await mineRes.json()) as MyBidState | null;
+        if (aliveRef.current) setMyBid(mine);
+      } else if (!user) {
+        if (aliveRef.current) setMyBid(null);
+      }
+    } catch {
+      // Network blip or bad response — keep the last state on screen but
+      // count the miss so the UI can admit it is not live any more.
+      if (aliveRef.current) setPollFailures((n) => n + 1);
     }
-
-    load();
-    const t = setInterval(load, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
   }, [listingId, user, getToken]);
 
+  useEffect(() => {
+    aliveRef.current = true;
+    void load();
+    const t = setInterval(() => void load(), 5000);
+    return () => {
+      aliveRef.current = false;
+      clearInterval(t);
+    };
+  }, [load]);
+
+  async function retryLoad() {
+    setRetrying(true);
+    await load();
+    if (aliveRef.current) setRetrying(false);
+  }
+
   if (!state) {
+    // Nothing loaded yet AND at least one attempt failed → this is broken,
+    // not slow. Say so and give the buyer a way out of the dead end.
+    if (pollFailures > 0) {
+      return (
+        <div
+          className="rounded-[6px] px-4 py-4 mb-5 text-sm"
+          role="alert"
+          style={{
+            background: 'rgba(200,16,46,0.08)',
+            border: '0.5px solid var(--red)',
+            color: 'var(--text-secondary)',
+            lineHeight: 1.5,
+          }}
+        >
+          <p style={{ color: 'var(--red)', fontWeight: 600 }}>
+            Couldn&apos;t load this auction
+          </p>
+          <p className="mt-1">
+            The live bid and countdown are unavailable — you may be offline, or
+            the connection dropped. Nothing has changed on your side.
+          </p>
+          <button
+            type="button"
+            onClick={() => void retryLoad()}
+            disabled={retrying}
+            className="w-full mt-3 py-2.5 rounded-[6px] text-sm font-medium"
+            style={{
+              background: retrying ? 'var(--bg-inset)' : 'var(--red)',
+              color: retrying ? 'var(--text-tertiary)' : '#fff',
+              border: 'none',
+              cursor: retrying ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {retrying ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
+      );
+    }
     return (
       <div
         className="rounded-[6px] px-4 py-3 mb-5 text-sm text-center"
@@ -197,6 +259,14 @@ export default function AuctionPanel({
   }
 
   const remaining = formatRemaining(state.endTime);
+  // "Over" means EITHER the client clock passed endTime OR the backend has
+  // already moved the listing off ACTIVE. Both matter: the clock flips first
+  // (finalizeAuction runs on a 1-minute cron, so there's a gap where the
+  // countdown reads 0 but no outcome exists yet), and the status is the only
+  // thing that tells us WHICH outcome happened. Keying the closed UI on the
+  // clock alone is why every ended auction — win, reserve-not-met, cancelled
+  // — used to read as the same flat "Bidding has closed."
+  const auctionOver = remaining.ended || state.status !== 'ACTIVE';
   const isOwnAuction = isLoaded && user?.id === sellerClerkId;
 
   // Shared bid-submit. Both Place Bid (one-shot) and Auto Bid (proxy)
@@ -290,6 +360,41 @@ export default function AuctionPanel({
 
   return (
     <div className="mb-5 space-y-3">
+      {/* Reconnecting hint — three polls in a row (~15s) have failed while
+          we still have an old snapshot on screen. The countdown keeps
+          ticking off the last known endTime, so without this the bidder
+          would read stale numbers as live ones on a money surface. */}
+      {pollFailures >= 3 && (
+        <div
+          className="rounded-[6px] px-3 py-2 text-xs flex items-center justify-between gap-2"
+          role="status"
+          style={{
+            background: 'var(--bg-inset)',
+            border: '0.5px solid var(--border)',
+            color: 'var(--text-tertiary)',
+          }}
+        >
+          <span>Reconnecting… the bid shown may be out of date.</span>
+          <button
+            type="button"
+            onClick={() => void retryLoad()}
+            disabled={retrying}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--red)',
+              fontWeight: 500,
+              cursor: retrying ? 'not-allowed' : 'pointer',
+              textDecoration: 'underline',
+              textUnderlineOffset: 3,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {retrying ? 'Retrying…' : 'Retry now'}
+          </button>
+        </div>
+      )}
+
       {/* Snipe-extension banner — transient (8s) callout when the
           backend extends endTime in response to a last-minute bid. */}
       {now < extendedBannerUntil && (
@@ -431,9 +536,9 @@ export default function AuctionPanel({
             fontWeight: 500,
           }}
         >
-          {remaining.ended ? 'Auction ended' : 'Time remaining'}
+          {auctionOver ? 'Auction ended' : 'Time remaining'}
         </p>
-        {remaining.ended ? (
+        {auctionOver ? (
           <p
             className="text-center text-lg"
             style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
@@ -474,7 +579,7 @@ export default function AuctionPanel({
           "exceeded your max" (another bidder went above) from "tied
           your max" (matched it; ties go to whoever bid first), since
           users hit the tie case often and the wording matters. */}
-      {myBid?.hasBid && !myBid.isHighBidder && !remaining.ended && (
+      {myBid?.hasBid && !myBid.isHighBidder && !auctionOver && (
         <div
           className="rounded-[6px] px-4 py-3 text-sm"
           style={{
@@ -501,8 +606,24 @@ export default function AuctionPanel({
         </div>
       )}
 
-      {/* Owner's view */}
-      {isOwnAuction ? (
+      {/* Outcome first, ownership second: once an auction is over "you can't
+          bid on your own auction" is noise, while WHAT HAPPENED (won /
+          reserve not met / cancelled) matters to the seller too. The seller
+          can never be the high bidder, so pass null and they get the
+          third-party wording, never the winner's pay CTA. */}
+      {auctionOver ? (
+        <EndedAuctionNotice
+          listingId={listingId}
+          status={state.status}
+          bidCount={state.bidCount}
+          hasReserve={state.hasReserve}
+          reserveMet={state.reserveMet}
+          currentBid={state.currentBid}
+          endedAt={state.endedAt}
+          myBid={isOwnAuction ? null : myBid}
+          now={now}
+        />
+      ) : isOwnAuction ? (
         <div
           className="rounded-[6px] px-4 py-3 text-sm text-center"
           style={{
@@ -512,17 +633,6 @@ export default function AuctionPanel({
           }}
         >
           This is your auction — you can&apos;t bid on it.
-        </div>
-      ) : remaining.ended ? (
-        <div
-          className="rounded-[6px] px-4 py-3 text-sm text-center"
-          style={{
-            background: 'var(--bg-inset)',
-            border: '0.5px solid var(--border)',
-            color: 'var(--text-tertiary)',
-          }}
-        >
-          Bidding has closed.
         </div>
       ) : !user ? (
         <SignInButton mode="modal">
@@ -722,6 +832,201 @@ export default function AuctionPanel({
   );
 }
 
+// ─── Ended-auction outcome ──────────────────────────────────────────
+//
+// Every viewer used to get the same "Bidding has closed." line — including
+// the WINNER, whose only path to pay was the single "you won" SMS. Miss that
+// SMS and the 24h clock runs out: listing EXPIREs and the backend records a
+// strike against the bidder (auctions.service.ts sweepUnpaidWins). The
+// listing page is the most natural place for a winner to come back to, so it
+// has to carry the pay CTA too.
+//
+// No new endpoint is involved: /auctions/:id already returns status +
+// endedAt, and /auctions/:id/me returns isHighBidder, which stays true after
+// close (it's computed off listing.currentBidderId, which finalize doesn't
+// clear). /checkout/<listingId> is the same page the SMS token link lands on
+// and it explicitly handles AUCTION + PAYMENT_PENDING.
+
+// finalizeAuction sets listing.expiresAt = endedAt + 24h as the pay-by time,
+// but the public auction-state payload doesn't carry expiresAt. Deriving it
+// from endedAt gives the identical instant with no payload change.
+const PAY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function payByFrom(endedAt: string | null): Date | null {
+  if (!endedAt) return null;
+  const t = new Date(endedAt).getTime();
+  if (Number.isNaN(t)) return null;
+  return new Date(t + PAY_WINDOW_MS);
+}
+
+// Absolute deadline, SAST-local in the reader's own locale settings. Shown
+// alongside a relative "about Nh left" because an absolute time alone is easy
+// to misjudge and a relative one alone is easy to forget.
+function formatDeadline(d: Date): string {
+  return d.toLocaleString('en-ZA', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function formatLeft(ms: number): string {
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 60) return `${Math.max(mins, 1)} min left`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `about ${hours} hour${hours === 1 ? '' : 's'} left`;
+  return 'about 24 hours left';
+}
+
+function EndedAuctionNotice({
+  listingId,
+  status,
+  bidCount,
+  hasReserve,
+  reserveMet,
+  currentBid,
+  endedAt,
+  myBid,
+  now,
+}: {
+  listingId: string;
+  status: string;
+  bidCount: number;
+  hasReserve: boolean;
+  reserveMet: boolean;
+  currentBid: number | null;
+  endedAt: string | null;
+  myBid: MyBidState | null;
+  now: number;
+}) {
+  const neutral: React.CSSProperties = {
+    background: 'var(--bg-inset)',
+    border: '0.5px solid var(--border)',
+    color: 'var(--text-tertiary)',
+  };
+
+  // ── Winner: the only state on this page with an action attached. ──
+  if (status === 'PAYMENT_PENDING' && myBid?.isHighBidder) {
+    const payBy = payByFrom(endedAt);
+    const msLeft = payBy ? payBy.getTime() - now : null;
+    const lapsed = msLeft !== null && msLeft <= 0;
+    return (
+      <div
+        className="rounded-[6px] px-4 py-4 text-sm"
+        role="status"
+        style={{
+          background: 'rgba(34,197,94,0.10)',
+          border: '0.5px solid rgba(34,197,94,0.55)',
+          color: 'var(--text-secondary)',
+          lineHeight: 1.55,
+        }}
+      >
+        <p style={{ color: '#22c55e', fontWeight: 600 }}>
+          🏆 You won this auction
+        </p>
+        <p className="mt-1">
+          Winning bid{' '}
+          <strong style={{ color: 'var(--text-primary)' }}>
+            {formatRand(currentBid ?? 0)}
+          </strong>
+          .{' '}
+          {payBy
+            ? lapsed
+              ? 'Your 24-hour payment window has passed — the sale may already have been cancelled.'
+              : `Complete checkout by ${formatDeadline(payBy)} (${formatLeft(msLeft!)}).`
+            : 'Complete checkout within 24 hours of the auction closing.'}
+        </p>
+        <Link
+          href={`/checkout/${listingId}`}
+          className="block w-full mt-3 py-3 rounded-[6px] text-sm text-center"
+          style={{
+            background: 'var(--red)',
+            color: '#fff',
+            fontWeight: 500,
+            textDecoration: 'none',
+          }}
+        >
+          Complete checkout — {formatRand(currentBid ?? 0)}
+        </Link>
+        <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+          If checkout isn&apos;t completed in time the sale is cancelled, the
+          seller can relist, and a strike is recorded against your bidding
+          account.
+        </p>
+      </div>
+    );
+  }
+
+  // ── Someone else won (or nobody here is signed in as the winner). ──
+  if (status === 'PAYMENT_PENDING') {
+    return (
+      <div className="rounded-[6px] px-4 py-3 text-sm" style={neutral}>
+        {myBid?.hasBid
+          ? 'Bidding has closed — you weren’t the high bidder. '
+          : 'Bidding has closed. '}
+        The winning bidder has 24 hours to complete checkout.
+      </div>
+    );
+  }
+
+  if (status === 'SOLD') {
+    return (
+      <div className="rounded-[6px] px-4 py-3 text-sm" style={neutral}>
+        Sold — this auction closed and the sale went through.
+      </div>
+    );
+  }
+
+  if (status === 'CANCELLED') {
+    return (
+      <div className="rounded-[6px] px-4 py-3 text-sm" style={neutral}>
+        Auction cancelled — the seller withdrew this listing before it closed.
+      </div>
+    );
+  }
+
+  if (status === 'EXPIRED') {
+    // Three very different endings all land on EXPIRED, and buyers read them
+    // completely differently: reserve-not-met (finalize case B), a winner who
+    // never paid (sweepUnpaidWins), and a run with no bids at all (case C).
+    if (bidCount > 0 && hasReserve && !reserveMet) {
+      return (
+        <div className="rounded-[6px] px-4 py-3 text-sm" style={neutral}>
+          Auction ended — reserve not met. The top bid of{' '}
+          {formatRand(currentBid ?? 0)} stayed below the seller&apos;s
+          minimum, so no sale was made. They may relist it.
+        </div>
+      );
+    }
+    if (bidCount > 0) {
+      return (
+        <div className="rounded-[6px] px-4 py-3 text-sm" style={neutral}>
+          Auction ended — the sale wasn&apos;t completed within the payment
+          window. The seller may relist it.
+        </div>
+      );
+    }
+    return (
+      <div className="rounded-[6px] px-4 py-3 text-sm" style={neutral}>
+        Auction ended with no bids.
+      </div>
+    );
+  }
+
+  // Clock passed endTime but the 1-minute finalize cron hasn't claimed the
+  // row yet. The panel polls every 5s, so this resolves itself — say so
+  // rather than implying a final result that hasn't been decided.
+  return (
+    <div className="rounded-[6px] px-4 py-3 text-sm" style={neutral}>
+      Bidding has closed — we&apos;re finalising the result. This page updates
+      itself within a minute.
+    </div>
+  );
+}
+
 // One D / H / M / S column in the big countdown card. The value is
 // zero-padded for hours/mins/secs so the timer doesn't visually wobble
 // when it ticks from 10 → 9 (single digit vs double). Days is shown
@@ -804,6 +1109,14 @@ function BidModal({
 
   return (
     <div
+      // data-blocking-overlay is read by the listing page's sticky mobile buy
+      // bar (a CSS :has() rule hides the bar while this is mounted). The bar
+      // lives in a sibling stacking context, so z-index alone can't keep it
+      // behind this overlay — the attribute is the contract between the two.
+      data-blocking-overlay="true"
+      role="dialog"
+      aria-modal="true"
+      aria-label={kind === 'placeBid' ? 'Place bid' : 'Set auto bid'}
       className="fixed inset-0 z-[60] flex items-center justify-center px-4"
       style={{ background: 'rgba(0,0,0,0.6)' }}
       onClick={onCancel}

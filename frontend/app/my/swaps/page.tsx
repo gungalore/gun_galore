@@ -171,7 +171,12 @@ function SwapCard({
         <span style={{ color: 'var(--text-tertiary)', fontSize: 18 }}>⇅</span>
         <ItemThumb item={swap.get} />
         <div className="ml-auto">
-          <StatusChip status={swap.status} />
+          <StatusChip
+            status={swap.status}
+            override={
+              swap.status === 'AWAITING_FUNDING' ? fundingChip(swap) : null
+            }
+          />
         </div>
       </div>
       <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
@@ -582,15 +587,49 @@ function ItemThumb({ item }: { item: Item | null }) {
   );
 }
 
-function StatusChip({ status }: { status: string }) {
+// AWAITING_FUNDING covers three genuinely different "what do I do now?"
+// situations, and the flat red "Awaiting payment" chip described none of them:
+// while the proof photo is outstanding the blocking step is verification, and
+// with card payments still switched off there is no payment to make at all —
+// so members hunted for a pay button that does not exist. Derive the label
+// from the same conditions the card body branches on (ProofSection →
+// FundingSection → AddressForm / FundingComingSoon) so chip and body agree.
+function fundingChip(swap: SwapRow): { label: string; color: string } {
+  if (swap.giveProofStatus !== 'APPROVED') {
+    return { label: 'Verify your item', color: '#f59e0b' };
+  }
+  if (swap.myFunded) {
+    return { label: 'Payment received', color: '#16a34a' };
+  }
+  if (!swap.fundingSetUp || !swap.myReference) {
+    return { label: 'Add delivery address', color: '#f59e0b' };
+  }
+  // Quoted and unfunded — the only state where the eventual "Awaiting
+  // payment" label belongs, but the body currently renders FundingComingSoon,
+  // so the chip must not promise a payment step that isn't live yet.
+  return { label: 'Payments launching soon', color: 'var(--text-secondary)' };
+}
+
+function StatusChip({
+  status,
+  override,
+}: {
+  status: string;
+  // Lets a call site pass a derived next-action label (see fundingChip) while
+  // keeping the plain status→label map for every other state.
+  override?: { label: string; color: string } | null;
+}) {
   const map: Record<string, { label: string; color: string }> = {
+    // Kept as the live-payments label this chip returns to once card
+    // funding is switched on; today AWAITING_FUNDING always arrives with a
+    // derived override.
     AWAITING_FUNDING: { label: 'Awaiting payment', color: 'var(--red)' },
     LOCKED: { label: 'Locked in', color: '#16a34a' },
     IN_TRANSIT: { label: 'In transit', color: 'var(--text-secondary)' },
     AWAITING_VERIFICATION: { label: 'Verifying', color: 'var(--text-secondary)' },
     DISPUTED: { label: 'Under review', color: '#f59e0b' },
   };
-  const m = map[status] ?? { label: status, color: 'var(--text-tertiary)' };
+  const m = override ?? map[status] ?? { label: status, color: 'var(--text-tertiary)' };
   return (
     <span className="text-xs px-2 py-0.5 rounded-[3px]"
       style={{ background: 'var(--bg-inset)', color: m.color, border: '0.5px solid var(--border)' }}>

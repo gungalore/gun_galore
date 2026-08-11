@@ -9,7 +9,7 @@
 // shell shows the empty state until the API lands.
 
 import { useEffect, useState, useCallback } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth, SignInButton } from '@clerk/nextjs';
 import {
   fetchFeed,
   dismissNotifications,
@@ -73,6 +73,14 @@ export function NotificationsList({
         const data = await fetchFeed(token, category, status);
         setItems(data);
       }
+      // Tell every badge on screen to re-count, on BOTH paths. The tab
+      // pills above this list and the bell badge in the bottom tab bar
+      // otherwise keep their old numbers until the next 60s poll — you
+      // clear your last alert and still read "Alerts (3)", which is
+      // exactly the distrust the never-clears-on-open badge can't afford.
+      // The rollback dispatch matters too: a failed dismiss must put the
+      // count back rather than leave it optimistically low.
+      window.dispatchEvent(new CustomEvent('gg:alerts-changed'));
     },
     [getToken, category, status],
   );
@@ -108,6 +116,10 @@ export function NotificationsList({
   }
 
   if (!isSignedIn) {
+    // Dead end without a CTA: in the installed app there is no top nav, so
+    // the only other way back in is the sign-in pill buried in the More
+    // sheet. Modal mode keeps this page mounted, matching that sheet's
+    // signed-out pattern.
     return (
       <div
         style={{
@@ -117,7 +129,25 @@ export function NotificationsList({
           fontSize: 14,
         }}
       >
-        Sign in to view your notifications.
+        <p style={{ margin: 0 }}>Sign in to view your notifications.</p>
+        <SignInButton mode="modal">
+          <button
+            type="button"
+            style={{
+              marginTop: 14,
+              padding: '10px 20px',
+              background: 'var(--red)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            Sign in
+          </button>
+        </SignInButton>
       </div>
     );
   }

@@ -30,6 +30,13 @@ export type ActionTokenPurpose =
   | 'COUNTER_DECISION'
   | 'AUCTION_BID'
   | 'CHECKOUT'
+  // AUCTION_RUNNER_UP — the SELLER's one-tap link after an auction winner
+  // blows the 24h pay window. Offers the item to the second-highest bidder at
+  // that bidder's own highest bid instead of making the seller restart a
+  // 7-day auction to reach a buyer we already had. Seller-confirmed, never
+  // automatic. targetType = 'listing'; metadata carries the runner-up's id +
+  // amount as snapshotted when the SMS was sent (both re-validated on accept).
+  | 'AUCTION_RUNNER_UP'
   // DISPATCH — seller's one-tap link from the 48h dispatch nudge SMS.
   // Lands on `/a/<token>` which renders the dispatch form (tracking
   // reference input + optional Pudo locker) so the seller can mark
