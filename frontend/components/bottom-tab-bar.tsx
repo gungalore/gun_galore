@@ -13,9 +13,14 @@
 //
 // Five tabs — Sell sits dead-centre (position 3) so the raised FAB
 // styling reads symmetric:
-//   1. Shop     → opens a bottom sheet with the shopping surfaces:
-//                 All listings / Marketplace / Auctions / Take a Shot /
-//                 Swop / Trade.
+//   1. Shop     → opens a CATEGORY-FIRST bottom sheet: the real
+//                 top-level category tree (Camping, Optics, Fishing,
+//                 Firearms…) up top, with the selling-mode surfaces
+//                 (All listings / Marketplace / Auctions / Take a Shot /
+//                 Swop / Daily Deals / Prize Draw) demoted below it.
+//                 A buyer opening "Shop" is looking for a THING, not a
+//                 transaction format; only someone who already knows how
+//                 the site sells thinks in modes.
 //   2. Alerts   → routes to /notifications. Bell icon. When there are
 //                 unresolved notifications, shows a red active-count
 //                 badge in the top-right corner of the bell.
@@ -43,15 +48,60 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
 import { useStandalone } from '@/lib/use-standalone';
 import { useScrollDirection } from '@/lib/use-scroll-direction';
 import { PushToggleRow } from '@/components/push-opt-in-banner';
 import { AccountMenuList } from '@/lib/account-menu';
 import { isSuppressed as isAskGgSuppressed } from '@/components/ask-gg/ask-gg-host';
+import type { CategoryWithCount } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
+// ─── Category tree for the Shop sheet ──────────────────────────────
+// Same GET /categories/with-counts the homepage curtain and the desktop
+// CategoryMenu flyout use — one canonical taxonomy, rolled-up counts (a
+// root already includes its children), so the sheet can never disagree
+// with the rest of the site.
+//
+// The flyout's loadCategories() is module-private (not exported), so the
+// pattern is repeated here rather than imported. That costs at most ONE
+// extra request per session: `cache: 'force-cache'` means the browser HTTP
+// cache serves whichever consumer asks second, and the module cache below
+// makes every later sheet open free.
+//
+// Rejects on ANY unusable outcome (HTTP error, non-array, empty list) and
+// clears `inflight` on the way out, so a bad response is never cached and
+// the NEXT sheet open transparently retries. An empty payload on a seeded
+// marketplace means the response was broken, not that the taxonomy is
+// empty — caching it would freeze the sheet mode-only for the session.
+let catCache: CategoryWithCount[] | null = null;
+let catInflight: Promise<CategoryWithCount[]> | null = null;
+
+async function loadShopCategories(): Promise<CategoryWithCount[]> {
+  if (catCache) return catCache;
+  if (!catInflight) {
+    catInflight = fetch(`${API_URL}/categories/with-counts`, {
+      cache: 'force-cache',
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(`categories ${r.status}`);
+        return r.json();
+      })
+      .then((data: CategoryWithCount[]) => {
+        const list = Array.isArray(data) ? data : [];
+        if (list.length === 0) throw new Error('categories empty');
+        catCache = list;
+        return list;
+      })
+      .catch((err) => {
+        catInflight = null; // let the next sheet open retry
+        throw err;
+      });
+  }
+  return catInflight;
+}
 
 interface Tab {
   key: string;
@@ -442,8 +492,10 @@ export function BottomTabBar() {
   if (!isStandalone) return null;
 
   // "Shop" tab is active on the shopping surfaces (i.e. anywhere the
-  // picker would point to).
-  const isShopSurface = pathname === '/';
+  // picker would point to). /category/* is included now that the sheet
+  // leads with the category grid — a user who tapped Shop → Camping would
+  // otherwise land on a page where no tab is lit at all.
+  const isShopSurface = pathname === '/' || pathname.startsWith('/category/');
 
   const tabs: Tab[] = [
     {
@@ -822,11 +874,17 @@ function SheetHandle({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ─── Shop sheet — picker for the 5 shopping surfaces ──────────────
-// Replaces the old separate Browse + Auctions tabs with one entry
-// point that surfaces all four shopping modes (plus the unfiltered
-// "All listings" view) with equal weight. Patterned after the App
-// Store's "Today / Games / Apps / ..." section selector.
+// ─── Shop sheet — CATEGORY-first browse entry point ────────────────
+// Two stacked sections:
+//   1. Shop by category — the live top-level taxonomy with counts. This
+//      is what a buyer actually wants: they came for a tent, a scope, a
+//      rod. Until now the installed app (the flagship mobile experience)
+//      had NO category browsing at all — the desktop nav got a
+//      CategoryMenu flyout and this sheet was never touched.
+//   2. Or browse by how it sells — the selling-mode surfaces, demoted.
+//      A transaction-mode taxonomy only helps someone who already knows
+//      how Gun Galore sells, so it stops being the first thing you see.
+// Patterned after the App Store's "Today / Games / Apps / ..." selector.
 function ShopSheet({
   pathname,
   searchParams,
@@ -842,6 +900,61 @@ function ShopSheet({
   onNavigate: () => void;
 }) {
   const { panelRef, dragHandlers, dragStyle } = useSwipeDown(onClose);
+
+  // Categories load LAZILY on first open — the sheet is only mounted while
+  // it's open (`{shopOpen && <ShopSheet/>}`), so mount === the user just
+  // tapped Shop. Nothing is fetched for users who never open it.
+  const [cats, setCats] = useState<CategoryWithCount[]>(catCache ?? []);
+  const [catState, setCatState] = useState<'loading' | 'ready' | 'error'>(
+    catCache ? 'ready' : 'loading',
+  );
+
+  useEffect(() => {
+    if (catCache) return; // warm module cache — nothing to do
+    let alive = true;
+    loadShopCategories().then(
+      (list) => {
+        if (!alive) return;
+        setCats(list);
+        setCatState('ready');
+      },
+      () => {
+        // Degrade to modes-only rather than showing a dead retry card: the
+        // sheet's whole job (get me somewhere) still works via the surface
+        // list below, and loadShopCategories() already re-arms itself so the
+        // next open silently tries again.
+        if (alive) setCatState('error');
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Roots only — the sheet is a launcher, not the full tree (tapping through
+  // to /category/[slug] shows the children). Curated sortOrder is preserved
+  // so the sheet agrees with the nav flyout and homepage curtain, EXCEPT that
+  // categories with no active stock sink to the bottom: an empty category at
+  // the top of a browse sheet is a dead end occupying the best real estate.
+  const roots = useMemo(
+    () =>
+      cats
+        .filter((c) => c.parentId === null && c.isActive)
+        .sort((a, b) => {
+          const aEmpty = a.count === 0 ? 1 : 0;
+          const bEmpty = b.count === 0 ? 1 : 0;
+          if (aEmpty !== bEmpty) return aEmpty - bEmpty;
+          return a.sortOrder - b.sortOrder;
+        }),
+    [cats],
+  );
+
+  // Skeletons while the first fetch is in flight; real tiles once we have
+  // roots; nothing at all if the call failed or the taxonomy has no active
+  // roots (modes-only degrade). Drives both the grid and the modes heading
+  // below it, so the two can never disagree.
+  const showCategories = catState === 'loading' || roots.length > 0;
+
   // Source of truth for the picker. Order = how prominent we want
   // each surface to be. Taglines mirror those in app/page.tsx
   // (SURFACE_TITLES) so the picker and the destination header speak
@@ -873,7 +986,12 @@ function ShopSheet({
       key: 'marketplace',
       href: '/?listingType=BUY_NOW',
       title: 'Marketplace',
-      tagline: 'Used firearms and gear — pay the listed price and go',
+      // Was "Used firearms and gear — …": gun-first copy on a general
+      // outdoor surface (the sheet also fronts camping, fishing, optics).
+      // Describe the MECHANIC, which is what distinguishes this surface
+      // from Auctions / Take a Shot, and let the categories above say what
+      // is for sale.
+      tagline: 'Buy it now at the listed price — no bidding, no waiting',
       icon: <IconCart />,
       isActive:
         pathname === '/' && searchParams.get('listingType') === 'BUY_NOW',
@@ -1005,21 +1123,154 @@ function ShopSheet({
         }}
       >
         <SheetHandle onClose={onClose} />
+
+        {/* ── 1. Shop by category ──────────────────────────────────
+            Hidden entirely when the taxonomy call failed (catState
+            'error') or came back with no active roots — a bare heading
+            over empty space is worse than the modes-only sheet, which
+            still gets the user somewhere. */}
+        {showCategories && (
+          <>
+            <p
+              style={{
+                padding: '4px 20px 10px',
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: 0.6,
+                textTransform: 'uppercase',
+                color: 'var(--text-tertiary)',
+                margin: 0,
+              }}
+            >
+              Shop by category
+            </p>
+            <ul
+              aria-label="Shop by category"
+              aria-busy={catState === 'loading'}
+              style={{
+                listStyle: 'none',
+                margin: 0,
+                padding: '0 12px',
+                // Two columns: the longest root names ("Reloading
+                // Components", "Gun Smithing & Parts") still fit on a
+                // 390px phone, and 14 roots stay a short scroll rather
+                // than a 14-row wall.
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                gap: 6,
+              }}
+            >
+              {catState === 'loading'
+                ? /* Same-height placeholders so the sheet doesn't jump when
+                     the real tiles land. Only ever seen on the very first
+                     open — the module cache serves every open after that. */
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <li
+                      key={`cat-skel-${i}`}
+                      aria-hidden
+                      style={{
+                        height: 58,
+                        borderRadius: 10,
+                        background: 'var(--bg-inset)',
+                        border: '0.5px solid var(--border)',
+                        opacity: 0.55,
+                      }}
+                    />
+                  ))
+                : roots.map((c) => {
+                    const active = pathname === `/category/${c.slug}`;
+                    return (
+                      <li key={c.id}>
+                        <Link
+                          href={`/category/${c.slug}`}
+                          onClick={onNavigate}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'center',
+                            gap: 2,
+                            // Fill the grid row so tiles in the same row
+                            // stay equal height even when one hides its
+                            // count.
+                            height: '100%',
+                            minHeight: 58,
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            background: active
+                              ? 'rgba(200, 16, 46, 0.10)'
+                              : 'var(--bg-inset)',
+                            border: `0.5px solid ${
+                              active
+                                ? 'rgba(200, 16, 46, 0.40)'
+                                : 'var(--border)'
+                            }`,
+                            color: 'var(--text-primary)',
+                            textDecoration: 'none',
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 13.5,
+                              fontWeight: 600,
+                              lineHeight: 1.25,
+                              color: active
+                                ? 'var(--red)'
+                                : 'var(--text-primary)',
+                            }}
+                          >
+                            {c.name}
+                          </span>
+                          {/* Hide a 0 — "0 items" reads worse than no
+                              number at all (same rule as the homepage
+                              curtain tiles). */}
+                          {c.count > 0 && (
+                            <span
+                              style={{
+                                fontSize: 11.5,
+                                color: 'var(--text-tertiary)',
+                                lineHeight: 1.3,
+                              }}
+                            >
+                              {c.count.toLocaleString('en-ZA')} item
+                              {c.count !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </Link>
+                      </li>
+                    );
+                  })}
+            </ul>
+          </>
+        )}
+
+        {/* ── 2. Selling modes, demoted ────────────────────────────
+            Divider + heading (same idiom as the More sheet's Section)
+            so the modes read as a secondary way in rather than the main
+            event. When the category section is absent there is nothing
+            to be "or" to, and a hairline directly under the grab handle
+            just looks like a rendering fault — so fall back to the
+            original standalone heading. */}
         <p
           style={{
-            padding: '4px 20px 12px',
+            padding: showCategories ? '14px 20px 10px' : '4px 20px 12px',
+            margin: showCategories ? '10px 0 0' : 0,
             fontSize: 11,
             fontWeight: 600,
             letterSpacing: 0.6,
             textTransform: 'uppercase',
             color: 'var(--text-tertiary)',
-            margin: 0,
+            borderTop: showCategories
+              ? '0.5px solid var(--border-divider)'
+              : undefined,
           }}
         >
-          Choose a surface
+          {showCategories ? 'Or browse by how it sells' : 'Choose a surface'}
         </p>
 
-        <ul style={{ listStyle: 'none', margin: 0, padding: '0 12px' }}>
+        <ul
+          aria-label="Browse by how it sells"
+          style={{ listStyle: 'none', margin: 0, padding: '0 12px' }}
+        >
           {surfaces.map((s) => (
             <li key={s.key} style={{ marginBottom: 6 }}>
               <Link

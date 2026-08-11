@@ -85,9 +85,13 @@ export class BrowseListingsDto {
   @Max(100)
   limit?: number = 20;
 
+  // 'ending_soon' orders by endTime ascending with nulls last — the sort the
+  // Auctions surface actually wants (a buyer browsing auctions is shopping by
+  // urgency, not by listing date). Prisma-path only: the Meili document does
+  // not carry endTime, so the browse layer falls back to the DB for it.
   @IsOptional()
-  @IsEnum(['price_asc', 'price_desc', 'newest'])
-  sort?: 'price_asc' | 'price_desc' | 'newest' = 'newest';
+  @IsEnum(['price_asc', 'price_desc', 'newest', 'ending_soon'])
+  sort?: 'price_asc' | 'price_desc' | 'newest' | 'ending_soon' = 'newest';
 
   /**
    * P4.3a — per-category attribute filters, JSON-encoded by the client.

@@ -74,7 +74,15 @@ export class SearchService implements OnModuleInit {
       ...STATIC_LISTING_FILTERABLE_ATTRIBUTES,
       ...attrKeys,
     ]);
-    await listingsIndex.updateSortableAttributes(['price', 'createdAt']);
+    // endTimeTs backs the Auctions surface's "Ending soonest" sort. Adding a
+    // sortable attribute only affects documents indexed AFTER the change, so
+    // a one-off reindex (admin "reindex all active listings") is needed once
+    // for pre-existing docs — until then they simply sort last on that key.
+    await listingsIndex.updateSortableAttributes([
+      'price',
+      'createdAt',
+      'endTimeTs',
+    ]);
     await listingsIndex.updateSearchableAttributes([
       'title',
       'description',

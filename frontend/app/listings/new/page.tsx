@@ -3658,7 +3658,7 @@ export default function NewListingPage() {
               isExperience
                 ? 'A hunting package is a future-dated on-site experience — no courier. Add the event details, your supplier registration + compliance, and a contact/pickup address.'
                 : effectiveCollectionOnly
-                ? 'Buyers collect this item in person from you — no courier. Add your pickup address so buyers know where they’re collecting from.'
+                ? 'Buyers collect this one from you — in person, or with a transporter they arrange themselves. No courier. Add your pickup address so buyers know where they’re collecting from.'
                 : isFirearm
                 ? 'Firearms must move through a SAPS-licensed dealer. Pick one or both arrangement options below, then add your pickup address.'
                 : 'Pick which couriers you offer, then add the pickup address. We use it to suggest your nearest Pudo locker.'
@@ -4159,7 +4159,11 @@ export default function NewListingPage() {
                 <p style={{ color: 'var(--text-secondary)' }}>
                   {dgLithiumRestricted && !collectionOnly
                     ? `Batteries rated over ${dgWhThreshold} Wh can’t be couriered (dangerous-goods rules), so this listing is collection-only — the buyer collects in person and their payment is held until they confirm collection.`
-                    : 'Buyers collect this item in person — no courier. You’ll coordinate a pickup time with the buyer after they pay. Their payment is held until they confirm collection.'}
+                    : // Big-4 copy interim: buyers are told they may send their
+                      // own transporter, so the seller must be told too — a
+                      // seller who reads "in person" and then meets a hired
+                      // truck at the gate has been mis-set by us.
+                      'No courier on this one. The buyer collects after they pay — either in person or with a transporter they arrange and pay for themselves. You’ll coordinate the pickup with them, and their payment is held until they confirm they have the item.'}
                 </p>
               </div>
             )}

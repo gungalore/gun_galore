@@ -195,6 +195,12 @@ const PRICELESS_LISTING_TYPES = new Set<ListingType>([
 // so an unsanitized key can never be interpolated into a filter string.
 const ATTR_KEY_RE = /^[a-z][a-z0-9_]{0,48}$/;
 
+// Sentinel `endTimeTs` for a listing with no close time (everything that
+// isn't a live auction). Year 5138 — far enough out that a real auction can
+// never collide with it, so ascending "ending soonest" always ranks genuine
+// auctions above never-ending listings.
+const NEVER_ENDS_TS = 99_999_999_999_999;
+
 // P5.6 — a category's sold-price comps only render once this many settled
 // sales exist, so a thin catalog can't reverse a range back to one seller's
 // take (POPIA) and the number is statistically meaningful.
@@ -1843,7 +1849,12 @@ export class ListingsService {
         ? ['price:asc']
         : sort === 'price_desc'
           ? ['price:desc']
-          : ['createdAt:desc'];
+          : sort === 'ending_soon'
+            ? // Mirrors the Prisma path. Non-auctions carry the far-future
+              // NEVER_ENDS_TS sentinel, so they land after real auctions
+              // instead of ahead of them.
+              ['endTimeTs:asc']
+            : ['createdAt:desc'];
 
     const result = await this.search.search(INDEXES.LISTINGS, q, {
       filter: filterParts.join(' AND '),
@@ -1981,7 +1992,13 @@ export class ListingsService {
         ? { price: 'asc' as const }
         : sort === 'price_desc'
           ? { price: 'desc' as const }
-          : { createdAt: 'desc' as const };
+          : sort === 'ending_soon'
+            ? // Soonest-closing auction first. `nulls: 'last'` matters: every
+              // non-auction listing has a null endTime, and Postgres sorts
+              // NULLs FIRST on ASC by default — without this the "ending
+              // soonest" view would open with every listing that never ends.
+              { endTime: { sort: 'asc' as const, nulls: 'last' as const } }
+            : { createdAt: 'desc' as const };
 
     const [listings, total] = await Promise.all([
       this.prisma.listing.findMany({
@@ -2778,6 +2795,14 @@ export class ListingsService {
         price: listing.price,
         priceRange: listing.price ? this.priceRange(listing.price) : null,
         createdAt: listing.createdAt?.toISOString(),
+        // Sortable auction close time, as a NUMBER (Meili sorts numerics
+        // predictably; a null/absent field has no defined position). Anything
+        // that never ends gets a far-future sentinel so an ascending
+        // "ending soonest" sort puts real auctions first and everything else
+        // after them, matching the Prisma path's `nulls: 'last'`.
+        endTimeTs: listing.endTime
+          ? listing.endTime.getTime()
+          : NEVER_ENDS_TS,
       };
 
       // P4.3a — flatten the per-category attribute VALUES into `attr_<key>`

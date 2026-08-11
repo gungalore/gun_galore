@@ -11,6 +11,12 @@ Items are referenced by their section + number below (e.g. Q1 = Quick win #1, M7
 
 **Batch 2 — `0437cbb` 2026-07-24** (11 items, migration `20260724030000_accept_reminder`): Q6 mobile PDP rail order · Edit action on /my/listings · /offers/received urgency sort + deadline chip · PWA badge re-poll + app-icon badge · admin dossier reject-strikes + clear-strikes · Release confirm-gate + res.ok surfacing · complaint→held-order handoff · alert deep-links by type prefix · SHIPMENT_DELIVERY_FAILED/RETURNED alerts · seller mid-window accept reminder · false "7-day auto-release" copy purged.
 
+**Batches 4–6 — `29a7305` + `7beb17d` 2026-07-24** (91 files, 18 agents across three fan-outs, migration `20260724160000_campaign_attribution`, 737 backend tests green):
+Quick wins Q22–Q46 and Q47–Q63 all shipped, plus mediums M1, M2, M3, M4, M5, M8, M9, M10, M11, M12, M13, M14, M17, M18, M25, M27, M28, M29, M32, M33, M34, M36, M37, M38, M39 and Q55 (`/condition-guide`).
+Highlights: mobile-web search bar + ARIA combobox · auction-winner pay CTA + existing-offer state on the PDP · sticky mobile buy bar · My Orders next-action cues · dispute→complaint evidence handoff (`/complaints/new?tx=`) · checkout re-check · sell-form draft/relist/progress/moderation-cache fixes · admin payouts-due panel + run-payouts · alerts triage (chips/bulk-resolve/JSON context) · danger-flagged go-live switches · complaints on tx + user dossiers · CSV exports · campaign conversion attribution (first-touch) · runner-up auction offers (BIG-2, seller-confirmed) · refund-ETA + auto-refund copy truthfulness pass · gun-first copy purge + homepage CategoryCurtain.
+⚠️ GOTCHA (cost a redeploy): a NEW public page must be added to `isPublicRoute` in `frontend/middleware.ts` or it 307s to sign-in — same trap as the `/competitions` routes.
+⚠️ NOTE on the "Ending soonest" sort: the Prisma browse path is complete (`endTime asc, nulls last`). The Meilisearch path sorts on a new `endTimeTs` document field, which only lands on documents indexed AFTER the change — so a *text search combined with* ending-soonest ranks pre-existing docs last until each listing is next edited (or an all-active reindex runs). Harmless at current catalogue size; worth a reindex before any real auction volume.
+
 **Batch 3 — automation 2026-07-24** (migration `20260724120000_automation_batch3`, 21 new tests):
 M7/M30 offer-expiry seller reminder (12h) + seller told when an offer lapses ·
 M20 pay-window reminders before the strike lands (accepted offers 6h, auction winners 6h) ·

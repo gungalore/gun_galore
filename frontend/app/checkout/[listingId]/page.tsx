@@ -139,6 +139,11 @@ export default async function CheckoutPage({
               </span>
             </div>
           </div>
+
+          {/* Big-4 copy interim: the "collect in person OR send a transporter"
+              framing now lives in the checkout form's own Collection panel
+              (checkout-form.tsx), gated on the same getCollectionMode check.
+              Saying it in both columns of one page just reads as repetition. */}
         </div>
 
         {/* Right: checkout form */}

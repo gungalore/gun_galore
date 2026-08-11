@@ -1,9 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@clerk/nextjs';
-import { useCart, removeFromCart } from '@/lib/cart-store';
+import {
+  useCart,
+  removeFromCart,
+  setCartQuantity,
+  getCart,
+} from '@/lib/cart-store';
+import { NumberStepper } from '@/components/number-stepper';
 import { formatPrice } from '@/lib/utils';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
@@ -37,6 +43,17 @@ interface FirearmState {
   consentAccepted: boolean;
 }
 
+// UX-M24 — live stock for one cart line, read from the PUBLIC listing payload
+// (trackInventory / quantityAvailable / quantityReserved are all in
+// PUBLIC_LISTING_SELECT). We deliberately do NOT trust the localStorage
+// snapshot for this: a cart can sit for days while other buyers reserve units,
+// so the quantity ceiling has to come from the server every time /cart loads.
+// `sellable` mirrors the PDP's trackedSellable (available − reserved).
+interface LineStock {
+  trackInventory: boolean;
+  sellable: number;
+}
+
 export default function CartPage() {
   const items = useCart();
   const { getToken } = useAuth();
@@ -51,8 +68,105 @@ export default function CartPage() {
   // Phase-1 payment gate — card payments aren't live yet, so the cart
   // checkout POST returns 503 "launching soon". True once we've detected that.
   const [comingSoon, setComingSoon] = useState(false);
+  // UX-M24 — live per-listing stock, keyed by listingId. Empty until the fetch
+  // below lands (and stays empty for any line whose fetch failed), which is the
+  // safe default: no entry ⇒ quantity ceiling of 1 ⇒ exactly today's behaviour.
+  const [stock, setStock] = useState<Record<string, LineStock>>({});
+  // In-progress text for a quantity input, keyed by listingId. The committed
+  // value always lives in the cart store; this only exists so typing (which can
+  // pass through '' or an over-max number) doesn't fight the controlled input.
+  // Cleared on blur so the field always settles back on the stored quantity.
+  const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
 
-  const itemsSubtotal = items.reduce((s, i) => s + i.price, 0);
+  // cart-store's read() already normalises quantity to a whole number >= 1, so
+  // this is belt-and-braces for the optional TYPE rather than a real case.
+  const qtyOf = (q?: number) => q ?? 1;
+
+  // UX-M24 — fetch live stock for every line whenever the SET of listings
+  // changes (not on every quantity tick — `ids` is a stable sorted key, so
+  // clamping below can't re-trigger this effect).
+  const ids = items
+    .map((i) => i.listingId)
+    .sort()
+    .join(',');
+  useEffect(() => {
+    if (!ids) return;
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(
+        ids.split(',').map(async (id) => {
+          try {
+            // Public endpoint — no token needed, and no auth means a signed-out
+            // browse-then-sign-in cart still gets its ceilings.
+            const res = await fetch(`${API_URL}/listings/${id}`);
+            if (!res.ok) return null;
+            const l = await res.json();
+            const trackInventory = Boolean(l?.trackInventory);
+            return [
+              id,
+              {
+                trackInventory,
+                sellable: trackInventory
+                  ? Math.max(
+                      0,
+                      (l.quantityAvailable ?? 0) - (l.quantityReserved ?? 0),
+                    )
+                  : 1,
+              },
+            ] as const;
+          } catch {
+            // Network blip — leave the line un-ceilinged (max 1). Never block
+            // the cart on a stock read.
+            return null;
+          }
+        }),
+      );
+      if (cancelled) return;
+      const map: Record<string, LineStock> = {};
+      for (const r of results) if (r) map[r[0]] = r[1];
+      setStock(map);
+      // Clamp anything the buyer banked earlier that no longer fits — units
+      // sold while the cart sat in localStorage. Reads the store fresh (not the
+      // render-time `items`) so this effect needn't depend on it. Floor of 1:
+      // a sold-out line keeps its quantity and is blocked by name below rather
+      // than silently mutating to zero.
+      for (const [id, s] of Object.entries(map)) {
+        const line = getCart().find((i) => i.listingId === id);
+        if (!line) continue;
+        const ceiling = Math.max(1, s.sellable);
+        if ((line.quantity ?? 1) > ceiling) setCartQuantity(id, ceiling);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ids]);
+
+  // The quantity ceiling for a line. Firearms are always single-unit (one
+  // licence, one serial, one dealer transfer), and an untracked listing is a
+  // single physical item — only inventory-tracked stock can exceed 1.
+  const maxQtyFor = (listingId: string, isFirearm: boolean): number => {
+    if (isFirearm) return 1;
+    const s = stock[listingId];
+    if (!s || !s.trackInventory) return 1;
+    return s.sellable;
+  };
+
+  // Lines the seller has since run out of. Consistent with the PDP, where
+  // trackedSellable <= 0 hides Buy Now — here we can't hide the line, so we
+  // name it and block Continue until it's removed (the backend would reject
+  // the whole order with "This item is sold out." otherwise).
+  const soldOutItems = items.filter((i) => {
+    const s = stock[i.listingId];
+    return !i.isFirearm && s?.trackInventory && s.sellable <= 0;
+  });
+
+  // Money + counts are per-UNIT now: a line is unitPrice × quantity.
+  const itemsSubtotal = items.reduce(
+    (s, i) => s + i.price * qtyOf(i.quantity),
+    0,
+  );
+  const unitCount = items.reduce((s, i) => s + qtyOf(i.quantity), 0);
 
   // Split shippable (courier) items from firearms — firearms branch to a
   // dealer-transfer / in-person route and never touch the courier picker.
@@ -122,7 +236,13 @@ export default function CartPage() {
   });
 
   const shippingReady =
-    courierReady && firearmsReady && collectionItems.length === 0;
+    courierReady &&
+    firearmsReady &&
+    collectionItems.length === 0 &&
+    // UX-M24 — a sold-out line poisons the whole order server-side, so gate on
+    // it here. Only ever true off a SUCCESSFUL stock read; a failed fetch
+    // leaves the line unknown and never blocks checkout.
+    soldOutItems.length === 0;
 
   async function checkout() {
     if (!shippingReady || items.length === 0) return;
@@ -142,9 +262,16 @@ export default function CartPage() {
               : {}),
           };
         }
+        // UX-M24 — per-line units. Only sent when the buyer actually raised it
+        // (CreateOrderLineDto.quantity is optional and resolves to 1 when
+        // absent), so a single-unit cart posts the byte-identical payload it
+        // always did. The server re-resolves against live stock and reserves
+        // that many units atomically before the order exists.
+        const units = qtyOf(i.quantity);
         return {
           listingId: i.listingId,
           shippingMethod: method,
+          ...(units > 1 ? { quantity: units } : {}),
           ...(method === 'PUDO'
             ? { pudoPickupLockerId: locker?.lockerId }
             : {
@@ -260,7 +387,14 @@ export default function CartPage() {
               {g.username}
             </div>
           )}
-          {g.items.map((i) => (
+          {g.items.map((i) => {
+            // UX-M24 — per-line units. `max` is the live sellable count (1 for
+            // firearms and untracked single items, so the stepper simply never
+            // renders for them — same rule the PDP uses for its own stepper).
+            const units = qtyOf(i.quantity);
+            const max = maxQtyFor(i.listingId, i.isFirearm);
+            const lineSoldOut = soldOutItems.includes(i);
+            return (
             <div
               key={i.listingId}
               className="flex items-center gap-3 p-3"
@@ -299,10 +433,75 @@ export default function CartPage() {
                     Firearm — dealer / in-person
                   </span>
                 )}
+
+                {/* Sold out beats the stepper — there's nothing to choose a
+                    quantity of, and Continue is blocked until it's gone. */}
+                {lineSoldOut ? (
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--red)', lineHeight: 1.4 }}>
+                    Sold out while it sat in your cart — remove it to continue.
+                  </p>
+                ) : max > 1 ? (
+                  <div
+                    className="mt-2 flex items-center gap-2"
+                    // Blur bubbles here from the input; clearing the draft makes
+                    // the field settle back on the committed cart quantity, so a
+                    // half-typed or over-max entry can never be left on screen
+                    // disagreeing with the totals.
+                    onBlur={() =>
+                      setQtyDraft((d) => {
+                        if (!(i.listingId in d)) return d;
+                        const next = { ...d };
+                        delete next[i.listingId];
+                        return next;
+                      })
+                    }
+                  >
+                    <div style={{ width: 108 }}>
+                      <NumberStepper
+                        value={qtyDraft[i.listingId] ?? String(units)}
+                        min={1}
+                        max={max}
+                        aria-label={`Quantity for ${i.title}`}
+                        onChange={(next) => {
+                          setQtyDraft((d) => ({ ...d, [i.listingId]: next }));
+                          const n = Number.parseInt(next, 10);
+                          if (!Number.isFinite(n) || n < 1) return; // mid-edit / cleared
+                          const clamped = Math.min(max, n);
+                          setCartQuantity(i.listingId, clamped);
+                          // Typed past the stock ceiling → snap the visible
+                          // field down immediately rather than waiting for blur,
+                          // so the buyer sees WHY they can't have more.
+                          if (clamped !== n) {
+                            setQtyDraft((d) => ({
+                              ...d,
+                              [i.listingId]: String(clamped),
+                            }));
+                          }
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      {max} available
+                    </span>
+                  </div>
+                ) : null}
               </div>
-              <span className="text-sm" style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                {formatPrice(i.price)}
-              </span>
+              <div className="text-right">
+                <span
+                  className="block text-sm"
+                  style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {formatPrice(i.price * units)}
+                </span>
+                {units > 1 && (
+                  <span
+                    className="block text-xs"
+                    style={{ color: 'var(--text-tertiary)', fontVariantNumeric: 'tabular-nums' }}
+                  >
+                    {formatPrice(i.price)} each
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => removeFromCart(i.listingId)}
@@ -313,7 +512,8 @@ export default function CartPage() {
                 Remove
               </button>
             </div>
-          ))}
+            );
+          })}
           {shippableInGroup >= 2 && (
             <div
               className="px-3 py-2 text-xs flex items-center gap-1.5"
@@ -508,7 +708,8 @@ export default function CartPage() {
         style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
       >
         <div className="flex justify-between text-sm py-1">
-          <span style={{ color: 'var(--text-tertiary)' }}>Items ({items.length})</span>
+          {/* Counts UNITS, not lines — 3 boxes of ammo on one line is 3 items. */}
+          <span style={{ color: 'var(--text-tertiary)' }}>Items ({unitCount})</span>
           <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
             {formatPrice(itemsSubtotal)}
           </span>
@@ -549,11 +750,13 @@ export default function CartPage() {
           ? 'Creating your order…'
           : shippingReady
             ? 'Continue to payment'
-            : !firearmsReady
-              ? 'Confirm the firearm details to continue'
-              : method === 'PUDO'
-                ? 'Pick a locker to continue'
-                : 'Enter a delivery address to continue'}
+            : soldOutItems.length > 0
+              ? 'Remove the sold-out item to continue'
+              : !firearmsReady
+                ? 'Confirm the firearm details to continue'
+                : method === 'PUDO'
+                  ? 'Pick a locker to continue'
+                  : 'Enter a delivery address to continue'}
       </button>
       <p className="text-xs mt-2 text-center" style={{ color: 'var(--text-tertiary)' }}>
         Your payment is held until you confirm delivery.

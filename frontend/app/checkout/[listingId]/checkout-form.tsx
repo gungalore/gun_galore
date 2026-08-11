@@ -26,6 +26,7 @@ import {
   emptyManualAddress,
   type ManualAddressValue,
 } from '@/components/manual-address-fields';
+import { getCollectionMode } from '@/lib/delivery-estimate';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -858,12 +859,31 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           >
             Collection only
           </p>
-          <p style={{ color: 'var(--text-secondary)' }}>
-            You&apos;ll collect this item in person from the seller. After
-            you pay, we&apos;ll share contact details so you can arrange a
-            pickup time. Your payment is held until you confirm you&apos;ve
-            collected it.
-          </p>
+          {/* Bulky-goods copy interim (audit Big-4). "You'll collect this in
+              person" reads as "same city only", which is what caps trailers
+              and off-road caravans at whoever will drive to fetch them — and
+              it isn't true: the buyer may send a transporter, and the payment
+              still stays held until THEY confirm the item is with them.
+              FREIGHT_OK licenses that sentence; IN_PERSON_ONLY is the
+              dangerous-goods case (loose lithium) where no carrier may legally
+              take it, so there the original wording is the correct one. */}
+          {getCollectionMode(listing) === 'FREIGHT_OK' ? (
+            <p style={{ color: 'var(--text-secondary)' }}>
+              You can collect this item yourself, or send your own
+              transporter — it doesn&apos;t have to be you at the gate. After
+              you pay, we&apos;ll share contact details so you can arrange the
+              pickup. Your payment is held until you confirm the item is with
+              you. Gun Galore doesn&apos;t arrange, quote or insure that
+              transport.
+            </p>
+          ) : (
+            <p style={{ color: 'var(--text-secondary)' }}>
+              You&apos;ll collect this item in person from the seller. After
+              you pay, we&apos;ll share contact details so you can arrange a
+              pickup time. Your payment is held until you confirm you&apos;ve
+              collected it.
+            </p>
+          )}
         </div>
       )}
 

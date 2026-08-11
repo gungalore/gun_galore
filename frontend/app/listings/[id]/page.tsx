@@ -38,7 +38,10 @@ import { RecordVisit } from '@/components/record-visit';
 import { UrgencyChip } from '@/components/urgency-chip';
 import { SellerRating } from '@/components/seller-rating';
 import { TrustBullets } from '@/components/trust-bullets';
-import { getListingDeliveryEstimate } from '@/lib/delivery-estimate';
+import {
+  getListingDeliveryEstimate,
+  getCollectionMode,
+} from '@/lib/delivery-estimate';
 
 export async function generateMetadata({
   params,
@@ -125,6 +128,15 @@ export default async function ListingDetailPage({
   // UX-1c — pre-purchase delivery estimate line (computed from the listing's
   // shipping shape; no extra fetch).
   const deliveryEstimate = getListingDeliveryEstimate(listing);
+
+  // Bulky-goods copy interim (audit Big-4). "Collection only" reads to buyers
+  // as "same city only", which is what caps trailers / off-road caravans at
+  // whoever will drive to fetch them. It isn't true: the buyer may send their
+  // own transporter and the payment still stays held until THEY confirm they
+  // have the item. FREIGHT_OK licenses that extra sentence; IN_PERSON_ONLY is
+  // the dangerous-goods battery case where no carrier may take it at all.
+  // No new shipping method, no booked/insured freight — copy only.
+  const collectionMode = getCollectionMode(listing);
 
   // UX-28 — sticky mobile buy bar. On a phone the price + CTA live in the
   // right-hand column, which stacks BELOW the gallery, badges, title, rating
@@ -496,7 +508,15 @@ export default async function ListingDetailPage({
                   </Link>
                 </>
               ) : deliveryEstimate.kind === 'COLLECTION' ? (
-                <>Collection from seller ({PROVINCE_LABELS[listing.province]})</>
+                <>
+                  Collection from seller ({PROVINCE_LABELS[listing.province]})
+                  {/* Big-4 copy interim — the half-sentence that stops an
+                      out-of-province buyer bouncing off "collection only".
+                      Suppressed for the dangerous-goods battery case, where
+                      no transporter is a legitimate option. */}
+                  {collectionMode === 'FREIGHT_OK' &&
+                    ' — collect yourself or send your own transporter'}
+                </>
               ) : deliveryEstimate.minDays === deliveryEstimate.maxDays ? (
                 <>
                   Estimated delivery: about {deliveryEstimate.maxDays} business
@@ -827,20 +847,65 @@ export default async function ListingDetailPage({
               >
                 Shipping & payment
               </p>
-              {listing.collectionOnly ? (
+              {/* Widened from `listing.collectionOnly` alone: a listing can
+                  carry COLLECTION as its only method while the snapshot flag
+                  is false (older DG-battery payloads — see
+                  transactions.service.ts). Those buyers were being shown the
+                  courier paragraph, which quotes a Pudo/TCG rate that does
+                  not exist for them. COLLECTION is only ever accepted for
+                  collection-only items, so this can't mis-fire the other way. */}
+              {listing.collectionOnly ||
+              listing.shippingMethods?.includes('COLLECTION') ? (
                 <>
                   <p className="mb-1.5">
                     <strong style={{ color: 'var(--text-primary)' }}>
                       Collection only
                     </strong>{' '}
-                    — collect in person from the seller. Payment held until
-                    you confirm collection. After you pay, we share contact
-                    details so you can arrange a pickup time.
+                    — no courier is quoted for this item. Payment held until
+                    you confirm you have it. After you pay, we share contact
+                    details so you can arrange a time.
                   </p>
+                  {/* Big-4 copy interim. The hard "same city only" wall this
+                      removes is imaginary: the buyer never has to be the
+                      person who arrives, and the hold releases on THEIR
+                      confirmation either way. Deliberately worded as the
+                      buyer's own arrangement — Gun Galore quotes, books and
+                      insures nothing on that leg, and there is no freight
+                      shipping method to sell them. */}
+                  {collectionMode === 'FREIGHT_OK' && (
+                    <p className="mb-1.5">
+                      <strong style={{ color: 'var(--text-primary)' }}>
+                        You don&apos;t have to drive:
+                      </strong>{' '}
+                      collect in person, or send your own transporter or
+                      freight company to fetch it — the seller just hands it
+                      over. Your payment stays held either way until you
+                      confirm the item is with you. Gun Galore doesn&apos;t
+                      arrange, quote or insure that transport; it&apos;s
+                      between you and whoever you hire.
+                    </p>
+                  )}
+                  {/* Dangerous goods (loose lithium >100 Wh, UN3480). Here
+                      "collection only" really does mean in person — saying
+                      otherwise would point the buyer at a shipment no
+                      carrier may legally accept. */}
+                  {collectionMode === 'IN_PERSON_ONLY' && (
+                    <p className="mb-1.5">
+                      This item must be collected in person — dangerous-goods
+                      rules mean no courier or transporter may carry it.
+                    </p>
+                  )}
                   {listing.requiresPapers && (
                     <p>
                       The seller will hand over the registration and
                       roadworthy papers at collection.
+                      {/* Practical consequence of the line above: NaTIS
+                          papers handed to a hired driver are the one thing
+                          that actually differs when you don't fetch it
+                          yourself, so say it rather than let it surprise
+                          someone at the gate. */}
+                      {collectionMode === 'FREIGHT_OK' &&
+                        ' If you send a transporter, agree with the seller up front how those papers get to you.'}
                     </p>
                   )}
                 </>

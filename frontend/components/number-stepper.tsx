@@ -72,12 +72,21 @@ export function NumberStepper(props: NumberStepperProps) {
   }, []);
   useEffect(() => () => stopRepeat(), [stopRepeat]);
 
+  // Latest committed value, readable from inside a long-lived interval
+  // closure. Press-and-hold was dead without this: startRepeat's interval
+  // captured applyDelta from press time, so every tick recomputed
+  // `value_at_press + delta` and the number stuck at ±1 no matter how long
+  // you held. Reading through a ref keeps applyDelta stable AND current.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
   // Apply a delta to the current value, clamped to [min, max] and
   // rounded to the precision of `step`. Empty current is treated as
   // min (or 0 if min isn't set) so the first + click does something
   // reasonable.
   const applyDelta = useCallback(
     (delta: number) => {
+      const value = valueRef.current;
       const cur =
         value === '' || value == null
           ? min ?? 0
@@ -94,7 +103,9 @@ export function NumberStepper(props: NumberStepperProps) {
       const decimals = decimalPlaces(step);
       onChange(roundTo(clamped, decimals).toString());
     },
-    [value, onChange, step, min, max],
+    // Deliberately NOT dependent on `value` — it is read from valueRef, which
+    // is what makes the repeat interval keep working across renders.
+    [onChange, step, min, max],
   );
 
   const startRepeat = useCallback(

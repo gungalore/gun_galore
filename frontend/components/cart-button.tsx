@@ -8,7 +8,10 @@ import { useCart } from '@/lib/cart-store';
 // there's something in it. The cart itself is single-seller (Phase 8b).
 export function CartButton() {
   const items = useCart();
-  const n = items.length;
+  // UNITS, not lines. Now that a cart line can hold a quantity, counting rows
+  // would show "1" for a cart holding three of something — the badge exists to
+  // tell the buyer how much is waiting, not how many rows the store has.
+  const n = items.reduce((sum, i) => sum + (i.quantity ?? 1), 0);
   return (
     <Link
       href="/cart"
