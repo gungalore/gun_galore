@@ -11,8 +11,21 @@ import type { Category, BrandSummary } from '@/lib/types';
 // holding a session, so staying anonymous is exactly what keeps regulated
 // stock out of the sitemap. Adding a token here would re-publish the firearm
 // taxonomy to every crawler — which is how 111 of 207 URLs were weapon-adjacent
-// before this change. `revalidate` is safe for the same reason: there is only
-// one audience for this file.
+// before this change.
+//
+// ALSO LOAD-BEARING: no-store, and the route is force-dynamic.
+//
+// These fetches previously used `next: { revalidate: 3600 }`, reasoning that a
+// shared cache is harmless when there is only one audience for the file. That
+// missed a second way a cache goes wrong: Next's fetch cache lives in
+// `.next/cache` and SURVIVES A REBUILD. The deploy that introduced the gate
+// therefore prerendered this route from a cache written BEFORE the gate existed
+// and published all 111 weapon URLs anyway — a correct backend behind a stale
+// snapshot. It would have self-healed an hour later, but "the crawler surface is
+// wrong for an hour after every deploy" is not a property this file may have.
+// Freshness beats the saved work: three API calls on a file crawlers fetch a
+// handful of times a day.
+export const dynamic = 'force-dynamic';
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ??
@@ -55,16 +68,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Dynamic entries — fetched from the API; fall back to the static set if
   // the backend is unreachable at build/revalidate time.
   const [listings, categories, brands] = await Promise.all([
-    // Anonymous by design — see the file header.
+    // Anonymous + uncached by design — see the file header.
     apiFetch<{ id: string; updatedAt: string }[]>('/listings/sitemap', {
-      next: { revalidate: 3600 },
+      cache: 'no-store',
     } as RequestInit).catch(() => [] as { id: string; updatedAt: string }[]),
     apiFetch<Category[]>('/categories', {
-      next: { revalidate: 3600 },
+      cache: 'no-store',
     } as RequestInit).catch(() => [] as Category[]),
     // P5.7 — only brands that clear the min-listings gate get a page + entry.
     apiFetch<BrandSummary[]>('/listings/brand-index', {
-      next: { revalidate: 3600 },
+      cache: 'no-store',
     } as RequestInit).catch(() => [] as BrandSummary[]),
   ]);
 

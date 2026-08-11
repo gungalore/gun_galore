@@ -61,6 +61,42 @@ interface ParentCat {
 // `publicVisible: true` is opt-in per root. Anything without it is hidden —
 // including anything added in future. Do not "fix" a missing flag by changing
 // the default; add the flag to the root you actually meant to publish.
+// Words that must never appear in a category a signed-out visitor can reach.
+//
+// The public/members split is enforced per-TREE, which is the right shape but
+// leaves one blind spot: a weapon-named child sitting inside an innocent parent.
+// Real examples this caught — Optics › Handgun Scopes, Optics › Rifle Scopes and
+// Hunting › Shooting Sticks & Bipods were all public after the roots were gated,
+// putting "handgun", "rifle" and "shooting" into crawlable URLs from trees that
+// look, from the top, like binoculars and backpacks.
+//
+// So the guard runs on the RESULT rather than the intent: whatever the seed
+// computes, refuse to write a public category whose own name or slug says
+// weapon. A new sub-category is the likely way this regresses, and this fails
+// the seed loudly instead of quietly republishing.
+//
+// To publish something this matches anyway, rename it to what it actually is
+// (Paintball Ammo → Paintballs) — do not weaken the pattern.
+const WEAPON_WORDS =
+  /\b(fire ?arm|gun|rifle|handgun|pistol|shotgun|revolver|ammo|ammunition|calibre|caliber|muzzle|silencer|suppressor|magazine|holster|shooting)\b/i;
+
+function assertNoWeaponWordInPublic(
+  name: string,
+  slug: string,
+  publicVisible: boolean,
+): void {
+  if (!publicVisible) return;
+  const hit = name.match(WEAPON_WORDS) ?? slug.replace(/-/g, ' ').match(WEAPON_WORDS);
+  if (hit) {
+    throw new Error(
+      `Refusing to seed "${name}" (${slug}) as PUBLIC: the word "${hit[0]}" ` +
+        `would appear in a crawlable, signed-out URL. Mark it ` +
+        `\`membersOnly: true\`, or rename the category if it is genuinely not ` +
+        `a weapon product.`,
+    );
+  }
+}
+
 const categories: ParentCat[] = [
   { name: 'Air Rifles', slug: 'air-rifles', sortOrder: 1 },
   // Live ammunition disabled entirely (isActive:false) — the platform is
@@ -157,7 +193,15 @@ const subCategories: Record<string, SubCat[]> = {
     { name: 'Pistol Magazines' },
   ],
   optics: [
-    { name: 'Rifle Scopes' },
+    // Optics is a PUBLIC root — binoculars, spotting scopes, rangefinders,
+    // trail cameras, thermal and drones are ordinary outdoor kit.
+    //
+    // The gun-mounted scopes are not, and the slug is the tell: a public
+    // /category/optics--handgun-scopes puts the word "handgun" in a crawlable
+    // URL, in the sitemap and in the visible category name. The parent tree
+    // stays public and these five sit behind the wall with the rest of the
+    // regulated stock.
+    { name: 'Rifle Scopes', membersOnly: true },
     { name: 'Binoculars' },
     { name: 'Rangefinders' },
     { name: 'Optical Cleaning Equipment' },
@@ -165,12 +209,12 @@ const subCategories: Record<string, SubCat[]> = {
     { name: 'Spotting Scopes' },
     { name: 'Optical Tripods & Window Mounts' },
     { name: 'Scope Mounts' },
-    { name: 'Air Rifle Scopes' },
-    { name: 'Handgun Scopes' },
+    { name: 'Air Rifle Scopes', membersOnly: true },
+    { name: 'Handgun Scopes', membersOnly: true },
     { name: 'Trail Cameras' },
-    { name: 'Rimfire Rifle Scopes' },
+    { name: 'Rimfire Rifle Scopes', membersOnly: true },
     { name: 'Rangefinder Binoculars' },
-    { name: 'Rangefinding Rifle Scopes' },
+    { name: 'Rangefinding Rifle Scopes', membersOnly: true },
     { name: 'Previously Owned Optics' },
     { name: 'Optical Accessories' },
     { name: 'GPS & Comms' },
@@ -262,7 +306,10 @@ const subCategories: Record<string, SubCat[]> = {
     { name: 'Hunting Packs & Bags' },
     { name: 'Field Dressing & Butchery' },
     { name: 'Scent Control & Attractants' },
-    { name: 'Shooting Sticks & Bipods' },
+    // Same stock as the already-gated Shooting Accessories › Rest Bipods &
+    // Shooting Sticks, and the duplicate is the only reason "shooting" appears
+    // in a public URL. Gated, not renamed — a rest IS shooting kit.
+    { name: 'Shooting Sticks & Bipods', membersOnly: true },
     { name: 'Hunting Accessories' },
   ],
   'outdoor-clothing-footwear': [
@@ -315,7 +362,12 @@ const subCategories: Record<string, SubCat[]> = {
     { name: 'Paintball Masks' },
     { name: 'Paintball Markers' },
     { name: 'Paintball Barrels' },
-    { name: 'Paintball Ammo' },
+    // Was "Paintball Ammo". Paintballs are not ammunition and this category is
+    // legitimately public, so it is RENAMED rather than gated — but the site
+    // states flatly that it does not sell ammunition, and "ammo" in a public
+    // URL is exactly the token that gets a page flagged by a scanner that never
+    // reads the word in front of it. "Paintballs" is also just the right name.
+    { name: 'Paintballs' },
     { name: 'Paintball Hoppers & Accessories' },
   ],
   // Ammo has no sub-categories — it's a single-pill parent under New Store.
@@ -503,10 +555,16 @@ async function main() {
       requiresPapers: cat.requiresPapers ?? false,
       showTestedWorkingAttestation: cat.showTestedWorkingAttestation ?? false,
       isExperience: cat.isExperience ?? false,
+      // MUST be written explicitly. Omitting it does not "leave it alone" — the
+      // column defaults to false, so an upsert without it silently demotes every
+      // public root and the signed-out shop goes empty. Children then read
+      // parent.publicVisible back from the DB and inherit the same false.
+      publicVisible: cat.publicVisible ?? false,
       sortOrder: cat.sortOrder,
       isActive: cat.isActive ?? true,
       parentId: null,
     };
+    assertNoWeaponWordInPublic(data.name, data.slug, data.publicVisible);
     await prisma.category.upsert({
       where: { slug: cat.slug },
       create: data,
@@ -534,6 +592,7 @@ async function main() {
       // single child back out. A child under a members-only parent can never
       // become public by accident.
       const publicVisible = child.membersOnly ? false : parent.publicVisible;
+      assertNoWeaponWordInPublic(child.name, childSlug, publicVisible);
       const data = {
         name: child.name,
         slug: childSlug,
