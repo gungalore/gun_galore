@@ -98,7 +98,7 @@ export function CrossSellRow({
   return (
     <section
       aria-label={title}
-      style={{ maxWidth: 1280, margin: '0 auto', padding: '28px 0 8px' }}
+      style={{ maxWidth: 'var(--page-max)', margin: '0 auto', padding: '28px 0 8px' }}
     >
       <header style={{ marginBottom: 12 }}>
         <h2

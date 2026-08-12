@@ -68,7 +68,7 @@ export default function RafflePage() {
   }, []);
 
   return (
-    <div className="max-w-[1280px] mx-auto px-4 py-8 pb-24">
+    <div className="max-w-[var(--page-max)] mx-auto px-4 py-8 pb-24">
       <BrowseRailShell>
       <div className="max-w-2xl">
       <h1 className="text-xl font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>

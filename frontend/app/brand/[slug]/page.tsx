@@ -71,7 +71,7 @@ export default async function BrandPage({
   const pageHref = (p: number) => `/brand/${brand.slug}?page=${p}`;
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-8">
+    <main className="max-w-[var(--page-max)] mx-auto px-4 py-8">
       <BrowseRailShell>
       {/* Breadcrumb */}
       <nav

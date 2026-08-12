@@ -136,7 +136,7 @@ export default async function SellerProfilePage({
   }
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-6">
+    <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
       <BrowseRailShell>
       <PageReveal variant="scale-in">
       {/* Profile header */}

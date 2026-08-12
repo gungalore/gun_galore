@@ -213,7 +213,7 @@ export default async function TransactionPage({
     : 'My sales';
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-6">
+    <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
       <Link href={backHref} className="text-sm inline-block mb-6" style={{ color: 'var(--text-tertiary)' }}>
         ← {backLabel}
       </Link>

@@ -5,7 +5,7 @@ import { Skel, SkeletonGrid } from '@/components/skeleton';
 
 export default function SellerProfileLoading() {
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-6">
+    <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
       {/* Header card */}
       <div
         className="rounded-[10px] p-6 mb-6 space-y-3"

@@ -8,7 +8,7 @@ import { FeaturedRail } from './featured-rail';
 // live ONLY on the homepage + listing-detail — every category / deals /
 // raffle / brand / seller page had nothing (operator 2026-07-20:
 // "EVERY page should have featured listings"). Drop this INSIDE a page's
-// existing `max-w-[1280px] mx-auto px-4` container: the rail's full-bleed
+// existing `max-w-[var(--page-max)] mx-auto px-4` container: the rail's full-bleed
 // margin maths reference that container's content box exactly (identical
 // to the homepage), and the page content flows to its right.
 //

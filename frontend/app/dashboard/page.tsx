@@ -68,7 +68,7 @@ export default async function DashboardPage() {
 
   return (
     <main
-      className="relative max-w-[1280px] mx-auto px-4 py-6"
+      className="relative max-w-[var(--page-max)] mx-auto px-4 py-6"
       style={{ zIndex: 1 }}
     >
       {/* House standard scenery — wrenches at low opacity tie this surface

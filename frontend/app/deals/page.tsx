@@ -46,7 +46,7 @@ export default async function DealsPage() {
   const liveDeals = enabled ? deals : [];
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-8">
+    <main className="max-w-[var(--page-max)] mx-auto px-4 py-8">
       <BrowseRailShell>
       <PageReveal>
         <header className="mb-6" data-reveal>

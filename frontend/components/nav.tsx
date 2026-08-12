@@ -120,7 +120,7 @@ export function Nav() {
           borderBottom: '0.5px solid var(--border)',
         }}
       >
-        <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center gap-3 sm:gap-6">
+        <div className="max-w-[var(--page-max)] mx-auto px-4 h-14 flex items-center gap-3 sm:gap-6">
           {/* Logo — /logo-nav.svg, NOT /logo.svg. The full scene is 1.5:1, so
               at these bar heights it rendered ~66px wide with the wordmark at
               7px: unreadable. The nav cut drops the scene and keeps the
@@ -463,7 +463,7 @@ export function Nav() {
           className="hidden md:block"
           style={{ borderTop: '0.5px solid var(--border)' }}
         >
-          <div className="max-w-[1280px] mx-auto px-4 h-10 flex items-center gap-5 text-sm">
+          <div className="max-w-[var(--page-max)] mx-auto px-4 h-10 flex items-center gap-5 text-sm">
             {SHOP_LINKS.map((link) => (
               <Link
                 key={link.href}

@@ -4,6 +4,22 @@
 
 /* Gun Galore design tokens — canonical source: CLAUDE.md */
 :root {
+  /* ── Page width ────────────────────────────────────────────────────────
+     THE single source of truth for how wide the site's content runs. Every
+     page container references it as `max-w-[var(--page-max)]` (Tailwind) or
+     `maxWidth: 'var(--page-max)'` (inline style) — change the number here
+     and the whole site follows.
+
+     It was previously hard-coded as `1280px` in 39 separate places across 30
+     files, which on a 1920px monitor left ~640px (a third of the screen) as
+     dead margin, and meant any width change was a 39-file sweep.
+
+     Why not 100%: a header and body text spanning 2560px reads badly and
+     looks unfinished. 1600px fills a 1920 screen properly while still
+     centring sensibly on ultrawides, and gives product grids a full extra
+     column over the old 1280. */
+  --page-max: 1600px;
+
   /* Surfaces */
   --bg:          #0f0f0f;
   --bg-deep:     #0a0a0a;

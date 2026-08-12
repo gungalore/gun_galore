@@ -2461,7 +2461,7 @@ export default function NewListingPage() {
 
   return (
     <main
-      className="relative max-w-[1280px] mx-auto px-4 py-8 sm:py-12"
+      className="relative max-w-[var(--page-max)] mx-auto px-4 py-8 sm:py-12"
       style={{ zIndex: 1 }}
     >
       {/* SA banknotes scenery behind the form, with a black vignette +

@@ -65,7 +65,7 @@ export default async function WishlistPage() {
   const tombstones = rows.filter((r) => TERMINAL_STATUSES.has(r.listing.status));
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-6">
+    <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
       <PageReveal variant="slide-up">
       <header data-reveal className="mb-6">
         <h1

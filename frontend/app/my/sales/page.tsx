@@ -91,7 +91,7 @@ export default async function MySalesPage() {
   }
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-6">
+    <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
       <PageReveal variant="slide-up">
       <h1 data-reveal className="text-xl font-medium mb-6" style={{ color: 'var(--text-primary)' }}>
         My Sales

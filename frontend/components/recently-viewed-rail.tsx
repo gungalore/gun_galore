@@ -96,7 +96,7 @@ export function RecentlyViewedRail({
     <section
       aria-label={title}
       style={{
-        maxWidth: 1280,
+        maxWidth: 'var(--page-max)',
         margin: '0 auto',
         padding: '24px 16px',
       }}

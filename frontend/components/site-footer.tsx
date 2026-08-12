@@ -42,7 +42,7 @@ export function SiteFooter() {
     >
       <div
         style={{
-          maxWidth: 1280,
+          maxWidth: 'var(--page-max)',
           margin: '0 auto',
           display: 'grid',
           // 180px min so all SIX groups fit one row at desktop widths —
@@ -191,7 +191,7 @@ export function SiteFooter() {
       {/* "Get the app" band. */}
       <div
         style={{
-          maxWidth: 1280,
+          maxWidth: 'var(--page-max)',
           margin: '0 auto',
           display: 'flex',
           flexWrap: 'wrap',
@@ -211,7 +211,7 @@ export function SiteFooter() {
           announcement, so it should read like the fine print it is. */}
       <div
         style={{
-          maxWidth: 1280,
+          maxWidth: 'var(--page-max)',
           margin: '0 auto',
           paddingTop: 16,
           borderTop: '0.5px solid var(--border)',
@@ -232,7 +232,7 @@ export function SiteFooter() {
           /legal. */}
       <div
         style={{
-          maxWidth: 1280,
+          maxWidth: 'var(--page-max)',
           margin: '0 auto',
           paddingTop: 16,
           borderTop: '0.5px solid var(--border)',

@@ -78,7 +78,7 @@ export default async function DealDetailPage({
       : `${deal.shipsInDaysMin}–${deal.shipsInDaysMax}`;
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-6">
+    <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
       <BrowseRailShell>
       <div className="mb-4">
         <Link href="/deals" className="text-sm" style={{ color: 'var(--text-tertiary)' }}>

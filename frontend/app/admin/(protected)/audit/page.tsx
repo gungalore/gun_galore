@@ -66,7 +66,7 @@ export default function AdminAuditPage() {
   const hasNext = currentOffset + data.rows.length < data.total;
 
   return (
-    <main className="max-w-[1280px] mx-auto px-6 py-6">
+    <main className="max-w-[var(--page-max)] mx-auto px-6 py-6">
       <h1
         className="text-xl mb-1"
         style={{ color: 'var(--text-primary)', fontWeight: 500 }}

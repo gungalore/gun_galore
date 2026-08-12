@@ -6,7 +6,7 @@ import { SkeletonGrid } from '@/components/skeleton';
 
 export default function Loading() {
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-6">
+    <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
       <div
         className="mb-6 rounded-[6px] h-10 animate-pulse"
         style={{ background: 'var(--bg-card)' }}

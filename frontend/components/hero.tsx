@@ -139,7 +139,7 @@ export function Hero() {
         }
       `}</style>
 
-      <div className="relative max-w-[1280px] mx-auto px-4 sm:px-6 py-12 sm:py-14 flex flex-col md:flex-row md:items-center md:justify-between gap-8 lg:gap-12" style={{ minHeight: 'inherit' }}>
+      <div className="relative max-w-[var(--page-max)] mx-auto px-4 sm:px-6 py-12 sm:py-14 flex flex-col md:flex-row md:items-center md:justify-between gap-8 lg:gap-12" style={{ minHeight: 'inherit' }}>
         <div className="max-w-[600px]">
           {/* Eyebrow */}
           <p

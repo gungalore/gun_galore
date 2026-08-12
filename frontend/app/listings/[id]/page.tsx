@@ -270,7 +270,7 @@ export default async function ListingDetailPage({
 
   return (
     <main
-      className="relative max-w-[1280px] mx-auto px-4 py-6"
+      className="relative max-w-[var(--page-max)] mx-auto px-4 py-6"
       style={{ zIndex: 1 }}
     >
       {/* Product/Offer structured data for search engines (not visible).

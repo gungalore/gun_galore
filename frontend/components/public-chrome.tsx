@@ -24,7 +24,7 @@ import { av } from '@/lib/asset-version';
 function CheckoutHeader() {
   return (
     <div style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--bg-deep)' }}>
-      <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center justify-between">
+      <div className="max-w-[var(--page-max)] mx-auto px-4 h-14 flex items-center justify-between">
         <Link href="/" aria-label="All Outdoor" className="flex items-center shrink-0">
           {/* /logo-nav.svg, not /logo.svg: the full-scene lockup is 1.5:1, so at
               36px tall it draws 54px wide and the wordmark becomes ~7px — an

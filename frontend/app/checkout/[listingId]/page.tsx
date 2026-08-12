@@ -57,7 +57,7 @@ export default async function CheckoutPage({
     : listing;
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-6">
+    <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
       <Link href={`/listings/${listing.id}`} className="text-sm inline-block mb-6" style={{ color: 'var(--text-tertiary)' }}>
         ← Back to listing
       </Link>

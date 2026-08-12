@@ -56,7 +56,7 @@ export default async function MyListingsPage() {
   const listings: MyListing[] = failed ? [] : await res.json();
 
   return (
-    <main className="max-w-[1280px] mx-auto px-4 py-6">
+    <main className="max-w-[var(--page-max)] mx-auto px-4 py-6">
       <PageReveal variant="slide-up">
       <div data-reveal className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>

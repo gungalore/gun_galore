@@ -333,7 +333,7 @@ export default async function HomePage({
       {showHero ? (
         <section
           data-featured-home-section
-          className="max-w-[1280px] mx-auto px-4 py-10"
+          className="max-w-[var(--page-max)] mx-auto px-4 py-10"
         >
           {/* Centered "Featured" header with red→gold gradient fill
               + warm drop-shadow glow (matches the card glow). Hairline
@@ -594,7 +594,7 @@ export default async function HomePage({
                 : 'slide-up'
           }
         >
-          <div className="max-w-[1280px] mx-auto px-4 py-10 flex flex-col lg:flex-row gap-6">
+          <div className="max-w-[var(--page-max)] mx-auto px-4 py-10 flex flex-col lg:flex-row gap-6">
             <FeaturedRail />
             <section className="flex-1 min-w-0">
               {renderListingsBody()}
@@ -602,7 +602,7 @@ export default async function HomePage({
           </div>
         </PageReveal>
       ) : (
-        <div className="max-w-[1280px] mx-auto px-4 py-10 flex flex-col lg:flex-row gap-6">
+        <div className="max-w-[var(--page-max)] mx-auto px-4 py-10 flex flex-col lg:flex-row gap-6">
           <FeaturedRail />
           <section className="flex-1 min-w-0">
             {renderListingsBody()}
