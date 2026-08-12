@@ -28,14 +28,26 @@ export class UsersPublicController {
   ): Promise<{ available: boolean; reason?: string }> {
     const u = (raw ?? '').trim().toLowerCase();
 
+    // These rules must stay at least as STRICT as the Clerk instance's
+    // username requirements (Configure > User & authentication > Username:
+    // min 4, max 64, numeric-only rejected). This endpoint is what puts the
+    // green "available" tick next to the field, so anything it accepts and
+    // Clerk then rejects turns into a confusing failure AFTER the user has
+    // filled in the whole form. If Clerk's rules are relaxed, relax these too
+    // — never the other way round.
     if (!u) return { available: false, reason: 'Required' };
-    if (u.length < 3) return { available: false, reason: 'Too short (min 3)' };
+    if (u.length < 4) return { available: false, reason: 'Too short (min 4)' };
     if (u.length > 32) return { available: false, reason: 'Too long (max 32)' };
     if (!/^[a-z0-9_]+$/.test(u)) {
       return {
         available: false,
         reason: 'Only lowercase letters, numbers, and underscores',
       };
+    }
+    // Clerk rejects usernames made only of digits ("Allow numeric usernames"
+    // is off), and an all-numeric handle reads as an account ID anyway.
+    if (/^[0-9]+$/.test(u)) {
+      return { available: false, reason: 'Needs at least one letter' };
     }
     if (RESERVED.has(u)) {
       return { available: false, reason: 'Reserved — pick another' };

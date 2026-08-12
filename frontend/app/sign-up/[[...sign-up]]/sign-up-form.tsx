@@ -628,8 +628,12 @@ export default function SignUpForm() {
             </div>
           </Field>
 
-          {/* Password */}
-          <Field label="Password" required htmlFor={ids.password} hint="At least 8 characters.">
+          {/* Password. The hint must match the Clerk instance's minimum
+              (Configure > User & authentication > Password: 15 characters,
+              with compromised-password rejection on). Clerk enforces it
+              server-side, so understating it here just means the user writes
+              a password, submits the whole form, and gets bounced. */}
+          <Field label="Password" required htmlFor={ids.password} hint="At least 15 characters.">
             <div style={{ position: 'relative' }}>
               <input
                 id={ids.password}
