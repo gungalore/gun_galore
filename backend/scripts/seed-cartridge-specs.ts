@@ -52,8 +52,18 @@ async function main() {
       year: s.year,
       caseLengthMm: s.caseLengthMm,
       maxCartridgeLengthMm: s.maxCartridgeLengthMm,
-      maxPressureBar: s.maxPressureBar,
-      maxPressurePsi: s.maxPressurePsi,
+      // The JSON carries bar as a float derived from the authoritative psi
+      // figure (65000 psi -> 4481.5922... bar) and the column is Int?, so
+      // something has to make it whole. Left implicit, Prisma decides: the
+      // version that seeded production rounded, the current one truncates,
+      // and eight cartridges came out 1 bar apart between the two databases
+      // for no reason anyone chose. Round explicitly so the value is the same
+      // whatever Prisma does next. 1 bar in ~4000 is immaterial physically —
+      // silent, version-dependent coercion in the pressure table is not.
+      maxPressureBar:
+        s.maxPressureBar == null ? null : Math.round(s.maxPressureBar),
+      maxPressurePsi:
+        s.maxPressurePsi == null ? null : Math.round(s.maxPressurePsi),
       caseCapacityGrH2O: s.caseCapacity,
       officialPdfUrl: s.officialPdfUrl,
     };
