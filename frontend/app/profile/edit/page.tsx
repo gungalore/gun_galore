@@ -1631,7 +1631,11 @@ export default function EditProfilePage() {
                   </Field>
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Field label="New password" hint="At least 8 characters.">
+                  {/* Must match the Clerk instance minimum (15) — same rule as
+                      the sign-up form. Clerk enforces it server-side, so a
+                      lower number here just gets the user rejected after they
+                      have typed a new password. */}
+                  <Field label="New password" hint="At least 15 characters.">
                     <input
                       type="password"
                       value={newPassword}
