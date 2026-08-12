@@ -435,15 +435,27 @@ export default async function HomePage({
               slots: "X of N spots open" + a "Bid for a spot" CTA. */}
           <FeaturedAvailabilityBar />
           </>)}
-          {/* Shop by category — the landing page's only breadth entry
-              point. Without it discovery leaned entirely on the nav
-              flyout (desktop-hover) and /category/[slug] got no homepage
-              links at all. Tiles fall into place column-by-column as the
-              grid scrolls into view; CategoryCurtain handles
-              reduced-motion and JS-off itself. Self-hides when the
-              taxonomy call failed or returned nothing rather than
-              leaving a bare heading over empty space. */}
-          {curtainTiles.length > 0 && (
+          {/* Shop by category — the FALLBACK breadth entry point, shown
+              only while the Featured marquee above has nothing to show.
+
+              The operator wants Featured to be the homepage's centrepiece
+              (the scrolling ads, as on the old site). It already is: the
+              marquee renders directly above and takes the prime slot the
+              moment any slot carries a listing. But Featured is dark until
+              slots are both created AND claimed — and with the store at
+              zero listings, deleting the category grid outright would leave
+              the whole page between hero and footer blank, which is worse
+              than the thing being fixed.
+
+              So the two are mutually exclusive, and the handover is
+              automatic: no featured listings -> categories give people
+              somewhere to go; the first featured listing -> categories step
+              aside and Featured owns the page, permanently. Nothing to
+              remember to switch over later.
+
+              Also self-hides when the taxonomy call failed or returned
+              nothing, rather than leaving a bare heading over empty space. */}
+          {occupiedFeatured.length === 0 && curtainTiles.length > 0 && (
             <div className="mt-10">
               <h2
                 className="text-2xl sm:text-3xl m-0 mb-5"
