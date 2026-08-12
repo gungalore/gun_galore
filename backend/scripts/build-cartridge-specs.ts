@@ -38,6 +38,7 @@
  *
  * cartridgeKeysFile: optional "key|display" lines (default: query the DB).
  */
+import 'dotenv/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import { cartridgeKey } from '../src/load-lab/recommended-loads.service';

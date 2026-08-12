@@ -6,6 +6,7 @@
  *
  *   npx ts-node scripts/seed-cartridge-specs.ts
  */
+import 'dotenv/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
