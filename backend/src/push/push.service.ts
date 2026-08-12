@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as webpush from 'web-push';
 import { PrismaService } from '../prisma/prisma.service';
+import { SUPPORT_EMAIL } from '../common/brand';
 import { NotificationCategory } from '@prisma/client';
 
 /**
@@ -38,7 +39,7 @@ export class PushService implements OnModuleInit {
   onModuleInit() {
     const pub = process.env.VAPID_PUBLIC_KEY;
     const priv = process.env.VAPID_PRIVATE_KEY;
-    const subject = process.env.VAPID_SUBJECT ?? 'mailto:support@gungalore.co.za';
+    const subject = process.env.VAPID_SUBJECT ?? `mailto:${SUPPORT_EMAIL}`;
     if (!pub || !priv) {
       this.logger.warn(
         'VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY missing — push notifications disabled. The inbox + email + SMS still work; push sends become silent no-ops.',

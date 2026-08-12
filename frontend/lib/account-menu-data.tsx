@@ -13,6 +13,7 @@
 // 'use client' boundary — is what lets the server hub render it.
 
 import type { FC, ReactNode } from 'react';
+import { PRO_NAME } from './brand';
 
 export type IconC = FC;
 
@@ -206,7 +207,7 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     items: [
       { href: '/dashboard', label: 'Dashboard', Icon: DashboardIcon },
       { href: '/profile', label: 'Profile', Icon: UserIcon },
-      { href: '/subscribe', label: 'GG PRO', Icon: CrownIcon },
+      { href: '/subscribe', label: PRO_NAME, Icon: CrownIcon },
       { href: '/settings', label: 'Settings', Icon: SettingsIcon },
       { href: '/notifications', label: 'Notifications', Icon: BellIcon },
     ],

@@ -8,7 +8,7 @@
 // details. Fees are described per the PAIA regulations — we do not
 // quote rand figures here so the page cannot go stale.
 
-import { SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import { LegalDocHeader } from '../legal-frame';
 
@@ -55,8 +55,8 @@ export default function PaiaPage() {
         Langeberg Glen, Cape Town, 7570, South Africa
         <br />
         <strong>Email:</strong>{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
         <br />
         <strong>Telephone:</strong>{' '}
@@ -89,8 +89,8 @@ export default function PaiaPage() {
         ALLOUTDOOR (PTY) LTD, 36 Sterappel Crescent, Langeberg Glen,
         Cape Town, 7570
         <br />
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
       </p>
       <p>

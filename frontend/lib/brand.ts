@@ -42,3 +42,21 @@ export const BRAND_TAGLINE = 'New and secondhand outdoor gear';
 /** Longer blurb for meta descriptions and the footer. */
 export const BRAND_BLURB =
   "South Africa's new and secondhand outdoor store";
+
+/**
+ * Subscription tier name. Was "GG PRO" — GG meant Gun Galore, the wound-down
+ * entity, so the tier was still advertising it on the pricing page.
+ *
+ * This is the LABEL only. The persisted `SubscriptionTier.PRO` enum value, the
+ * `pro_draw_enabled` flag key and every `tier === 'PRO'` check stay as they
+ * are — renaming a stored value breaks rows, renaming a label does not.
+ */
+export const PRO_NAME = 'AO PRO';
+
+/**
+ * Support mailbox. Still on gungalore.co.za because that domain's mail is
+ * live and alloutdoor.co.za's is not yet wired — moving the address before
+ * the MX/SPF/DKIM records exist would bounce every reply. Moves to the new
+ * domain with the DNS cutover: one edit here.
+ */
+export const SUPPORT_EMAIL = 'support@gungalore.co.za';

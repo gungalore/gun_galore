@@ -1999,8 +1999,9 @@ export class AdminService {
     }
 
     // ─── Move the money back via the gateway ─────────────────────────
-    // peachPaymentId holds the Stitch payment id (column reused during the
-    // Peach→Stitch transition). On failure roll back the reservation (and
+    // peachPaymentId holds the Peach payment id (Stitch was evaluated as the
+    // rail in 2026-06/07 and dropped — the column never changed hands).
+    // On failure roll back the reservation (and
     // the status flip, if any) so the row returns to its refundable state.
     // Manual mode skips the gateway entirely — the FNB batch on the child
     // row IS the refund; there is nothing to reverse at a gateway.

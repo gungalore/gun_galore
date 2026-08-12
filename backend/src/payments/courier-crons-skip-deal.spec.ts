@@ -53,7 +53,7 @@ function makeService() {
     $transaction: jest.fn().mockResolvedValue([]),
   };
 
-  const stitch = { refundPayment: jest.fn() };
+  const peach = { refundPayment: jest.fn() };
   const notifications = {
     dispatchNudgeSeller: jest.fn(),
     dealerTransferStallNudgeSeller: jest.fn(),
@@ -65,7 +65,7 @@ function makeService() {
 
   const service = new DispatchSlaService(
     prisma as never,
-    stitch as never,
+    peach as never,
     notifications as never,
     tracking as never,
     shipping as never,

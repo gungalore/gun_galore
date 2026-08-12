@@ -81,7 +81,7 @@ function makeService(listing: Record<string, unknown>) {
     prisma as never,
     new FeeCalculator() as never, // real fee calc
     {} as never, // notifications
-    {} as never, // stitch
+    {} as never, // peach
     kyc as never,
     shipping as never,
     {} as never, // tracking
@@ -249,7 +249,7 @@ describe('EXP-E1 confirmDelivery guard (experiences never settle via delivery-co
       prisma as never,
       new FeeCalculator() as never,
       {} as never, // notifications
-      {} as never, // stitch
+      {} as never, // peach
       {} as never, // kyc
       {} as never, // shipping
       {} as never, // tracking

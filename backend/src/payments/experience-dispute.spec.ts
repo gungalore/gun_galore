@@ -71,7 +71,7 @@ function makeService(
     prisma as never,
     new FeeCalculator() as never,
     {} as never, // notifications
-    {} as never, // stitch
+    {} as never, // peach
     {} as never, // kyc
     {} as never, // shipping
     tracking as never,

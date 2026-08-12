@@ -79,7 +79,7 @@ function makeService(over: { stampedCount?: number } = {}) {
     prisma as never,
     {} as never, // fees
     notifications as never,
-    {} as never, // stitch
+    {} as never, // peach
     {} as never, // kyc
     shipping as never,
     tracking as never,

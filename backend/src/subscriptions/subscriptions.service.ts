@@ -7,6 +7,7 @@ import {
 import { SubscriptionTier } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
+import { PRO_NAME } from '../common/brand';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
@@ -134,7 +135,7 @@ export class SubscriptionsService {
     assertPaymentsLive();
     const tier = tierRaw as SubscriptionTier;
     if (!PAID_TIERS.includes(tier)) {
-      throw new BadRequestException('GG PRO is the only paid plan.');
+      throw new BadRequestException(`${PRO_NAME} is the only paid plan.`);
     }
     const user = await this.prisma.user.findUnique({
       where: { clerkId },

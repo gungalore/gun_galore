@@ -50,6 +50,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
+import { PRO_NAME } from '@/lib/brand';
 import { useStandalone } from '@/lib/use-standalone';
 import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { useScrollDirection } from '@/lib/use-scroll-direction';
@@ -614,6 +615,13 @@ export function BottomTabBar() {
           left: 0,
           right: 0,
           bottom: 0,
+          // 55 is the number the "anything floating must be z >= 60" house
+          // rule is measured against — don't raise it without updating that
+          // rule everywhere it is written down. The bar owns the full bottom
+          // edge in standalone, which is why nothing else may claim the
+          // bottom-right corner here: the Ask Boet dock is browser-only
+          // (AskGgHost gates on useStandalone) and the footer's "Get the app"
+          // pill is hidden with the rest of the public footer.
           zIndex: 55,
           background: 'var(--bg-deep)',
           borderTop: '0.5px solid var(--border)',
@@ -1086,7 +1094,7 @@ function ShopSheet({
       key: 'raffle',
       href: '/raffle',
       title: 'Prize Draw',
-      tagline: 'GG PRO members are entered free — amazing prizes',
+      tagline: `${PRO_NAME} members are entered free — amazing prizes`,
       icon: (
         <svg
           width="18"

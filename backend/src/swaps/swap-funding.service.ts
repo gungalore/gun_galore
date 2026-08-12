@@ -389,8 +389,34 @@ export class SwapFundingService {
   }
 
   // ----------------------------------------------------------------
-  // Reconciler hooks (called from ManualPaymentsService).
+  // Reconciler hooks — INTENTIONALLY UNCALLED. Do not delete.
   // ----------------------------------------------------------------
+  //
+  // These two were the ManualPaymentsService reconciler's entry points: it
+  // matched incoming EFTs against the swap's payment reference and called
+  // markFundingDetected on a provisional (inContact) match, then
+  // confirmSwapFunding on the authoritative statement match. Manual EFT was
+  // stripped on 2026-07-16 (see project_paygate_transition) and the reconciler
+  // went with it, so as of that date nothing in the codebase calls either one.
+  // `npx jest swap-funding` still exercises confirmSwapFunding directly.
+  //
+  // They stay because a swap still needs a "this side has paid" transition —
+  // two parties, two independent payments, and the LOCK must not fire until
+  // both land. That logic (the CAS claim below plus tryLock) is the part worth
+  // keeping; only the trigger changed.
+  //
+  // To wire them back in when the paygate goes live:
+  //   1. PAYMENTS_LIVE=true and PAYMENT_MODE=paygate — until then
+  //      setupFunding() itself is gated and no swap ever reaches
+  //      AWAITING_FUNDING, so calling these would be a no-op anyway.
+  //   2. Call confirmSwapFunding(swapId, side) from the Peach pay-in
+  //      confirmation path (webhook + verify-on-return, the same two arms that
+  //      drive markPaid for an ordinary transaction), resolving swapId + side
+  //      from the leg's Transaction. markFundingDetected has no paygate
+  //      equivalent — a card either captures or it doesn't, there is no
+  //      provisional state — so expect to drop it rather than rewire it.
+  //   3. The AWAITING_FUNDING status guard and the `*VerifiedAt IS NULL` CAS
+  //      guard are what make this safe against a duplicate webhook. Keep them.
 
   // Provisional inContact match — stop the funding sweep for this side.
   async markFundingDetected(swapId: string, side: Side) {

@@ -307,7 +307,7 @@ describe('EXP-E4 nudgeAndAlertPostEvent', () => {
 describe('EXP-E4 ExperienceSlaService — NO money movement', () => {
   it('exposes no release/refund surface: prisma double only needs findMany/update/adminAlert/$transaction', async () => {
     // If the service ever tried to release/refund it would call updateMany with
-    // paymentStatus RELEASED/REFUNDED, or a stitch/zoho dependency — none of
+    // paymentStatus RELEASED/REFUNDED, or a peach/zoho dependency — none of
     // which are wired. A full sweep over empty data must complete cleanly.
     const { service, alertsCreated, updates } = makeService([[], [], [], [], []]);
     const res = await service.experienceSlaSweep();

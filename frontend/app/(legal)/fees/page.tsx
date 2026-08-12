@@ -6,7 +6,7 @@
 //     TOP_SELLER_DISCOUNT)
 //   - Card processing fee (3.5% + R1.50 / transaction): same file
 //   - Shipping handling (R15/waybill) + swap leg fees: same file
-//   - GG PRO membership prices: backend/src/settings/settings.service.ts
+//   - AO PRO membership prices: backend/src/settings/settings.service.ts
 //     (launch defaults R49 / R149; operator-tunable)
 //   - Featured-slot ladder: FeaturedSlotConfig defaults in schema.prisma
 //
@@ -14,7 +14,8 @@
 //   NEVER name a payment provider here until a contract is signed (TPPP).
 //   NEVER use the word "escrow" — say "funds held" / "payment held".
 
-import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+import { PRO_NAME } from '@/lib/brand';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import { LegalDocHeader } from '../legal-frame';
 
@@ -45,7 +46,7 @@ export default function FeesPage() {
           <li><strong>Listing is free.</strong> Browsing, listing and offering cost nothing.</li>
           <li><strong>No charge until a sale completes.</strong> Our commission is only ever taken from a completed sale — it is deducted from the seller's payout, never billed up front.</li>
           <li><strong>Commission is banded</strong> — a lower percentage applies the higher the sale price (see below).</li>
-          <li>Optional extras (a GG PRO membership or a featured homepage slot) are the only things you can choose to pay for separately.</li>
+          <li>Optional extras (an {PRO_NAME} membership or a featured homepage slot) are the only things you can choose to pay for separately.</li>
         </ul>
       </div>
       <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 24 }}>
@@ -154,9 +155,9 @@ export default function FeesPage() {
 
       <h2>5. Optional extras</h2>
 
-      <h3>5.1 GG PRO membership</h3>
+      <h3>5.1 {PRO_NAME} membership</h3>
       <p>
-        GG PRO is the optional paid membership, at{' '}
+        {PRO_NAME} is the optional paid membership, at{' '}
         <strong>R99 per 31-day period</strong>. It includes the full Ask Boet
         assistant, the Load Lab load-data browser, swap benefits, and reduced
         fees on featured homepage slots (see below). Membership is prepaid —
@@ -195,7 +196,7 @@ export default function FeesPage() {
         </tbody>
       </table>
       <p>
-        GG PRO members pay less for a featured slot: <strong>PRO saves 50%</strong>
+        {PRO_NAME} members pay less for a featured slot: <strong>PRO saves 50%</strong>
         {' '}off the slot fee. The live tiers, floor and any discount are
         always shown on the bidding page before you commit.
       </p>
@@ -208,7 +209,7 @@ export default function FeesPage() {
         minimum of <strong>R50</strong> for a courier leg (<strong>R100</strong>{' '}
         for a leg that has to complete through a licensed dealer) and a cap of{' '}
         <strong>R750</strong>{' '}
-        per leg. GG PRO members get 25% off the swap service fee. Any cash
+        per leg. {PRO_NAME} members get 25% off the swap service fee. Any cash
         top-up above R1,000 carries the standard commission bands on the
         amount above R1,000, deducted from the cash the receiving party is
         paid at settlement. Your exact fee is always shown before you pay.
@@ -232,8 +233,8 @@ export default function FeesPage() {
       <h2>8. Questions</h2>
       <p>
         For anything about fees, email{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
         {' '}or call {SUPPORT_PHONE_DISPLAY}. See also{' '}
         <a href="/how-payments-work" style={{ color: 'var(--red)' }}>How payments work</a>

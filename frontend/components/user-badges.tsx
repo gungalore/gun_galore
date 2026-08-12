@@ -16,6 +16,7 @@
 // breaking the visual rhythm.
 
 import { HelpTip } from './help-tip';
+import { PRO_NAME } from '@/lib/brand';
 import type { SubscriptionTier } from '@/lib/types';
 
 interface UserBadgesProps {
@@ -105,9 +106,10 @@ function GgPlusPill({
   // Plus pill" generically; tier-aware shading is a tasteful
   // upgrade cue without screaming about it.
   const isPro = tier === 'PRO';
-  // Rebrand 2026-07-19: the single paid tier is GG PRO. Legacy MEMBER rows
-  // keep the old GG+ pill until they lapse.
-  const label = isPro ? 'GG PRO' : 'GG+';
+  // Rebrand 2026-07-19: the single paid tier is PRO_NAME. Legacy MEMBER rows
+  // keep the old GG+ pill until they lapse — renaming a badge nobody can buy
+  // any more would only invent a tier that does not exist.
+  const label = isPro ? PRO_NAME : 'GG+';
   return (
     <span
       title={

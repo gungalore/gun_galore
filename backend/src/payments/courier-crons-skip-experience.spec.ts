@@ -15,7 +15,7 @@
 //      NOT satisfy that filter (a hand-evaluated match check).
 //
 // No DB. The passes short-circuit on the empty findMany result before touching
-// stitch/shipping/notifications, so those deps are trivial stubs.
+// peach/shipping/notifications, so those deps are trivial stubs.
 //
 // DispatchSlaService transitively imports tracking → search → the ESM-only
 // meilisearch package; stub it so ts-jest doesn't choke (same as the sibling
@@ -88,7 +88,7 @@ function makeService() {
     $transaction: jest.fn().mockResolvedValue([]),
   };
 
-  const stitch = { refundPayment: jest.fn() };
+  const peach = { refundPayment: jest.fn() };
   const notifications = {
     dispatchNudgeSeller: jest.fn(),
     dealerTransferStallNudgeSeller: jest.fn(),
@@ -100,7 +100,7 @@ function makeService() {
 
   const service = new DispatchSlaService(
     prisma as never,
-    stitch as never,
+    peach as never,
     notifications as never,
     tracking as never,
     shipping as never,

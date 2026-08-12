@@ -93,13 +93,13 @@ export class TransactionsController {
   }
 
   // ---------------------------------------------------------------
-  // Verify Stitch payment result (called from /checkout/complete)
+  // Verify Peach payment result (called from /checkout/complete)
   // ---------------------------------------------------------------
   // INTENTIONALLY UNAUTHENTICATED — the return-from-gateway flow has no
   // Clerk session (SMS-token buyers were never signed in) and no token
   // (the CHECKOUT token wasn't passed back). Security relies on:
   //   1. The endpoint re-fetches authoritative payment status from
-  //      Stitch using the STORED payment id on the transaction — an
+  //      Peach using the STORED payment id on the transaction — an
   //      attacker controlling only the URL's txId cannot fabricate a
   //      "paid" state.
   //   2. markPaid binds the exact amount.

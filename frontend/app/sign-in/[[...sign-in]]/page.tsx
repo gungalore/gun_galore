@@ -9,7 +9,7 @@ export default function SignInPage() {
       style={{ background: 'var(--bg-deep)' }}
     >
       <Link href="/" aria-label="All Outdoor">
-        <img src={av('/logo.svg')} alt="All Outdoor" style={{ height: 44, width: 'auto' }} />
+        <img src={av('/logo-nav.svg')} alt="All Outdoor" style={{ height: 44, width: 'auto' }} />
       </Link>
       <SignIn
         signUpUrl="/sign-up"

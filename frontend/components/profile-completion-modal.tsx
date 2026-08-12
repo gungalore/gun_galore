@@ -22,6 +22,7 @@ const API_URL =
 // branch number for some reason.
 // Shared payout-bank list (mirrors the Peach Payouts enum server-side).
 import { SA_BANKS } from '@/lib/sa-banks';
+import { SUPPORT_EMAIL } from '@/lib/brand';
 
 // Hard-wall modal shown to the seller after their first listing is
 // published successfully. Collects everything we need to pay them
@@ -730,7 +731,7 @@ export function ProfileCompletionModal({
             >
               Still stuck?{' '}
               <a
-                href="mailto:support@gungalore.co.za?subject=Profile%20completion%20help"
+                href={`mailto:${SUPPORT_EMAIL}?subject=Profile%20completion%20help`}
                 style={{ color: '#fff', textDecoration: 'underline' }}
               >
                 Email support

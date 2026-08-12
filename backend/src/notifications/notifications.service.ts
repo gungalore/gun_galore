@@ -5,7 +5,7 @@ import { SmsService } from '../sms/sms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../push/push.service';
 import { Saps534Service, Saps534Data } from '../payments/saps534.service';
-import { EMAIL_FROM } from '../common/brand';
+import { EMAIL_FROM, PRO_NAME, SUPPORT_EMAIL } from '../common/brand';
 
 // Compile-time list of the entity types we can link a Notification
 // row to. Used by resolveByEntity() callers so typos don't sit silently
@@ -238,7 +238,7 @@ function renderEmail(c: EmailContent, logoUrl: string): string {
             <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border-top:1px solid ${TOKEN.border};">
               <tr><td style="height:24px;font-size:0;line-height:0;">&nbsp;</td></tr>
               <tr><td align="center"><p style="margin:0;font-size:12px;color:${TOKEN.textTertiary} !important;line-height:1.5;">All Outdoor (Pty) Ltd &middot; South Africa</p></td></tr>
-              <tr><td align="center" style="padding-top:6px;"><a href="mailto:support@gungalore.co.za" style="font-size:12px;color:${TOKEN.red} !important;text-decoration:none;">support@gungalore.co.za</a></td></tr>
+              <tr><td align="center" style="padding-top:6px;"><a href="mailto:${SUPPORT_EMAIL}" style="font-size:12px;color:${TOKEN.red} !important;text-decoration:none;">${SUPPORT_EMAIL}</a></td></tr>
               <tr><td align="center" style="padding-top:10px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">Transactional email related to your All Outdoor account.</p></td></tr>
               <tr><td align="center" style="padding-top:4px;"><p style="margin:0;font-size:11px;color:${TOKEN.textTertiary} !important;line-height:1.6;">&copy; ${new Date().getFullYear()} All Outdoor. All rights reserved.</p></td></tr>
             </table>
@@ -2113,7 +2113,7 @@ export class NotificationsService {
     const html = this.email({
       status: { tone: 'error', label: 'Removed' },
       headline: 'Listing removed',
-      body: `Hi ${b(d.sellerName)}, an admin has removed your listing ${b(d.listingTitle)} from the marketplace. Reason: ${b(d.reason)}<br><br>If you believe this was a mistake, reply to this email or contact support@gungalore.co.za and an admin will review the takedown. The listing will not return automatically.`,
+      body: `Hi ${b(d.sellerName)}, an admin has removed your listing ${b(d.listingTitle)} from the marketplace. Reason: ${b(d.reason)}<br><br>If you believe this was a mistake, reply to this email or contact ${SUPPORT_EMAIL} and an admin will review the takedown. The listing will not return automatically.`,
       cta: { label: 'Open my listings', url: myListingsUrl },
       preheader: `${d.listingTitle} was removed by an admin`,
     });
@@ -4566,16 +4566,16 @@ export class NotificationsService {
     });
     const html = this.email({
       status: { tone: 'success', label: 'Winner' },
-      headline: 'You won the GG PRO prize draw!',
-      body: `Hi ${b(d.name)}, congratulations — you are this cycle's GG PRO prize-draw winner. Your prize: ${b(d.prizeTitle)} (value ${formatRand(d.prizeValueCents)}). Our team will contact you within 2 business days to arrange delivery. If you'd prefer, you can exchange your prize for an alternative of equal value.`,
+      headline: `You won the ${PRO_NAME} prize draw!`,
+      body: `Hi ${b(d.name)}, congratulations — you are this cycle's ${PRO_NAME} prize-draw winner. Your prize: ${b(d.prizeTitle)} (value ${formatRand(d.prizeValueCents)}). Our team will contact you within 2 business days to arrange delivery. If you'd prefer, you can exchange your prize for an alternative of equal value.`,
       cta: { label: 'See the draw page', url: `${this.appUrl}/raffle` },
-      preheader: 'You won the GG PRO prize draw',
+      preheader: `You won the ${PRO_NAME} prize draw`,
     });
-    await this.send(d.email, 'You won the GG PRO prize draw! 🎉', html);
+    await this.send(d.email, `You won the ${PRO_NAME} prize draw! 🎉`, html);
     if (d.phone) {
       await this.sendSms(
         d.phone,
-        `All Outdoor: congratulations — you WON the GG PRO prize draw (${d.prizeTitle}). We'll contact you to arrange delivery.`,
+        `All Outdoor: congratulations — you WON the ${PRO_NAME} prize draw (${d.prizeTitle}). We'll contact you to arrange delivery.`,
         'raffle-winner',
       );
     }

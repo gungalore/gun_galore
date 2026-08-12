@@ -38,8 +38,10 @@ import { derivePageContext } from '@/lib/ask-gg-context';
 //     and stops wandering (calm idle). Toggled by the speaker button.
 //   - Never over the install-prompt card, tab hidden, panel open, or mid-form.
 //
-// Geometry: a fixed #askgg-dock (flex column) holds the bubble above Boet;
-// dock lifts via body[data-install-prompt] rules in globals.css.
+// Geometry: a fixed #askgg-dock (flex column) holds the bubble above Boet.
+// body[data-install-prompt] no longer lifts the dock (the install prompt is a
+// centred z-1000 modal now, not a corner card) but it IS still read below to
+// keep Boet quiet while that modal is up.
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -109,6 +111,28 @@ interface Bubble {
   prefill?: string;
   kind: 'hello' | AskGgNudge['kind'];
 }
+
+// The dock used to sit at z-52, i.e. UNDER the installed-app bottom tab bar
+// (z-55) — the house rule is that anything floating must be z >= 60 or the
+// bar clips it. AskGgHost only mounts the launcher in browser modes, but
+// useStandalone() resolves after hydration, so an installed PWA still paints
+// one frame with Boet standing on the tab bar. He is now z-60; these two
+// rules are what make that promotion safe, and they live here rather than in
+// globals.css because they only make sense next to the z they are correcting:
+//
+//   1. In standalone, lift the dock a full tab-bar height so it clears the
+//      bar GEOMETRICALLY, not just in paint order. (Mutually exclusive with
+//      the buy-bar lift on the listing page, which is scoped to
+//      :not([data-standalone]).)
+//   2. At z-60 Boet now ties with the modal tier and wins on DOM order,
+//      because the host is the last thing in <body>. Stand down while a
+//      blocking overlay is up. `data-blocking-overlay` is the attribute the
+//      auction BidModal already sets for the listing page's buy bar; any new
+//      full-screen overlay that shares this corner should set it too.
+const DOCK_STACKING_CSS = [
+  `html[data-standalone='true'] #askgg-dock{bottom:calc(70px + env(safe-area-inset-bottom));}`,
+  `body:has([data-blocking-overlay]) #askgg-dock{display:none;}`,
+].join('');
 
 export function AskGgLauncher({
   onOpen,
@@ -337,11 +361,15 @@ export function AskGgLauncher({
       <div
         id="askgg-dock"
         className={[
-          'app-chrome fixed z-[52] flex items-center gap-1.5',
+          'app-chrome fixed z-[60] flex items-center gap-1.5',
           'right-4 bottom-[calc(12px+env(safe-area-inset-bottom))]',
-          'md:right-6 md:bottom-5',
+          // The inset applies at every breakpoint: an iPad in browser mode is
+          // md+ and still has a home indicator to clear.
+          'md:right-6 md:bottom-[calc(20px+env(safe-area-inset-bottom))]',
         ].join(' ')}
       >
+        {/* display:none by UA rule, so never a flex item. */}
+        <style>{DOCK_STACKING_CSS}</style>
         <button
           type="button"
           id="askgg-fab"
@@ -400,15 +428,20 @@ export function AskGgLauncher({
     <div
       id="askgg-dock"
       className={[
-        'app-chrome fixed z-[52] flex flex-col items-end gap-1',
+        'app-chrome fixed z-[60] flex flex-col items-end gap-1',
         // Boet's footprint — the design's 210px on desktop, trimmed on
         // mobile so a taller character doesn't crowd content. The id
         // selector in globals.css lifts this whole dock over the install card.
         'w-[150px] md:w-[210px]',
         'right-3 md:right-[26px]',
-        'bottom-[calc(10px+env(safe-area-inset-bottom))] md:bottom-[14px]',
+        // Inset at every breakpoint — an iPad in browser mode is md+ and
+        // still has a home indicator under Boet's feet.
+        'bottom-[calc(10px+env(safe-area-inset-bottom))] md:bottom-[calc(14px+env(safe-area-inset-bottom))]',
       ].join(' ')}
     >
+      {/* display:none by UA rule, so never a flex item. */}
+      <style>{DOCK_STACKING_CSS}</style>
+
       {bubble && (
         <div
           id="askgg-hello"

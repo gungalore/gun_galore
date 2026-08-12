@@ -20,8 +20,8 @@
 // route group with its own chrome) but rendered on every public
 // page. Server-rendered to keep zero JS cost.
 
-import { BRAND_NAME } from '@/lib/brand';
-import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+import { BRAND_NAME, PRO_NAME } from '@/lib/brand';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import Link from 'next/link';
 import { GetTheAppCta } from '@/components/get-the-app-cta';
@@ -92,7 +92,7 @@ export function SiteFooter() {
             <li><Link href="/?listingType=SWOP" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Swop / Trade</Link></li>
             <li><Link href="/deals" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Daily Deals</Link></li>
             <li><Link href="/raffle" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Prize Draw</Link></li>
-            <li><Link href="/subscribe" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>GG PRO</Link></li>
+            <li><Link href="/subscribe" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>{PRO_NAME}</Link></li>
             <li><Link href="/listings/new" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Sell</Link></li>
             <li><Link href="/faq" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Help &amp; FAQ</Link></li>
           </ul>
@@ -135,10 +135,10 @@ export function SiteFooter() {
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, lineHeight: 1.9 }}>
             <li>
               <a
-                href="mailto:support@gungalore.co.za"
+                href={`mailto:${SUPPORT_EMAIL}`}
                 style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}
               >
-                support@gungalore.co.za
+                {SUPPORT_EMAIL}
               </a>
             </li>
             <li style={{ color: 'var(--text-tertiary-on-card)', fontSize: 12 }}>
@@ -243,8 +243,8 @@ export function SiteFooter() {
       >
         <p style={{ margin: 0 }}>
           © {year} ALLOUTDOOR (PTY) LTD · Registration No. 2026/639713/07 · 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa ·{' '}
-          <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--text-tertiary-on-card)', textDecoration: 'underline' }}>
-            support@gungalore.co.za
+          <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--text-tertiary-on-card)', textDecoration: 'underline' }}>
+            {SUPPORT_EMAIL}
           </a>
           {' · '}
           {SUPPORT_PHONE_DISPLAY}

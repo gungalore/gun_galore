@@ -27,6 +27,7 @@
 
 // Shares the legal-document header with the public policies — this is the
 // same class of document, it simply isn't public.
+import { SUPPORT_EMAIL } from '@/lib/brand';
 import { LegalDocHeader } from '../../(legal)/legal-frame';
 
 export const metadata = {
@@ -580,8 +581,8 @@ export default function RegulatedItemsAnnexPage() {
       <p>
         If a firearm transacted on All Outdoor is later reported lost or
         stolen, contact SAPS immediately (10111) and notify us at{' '}
-        <a href="mailto:support@gungalore.co.za" style={linkStyle}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={linkStyle}>
+          {SUPPORT_EMAIL}
         </a>{' '}
         with the order reference. We will provide the dealer-transfer
         record and any other information we hold to support a SAPS
@@ -708,8 +709,8 @@ export default function RegulatedItemsAnnexPage() {
         to cooperate with law enforcement generally, or the undertaking
         to investigate every report of suspected money laundering,
         fraud or other criminal activity sent to{' '}
-        <a href="mailto:support@gungalore.co.za" style={linkStyle}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={linkStyle}>
+          {SUPPORT_EMAIL}
         </a>
         .
       </p>
@@ -732,8 +733,8 @@ export default function RegulatedItemsAnnexPage() {
       <h2>26. Contact</h2>
       <p>
         For any compliance enquiry, contact{' '}
-        <a href="mailto:support@gungalore.co.za" style={linkStyle}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={linkStyle}>
+          {SUPPORT_EMAIL}
         </a>
         . Urgent matters (suspected illegal firearm activity, stolen
         firearm) should be reported to SAPS first (10111) and then

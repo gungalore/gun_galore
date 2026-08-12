@@ -156,7 +156,7 @@ function makeService(
     prisma as never,
     fc as never,
     notifications as never,
-    {} as never, // stitch
+    {} as never, // peach
     {} as never, // kyc
     { cancelForTransaction: jest.fn() } as never, // shipping
     tracking as never,

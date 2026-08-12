@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense, type CSSProperties } from 'react';
 import { av } from '@/lib/asset-version';
+import { SUPPORT_EMAIL } from '@/lib/brand';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import Image from 'next/image';
@@ -643,9 +644,10 @@ function VerifyKycPageInner() {
       <div style={{ width: '100%', maxWidth: 390 }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <Image
-            src={av('/logo.svg')}
+            // Nav mark — the full scene's wordmark is unreadable at 36px.
+            src={av('/logo-nav.svg')}
             alt="All Outdoor"
-            width={180}
+            width={96}
             height={36}
             priority
             style={{ height: 36, width: 'auto', margin: '0 auto 12px', display: 'block' }}
@@ -1341,7 +1343,7 @@ function VerifyKycPageInner() {
                 }}
               >
                 <a
-                  href="mailto:support@gungalore.co.za?subject=Identity%20verification%20help"
+                  href={`mailto:${SUPPORT_EMAIL}?subject=Identity%20verification%20help`}
                   style={{
                     ...primaryButton(false),
                     width: 'auto',
@@ -1620,7 +1622,7 @@ function CameraUnavailableHandoff({
       >
         No smartphone either?{' '}
         <a
-          href="mailto:support@gungalore.co.za?subject=KYC%20without%20camera"
+          href={`mailto:${SUPPORT_EMAIL}?subject=KYC%20without%20camera`}
           style={{ color: 'var(--red)', textDecoration: 'none' }}
         >
           Email support

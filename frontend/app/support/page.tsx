@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 import { useAuth } from '@clerk/nextjs';
 
 const API_URL =
@@ -144,8 +144,8 @@ export default function SupportPage() {
         <ul className="mt-4 space-y-1.5 text-sm text-[var(--text-secondary)]">
           <li>
             Email{' '}
-            <a href="mailto:support@gungalore.co.za" className="text-[var(--red)]">
-              support@gungalore.co.za
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="text-[var(--red)]">
+              {SUPPORT_EMAIL}
             </a>
           </li>
           <li>

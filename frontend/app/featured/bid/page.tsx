@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { HelpTip } from '@/components/help-tip';
 import { HelpText } from '@/components/help-text';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
+import { PRO_NAME } from '@/lib/brand';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -327,7 +328,7 @@ export default function FeaturedBidPage() {
               flexShrink: 0,
             }}
           >
-            {bidderTier === 'PRO' ? 'GG PRO' : `GG+ ${bidderTier}`}
+            {bidderTier === 'PRO' ? PRO_NAME : `GG+ ${bidderTier}`}
           </span>
           <span style={{ color: 'var(--text-secondary)' }}>
             Your Ask Boet subscription unlocks{' '}
@@ -1110,7 +1111,7 @@ function BidModal({
                     color: 'var(--text-primary)',
                   }}
                 >
-                  {bidderTier === 'PRO' ? 'GG PRO' : `GG+ ${bidderTier}`} discount −{bidderDiscountPercent}% →{' '}
+                  {bidderTier === 'PRO' ? PRO_NAME : `GG+ ${bidderTier}`} discount −{bidderDiscountPercent}% →{' '}
                   you&apos;ll be charged{' '}
                   <strong>{formatRand(effectiveChargeCents)}</strong>{' '}
                   (saving {formatRand(snapped.amountCents - effectiveChargeCents)})
@@ -1395,7 +1396,7 @@ function BindModal({
 // ─── Buy Now modal ────────────────────────────────────────────────────
 // Skip the auction: pick a tier + one of your ACTIVE listings and pay a
 // fixed 2× the tier's base price to take the slot outright, live now, for
-// that tier's duration. Atomic — no bind window. The GG PRO discount
+// that tier's duration. Atomic — no bind window. The AO PRO discount
 // applies to the doubled base, mirroring the auction bid maths.
 const BUY_NOW_MULTIPLIER = 2;
 
@@ -1432,7 +1433,7 @@ function BuyNowModal({
   const [comingSoon, setComingSoon] = useState(false);
 
   const chosen = tierRows.find((r) => r.tier === tier)!;
-  // 2× the base price is what Buy Now charges (pre-discount). The GG PRO
+  // 2× the base price is what Buy Now charges (pre-discount). The AO PRO
   // discount then applies to that doubled base — same floor-cents maths
   // as the backend so the preview never lies.
   const baseCents = chosen.amountCents * BUY_NOW_MULTIPLIER;
@@ -1586,7 +1587,7 @@ function BuyNowModal({
                     color: 'var(--text-primary)',
                   }}
                 >
-                  {bidderTier === 'PRO' ? 'GG PRO' : `GG+ ${bidderTier}`} discount
+                  {bidderTier === 'PRO' ? PRO_NAME : `GG+ ${bidderTier}`} discount
                   −{bidderDiscountPercent}% → you&apos;ll be charged{' '}
                   <strong>{formatRand(chargedCents)}</strong>{' '}
                   (saving {formatRand(baseCents - chargedCents)})

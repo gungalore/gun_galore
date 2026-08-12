@@ -22,7 +22,7 @@ const CYCLE_DAYS: Record<string, number> = {
 };
 
 /**
- * GG PRO prize draw — a CPA s36 promotional competition, NOT a paid
+ * AO PRO prize draw — a CPA s36 promotional competition, NOT a paid
  * lottery. The prize is a physical item bought by GG and displayed for
  * the whole cycle; every paid-up PRO member is entered automatically and
  * free. The budget maths (percent of recent subscription revenue) is

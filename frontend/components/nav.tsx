@@ -121,23 +121,27 @@ export function Nav() {
         }}
       >
         <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center gap-3 sm:gap-6">
-          {/* Logo — smaller on mobile (the 220px-wide mark was crowding the
-              Sell/bell/cart/hamburger cluster on ≤375px phones and pushing the
-              row into horizontal overflow). Allowed to shrink (min-w-0 +
-              max-w-full object-contain) as a backstop so it always gives up
-              space to the fixed-size right cluster rather than overflowing. */}
+          {/* Logo — /logo-nav.svg, NOT /logo.svg. The full scene is 1.5:1, so
+              at these bar heights it rendered ~66px wide with the wordmark at
+              7px: unreadable. The nav cut drops the scene and keeps the
+              wordmark, which is 2.66:1 — same height, ~117px wide, type 2.5x
+              bigger. /logo.svg still owns the hero, share cards and print.
+              Smaller on mobile, and still allowed to shrink (min-w-0 +
+              max-w-full object-contain) as a backstop so it gives up space to
+              the fixed-size Sell/bell/cart/hamburger cluster on ≤375px phones
+              rather than pushing the row into horizontal overflow. */}
           <Link
             href="/"
             className="shrink min-w-0 flex items-center"
             aria-label="All Outdoor"
           >
             <Image
-              src={av('/logo.svg')}
+              src={av('/logo-nav.svg')}
               alt="All Outdoor"
-              width={220}
+              width={117}
               height={44}
               priority
-              className="h-8 w-auto sm:h-11 max-w-full object-contain"
+              className="h-9 w-auto sm:h-11 max-w-full object-contain"
             />
           </Link>
 
@@ -548,11 +552,11 @@ export function Nav() {
               style={{ borderBottom: '0.5px solid var(--border)' }}
             >
               <Image
-                src={av('/logo.svg')}
+                src={av('/logo-nav.svg')}
                 alt="All Outdoor"
-                width={160}
-                height={32}
-                style={{ height: 32, width: 'auto' }}
+                width={96}
+                height={36}
+                style={{ height: 36, width: 'auto' }}
               />
               <button
                 type="button"

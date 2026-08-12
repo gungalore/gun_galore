@@ -3,6 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { Me, TrustDashboard, SellerTier } from '@/lib/types';
+import { SUPPORT_EMAIL } from '@/lib/brand';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { HelpTip } from '@/components/help-tip';
@@ -419,13 +420,13 @@ export default async function ProfilePage() {
                         already uploaded is kept. If that ID photo was the
                         problem, email{' '}
                         <a
-                          href="mailto:support@gungalore.co.za?subject=KYC%20%E2%80%94%20reset%20my%20ID%20document%20step"
+                          href={`mailto:${SUPPORT_EMAIL}?subject=KYC%20%E2%80%94%20reset%20my%20ID%20document%20step`}
                           style={{
                             color: 'var(--red)',
                             textDecoration: 'underline',
                           }}
                         >
-                          support@gungalore.co.za
+                          {SUPPORT_EMAIL}
                         </a>{' '}
                         and we&apos;ll reset that step.
                       </>
@@ -441,10 +442,10 @@ export default async function ProfilePage() {
                   review and we&apos;ll SMS you the outcome. To chase it,
                   email{' '}
                   <a
-                    href="mailto:support@gungalore.co.za?subject=KYC%20rejected%20%E2%80%94%20help%20resubmitting"
+                    href={`mailto:${SUPPORT_EMAIL}?subject=KYC%20rejected%20%E2%80%94%20help%20resubmitting`}
                     style={{ color: 'var(--red)', textDecoration: 'underline' }}
                   >
-                    support@gungalore.co.za
+                    {SUPPORT_EMAIL}
                   </a>
                   .
                 </p>
@@ -464,10 +465,10 @@ export default async function ProfilePage() {
                   to try again — most rejections are a lighting or focus
                   problem. If it won&apos;t let you continue, email{' '}
                   <a
-                    href="mailto:support@gungalore.co.za?subject=KYC%20rejected%20%E2%80%94%20help%20resubmitting"
+                    href={`mailto:${SUPPORT_EMAIL}?subject=KYC%20rejected%20%E2%80%94%20help%20resubmitting`}
                     style={{ color: 'var(--red)', textDecoration: 'underline' }}
                   >
-                    support@gungalore.co.za
+                    {SUPPORT_EMAIL}
                   </a>
                   .
                 </p>

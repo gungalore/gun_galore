@@ -784,7 +784,7 @@ why `GunGalore (Pty) Ltd` appears verbatim there while the trading name is
 and disburse other people's money in South Africa. The reason payments are not
 live yet.
 
-**GG PRO** — the single paid membership tier, R99/month. Free accounts get a
+**AO PRO** — the single paid membership tier, R99/month. Free accounts get a
 demo of every PRO feature.
 
 ---

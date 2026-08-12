@@ -6,7 +6,7 @@ import { TransactionsService } from '../payments/transactions.service';
 
 // Build a TransactionsService with the minimal mocks the order-checkout /
 // order-confirm paths touch. Positional ctor args mirror the existing
-// cancel-by-buyer spec: prisma, fees, notifications, stitch, kyc, shipping,
+// cancel-by-buyer spec: prisma, fees, notifications, peach, kyc, shipping,
 // tracking, tokens, referenceNumbers, fraudRisk, cloudinary.
 function makeService(over: {
   $transaction?: jest.Mock;

@@ -1,3 +1,5 @@
+# Served verbatim from /public, so it cannot import SUPPORT_EMAIL
+# (frontend/lib/brand.ts). Change both together at the DNS cutover.
 Contact: mailto:support@gungalore.co.za
 Expires: 2027-07-16T00:00:00.000Z
 Preferred-Languages: en

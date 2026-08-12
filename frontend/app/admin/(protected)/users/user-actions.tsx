@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/admin-auth';
+import { PRO_NAME } from '@/lib/brand';
 
 const TIERS = ['NEW', 'ESTABLISHED', 'TRUSTED', 'TOP_SELLER', 'DEALER'];
 // Must match the KycStatus enum (backend @IsEnum rejects anything else).
@@ -146,7 +147,7 @@ export default function UserActions({
           </div>
           <div>
             <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
-              GG PRO
+              {PRO_NAME}
             </p>
             <select
               defaultValue={subscriptionTier}
@@ -427,7 +428,7 @@ function ConfirmModal({
       case 'kyc':
         return `Override KYC status to ${confirm.value}?`;
       case 'subscription':
-        return `Set GG PRO subscription to ${confirm.value}?`;
+        return `Set ${PRO_NAME} subscription to ${confirm.value}?`;
       case 'clearStrikes':
         return `Clear reject strikes for @${username ?? 'this user'}?`;
     }
@@ -444,7 +445,7 @@ function ConfirmModal({
       case 'kyc':
         return 'KYC overrides bypass VerifyNow + Home Affairs. Use only when you have independent verification of identity (manual document review).';
       case 'subscription':
-        return 'Manually sets the GG PRO subscription tier without going through paid checkout — a comp / support grant. PRO unlocks Ask Boet Pro features, Load Lab, and the ballistics calculator. Reversible; recorded in the audit log.';
+        return `Manually sets the ${PRO_NAME} subscription tier without going through paid checkout — a comp / support grant. PRO unlocks Ask Boet Pro features, Load Lab, and the ballistics calculator. Reversible; recorded in the audit log.`;
       case 'clearStrikes':
         return 'Resets seller reject-strikes to 0, lifts the selling ban if one is in force, and resolves the open strike alerts. Use after reviewing the SELLER_REJECT_STRIKE alerts. Audited.';
     }

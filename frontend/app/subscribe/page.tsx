@@ -1,6 +1,6 @@
 'use client';
 
-// /subscribe — GG PRO subscription purchase (single paid tier since 2026-07-19).
+// /subscribe — AO PRO subscription purchase (single paid tier since 2026-07-19).
 //
 // Phase 1 (manual-EFT retirement): card payments are launching soon and the
 // manual bank-transfer purchase rail is retired, so picking a tier now shows
@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { useAuth } from '@clerk/nextjs';
 import { PageReveal } from '@/components/page-reveal';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
+import { PRO_NAME } from '@/lib/brand';
 import { formatPrice } from '@/lib/utils';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -38,7 +39,7 @@ const TIER_PERKS: Record<'PRO', string[]> = {
     'Unlimited photo identification (10/query)',
     'Ballistic calculator + full Load Lab load data',
     'Unlimited open swap proposals + 25% off swap service fees',
-    'GG PRO username badge',
+    `${PRO_NAME} username badge`,
     '50% off featured-listing bids',
   ],
 };
@@ -151,7 +152,7 @@ export default function SubscribePage() {
     <PageReveal>
       <div className="max-w-2xl mx-auto px-4 py-8 pb-24">
         <h1 className="text-xl font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-          GG PRO
+          {PRO_NAME}
         </h1>
         <p className="text-sm mb-6" style={{ color: 'var(--text-tertiary)' }}>
           Prepaid monthly. No debit orders, no auto-renew — renew your tier
@@ -167,7 +168,7 @@ export default function SubscribePage() {
               color: 'var(--text-secondary)',
             }}
           >
-            You&apos;re on <strong style={{ color: 'var(--text-primary)' }}>{currentTier === 'PRO' ? 'GG PRO' : `GG+ ${currentTier}`}</strong>
+            You&apos;re on <strong style={{ color: 'var(--text-primary)' }}>{currentTier === 'PRO' ? PRO_NAME : `GG+ ${currentTier}`}</strong>
             {mine?.isComp
               ? ' (complimentary — no renewal needed).'
               : periodEndLabel
@@ -282,7 +283,7 @@ export default function SubscribePage() {
                         // MEMBER period (the sole PRO card renews, never
                         // blocks) — so the label is always the legacy one.
                         isCrossTierBlocked
-                          ? `You're on GG+ ${currentTier} until your period ends. You can switch to GG PRO then.`
+                          ? `You're on GG+ ${currentTier} until your period ends. You can switch to ${PRO_NAME} then.`
                           : undefined
                       }
                       onClick={() => void checkout(t.key)}

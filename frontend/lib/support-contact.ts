@@ -8,4 +8,8 @@
 export const SUPPORT_PHONE_DISPLAY = '+27 87 550 0000';
 export const SUPPORT_PHONE_TEL = '+27875500000';
 
-export const SUPPORT_EMAIL = 'support@gungalore.co.za';
+// The address itself lives in lib/brand.ts alongside EMAIL_FROM — both move
+// together at the DNS cutover, so keeping them in one file stops half a
+// rebrand shipping. Re-exported here because the legal pages already import
+// their phone details from this module.
+export { SUPPORT_EMAIL } from './brand';

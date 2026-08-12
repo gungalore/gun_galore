@@ -3,6 +3,7 @@
 // readable AND enforceable: each "banned" item has a clear test so
 // admins can apply it consistently.
 
+import { SUPPORT_EMAIL } from '@/lib/brand';
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -155,8 +156,8 @@ export default function AcceptableUsePage() {
         Every enforcement decision is recorded in our audit log with
         the admin's identity and the reason given. You may appeal an
         enforcement decision by emailing{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
         {' '}within 14 days; we aim to respond within 5 business days.
       </p>
@@ -166,8 +167,8 @@ export default function AcceptableUsePage() {
         If you spot a listing, message or behaviour that breaches this
         AUP, report it via the in-product report button (on Q&amp;A
         rows) or email{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
         {' '}with the URL or reference number of what you saw. We treat
         every report seriously and respond within 2 business days.

@@ -4,7 +4,7 @@
 // know exactly who they are dealing with. Links onward to complaints
 // handling and the full legal index.
 
-import { SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import { LegalDocHeader } from '../legal-frame';
 
@@ -38,8 +38,8 @@ export default function ContactPage() {
       >
         <p style={{ margin: 0 }}>
           <strong>Email:</strong>{' '}
-          <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-            support@gungalore.co.za
+          <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+            {SUPPORT_EMAIL}
           </a>
           <br />
           <strong>Phone:</strong>{' '}

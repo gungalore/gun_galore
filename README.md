@@ -314,7 +314,7 @@ Every module is registered in `app.module.ts`; read that file first, it's the ho
 | `load-lab/`, `reloading/`, `hunt-ballistics/` | Reloading manual library, powder burn charts, cartridge specs, ballistics reference. Domain content, not marketplace mechanics. |
 | `deals/`, `suppliers/` | Daily Deals — All Outdoor as a first-party seller. Flag-gated off. |
 | `featured/` | Paid featured-listing slots. |
-| `subscriptions/`, `raffle/` | GG PRO (R99/month) and the PRO prize draw. |
+| `subscriptions/`, `raffle/` | AO PRO (R99/month) and the PRO prize draw. |
 | `settings/` | Runtime feature flags, read from the DB (`FLAGS` in `settings.service.ts`). Most half-built features ship dark behind one of these. |
 | `activity/` | Buffered analytics event capture feeding the insights dashboard. |
 | `zoho/` | Zoho Books accounting sync. |
@@ -396,7 +396,7 @@ you push a routing change.
 | **Bakkie** | Pickup truck. Ubiquitous here; a whole product category (canopies, drawer systems, roof racks, bull bars) exists around it under Overlanding. |
 | **Take a Shot** | Our name for offers: the buyer names a price, the seller accepts, rejects or counters. |
 | **Swop** | Trade. Two items exchange hands, optionally with a cash top-up. Both sides pay a leg fee and we manage both shipments. |
-| **GG PRO** | The paid membership tier, R99/month. |
+| **AO PRO** | The paid membership tier, R99/month. |
 | **ZAR / cents** | Prices are stored as **integer cents** throughout. Peach speaks decimal rand, so the payment adapter converts at the boundary — that conversion is the single place the two representations meet. |
 | **TPPP** | Third-Party Payment Provider. Holding buyer funds makes us one, which drives the bank onboarding, AML policy and statutory pages under `app/(legal)/`. |
 

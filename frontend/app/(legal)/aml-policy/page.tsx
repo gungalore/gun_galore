@@ -5,6 +5,7 @@
 //   retention consistent with FICA principles. Worth disclosing
 //   publicly so sellers / partners / regulators can see the controls.
 
+import { SUPPORT_EMAIL } from '@/lib/brand';
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -118,8 +119,8 @@ export default function AmlPolicyPage() {
         Intelligence Centre, law enforcement and any other competent
         authority where compelled by valid legal process. If you suspect money laundering, fraud or any other
         criminal activity on the Platform, please email{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
         . We investigate every report.
       </p>
@@ -138,8 +139,8 @@ export default function AmlPolicyPage() {
       <h2>3. Contact</h2>
       <p>
         For any AML-related enquiry, contact:{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
         .
       </p>

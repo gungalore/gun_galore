@@ -34,6 +34,7 @@ import {
   type AskGgQuota,
   type AskGgKbHit,
 } from '@/lib/use-ask-gg';
+import { PRO_NAME } from '@/lib/brand';
 import { useAskGgChat } from '@/lib/use-ask-gg-widget';
 import { LoadLabPanel } from './load-lab/LoadLabPanel';
 import {
@@ -770,7 +771,7 @@ function TierPerksTable({
     },
     {
       label: 'Username badge',
-      perk: { free: '—', pro: 'GG PRO pill' },
+      perk: { free: '—', pro: `${PRO_NAME} pill` },
     },
     {
       label: 'Featured-listing bid discount',

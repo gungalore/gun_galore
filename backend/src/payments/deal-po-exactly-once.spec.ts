@@ -43,7 +43,7 @@ function makeService(over: {
     prisma as never,
     {} as never, // fees
     {} as never, // notifications
-    {} as never, // stitch
+    {} as never, // peach
     {} as never, // kyc
     {} as never, // shipping
     {} as never, // tracking

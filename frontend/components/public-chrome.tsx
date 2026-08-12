@@ -14,6 +14,7 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Nav } from '@/components/nav';
+import { av } from '@/lib/asset-version';
 
 // UX-8 — stripped checkout chrome: logo + "Secure checkout 🔒" + Help only.
 // Replaces the full marketplace nav on /checkout/* so the buyer stays focused
@@ -25,7 +26,11 @@ function CheckoutHeader() {
     <div style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--bg-deep)' }}>
       <div className="max-w-[1280px] mx-auto px-4 h-14 flex items-center justify-between">
         <Link href="/" aria-label="All Outdoor" className="flex items-center shrink-0">
-          <Image src="/logo.svg" alt="All Outdoor" width={180} height={36} priority style={{ height: 36, width: 'auto' }} />
+          {/* /logo-nav.svg, not /logo.svg: the full-scene lockup is 1.5:1, so at
+              36px tall it draws 54px wide and the wordmark becomes ~7px — an
+              illegible smudge at the exact moment the buyer is handing over
+              money. The nav mark is the same wordmark at 2.66:1. */}
+          <Image src={av('/logo-nav.svg')} alt="All Outdoor" width={96} height={36} priority style={{ height: 36, width: 'auto' }} />
         </Link>
         <span className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
           <span aria-hidden>🔒</span> Secure checkout

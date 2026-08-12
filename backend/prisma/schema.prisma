@@ -1562,11 +1562,18 @@ model Transaction {
   // through the consent screen).
   privateArrangeAcceptedAt DateTime?
 
+  // M33 — set when the buyer ticks the 18+/SAPS-competency attestation at
+  // checkout on an isFirearm listing. The hard gate lives in
+  // transactions.service (reserveAndCreateLine); this column is the durable
+  // record of it. It was a log line for a while, which is not evidence you can
+  // produce to a regulator — a firearm sale has to be provable from the row.
+  firearmAttestationAcceptedAt DateTime?
+
   // Set when a buyer ticks the collection papers acknowledgement at
   // checkout on a requiresPapers (trailer / caravan) listing — durable
   // evidence they affirmed they'll collect in person and receive the
-  // registration / roadworthy papers at handover. Boolean gate, like the
-  // firearm 18+ attestation, but persisted since we add the column here.
+  // registration / roadworthy papers at handover. Same boolean-gate →
+  // *At-evidence pattern as the firearm attestation above.
   collectionPapersAckAt DateTime?
 
   // ─── Hunting Packages / Experiences (EXP-E1 checkout → HELD) ─────────

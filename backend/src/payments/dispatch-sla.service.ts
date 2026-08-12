@@ -170,7 +170,7 @@ export class DispatchSlaService {
 
         if (!r.success) {
           this.logger.warn(
-            `Auto-refund cron: Stitch refund failed for ${tx.id} (${r.resultCode}) — rolling back to HELD for admin review`,
+            `Auto-refund cron: Peach refund failed for ${tx.id} (${r.resultCode}) — rolling back to HELD for admin review`,
           );
           // Roll the claim back so the row returns to HELD for a retry.
           await this.prisma.transaction
@@ -186,7 +186,7 @@ export class DispatchSlaService {
               type: 'DISPATCH_SLA_REFUND_FAILED',
               referenceId: tx.id,
               urgent: true,
-              context: `Stitch refund failed: ${r.resultCode} ${r.message ?? ''}`,
+              context: `Peach refund failed: ${r.resultCode} ${r.message ?? ''}`,
             },
           });
           continue;

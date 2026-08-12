@@ -3,7 +3,7 @@
 // page is to give regulators, lawyers, journalists and curious users
 // one URL where the entire compliance posture is visible.
 
-import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import Link from 'next/link';
 import { LegalDocHeader } from '../legal-frame';
@@ -175,8 +175,8 @@ export default function LegalIndexPage() {
           Langeberg Glen, Cape Town, 7570, South Africa
           <br />
           <strong>Email:</strong>{' '}
-          <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-            support@gungalore.co.za
+          <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+            {SUPPORT_EMAIL}
           </a>
           <br />
           <strong>Phone:</strong> {SUPPORT_PHONE_DISPLAY}
@@ -186,8 +186,8 @@ export default function LegalIndexPage() {
           <strong>Membership of self-regulatory bodies:</strong> None at this time
           <br />
           <strong>Information Officer (POPIA):</strong> Gerhard Johan Petrus Fourie ·{' '}
-          <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-            support@gungalore.co.za
+          <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+            {SUPPORT_EMAIL}
           </a>
         </p>
       </div>

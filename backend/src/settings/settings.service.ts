@@ -44,7 +44,7 @@ export const FLAGS = {
       return Number.isFinite(n) ? n : 20000;
     },
   } as FlagDefinition<number>,
-  // GG PRO subscription price, ZAR CENTS per 31-day period. Single paid
+  // AO PRO subscription price, ZAR CENTS per 31-day period. Single paid
   // tier since 2026-07-19 (MEMBER retired — operator decision): FREE gets
   // a demo of every PRO feature, PRO is R99/mo.
   subscriptionProPriceCents: {

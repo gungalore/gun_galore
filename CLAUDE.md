@@ -334,7 +334,7 @@ never printed.
    Marketing).
 8. Feature flags stay `false` until a module is fully ready.
 9. **No wallet.** There is no user balance, stored credit, or
-   ledger. All money moves per-transaction through Stitch.
+   ledger. All money moves per-transaction through the paygate.
 10. **No public seller profile page** and **no dealer directory
     page.** Seller reputation surfaces only as the tier badge and
     rating on the listing itself.
@@ -380,7 +380,7 @@ stabilised before the next.
 3. **Shipping** — Pudo locker API (L2L, ~2,700 lockers, 24h cache),
    TCG door API, dealer-transfer routing for firearms, buyer
    delivery-address collection, address standardisation.
-4. **Payments** — Stitch Express hosted payment-link checkout,
+4. **Payments** — Peach Checkout V2 hosted checkout,
    `PaymentStatus` flow, commission calculation, seller payouts,
    penalties.
 5. **Messaging** — buyer↔seller threaded chat scoped per
@@ -485,16 +485,28 @@ sub-pages we add later) wraps its `<main>` with these two components:
 
 - The **All Outdoor** wordmark is operator-supplied artwork (2026-08-12), traced
   to vector: Table Mountain, a kudu, a bakkie and an acacia over the ALL Outdoor
-  lockup. Three files, all the SAME 56 paths:
+  lockup. Four files, all the SAME 56 paths:
   - `logo.svg` — **PRIMARY**, warm off-white `#f0ede4`. The UI is DARK-ONLY
     (`--bg #0f0f0f`), so the operator's dark green would be invisible on it.
+    Use it where the mark is drawn **≥120px tall**: the hero, share cards, print.
+  - `logo-nav.svg` — the **wordmark only**, 2.66:1. Use it everywhere the mark
+    is drawn SMALL: nav bar (36px mobile / 44px desktop), nav drawer, checkout
+    header, sign-in, sign-up, error, not-found, offline, KYC, profile edit.
+    Windowed out of the same artwork by **two** nested `<svg>` viewports —
+    "ALL" and "Outdoor" separately, because the scene sits in the gap between
+    them and no single rectangle isolates the type.
   - `logo-dark.svg` — the original green `#3c4227`, for LIGHT surfaces only
     (print, documents). Not used anywhere in the app today.
   - `logo-mark.svg` — the square icon tile. Table Mountain + kudu + bakkie,
     cut out by **viewBox only** so it can never drift from the wordmark.
+- ⚠️ **Never render `logo.svg` small.** It is 1.5:1, so at a 36px height it
+  draws 54px wide and the wordmark lands at ~7px — an illegible smudge. This
+  shipped on every page for a while before anyone measured it. Small = `logo-nav.svg`.
 - The only text-free window in the artwork is **x 634–1134, y 240–700**: "ALL"
   ends at x=624 and "Outdoor" occupies everything below y=700 out to x=1134.
-  Any new crop must stay inside it.
+  Any new crop must stay inside it. Measure a new crop by rasterising the band
+  and scanning pixel rows — the bounds in `logo-nav.svg`'s header were once off
+  by a unit and opened a window inside the artwork.
 - A nested `<svg>` clips to its **viewport, not its viewBox**. Size the viewport
   to the viewBox aspect or letterboxing reveals the artwork sitting alongside —
   the first cut of the mark rendered a stray "L".
@@ -539,7 +551,7 @@ across the board and a R30 minimum platform fee was added.
   listing price itself.
 - **Absorb-only commission:** commission is always deducted from the
   seller's payout.
-- **The BUYER pays the payment-processing fee** (Stitch's
+- **The BUYER pays the payment-processing fee** (Peach's
   per-transaction fee). It is added to the buyer's total at checkout, and
   the platform keeps it — no part of it flows back to the seller.
   `passFeeToBuyer` on `Listing` is hardcoded `true` in the Sell form;
@@ -573,8 +585,8 @@ listing quality 10 (Claude assessment), account age 5.
 
 **Cancellation penalty escalation** — applied only AFTER a failure,
 each requiring admin approval. All of the seller's listings are
-suspended until the fine is paid (via Stitch or deducted from the
-next payout):
+suspended until the fine is paid (via the paygate or deducted from
+the next payout):
 
 - 1st failure within 6 months — R150
 - 2nd — R300 + tier reset to New
@@ -589,7 +601,7 @@ KYC is a **seller-only gate**.
 - Buyers, bidders and offer-makers **never** need KYC to transact —
   anywhere, in any module.
 - Seller KYC is triggered ONLY at `sellerConfirmSale()` in
-  `payments.service.ts`, after Stitch confirms payment. The
+  `payments.service.ts`, after Peach confirms payment. The
   equivalent gate for Take a Shot is in `offers.service.ts` →
   `acceptOffer()`. **Not** at listing submission.
 - Bank-account verification happens at first payout.
@@ -600,59 +612,80 @@ KYC is a **seller-only gate**.
 
 ## Payments
 
-**Provider: Stitch Express only.** Migrated off Peach in 2026-06.
-Peach is the rejected legacy provider; do not reintroduce it.
-PayFast, Ozow, iKhokha, Yoco and direct bank APIs are also rejected.
+**Provider: Peach Payments.** Checkout V2 (pay-in) + Payouts + BANV.
+
+> ⚠️ **This section said the opposite until 2026-08-12** — "Stitch
+> Express only … Peach is the rejected legacy provider". That was
+> backwards from 2026-07-23 onward and a developer trusting it would
+> have deleted the live integration. It nearly happened. **There is no
+> Stitch code in this repo**: no service, no module, no webhook route.
+> `src/payments/` contains `peach.service.ts`, `peach.module.ts`,
+> `peach-signature.ts`, `peach-banks.ts`. If you find "Stitch" anywhere
+> outside a historical note, it is a leftover, not an instruction.
+
+Stitch was evaluated and dropped. PayFast, Ozow, iKhokha, Yoco, KoraPay
+and direct bank APIs are also rejected. `STITCH_CLIENT_ID` /
+`STITCH_CLIENT_SECRET` still sit in the env as dead vars.
+
+**Deployed but INERT.** The site is not trading. Manual EFT was stripped
+2026-07-16 and checkout returns 503. Two gates in
+`src/payments/payment-mode.ts`: `PAYMENT_MODE=paygate` and
+`PAYMENTS_LIVE=true` (`assertPaymentsLive()` guards every entry point).
+Without `PEACH_*` creds the service runs as a mock. Go-live = creds +
+both flags.
 
 **NEVER use the word "escrow"** in user-facing copy, internal copy,
-or notifications. It is a regulated SA financial term Gun Galore is
+or notifications. It is a regulated SA financial term All Outdoor is
 not registered for. Use "funds held" / "payment held" / "held until
 delivery confirmed" instead. This applies everywhere — Terms,
 listing detail, transaction page, emails, SMS, admin panel.
 
-**Stitch integration shape:**
+**Peach integration shape** (`peach.service.ts`):
 
-- **Pay-in:** Stitch hosted payment links (`POST /payment-init` →
-  redirect → buyer pays → Stitch redirects to `/checkout/complete?id=…`
-  → we verify via `stitch.verifyPayment(id)` AND match the bound
-  transaction + amount → flip `PaymentStatus`).
-- **Webhook:** Stitch posts to `/api/payments/webhook/stitch` (Svix
-  signature). Fail-closed: bad signature = 401, no DB writes.
-  `peachPaymentId` column was renamed in spirit — the field is now
-  the Stitch payment ID, `@unique` to block replay.
-- **Pay-out:** Stitch payouts to the seller's verified bank account.
+- **Pay-in:** `createCheckout()` → Peach Checkout V2 → buyer pays →
+  `/checkout/complete?id=…` → `getPaymentStatus(checkoutId)` verifies
+  AND matches the bound transaction + amount → flip `PaymentStatus`.
+  DECIMAL ZAR on pay-in, integer cents on payouts — don't mix them.
+- **Webhooks:** four routes on `transactions.controller.ts`, all
+  fail-closed (bad signature = 401, no DB writes):
+  `/api/payments/webhook/peach` (payment),
+  `/webhook/peach-dispute`, `/webhook/peach-banv`, `/webhook/peach-payout`.
+  HMAC verified by `peach-signature.ts` (golden-vector tested; the
+  raw-vs-hex key question is unresolved until the first sandbox txn).
+- **Idempotency columns on `Transaction`:** `peachPaymentId`,
+  `peachCheckoutId`, `peachMerchantRef`, `peachPayoutId` — each
+  `@unique` to block replay — plus `peachResultCode`.
+- **Pay-out:** `createPayout()` to the seller's verified bank account.
   Triggered on dealer-verification APPROVED (firearms) or buyer
   Confirm-Delivery (non-firearms). See dealer-verification flow.
-- **Refunds:** `stitch.refundPayment(stitchId)` is called BEFORE
-  flipping the row to `REFUNDED`. Money moves first, ledger flips
-  second — never the other way around.
+- **Refunds:** `peach.refundPayment(...)` is called BEFORE flipping the
+  row to `REFUNDED`. Money moves first, ledger flips second — never the
+  other way around.
 - **`PaymentStatus` enum:** `HELD`, `PENDING_ADMIN_VERIFICATION`,
   `RELEASED`, `DISPUTED`, `REFUNDED`.
-- **3DS/OTP:** Stitch handles cardholder authentication on its
-  hosted page. Buyer is always present (cardholder-initiated, no
+- **3DS/OTP:** Peach handles cardholder authentication on its hosted
+  page. Buyer is always present (cardholder-initiated, no
   recurring/tokenisation in scope for v1).
-- **Bank verification:** there is NO automated AVS. Automated account
-  verification was Peach's BANVR product and was dropped along with
-  Peach; Stitch Express has no account-verification endpoint, and
-  VerifyNow only does ID lookup + selfie face-match (KYC), NOT bank
-  AVS. `completeProfile` captures bank details as entered
-  (`bankVerifiedAt: null`, `bankAvsResult: null`); an **admin reviews
-  the bank-holder name against the KYC-verified identity manually
-  before the first payout EFT**. Do not claim automated AVS in any
-  user-facing copy — the legal pages were corrected to say "manual
-  review before first payout" (operator memory:
-  `project_avs_kyc_ordering`).
+- **Bank verification: MANUAL today.** Peach BANV (`verifyBankAccount`,
+  `getBankVerificationResult`, `parseBanvWebhook`) is built and deployed
+  but **inert** — `isBanvEnabled()` gates it, and once live
+  `bankVerifiedAt` gates payouts. Until then `completeProfile` captures
+  bank details as entered (`bankVerifiedAt: null`, `bankAvsResult: null`)
+  and an **admin reviews the bank-holder name against the KYC-verified
+  identity by hand before the first payout**. VerifyNow does ID lookup +
+  face-match (KYC) only, never bank AVS. **Do not claim automated AVS in
+  any user-facing copy** until BANV is switched on — the legal pages say
+  "manual review before first payout" (memory: `project_avs_kyc_ordering`).
 - **`VERIFYNOW_MODE=production`** at boot — asserted by config
   guard; sandbox is rejected outside dev. Operator memory:
   `feedback_env_mode_changes` — never flip sandbox↔production
   without explicit confirmation.
-- **Stitch redirect URL setup:** prod helper at
-  `scripts/stitch-redirect-setup.cjs` registers `/checkout/complete`
-  with Stitch's API. Run once per env.
+- `scripts/stitch-redirect-setup.cjs` is **dead** — a leftover from the
+  evaluation. Peach redirect URLs are configured in the Peach dashboard.
 
 **Prohibited:** never enter or store raw card/bank numbers. If a
 user pastes card details into chat or a form, refuse and instruct
-them to enter it themselves on the Stitch hosted page.
+them to enter it themselves on the Peach hosted page.
 
 ---
 
@@ -1262,7 +1295,7 @@ admin retry button per row, and queue-depth health monitoring. See
 was the earlier plan and is archived — do not build new code
 against it.
 
-Stitch payment fees → expenses; users → contacts (FICA records);
+Peach payment fees → expenses; users → contacts (FICA records);
 featured fees → revenue; SMS / email costs → expenses. VAT201,
 monthly P&L, balance sheet, cash flow all run
 out of Books once VAT registration crosses R1M turnover (see
@@ -1437,15 +1470,19 @@ the launch, read these two files (both tracked in this repo):
 
 ### Headline state (2026-06-12)
 
-- **Payments: Stitch Express, fully live.** Peach has been removed
+- ~~**Payments: Stitch Express, fully live.** Peach has been removed
   from the code-path (search the codebase for `peach` — only
-  comments noting the migration should remain). See Payments
-  section above.
+  comments noting the migration should remain).~~
+  **❌ SUPERSEDED — do not act on the struck-through line.** It was
+  true for about six weeks in 2026-06. Stitch was dropped on
+  2026-07-23 and **Peach is the rail**; following that instruction
+  today deletes the live payment integration. See the Payments
+  section above, which is the current truth.
 - **KYC SMS link tokenization** (`ActionToken` purpose
   `KYC_VERIFY`): KYC verification can be triggered from a single-
   tap SMS link via the dual-auth `KycOrTokenGuard`. Mirrors the
   offer / counter / dispatch / auction-bid token pattern.
-- **40-agent audit + 21 batch fixes shipped** to prod (Stitch +
+- **40-agent audit + 21 batch fixes shipped** to prod (payments +
   CSP/COOP headers + raffle race + offer checkout UX + featured
   slots + firearm attestation gate). Items left over are tracked
   in LAUNCH-CHECKLIST.md, NOT here.
@@ -1514,9 +1551,10 @@ LAUNCH-CHECKLIST.md for the authoritative list):
   sellers are NOT genuinely ID-verified. Set `VERIFYNOW_MODE=production`
   + the production VerifyNow API key in `backend/.env` and reload the
   backend. Accepted as a known gap at the 2026-06-24 go-live.
-- Stitch live merchant + payout-bank account fully configured
-  (sandbox→production cutover, redirect URL registered via
-  `scripts/stitch-redirect-setup.cjs`).
+- **Peach** live merchant + payout-bank account fully configured
+  (sandbox→production cutover; redirect URLs are set in the Peach
+  dashboard — `scripts/stitch-redirect-setup.cjs` is dead code).
+  Under the NEW entity, ALLOUTDOOR (PTY) LTD.
 - Attorney review of `/terms`, `/privacy`, `/aml-policy`,
   `/refund-policy`, `/firearms-compliance`.
 - Email forwarding for `sellers@` / `support@`

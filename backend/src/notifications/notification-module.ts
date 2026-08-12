@@ -34,7 +34,7 @@ export function moduleForNotification(
     return '/profile';
   }
 
-  // Subscription (GG PRO).
+  // Subscription (AO PRO).
   if (type.startsWith('subscription_')) return '/subscribe';
 
   // Seller's listings — moderation results, delisting, licence expiry,

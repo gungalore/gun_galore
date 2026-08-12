@@ -8,6 +8,7 @@ import {
 import { createHash } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SUPPORT_EMAIL } from '../common/brand';
 import {
   VerifyNowService,
   KycException,
@@ -838,8 +839,7 @@ export class KycService {
     // rejection — the 50-69 band already routes borderline cases to a human,
     // so we don't loop these through retries; we point them to support. Copy
     // stays generic (never names the DOB cross-check).
-    const supportEmail =
-      process.env.SUPPORT_EMAIL ?? 'support@gungalore.co.za';
+    const supportEmail = process.env.SUPPORT_EMAIL ?? SUPPORT_EMAIL;
     const retryMessage = `We couldn't verify your identity from the document and selfie you provided. Please email ${supportEmail} and our team will help you get verified.`;
     if (user.phone) {
       await this.sms.sendSms({

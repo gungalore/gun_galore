@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { Me, SellerTier } from '@/lib/types';
 import { ACCOUNT_GROUPS } from '@/lib/account-menu-data';
+import { PRO_NAME } from '@/lib/brand';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { AccountWishlistCount } from './wishlist-count';
@@ -97,7 +98,7 @@ export default async function AccountPage() {
   // "we couldn't reach the backend". safeJson degrades both to null, and
   // rendering the fallback as fact is actively misleading here: a verified
   // seller would be shown "ID not verified" and a paying PRO subscriber the
-  // "Get GG PRO" upsell, and neither has any way to tell it's a blip.
+  // "Get AO PRO" upsell, and neither has any way to tell it's a blip.
   // Each fetch is judged on its own so one outage doesn't blank the other.
   const meFailed = !meRes || !meRes.ok;
   const subFailed = !subRes || !subRes.ok;
@@ -180,7 +181,7 @@ export default async function AccountPage() {
                   {kyc.label}
                 </span>
               )}
-              {/* GG PRO tier chip (or an upgrade nudge — the single paid
+              {/* AO PRO tier chip (or an upgrade nudge — the single paid
                   tier since 2026-07-19; legacy MEMBER rows show their own
                   label until they lapse). Suppressed entirely when the
                   subscription fetch failed: showing the upsell to a paying
@@ -190,7 +191,7 @@ export default async function AccountPage() {
                   className="text-xs px-2 py-0.5 rounded-[4px]"
                   style={{ color: 'var(--red)', background: 'rgba(200,16,46,0.10)', border: '0.5px solid var(--red)' }}
                 >
-                  {ggPlus === 'PRO' ? 'GG PRO' : `GG+ ${ggPlus}`}
+                  {ggPlus === 'PRO' ? PRO_NAME : `GG+ ${ggPlus}`}
                   {periodEnd ? ` · renews ${periodEnd}` : ''}
                 </span>
               ) : (
@@ -205,7 +206,7 @@ export default async function AccountPage() {
                     fontWeight: 500,
                   }}
                 >
-                  Get GG PRO — R99/mo
+                  Get {PRO_NAME} — R99/mo
                 </Link>
               )}
               {me && (

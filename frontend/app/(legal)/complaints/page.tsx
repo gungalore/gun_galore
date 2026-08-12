@@ -11,7 +11,7 @@
 // only. Every route that binds all users (privacy, consumer, payment)
 // stays public and complete.
 
-import { SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import Link from 'next/link';
 import { LegalDocHeader } from '../legal-frame';
@@ -88,8 +88,8 @@ export default function ComplaintsPage() {
         }}
       >
         <strong>Email:</strong>{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
         <br />
         <strong>Telephone:</strong>{' '}

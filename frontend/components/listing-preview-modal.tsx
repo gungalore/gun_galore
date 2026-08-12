@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { Condition, Province, ListingType, Category } from '@/lib/types';
 import { CONDITION_LABELS, PROVINCE_LABELS } from '@/lib/utils';
+import { SUPPORT_EMAIL } from '@/lib/brand';
 import { modalIn } from '@/lib/anim';
 import { gsap } from 'gsap';
 
@@ -191,7 +192,7 @@ export function ListingPreviewModal({
         : preview.decision === 'HUMAN_REVIEW'
           ? 'Your listing will be visible to buyers after an admin double-checks it. Usually under an hour.'
           : preview.hardBlocked
-            ? 'We can’t auto-publish this. Email support@gungalore.co.za if you believe this is a mistake.'
+            ? `We can’t auto-publish this. Email ${SUPPORT_EMAIL} if you believe this is a mistake.`
             : (preview.publicReason ??
               'Fix the issues below and try again — most of the time this is one quick edit.');
 
@@ -201,6 +202,12 @@ export function ListingPreviewModal({
       role="dialog"
       aria-modal
       aria-label="Listing preview"
+      // data-blocking-overlay stands the Ask Boet dock down for this modal's
+      // lifetime (rule in ask-gg-launcher.tsx). Boet is z-60 too and, being the
+      // last thing in <body>, wins the tie on DOM order — he'd otherwise land on
+      // the bottom-right action bar and cover "Publish listing", which is the
+      // only publish path there is. Any new full-screen overlay needs this attr.
+      data-blocking-overlay="true"
       className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto p-4 sm:p-8"
       style={{ background: 'rgba(0,0,0,0.72)', opacity: 0 }}
       onClick={(e) => {

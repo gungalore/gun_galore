@@ -3,6 +3,7 @@
 // analytics + marketing categories as "currently none" so the
 // document can stay current if we add them later.
 
+import { SUPPORT_EMAIL } from '@/lib/brand';
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -190,8 +191,8 @@ export default function CookiesPage() {
       <h2>6. Contact</h2>
       <p>
         Cookie-related questions can be sent to{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
         .
       </p>

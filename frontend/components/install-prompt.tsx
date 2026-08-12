@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { InstallAnimation } from './install-animation';
 import { useInstallPrompt } from '@/lib/use-install-prompt';
+import { useWishlist } from '@/lib/use-wishlist';
 import { BRAND_NAME } from '@/lib/brand';
 
 // "Get the All Outdoor app" install popup + the shared install-help modal.
@@ -18,8 +19,8 @@ import { BRAND_NAME } from '@/lib/brand';
 //   3. The event is single-use; once consumed it won't re-fire this session.
 //
 // The popup is a proper, dismissible reminder card (app icon + benefits +
-// Install button) shown a few seconds after landing on the WEBSITE (never in
-// the installed app, never on focused/checkout/admin flows). It offers three
+// Install button) shown to an ENGAGED visitor on the WEBSITE (never in the
+// installed app, never on focused/checkout/admin flows). It offers three
 // exits:
 //   • ✕ / "Maybe later" / backdrop  → hide for 14 days (gentle re-remind).
 //   • "Don't show this again"       → PERMANENT opt-out (localStorage).
@@ -28,12 +29,55 @@ import { BRAND_NAME } from '@/lib/brand';
 // `gg:show-install-help` window event — for when Chrome hasn't fired
 // beforeinstallprompt yet (the only install path then is the browser's own
 // ⋮ menu, which we can only explain, not trigger) or on iOS Safari.
+//
+// ─── WHY THE ENGAGEMENT GATE EXISTS — please don't "fix" it back ───
+//
+// This popup used to fire on a bare timer, so a first-time visitor got a modal
+// over the page 3.5 seconds after landing, before they had seen a single
+// product. That is the textbook intrusive interstitial: Google demotes pages
+// that cover the content a searcher just arrived for, and a stranger asked to
+// install an app for a store they haven't evaluated simply leaves. Asking is
+// only reasonable once someone has shown they want to be here.
+//
+// So the popup now needs an engagement signal as well as the delay — EITHER a
+// return visit (`gg-install-prompt-sessions` >= 2) OR real intent shown in this
+// session: opening a listing, running a search, adding to the cart or saving to
+// the wishlist. The landing view itself never counts (see the intent effect) —
+// a listing link shared on WhatsApp drops people straight onto a detail page,
+// and that arrival is precisely the moment we must not interrupt.
+//
+// The nav's manual "Install app" button is untouched and bypasses all of this:
+// a person asking to install is the opposite problem.
 
 const DISMISSED_KEY = 'gg-install-prompt-dismissed-until';
 const NEVER_KEY = 'gg-install-prompt-never';
+// Engagement gate. Sessions + last-seen live in localStorage (they must survive
+// the tab closing); the counted-flag is per-tab sessionStorage so a reload
+// can't inflate the count.
+const SESSIONS_KEY = 'gg-install-prompt-sessions';
+const LAST_SEEN_KEY = 'gg-install-prompt-last-seen';
+const SESSION_COUNTED_KEY = 'gg-install-prompt-session-counted';
 const DISMISS_DAYS = 14;
 // Delay before the popup appears so it never slams in on first paint.
 const SHOW_DELAY_MS = 3500;
+// Gap after which a fresh page load counts as a NEW visit rather than a
+// continuation. 30 minutes is the standard analytics session window.
+const SESSION_GAP_MS = 30 * 60 * 1000;
+// Visits needed before a landing view alone can trigger the popup.
+const MIN_SESSIONS = 2;
+// Breathing room between an intent signal and the popup, so we never land on
+// top of the thing the visitor just did. The cart wait is longer because
+// adding to the cart opens the added-to-cart drawer (see AddedToCartDrawer),
+// and stacking our modal on that is worse than the original ambush.
+const INTENT_DELAY_MS = 6000;
+const CART_INTENT_DELAY_MS = 12000;
+
+// Listing detail = /listings/<id>. `/listings/new` is the seller's create form,
+// not a shopping signal — and interrupting a half-filled listing is unkind.
+function isListingDetail(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return /^\/listings\/[^/]+$/.test(pathname) && pathname !== '/listings/new';
+}
 
 // Routes where an install popup would interrupt a focused task — never show
 // there (matches the Ask Boet suppression spirit).
@@ -53,10 +97,30 @@ function isSuppressedRoute(pathname: string | null): boolean {
   );
 }
 
+// The "did they run a search" signal reads useSearchParams(), which opts its
+// subtree out of static rendering. Keeping the boundary here means only this
+// popup goes dynamic instead of every page in the root layout — the same
+// self-wrapping trick PageViewTracker uses.
 export function InstallPrompt() {
+  return (
+    <Suspense fallback={null}>
+      <InstallPromptBody />
+    </Suspense>
+  );
+}
+
+function InstallPromptBody() {
   const { canInstall, isInstalled, isIosSafari, isIosNonSafari, promptInstall } =
     useInstallPrompt();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // Saving a listing is an intent signal; the hook is the only place that knows
+  // a heart was tapped (there's no window event for it).
+  const {
+    ready: wishlistReady,
+    count: wishlistCount,
+    isSignedIn: wishlistSignedIn,
+  } = useWishlist();
   const [dismissed, setDismissed] = useState(true); // assume dismissed until effect checks
   const [never, setNeverState] = useState(true); // assume opted-out until effect checks
   const [helpOpen, setHelpOpen] = useState(false);
@@ -76,10 +140,29 @@ export function InstallPrompt() {
   const [desktopArmed, setDesktopArmed] = useState(false);
   // Delay-gate so the popup never appears on first paint.
   const [readyToShow, setReadyToShow] = useState(false);
+  // Engagement gate (see the header comment). `returning` is decided once at
+  // mount; `engaged` flips when an intent signal's grace period elapses.
+  const [returning, setReturning] = useState(false);
+  const [engaged, setEngaged] = useState(false);
+  const intentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Arm the popup off an intent signal. First signal wins — a visitor who
+  // saves three listings shouldn't keep pushing the popup further away.
+  const armIntent = useCallback((delayMs: number) => {
+    if (intentTimer.current) return;
+    intentTimer.current = setTimeout(() => setEngaged(true), delayMs);
+  }, []);
+  useEffect(
+    () => () => {
+      if (intentTimer.current) clearTimeout(intentTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     setDismissed(isDismissedRecently());
     setNeverState(isNever());
+    setReturning(noteSession() >= MIN_SESSIONS);
     const ua = navigator.userAgent;
     const mobile = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(ua);
     setIsMobile(mobile);
@@ -109,6 +192,74 @@ export function InstallPrompt() {
       if (dtTimer) clearTimeout(dtTimer);
     };
   }, []);
+
+  // ─── Intent signals ─────────────────────────────────────────────
+  //
+  // Navigation. We watch the query string as well as the path because search
+  // results are a query-only variant of "/" (/?q=…), so a pathname-only effect
+  // never fires for them.
+  // Remembering the landing VIEW rather than a "seen one" boolean also makes
+  // this idempotent, so StrictMode's double-invoke in dev can't mistake the
+  // landing page for a navigation and fire the popup we're trying to prevent.
+  //
+  // We store the arrival as its PARTS (path, q) rather than one joined string,
+  // because the query string gets rewritten underneath us: WelcomeBanner strips
+  // the `?c=` marketing key with history.replaceState, and Next re-renders
+  // useSearchParams() when it does. A joined string would read that rewrite as
+  // a navigation, so someone arriving from a marketing SMS on
+  // /listings/<id>?c=KEY — a first-time visitor, on the page we least want to
+  // cover — would get the popup ~6s after landing. Comparing the parts means a
+  // query-only rewrite leaves both unchanged and cannot arm.
+  const landing = useRef<{ path: string; q: string } | null>(null);
+  useEffect(() => {
+    // Refresh last-seen on every move so a long browse in one tab doesn't age
+    // past SESSION_GAP_MS and let a second tab count as another visit.
+    touchLastSeen();
+    const path = pathname ?? '';
+    const q = searchParams?.get('q') ?? '';
+    // The first view of a mount is where the visitor ARRIVED. Landing on a
+    // listing (shared link, Google result) is not intent — it's the page we
+    // must not cover. Only what they navigate to afterwards counts.
+    if (landing.current === null) {
+      landing.current = { path, q };
+      return;
+    }
+    const openedListing = isListingDetail(pathname) && path !== landing.current.path;
+    const ranSearch = q !== '' && q !== landing.current.q;
+    if (openedListing || ranSearch) armIntent(INTENT_DELAY_MS);
+  }, [pathname, searchParams, armIntent]);
+
+  // Add to cart — the strongest signal there is, and the only one with its own
+  // window event (dispatched by AddToCartButton on a genuine add).
+  useEffect(() => {
+    function onAddedToCart() {
+      armIntent(CART_INTENT_DELAY_MS);
+    }
+    window.addEventListener('gg:added-to-cart', onAddedToCart);
+    return () => window.removeEventListener('gg:added-to-cart', onAddedToCart);
+  }, [armIntent]);
+
+  // Wishlist. The count jumps 0 → N when the provider hydrates the user's
+  // EXISTING saves, so the first reading after `ready` is only a baseline —
+  // an increase after that is a heart tapped now.
+  //
+  // Re-baseline whenever the identity changes. WishlistProvider reports
+  // `ready` immediately for a signed-out visitor with a count of 0 and never
+  // resets it, so a mid-session sign-in hydrates 0 → N against a live baseline
+  // and would read as a save made just now.
+  const savedBaseline = useRef<number | null>(null);
+  const baselineIdentity = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!wishlistReady) return;
+    if (baselineIdentity.current !== wishlistSignedIn) {
+      baselineIdentity.current = wishlistSignedIn;
+      savedBaseline.current = wishlistCount;
+      return;
+    }
+    const previous = savedBaseline.current;
+    savedBaseline.current = wishlistCount;
+    if (previous !== null && wishlistCount > previous) armIntent(INTENT_DELAY_MS);
+  }, [wishlistReady, wishlistCount, wishlistSignedIn, armIntent]);
 
   async function install() {
     setBusy(true);
@@ -158,11 +309,13 @@ export function InstallPrompt() {
   const showDesktopHint =
     desktopArmed && isChromiumDesktop && !canInstall && !isInstalled;
 
-  // The popup shows when there's an actionable install path, the user hasn't
+  // The popup shows when there's an actionable install path, the visitor has
+  // earned it (return visit or intent shown this session), the user hasn't
   // dismissed / permanently opted out / already installed, we're not on a
   // focused route, and the initial delay has elapsed.
   const showPopup =
     readyToShow &&
+    (returning || engaged) &&
     !isInstalled &&
     !dismissed &&
     !never &&
@@ -789,5 +942,44 @@ function isNever(): boolean {
     return localStorage.getItem(NEVER_KEY) === '1';
   } catch {
     return false;
+  }
+}
+
+// ─── Engagement helpers ────────────────────────────────────────────
+
+/**
+ * Count this page load as a visit — at most once — and return the running
+ * total. Two guards, because each catches what the other misses: the
+ * sessionStorage flag is per-tab so a reload can't inflate the count, and the
+ * last-seen gap stops extra tabs (middle-clicking three listings) reading as
+ * three separate visits.
+ */
+function noteSession(): number {
+  try {
+    const stored = Math.floor(Number(localStorage.getItem(SESSIONS_KEY)));
+    let total = Number.isFinite(stored) && stored > 0 ? stored : 0;
+    if (sessionStorage.getItem(SESSION_COUNTED_KEY) !== '1') {
+      const last = Number(localStorage.getItem(LAST_SEEN_KEY));
+      if (!Number.isFinite(last) || Date.now() - last > SESSION_GAP_MS) {
+        total += 1;
+        localStorage.setItem(SESSIONS_KEY, String(total));
+      }
+      sessionStorage.setItem(SESSION_COUNTED_KEY, '1');
+    }
+    touchLastSeen();
+    return total;
+  } catch {
+    // Storage blocked (private mode, cookie-blocking extension). Reporting 0
+    // means the visitor can still earn the popup through in-session intent but
+    // never through a return visit — erring towards not nagging.
+    return 0;
+  }
+}
+
+function touchLastSeen() {
+  try {
+    localStorage.setItem(LAST_SEEN_KEY, String(Date.now()));
+  } catch {
+    // Storage blocked — sessions just won't accumulate.
   }
 }

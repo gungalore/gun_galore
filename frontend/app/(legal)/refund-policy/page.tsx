@@ -11,6 +11,7 @@
 //   - Admin dossier actions: release / refund / resolve-dispute-release
 
 import Link from 'next/link';
+import { SUPPORT_EMAIL } from '@/lib/brand';
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -241,8 +242,8 @@ export default function RefundPolicyPage() {
       </ul>
       <p>
         To exercise a Daily Deal return, email{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>{' '}
         with your order reference within the applicable window and we will
         arrange the return and refund. Your payment for a Daily Deal is held in
@@ -264,8 +265,8 @@ export default function RefundPolicyPage() {
       <p>
         For any refund or dispute enquiry that you cannot resolve via
         the in-product flows, email{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
         . Please include the order reference number in the subject
         line so we can find it quickly.

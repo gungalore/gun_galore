@@ -2,10 +2,11 @@
  * Backend mirror of frontend/lib/brand.ts. Deliberately a separate file —
  * neither app imports the other — so keep the two in step by hand.
  *
- * The platform trades as ALL OUTDOOR. The registered company is still
- * GunGalore (Pty) Ltd; ECT s43 requires the REGISTERED name in public
- * disclosures, which is why both exist. A CIPC name change is a one-line edit
- * to LEGAL_ENTITY.
+ * The platform trades as ALL OUTDOOR and the registered company is
+ * ALLOUTDOOR (PTY) LTD (reg 2026/639713/07, CIPC 2026). ECT s43 requires the
+ * REGISTERED name in public disclosures, which is why both constants exist.
+ * The old GunGalore (Pty) Ltd entity is a SEPARATE company being wound down —
+ * it is not this business and must not appear anywhere in outbound comms.
  *
  * Used for outbound comms (email from-name, SMS prefix, document headers)
  * where a stale brand name is the most visible kind of miss: a customer who
@@ -33,3 +34,19 @@ export const SMS_PREFIX = `${BRAND_NAME}:`;
  * SPF/DKIM/DMARC records would put every transactional email in spam.
  */
 export const EMAIL_FROM = `${BRAND_NAME} <noreply@gungalore.co.za>`;
+
+/**
+ * Support mailbox — the reply-to address we print in emails, receipts and
+ * takedown notices. Same domain reasoning as EMAIL_FROM: gungalore.co.za mail
+ * is live, alloutdoor.co.za is not wired yet, so the value moves with the DNS
+ * cutover rather than ahead of it. One edit here, not twenty-five.
+ */
+export const SUPPORT_EMAIL = 'support@gungalore.co.za';
+
+/**
+ * Subscription tier name. Was "GG PRO" — GG meant Gun Galore, the wound-down
+ * entity. LABEL ONLY: the `SubscriptionTier.PRO` enum, the `pro_draw_enabled`
+ * flag key and every `tier === 'PRO'` comparison are persisted values and stay
+ * exactly as they are.
+ */
+export const PRO_NAME = 'AO PRO';

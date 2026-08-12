@@ -79,12 +79,12 @@ function makeMocks() {
     ),
   };
   const zohoBooks = { createFeaturedSlotInvoice: jest.fn().mockResolvedValue(undefined) };
-  const stitch = {};
+  const peach = {};
   const notifications = {};
   const referenceNumbers = {};
   const service = new FeaturedService(
     prisma as never,
-    stitch as never,
+    peach as never,
     zohoBooks as never,
     notifications as never,
     referenceNumbers as never,

@@ -23,7 +23,8 @@ export const MIN_COMMISSION_CENTS = 3_000; // R30
 // Top Seller discount — 0.5% off total price. LOCKED per CLAUDE.md.
 const TOP_SELLER_DISCOUNT = 0.005;
 
-// Card-gateway processing fee (Stitch/Peach lineage). Published rate is
+// Card-gateway processing fee. Peach is the gateway (Stitch was evaluated in
+// 2026-06/07 and dropped); its published rate is
 // 3.5% + R1.50 fixed, VAT-EXCLUSIVE. SA VAT is 15%, so the buyer-facing
 // inclusive figure is (subtotal × 3.5% + R1.50) × 1.15 ≈ 4.025% + R1.725.
 // Computed inclusively so the buyer sees the figure billed against the card.

@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { PhotoDropzone } from '@/components/photo-dropzone';
+import { SUPPORT_EMAIL } from '@/lib/brand';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -178,8 +179,8 @@ export default function NewComplaintPage() {
           </Link>{' '}
           to lodge a formal complaint, so we can link it to your account and
           give you a case number to track. You can also email{' '}
-          <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-            support@gungalore.co.za
+          <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+            {SUPPORT_EMAIL}
           </a>
           .
         </p>

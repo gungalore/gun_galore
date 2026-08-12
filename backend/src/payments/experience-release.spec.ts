@@ -122,7 +122,7 @@ function makeService(
     prisma as never,
     new FeeCalculator() as never,
     notifications as never,
-    {} as never, // stitch
+    {} as never, // peach
     {} as never, // kyc
     {} as never, // shipping
     tracking as never,

@@ -435,57 +435,6 @@ export default async function HomePage({
               slots: "X of N spots open" + a "Bid for a spot" CTA. */}
           <FeaturedAvailabilityBar />
           </>)}
-          {occupiedFeatured.length === 0 && (
-            // Cold-start state: no slot is occupied, so the featured grid
-            // is collapsed and THIS is the only featured entry point on
-            // the homepage — on an empty site it's the one sellers see.
-            // Vibrant banner treatment (operator 2026-07-20 "easy to
-            // miss"): shared .gg-bid-spot gold glow + star + red CTA pill.
-            <div className="text-center mb-8" data-reveal>
-              <Link
-                href="/featured/bid"
-                className="gg-bid-spot inline-flex flex-wrap items-center justify-center gap-x-4 gap-y-2 rounded-[10px] px-6 py-4"
-                style={{
-                  background:
-                    'radial-gradient(130% 160% at 50% 0%, rgba(232, 181, 58, 0.16) 0%, transparent 70%), var(--bg-card)',
-                  textDecoration: 'none',
-                  maxWidth: 640,
-                }}
-              >
-                <svg
-                  width="26"
-                  height="26"
-                  viewBox="0 0 24 24"
-                  fill="#e8b53a"
-                  aria-hidden="true"
-                  style={{ filter: 'drop-shadow(0 0 8px rgba(232,181,58,0.55))', flexShrink: 0 }}
-                >
-                  <path d="M12 2l2.9 6.26L21.5 9.3l-4.9 4.46 1.3 6.74L12 17.2l-5.9 3.3 1.3-6.74L2.5 9.3l6.6-1.04Z" />
-                </svg>
-                <span className="text-left">
-                  <span
-                    className="block text-[11px] uppercase"
-                    style={{ color: '#e8b53a', letterSpacing: '0.12em', fontWeight: 700 }}
-                  >
-                    Featured spots open
-                  </span>
-                  <span
-                    className="block text-sm"
-                    style={{ color: 'var(--text-primary)', fontWeight: 600 }}
-                  >
-                    Sellers — put your listing right here, seen first by every visitor
-                  </span>
-                </span>
-                <span
-                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
-                  style={{ background: 'var(--red)', color: '#fff', fontWeight: 600, flexShrink: 0 }}
-                >
-                  <i className="gg-bid-dot" aria-hidden="true" />
-                  Bid or Buy Now →
-                </span>
-              </Link>
-            </div>
-          )}
           {/* Shop by category — the landing page's only breadth entry
               point. Without it discovery leaned entirely on the nav
               flyout (desktop-hover) and /category/[slug] got no homepage
@@ -571,6 +520,65 @@ export default async function HomePage({
                   <ListingCard key={l.id} listing={l} />
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Cold-start featured pitch: no slot is occupied, so the grid
+              above is collapsed and this is the only featured entry point
+              on the homepage. It is an ad aimed at SELLERS, so it sits
+              last — a first-time buyer has to be shown the categories and
+              the actual stock before being asked to bid for placement.
+              Gated on the store having stock at all: nobody buys a shop
+              window in an empty shop, and the pitch only makes the
+              emptiness louder. `browse.total`, not `listings.length` —
+              a deep ?page= still counts as showHero and would otherwise
+              hide the pitch on a well-stocked store.
+              Vibrant banner treatment (operator 2026-07-20 "easy to
+              miss"): shared .gg-bid-spot gold glow + star + red CTA pill. */}
+          {occupiedFeatured.length === 0 && browse.total > 0 && (
+            <div className="text-center mt-10" data-reveal>
+              <Link
+                href="/featured/bid"
+                className="gg-bid-spot inline-flex flex-wrap items-center justify-center gap-x-4 gap-y-2 rounded-[10px] px-6 py-4"
+                style={{
+                  background:
+                    'radial-gradient(130% 160% at 50% 0%, rgba(232, 181, 58, 0.16) 0%, transparent 70%), var(--bg-card)',
+                  textDecoration: 'none',
+                  maxWidth: 640,
+                }}
+              >
+                <svg
+                  width="26"
+                  height="26"
+                  viewBox="0 0 24 24"
+                  fill="#e8b53a"
+                  aria-hidden="true"
+                  style={{ filter: 'drop-shadow(0 0 8px rgba(232,181,58,0.55))', flexShrink: 0 }}
+                >
+                  <path d="M12 2l2.9 6.26L21.5 9.3l-4.9 4.46 1.3 6.74L12 17.2l-5.9 3.3 1.3-6.74L2.5 9.3l6.6-1.04Z" />
+                </svg>
+                <span className="text-left">
+                  <span
+                    className="block text-[11px] uppercase"
+                    style={{ color: '#e8b53a', letterSpacing: '0.12em', fontWeight: 700 }}
+                  >
+                    Featured spots open
+                  </span>
+                  <span
+                    className="block text-sm"
+                    style={{ color: 'var(--text-primary)', fontWeight: 600 }}
+                  >
+                    Sellers — put your listing right here, seen first by every visitor
+                  </span>
+                </span>
+                <span
+                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
+                  style={{ background: 'var(--red)', color: '#fff', fontWeight: 600, flexShrink: 0 }}
+                >
+                  <i className="gg-bid-dot" aria-hidden="true" />
+                  Bid or Buy Now →
+                </span>
+              </Link>
             </div>
           )}
         </section>

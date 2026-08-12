@@ -61,9 +61,15 @@ export { PAYMENT_MODE, PAYMENTS_LIVE, assertPaymentsLive };
 export const ACCEPT_DEADLINE_HOURS = 48;
 export const DISPATCH_DEADLINE_DAYS = 5;
 
-// Gateway-agnostic payment-result shape that markPaid() binds on. (Was
-// PeachPaymentResult — the gateway is now Stitch.) The verify-result and
-// webhook paths each map their provider response into this.
+// Gateway-agnostic payment-result shape that markPaid() binds on. Kept
+// separate from PeachPaymentResult so the money-state machine never depends on
+// one provider's response shape. The verify-result and webhook paths each map
+// their provider response into this.
+//
+// The gateway is PEACH. Stitch was evaluated during the 2026-06/07 paygate
+// search and dropped; a run of comments in this file used to say otherwise and
+// a developer trusting them nearly removed the live Peach integration. If you
+// find another one, fix it rather than working around it.
 interface GatewayPaymentResult {
   paymentId: string;
   resultCode: string;
@@ -637,6 +643,14 @@ export class TransactionsService {
           dto.shippingMethod === 'PRIVATE_ARRANGE' && dto.privateArrangeConsent
             ? new Date()
             : null,
+        // M33 — durable evidence the buyer gave the 18+/SAPS-competency
+        // attestation. The hard gate above is what enforces it; this is what
+        // proves it afterwards. Only stamped on a firearm line, so a NULL on a
+        // non-firearm row means "not applicable", not "not attested".
+        firearmAttestationAcceptedAt:
+          listing.isFirearm && dto.firearmAttestation18Plus === true
+            ? new Date()
+            : null,
         // P3 — durable evidence the buyer acknowledged in-person collection +
         // papers handover for a trailer/caravan. Gate above enforces it.
         collectionPapersAckAt:
@@ -668,13 +682,10 @@ export class TransactionsService {
       throw err;
     });
 
-    // M33 — durable evidence of the firearm-attestation flag. Logged
-    // here (not persisted on Transaction yet) because adding the
-    // `firearmAttestationAcceptedAt` column is held behind the
-    // tsvector schema reconciliation on the launch checklist —
-    // pushing schema today would risk dropping the runtime-added
-    // FTS columns. The validation gate above is what enforces it; the
-    // log line gives us a searchable record until persistence lands.
+    // M33 — the attestation is persisted as `firearmAttestationAcceptedAt` on
+    // the row above; the column is the record, not this line. The line stays
+    // because it is what you grep when tracing a checkout through the logs
+    // alongside the KYC and gateway lines that follow it.
     if (listing.isFirearm) {
       this.logger.log(
         `FIREARM_ATTESTATION accepted=true tx=${tx.id} buyer=${buyer.id} listing=${listing.id}`,
@@ -757,8 +768,8 @@ export class TransactionsService {
     // assertPaymentsLive() above, so this path only runs once a card paygate
     // is live; it creates the gateway checkout below (rail-agnostic seam).
 
-    // Create the Stitch Express checkout (hosted payment link). We pass
-    // the BASE complete URL (no txId) because Stitch matches the
+    // Create the Peach Checkout V2 session (hosted payment page). We pass
+    // the BASE complete URL (no txId) because the gateway matches the
     // redirect against a registered set; the txId rides back via the
     // browser (localStorage) and, once the webhook lands, via
     // merchantReference. The buyer's own name is fine to send to the
@@ -1046,7 +1057,8 @@ export class TransactionsService {
           // P6-A — firearm lines carry their own attestation + in-person
           // consent + optional dealer so the shared core's firearm gates
           // (validateShipping, the 18+ hard check, dealer lookup,
-          // privateArrangeAcceptedAt) fire exactly as on a single-item buy.
+          // privateArrangeAcceptedAt, firearmAttestationAcceptedAt) fire
+          // exactly as on a single-item buy.
           dealerId: line.dealerId,
           privateArrangeConsent: line.privateArrangeConsent,
           firearmAttestation18Plus: line.firearmAttestation18Plus,
@@ -1239,18 +1251,17 @@ export class TransactionsService {
   // unchanged and ready for that seam.
 
   // ------------------------------------------------------------------
-  // Called from the result page — verify payment with Stitch
+  // Called from the result page — verify payment with Peach
   // ------------------------------------------------------------------
-  // The Stitch payment id was stored on peachCheckoutId at create() time.
+  // The gateway checkout id was stored on peachCheckoutId at create() time.
   // We look the tx up by its own id, read ITS stored payment id, and query
-  // Stitch for that payment — so the gateway result is bound to this exact
+  // Peach for that payment — so the gateway result is bound to this exact
   // transaction by construction (an attacker who controls only the URL's
   // transactionId can never point it at someone else's payment). The
-  // amount check in markPaid (Stitch echoes data.payment.amount in cents)
-  // is the remaining money-state guard.
+  // amount check in markPaid is the remaining money-state guard.
   //
   // We deliberately DO NOT revert the listing on a non-success here. The
-  // Stitch payment OBJECT only exists once captured, so a "not found yet"
+  // payment OBJECT only exists once captured, so a "not found yet"
   // simply means the buyer hasn't finished (or an EFT/PayShap is still
   // settling); reverting could double-sell a still-settling order.
   // Abandoned PAYMENT_PENDING listings are freed by the webhook/reconcile
@@ -1351,10 +1362,10 @@ export class TransactionsService {
   }
 
   // ------------------------------------------------------------------
-  // Called from the Stitch webhook (payment.paid). Confirms the matching
+  // Called from the Peach webhook. Confirms the matching
   // transaction even when the buyer closed the tab before returning to
   // /checkout/complete (or paid by async EFT). We re-fetch authoritative
-  // status from Stitch — never trusting the webhook body's amount — and
+  // status from Peach — never trusting the webhook body's amount — and
   // bind it in markPaid. Never reverts on a non-success (a still-settling
   // payment could be double-sold); the webhook must always 200.
   // ------------------------------------------------------------------
@@ -1957,7 +1968,7 @@ export class TransactionsService {
 
   // DD-2 — Daily Deals AUTO-ACCEPT. A house deal (Listing.isDealListing) has
   // no human seller to tap the TOK-7 accept token, so at payment-confirmed
-  // (called fire-and-forget from markPaid, on BOTH the manual-EFT and Stitch
+  // (called fire-and-forget from markPaid, on BOTH the manual-EFT and card
   // rails) we stamp acceptedAt + dispatchDeadlineAt immediately and fire the
   // courier booking, exactly as a seller acceptance would. Idempotent on
   // acceptedAt (safe to re-invoke from the reconcile sweep). Runs AFTER
@@ -2194,11 +2205,10 @@ export class TransactionsService {
       );
     }
 
-    // Fire the Stitch refund first — only stamp rejectedAt if it
+    // Fire the Peach refund first — only stamp rejectedAt if it
     // succeeded, so an admin can retry on failure rather than the buyer
     // being stuck without a refund AND the listing reactivated.
-    // peachPaymentId holds the Stitch payment id (column reused during
-    // the Peach→Stitch transition).
+    // peachPaymentId holds the gateway payment id.
     //
     // PAY-8 — if the tx has NO stored payment id we MUST NOT silently
     // flip to REFUNDED (the buyer was charged; no payment was reversed).
@@ -2227,14 +2237,14 @@ export class TransactionsService {
 
     if (!refundRes.success) {
       this.logger.warn(
-        `Reject failed for ${transactionId}: Stitch refund failed (${refundRes.resultCode}) — raising admin alert`,
+        `Reject failed for ${transactionId}: Peach refund failed (${refundRes.resultCode}) — raising admin alert`,
       );
       await this.prisma.adminAlert.create({
         data: {
           type: 'SALE_REJECT_REFUND_FAILED',
           referenceId: transactionId,
           urgent: true,
-          context: `Seller tried to reject sale; Stitch refund failed: ${refundRes.resultCode}. Buyer still owed ${tx.buyerTotal} cents.`,
+          context: `Seller tried to reject sale; Peach refund failed: ${refundRes.resultCode}. Buyer still owed ${tx.buyerTotal} cents.`,
         },
       });
       throw new BadRequestException(
@@ -2473,7 +2483,7 @@ export class TransactionsService {
           type: 'BUYER_CANCEL_REFUND_FAILED',
           referenceId: transactionId,
           urgent: true,
-          context: `Buyer cancel of ${transactionId}: Stitch refund failed (${refundRes.resultCode}). Buyer still owed ${tx.buyerTotal} cents.`,
+          context: `Buyer cancel of ${transactionId}: Peach refund failed (${refundRes.resultCode}). Buyer still owed ${tx.buyerTotal} cents.`,
         },
       });
       throw new BadRequestException(

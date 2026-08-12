@@ -1,17 +1,18 @@
-// /raffle/rules — statutory competition rules for the GG PRO prize draw
+// /raffle/rules — statutory competition rules for the AO PRO prize draw
 // (Consumer Protection Act s36 promotional competition). Static server
 // component. Reviewed wording — changes need operator + attorney sign-off.
 
 import Link from 'next/link';
+import { LEGAL_ENTITY, PRO_NAME, SUPPORT_EMAIL } from '@/lib/brand';
 
 export const metadata = {
-  title: 'GG PRO prize draw — competition rules | All Outdoor',
+  title: `${PRO_NAME} prize draw — competition rules | All Outdoor`,
 };
 
 const RULES: Array<{ h: string; p: string }> = [
   {
     h: '1. The promoter',
-    p: 'The GG PRO prize draw is a promotional competition run by All Outdoor (Pty) Ltd ("All Outdoor") to promote the All Outdoor PRO subscription. It is conducted in accordance with section 36 of the Consumer Protection Act 68 of 2008.',
+    p: `The ${PRO_NAME} prize draw is a promotional competition run by ${LEGAL_ENTITY} ("All Outdoor") to promote the ${PRO_NAME} subscription. It is conducted in accordance with section 36 of the Consumer Protection Act 68 of 2008.`,
   },
   {
     h: '2. Who is entered',
@@ -31,7 +32,7 @@ const RULES: Array<{ h: string; p: string }> = [
   },
   {
     h: '6. General',
-    p: 'All Outdoor may cancel or amend a draw before its draw date where required by law or for reasons beyond its reasonable control; a prize already drawn will always be honoured. By holding a PRO subscription you consent to your username being published if you win. These rules, together with the All Outdoor Terms of Service, govern the competition. Queries: support@gungalore.co.za.',
+    p: `All Outdoor may cancel or amend a draw before its draw date where required by law or for reasons beyond its reasonable control; a prize already drawn will always be honoured. By holding a PRO subscription you consent to your username being published if you win. These rules, together with the All Outdoor Terms of Service, govern the competition. Queries: ${SUPPORT_EMAIL}.`,
   },
 ];
 
@@ -39,7 +40,7 @@ export default function RaffleRulesPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 pb-24">
       <h1 className="text-xl font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-        GG PRO prize draw — competition rules
+        {PRO_NAME} prize draw — competition rules
       </h1>
       <p className="text-sm mb-6" style={{ color: 'var(--text-tertiary)' }}>
         <Link href="/raffle" style={{ color: 'var(--red)' }}>

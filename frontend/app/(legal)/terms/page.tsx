@@ -16,7 +16,8 @@
 //     registered to operate). The funds-held mechanism is described
 //     as "payment held" or "funds held" throughout.
 
-import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+import { PRO_NAME } from '@/lib/brand';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import { LegalDocHeader } from '../legal-frame';
 
@@ -134,7 +135,7 @@ export default function TermsPage() {
       <ul>
         <li>provide accurate, current and complete information when you register;</li>
         <li>keep your account credentials confidential and not share access with any third party;</li>
-        <li>notify us immediately at <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>support@gungalore.co.za</a> of any unauthorised use of your account;</li>
+        <li>notify us immediately at <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>{SUPPORT_EMAIL}</a> of any unauthorised use of your account;</li>
         <li>maintain a single All Outdoor account (multiple accounts per natural person are not permitted); and</li>
         <li>cooperate fully and truthfully with any verification, dispute or compliance request we make.</li>
       </ul>
@@ -341,9 +342,9 @@ export default function TermsPage() {
         items from a restricted category.
       </p>
 
-      <h2>13. GG PRO membership and the prize draw</h2>
+      <h2>13. {PRO_NAME} membership and the prize draw</h2>
       <p>
-        <strong>GG PRO</strong> is our single paid membership tier: a
+        <strong>{PRO_NAME}</strong> is our single paid membership tier: a
         prepaid 31-day subscription at the price shown on our{' '}
         <a href="/fees" style={{ color: 'var(--red)' }}>Fees</a> page.
         It does not auto-renew — you renew when you choose, and unused
@@ -391,8 +392,8 @@ export default function TermsPage() {
       </ul>
       <p>
         You may close your account at any time by emailing{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
         . Account closure does not relieve you of any liability for
         transactions in progress, fees due or warranties given.
@@ -464,8 +465,8 @@ export default function TermsPage() {
         Notices to you will be sent to the email address registered on
         your account and, where appropriate, by SMS to your verified
         phone number. Notices to All Outdoor must be sent to{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>{' '}
         or by post to the registered address set out in paragraph 1.
       </p>
@@ -503,8 +504,8 @@ export default function TermsPage() {
         }}
       >
         <strong>Email:</strong>{' '}
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
         <br />
         <strong>Telephone:</strong> {SUPPORT_PHONE_DISPLAY}
@@ -523,7 +524,7 @@ export default function TermsPage() {
         <li><strong>Trading as:</strong> All Outdoor</li>
         <li><strong>Director:</strong> Gerhard Johan Petrus Fourie</li>
         <li><strong>Physical address:</strong> 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa</li>
-        <li><strong>Email:</strong> support@gungalore.co.za</li>
+        <li><strong>Email:</strong> {SUPPORT_EMAIL}</li>
         <li><strong>Telephone:</strong> {SUPPORT_PHONE_DISPLAY}</li>
         <li><strong>VAT registration:</strong> Not yet registered for VAT</li>
         <li><strong>Membership of self-regulatory bodies:</strong> None at this time</li>

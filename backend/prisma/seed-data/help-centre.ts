@@ -2,6 +2,13 @@
 // SINGLE SOURCE OF TRUTH for platform Q&A copy — edit here and rerun
 // `npm run seed:help` (idempotent upsert on sourceKey). Authored from the
 // live site copy (FAQ, how-selling-works, legal pages, fee calculator).
+//
+// The support address is interpolated from SUPPORT_EMAIL rather than typed
+// out: these strings become HelpCentre ROWS, so a stale address survives in
+// the database long after the source is fixed. Re-run the seed after the
+// domain cutover to refresh them.
+
+import { SUPPORT_EMAIL } from '../../src/common/brand';
 
 export interface HelpCentreSeedEntry {
   /** Stable unique key, kebab-case, prefixed by area: e.g. 'fees-commission-bands' */
@@ -385,7 +392,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How do I contact Gun Galore support?',
     question: 'Where do I get help with an order or my account?',
     answer:
-      'Open a ticket at [Support](/support) — pick a category (general, payment, shipping/delivery, account, a listing, or other), describe the problem, and reply in the same thread when the team answers. You can also email support@gungalore.co.za; include your order reference so we find it fast. For a problem with a paid order, the Raise dispute button on the order page is the best route — it also keeps your payment held while we review.',
+      `Open a ticket at [Support](/support) — pick a category (general, payment, shipping/delivery, account, a listing, or other), describe the problem, and reply in the same thread when the team answers. You can also email ${SUPPORT_EMAIL}; include your order reference so we find it fast. For a problem with a paid order, the Raise dispute button on the order page is the best route — it also keeps your payment held while we review.`,
     tags: ['support', 'tickets', 'help'],
   },
   {
@@ -401,7 +408,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What are the basic account rules?',
     question: 'Can I have more than one Gun Galore account?',
     answer:
-      'No — one account per person. You must be 18 or older, keep your credentials confidential (never share access), and notify us immediately at support@gungalore.co.za of any unauthorised use. You are responsible for all activity on your account, including listings, bids, offers and payments. You can close your account at any time; the [Terms](/terms) carry the full rules.',
+      `No — one account per person. You must be 18 or older, keep your credentials confidential (never share access), and notify us immediately at ${SUPPORT_EMAIL} of any unauthorised use. You are responsible for all activity on your account, including listings, bids, offers and payments. You can close your account at any time; the [Terms](/terms) carry the full rules.`,
     tags: ['account', 'rules', 'terms'],
   },
 
@@ -495,7 +502,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What if I pay late or use the wrong reference?',
     question: 'I paid by EFT but my order is not confirmed — what now?',
     answer:
-      'Always pay using the exact unique reference shown at checkout — that is how your EFT is matched to your order automatically. If you leave it out or use the wrong one, the payment can sit unmatched and your order stays pending until it is reconciled, which can take longer or need a hand. If your reference was wrong or the order looks stuck, contact support@gungalore.co.za with your proof of payment and I can help you draft a ticket. Orders have a pay-by window; pay within it so the item is held for you.',
+      `Always pay using the exact unique reference shown at checkout — that is how your EFT is matched to your order automatically. If you leave it out or use the wrong one, the payment can sit unmatched and your order stays pending until it is reconciled, which can take longer or need a hand. If your reference was wrong or the order looks stuck, contact ${SUPPORT_EMAIL} with your proof of payment and I can help you draft a ticket. Orders have a pay-by window; pay within it so the item is held for you.`,
     tags: ['payments', 'eft', 'reference'],
   },
   {
@@ -535,7 +542,7 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'How do I delete my account or request my data?',
     question: 'Can I have my data erased, and what is kept?',
     answer:
-      "You can close your account at any time and request access to or deletion of your personal information under POPIA — email support@gungalore.co.za. Some records must be kept even after closure: transaction and financial records for legal and tax reasons, and — where you have bought or sold a firearm — the encrypted copy of your SA ID is retained for firearm-transfer (SAP 534) compliance rather than being purged. The [Privacy Policy](/privacy) sets out exactly what we hold, why, and for how long.",
+      `You can close your account at any time and request access to or deletion of your personal information under POPIA — email ${SUPPORT_EMAIL}. Some records must be kept even after closure: transaction and financial records for legal and tax reasons, and — where you have bought or sold a firearm — the encrypted copy of your SA ID is retained for firearm-transfer (SAP 534) compliance rather than being purged. The [Privacy Policy](/privacy) sets out exactly what we hold, why, and for how long.`,
     tags: ['account', 'privacy', 'popia'],
   },
   {

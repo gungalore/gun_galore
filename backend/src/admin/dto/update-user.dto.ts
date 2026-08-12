@@ -10,7 +10,7 @@ export class UpdateUserDto {
   @IsEnum(KycStatus)
   kycStatus?: KycStatus;
 
-  // GG PRO subscription tier — an admin manual grant (comp accounts,
+  // AO PRO subscription tier — an admin manual grant (comp accounts,
   // support goodwill) that bypasses the paid checkout, mirroring the KYC
   // override. FREE | PRO only: MEMBER was retired 2026-07-19 (the enum
   // value survives in Postgres for legacy rows but must not be GRANTED).

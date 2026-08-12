@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { BRAND_NAME } from '@/lib/brand';
+import { BRAND_NAME, SUPPORT_EMAIL } from '@/lib/brand';
 
 export const metadata: Metadata = {
   title: `Help & FAQ — ${BRAND_NAME}`,
@@ -107,7 +107,7 @@ export default function FaqPage() {
       <p className="text-sm mt-2" style={{ color: 'var(--text-tertiary)' }}>
         Common questions about buying and selling on All Outdoor. Still stuck?{' '}
         <a
-          href="mailto:support@gungalore.co.za"
+          href={`mailto:${SUPPORT_EMAIL}`}
           style={{ color: 'var(--red)', textDecoration: 'underline' }}
         >
           Email support

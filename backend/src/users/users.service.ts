@@ -30,9 +30,8 @@ export interface AddressInput {
 
 // Submitted by the ProfileCompletionModal post-first-publish. Hard
 // wall — the seller can't skip it before the modal closes. Backend
-// validates every field, then writes to the DB. (Automated bank AVS was
-// removed with Peach — Stitch Express has no account-verification
-// endpoint; bank details are reviewed manually at payout instead.)
+// validates every field, then writes to the DB. (Bank details are reviewed
+// manually at payout — see the note in completeProfile below.)
 export interface ProfileCompleteDto {
   firstName: string;
   lastName: string;
@@ -718,10 +717,12 @@ export class UsersService {
       }
     }
 
-    // Automated bank-account verification (AVS) was removed with Peach —
-    // Stitch Express has no account-verification endpoint. Bank details
-    // are captured as entered; an admin reviews them before the manual
-    // payout EFT (the manual check that replaced automated AVS).
+    // No automated bank-account verification runs here. Peach BANV is built
+    // and deployed but INERT (it gates payouts via bankVerifiedAt once the
+    // PEACH_* credentials are live), so today bank details are captured as
+    // entered and an ADMIN reviews the account holder against the KYC-verified
+    // identity before the first payout. Do not upgrade any user-facing copy to
+    // claim automated verification until BANV is actually switched on.
 
     // ─── Push username to Clerk first so the two stores stay in sync ──
     if (username !== user.username) {

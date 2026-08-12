@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { PrismaService } from '../prisma/prisma.service';
+import { SUPPORT_EMAIL } from '../common/brand';
 
 // ────────────────────────────────────────────────────────────────────
 // Buyer purchase receipt (Phase 2). All Outdoor-issued proof of purchase —
@@ -197,7 +198,7 @@ export class ReceiptService {
       );
     }
     note(
-      'This is a proof-of-purchase receipt, not a tax invoice. Questions: support@gungalore.co.za',
+      `This is a proof-of-purchase receipt, not a tax invoice. Questions: ${SUPPORT_EMAIL}`,
     );
     note('All Outdoor — gungalore.co.za');
 

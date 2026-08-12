@@ -15,6 +15,7 @@
 //   - Children — refused for under-18s (s 34)
 //   - Complaints to the Information Regulator (s 74)
 
+import { SUPPORT_EMAIL } from '@/lib/brand';
 import { LegalDocHeader } from '../legal-frame';
 
 export const metadata = {
@@ -65,8 +66,8 @@ export default function PrivacyPage() {
         ALLOUTDOOR (PTY) LTD, 36 Sterappel Crescent, Langeberg Glen,
         Cape Town, 7570
         <br />
-        <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-          support@gungalore.co.za
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+          {SUPPORT_EMAIL}
         </a>
       </p>
       <p>

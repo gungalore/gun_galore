@@ -12,7 +12,8 @@ import { BANV_ACCOUNT_TYPE, type BanvFlag, type BanvMatches } from './peach-bank
  * PeachService — Peach Payments adapter (Checkout V2 pay-in + Payouts API
  * pay-out), the marketplace money rail (operator decision 2026-07-23).
  *
- * Public surface mirrors the prior StitchService so the rail-agnostic money
+ * Public surface mirrors StitchService — the adapter for the rail that was
+ * evaluated and dropped in 2026-07 — so the rail-agnostic money
  * engine (markPaid amount-binding, refund arms, payout-due gating) is
  * unchanged: createCheckout / getPaymentStatus / refundPayment /
  * verifyWebhookSignature / parseWebhookEvent — plus createPayout (new).
@@ -44,7 +45,8 @@ import { BANV_ACCOUNT_TYPE, type BanvFlag, type BanvMatches } from './peach-bank
  * AMOUNTS: Peach uses DECIMAL ZAR (e.g. "150.00"). Our codebase is in
  * integer cents, so every outbound amount is (cents/100).toFixed(2) and
  * every inbound amount is Math.round(parseFloat(x)*100). This is the key
- * difference from the old Stitch adapter (which was integer cents).
+ * difference from the dropped Stitch adapter (which was integer cents), and
+ * the reason a decimal must never leak past this file into the database.
  *
  * INERT until configured: with no PEACH_* env the service returns mock
  * checkouts / logs intents and never calls out, so nothing breaks before

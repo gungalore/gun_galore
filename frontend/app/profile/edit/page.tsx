@@ -1159,9 +1159,10 @@ export default function EditProfilePage() {
               }}
             >
               <Image
-                src={av('/logo.svg')}
+                // Nav mark — the full scene's wordmark is unreadable at 36px.
+                src={av('/logo-nav.svg')}
                 alt="All Outdoor"
-                width={180}
+                width={96}
                 height={36}
                 priority
                 style={{

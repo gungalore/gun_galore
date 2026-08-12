@@ -267,9 +267,9 @@ export class UsersController {
   // partial). Backend validates the banking quartet + encrypts the
   // SA ID at rest. Sets profileCompletedAt on success. Throws a
   // BadRequestException with the modal-displayable message on any
-  // validation failure. Note: Peach AVS was removed in 2026-06;
-  // bank details are now verified manually by admin at payout time
-  // (no automated verification with Stitch Express).
+  // validation failure. Note: no automated AVS runs at this point —
+  // Peach BANV exists but is deployed inert, so bank details are verified
+  // manually by an admin at payout time. See users.service.completeProfile.
   @Post('me/profile-complete')
   @UseGuards(ClerkGuard)
   completeProfile(

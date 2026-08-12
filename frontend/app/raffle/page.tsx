@@ -1,6 +1,6 @@
 'use client';
 
-// /raffle — the GG PRO prize draw. A marketing surface: the actual prize
+// /raffle — the AO PRO prize draw. A marketing surface: the actual prize
 // of the running cycle is displayed for the whole cycle; PRO members are
 // entered automatically and free. Copy NEVER mentions how prizes are
 // funded and never names prize categories — "amazing prizes" only.
@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { BrowseRailShell } from '@/components/browse-rail-shell';
+import { PRO_NAME } from '@/lib/brand';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -71,10 +72,10 @@ export default function RafflePage() {
       <BrowseRailShell>
       <div className="max-w-2xl">
       <h1 className="text-xl font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-        The GG PRO prize draw
+        The {PRO_NAME} prize draw
       </h1>
       <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-        Every GG PRO member is entered automatically — free, no tickets, no
+        Every {PRO_NAME} member is entered automatically — free, no tickets, no
         entry steps. Amazing prizes, drawn on the date shown. The bigger the
         PRO club grows, the bigger the prizes get.
       </p>
@@ -91,7 +92,7 @@ export default function RafflePage() {
           style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
         >
           <p className="text-base font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-            Prize draws are coming with GG PRO
+            Prize draws are coming with {PRO_NAME}
           </p>
           <p className="text-sm m-0" style={{ color: 'var(--text-secondary)' }}>
             Amazing prizes, on display right here before every draw. Watch this
@@ -152,7 +153,7 @@ export default function RafflePage() {
               className="inline-block text-sm px-4 py-2.5 rounded-[6px]"
               style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
             >
-              Get GG PRO — you&apos;re entered automatically
+              Get {PRO_NAME} — you&apos;re entered automatically
             </Link>
           </div>
         </div>
@@ -191,7 +192,7 @@ export default function RafflePage() {
 
       <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
         No purchase of entries — entry is an automatic, free benefit of an
-        active GG PRO subscription. 18+.{' '}
+        active {PRO_NAME} subscription. 18+.{' '}
         <Link href="/raffle/rules" style={{ color: 'var(--red)' }}>
           Competition rules
         </Link>

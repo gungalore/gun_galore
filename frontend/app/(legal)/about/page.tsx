@@ -11,7 +11,7 @@
 // nothing is softened and nothing is denied: we do trade in regulated
 // categories, for registered members.
 
-import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
+import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import { LegalDocHeader } from '../legal-frame';
 
@@ -102,8 +102,8 @@ export default function AboutPage() {
           Langeberg Glen, Cape Town, 7570, South Africa
           <br />
           <strong>Email:</strong>{' '}
-          <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
-            support@gungalore.co.za
+          <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
+            {SUPPORT_EMAIL}
           </a>
           <br />
           <strong>Phone:</strong> {SUPPORT_PHONE_DISPLAY}

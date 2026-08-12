@@ -7,6 +7,12 @@
 // path the nav drawer's Install button uses. Kept as a tiny client child so
 // the rest of the footer stays server-rendered. Self-hides when already
 // running as the installed standalone app.
+//
+// Pinned to the LEFT of its footer band (marginRight:auto beats the band's
+// justify-content:flex-end). The bottom-right of the viewport belongs to
+// Boet — his dock is `fixed` there and is ~160px wide on a phone, ~240px on
+// desktop, so a right-aligned pill in the footer is sitting under the mascot
+// from the moment the footer scrolls into view. See ask-gg-launcher.tsx.
 
 import { useInstallPrompt } from '@/lib/use-install-prompt';
 
@@ -43,6 +49,7 @@ export function GetTheAppCta() {
         borderRadius: 6,
         padding: '8px 14px',
         cursor: 'pointer',
+        marginRight: 'auto',
       }}
     >
       <span aria-hidden>📲</span>

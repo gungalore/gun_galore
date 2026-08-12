@@ -63,7 +63,7 @@ function makeService(overrides: {
     createCommissionCreditNote: jest.fn().mockResolvedValue(undefined),
     createCommissionInvoice: jest.fn().mockResolvedValue(undefined),
   };
-  const stitch = { refundPayment };
+  const peach = { refundPayment };
 
   const transactions = { cancelBookedShipment: jest.fn().mockResolvedValue(undefined) };
   const service = new AdminService(
@@ -72,7 +72,7 @@ function makeService(overrides: {
     {} as never, // listings — unused by refund
     audit as never,
     zohoBooks as never,
-    stitch as never,
+    peach as never,
     transactions as never, // P5.2 — cancels booked shipment on full refund
     {} as never, // sms — unused by refund
   );

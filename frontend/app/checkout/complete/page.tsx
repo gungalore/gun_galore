@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { SUPPORT_EMAIL } from '@/lib/brand';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -237,7 +238,7 @@ function CheckoutCompleteInner() {
               aria-live="polite"
             >
               Checked at {lastCheckedAt} — still not confirmed. If your bank
-              shows a charge, email support@gungalore.co.za before paying again.
+              shows a charge, email {SUPPORT_EMAIL} before paying again.
             </p>
           )}
         </>
@@ -257,7 +258,7 @@ function CheckoutCompleteInner() {
           <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
             We weren&apos;t able to verify the result. Check your order page
             in a minute to see its status — if it hasn&apos;t updated, contact
-            support@gungalore.co.za before paying again so you aren&apos;t
+            {SUPPORT_EMAIL} before paying again so you aren&apos;t
             charged twice.
           </p>
           <button
