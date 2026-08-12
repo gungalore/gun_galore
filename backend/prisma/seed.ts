@@ -299,6 +299,19 @@ const subCategories: Record<string, SubCat[]> = {
     // only + NaTIS registration/roadworthy attestation at handover.
     { name: 'Trailers & Off-Road Caravans', collectionOnly: true, requiresPapers: true },
     { name: 'Overlanding Accessories' },
+    // Added on the live site through the admin panel and never backfilled here,
+    // so a rebuild from this file silently lost seven public categories. Found
+    // 2026-08-12 by diffing a freshly-seeded database against production.
+    // The originals carry bare slugs because the admin panel does not apply the
+    // `parent--child` convention; seeded here they get the consistent form,
+    // which is safe on a clean database with nothing indexed yet.
+    { name: 'Suspension & Lift Kits' },
+    { name: 'Snorkels & Air Intakes' },
+    { name: 'Canopies, Tonneau & Load-Bed' },
+    { name: 'Tyres, Wheels & Beadlocks' },
+    { name: 'Fuel & Jerry Cans' },
+    { name: 'Portable Power & Inverters' },
+    { name: 'Towing & Tow Bars' },
   ],
   hunting: [
     { name: 'Game Calls & Decoys' },
@@ -695,20 +708,41 @@ async function main() {
     console.log(`  ✓ ${dealer.name}`);
   }
 
+  // ── Superadmin ───────────────────────────────────────────────────────────
+  //
+  // This used to fall back to a hard-coded password when ADMIN_SEED_PASSWORD was
+  // unset. That default is in this file, in git history, and in every clone —
+  // so seeding a production box silently created a SUPERADMIN whose password
+  // anyone with repo access already knew. Now it refuses.
+  //
+  // Local development keeps a convenience default, because a dev box behind
+  // localhost with throwaway data is not the same risk and forcing a ceremony
+  // there just gets worked around.
   console.log('Seeding superadmin…');
-  const hash = await bcrypt.hash(process.env.ADMIN_SEED_PASSWORD ?? 'Admin@GunGalore1!', 10);
+  const seedPassword = process.env.ADMIN_SEED_PASSWORD;
+  if (process.env.NODE_ENV === 'production' && !seedPassword) {
+    throw new Error(
+      'ADMIN_SEED_PASSWORD is required when NODE_ENV=production.\n' +
+        'Refusing to create a SUPERADMIN with a default password — the old default was\n' +
+        'committed to this repository and is not a secret. Generate one and pass it in:\n' +
+        '  ADMIN_SEED_PASSWORD="$(openssl rand -base64 24)" npx prisma db seed',
+    );
+  }
+  const adminEmail =
+    process.env.ADMIN_SEED_EMAIL ?? 'admin@alloutdoor.co.za';
+  const hash = await bcrypt.hash(seedPassword ?? 'dev-only-not-for-production', 10);
   await prisma.adminUser.upsert({
-    where: { email: 'admin@gungalore.co.za' },
+    where: { email: adminEmail },
     update: {},
     create: {
-      email: 'admin@gungalore.co.za',
+      email: adminEmail,
       passwordHash: hash,
       role: 'SUPERADMIN',
       firstName: 'Super',
       lastName: 'Admin',
     },
   });
-  console.log('  ✓ admin@gungalore.co.za (SUPERADMIN)');
+  console.log(`  ✓ ${adminEmail} (SUPERADMIN)`);
 
   console.log('Done.');
 }
