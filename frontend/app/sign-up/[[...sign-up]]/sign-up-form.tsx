@@ -785,14 +785,17 @@ function VerifyStep({
   const codeId = useId();
   return (
     <div className="w-full max-w-[480px]">
-      <div className="text-center mb-6">
-        <Link href="/" style={{ textDecoration: 'none' }}>
-          <span
-            className="text-xl tracking-tight"
-            style={{ color: 'var(--text-primary)', fontWeight: 500, letterSpacing: '-0.01em' }}
-          >
-            Gun<span style={{ color: 'var(--red)' }}>·</span>Galore
-          </span>
+      {/* Same lockup as the first sign-up step above — this one was a
+          hand-rolled text wordmark and got missed in the rebrand sweep, so
+          every new user saw "Gun·Galore" at the moment they typed their
+          verification code. */}
+      <div className="flex justify-center mb-6">
+        <Link href="/" aria-label="All Outdoor">
+          <img
+            src="/logo.svg"
+            alt="All Outdoor"
+            style={{ height: 48, width: 'auto' }}
+          />
         </Link>
       </div>
 

@@ -8,13 +8,19 @@
 //      place for this.
 //
 //   2. Legal-doc discoverability — gives users a single, predictable
-//      place to find Terms, Privacy, AUP, Refund, Firearms, Cookies
-//      and the AML policy.
+//      place to find Terms, Privacy, AUP, Refund, Cookies, PAIA and
+//      the AML policy.
+//
+//   3. Standing platform policy — the small-print band above the s43
+//      disclosure carries the prohibitions that apply everywhere on
+//      the site, so they are stated on every page rather than buried
+//      one document deep.
 //
 // Skipped on the admin panel (admin layout sits under a separate
 // route group with its own chrome) but rendered on every public
 // page. Server-rendered to keep zero JS cost.
 
+import { BRAND_NAME } from '@/lib/brand';
 import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import Link from 'next/link';
@@ -198,6 +204,27 @@ export function SiteFooter() {
         }}
       >
         <GetTheAppCta />
+      </div>
+
+      {/* Standing platform policy. Same small-print treatment as the
+          disclosure band below it — this is a rule of the site, not an
+          announcement, so it should read like the fine print it is. */}
+      <div
+        style={{
+          maxWidth: 1280,
+          margin: '0 auto',
+          paddingTop: 16,
+          borderTop: '0.5px solid var(--border)',
+          marginBottom: 16,
+          color: 'var(--text-tertiary-on-card)',
+          fontSize: 11,
+          lineHeight: 1.7,
+        }}
+      >
+        <p style={{ margin: 0 }}>
+          {BRAND_NAME} does not sell ammunition. Live ammunition may not be
+          listed, sold or traded on this platform under any circumstances.
+        </p>
       </div>
 
       {/* ECT § 43 disclosures — mandatory on every commercial SA page.

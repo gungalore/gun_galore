@@ -41,9 +41,9 @@ const DOCS: { href: string; title: string; description: string }[] = [
   },
   {
     href: '/members/regulated-items',
-    title: 'Regulated Items & Compliance',
+    title: 'Regulated Items Annex',
     description:
-      'Our role and your obligations for licence- and age-restricted categories, including firearms under the Firearms Control Act 60 of 2000.',
+      'Additional terms that apply to licence- and age-restricted categories: our role, your obligations, and how those items are verified and transferred. Available to registered members.',
   },
   {
     href: '/aml-policy',
@@ -99,6 +99,17 @@ export default function LegalIndexPage() {
         disclosure that applies to GunGalore (Pty) Ltd. Each document
         is binding to the extent set out in its own text; together
         they form the legal framework of the Platform.
+      </p>
+      <p>
+        Additional terms apply to regulated categories. See the{' '}
+        <Link href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </Link>
+        , available to registered members. The Annex forms part of our{' '}
+        <Link href="/terms" style={{ color: 'var(--red)' }}>
+          Terms of Service
+        </Link>{' '}
+        and does not replace anything on this page.
       </p>
 
       <h2>Documents</h2>
@@ -201,7 +212,13 @@ export default function LegalIndexPage() {
             National Financial Ombud
           </a>{' '}
           or your card issuer's dispute process</li>
-        <li>Firearms-related: the South African Police Service (SAPS)</li>
+        <li>Restricted-category or public-safety matters: the relevant
+          law-enforcement or regulatory authority. The escalation route
+          for each restricted category is set out in the{' '}
+          <Link href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+            Regulated Items Annex
+          </Link>
+        </li>
       </ul>
     </>
   );

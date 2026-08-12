@@ -161,8 +161,14 @@ export default function FaqPage() {
         <Link href="/acceptable-use" style={{ color: 'var(--text-secondary)' }}>
           Acceptable Use Policy
         </Link>{' '}
-        pages. Rules for regulated categories live in the Regulated Items
-        Annex, available to registered members.
+        pages. Additional terms apply to regulated categories. See the{' '}
+        <Link
+          href="/members/regulated-items"
+          style={{ color: 'var(--text-secondary)' }}
+        >
+          Regulated Items Annex
+        </Link>
+        , available to registered members.
       </p>
     </main>
   );

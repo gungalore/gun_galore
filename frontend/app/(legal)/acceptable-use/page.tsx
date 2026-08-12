@@ -38,12 +38,15 @@ export default function AcceptableUsePage() {
       <ul>
         <li>You own the item (or have express authority from the owner to sell it on their behalf).</li>
         <li>The item is lawful to sell, possess and transfer in South Africa.</li>
-        <li>The item fits one of All Outdoor's category trees (optics, hunting, outdoor, camping, fishing, ranges, accessories, ammunition, firearms, etc.).</li>
+        <li>The item fits one of All Outdoor's category trees (optics, hunting, outdoor, camping, fishing, ranges, accessories, regulated categories, etc.).</li>
         <li>The item is accurately described, with the correct condition (New, Like New, Good, Fair or Poor) and clear, recent photographs showing the actual item.</li>
-        <li>For licence- and age-restricted items subject to the Firearms Control Act 60 of 2000, both you and the buyer hold the relevant SAPS Competency Certificate and the transfer is routed through a SAPS-licensed dealer — see our{' '}
-          <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items &amp; Compliance</a>.
-        </li>
+        <li>For items that require a licence or permit, both you and the buyer hold every authorisation the relevant authority requires for that category, and the item is transferred through a licensed dealer rather than directly between the two of you.</li>
       </ul>
+      <p>
+        Additional terms apply to regulated categories. See the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>
+        , available to registered members.
+      </p>
 
       <h2>3. What you cannot list</h2>
       <p>
@@ -53,16 +56,46 @@ export default function AcceptableUsePage() {
       </p>
       <ul>
         <li><strong>Stolen goods</strong> — including goods you cannot prove ownership of, or goods whose serial numbers have been removed or altered.</li>
-        <li><strong>Counterfeit or replica regulated items / accessories</strong> (including replica firearms) sold as genuine.</li>
-        <li><strong>Fully automatic firearms</strong> or any firearm component prohibited under the Firearms Control Act for civilian possession.</li>
-        <li><strong>Loose live ammunition</strong> traded peer-to-peer between private individuals — these may only be sold by SAPS-licensed dealers through dealer storefronts, where that capability is enabled.</li>
-        <li><strong>Explosives, suppressors, silencers, prohibited large-capacity magazines</strong> or any other item explicitly restricted under SA law.</li>
+        <li><strong>Counterfeit or replica regulated items / accessories</strong> sold as genuine.</li>
+        <li><strong>Items prohibited for civilian possession</strong> under South African law, and any component of such an item.</li>
+        <li><strong>Live ammunition, primers and propellant powder</strong> — see paragraph 3a below.</li>
+        <li><strong>Explosives, pyrotechnics</strong> and any other component or accessory whose possession or sale is explicitly restricted under South African law.</li>
         <li><strong>Goods that infringe</strong> any third-party intellectual property right (trademark, copyright, design).</li>
         <li><strong>Hate symbols, extremist memorabilia</strong> or any item primarily associated with promoting violence against a protected group.</li>
         <li><strong>Personal data of others</strong> — including ID copies, licences belonging to other people, or contact lists.</li>
         <li><strong>Hazardous materials</strong> that cannot be safely couriered or that contravene IATA / SARS import-export rules.</li>
         <li><strong>Animals, pets, ivory, rhino horn, lion bones</strong> or any item subject to CITES restrictions.</li>
       </ul>
+
+      <h2>3a. Ammunition, primers and propellant powder are banned outright</h2>
+      <p>
+        <strong>
+          All Outdoor does not sell ammunition. Live ammunition may not be
+          listed, sold or traded on this platform under any circumstances.
+          The same absolute prohibition applies to primers and propellant
+          powder.
+        </strong>
+      </p>
+      <p>
+        This prohibition is absolute. It applies to every seller — private
+        or business — to every category, and to every selling mode on the
+        Platform, including auctions, offers, swaps and any storefront. A
+        listing that offers live ammunition, primers or propellant powder is
+        removed on sight and the account that placed it is subject to the
+        enforcement ladder in paragraph 7. There is no category on the
+        Platform in which any of those three items can be listed.
+      </p>
+      <p>
+        Reloading components are limited to <strong>projectiles and brass
+        cases</strong>. Those two component types are not ammunition, are
+        not covered by the prohibition above, and may be listed in the
+        appropriate category by registered members who comply with the law
+        that applies to them. They appear only in the members-only part of
+        the Platform. Additional terms apply to regulated categories. See
+        the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>
+        , available to registered members.
+      </p>
 
       <h2>4. What your listing photographs must show</h2>
       <ul>
@@ -86,7 +119,7 @@ export default function AcceptableUsePage() {
       </p>
       <ul>
         <li>Phone numbers, email addresses, WhatsApp / Telegram / Signal / Facebook Messenger handles, Instagram / TikTok / Facebook / X / Snapchat usernames, or any other personal contact channel.</li>
-        <li>URLs or domain names pointing at your own shop, channel or storefront. (Brand or manufacturer websites mentioned in passing — e.g. "glock.com" — are fine.)</li>
+        <li>URLs or domain names pointing at your own shop, channel or storefront. (A manufacturer's or brand's own website mentioned in passing — for example the product page for the item you are selling — is fine.)</li>
         <li>Phrases that try to coordinate off-platform — e.g. "DM me", "WhatsApp me", "meet me at...", "let's chat directly", "deal off-platform".</li>
         <li>Street addresses identifying where you can be found physically. (Province or suburb on its own is fine.)</li>
         <li>Pricing or sale terms that contradict the listing's headline price.</li>
@@ -116,7 +149,7 @@ export default function AcceptableUsePage() {
         <li><strong>Warning</strong> issued via email + in-app banner for repeated minor breaches.</li>
         <li><strong>Temporary suspension</strong> (typically 7 to 30 days) for serious or repeated breaches.</li>
         <li><strong>Permanent ban</strong> for severe breaches (e.g. stolen-goods listing, fraud, harassment) or for repeated breach after suspension.</li>
-        <li>For unlawful conduct, we will refer the matter to the South African Police Service and any other competent authority and will provide them with the information necessary for their investigation.</li>
+        <li>For unlawful conduct, we will refer the matter to the relevant law-enforcement and regulatory authorities and will provide them with the information necessary for their investigation.</li>
       </ol>
       <p>
         Every enforcement decision is recorded in our audit log with

@@ -73,7 +73,7 @@ const MODES: {
     how: [
       'You list the item you want to trade — no price. Buyers browse and propose a swap: their item, plus optional cash in either direction.',
       'You accept, decline, or counter the cash once. All Outdoor arranges both couriers and any cash is held until both parcels are delivered, then released.',
-      'Firearms can be swapped too — each side transfers through a SAPS-licensed dealer, exactly like a normal firearm sale.',
+      'Items in a regulated category can be swopped too, but they are not couriered — each side is handed over the same way it would be on a normal sale in that category.',
     ],
   },
 ];
@@ -159,23 +159,32 @@ export default function HowSellingWorksPage() {
         ))}
       </div>
 
-      {/* Firearms note — a delivery method, not a fifth selling style. */}
+      {/* Regulated-category note — a hand-over method, not a fifth selling
+          style. Members-only detail (which authority, which forms, what is
+          captured) lives in the Regulated Items Annex. */}
       <div
         className="rounded-[10px] p-5 mt-4"
         style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)' }}
       >
         <h2 className="text-base" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-          Selling a firearm?
+          Selling in a regulated category?
         </h2>
         <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-          You can list a firearm as Marketplace or Auction, but by law it can&apos;t
-          be couriered — it&apos;s transferred through a SAPS-licensed dealer and the
-          buyer collects there once the paperwork is done. You&apos;ll capture the
-          serial and licence details when you list. See{' '}
+          Some categories are open to registered members only, and an item
+          that requires a licence or permit cannot be couriered. By law it is
+          handed over through an authorised dealer and the buyer collects it
+          there once the paperwork is done. You will be asked for the
+          identifying and licence details the law requires when you list, and
+          the listing is checked before it goes live. Additional terms apply
+          to regulated categories. See the{' '}
           <Link href="/members/regulated-items" style={{ color: 'var(--red)', textDecoration: 'underline' }}>
-            Firearms Compliance
-          </Link>{' '}
-          for the full process.
+            Regulated Items Annex
+          </Link>
+          , available to registered members.
+        </p>
+        <p className="text-sm mt-3" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+          All Outdoor does not sell ammunition. Live ammunition may not be
+          listed, sold or traded on this platform under any circumstances.
         </p>
       </div>
 

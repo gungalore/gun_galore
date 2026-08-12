@@ -4,8 +4,12 @@
 // reviewer can read end to end.
 //
 // Mapped to the actual implementation: payment held on checkout, released
-// on confirm-delivery / verified SAPS 534 dealer transfer, manual bank-
-// detail review before the first payout, commission-only revenue.
+// on confirm-delivery / verified dealer transfer (SAPS 534 for firearms),
+// manual bank-detail review before the first payout, commission-only revenue.
+//
+//   PUBLIC PAGE — the regulated-category detail lives in the members-only
+//   Regulated Items Annex (/members/regulated-items). Keep the copy here
+//   generic ("items that require a licence or permit").
 //
 // House rules baked in:
 //   NEVER name a payment provider here until a contract is signed (TPPP).
@@ -19,7 +23,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'How Payments Work',
   description:
-    'How All Outdoor holds a buyer\'s payment until the sale completes, then releases it to the seller — and how firearms, refunds and disputes are handled.',
+    'How All Outdoor holds a buyer\'s payment until the sale completes, then releases it to the seller — and how regulated items, refunds and disputes are handled.',
 };
 
 export default function HowPaymentsWorkPage() {
@@ -77,16 +81,18 @@ export default function HowPaymentsWorkPage() {
         </li>
       </ol>
 
-      <h2>2. Firearms are held to a stricter step</h2>
+      <h2>2. Items that require a licence or permit are held to a stricter step</h2>
       <p>
-        A firearm never ships between private individuals. It moves only
-        between SAPS-licensed dealers, and both buyer and seller must hold
-        the relevant SAPS competency. The payment stays held until the{' '}
-        <strong>SAPS 534 dealer transfer is verified</strong> — not merely
-        until the parcel is handed over. Only after that verification is the
-        seller paid. See our{' '}
-        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items &amp; Compliance</a>
-        {' '}page for the full firearm process.
+        An item that requires a licence or permit is never shipped directly
+        between private individuals. It is handed over through a licensed
+        dealer, and both buyer and seller must hold every authorisation the
+        relevant authority requires for that category. The payment stays
+        held until the{' '}
+        <strong>transfer is verified as complete</strong> — not merely until
+        the parcel is handed over. Only after that verification is the
+        seller paid. Additional terms apply to regulated categories. See the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>
+        , available to registered members.
       </p>
 
       <h2>3. How sellers are paid</h2>

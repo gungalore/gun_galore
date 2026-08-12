@@ -472,9 +472,28 @@ sub-pages we add later) wraps its `<main>` with these two components:
 
 ## Logo Rules — Never Break These
 
-- `logo.svg` / `logo-mark.svg` are the **All Outdoor** interim mark: a mountain
-  peak plus a text wordmark, geometry only (no webfont, so it renders identically
-  at 16px favicon size). The old Gun Galore mark set the wordmark inside a
+- The **All Outdoor** wordmark is operator-supplied artwork (2026-08-12), traced
+  to vector: Table Mountain, a kudu, a bakkie and an acacia over the ALL Outdoor
+  lockup. Three files, all the SAME 56 paths:
+  - `logo.svg` — **PRIMARY**, warm off-white `#f0ede4`. The UI is DARK-ONLY
+    (`--bg #0f0f0f`), so the operator's dark green would be invisible on it.
+  - `logo-dark.svg` — the original green `#3c4227`, for LIGHT surfaces only
+    (print, documents). Not used anywhere in the app today.
+  - `logo-mark.svg` — the square icon tile. Table Mountain + kudu + bakkie,
+    cut out by **viewBox only** so it can never drift from the wordmark.
+- The only text-free window in the artwork is **x 634–1134, y 240–700**: "ALL"
+  ends at x=624 and "Outdoor" occupies everything below y=700 out to x=1134.
+  Any new crop must stay inside it.
+- A nested `<svg>` clips to its **viewport, not its viewBox**. Size the viewport
+  to the viewBox aspect or letterboxing reveals the artwork sitting alongside —
+  the first cut of the mark rendered a stray "L".
+- `favicon.ico`'s 16/32/48 frames are a **simplified Table Mountain silhouette**,
+  not the full mark: traced line art dissolves below ~64px. 64/128/256 carry the
+  real mark.
+- ⚠️ The artwork contains a recognisable **Toyota Hilux with the Toyota badge and
+  HILUX wordmark** — a third party's trademark inside our logo. A legal question
+  for the operator, not a code one. Flagged, not changed.
+- The old Gun Galore mark set the wordmark inside a
   **bullet/cartridge outline** — a firearm motif on every page, in the app icon
   and in every share unfurl. Never reinstate it, and keep any replacement free of
   weapon imagery: the logo is the one asset that appears everywhere, including in

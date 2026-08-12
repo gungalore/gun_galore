@@ -2,8 +2,14 @@
 // external escalation routes, broken down by subject matter. Split
 // out from /legal so it has a canonical URL that the footer, /legal
 // and /contact can all link to. Intake is email + phone; escalation
-// points to the correct consumer, privacy, payment and firearms
-// forums — never an industry association.
+// points to the correct consumer, privacy, payment and regulated-
+// category forums — never an industry association.
+//
+// PUBLIC SURFACE. The escalation route for regulated categories is
+// named in general terms here and spelled out — authority, statute and
+// contact details — in the Regulated Items Annex, which is members-
+// only. Every route that binds all users (privacy, consumer, payment)
+// stays public and complete.
 
 import { SUPPORT_PHONE_TEL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
@@ -105,7 +111,7 @@ export default function ComplaintsPage() {
       <h2>2. How we handle your complaint</h2>
       <ul>
         <li>We aim to <strong>acknowledge</strong> your complaint within <strong>2 business days</strong> of receiving it.</li>
-        <li>We aim to <strong>resolve</strong> it within <strong>14 business days</strong>. Where a matter is complex or depends on a third party — for example a courier, a SAPS-licensed dealer handling a firearm transfer, or a payment reconciliation — it may take longer; if so, we will tell you, explain why, and keep you updated on progress.</li>
+        <li>We aim to <strong>resolve</strong> it within <strong>14 business days</strong>. Where a matter is complex or depends on a third party — for example a courier, an authorised dealer handling the hand-over of a regulated item, or a payment reconciliation — it may take longer; if so, we will tell you, explain why, and keep you updated on progress.</li>
         <li>Every complaint is logged, assigned an owner and recorded together with its outcome.</li>
       </ul>
 
@@ -205,12 +211,26 @@ export default function ComplaintsPage() {
         card issuer's dispute process.
       </p>
 
-      <h3>3.4 Firearms-related matters</h3>
+      <h3>3.4 Regulated categories</h3>
       <p>
-        For matters involving the lawful handling, transfer or licensing
-        of firearms under the Firearms Control Act 60 of 2000, contact
-        the South African Police Service (SAPS) — through your nearest
-        SAPS station or the SAPS Central Firearms Register.
+        Some categories on this platform are regulated by statute and
+        are open to registered members only. A complaint about the
+        lawful possession, hand-over or licensing of an item in one of
+        those categories is a matter for the responsible state
+        authority rather than for All Outdoor, and you may approach
+        that authority directly. Additional terms apply to regulated
+        categories. See the{' '}
+        <Link href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </Link>
+        , available to registered members, which names the authority
+        and gives its contact details.
+      </p>
+      <p>
+        This does not affect any of the routes above: if your complaint
+        is about your personal information, a consumer-law issue or a
+        payment, use 3.1, 3.2 or 3.3 — whichever category the item
+        itself falls into.
       </p>
 
       <h2>4. Related documents</h2>

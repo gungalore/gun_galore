@@ -124,8 +124,13 @@ export default function FeesPage() {
       </p>
       <ul>
         <li>after <strong>delivery is confirmed</strong> for a couriered item; or</li>
-        <li>after the <strong>SAPS 534 dealer transfer is verified</strong> for a firearm, which moves only between SAPS-licensed dealers.</li>
+        <li>after the <strong>transfer is verified as complete</strong> for an item that requires a licence or permit — such an item is handed over through a licensed dealer rather than couriered to the buyer, and the payout is only released once we have confirmation that the transfer went through.</li>
       </ul>
+      <p>
+        Additional terms apply to regulated categories. See the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>
+        , available to registered members.
+      </p>
       <p>
         Before a seller's <strong>first</strong> payout, our team carries
         out a manual review of the seller's bank details against their
@@ -140,8 +145,11 @@ export default function FeesPage() {
         parcel and is paid by the buyer. Couriers are Pudo (locker-to-locker)
         and The Courier Guy (door-to-door). A flat{' '}
         <strong>R15 handling fee per parcel</strong> applies to
-        courier-shipped orders. Firearm dealer transfers and in-person
-        collection use no courier and carry no shipping or handling fee.
+        courier-shipped orders. Licensed-dealer handovers and in-person
+        collection use no courier and carry no All Outdoor shipping or
+        handling fee. Any charge a dealer levies for receiving, storing or
+        processing an item is that dealer&apos;s own charge, is payable
+        directly to them, and is not collected or refunded by All Outdoor.
       </p>
 
       <h2>5. Optional extras</h2>
@@ -198,7 +206,8 @@ export default function FeesPage() {
         pays a service fee for the leg they send:{' '}
         <strong>1.5% of the item&apos;s declared value</strong>, with a
         minimum of <strong>R50</strong> for a courier leg (<strong>R100</strong>{' '}
-        for a firearm dealer-transfer leg) and a cap of <strong>R750</strong>{' '}
+        for a leg that has to complete through a licensed dealer) and a cap of{' '}
+        <strong>R750</strong>{' '}
         per leg. GG PRO members get 25% off the swap service fee. Any cash
         top-up above R1,000 carries the standard commission bands on the
         amount above R1,000, deducted from the cash the receiving party is

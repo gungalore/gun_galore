@@ -1,28 +1,18 @@
 <!--
-  ALL OUTDOOR — compact square mark, cut from the operator's wordmark 2026-08-12.
-
-  Table Mountain, the kudu and the bakkie, lifted out of the full lockup by
-  VIEWBOX ONLY — the paths are byte-identical to logo.svg, so the mark and the
-  wordmark can never drift apart.
-
-  The window x 634..1134 by y 240..700 is the only
-  text-free rectangle in the artwork: "ALL" ends at x=624 and "Outdoor" occupies
-  everything below y=700 out to x=1134.
-
-  The viewport below is sized to the viewBox ASPECT on purpose. A nested <svg>
-  clips to its viewport rather than its viewBox, so letterboxing shows whatever
-  artwork sits alongside — the first cut of this mark rendered a stray "L".
-
-  Inset to the middle ~68% because Android maskable icons crop to a circle.
-  Light ink on #141414: the UI is dark-only, so the operator's dark green would
-  disappear against it — logo-dark.svg keeps that colour for light surfaces.
+  ALL OUTDOOR — operator-supplied wordmark, traced to vector 2026-08-12.
+  The operator's original dark green, for LIGHT surfaces only — print,
+  documents, and any light-background email template.
+  Geometry is identical across the colour variants; only the fill differs.
+  Source art: Table Mountain, kudu, bakkie and acacia over the ALL Outdoor
+  lockup. Replaces the interim mountain mark, which replaced the original
+  bullet/cartridge wordmark.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="All Outdoor">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024" role="img" aria-label="All Outdoor">
   <title>All Outdoor</title>
-  <rect width="512" height="512" rx="112" fill="#141414"/>
-  <svg x="67" y="82" width="378" height="348" viewBox="634 240 500 460">
-    <g transform="translate(0.000000,1024.000000) scale(0.100000,-0.100000)"
-fill="#f0ede4" stroke="none">
+
+
+<g transform="translate(0.000000,1024.000000) scale(0.100000,-0.100000)"
+fill="#3c4227" stroke="none">
 <path d="M6064 7785 c-25 -10 -36 -25 -53 -69 -12 -31 -21 -61 -21 -66 0 -12
 -80 -58 -122 -71 -18 -5 -74 -16 -125 -24 -87 -15 -93 -14 -125 4 -33 20 -68
 26 -203 36 -221 16 -321 30 -439 60 -203 52 -377 86 -400 79 -44 -13 -64 -44
@@ -1059,6 +1049,4 @@ l-24 55 -41 -17 c-61 -27 -150 -42 -194 -35 -56 9 -123 56 -144 99 -31 65 -36
 -268 -533 -180 -84 40 -120 73 -155 145 -43 87 -49 161 -50 545 l0 332 -70 0
 -70 0 0 -393z"/>
 </g>
-
-  </svg>
 </svg>

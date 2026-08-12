@@ -768,13 +768,31 @@ function VerifyKycPageInner() {
                 }}
               >
                 {flow === 'CLAUDE' ? (
+                  // POPIA s72(1)(b) — consent to a cross-border transfer is only
+                  // valid if it is INFORMED. This previously said the document
+                  // and selfie were assessed by "Gun Galore's automated systems",
+                  // which named no processor and no transfer, while the Privacy
+                  // Policy relied on this checkbox as the basis for sending
+                  // biometric data to the United States. Say what actually
+                  // happens, or the consent carries nothing.
                   <>
                     I consent to All Outdoor verifying my identity using my SA
                     ID number, date of birth, ID document and a selfie. The ID
                     number is checked against official records by VerifyNow
-                    (Pty) Ltd; the document and selfie are assessed by Gun
-                    Galore&apos;s automated systems and, where needed, our
-                    staff — all in accordance with POPIA.
+                    (Pty) Ltd. My ID document and selfie are stored with our
+                    image-hosting provider and sent to our AI provider, both in
+                    the United States, for an automated authenticity and
+                    face-match check, and are reviewed by our staff where
+                    needed — all in accordance with POPIA and the{' '}
+                    <a
+                      href="/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'var(--red)' }}
+                    >
+                      Privacy Policy
+                    </a>
+                    .
                   </>
                 ) : (
                   <>

@@ -71,9 +71,21 @@ export function Hero() {
           stops washing out into grey-on-grey when the image crops. */}
       <style>{`
         .hero-bg {
-          /* Outdoor hero — a hunter glassing a golden-hour Karoo landscape
-             (operator-supplied 2026-06-24). WebP with a JPG fallback; the
-             first url() is the fallback for browsers without image-set. */
+          /* Outdoor hero — operator-supplied brand scene, 2026-08-12: Table
+             Mountain at golden hour over the city bowl, with a kudu, a bakkie
+             and an acacia. WebP with a JPG fallback; the first url() is the
+             fallback for browsers without image-set.
+
+             This is the CLEAN plate. The operator also supplied the same scene
+             with "ALL Outdoor" set into the lower-left, and that version is
+             /og-default.jpg — a share card has no HTML around it, so brand in
+             the picture is right there. Here it would be wrong: the wordmark
+             would sit under the 92%-opaque gradient below and behind the <h1>,
+             ghosting through both. Keep the two plates in their own lanes.
+
+             LCP ELEMENT, and preloaded in <head> on EVERY page, so it is
+             encoded tight: jpg q80 progressive (~290 KB), webp q76 (~190 KB).
+             Almost every browser takes the WebP. */
           background-image: url('/hero-outdoor.jpg');
           background-image: image-set(
             url('/hero-outdoor.webp') type('image/webp'),

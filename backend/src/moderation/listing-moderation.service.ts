@@ -30,7 +30,26 @@ export type SinCategory =
 
 export function categorizeReason(reason: string): SinCategory {
   const lower = reason.toLowerCase();
-  if (/live\s*(ammo|ammunition|primer|propellant|round|cartridge)/.test(lower))
+  // Primers / propellant. A SEPARATE prohibition from the ammunition ban:
+  // they are not ammunition and must never be bucketed or described as such,
+  // but they have no category on this platform either, so an offer of them is
+  // still a sin. Checked BEFORE the ammunition bucket so a reason naming both
+  // does not silently become "live-ammo". Projectiles / bullets and brass
+  // cases are the components that ARE listable and are never a sin.
+  if (
+    /\b(primers?|propellant|gun\s?powder|smokeless\s+powder)\b/.test(lower) &&
+    !/\bprimer\s+(pocket|tool|tray|seater|feed)/.test(lower)
+  )
+    return 'prohibited-content';
+  // The ammunition bucket. Widened 2026-08 when the ammo ban became absolute:
+  // the moderator's reason strings no longer always carry the word "live"
+  // (e.g. "ammunition offered for sale", "loaded rounds bundled with rifle"),
+  // and mis-bucketing would break the repeat-attempt hard-block.
+  if (
+    /\bammunition\b|live\s*(ammo|round|cartridge)|loaded\s*(ammo|round|cartridge)|rounds?\s+(for\s+sale|included|bundled)/.test(
+      lower,
+    )
+  )
     return 'live-ammo';
   // QR codes — own bucket because they're a high-signal bypass tactic.
   if (/\bqr[\s-]?code\b/.test(lower)) return 'qr-code';
@@ -239,26 +258,96 @@ product, the answer is APPROVE.
 - Contact details in a PHOTO → REJECT with publicReason naming the
   photo and what was visible, e.g. "Phone number visible in photo 2".
 
-# CHECK 2 — Blatantly advertised live ammo, primers, propellant
+# CHECK 2 — AMMUNITION, PRIMERS and PROPELLANT being offered
 
-Selling live ammunition / primers / smokeless or black powder to private
-buyers through the marketplace is illegal in SA — those need a licensed
-dealer. Flag ONLY when the seller is clearly offering them for sale.
+All Outdoor does not sell ammunition. Live ammunition may not be listed,
+sold or traded on this platform under any circumstances. This is a
+permanent platform prohibition — not a licensing question — so there is
+no version of the listing that makes it acceptable.
 
-Examples of BLATANT advertising → REJECT:
-- Title says "500 rounds of 9mm for sale"
-- Description: "comes with 200 rounds included" / "bundled with 1000 CCI primers"
-- Listing is in an Ammunition category AND describes live rounds for sale
+"Ammunition" means a COMPLETE loaded round: case + primer + propellant +
+projectile assembled together. Factory or hand-loaded, new or surplus,
+sold on its own or thrown in with something else — all banned.
 
-NOT grounds to reject (these are fine):
-- Spent brass cases, projectiles (bullets only, no case/primer/powder),
-  reloading dies, shell holders, powder measures
+Primers and propellant powder are ALSO not listable. They are not
+ammunition — never call them that — but there is no category for them on
+this platform, so an offer of primers or powder is rejected too.
+
+REJECT when the seller is offering ammunition:
+- Title says "500 rounds of 9mm for sale" / "Factory ammunition"
+- Description: "comes with 200 rounds included" / "50 live rounds thrown in"
+- The listing bundles loaded rounds with a firearm, magazine or optic
+- Listing is in an Ammunition category, or describes loaded rounds for sale
+  from an innocent-looking category
+- A count, a calibre and a price with no ammunition noun anywhere — this is
+  how ammunition is ACTUALLY advertised and it is the phrasing a pattern
+  struggles most with: "PMP 9mm 115gr FMJ x 250, R1500", ".308 Win 150gr SP
+  - 100 for sale", "Bulk 5.56 - 1000 available, R9 each", "Factory fresh
+  9mm, sealed 50s, R450 a box"
+- Naming the packaging does not launder it: "1000 rounds of 9mm in original
+  factory boxes", "Case of 500 rounds .223 Remington, sealed", "200 rounds
+  9mm boxed and sealed"
+
+Use publicReason: "All Outdoor does not sell ammunition — live ammunition
+may not be listed under any circumstances. Remove it and relist without
+it." Put "ammunition offered for sale" in the reasons array so the repeat
+-attempt tracker buckets it correctly.
+
+For primers or propellant, use publicReason: "Primers and propellant powder
+cannot be listed on this platform. Remove them and relist without them."
+Put "primers or propellant offered for sale" in the reasons array.
+
+## CRITICAL — the components that ARE allowed, do NOT reject them
+
+The platform's component categories are Rifle Bullets, Rifle Brass Cases,
+Handgun Bullets and Handgun Brass Cases. So the permitted components are
+PROJECTILES / BULLETS and BRASS CASES — and those two only. They are
+separate items, not ammunition, and they are lawful listings here. Never
+reject for:
+- Projectiles / bullets ("147gr FMJ projectiles", "500 x .308 pills")
+- Brass cases — once-fired, unprimed OR primed. Primed brass is still a
+  case, not a round.
+- Reloading EQUIPMENT: dies, presses, scales, shell holders, tumblers,
+  trimmers, case gauges, bullet feeders, priming tools, primer-pocket
+  uniformers — and POWDER MEASURES, powder throwers, powder tricklers and
+  powder funnels. A powder measure is a tool, not propellant. Throughput
+  copy is a spec, not an offer: "makes 500 rounds an hour", "throws
+  consistent charges for 1000 rounds".
+
+Also NOT grounds to reject:
+- The calibre a firearm is chambered in ("chambered in .308 Win")
+- What a rifle or optic was zeroed / tested / grouped with ("zeroed with
+  factory ammo", "shoots Hornady well")
+- Round-count / WEAR copy. This is the commonest honest sentence on the
+  platform and rejecting it costs a real seller: "1200 rounds, one owner",
+  "Rifle in as-new condition, 400 rounds and nothing more", "Bolt action,
+  1500 rounds, immaculate", "Rifle has done 500 rounds", "Bought new, 300
+  rounds later I am selling", "Excellent condition, 250 rounds total"
+- Ammunition CARRIERS, which are permitted products: "Ammo wallet, 30
+  rounds", "MTM case, 100 rounds", "Bandolier, 50 shells", "Leather
+  cartridge belt, 24 rounds", "Hunting vest with loops for 25 shells",
+  "Shell holder rack, 100 shells". Also ammo boxes, pouches, cans and other
+  empty storage.
+- Magazine or chamber capacity ("30 round magazine", "5 round internal")
+- Honest DISCLAIMERS. The seller is stating the opposite of an offer and
+  telling them they may not sell ammunition is simply false: "Buyer must
+  supply their own ammunition", "Ammunition is the buyer's responsibility",
+  "Please note: ammunition is not part of this sale", "Ammunition is easy
+  to find for this calibre", "Cheap to shoot, ammunition widely available"
 - Ammunition visible in a photo background but NOT mentioned in the
   listing copy — incidental, the seller isn't selling it
-- A scope listing with a few rounds on a mag in the frame
 - "Sold with empty mag" — empty mag is fine
 
-If in doubt about whether ammo is being advertised vs incidental, APPROVE.
+The tell is the ABSENCE of a component noun combined with a SALE SIGNAL. A
+loaded-round advert prices per unit or per box and names a calibre, and it
+never says "projectiles" or "brass" — because those are the words its buyer
+would search for. A bare round count with no sale signal is wear copy.
+
+If the item is a permitted COMPONENT, APPROVE. If in doubt about whether
+loaded ammunition is being offered vs merely mentioned, APPROVE — a
+deterministic term guard runs on every write path (previewDraft, create AND
+update — the edit path calls you too, as of 2026-08) and blocks the blatant
+cases, so your job here is the phrasings a pattern cannot see.
 
 # Everything else: APPROVE
 

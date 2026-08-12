@@ -49,19 +49,35 @@ export default function AmlPolicyPage() {
       <h3>2.1 Know-Your-Customer (KYC)</h3>
       <p>
         Every Seller must complete identity verification before their
-        first payout can be released. The verification flow runs through
-        VerifyNow (a South African KYC provider) and includes:
+        first payout can be released. Verification includes:
       </p>
       <ul>
-        <li>South African ID number lookup against the Department of Home Affairs;</li>
-        <li>Selfie face-match against the Home Affairs ID photo;</li>
+        <li>A South African ID number record check through VerifyNow, a South African verification provider;</li>
+        <li>Upload of an identity document, and a live face image captured at the time of verification;</li>
+        <li>An automated authenticity and face-match assessment of those images by our verification provider, with manual review where the automated check is inconclusive;</li>
+        <li>For higher-assurance verification, a comparison against the official Department of Home Affairs record photograph;</li>
         <li>A manual review of the Seller's bank details against their verified identity before the first payout, to confirm the payout account belongs to the verified person.</li>
       </ul>
       <p>
         If face-match fails three times, the account is flagged for
         manual admin review and the Seller is directed to contact
-        support. KYC outcomes (pass, fail, attempts) are retained for
-        audit; the selfie image itself is not retained.
+        support. Verification outcomes (pass, fail, attempts) are retained
+        for audit, and the identity document and face image are stored
+        with our image-hosting provider as a record of the verification.
+        See the{' '}
+        <a href="/privacy" style={{ color: 'var(--red)' }}>
+          Privacy Policy
+        </a>{' '}
+        for what is held, for how long, and on what basis.
+      </p>
+      <p>
+        Further verification steps, and further record-keeping, apply to
+        Sellers who list in categories that require a licence or permit.
+        Additional terms apply to regulated categories. See the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </a>
+        , available to registered members.
       </p>
 
       <h3>2.2 Contact-detail filtering</h3>
@@ -99,9 +115,8 @@ export default function AmlPolicyPage() {
       <p>
         While All Outdoor is not obliged under FICA to file Suspicious
         Transaction Reports, we will cooperate fully with the Financial
-        Intelligence Centre, the South African Police Service and any
-        other competent authority where compelled by valid legal
-        process. If you suspect money laundering, fraud or any other
+        Intelligence Centre, law enforcement and any other competent
+        authority where compelled by valid legal process. If you suspect money laundering, fraud or any other
         criminal activity on the Platform, please email{' '}
         <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>
           support@gungalore.co.za

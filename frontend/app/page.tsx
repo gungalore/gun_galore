@@ -295,8 +295,21 @@ export default async function HomePage({
       {/* Per-surface scenery. Same PageBackground component the Sell
           page uses — each photo gets the dark tint + radial vignette
           so the listing cards stay primary. */}
+      {/* Buy Now runs LIGHTER than the house default (0.18 / tint 0.55 /
+          vignette 0.85). marketplace.jpg is operator brand art — a gear
+          flat-lay shot with a deliberately empty centre for the cards to sit
+          in — and at the house settings it rendered as very nearly solid
+          black. The old plate was a stock handgun photo that wanted burying;
+          this one is meant to be seen. Only this surface is lifted: Auctions,
+          Take a Shot, Sell, dashboard and profile keep the defaults, since
+          those are stock photos with no dead centre to sit content in. */}
       {isMarketplace && (
-        <PageBackground imageSrc="/marketplace.jpg" opacity={0.18} />
+        <PageBackground
+          imageSrc="/marketplace.jpg"
+          opacity={0.34}
+          tint={0.34}
+          vignette={0.72}
+        />
       )}
       {isAuction && (
         <PageBackground imageSrc="/auction.jpg" opacity={0.18} />

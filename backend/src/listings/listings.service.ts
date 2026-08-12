@@ -227,6 +227,474 @@ function brandSlugify(s: string): string {
     .replace(/^-|-$/g, '');
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// AMMUNITION BAN — platform policy, enforced in code (2026-08, rebuilt)
+//
+// All Outdoor does not sell ammunition. Live / loaded ammunition may never be
+// listed, sold or traded here. This is a PERMANENT prohibition, not a
+// paperwork step: no licence, permit or dealer arrangement unlocks it, so the
+// error copy has to say so plainly or sellers just resubmit.
+//
+// WHAT IS STILL LISTABLE. prisma/seed.ts keeps the whole `ammo` tree
+// isActive:false and creates exactly four component categories — Rifle
+// Bullets, Rifle Brass Cases, Handgun Bullets, Handgun Brass Cases. So the
+// permitted components are PROJECTILES / BULLETS and BRASS CASES, and nothing
+// else: primers and propellant powder have no category at all and are NOT
+// listable. Reloading EQUIPMENT (presses, dies, scales, powder measures,
+// powder funnels, priming tools) is ordinary hardware and stays welcome —
+// "powder measure" is a tool, not propellant.
+//
+// ── THE DISCRIMINATOR ────────────────────────────────────────────────────
+// The old guard asked "is an ammunition noun present?". That is a weak
+// signal and it failed in both directions: it missed every ad that names a
+// calibre and a grain weight without ever saying "ammo", and it blocked the
+// commonest honest sentence on this platform ("1200 rounds, one owner").
+//
+// The strong signal is the ABSENCE OF A COMPONENT NOUN combined with a SALE
+// SIGNAL. A loaded-round ad prices per unit or per box, names a calibre, and
+// never says "projectiles" or "brass" — because those are the words its buyer
+// would search for. A bare round count with no sale signal is wear copy and
+// defaults to PASS.
+//
+// Consequently every veto (component / carrier / equipment / wear /
+// disclaimer) is scanned over the WHOLE field plus the sibling field, not a
+// 40-character lookback — almost every historical false positive was a word
+// sitting one comma outside that window. Negation and disclaimers are
+// SENTENCE-scoped for the same reason: "Ammunition is not part of this sale"
+// must never be read as an offer.
+//
+// Layers, all enforced on ALL THREE write paths — previewDraft(), create()
+// and update(). A guard on create() alone is a bypass: the seller would
+// preview clean, or publish something innocent and edit it into ammunition
+// afterwards. update() additionally re-runs the Claude moderator (the
+// deterministic guard is the floor, never the ceiling).
+//   1. CATEGORY — nothing may be listed into a live-ammunition category.
+//   2. TERMS    — the signal guard below, for live ammunition (and for
+//                 primers / propellant) smuggled into an innocent category.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const AMMUNITION_BAN_MESSAGE =
+  'All Outdoor does not sell ammunition. Live ammunition may not be listed, sold or traded on this platform under any circumstances. ' +
+  'This is a permanent platform rule, not a paperwork problem — there is no licence, permit or approval that unlocks it, so please do not resubmit this listing with the wording changed. ' +
+  'Reloading components are still welcome: projectiles / bullets and brass cases can be listed under Reloading Components. ' +
+  'Primers and propellant powder cannot be listed here either — there is no category for them. Reloading equipment (presses, dies, scales, powder measures) is fine.';
+
+// Primers and propellant are a DIFFERENT prohibition from the ammunition ban
+// and must not be described as ammunition — saying "you may not sell
+// ammunition" to someone listing primers is simply untrue, and untrue error
+// copy is how sellers learn to ignore the rules.
+export const RELOADING_SUPPLY_BAN_MESSAGE =
+  'Primers and propellant powder may not be listed, sold or traded on this platform. There is no category for them and no licence or permit unlocks it, so please do not resubmit this listing with the wording changed. ' +
+  'The reloading components that CAN be listed are projectiles / bullets and brass cases. Reloading equipment — presses, dies, scales, powder measures, powder funnels, priming tools — is welcome as normal.';
+
+// A category is a live-ammunition category when its own (or its parent's)
+// name/slug says ammunition — UNLESS it is plainly an accessory that merely
+// carries the word. "Ammo Boxes & Storage Cases" and "Ammo Pouch" are real,
+// legitimate children of Shooting Accessories and must keep working.
+const AMMO_CATEGORY_WORDS =
+  /\b(ammo|ammos|ammunition|ammunisie|rounds|cartridges|patrone|shotshells|shot\s?shells)\b/i;
+const AMMO_CATEGORY_ACCESSORY_WORDS =
+  /\b(box|boxes|pouch|pouches|can|cans|crate|crates|case|cases|tin|tins|tray|trays|rack|racks|carrier|carriers|wallet|wallets|holder|holders|belt|belts|bandolier|storage|safe|safes|bag|bags|sleeve|sleeves|caddy)\b/i;
+
+export function isLiveAmmunitionCategory(category: {
+  slug?: string | null;
+  name?: string | null;
+  parent?: { slug?: string | null; name?: string | null } | null;
+}): boolean {
+  const saysAmmunition = (
+    slug?: string | null,
+    name?: string | null,
+  ): boolean => {
+    const words = `${(slug ?? '').replace(/-/g, ' ')} ${name ?? ''}`.toLowerCase();
+    if (!AMMO_CATEGORY_WORDS.test(words)) return false;
+    return !AMMO_CATEGORY_ACCESSORY_WORDS.test(words);
+  };
+  return (
+    saysAmmunition(category.slug, category.name) ||
+    saysAmmunition(category.parent?.slug, category.parent?.name)
+  );
+}
+
+
+export type AmmunitionBanKind = 'AMMUNITION' | 'RELOADING_SUPPLY';
+
+export interface AmmunitionTermHit {
+  field: 'title' | 'description';
+  rule: string;
+  excerpt: string;
+  ban: AmmunitionBanKind;
+}
+
+// Newlines are PRESERVED (only horizontal whitespace is collapsed): sellers
+// write bullet lists, and a line break is the clause boundary between
+// "• Rifle" and "• 500 rounds". Zero-width and homoglyph separators are
+// stripped so an invisible character cannot break a banned word apart.
+function normaliseForAmmoScan(text: string): string {
+  return text
+    .replace(/[​-‍﻿­]/g, '')
+    .replace(/[‐-―]/g, '-')
+    .replace(/[^\S\n]+/g, ' ')
+    .trim();
+}
+
+// ── The scan ─────────────────────────────────────────────────────────────
+//
+// REWRITTEN 2026-08-12, third attempt, and the rewrite is the point.
+//
+// The previous versions tried to INFER intent — absence of a component noun,
+// weighed against sale signals, per-unit-price proximity, bundle markers, wear
+// context, product context, clause boundaries and a 40-character lookback.
+// Twenty interacting regexes. Three adversarial rounds measured what that
+// bought: "9mm rounds for sale, R6 each" walked straight through, while
+// ammunition SAFES, brass, projectiles, load-development notes and primer
+// seating tools — all lawful, several of them named as permitted in the ban
+// message itself — were rejected. Cleverness failed in both directions at once.
+//
+// So this version is deliberately dumb, and it is biased. Two rules, in order:
+//
+//   1. NEVER accuse a lawful seller. A false positive tells someone selling an
+//      ammo safe that they may not sell ammunition. They cannot fix it, because
+//      there is nothing to fix, and the message tells them not to resubmit.
+//   2. A miss is CHEAP. Claude moderation runs on all three write paths
+//      (previewDraft, create, update), reads the whole advert, and is prompted
+//      to reject ammunition. A regex miss is a handoff, not a hole.
+//
+// Every rule below therefore STANDS DOWN the moment the text is ambiguous.
+// When you are tempted to close a gap by adding a condition, check first
+// whether it can fire on an honest listing — if it can, leave the gap.
+
+// A COUNTED, LOADED cartridge. Deliberately excludes the generic counters
+// (pieces / pcs / stuks): those are how brass and projectiles are sold, and
+// both are permitted components.
+// Singular "rd" is ordinal-unsafe (3rd, 23rd), so it only counts when the
+// preceding digit is not a 3 — "50rd boxes" yes, "23rd of the month" no.
+const ROUND_NOUN =
+  '(?:rounds?|rnds?|rds|shots?|cartridges?|shotshells?|shells?|patrone|patroon|skote|skoot|(?<![03])rd)';
+// A count, in every shape a South African advert writes one: 1000, 1 000,
+// 1.000, 1k, and the spelled-out forms. Kept as one token so every rule below
+// accepts the same vocabulary — the previous guard had four divergent copies.
+const COUNT =
+  '(?:\\d{1,3}(?:[ ,.]\\d{3})+|\\d{1,4}(?:[.,]\\d+)?\\s?k\\b|\\d{1,6}|(?:one|two|three|four|five|six|seven|eight|nine|ten|twenty|fifty|hundred|thousand)(?:[\\s-](?:hundred|thousand|and|one|two|three|four|five|six|seven|eight|nine|ten))*)';
+const CALIBRE =
+  '(?:\\.?\\d{1,3}(?:[.,]\\d{1,3})?\\s?(?:mm|ga|gauge|cal|lr|acp|win|rem|nato|special|magnum|mag|luger|creedmoor|blackout)\\b|\\.\\d{2,3}\\b|\\b\\d{1,2}\\s?x\\s?\\d{2}\\b)';
+
+// The listing is OFFERING the thing, not describing it.
+const SALE_SIGNAL =
+  /\b(?:for sale|selling|to sell|te koop|in stock|available|beskikbaar|bulk|per box|a box|per round|a round|each|elk|apiece|ea\b|price|prys|R\s?\d{2,})/i;
+// A price attached to the UNIT — close to conclusive on a count of rounds.
+const PER_UNIT_PRICE =
+  /\bR\s?\d+(?:[.,]\d{1,2})?\s?(?:\/|per\s|a\s|each|elk|ea\b|p\/r\b)/i;
+
+// ── Stand-downs. Any of these and the inference rules go quiet. ───────────
+// This vocabulary is the entire safety margin, so it is generous on purpose.
+
+// Containers, storage and load-bearing kit. An ammunition safe is the legally
+// required storage product in South Africa and is the single most common
+// accessory listing this guard will ever meet.
+const CARRIER_WORD =
+  /\b(?:safes?|bags?|pouch(?:es)?|wallets?|cans?|crates?|tins?|boxe?s?|cases?|lockers?|racks?|shelf|shelves|holders?|carriers?|belts?|bandoliers?|vests?|sleeves?|caddy|caddies|trays?|inserts?|dividers?|compartments?|organisers?|dump)\b/i;
+// Capacity copy describes the container, not an offer. The verbs must be
+// followed by a NUMBER: capacity is always quantified ("holds 1000 rounds"),
+// whereas a bare "holds" is usually the classified boilerplate "no holds",
+// which was standing the whole guard down.
+const CAPACITY_WORD =
+  /\b(?:holds?|fits|takes|stores?|room for)\s+\d|\bcapacity\b|\b(?:magazines?|mags?|clips?)\b/i;
+// Permitted components, and the words a component advert always uses.
+const COMPONENT_WORD =
+  /\b(?:projectiles?|bullets?|koe[eë]ls?|brass|casings?|doppies|once[-\s]?fired|unprimed|deprimed|tumbled|annealed|components?)\b/i;
+// Reloading and gunsmithing hardware — ordinary and welcome.
+const EQUIPMENT_WORD =
+  /\b(?:press(?:es)?|dies?|scales?|measures?|throwers?|tricklers?|funnels?|tumblers?|trimmers?|seat(?:er|ers|ing)|prim(?:er|ing)\s+tool|hand\s?prime|uniformers?|gauges?|calipers?|kits?|bench|data|manual|load\s?book|notes?|development|brush(?:es)?|cleaning|patch(?:es)?|jags?|rods?|solvents?)\b/i;
+// Wear / provenance copy — the commonest sentence in a used-rifle advert.
+const WEAR_WORD =
+  /\b(?:fired|through it|through the|on the clock|shot count|barrel life|one owner|condition|as[-\s]?new|immaculate|worked up|load\s?development|grouped?|zeroed|has done|since new|later I|tested with|shot with|put through)\b|\b(?:only|under|about|approx(?:imately)?|roughly|around|less than|more than|over|maybe|estimated)\s+(?:\d|one|two|three|four|five|six|seven|eight|nine|ten)/i;
+// A charge weight is not a saleable quantity of powder.
+// Load development and sight-in copy: "zeroed with factory ammo" says what
+// the seller SHOT, not what they are selling.
+const TESTED_WITH =
+  /\b(?:tested|zeroed|sighted|shot|grouped|developed|chrono(?:graphed)?|worked\s+up|ran|run)\b(?:\W+\w+){0,3}\W+(?:with|on|using)\b|\bzeroed\b/i;
+const CHARGE_WEIGHT = /\b\d+(?:[.,]\d+)?\s*(?:gr|grains?)\b/i;
+// The seller saying the opposite of an offer.
+// The seller saying the opposite of an offer. Deliberately generous — every
+// phrase here appears in HONEST adverts, and a false positive tells the seller
+// they may not sell ammunition for saying they are not selling any.
+const DISCLAIMER =
+  /\b(?:no|not|never|without|zero|excludes?|excluding)\s+(?:\w+\s+){0,3}(?:ammunition|ammunisie|ammo|rounds?|cartridges?|patrone)\b/i;
+const AMMO_NOT_OFFERED =
+  /\b(?:ammunition|ammunisie|ammo)\b(?:[^.!?\n]{0,40})\b(?:not included|excluded|is extra|is the buyer|buyer'?s? (?:own|responsibility)|widely available|easy to (?:find|get|come by)|not part of|not supplied|is not|are not|never included)\b|\b(?:supply|supplies|supplying|bring|arrange|source|provide)\s+(?:their|your|his|her|its)\s+own\b|\bcheap to shoot\b/i;
+
+// Two tiers, and the distinction is load-bearing.
+//
+// HARD — capacity, components, equipment, wear, disclaimers. Nothing overrides
+// these. Every one of them describes a lawful listing, and the whole design
+// bias is that we would rather miss than accuse.
+//
+// SOFT — the container word alone. "Box", "case" and "safe" are how a genuine
+// ammunition seller describes their packaging as much as how an accessory
+// seller names their product, so a per-unit price is allowed to see past it —
+// but only when no hard stand-down is also present.
+function hardStandDown(text: string): boolean {
+  return (
+    CAPACITY_WORD.test(text) ||
+    COMPONENT_WORD.test(text) ||
+    EQUIPMENT_WORD.test(text) ||
+    WEAR_WORD.test(text) ||
+    DISCLAIMER.test(text) ||
+    AMMO_NOT_OFFERED.test(text)
+  );
+}
+
+function standDown(text: string): boolean {
+  return hardStandDown(text) || CARRIER_WORD.test(text);
+}
+
+// Phrases whose only meaning is loaded ammunition. No inference at all.
+const LOADED_PHRASE = new RegExp(
+  '\\b(?:live|loaded|factory|surplus|training|practice|match|reman(?:ufactured)?|lewendige|gelaaide)\\s+(?:\\w+\\s+){0,2}(?:ammunition|ammunisie|ammo|rounds?|cartridges?|patrone)\\b' +
+    '|\\b(?:ammunition|ammunisie|ammo)\\s+(?:for sale|te koop|in stock|available)\\b',
+  'i',
+);
+
+export function findLiveAmmunitionTerm(
+  text: string | null | undefined,
+  opts: { context?: string; isTitle?: boolean } = {},
+): { rule: string; excerpt: string; ban: AmmunitionBanKind } | null {
+  const raw = normaliseForAmmoScan(text ?? '');
+  if (!raw.trim()) return null;
+  // The seller writes ONE advert. Judge every rule against both fields, so a
+  // container word in the title excuses a round count in the description.
+  const whole = normaliseForAmmoScan(opts.context ?? '') || raw;
+
+  // Obfuscation: "a m m u n i t i o n", "a.m.m.u.n.i.t.i.o.n", "4mmun1t10n".
+  // Folded separately and only reported when the FOLDED form is a banned word
+  // AND differs from the raw text, so ordinary prose can never trip it.
+  const folded = raw
+    .toLowerCase()
+    .replace(/[\s.\-_*·•]/g, '')
+    .replace(/0/g, 'o')
+    .replace(/1/g, 'i')
+    .replace(/3/g, 'e')
+    .replace(/4/g, 'a')
+    .replace(/5/g, 's')
+    .replace(/7/g, 't');
+  // Only when the banned word appears ONLY after folding. Without this the
+  // rule fires on any prose containing "ammunition", because folding strips
+  // the spaces around it — which is how it rejected the honest sentence
+  // "Ammunition-adjacent phrasing a pattern cannot see."
+  if (
+    !/ammunition|ammunisie|ammo/i.test(raw) &&
+    folded !== raw.toLowerCase() &&
+    /(ammunition|ammunisie|liveammo|loadedammo)/.test(folded) &&
+    !DISCLAIMER.test(whole) &&
+    !AMMO_NOT_OFFERED.test(whole)
+  ) {
+    return {
+      rule: 'obfuscated-ammunition',
+      excerpt: raw.slice(0, 120).trim(),
+      ban: 'AMMUNITION',
+    };
+  }
+
+  const hit = (
+    rule: string,
+    m: RegExpExecArray,
+    ban: AmmunitionBanKind = 'AMMUNITION',
+  ) => ({
+    rule,
+    excerpt: raw
+      .slice(Math.max(0, m.index - 40), m.index + m[0].length + 40)
+      .trim(),
+    ban,
+  });
+
+  // 1. Unambiguous loaded-ammunition phrasing. Fires even against a carrier
+  //    word — "live ammunition" in a listing that also says "pouch" is still
+  //    someone offering live ammunition. Only an explicit disclaimer excuses it.
+  if (
+    !DISCLAIMER.test(whole) &&
+    !AMMO_NOT_OFFERED.test(whole) &&
+    !TESTED_WITH.test(whole)
+  ) {
+    const m = LOADED_PHRASE.exec(raw);
+    if (m) return hit('loaded-ammunition-phrase', m);
+  }
+
+  // 2. A title that IS the product name "ammo". Nobody titles a listing
+  //    "9mm ammo" except to sell ammunition; a container listing always names
+  //    the container, and that naming is the stand-down.
+  //
+  //    One override: a calibre AND a per-unit price beat the container word.
+  //    "9mm ammo R450 a box" is an ammunition advert that happens to contain
+  //    "box"; "Ammo box, R450" is a container, and it has no calibre and no
+  //    price-per-unit. Both parts are required — either alone false-positives.
+  const calibred = new RegExp(CALIBRE, 'i').test(whole);
+  const pricedPerUnit = PER_UNIT_PRICE.test(whole);
+  if (
+    opts.isTitle &&
+    (!standDown(whole) ||
+      (calibred && pricedPerUnit && !hardStandDown(whole)))
+  ) {
+    const m = /\b(?:ammo|ammunition|ammunisie)\b/i.exec(raw);
+    if (m) return hit('ammunition-title', m);
+  }
+
+  // 3. Rounds offered for sale: <count> rounds, or <calibre> rounds, plus a
+  //    sale signal. Stands down on any container / component / equipment /
+  //    wear word anywhere in the advert — UNLESS the rounds carry a per-unit
+  //    price, which no honest capacity or wear sentence ever does. Components
+  //    and disclaimers override even that: brass and projectiles are sold by
+  //    the each, lawfully.
+  const priced = PER_UNIT_PRICE.test(whole);
+  const componentSafe =
+    !COMPONENT_WORD.test(whole) &&
+    !DISCLAIMER.test(whole) &&
+    !AMMO_NOT_OFFERED.test(whole);
+  if ((!standDown(whole) || (priced && !hardStandDown(whole))) && SALE_SIGNAL.test(whole)) {
+    // A bare count with no per-unit price must find its CALIBRE IN THE SAME
+    // FIELD. "500 rounds .223 Rem for sale" is a lot of ammunition; a used
+    // rifle titled "Bergara B14 HMR .308 Win" whose description says
+    // "R18000, 400 rounds, for sale" is a rifle — the calibre belongs to the
+    // product in the title, not to the count in the description. A per-unit
+    // price removes the ambiguity and lifts the requirement.
+    if (priced || new RegExp(CALIBRE, 'i').test(raw)) {
+      const counted = new RegExp(
+        '\\b' + COUNT + '\\s?(?:x\\s?)?' + ROUND_NOUN + '\\b',
+        'i',
+      ).exec(raw);
+      if (counted) return hit('rounds-offered', counted);
+    }
+
+    const bore = new RegExp(
+      CALIBRE + '\\s+(?:\\w+\\s+){0,2}' + ROUND_NOUN + '\\b',
+      'i',
+    ).exec(raw);
+    if (bore) return hit('rounds-offered', bore);
+
+    // "10 boxes 9mm Luger, R450 each" — the count is of boxes, but a per-unit
+    // price on boxes of a calibre is an ammunition advert.
+    if (priced) {
+      const boxes = new RegExp(
+        '\\b\\d{1,4}\\s+(?:boxe?s|cases|packets|sleeves|bricks)\\s+(?:of\\s+)?' +
+          CALIBRE,
+        'i',
+      ).exec(raw);
+      if (boxes) return hit('rounds-offered', boxes);
+
+      // The two shapes an ammunition advert takes when it never names a round:
+      //   "box of 50 … R450 per box"      — packaged quantity
+      //   "Bulk 5.56 - 1000 available, R9 each" — bare count offered
+      // Both are gated on a calibre being present, and this whole branch
+      // already requires a per-unit price and no component word, so brass and
+      // projectiles sold by the each cannot reach here.
+      if (new RegExp(CALIBRE, 'i').test(whole)) {
+        const packaged =
+          /\b(?:boxe?s|packets?|sleeves?|bricks?)\s+of\s+\d{2,4}\b/i.exec(raw) ??
+          /\b\d{2,5}\s+(?:available|in stock|beskikbaar|op voorraad)\b/i.exec(raw);
+        if (packaged) return hit('rounds-offered', packaged);
+      }
+    }
+  }
+
+  // 3a. Count + calibre + an EXPLICIT offer word, all inside one clause.
+  //
+  //     This is the only place a stand-down is overruled by something other
+  //     than a per-unit price, and the clause scope is what makes it safe: the
+  //     three signals have to sit together, between two commas, with nothing
+  //     else claiming them. "500 rounds 9mm for sale, all in mint condition"
+  //     is an ammunition advert with a condition note; "Tikka T3x .308, 1200
+  //     rounds, one owner" keeps its count in a clause of its own, with no
+  //     calibre and no offer word, and stays clear. A bare price does NOT
+  //     count as an offer word here — "9mm ammo box, R450" is a container.
+  const OFFER_WORD = /\b(?:for sale|te koop|selling|available|in stock|beskikbaar|op voorraad|bulk)\b/i;
+  if (!COMPONENT_WORD.test(whole) && !DISCLAIMER.test(whole) && !AMMO_NOT_OFFERED.test(whole)) {
+    for (const clause of raw.split(/[,;\n]|(?:\s[-–—]\s)/)) {
+      if (!OFFER_WORD.test(clause)) continue;
+      if (!new RegExp(CALIBRE, 'i').test(clause)) continue;
+      const m = new RegExp(
+        '\\b' + COUNT + '\\s?(?:x\\s?)?' + ROUND_NOUN + '\\b',
+        'i',
+      ).exec(clause);
+      if (m) return hit('rounds-offered', m);
+    }
+  }
+
+  // 3b. "<count> rounds OF <calibre>" — the one quantity idiom a container
+  //     listing never uses. A carrier states its capacity ("holds 1000
+  //     rounds", "30 rounds"); it does not say "1000 rounds of 9mm". That
+  //     lets this rule see past the carrier stand-down, which otherwise lets
+  //     "1000 rounds of 9mm in original factory boxes, R6500" through on the
+  //     word "boxes". Component and wear copy still stand it down: "500 rounds
+  //     of .308 through it" is a used rifle, not a lot of ammunition.
+  if (!hardStandDown(whole) && SALE_SIGNAL.test(whole)) {
+    const ofBore = new RegExp(
+      '\\b' + COUNT + '\\s?' + ROUND_NOUN + '\\s+of\\s+(?:\\w+\\s+){0,2}' + CALIBRE,
+      'i',
+    ).exec(raw);
+    if (ofBore) return hit('rounds-offered', ofBore);
+  }
+
+  // 4. Primers and propellant — a DIFFERENT prohibition with its own message.
+  //    Telling a primer seller "you may not sell ammunition" is untrue, and
+  //    untrue error copy is how sellers learn to ignore the rules. Stands down
+  //    on equipment (a powder MEASURE is a tool) and on a charge weight
+  //    ("42 grains of Varget" is load data, not stock).
+  // No sale signal is required here, unlike rounds. There is NO category for
+  // primers or propellant, so a listing whose subject is either one is banned
+  // outright — whereas "rounds" has innocent uses (wear counts, capacities)
+  // that need an offer signal to disambiguate. The tools are already excluded
+  // by EQUIPMENT_WORD, and load-development copy by CHARGE_WEIGHT / wear.
+  if (
+    !EQUIPMENT_WORD.test(whole) &&
+    !CHARGE_WEIGHT.test(whole) &&
+    !WEAR_WORD.test(whole) &&
+    !TESTED_WITH.test(whole) &&
+    !DISCLAIMER.test(whole)
+  ) {
+    // Primers: the noun alone is enough once a sale signal is present. Unlike
+    // "rounds", "primers" has no innocent use as a count in an advert — the
+    // tools that seat them are already excluded by EQUIPMENT_WORD above.
+    const m =
+      /\bprimers?\b/i.exec(raw) ??
+      // Propellant: by weight, or a named propellant with any quantity. "42
+      // grains of Varget" is excluded above as a charge weight, not stock.
+      /\b\d[\d\s.,]{0,6}\s?(?:kg|kgs|g|grams?|lbs?|pounds?|tubs?|tins?|jars?|bottles?|kegs?)\s*(?:of\s+)?(?:\w+\s+){0,2}(?:powder|propellant|kruit)\b/i.exec(
+        raw,
+      ) ??
+      /\b(?:somchem|varget|vihtavuori|hodgdon|imr|accurate|reloder|benchmark|s3\d{2}|n1?\d{2,3}|h\d{3,4})\b[^.\n]{0,30}\b(?:powder|propellant|kruit)\b/i.exec(
+        raw,
+      ) ??
+      /\b(?:powder|propellant|kruit)\b[^.\n]{0,20}\b(?:for sale|te koop|in stock|unopened|sealed)\b/i.exec(
+        raw,
+      );
+    if (m) return hit('reloading-supply-offered', m, 'RELOADING_SUPPLY');
+  }
+
+  return null;
+}
+
+// Title + description in one pass, reporting which field tripped. BOTH fields
+// are handed to each scan as context, so a veto in the title excuses the
+// description and vice versa — the seller writes one advert, not two.
+export function findLiveAmmunitionListing(
+  title: string | null | undefined,
+  description: string | null | undefined,
+): AmmunitionTermHit | null {
+  const context = `${title ?? ''}\n${description ?? ''}`;
+  const inTitle = findLiveAmmunitionTerm(title, { context, isTitle: true });
+  if (inTitle) return { field: 'title', ...inTitle };
+  const inDescription = findLiveAmmunitionTerm(description, { context });
+  if (inDescription) return { field: 'description', ...inDescription };
+  return null;
+}
+
+// The message that matches a hit — the ammunition ban and the primer /
+// propellant prohibition are different rules and are worded differently.
+export function banMessageFor(kind: AmmunitionBanKind): string {
+  return kind === 'RELOADING_SUPPLY'
+    ? RELOADING_SUPPLY_BAN_MESSAGE
+    : AMMUNITION_BAN_MESSAGE;
+}
+
 // P4.3b — dangerous-goods gate. A LOOSE lithium battery rated above the
 // energy limit (Watt-hours, UN3480) can't be carried by our couriers (Pudo /
 // TCG), so a listing whose `battery_wh` attribute exceeds it is forced
@@ -279,6 +747,37 @@ export class ListingsService {
     private readonly wishlistAlerts: WishlistAlertsService,
     private readonly activity: ActivityService,
   ) {}
+
+  // AMMUNITION BAN — the single chokepoint every write path calls
+  // (previewDraft, create, update). The category layer and the term guard
+  // both throw a permanent-prohibition message so the seller can never
+  // conclude that a different category or different wording would let the
+  // listing through. The MESSAGE follows the hit: live ammunition and
+  // primers/propellant are two different rules, and telling a primer seller
+  // "you may not sell ammunition" would simply be untrue. See the
+  // AMMUNITION_BAN_MESSAGE block above for the component split.
+  private assertNotLiveAmmunition(
+    category: {
+      slug?: string | null;
+      name?: string | null;
+      parent?: { slug?: string | null; name?: string | null } | null;
+    },
+    title: string | null | undefined,
+    description: string | null | undefined,
+  ): void {
+    if (isLiveAmmunitionCategory(category)) {
+      throw new BadRequestException(AMMUNITION_BAN_MESSAGE);
+    }
+    const hit = findLiveAmmunitionListing(title, description);
+    if (hit) {
+      this.logger.warn(
+        `Ammunition ban tripped (${hit.rule}) in listing ${hit.field}: "${hit.excerpt}"`,
+      );
+      throw new BadRequestException(
+        `${banMessageFor(hit.ban)} (Flagged in the ${hit.field}: "${hit.excerpt}".)`,
+      );
+    }
+  }
 
   // Pre-upload the firearm serial + licence proof photos to Cloudinary
   // BEFORE create(), so create() can run the Claude-vision licence check
@@ -392,8 +891,19 @@ export class ListingsService {
 
     const category = await this.prisma.category.findUnique({
       where: { id: dto.categoryId },
+      include: { parent: { select: { slug: true, name: true } } },
     });
-    if (!category || !category.isActive) {
+    if (!category) {
+      throw new BadRequestException('Invalid category');
+    }
+    // AMMUNITION BAN — enforced on the PREVIEW path too, not just create().
+    // The preview is what the seller trusts ("it passed review"), so letting
+    // ammunition preview clean and fail at publish would be both confusing
+    // and an invitation to probe the wording until it sticks. Runs BEFORE the
+    // isActive / availableSecondhand checks so the seller reads the actual
+    // rule instead of a generic "invalid category" they'd try to work around.
+    this.assertNotLiveAmmunition(category, dto.title, dto.description);
+    if (!category.isActive) {
       throw new BadRequestException('Invalid category');
     }
     // P0.1c — availableSecondhand was only ever a UI filter; enforce it
@@ -609,8 +1119,17 @@ export class ListingsService {
 
     const category = await this.prisma.category.findUnique({
       where: { id: dto.categoryId },
+      include: { parent: { select: { slug: true, name: true } } },
     });
-    if (!category || !category.isActive) {
+    if (!category) {
+      throw new BadRequestException('Invalid category');
+    }
+    // AMMUNITION BAN — runs before the isActive gate (so the seller reads the
+    // real rule rather than a generic "invalid category"), and before the paid
+    // Claude licence/moderation calls and reference-number allocation, so a
+    // banned payload costs nothing and burns no counter.
+    this.assertNotLiveAmmunition(category, dto.title, dto.description);
+    if (!category.isActive) {
       throw new BadRequestException('Invalid category');
     }
     // P0.1c — availableSecondhand was only ever a UI filter; enforce it
@@ -2204,6 +2723,34 @@ export class ListingsService {
     // 409 if locked.
     await this.assertEditable(listing);
 
+    // AMMUNITION BAN — the edit path is the obvious bypass: publish something
+    // innocent, then rewrite it into ammunition once it is live. Checked
+    // against the EFFECTIVE values (the incoming field, falling back to what
+    // is stored), for two reasons: a partial PATCH that only changes the title
+    // must still be judged against the stored description, and a legacy row
+    // that predates this guard must not become editable-and-live. The
+    // effective CATEGORY is checked too, so a listing cannot be moved into
+    // (or edited while sitting in) an ammunition category.
+    const effectiveCategoryId = dto.categoryId ?? listing.categoryId;
+    const effectiveTitle = dto.title ?? listing.title;
+    const effectiveDescription = dto.description ?? listing.description;
+    const ammoGateCategory = await this.prisma.category.findUnique({
+      where: { id: effectiveCategoryId },
+      select: {
+        slug: true,
+        name: true,
+        isFirearm: true,
+        parent: { select: { slug: true, name: true } },
+      },
+    });
+    if (ammoGateCategory) {
+      this.assertNotLiveAmmunition(
+        ammoGateCategory,
+        effectiveTitle,
+        effectiveDescription,
+      );
+    }
+
     // Price-less types (TAKE_A_SHOT / SWOP) can never gain a listed price —
     // mirrors the create() guard so a crafted PATCH can't sneak one on.
     if (PRICELESS_LISTING_TYPES.has(listing.listingType) && dto.price) {
@@ -2496,10 +3043,104 @@ export class ListingsService {
       }
     }
 
+    // ---- Claude AI moderation on the EDIT path ---------------------------
+    // Until 2026-08 update() ran the deterministic term guard and nothing
+    // else: moderate() was only ever called from previewDraft() and create().
+    // That made the edit path the cheapest bypass on the platform — publish a
+    // clean "Bergara B14 HMR chambered in .308 Winchester", then PATCH the
+    // description into an ammunition advert. assertEditable only locks on
+    // bids/offers, so an ACTIVE listing with neither edits freely, and the
+    // tail of this method re-indexes it. It also made the moderation prompt's
+    // own claim ("a deterministic term guard already runs on every write
+    // path") true while the AI half of that sentence was false.
+    //
+    // We re-run the FULL moderator rather than just forcing PENDING_REVIEW.
+    // Forcing review would have been the cheap option, but it taxes every
+    // honest typo fix with an admin round-trip and sellers learn to avoid
+    // editing — the same "listings stuck pending" failure create() was
+    // deliberately unwound from. Claude only runs when the seller actually
+    // touches the title, the description or the category (a price or shipping
+    // PATCH is free), so the spend is bounded by real text edits.
+    //
+    // Judged on the EFFECTIVE (merged) values: a PATCH that changes only the
+    // title must still be read against the stored description.
+    const editTouchesText =
+      dto.title !== undefined ||
+      dto.description !== undefined ||
+      dto.categoryId !== undefined;
+
+    let editModeration: ListingModerationResult | null = null;
+    let editStatus: ListingStatus | undefined;
+    let editDescription: string | undefined;
+    let editOriginalDescription: string | undefined;
+    let editAutoFixApplied = false;
+
+    if (editTouchesText) {
+      const moderationEnabled = await this.settings.get(
+        FLAGS.claudeModerationEnabled,
+      );
+      if (moderationEnabled && this.moderation.isEnabled) {
+        editModeration = await this.moderation.moderate({
+          title: effectiveTitle,
+          description: effectiveDescription,
+          categoryName: ammoGateCategory?.name ?? '',
+          categoryIsFirearm: ammoGateCategory?.isFirearm ?? listing.isFirearm,
+          priceCents:
+            dto.price !== undefined ? (dto.price ?? null) : listing.price,
+          compareAtPriceCents:
+            dto.compareAtPriceZarCents !== undefined
+              ? (dto.compareAtPriceZarCents ?? null)
+              : listing.compareAtPriceZarCents,
+          imageUrls: [],
+          imageCount: 0,
+          sellerFirstFirearmListings: false,
+        });
+
+        // Same mapping create() uses: APPROVE / AUTO_FIX → publishable,
+        // REJECT → PENDING_REVIEW for an admin. A listing that was already
+        // PENDING_REVIEW stays there; nothing here promotes a listing.
+        if (editModeration.decision === 'AUTO_FIX_AND_APPROVE') {
+          const cleaned =
+            editModeration.cleanedDescription ?? effectiveDescription;
+          editDescription = this.moderation.stripContactInfo(cleaned).cleaned;
+          editOriginalDescription = effectiveDescription;
+          editAutoFixApplied = true;
+        }
+        if (
+          editModeration.decision === 'REJECT' ||
+          editModeration.decision === 'HUMAN_REVIEW'
+        ) {
+          editStatus = ListingStatus.PENDING_REVIEW;
+        }
+      } else {
+        // Flag off OR no API key — mirrors create(), which publishes without
+        // moderation rather than stalling the seller in a review queue.
+        this.logger.warn(
+          moderationEnabled
+            ? 'ANTHROPIC_API_KEY not set — applying listing edit without moderation'
+            : 'Moderation flag is OFF — applying listing edit without moderation',
+        );
+      }
+    }
+
     const updated = await this.prisma.listing.update({
       where: { id },
       data: {
         ...listingUpdate,
+        ...(editDescription !== undefined
+          ? { description: editDescription }
+          : {}),
+        ...(editStatus !== undefined ? { status: editStatus } : {}),
+        ...(editModeration
+          ? {
+              claudeDecision: editModeration.decision,
+              claudeConfidence: editModeration.confidence,
+              claudeReasons: editModeration.reasons,
+              claudeReviewedAt: new Date(),
+              claudeOriginalDescription: editOriginalDescription ?? null,
+              claudeAutoFixApplied: editAutoFixApplied,
+            }
+          : {}),
         ...(plannedDealerUpdate !== undefined ? plannedDealerUpdate : {}),
         ...(attributesUpdate !== undefined
           ? { attributes: attributesUpdate }
@@ -2533,6 +3174,12 @@ export class ListingsService {
 
     if (updated.status === ListingStatus.ACTIVE) {
       await this.indexListing(updated);
+    } else if (listing.status === ListingStatus.ACTIVE) {
+      // The edit knocked a live listing back into review (moderation REJECT).
+      // Leaving the old document behind would keep the pre-edit copy
+      // searchable and clickable — the exact hole the edit-path backstop
+      // exists to close.
+      await this.search.deleteDocument(INDEXES.LISTINGS, id);
     }
 
     // P5.2 — price-drop alert to wishlisters. Fire only on a genuine DECREASE of

@@ -107,10 +107,49 @@ export default function CookiesPage() {
 
       <h3>2.3 Analytics</h3>
       <p>
-        <strong>None at this time.</strong> When we add a privacy-respecting
-        analytics provider (Plausible, PostHog or similar), we will
-        update this policy and ask for your opt-in consent before
-        setting any analytics cookie.
+        <strong>First-party only — no third-party analytics.</strong> We
+        do not use Google Analytics or any comparable third-party
+        analytics service, and no third-party analytics cookie is set on
+        this Platform. We do keep our own first-party record of how the
+        Platform is used, and to recognise a returning browser without
+        double-counting it we store a randomly generated device
+        identifier in your browser. It contains no name, email or other
+        personal detail, it is never shared with an ad network, and
+        where you are signed out it is the only thing the activity is
+        linked to. What we do with that activity, how long we keep it
+        and how to object to it are set out in sections 3.7, 9 and 10 of
+        our{' '}
+        <a href="/privacy" style={{ color: 'var(--red)' }}>Privacy Policy</a>.
+      </p>
+      <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 16 }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--border)' }}>
+            <th style={{ textAlign: 'left', padding: '8px 0' }}>Item</th>
+            <th style={{ textAlign: 'left', padding: '8px 0' }}>Set by</th>
+            <th style={{ textAlign: 'left', padding: '8px 0' }}>Purpose</th>
+            <th style={{ textAlign: 'left', padding: '8px 0' }}>Retention</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style={{ borderBottom: '0.5px solid var(--border)' }}>
+            <td style={{ padding: '6px 8px 6px 0', fontFamily: 'monospace' }}>gg_did</td>
+            <td style={{ padding: '6px 8px' }}>All Outdoor</td>
+            <td style={{ padding: '6px 8px' }}>
+              Random first-party device identifier used to group activity
+              from the same browser
+            </td>
+            <td style={{ padding: '6px 0' }}>
+              Stored in <code>localStorage</code> until you clear site
+              data; the activity events themselves are deleted after 12
+              months
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        If we ever add a third-party analytics provider, we will update
+        this policy and ask for your opt-in consent before setting any
+        analytics cookie.
       </p>
 
       <h3>2.4 Marketing</h3>

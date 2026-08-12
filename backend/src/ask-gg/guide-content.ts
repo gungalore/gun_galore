@@ -58,12 +58,11 @@ export const GUIDES: Record<string, AskGgGuide> = {
     key: 'home',
     title: 'Welcome — here’s how All Outdoor works',
     intro:
-      'A South African marketplace for firearms, hunting, shooting, fishing, camping and the outdoors — with your payment protected on every deal.',
+      'South Africa’s new and secondhand outdoor store — camping, overlanding, fishing, optics, knives and outdoor clothing, with your payment protected on every deal.',
     points: [
       'Browse or search for anything outdoors. Every buy is protected: your payment is held until you’ve got the item.',
       'Four ways to buy: Buy Now, make an offer (Take a Shot), bid in an Auction, or Swop an item you own.',
       'Selling is free to list — you only pay a commission when it sells.',
-      'Firearms are fully legal here: every firearm sale completes through a licensed-dealer transfer.',
       'Stuck? I’m on every page — ask me anything about the site, your orders, or the gear itself.',
     ],
     ctas: [
@@ -125,7 +124,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'Set an auto-bid (your maximum) — I then bid the smallest amount needed to keep you in front, up to your max. No need to sit and watch the clock.',
       'No last-second snipes: a bid in the final moments extends the clock, so you always get a chance to respond. Set your true max early and let it run.',
       'Reserve: some auctions have a hidden minimum. If it shows “reserve not met”, even the top bid won’t win until it’s cleared — keep bidding to reach it.',
-      'When it ends, the highest qualifying bid wins and pays through normal checkout, with your payment held until delivery. Firearms complete via a licensed-dealer transfer.',
+      'When it ends, the highest qualifying bid wins and pays through normal checkout, with your payment held until delivery. Items that require a licence or permit are handed over through an authorised dealer.',
     ],
     ctas: [
       { label: 'How does auto-bidding work?', ask: 'How exactly does auto-bidding (setting a maximum) work on a All Outdoor auction, and how does it help me win?' },
@@ -140,7 +139,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'Propose a straight swap of your item for this one — add cash either way if the values differ.',
       'Both sides ship through the platform and both items are checked before anything is released, so neither of you is left empty-handed.',
       'There’s a small flat fee per side to cover the managed shipping — no commission on the item value.',
-      'Firearm swaps still route each firearm through a licensed dealer.',
+      'Swaps of licence- or permit-controlled items are still handed over through an authorised dealer.',
     ],
     ctas: [
       { label: 'Walk me through a swop', ask: 'Walk me through how a Swop works on All Outdoor from proposal to completion.' },
@@ -181,7 +180,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'Price it right: ask me for a suggested price based on what similar items actually sold for.',
       'Pick your selling mode — Buy Now for a quick sale, Auction to let the market decide, Take a Shot to invite offers, or Swop to trade.',
       'Listing is free — you only pay a commission when it sells.',
-      'Firearms: you’ll add the serial, a licence photo, and where you’ll dealer-stock it (dealer name, province, area) — all required and verified.',
+      'Restricted categories ask for extra detail — the item identifier, proof of entitlement and where the hand-over will happen. The form tells you exactly what it needs once you pick the category.',
     ],
     ctas: [
       { label: 'Write my listing', ask: 'Help me write a strong title and description for the item I am listing.' },
@@ -249,7 +248,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     key: 'help',
     title: 'Getting help',
     points: [
-      'Most answers are instant — ask me anything about the site, fees, shipping, firearms, or your account.',
+      'Most answers are instant — ask me anything about the site, fees, shipping, or your account.',
       'If you need a human, I can draft a support ticket for you to send with one tap.',
     ],
     ctas: [
@@ -380,7 +379,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'Manage everything you’re selling — live, sold and drafts — from here.',
       'Listing is free; you only pay commission when an item sells. Ask me what you’ll take home after fees.',
       'Better photos and an honest, specific description sell faster and for more — I can rewrite yours.',
-      'Firearms need a serial, a licence photo and where you’ll dealer-stock it (dealer, province, area) before they go live.',
+      'Restricted categories need their extra detail — item identifier, proof of entitlement and the hand-over arrangement — before they go live.',
     ],
     ctas: [
       { label: 'List a new item', href: '/listings/new' },
@@ -465,9 +464,9 @@ export const GUIDES: Record<string, AskGgGuide> = {
     key: 'legal',
     title: 'Policies & the fine print',
     points: [
-      'All the official documents — Terms, Privacy, refunds, firearms compliance and more — are gathered here.',
+      'All the official documents — Terms, Privacy, refunds, complaints and more — are gathered here.',
       'Rather get the short version? Ask me and I’ll explain any policy in plain language.',
-      'For firearm law or tax specifics I’ll point you to a dealer (DFO) or professional — I’m a guide, not legal advice.',
+      'For legal or tax specifics I’ll point you to a professional — I’m a guide, not legal advice.',
     ],
     ctas: [
       { label: 'Explain a policy for me', ask: 'Explain in plain language how ' },
@@ -480,7 +479,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     points: [
       'I’m on every page — ask me how anything works, and I can look up your own orders, sales and offers.',
       'Buying is protected end to end: your payment is held until you’ve got the item.',
-      'Selling is free to list; firearms complete through a licensed-dealer transfer.',
+      'Selling is free to list; items that require a licence or permit are handed over through an authorised dealer.',
     ],
     ctas: [
       { label: 'What can you do?', ask: 'What can you help me with on All Outdoor?' },

@@ -72,14 +72,19 @@ export default function RefundPolicyPage() {
       </p>
       <p>
         Where a transaction uses the{' '}
-        <strong>Private Arrangement</strong> transfer option for a
-        licence-controlled item (buyer and seller go to a SAPS-licensed
-        dealer together), payment captures and releases immediately. The
-        funds-held mechanism does not apply, because the buyer expressly
-        waives it at checkout and physical possession happens face-to-face.
-        See our{' '}
+        <strong>Private Arrangement</strong> transfer option for an item
+        that requires a licence or permit (buyer and seller attend a
+        licensed dealer together and complete the transfer in person),
+        payment captures and releases immediately. The funds-held mechanism
+        does not apply, because the buyer expressly waives it at checkout
+        and physical possession happens face-to-face. See our{' '}
         <a href="/terms" style={{ color: 'var(--red)' }}>Terms of Service</a>{' '}
-        paragraph 7 for the binding text.
+        paragraph 7 for the binding text. Additional terms apply to
+        regulated categories. See the{' '}
+        <Link href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </Link>
+        , available to registered members.
       </p>
 
       <h2>2. When you can raise a dispute</h2>
@@ -97,7 +102,7 @@ export default function RefundPolicyPage() {
       </p>
       <ul>
         <li><strong>Arrived damaged</strong> — item is broken, scratched, malfunctioning, or otherwise not in the condition described.</li>
-        <li><strong>Wrong item</strong> — what you received doesn't match the listing (different model, calibre, accessories missing, etc.).</li>
+        <li><strong>Wrong item</strong> — what you received doesn't match the listing (different model, different specification, accessories missing, etc.).</li>
         <li><strong>Never arrived</strong> — seller marked dispatched but the parcel never showed up.</li>
         <li><strong>Other</strong> — describe in your own words.</li>
       </ul>
@@ -113,7 +118,7 @@ export default function RefundPolicyPage() {
             <li><strong>Full refund to you</strong> — payment is reversed to your original payment method; you receive the full amount including shipping (typically 3–7 business days).</li>
             <li><strong>Partial refund</strong> — for cases where the item is usable but not as-described; agreed split is refunded to you, the balance released to the seller.</li>
             <li><strong>Release to seller</strong> — where the dispute is not upheld; payment releases as normal. You will be told why.</li>
-            <li><strong>Escalation</strong> — where there is suspected fraud or criminal conduct, the matter is referred to SAPS and may be paused indefinitely.</li>
+            <li><strong>Escalation</strong> — where there is suspected fraud or criminal conduct, the matter is referred to the relevant law-enforcement authority and may be paused indefinitely.</li>
           </ul>
         </li>
       </ol>
@@ -128,8 +133,9 @@ export default function RefundPolicyPage() {
         both parties — you don't need to do anything. The refund records
         as a &quot;dispatch SLA auto-refund&quot; in your transaction
         history. (This automatic refund applies to courier orders;
-        collection and dealer-transfer orders follow the dispute route in
-        section&nbsp;6 instead.)
+        collection orders, and orders that complete through a licensed
+        dealer, follow the dispute route in sections&nbsp;2 and&nbsp;3
+        instead.)
       </p>
 
       <h2>4a. Item damaged in transit</h2>
@@ -143,7 +149,7 @@ export default function RefundPolicyPage() {
         ) within 48&nbsp;hours of delivery. Your payment stays held while we
         investigate with you, the seller and the courier. Where the courier is
         at fault we pursue the courier claim; where the item was misrepresented
-        or poorly packed we resolve it in line with sections&nbsp;2 and&nbsp;6.
+        or poorly packed we resolve it in line with sections&nbsp;2 and&nbsp;3.
       </p>
 
       <h2>5. What is not refundable</h2>
@@ -159,7 +165,7 @@ export default function RefundPolicyPage() {
       </p>
       <ul>
         <li><strong>Section 55</strong> — the right to safe, good-quality goods that are reasonably suitable for the purposes for which they are generally intended, are of good quality, in good working order and free of any defects.</li>
-        <li><strong>Section 56</strong> — an implied warranty of quality lasting <strong>6 months</strong> from the date of delivery; if the goods fail to meet the standards in Section 55 within that period, you may require the supplier (the seller) to repair them, replace them or refund the price. (For private-individual sellers, All Outdoor acts only as facilitator; for goods sold by SAPS-licensed dealer Sellers, Section 56 applies directly to that dealer.)</li>
+        <li><strong>Section 56</strong> — an implied warranty of quality lasting <strong>6 months</strong> from the date of delivery; if the goods fail to meet the standards in Section 55 within that period, you may require the supplier (the seller) to repair them, replace them or refund the price. (For private-individual sellers, All Outdoor acts only as facilitator; for goods sold by a business or licensed-dealer Seller, Section 56 applies directly to that Seller.)</li>
         <li><strong>Section 17</strong> — the right to cancel an advance reservation within reasonable terms.</li>
         <li><strong>Section 19</strong> — the right to delivery at the agreed time and place.</li>
       </ul>

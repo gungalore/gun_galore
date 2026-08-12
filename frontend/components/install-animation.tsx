@@ -77,6 +77,22 @@ interface SceneDef {
   haloShape: HaloShape;
 }
 
+// The four JPEGs are REDACTED captures, not fresh ones. As shot they were live
+// screenshots of the pre-rebrand site and they render site-wide to signed-out
+// visitors, so a crawler could fetch, in image form: the GUN•GALORE bullet
+// wordmark, a handgun photograph, "SOUTH AFRICA'S FIREARMS MARKETPLACE",
+// "Buy, sell, bid and win firearms and gear" — and, in step 3, two real phone
+// numbers and a person's name showing through from the WhatsApp screen behind
+// the share sheet. That last one is a privacy problem quite apart from the
+// rebrand.
+//
+// Each image now keeps only the iOS chrome and the control the halo points at;
+// everything else is painted over. The `target` coordinates below are matched to
+// the ORIGINAL captures and the redaction deliberately left every one of those
+// regions untouched — so if you recapture, re-check all four targets.
+//
+// Recapturing properly (iPhone Safari, signed out, current site) is still worth
+// doing; these are correct but plainer than real screenshots.
 const SCENES: SceneDef[] = [
   {
     n: 1,

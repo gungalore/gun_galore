@@ -20,10 +20,13 @@ import { derivePageContext } from '@/lib/ask-gg-context';
 // heavy). Rendered by AskGgHost on every non-suppressed page in BROWSER modes.
 //
 // Boet lives in the bottom-right corner (the design's 210px). He WANDERS
-// on his own — idles a few seconds, plays one of nine activity scenes
-// (wave / binoculars / campfire / tent / shooting / fishing / knife / map /
-// drive), back to idle, forever — all in-character (the scenes live in his
-// SVG). Tapping him opens the chat. His eyes follow the cursor.
+// on his own — idles a few seconds, plays one of eight activity scenes
+// (wave / binoculars / campfire / tent / fishing / knife / map / drive), back
+// to idle, forever — all in-character (the scenes live in his SVG). Tapping him
+// opens the chat. His eyes follow the cursor.
+//
+// There is no shooting scene, and there must not be one: this rotation runs on
+// every public page for signed-out visitors. See ask-gg-mascot.tsx.
 //
 // ONE proactive bubble per page — useful-first (site-guide G1 + G3):
 //   - G3 (state-aware): on a listing page Boet fetches the server Guide's
@@ -94,7 +97,6 @@ const ACTIVITIES: BoetScene[] = [
   'binoculars',
   'campfire',
   'tent',
-  'shooting',
   'fishing',
   'knife',
   'map',

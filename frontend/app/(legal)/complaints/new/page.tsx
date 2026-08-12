@@ -206,7 +206,7 @@ export default function NewComplaintPage() {
         <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
           We aim to acknowledge within 2 business days and resolve within 14.
           {done.held
-            ? ' Because this concerns a paid order, we&apos;ve placed the payout on hold while we investigate.'
+            ? ' Because this concerns a paid order, we’ve placed the payout on hold while we investigate.'
             : ''}
         </p>
         <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>

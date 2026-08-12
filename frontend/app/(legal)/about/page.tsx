@@ -1,8 +1,15 @@
 // /about — a short, honest description of what All Outdoor is, who
 // operates it and where to find the detail. Kept factual (no
-// marketing claims): what the platform does, how firearm transfers
-// and held payments work, and the registered company behind it.
+// marketing claims): what the store does, how held payments work, and
+// the registered company behind it.
 // Middleware already whitelists /about as a public route.
+//
+// PUBLIC SURFACE. Regulated categories are members-only, so the
+// procedure that applies to them lives in the Regulated Items Annex
+// (/members/regulated-items) and not here. What stays here is the
+// duty that binds every buyer and seller, stated in general terms —
+// nothing is softened and nothing is denied: we do trade in regulated
+// categories, for registered members.
 
 import { SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
@@ -20,44 +27,51 @@ export default function AboutPage() {
       <LegalDocHeader title="About All Outdoor" lastUpdated="Effective 16 July 2026" />
 
       <h2>What All Outdoor is</h2>
-      {/* "Ammunition" removed on purpose — the Ammo category is seeded
-          isActive:false (live ammo, primers and powder cannot be listed
-          here), so naming it advertised a product line the platform has
-          deliberately switched off. Reloading components stay: that
-          category is live and holds bullets and brass only. */}
       <p>
-        All Outdoor is a South African online marketplace for the
-        outdoor, hunting and sport-shooting community — camping and
-        overlanding gear, fishing, optics, knives, clothing, ranges,
-        accessories and reloading components, alongside firearms. You
-        can buy at a set price, bid in auctions, make an offer, or swop
-        item for item, from both private sellers and licensed dealers.
+        All Outdoor is a South African new and secondhand outdoor store
+        — camping and overlanding gear, fishing tackle, optics, knives,
+        clothing, outdoor equipment and accessories. You can buy at a
+        set price, bid in auctions, make an offer, or swop item for
+        item, from both private sellers and licensed dealers.
+      </p>
+      <p>
+        Some of the categories we carry are regulated, and those are
+        open to registered members only. We do not hide that we trade
+        in them — they are simply not browsable while you are signed
+        out, and the additional rules that govern them are published to
+        members.
+      </p>
+      <p>
+        All Outdoor does not sell ammunition. Live ammunition may not
+        be listed, sold or traded on this platform under any
+        circumstances.
       </p>
 
       <h2>How it works</h2>
       <p>
-        Firearms are never couriered to a home address. By law they are
-        transferred through a SAPS-licensed dealer, and you collect
-        them there once the required paperwork is complete. For every
-        order, your payment is held by All Outdoor and only released to
-        the seller after delivery is confirmed — or, for firearms,
-        after the dealer transfer is verified — so you are not out of
-        pocket if something goes wrong. Non-firearm gear ships via our
-        courier partners, Pudo (locker-to-locker) and The Courier Guy
-        (door-to-door). Seller identity is verified through VerifyNow,
-        a South African KYC provider, before any payout is released.
+        Items that require a licence or permit are never couriered to a
+        residential address. Where the law requires it, they are handed
+        over through an authorised dealer and you collect them there
+        once the required paperwork is complete. For every order, your
+        payment is held by All Outdoor and only released to the seller
+        after delivery is confirmed — or, where an item is handed over
+        through a dealer, after that hand-over is verified — so you are
+        not out of pocket if something goes wrong. Everything else
+        ships via our courier partners, Pudo (locker-to-locker) and The
+        Courier Guy (door-to-door). Seller identity is verified through
+        VerifyNow, a South African KYC provider, before any payout is
+        released.
       </p>
       <p>
         For the full detail on how money moves, see{' '}
         <a href="/how-payments-work" style={{ color: 'var(--red)' }}>
           How payments work
         </a>
-        , and for the rules around licence- and age-restricted
-        categories see{' '}
+        . Additional terms apply to regulated categories. See the{' '}
         <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
-          Regulated Items &amp; Compliance
+          Regulated Items Annex
         </a>
-        .
+        , available to registered members.
       </p>
 
       <h2>Who runs it</h2>

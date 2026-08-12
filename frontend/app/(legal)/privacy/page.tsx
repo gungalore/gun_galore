@@ -92,11 +92,26 @@ export default function PrivacyPage() {
 
       <h3>3.2 KYC and identity verification (Sellers only)</h3>
       <ul>
-        <li>South African ID number (stored encrypted at rest with AES-GCM; we also derive a salted SHA-256 hash for duplicate-registration checks. As a firearms marketplace we retain the encrypted ID — see &ldquo;How long we keep your information&rdquo; below — because it must be reproduced on the SAP 534 firearm-transfer form if one of your firearms later sells)</li>
-        <li>VerifyNow Home Affairs lookup result (full name, date of birth, status)</li>
-        <li>Selfie image captured during face-match verification (image not retained by All Outdoor — only the match score)</li>
+        <li>South African ID number (stored encrypted at rest with AES-GCM; we also derive a salted SHA-256 hash for duplicate-registration checks. We retain the encrypted ID — see &ldquo;How long we keep your information&rdquo; below — so that we can confirm the person receiving a payout is the person we verified, prevent fraud and impersonation, and meet the record-keeping and transfer-documentation obligations that apply to certain regulated categories, where the seller&rsquo;s identity number must be reproduced on a prescribed statutory form)</li>
+        <li>VerifyNow Home Affairs lookup result (full name, date of birth, status), which may include the official record photograph held by the Department of Home Affairs</li>
+        <li>An image of the identity document you upload during verification (an identity card, identity book page or passport, or a PDF of one). This image is stored with our image-hosting provider, Cloudinary, in the United States, and is retained as an audit record of the verification for the life of your account.</li>
+        <li><strong>Selfie image captured during face-match verification.</strong> The image is <strong>stored</strong> with our image-hosting provider, Cloudinary, in the United States. We retain it as an audit record of the verification for the life of your account, and we re-use it only to re-run a verification check on that same account. If you delete your account we remove the link to the image from your account record, but the stored image itself is <strong>not deleted today</strong> — deletion of the copy held by the image-hosting provider is a follow-up we have not yet implemented, and we will not describe it as done until it is.</li>
         <li>Number of face-match attempts and outcome</li>
       </ul>
+      <p>
+        The identity-document image, the selfie and — where the anchored check
+        is used — the official record photograph returned by the Home Affairs
+        lookup are transmitted to Anthropic in the United States, which runs
+        the automated document-authenticity and face-match checks on our
+        behalf. See paragraphs 7 and 8.
+      </p>
+      <p>
+        Additional terms apply to regulated categories. See the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </a>
+        , available to registered members.
+      </p>
 
       <h3>3.3 Banking (Sellers only)</h3>
       <ul>
@@ -160,7 +175,8 @@ export default function PrivacyPage() {
       <ul>
         <li><strong>To provide the Platform</strong> — register and authenticate your account, display your listings, route your transactions, accept your payments and pay out your earnings.</li>
         <li><strong>To verify your identity</strong> — meet our KYC obligations before releasing seller payouts, prevent fraud and identity theft.</li>
-        <li><strong>To comply with the law</strong> — including the regulatory regimes that govern licence- and age-restricted categories (such as the Firearms Control Act 60 of 2000), the Consumer Protection Act, the Financial Intelligence Centre Act (FICA) and tax obligations.</li>
+        <li><strong>To comply with the law</strong> — including the sector-specific legislation that governs licence- and age-restricted categories of goods, which is identified by name in our{' '}
+          <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>, together with the Consumer Protection Act, the Financial Intelligence Centre Act (FICA) and tax obligations.</li>
         <li><strong>To detect and prevent fraud, abuse and platform misuse</strong> — including off-platform contact-detail sharing, sock-puppet accounts and money-laundering risk.</li>
         <li><strong>To communicate with you</strong> — transactional notifications (order updates, dispatch confirmations, dispute outcomes) and, with your opt-in consent, marketing communications.</li>
         <li><strong>To improve the Platform</strong> — analytics, debugging, A/B testing (always against aggregated or de-identified data where possible).</li>
@@ -174,10 +190,18 @@ export default function PrivacyPage() {
       </p>
       <ul>
         <li><strong>Performance of a contract:</strong> processing necessary to deliver the Platform you signed up for (§ 11(1)(b)).</li>
-        <li><strong>Compliance with legal obligation:</strong> KYC, statutory records for regulated categories (including those required under the Firearms Control Act 60 of 2000), tax (§ 11(1)(c)).</li>
+        <li><strong>Compliance with legal obligation:</strong> KYC, the statutory records we must keep for licence- and age-restricted categories, tax (§ 11(1)(c)). The particular legislation imposing that obligation, and the records kept under it, are identified in our{' '}
+          <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>, which is publicly available and which we also give you as the notification required by § 18(1)(f).</li>
         <li><strong>Legitimate interest:</strong> fraud prevention, platform safety, dispute investigation (§ 11(1)(f)) — balanced against your rights.</li>
-        <li><strong>Consent:</strong> KYC Home Affairs lookup, direct marketing, sharing of contact details for private-arrangement transfers of regulated items requiring a licensed dealer or competency/licence holder (§ 11(1)(a)).</li>
+        <li><strong>Consent:</strong> KYC Home Affairs lookup, direct marketing, and the sharing of contact details where you agree that hand-over of an item that requires a licence or permit will be arranged directly between the parties or through an authorised third party (§ 11(1)(a)).</li>
       </ul>
+      <p>
+        Additional terms apply to regulated categories. See the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </a>
+        , available to registered members.
+      </p>
 
       <h2>7. Who we share your information with</h2>
       <p>
@@ -202,10 +226,10 @@ export default function PrivacyPage() {
             ['VerifyNow', 'South Africa', 'ID number, name, selfie image (KYC face-match)'],
             ['Pudo', 'South Africa', 'Buyer address, parcel size + weight, shipping reference'],
             ['The Courier Guy', 'South Africa', 'Buyer address, parcel size + weight, waybill reference'],
-            ['Cloudinary', 'United States', 'Listing photos uploaded by Sellers'],
+            ['Cloudinary', 'United States', 'Listing photos; identity-verification images (ID document, selfie) and compliance documents you upload'],
             ['Resend', 'United States', 'Email address, content of transactional emails'],
             ['SMSPortal', 'South Africa', 'Phone number, content of transactional SMS'],
-            ['Anthropic (Claude)', 'United States', 'Listing title + description + photos (for moderation); pre-purchase question text (for Q&A moderation)'],
+            ['Anthropic (Claude)', 'United States', 'Listing title + description + photos (for moderation); pre-purchase question text (for Q&A moderation); identity-verification images (ID document, selfie and, where applicable, the official record photograph) for automated document-authenticity and face-match checks'],
           ].map(([op, country, share], i) => (
             <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
               <td style={{ padding: '6px 8px 6px 0' }}>{op}</td>
@@ -234,6 +258,19 @@ export default function PrivacyPage() {
         <li>Your explicit consent at sign-up; and</li>
         <li>Where the transfer is necessary to perform the contract you concluded with us.</li>
       </ul>
+      <p>
+        The information transferred across borders includes the
+        identity-verification images described in paragraph 3.2 — the
+        identity-document image, the face image (selfie) and, where the
+        anchored check is used, the official record photograph. Those images
+        are stored with Cloudinary in the United States and are transmitted to
+        Anthropic in the United States for the automated document-authenticity
+        and face-match checks. For that transfer specifically we rely on the
+        consent you give before verification begins — the consent screen names
+        the storage and assessment providers, and states that both are in the
+        United States — on the necessity of the transfer for the verification
+        step you asked us to perform, and on the contractual safeguards above.
+      </p>
 
       <h2>9. How long we keep your information</h2>
       <p>
@@ -244,8 +281,10 @@ export default function PrivacyPage() {
         <li><strong>Transaction records:</strong> 5 years from completion, in line with FICA record-keeping requirements.</li>
         <li><strong>Listings, ratings and Q&amp;A:</strong> for the lifetime of your account (kept for public-history integrity); permanently de-identified within 90 days of account deletion.</li>
         <li><strong>KYC ID hash:</strong> retained while your account is active, plus 12 months after deletion to prevent duplicate registration.</li>
-        <li><strong>Encrypted SA ID number:</strong> retained (AES-GCM encrypted at rest) while your account is active, under our firearms-transfer compliance obligations, so we can complete a SAP 534 form if one of your firearms sells; kept for the period required by law after any such transfer, and otherwise deleted on account closure.</li>
-        <li><strong>KYC selfie:</strong> not retained by All Outdoor; only the match score is kept.</li>
+        <li><strong>Encrypted SA ID number:</strong> retained (AES-GCM encrypted at rest) while your account is active, so that we can confirm payout identity, prevent impersonation, and complete any prescribed statutory transfer or record-keeping document required for the regulated categories we handle; where such a document has been completed, the encrypted ID is kept for the period that legislation requires that record to be retained, and is otherwise deleted on account closure. The legislation imposing that requirement is identified in our{' '}
+          <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>.</li>
+        <li><strong>KYC selfie (face image):</strong> stored with our image-hosting provider, Cloudinary, and retained as an audit record of the verification for the life of your account; re-used only to re-run a verification check on that same account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present; deleting the copy held by the image-hosting provider is a tracked follow-up and is not yet implemented.</li>
+        <li><strong>KYC identity-document image:</strong> stored with our image-hosting provider, Cloudinary, and retained as an audit record of the verification for the life of your account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present, on the same basis as the selfie above.</li>
         <li><strong>Email and SMS logs:</strong> 90 days.</li>
         <li><strong>Usage analytics (raw activity events):</strong> up to 12 months, after which they are deleted; we keep only aggregated, de-identified statistics beyond that period.</li>
         <li><strong>Banking details:</strong> retained while your account is active; deleted on account closure unless there is an unresolved transaction or legal-hold reason to retain.</li>

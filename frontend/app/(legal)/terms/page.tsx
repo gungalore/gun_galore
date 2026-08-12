@@ -3,11 +3,14 @@
 //   - Electronic Communications and Transactions Act 25 of 2002 (§ 43)
 //   - Consumer Protection Act 68 of 2008
 //   - Protection of Personal Information Act 4 of 2013
-//   - Firearms Control Act 60 of 2000
 //
 // Conventions in this file:
 //   - "All Outdoor" / "we" / "us" / "our" = GunGalore (Pty) Ltd
 //   - "you" / "your" = any user of the platform
+//   - This page is PUBLIC. Category-specific statutory procedure for
+//     restricted categories lives in the members-only Regulated Items
+//     Annex (/members/regulated-items), which these Terms incorporate
+//     by reference. Keep the obligations here; keep the detail there.
 //   - Per the operator's policy, this document NEVER uses the word
 //     "escrow" (regulated SA financial term that All Outdoor is not
 //     registered to operate). The funds-held mechanism is described
@@ -47,21 +50,46 @@ export default function TermsPage() {
 
       <h2>2. What All Outdoor does</h2>
       <p>
-        All Outdoor is an online marketplace that allows registered users
-        ("<strong>Sellers</strong>") to list outdoor, hunting and sport
-        goods — including optics, camping and fishing gear, knives,
-        self-defence items, air rifles, and regulated categories such as
-        firearms, ammunition and accessories — for sale or auction, and
-        allows other registered users ("<strong>Buyers</strong>") to
-        purchase those goods. For marketplace listings All Outdoor is a{' '}
+        All Outdoor is an online marketplace for <strong>new and
+        secondhand outdoor goods</strong>. It allows registered users
+        ("<strong>Sellers</strong>") to list items — including optics,
+        camping, hiking and fishing gear, knives and multi-tools,
+        outdoor clothing, and hunting and sport accessories — for sale
+        or auction, and allows other registered users
+        ("<strong>Buyers</strong>") to purchase those goods.
+      </p>
+      <p>
+        All Outdoor also lists a number of{' '}
+        <strong>restricted categories</strong>. Listings in those
+        categories are shown only to registered members who are signed
+        in, and are subject to additional eligibility, verification and
+        handling requirements. Additional terms apply to regulated
+        categories. See the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </a>
+        , available to registered members. That Annex forms part of
+        these Terms and is incorporated by reference.
+      </p>
+      <p>
+        <strong>All Outdoor does not sell ammunition. Live ammunition
+        may not be listed, sold or traded on this platform under any
+        circumstances. The same absolute prohibition applies to primers
+        and propellant powder.</strong>{' '}
+        Reloading components are limited to projectiles and brass cases,
+        which registered members may list in the appropriate category.
+      </p>
+      <p>
+        For marketplace listings All Outdoor is a{' '}
         <strong>platform</strong> — we do not own, stock, dispatch or
         directly sell the goods members list. The one exception is{' '}
         <strong>Daily Deals</strong> (section 12), where All Outdoor
-        itself is the seller of record. Where a transaction involves an item
-        subject to the Firearms Control Act 60 of 2000, physical
-        possession is transferred only through a SAPS-licensed dealer.
-        All Outdoor is not a SAPS-licensed dealer and does not handle
-        such items in any physical capacity.
+        itself is the seller of record. Where a transaction involves an
+        item that requires a licence or permit to possess, physical
+        possession is transferred only through the authorised channel
+        prescribed for that category. All Outdoor is not an authorised
+        dealer in any restricted category and does not handle such
+        items in any physical capacity.
       </p>
 
       <h2>3. Acceptance and changes</h2>
@@ -73,7 +101,7 @@ export default function TermsPage() {
         our{' '}
         <a href="/acceptable-use" style={{ color: 'var(--red)' }}>Acceptable Use Policy</a>{' '}
         and (where applicable) our{' '}
-        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items &amp; Compliance</a>{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>{' '}
         and{' '}
         <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>.
       </p>
@@ -95,7 +123,7 @@ export default function TermsPage() {
         <li>be a permanent resident of, or lawfully present in, the Republic of South Africa;</li>
         <li>have the legal capacity to enter into a binding contract;</li>
         <li>not have been previously banned by All Outdoor;</li>
-        <li>where you list, bid on or purchase any item subject to the Firearms Control Act 60 of 2000, hold (and continue to hold throughout the transaction) the relevant <strong>SAPS Competency Certificate</strong> and any required <strong>Possession Licence</strong>; and</li>
+        <li>where you list, bid on or purchase any item in a <strong>restricted category</strong>, hold (and continue to hold for the whole duration of the transaction) every competency, licence, permit or other authorisation that the relevant authority requires for that item, as set out in the <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>; and</li>
         <li>where applicable, complete our identity verification (KYC) process before payouts are released to you.</li>
       </ul>
 
@@ -177,12 +205,19 @@ export default function TermsPage() {
       </p>
       <p>
         Where a Buyer and Seller elect to use the{' '}
-        <strong>"private arrangement"</strong> shipping option for a
-        firearm transfer (where both parties travel to a SAPS-licensed
-        dealer to complete the transfer themselves), the Buyer
-        explicitly consents that payment is captured and released
-        immediately to the Seller upon successful payment, and that the
-        funds-held mechanism does not apply to that transaction.
+        <strong>"private arrangement"</strong> handover option offered
+        on certain restricted categories (where both parties travel to
+        an authorised third party and complete the handover
+        themselves), the Buyer explicitly consents that payment is
+        captured and released immediately to the Seller upon successful
+        payment, and that the funds-held mechanism does not apply to
+        that transaction. The categories on which this option is
+        available, and the conditions attached to it, are set out in
+        the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </a>
+        .
       </p>
 
       <h2>8. Fees, commission and payouts</h2>
@@ -220,11 +255,24 @@ export default function TermsPage() {
         shipping method chosen by the Buyer at checkout from the
         options the Seller has enabled. Available methods include
         locker-to-locker (Pudo), door-to-door courier (The Courier
-        Guy), licensed-dealer transfer (for firearms, barrels and other
-        items subject to the Firearms Control Act 60 of 2000) and
-        private arrangement (for those regulated items only — see
-        paragraph 7). Shipping costs are quoted live at checkout and
-        paid by the Buyer.
+        Guy), <strong>authorised-agent transfer</strong> (for items
+        that require a licence or permit) and{' '}
+        <strong>private arrangement</strong> (for those restricted
+        categories only — see paragraph 7). Shipping costs are quoted
+        live at checkout and paid by the Buyer.
+      </p>
+      <p>
+        Items that require a licence or permit may not be sent by
+        ordinary courier and may not be delivered to a residential
+        address. They must be routed through the authorised transfer
+        channel prescribed for their category, and the Buyer may not
+        select a delivery method that bypasses it. The permitted
+        routes, and the documents that must accompany each handover,
+        are set out in the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </a>
+        .
       </p>
       <p>
         The Seller must dispatch within 48 hours of payment being
@@ -264,9 +312,14 @@ export default function TermsPage() {
         party must photograph their item together with a unique
         verification code we issue (proof of possession). Cash top-ups
         above the threshold on the Fees page carry standard commission,
-        deducted from the cash the recipient is paid. Firearms may only
-        change hands through a licensed dealer in terms of the Firearms
-        Control Act. Agreeing a swap is a commitment to verify, pay and
+        deducted from the cash the recipient is paid. Items that
+        require a licence or permit may only change hands through the
+        authorised transfer channel prescribed for their category, as
+        set out in the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </a>
+        . Agreeing a swap is a commitment to verify, pay and
         ship: members who repeatedly fail to honour agreed swaps may be
         suspended under the same three-strike rule that applies to
         unpaid auction wins and offers.
@@ -285,7 +338,7 @@ export default function TermsPage() {
         are governed by our{' '}
         <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>{' '}
         and the Consumer Protection Act. Daily Deals never include
-        items requiring a licence to possess.
+        items from a restricted category.
       </p>
 
       <h2>13. GG PRO membership and the prize draw</h2>
@@ -383,11 +436,16 @@ export default function TermsPage() {
         its directors, officers, employees and agents from and against
         any third-party claim, action, demand, loss, damage, fine,
         penalty or expense (including reasonable legal fees) arising
-        out of or related to (a) your breach of these Terms, (b) your
-        breach of any law, including the Firearms Control Act, the
-        Consumer Protection Act or the Protection of Personal
-        Information Act, (c) any goods you list or transact on the
-        Platform, or (d) any content you submit to the Platform.
+        out of or related to (a) your breach of these Terms or of the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </a>
+        , (b) your breach of any law applicable to you or to the goods
+        you deal in, including the Consumer Protection Act, the
+        Protection of Personal Information Act and any legislation
+        governing a restricted category, (c) any goods you list or
+        transact on the Platform, or (d) any content you submit to the
+        Platform.
       </p>
 
       <h2>19. Force majeure</h2>

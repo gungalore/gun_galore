@@ -38,6 +38,15 @@ const isPublicRoute = createRouteMatcher([
   '/support',      // public support page
   '/complaints',   // public complaints-handling page
   '/paia',         // public PAIA manual / access-to-information page
+  '/regulated-categories', // public statutory schedule naming the particular
+                   // legislation we keep regulated-category records under.
+                   // MUST be reachable signed-out: POPIA s 18(1)(f) requires
+                   // the data subject to be told the particular law, and PAIA
+                   // s 51 requires the manual to be complete and free to ANY
+                   // requester — a journalist, a regulator or a non-account
+                   // holder cannot read the members-only annex. The page
+                   // itself carries robots noindex/nofollow and is NOT in
+                   // app/sitemap.ts, so it is reachable without being indexed.
   '/fees',         // public fees schedule
   '/sitemap.xml',  // SEO — must be crawlable without auth (.xml isn't
   '/robots.txt',   // excluded by the matcher, so it hits this middleware)

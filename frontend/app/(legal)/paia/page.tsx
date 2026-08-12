@@ -134,8 +134,24 @@ export default function PaiaPage() {
         </li>
         <li>
           <strong>Transaction records</strong> — listings, bids, offers,
-          orders, sales, payment and payout records, shipping and
-          dealer-transfer records, invoices and commission records.
+          orders, sales, payment and payout records, shipping, courier and
+          hand-over records (including records of transfers completed
+          through an authorised third party where a category of goods
+          requires it), invoices and commission records.
+        </li>
+        <li>
+          <strong>Regulated-category compliance records</strong> — the
+          licence, permit and competency particulars supplied by the parties
+          to a transaction, item identifiers such as serial numbers, the
+          particulars of the authorised third party at which an item is held
+          or handed over, completed prescribed statutory forms, and the
+          registers kept in connection with those transfers. The legislation
+          under which these records are kept is identified in our{' '}
+          <a href="/regulated-categories" style={{ color: 'var(--red)' }}>
+            Regulated Categories &mdash; Statutory Schedule
+          </a>
+          , which is publicly available free of charge and without
+          registration.
         </li>
         <li>
           <strong>Marketplace content</strong> — listing text and
@@ -158,7 +174,16 @@ export default function PaiaPage() {
         <li>Companies Act 71 of 2008</li>
         <li>Protection of Personal Information Act 4 of 2013 (POPIA)</li>
         <li>Financial Intelligence Centre Act 38 of 2001 (FICA)</li>
-        <li>Firearms Control Act 60 of 2000</li>
+        <li>
+          Sector-specific legislation governing licence- and
+          permit-controlled categories of goods offered on the Platform,
+          together with the statutory registers, prescribed forms and
+          transfer records kept under it — that legislation is identified by
+          name in our{' '}
+          <a href="/regulated-categories" style={{ color: 'var(--red)' }}>
+            Regulated Categories &mdash; Statutory Schedule
+          </a>
+        </li>
         <li>Consumer Protection Act 68 of 2008</li>
         <li>Electronic Communications and Transactions Act 25 of 2002</li>
         <li>Income Tax Act 58 of 1962 and the Tax Administration Act 28 of 2011</li>
@@ -167,7 +192,20 @@ export default function PaiaPage() {
       <p>
         Records kept under these laws are made available in accordance
         with the relevant Act and, where a request falls under PAIA, in
-        accordance with this manual.
+        accordance with this manual. The category-specific legislation, and
+        the categories of records we keep under it, are identified in our{' '}
+        <a href="/regulated-categories" style={{ color: 'var(--red)' }}>
+          Regulated Categories &mdash; Statutory Schedule
+        </a>
+        , which forms part of this manual and is available to any requester
+        free of charge, without registration and without an account.
+        Registered members are additionally subject to the operational terms
+        of the{' '}
+        <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
+          Regulated Items Annex
+        </a>{' '}
+        in their account; that annex is a convenience for members and is not
+        the source of any record category identified in this manual.
       </p>
 
       <h2>6. How to request access to a record</h2>

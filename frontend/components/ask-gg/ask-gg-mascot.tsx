@@ -24,7 +24,11 @@ export type BoetScene =
   | 'binoculars'
   | 'campfire'
   | 'tent'
-  | 'shooting'
+  // NO 'shooting' SCENE. It drew Boet firing a scoped long gun — wooden barrel,
+  // front sight, shoulder stock, an animated muzzle flash and a target taking
+  // hits — and the launcher rotated it in at random on EVERY page, signed out
+  // included. The file already carried the house rule "never firearm jokes";
+  // the artwork was simply never brought in line with it. Do not add it back.
   | 'fishing'
   | 'knife'
   | 'map'
@@ -41,8 +45,6 @@ export type SparkieMood = 'idle' | 'think' | 'happy';
 const RIGS: Partial<Record<BoetScene, string>> = {
   binoculars:
     'animation:boet-pan 4.2s ease-in-out infinite alternate;transform-origin:130px 292px',
-  shooting:
-    'animation:boet-recoil 2.4s linear infinite;transform-origin:130px 200px',
   drive: 'animation:boet-drive .45s ease-in-out infinite',
 };
 const DEFAULT_RIG = 'animation:boet-bob 3.4s ease-in-out infinite';
@@ -78,17 +80,6 @@ const SVG_INNER = `<defs>
           <path d="M94 250 L112 264" stroke="#b8a97c" stroke-width="2"></path>
         </g>
         <rect x="110" y="258" width="5" height="12" rx="2" fill="#8a7a52" transform="rotate(20 112 264)"></rect>
-      </g>
-      <g class="sc sc-shooting" style="display:none">
-        <g>
-          <rect x="28" y="176" width="5" height="106" fill="#46453e"></rect>
-          <circle cx="30.5" cy="162" r="17" fill="#ece5d2" stroke="#b9b1a0" stroke-width="1.5"></circle>
-          <circle cx="30.5" cy="162" r="11.5" fill="none" stroke="#c0392b" stroke-width="3"></circle>
-          <circle cx="30.5" cy="162" r="4.5" fill="#c0392b"></circle>
-          <g style="animation:boet-hit 2.4s linear infinite;transform-origin:30.5px 162px">
-            <path d="M25 156 L36 168 M36 156 L25 168" stroke="#26221a" stroke-width="2.5" stroke-linecap="round"></path>
-          </g>
-        </g>
       </g>
       <g class="sc sc-fishing" style="display:none">
         <g>
@@ -208,22 +199,6 @@ const SVG_INNER = `<defs>
             <circle cx="97" cy="208" r="7" fill="#e8b586"></circle>
             <path d="M97 208 L103 242" stroke="#7a5836" stroke-width="5" stroke-linecap="round"></path>
             <rect x="93" y="238" width="21" height="12" rx="3" fill="#6b6242"></rect>
-          </g>
-        </g>
-        <g class="sc sc-shooting" style="display:none">
-          <g>
-            <rect x="135" y="94" width="19" height="10" rx="5" fill="#e9b686"></rect>
-            <path d="M137 100 h15" stroke="#7c4a2c" stroke-width="2.5" stroke-linecap="round"></path>
-            <path d="M50 171 l-16 -8 9 8 -9 8 z" fill="#f7d154" style="animation:boet-flash 2.4s linear infinite"></path>
-            <rect x="52" y="168" width="76" height="7" rx="3" fill="#6e5a3e" stroke="#463823" stroke-width="1"></rect>
-            <rect x="60" y="161" width="4" height="8" fill="#8a7358"></rect>
-            <path d="M126 166 L156 176 L152 191 L136 183 L126 179 Z" fill="#7a5b3a" stroke="#4a3a24" stroke-width="1"></path>
-            <rect x="88" y="162" width="18" height="18" rx="9" fill="#b39c6f"></rect>
-            <path d="M98 172 L88 176" stroke="#e2ae7e" stroke-width="13" stroke-linecap="round"></path>
-            <circle cx="86" cy="175" r="7" fill="#e8b586"></circle>
-            <rect x="154" y="162" width="18" height="18" rx="9" fill="#b39c6f"></rect>
-            <path d="M160 174 L142 180" stroke="#d9a271" stroke-width="13" stroke-linecap="round"></path>
-            <circle cx="139" cy="180" r="7" fill="#e0ab7c"></circle>
           </g>
         </g>
         <g class="sc sc-fishing" style="display:none">

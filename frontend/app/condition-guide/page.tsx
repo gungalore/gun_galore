@@ -4,7 +4,7 @@ import Link from 'next/link';
 export const metadata: Metadata = {
   title: 'Condition guide — All Outdoor',
   description:
-    'What NEW, LIKE NEW, GOOD, FAIR and POOR actually mean on All Outdoor, plus what to check before you grade optics, electronics, tents, packs and firearms. Grade honestly and your listing sells faster with fewer disputes.',
+    'What NEW, LIKE NEW, GOOD, FAIR and POOR actually mean on All Outdoor, plus what to check before you grade optics, electronics, tents, packs, clothing and boots. Grade honestly and your listing sells faster with fewer disputes.',
   alternates: { canonical: '/condition-guide' },
 };
 
@@ -16,6 +16,12 @@ export const metadata: Metadata = {
 // listing-detail condition chip both link here.
 //
 // Copy rule: describe what the BUYER receives, never what the seller intended.
+//
+// PUBLIC SURFACE. The grades below bind every listing on the platform,
+// including those in members-only regulated categories, so they stay here in
+// full. The category checklist for regulated items is procedure specific to
+// stock a signed-out reader cannot browse, so it lives in the Regulated Items
+// Annex (/members/regulated-items) instead.
 const GRADES: {
   code: string;
   label: string;
@@ -28,9 +34,9 @@ const GRADES: {
     label: 'New',
     headline: 'Unused, still sealed or with tags — exactly as it left the shop.',
     means: [
-      'Never used, never mounted, never fired, never pitched',
+      'Never used, never mounted, never pitched',
       'Original box, tags, caps, tools and paperwork still with it',
-      'No marks of any kind, including mounting-ring marks or safe rash',
+      'No marks of any kind, including mounting-ring marks or storage marks',
     ],
     notThis:
       '"New to me", or bought new and used twice — that is Like New at best.',
@@ -85,7 +91,7 @@ const GRADES: {
   },
 ];
 
-// Category-aware checklists. Grading a rifle scope and grading a camping
+// Category-aware checklists. Grading a spotting scope and grading a camping
 // fridge need different questions; these are the ones that actually decide the
 // grade (and the ones buyers complain about when nobody checked them).
 const CHECKLISTS: { title: string; points: string[] }[] = [
@@ -122,15 +128,6 @@ const CHECKLISTS: { title: string; points: string[] }[] = [
       'Zips, buckles, straps and stitching — anything already pulling loose?',
       'Fading, staining, and whether any waterproof membrane still beads water',
       'Boots: sole wear and any separation at the welt',
-    ],
-  },
-  {
-    title: 'Firearms and firearm parts',
-    points: [
-      'Bore and crown condition, plus an honest round count if you have any idea',
-      'Bluing or finish wear, safe rash, stock dings and any repairs',
-      'Function-check: action cycles, safety engages, trigger as it left the factory or modified',
-      'Every part included — magazines, mounts, tools, case and original paperwork',
     ],
   },
 ];
@@ -259,6 +256,23 @@ export default function ConditionGuidePage() {
           </section>
         ))}
       </div>
+
+      <p
+        className="text-sm mt-4"
+        style={{ color: 'var(--text-tertiary)', lineHeight: 1.6 }}
+      >
+        The grades above apply to every listing on the platform, whatever the
+        category. Additional terms apply to regulated categories, including
+        the extra points to check before you grade an item in one of them. See
+        the{' '}
+        <Link
+          href="/members/regulated-items"
+          style={{ color: 'var(--red)', textDecoration: 'none' }}
+        >
+          Regulated Items Annex
+        </Link>
+        , available to registered members.
+      </p>
 
       <div
         className="rounded-[10px] p-5 mt-6"

@@ -52,8 +52,8 @@ export default function ExperiencesCancellationPolicyPage() {
       <p>
         The <strong>outfitter</strong> is the supplier of the experience — they
         run the hunt or range day, provide the venue, guide and facilities, and
-        carry the Consumer Protection Act supplier obligations for it. Gun
-        Galore is a <strong>payment-protection intermediary</strong>: we hold
+        carry the Consumer Protection Act supplier obligations for it. All
+        Outdoor is a <strong>payment-protection intermediary</strong>: we hold
         your payment until the experience has taken place and you confirm it
         happened, then release it to the outfitter less our commission. We are
         not the supplier of the experience.

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { InstallAnimation } from './install-animation';
 import { useInstallPrompt } from '@/lib/use-install-prompt';
+import { BRAND_NAME } from '@/lib/brand';
 
 // "Get the All Outdoor app" install popup + the shared install-help modal.
 //
@@ -297,7 +298,7 @@ export function InstallPrompt() {
                   margin: 0,
                 }}
               >
-                Get the Gun&nbsp;Galore app
+                Get the {BRAND_NAME} app
               </p>
               <p
                 style={{
@@ -702,7 +703,7 @@ function InstallHelpModal({
                   }}
                 >
                   On some phones only &ldquo;Add to Home screen&rdquo; is
-                  available — that still puts a All Outdoor icon on your home
+                  available — that still puts an All Outdoor icon on your home
                   screen; it just opens in your browser.
                 </p>
               </>
