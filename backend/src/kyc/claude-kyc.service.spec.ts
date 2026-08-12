@@ -46,6 +46,90 @@ describe('ClaudeKycService.statusFromFindings', () => {
     expect(svc.statusFromFindings(findings(), clean, 'standard')).toBe('VERIFIED');
   });
 
+  // ── Capture quality vs identity ────────────────────────────────────
+  // These encode the rule that an unreadable photo is a camera problem,
+  // not an accusation. Before this split, every case below returned
+  // REJECTED — costing the seller a strike and a failure SMS, and the
+  // admin an urgent review item, for a photo that was merely too dark.
+  describe('quality failures ask for a retake instead of rejecting', () => {
+    it('unreadable document → RETAKE, not REJECTED', () => {
+      expect(
+        svc.statusFromFindings(findings({ legibility: 20 }), clean, 'standard'),
+      ).toBe('RETAKE');
+    });
+
+    it('ID photo not clear enough → RETAKE, not REJECTED', () => {
+      expect(
+        svc.statusFromFindings(
+          findings({ document_photo_visible: 15 }),
+          clean,
+          'standard',
+        ),
+      ).toBe('RETAKE');
+    });
+
+    it('a real identity failure OUTRANKS poor quality — still REJECTED', () => {
+      // Both bad: we could see enough to know it is the wrong person, so a
+      // blurry capture must not launder that into a polite "try again".
+      expect(
+        svc.statusFromFindings(
+          findings({ same_person: 10, legibility: 20 }),
+          clean,
+          'standard',
+        ),
+      ).toBe('REJECTED');
+    });
+
+    it('a forged document OUTRANKS poor quality — still REJECTED', () => {
+      expect(
+        svc.statusFromFindings(
+          findings({ looks_genuine_sa_id: 12, legibility: 20 }),
+          clean,
+          'standard',
+        ),
+      ).toBe('REJECTED');
+    });
+
+    it('anti-spoofing survives: screen re-shoot REJECTS even with clean quality', () => {
+      expect(
+        svc.statusFromFindings(
+          findings({ selfie_live_capture: 20 }),
+          clean,
+          'standard',
+        ),
+      ).toBe('REJECTED');
+    });
+
+    it('a hard cross-check lie REJECTS even when the only score issue is quality', () => {
+      expect(
+        svc.statusFromFindings(findings({ legibility: 20 }), hard, 'standard'),
+      ).toBe('REJECTED');
+    });
+
+    it('anchored: a failed HA-photo match REJECTS, never downgraded to RETAKE', () => {
+      expect(
+        svc.statusFromFindings(
+          findings({ same_person_vs_ha_photo: 10, legibility: 20 }),
+          clean,
+          'anchored',
+        ),
+      ).toBe('REJECTED');
+    });
+
+    it('merely mediocre quality (50-69) still routes to a human, not a retake', () => {
+      expect(
+        svc.statusFromFindings(findings({ legibility: 60 }), clean, 'standard'),
+      ).toBe('UNDER_REVIEW');
+    });
+
+    it('retakeReason names what to fix rather than saying "failed"', () => {
+      const msg = svc.retakeReason(findings({ legibility: 20 }));
+      expect(msg).toMatch(/not readable/i);
+      expect(msg).toMatch(/good light/i);
+      expect(msg).not.toMatch(/reject|fail/i);
+    });
+  });
+
   it('REJECTED when any gate <50', () => {
     expect(
       svc.statusFromFindings(findings({ same_person: 30 }), clean, 'standard'),

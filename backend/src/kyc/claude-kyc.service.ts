@@ -90,7 +90,16 @@ B. LIVENESS IMPRESSION — score whether the selfie looks like a genuine live ca
 C. DOCUMENT OCR — read from the identity document: the 13-digit ID number, the surname, the given names, and the date of birth. Output the date of birth normalised to YYYY-MM-DD. If any field is not clearly readable, output null for it — NEVER guess.
 D. DOCUMENT AUTHENTICITY — score whether this looks like a genuine, untampered South African identity document: correct layout and fonts, coat of arms, no visible edits, pasted-over photos, or font inconsistencies. Green ID books are often OLD and WORN — judge signs of tampering, not ordinary wear. Classify document_type as SMART_ID_CARD, GREEN_BOOK, or OTHER.
 
-Scoring guidance: be honest, not generous. A blurry or illegible input scores low legibility (≤ 50). When you are genuinely uncertain whether two faces match, score in the 50-79 band (that routes to a human) rather than guessing high or low. Recommend REJECT only when you are confident something is wrong; recommend ADMIN_REVIEW when uncertain.
+Scoring guidance: be honest, not generous. When you are genuinely uncertain whether two faces match, score in the 50-79 band (that routes to a human) rather than guessing high or low. Recommend REJECT only when you are confident something is wrong; recommend ADMIN_REVIEW when uncertain.
+
+CRITICAL — SEPARATE "I CANNOT SEE" FROM "THIS IS THE WRONG PERSON". These are different failures with different consequences, and conflating them punishes honest people:
+- If the document photo is too dark, blurred, glared, cropped or low-resolution to judge, say so through LOW legibility and LOW document_photo_visible. Do NOT let that drag down same_person. An unreadable capture is a capture problem, not evidence of fraud.
+- Only score same_person low when you can actually SEE both faces well enough to judge and they genuinely look like different people.
+- If you cannot see well enough to have an opinion at all, same_person belongs in the 50-79 uncertain band — never below 50.
+
+Judging same_person — compare STABLE FACIAL STRUCTURE, not surface appearance. Weigh the geometry: eye spacing and shape, nose bridge and width, jawline and chin, ear position, brow ridge, the proportions between these. Explicitly DISCOUNT: hairstyle, facial hair, glasses, make-up, weight change, skin tone under different lighting, expression, image colour cast, and AGE. South African green ID books are frequently 10-25 years old, so a genuine holder can look substantially older than their document photo — that alone is NOT a mismatch. Smart ID cards carry holographic overlays that cause glare and colour shifts across the printed photo; judge through the glare rather than treating it as a different face.
+
+Judging selfie_live_capture — score SPOOF ARTEFACTS, not sharpness. Red flags are screen re-shoots (moiré, pixel grid, monitor bezels, backlight glow), a photograph of a printed photograph (paper texture, uniform print grain, visible edges), and obvious digital editing. A genuinely live capture that happens to be blurry, dim or grainy is STILL a live capture and must score high on this gate. Do not punish a bad camera.
 
 Output ONLY a single valid JSON object. The first character of your reply MUST be the literal '{'. No markdown fences, no commentary. Schema:
 {
@@ -181,6 +190,15 @@ export class ClaudeKycService {
     const msg = await this.client.messages.create({
       model: MODEL_VISION,
       max_tokens: 1500,
+      // temperature 0 — this was previously unset, so it defaulted to 1.0 and
+      // the SAME selfie + ID pair could score 68 on one run and 74 on the
+      // next. With hard cut-offs at 50 and 70 that sampling noise alone
+      // flipped people between VERIFIED, UNDER_REVIEW and REJECTED: a seller
+      // who retried got a different answer, and admins saw review items that
+      // were nothing but variance. Identity decisions must be reproducible —
+      // the same evidence has to give the same verdict every time, including
+      // when we re-run a scan to explain a decision afterwards.
+      temperature: 0,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userContent as never }],
     });
@@ -195,12 +213,44 @@ export class ClaudeKycService {
   /**
    * Combine Claude's gate scores with the server-side cross-check.
    * Hard cross-check fails always REJECT; soft fails cap at UNDER_REVIEW.
+   *
+   * RETAKE exists because the gates measure two different things and they
+   * must not share an outcome:
+   *
+   *   IDENTITY / AUTHENTICITY — is this the right person, is the document
+   *   real, is the selfie a live capture rather than a screen re-shoot.
+   *   Failing these is a real finding: reject it.
+   *
+   *   CAPTURE QUALITY — legibility and document_photo_visible. These say
+   *   "the photograph is too dark / blurred / glared to read", which is a
+   *   statement about the camera, not the person.
+   *
+   * Previously both sat in one list against one threshold, so an honest
+   * seller photographing a worn green ID book in bad light was REJECTED:
+   * they got a failure SMS, burned a strike toward the 3-strike admin
+   * escalation, and an urgent review alert landed on an admin's desk — for
+   * a photo nobody could read. That is the single largest source of
+   * pointless work for both sides, and it teaches sellers the check is
+   * broken rather than that their photo was dark.
+   *
+   * So quality is now assessed FIRST and answered with RETAKE, which the
+   * caller maps to: no strike, no failure SMS, no admin alert, status left
+   * PENDING, and specific guidance on what to fix. Deliberate consequence:
+   * someone can submit unreadable images repeatedly without accumulating
+   * strikes. That costs them nothing and gains them nothing — the payout
+   * gate is `!== VERIFIED`, so a retake loop never approves anyone, and the
+   * endpoint is already rate-limited. Being un-photographable is not fraud.
+   *
+   * Anti-spoofing is deliberately NOT treated as quality: selfie_live_capture
+   * stays an identity gate, and the prompt tells the model to score it on
+   * spoof artefacts (moiré, bezels, print grain) rather than sharpness, so a
+   * blurry-but-genuine capture passes it while a crisp screen re-shoot fails.
    */
   statusFromFindings(
     findings: KycClaudeFindings,
     crossCheck: CrossCheckResult,
     mode: 'standard' | 'anchored',
-  ): 'VERIFIED' | 'UNDER_REVIEW' | 'REJECTED' {
+  ): 'VERIFIED' | 'UNDER_REVIEW' | 'REJECTED' | 'RETAKE' {
     if (crossCheck.hardFails.length > 0) return 'REJECTED';
 
     // Coerce every gate to a finite number, defaulting to 0 — a string or
@@ -210,23 +260,67 @@ export class ClaudeKycService {
       const n = Number(v);
       return Number.isFinite(n) ? n : 0;
     };
-    const gates: number[] = [
+
+    const identityGates: number[] = [
       toGate(findings.face_match?.same_person),
       toGate(findings.face_match?.selfie_live_capture),
-      toGate(findings.face_match?.document_photo_visible),
       toGate(findings.document?.looks_genuine_sa_id),
-      toGate(findings.document?.legibility),
     ];
     if (mode === 'anchored') {
       // The anchored gate is the whole point of the tier — a missing score
       // (model omitted it) counts as 0 so it can never silently pass.
-      gates.push(toGate(findings.face_match?.same_person_vs_ha_photo));
+      identityGates.push(toGate(findings.face_match?.same_person_vs_ha_photo));
     }
+    const qualityGates: number[] = [
+      toGate(findings.document?.legibility),
+      toGate(findings.face_match?.document_photo_visible),
+    ];
 
-    if (gates.some((g) => g < AUTO_REJECT_CEILING)) return 'REJECTED';
+    // A confident identity/authenticity failure outranks everything: a
+    // screen re-shoot or a tampered document is a finding in its own right,
+    // and must not be excused as "the photo was bad".
+    if (identityGates.some((g) => g < AUTO_REJECT_CEILING)) return 'REJECTED';
+
+    // Nothing is provably wrong, but we could not read the document well
+    // enough to decide. Ask for a better photo instead of accusing anyone.
+    if (qualityGates.some((g) => g < AUTO_REJECT_CEILING)) return 'RETAKE';
+
     if (crossCheck.softFails.length > 0) return 'UNDER_REVIEW';
-    if (gates.every((g) => g >= AUTO_APPROVE_FLOOR)) return 'VERIFIED';
+    if (
+      [...identityGates, ...qualityGates].every((g) => g >= AUTO_APPROVE_FLOOR)
+    ) {
+      return 'VERIFIED';
+    }
     return 'UNDER_REVIEW';
+  }
+
+  /**
+   * Seller-facing guidance for a RETAKE, derived from whichever quality gate
+   * actually failed plus any issues the model listed. Deliberately concrete
+   * ("too dark to read") — "verification failed" tells someone nothing about
+   * what to do differently, which is how a retry loop starts.
+   */
+  retakeReason(findings: KycClaudeFindings): string {
+    const n = (v: unknown): number => {
+      const x = Number(v);
+      return Number.isFinite(x) ? x : 0;
+    };
+    const parts: string[] = [];
+    if (n(findings.document?.legibility) < AUTO_REJECT_CEILING) {
+      parts.push('the details on your ID are not readable');
+    }
+    if (n(findings.face_match?.document_photo_visible) < AUTO_REJECT_CEILING) {
+      parts.push('the photo on your ID is not clear enough');
+    }
+    const issues = [
+      ...(findings.document?.issues ?? []),
+      ...(findings.face_match?.issues ?? []),
+    ]
+      .filter((s) => typeof s === 'string' && s.trim().length > 0)
+      .slice(0, 2);
+    const what = parts.length > 0 ? parts.join(' and ') : 'we could not read your ID clearly';
+    const hint = issues.length > 0 ? ` (${issues.join('; ')})` : '';
+    return `We could not complete the check because ${what}${hint}. Please retake the photo in good light, with the whole card flat in frame and no glare or shadow across it — then try again.`;
   }
 
   /**

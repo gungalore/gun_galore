@@ -741,13 +741,41 @@ export class KycService {
     // Verdict: hard cross-check lies reject even without Claude; a missing
     // scan otherwise parks for a human; anchored sellers whose HA photo
     // pull failed also park (never silently downgraded).
-    let status: 'VERIFIED' | 'REJECTED' | 'UNDER_REVIEW';
+    let status: 'VERIFIED' | 'REJECTED' | 'UNDER_REVIEW' | 'RETAKE';
     if (crossCheck.hardFails.length > 0) {
       status = 'REJECTED';
     } else if (!findings || (tier === 'ANCHORED' && mode === 'standard')) {
       status = 'UNDER_REVIEW';
     } else {
       status = this.claudeKyc.statusFromFindings(findings, crossCheck, mode);
+    }
+
+    // RETAKE — the images were too poor to read, with nothing pointing at
+    // the wrong person or a forged document. That is a camera problem, so
+    // it must not look like a verdict: no attempt increment (no march
+    // toward the 3-strike escalation), no failure SMS, no admin alert, and
+    // kycStatus is left exactly as it was so the wizard stays open and the
+    // seller can simply try again. Returning early is what keeps all of
+    // that from happening — everything below this point is verdict
+    // machinery. The selfie is deliberately not persisted either: it is not
+    // evidence of anything and the next attempt supersedes it.
+    if (status === 'RETAKE') {
+      if (findings) {
+        this.log.log(
+          `KYC retake requested for ${clerkId} — capture quality too low to judge (no strike)`,
+        );
+        return {
+          success: false,
+          status: user.kycStatus,
+          message: this.claudeKyc.retakeReason(findings),
+        };
+      }
+      // Unreachable: statusFromFindings is only consulted when findings
+      // exist. Kept so RETAKE can never fall through to the kycStatus write
+      // below — it is not a member of the KycStatus enum, and a future edit
+      // that breaks that invariant should park the seller for a human
+      // rather than throw a Prisma error at them mid-verification.
+      status = 'UNDER_REVIEW';
     }
 
     const persistedFindings = {
