@@ -318,6 +318,11 @@ nothing worth moving.
 
 ### Reused
 
+> **Scope narrowed — see Phase 8.** This account is for LISTING PHOTOS ONLY. KYC identity
+> documents and selfies are stored on the VPS instead, because Cloudinary uploads are public
+> by default and the images sit in the United States. Do not point the KYC flow at this
+> account "for now"; that is how it becomes permanent.
+
 **11. Anthropic** — same key. Confirm the org has balance; a cold org with no balance means
 every seller fails KYC vision and every listing lands in manual review.
 
@@ -789,8 +794,9 @@ margin from the processing-fee base all look like tidy-up targets and are not.
 
 ## 5. The build, phased
 
-Phases 1–7 are the box and can be done in about a week. Phase 8 (Bob Go) runs in parallel
-and is the long pole. Phases 9–11 are the launch.
+Phases 1–7 are the box and can be done in about a week. Phase 8 (self-hosted KYC storage)
+is a day and must land before the first real seller verifies. Phase 9 (Bob Go) runs in
+parallel and is the long pole. Phases 10–12 are the launch.
 
 ---
 
@@ -1274,7 +1280,132 @@ powder chart once to warm it. The `pudo_lockers` index is being deleted (section
 
 ---
 
-### Phase 8 — Bob Go
+### Phase 8 — Self-hosted KYC storage
+
+**Do this before the first real seller verifies.** Once identity documents exist in a
+third-party account, moving them means copying identity documents around, and every copy is
+another place that can leak. On a clean slate the cost is a day; later it is a project with a
+compliance question attached.
+
+Listing photos are **not** in scope. They stay on Cloudinary — high volume, they genuinely
+benefit from a CDN and format negotiation, and they are not sensitive. This phase moves the
+KYC images only.
+
+#### Why
+
+Three problems, all in the same place.
+
+**1. Identity documents are on public URLs.** `backend/src/cloudinary/cloudinary.service.ts:31-35`
+sets `folder`, `resource_type` and a transformation, and nothing else. There is no
+`type: 'authenticated'` and no `access_mode`, and Cloudinary's default is public. So
+`User.kycIdDocumentUrl` and `User.kycSelfieUrl` are plain, unauthenticated HTTPS URLs holding
+a seller's ID document and face photo. The URL is unguessable, which is obscurity, not access
+control — anyone who obtains one from a log line, a screenshot, a support email or a database
+export can fetch it.
+
+**2. They cross the border.** The images are stored in the United States and, in the Claude
+flow, transmitted to a second US provider. That is a POPIA s72 cross-border transfer of
+identity and biometric data, and it is why `/privacy` now has to disclose it and the consent
+screen has to name both providers. Storing them on a South African VPS removes the transfer
+and the disclosure obligation with it.
+
+**3. Erasure does not erase.** `backend/src/users/users.service.ts:612-621` nulls the URL
+columns on account deletion and its own comment concedes the asset itself survives. A local
+file can simply be deleted, so self-hosting fixes this defect as a side effect rather than as
+another follow-up nobody schedules.
+
+#### What has to change
+
+Only two files read or write these columns — `kyc.service.ts` and `users.service.ts` — but
+three Cloudinary-shaped assumptions are baked into them and each needs replacing.
+
+| Coupling | Where | Replace with |
+|---|---|---|
+| PDF detection by URL shape: `kycIdDocumentUrl.includes('/raw/upload/')` | `kyc.service.ts:663` | An explicit `kycIdDocumentMime` column. Sniffing a vendor's URL structure to decide how to parse a file is fragile even without a migration. |
+| The ID document is handed to Anthropic as a URL it fetches itself: `{type:'url', url: this.jpegUrl(...)}` | `claude-kyc.service.ts:152`, helper at `:238-241` | Read the bytes from disk and send base64 inline, exactly as the selfie already is at `:163`. Delete `jpegUrl()` — it rewrites a Cloudinary path to force JPEG and has no meaning off Cloudinary. |
+| Column holds a fully-qualified URL | `schema.prisma` | Store a **relative storage key**, not a URL. The serving host changes; the key does not. |
+
+Note the second row is a security improvement on its own: today the document must be publicly
+fetchable *because* Anthropic fetches it. Sending bytes inline removes that requirement.
+
+#### Storage design
+
+```
+/var/lib/alloutdoor/kyc/          0700, owned by the app user, NOT under the repo
+  <uuid>.jpg | .png | .pdf
+```
+
+- **Filename is a fresh UUID**, never derived from the user id. A predictable path is an
+  enumeration hole, and the whole point is that possession of a URL grants nothing.
+- **Outside the deploy directory** so a redeploy, a `git clean` or a fresh clone cannot touch
+  it.
+- Volume is negligible: two files per seller at roughly 500 KB after the client-side resize.
+  A thousand verified sellers is about 1 GB.
+
+Schema:
+
+```prisma
+kycIdDocumentKey   String?   // was kycIdDocumentUrl — relative key, not a URL
+kycIdDocumentMime  String?   // replaces URL-shape sniffing
+kycSelfieKey       String?   // was kycSelfieUrl
+```
+
+#### Serving
+
+One authenticated endpoint, admin-only, streaming from disk:
+
+```
+GET /admin/kyc/:userId/document
+GET /admin/kyc/:userId/selfie
+```
+
+Behind `AdminJwtGuard`. Set `Cache-Control: private, no-store` and never emit these paths
+into a public template, an email or a log line. The seller does not need to re-read their own
+document, so do not build that route — every route that can serve an ID document is a route
+that can leak one.
+
+> Reminder from `docs/ARCHITECTURE.md`: a module with an `AdminJwtGuard` controller must
+> import `JwtModule.register({})` **and** provide the guard, or Nest crash-loops at boot while
+> `tsc` stays perfectly happy.
+
+#### Erasure
+
+Delete the file, then null the columns, in that order — a failed unlink must not leave a
+dangling row claiming the file is gone. This closes the defect at `users.service.ts:612-621`.
+When it works, remove the "not deleted today" wording from `/privacy` §3.2 — **and not
+before**. That sentence is currently true and must stay true until the code catches up.
+
+#### Backups
+
+These are special-category data and must not go in the ordinary nightly dump:
+
+- Encrypt at rest in the backup, off-box.
+- Retain to the KYC schedule, not the database schedule.
+- Never copy the directory to a developer machine, a shared drive or a support ticket.
+
+If that sounds like more care than a photo directory deserves — that is the point. It is why
+listing photos stay on Cloudinary and these do not.
+
+#### Verify
+
+1. Complete a verification end to end and confirm two files land in
+   `/var/lib/alloutdoor/kyc/` with UUID names and `0600`.
+2. `curl` the raw path with no admin session → **401/403**, never the image.
+3. `curl` the admin endpoint with a valid session → the image.
+4. Grep the application log for the storage key after a full verification run → **no hits**.
+5. Delete a test account → confirm both files are gone from disk, not merely unlinked in the
+   database.
+6. Confirm the Claude flow still returns a verdict with the document sent inline — that path
+   changed and it is the one most likely to silently regress to a URL.
+
+#### Effort
+
+**1 day**, with the caveat that step 6 needs a real Anthropic round-trip against a real
+document to prove the base64 path works. Do not mark this done on unit tests alone.
+
+---
+
+### Phase 9 — Bob Go
 
 Section 4 is the scope. Runs in parallel with everything above. The sequencing that matters:
 
@@ -1296,7 +1427,7 @@ money.**
 
 ---
 
-### Phase 9 — Dry run on a test hostname
+### Phase 10 — Dry run on a test hostname
 
 **Why.** There is no staging environment — `docs/ARCHITECTURE.md:32-34` is explicit that
 work goes from a laptop to production after a local type-check and build. This phase is the
@@ -1353,7 +1484,7 @@ you are not testing what visitors see.
 
 ---
 
-### Phase 10 — Go live
+### Phase 11 — Go live
 
 With no users, no orders and no in-flight parcels, this is not the fraught window the old
 plan described. It is: point DNS at the box and turn off the gate.
@@ -1378,7 +1509,7 @@ the pm2 config.
 
 ---
 
-### Phase 11 — After
+### Phase 12 — After
 
 1. **Old box:** stop the marketplace pm2 processes only. Two boxes both running the ~26
    schedulers means every cron fires twice.
