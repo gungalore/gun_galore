@@ -110,6 +110,55 @@ Output ONLY a single valid JSON object. The first character of your reply MUST b
   "recommendation_reason": "one sentence"
 }`;
 
+/**
+ * Best-of-3 consensus for borderline scans.
+ *
+ * The obvious implementation — call the same prompt three times — is worth
+ * nothing here, because temperature is 0 and the model is therefore
+ * deterministic: three identical requests return three identical answers at
+ * three times the cost. Self-consistency normally buys its diversity with a
+ * non-zero temperature, but that would surrender the reproducibility the
+ * temperature-0 fix exists to provide, and identity verdicts must be
+ * explicable after the fact ("re-run it and you get the same answer").
+ *
+ * So diversity comes from the ANALYSIS being different rather than the
+ * sampling being random. Each lens is a distinct, deterministic way of
+ * approaching the same evidence:
+ *
+ *   BASELINE   — the standard holistic scan.
+ *   SKEPTICAL  — actively hunts for reasons this is NOT the same person.
+ *   CHARITABLE — actively hunts for innocent explanations of differences.
+ *
+ * The skeptical and charitable lenses are deliberately biased in OPPOSITE
+ * directions and are used in a MEDIAN of three, never a mean. The median of
+ * {lean-strict, neutral, lean-lenient} discards whichever extreme is
+ * furthest out, so the pair cancel rather than compound — while a lone
+ * outlier from any one lens can no longer decide the verdict on its own.
+ * Balanced-and-opposed is the point; three sympathetic lenses would just
+ * shift the whole distribution.
+ *
+ * The whole thing stays deterministic: same images in, same three lenses,
+ * same median out.
+ */
+type Lens = 'BASELINE' | 'SKEPTICAL' | 'CHARITABLE';
+
+const LENS_INSTRUCTION: Record<Lens, string> = {
+  BASELINE: '',
+  SKEPTICAL: `
+ADDITIONAL INSTRUCTION FOR THIS PASS — adversarial review. Before scoring, actively look for evidence that the selfie and the document photo are DIFFERENT people, and for evidence the document or selfie has been manipulated. Check the facial geometry that cosmetic change cannot alter: inter-pupillary distance relative to face width, nose bridge width and profile, philtrum length, jaw and chin outline, ear position and shape where visible. State any genuine discrepancies in the issues array. Then score honestly on what you actually found — if the adversarial reading turns up nothing real, say so and score accordingly. Do NOT invent doubt.`,
+  CHARITABLE: `
+ADDITIONAL INSTRUCTION FOR THIS PASS — benefit-of-the-doubt review. Before scoring, assume this is an honest applicant and test whether every apparent difference has an innocent explanation: an ID photo taken 10-25 years ago, weight change, a different hairstyle or facial hair, glasses on or off, harsh or coloured lighting, camera lens distortion, low resolution, holographic glare across a smart-card photo. Then score honestly on what remains — if a real, structural mismatch survives every innocent explanation, score it low. Do NOT excuse a genuine mismatch.`,
+};
+
+/**
+ * A scan is borderline when any gate sits near a decision boundary, so a
+ * single reading is deciding something on a knife-edge. Covers all three
+ * bad outcomes: an UNDER_REVIEW that costs an admin a look, a REJECTED at
+ * 48 that refuses an honest seller, and a VERIFIED at 71 that lets someone
+ * through on one opinion.
+ */
+const BORDERLINE_MARGIN = 10;
+
 type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg'; data: string } }
@@ -143,7 +192,10 @@ export class ClaudeKycService {
    * error, non-JSON reply) — the caller maps a throw to UNDER_REVIEW so a
    * Claude outage can never auto-verify OR auto-reject anyone.
    */
-  async scan(input: KycScanInput): Promise<KycClaudeFindings> {
+  async scan(
+    input: KycScanInput,
+    lens: Lens = 'BASELINE',
+  ): Promise<KycClaudeFindings> {
     if (!this.client) throw new Error('Claude KYC unavailable — no API key');
     if (!input.documentUrl && !input.documentPdf) {
       throw new Error('Claude KYC scan called without a document');
@@ -199,7 +251,7 @@ export class ClaudeKycService {
       // the same evidence has to give the same verdict every time, including
       // when we re-run a scan to explain a decision afterwards.
       temperature: 0,
-      system: SYSTEM_PROMPT,
+      system: SYSTEM_PROMPT + LENS_INSTRUCTION[lens],
       messages: [{ role: 'user', content: userContent as never }],
     });
 
@@ -208,6 +260,198 @@ export class ClaudeKycService {
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('Claude KYC did not return JSON');
     return JSON.parse(match[0]) as KycClaudeFindings;
+  }
+
+  /**
+   * Run the baseline scan, and when it lands near a decision boundary,
+   * re-read the same evidence through the skeptical and charitable lenses
+   * and take the per-gate MEDIAN.
+   *
+   * Clear-cut cases (the large majority) cost exactly one call, as before.
+   * Only knife-edge cases pay for three, which is where the extra reading
+   * actually changes anything.
+   *
+   * The two extra lenses run CONCURRENTLY, so a borderline scan costs about
+   * two calls' latency rather than three — a seller is staring at a spinner
+   * while this happens.
+   *
+   * Failure of an extra lens is not fatal: whatever came back is merged, and
+   * a single surviving sample degrades to exactly the old behaviour. A
+   * consensus mechanism must never turn a working verification into a failed
+   * one.
+   */
+  async scanWithConsensus(
+    input: KycScanInput,
+  ): Promise<{ findings: KycClaudeFindings; samples: number; borderline: boolean }> {
+    const baseline = await this.scan(input, 'BASELINE');
+    if (!this.isBorderline(baseline, input.mode)) {
+      return { findings: baseline, samples: 1, borderline: false };
+    }
+
+    const extra = await Promise.allSettled([
+      this.scan(input, 'SKEPTICAL'),
+      this.scan(input, 'CHARITABLE'),
+    ]);
+    const ok = extra
+      .filter(
+        (r): r is PromiseFulfilledResult<KycClaudeFindings> =>
+          r.status === 'fulfilled',
+      )
+      .map((r) => r.value);
+    extra
+      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      .forEach((r) =>
+        this.logger.warn(
+          `KYC consensus lens failed (continuing with fewer samples): ${String(r.reason)}`,
+        ),
+      );
+
+    const all = [baseline, ...ok];
+    if (all.length === 1) {
+      return { findings: baseline, samples: 1, borderline: true };
+    }
+    return {
+      findings: this.mergeFindings(all, baseline),
+      samples: all.length,
+      borderline: true,
+    };
+  }
+
+  /** Any gate within BORDERLINE_MARGIN of either decision threshold. */
+  isBorderline(
+    findings: KycClaudeFindings,
+    mode: 'standard' | 'anchored',
+  ): boolean {
+    const lo = AUTO_REJECT_CEILING - BORDERLINE_MARGIN; // 40
+    const hi = AUTO_APPROVE_FLOOR + BORDERLINE_MARGIN; // 80
+    const gates = [
+      findings.face_match?.same_person,
+      findings.face_match?.selfie_live_capture,
+      findings.face_match?.document_photo_visible,
+      findings.document?.looks_genuine_sa_id,
+      findings.document?.legibility,
+      ...(mode === 'anchored'
+        ? [findings.face_match?.same_person_vs_ha_photo]
+        : []),
+    ];
+    return gates.some((v) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= lo && n <= hi;
+    });
+  }
+
+  /**
+   * Per-gate median across samples; majority vote on the OCR fields.
+   *
+   * Median, not mean: it is the statistic that ignores one wild reading
+   * entirely, which is the whole reason for taking three.
+   *
+   * The OCR fields get a majority vote rather than a median because they are
+   * strings, and this genuinely improves them — two lenses agreeing on a
+   * digit outvote one misreading it. That matters beyond the score, since
+   * the extracted ID number and date of birth feed the server-side
+   * cross-check against what the seller typed.
+   */
+  private mergeFindings(
+    all: KycClaudeFindings[],
+    baseline: KycClaudeFindings,
+  ): KycClaudeFindings {
+    const median = (vals: unknown[]): number => {
+      const nums = vals
+        .map((v) => Number(v))
+        .filter((n) => Number.isFinite(n))
+        .sort((a, b) => a - b);
+      if (nums.length === 0) return 0;
+      const mid = Math.floor(nums.length / 2);
+      return nums.length % 2 === 1
+        ? nums[mid]
+        : Math.round((nums[mid - 1] + nums[mid]) / 2);
+    };
+    const majority = <T>(vals: T[], fallback: T): T => {
+      const counts = new Map<string, { v: T; n: number }>();
+      vals
+        .filter((v) => v !== null && v !== undefined && v !== '')
+        .forEach((v) => {
+          const k = String(v);
+          counts.set(k, { v, n: (counts.get(k)?.n ?? 0) + 1 });
+        });
+      // Only override the baseline when a value actually won a vote (n >= 2);
+      // with three one-off readings there is no majority, so the deterministic
+      // baseline stands rather than an arbitrary pick.
+      let bestV: T | undefined;
+      let bestN = 0;
+      for (const c of counts.values()) {
+        if (c.n > bestN) {
+          bestN = c.n;
+          bestV = c.v;
+        }
+      }
+      return bestN >= 2 && bestV !== undefined ? bestV : fallback;
+    };
+    const unionIssues = (lists: (string[] | undefined)[]): string[] =>
+      [
+        ...new Set(
+          lists
+            .flatMap((l) => l ?? [])
+            .filter((s) => typeof s === 'string' && s.trim().length > 0),
+        ),
+      ].slice(0, 8);
+
+    const haScores = all
+      .map((f) => f.face_match?.same_person_vs_ha_photo)
+      .filter((v) => v !== undefined && v !== null);
+
+    return {
+      face_match: {
+        same_person: median(all.map((f) => f.face_match?.same_person)),
+        selfie_live_capture: median(
+          all.map((f) => f.face_match?.selfie_live_capture),
+        ),
+        document_photo_visible: median(
+          all.map((f) => f.face_match?.document_photo_visible),
+        ),
+        // Only carry the anchored score when at least one lens produced it —
+        // synthesising a 0 here would fail the anchored gate on a standard
+        // scan, and synthesising a pass would defeat the tier entirely.
+        ...(haScores.length > 0
+          ? { same_person_vs_ha_photo: median(haScores) }
+          : {}),
+        issues: unionIssues(all.map((f) => f.face_match?.issues)),
+      },
+      document: {
+        looks_genuine_sa_id: median(
+          all.map((f) => f.document?.looks_genuine_sa_id),
+        ),
+        document_type: majority(
+          all.map((f) => f.document?.document_type),
+          baseline.document?.document_type ?? null,
+        ),
+        extracted_id_number: majority(
+          all.map((f) => f.document?.extracted_id_number),
+          baseline.document?.extracted_id_number ?? null,
+        ),
+        extracted_surname: majority(
+          all.map((f) => f.document?.extracted_surname),
+          baseline.document?.extracted_surname ?? null,
+        ),
+        extracted_names: majority(
+          all.map((f) => f.document?.extracted_names),
+          baseline.document?.extracted_names ?? null,
+        ),
+        extracted_dob: majority(
+          all.map((f) => f.document?.extracted_dob),
+          baseline.document?.extracted_dob ?? null,
+        ),
+        legibility: median(all.map((f) => f.document?.legibility)),
+        issues: unionIssues(all.map((f) => f.document?.issues)),
+      },
+      overall_confidence: median(all.map((f) => f.overall_confidence)),
+      recommendation: majority(
+        all.map((f) => f.recommendation),
+        baseline.recommendation,
+      ),
+      recommendation_reason: `Consensus of ${all.length} readings: ${baseline.recommendation_reason}`,
+    };
   }
 
   /**

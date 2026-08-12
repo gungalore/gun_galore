@@ -680,17 +680,33 @@ export class KycService {
 
     // Vision scan — failure NEVER auto-verifies or auto-rejects.
     let findings: KycClaudeFindings | null = null;
+    // How many readings the verdict rests on (1 = clear-cut, 3 = borderline
+    // consensus). Persisted so an admin looking at a disputed decision can
+    // see whether it was a knife-edge call, and so we can measure later
+    // whether the consensus pass is actually earning its cost.
+    let consensusSamples = 0;
     try {
       if (isPdfDoc && !documentPdf) {
         throw new Error('PDF document bytes unavailable');
       }
-      findings = await this.claudeKyc.scan({
+      // Best-of-3 on borderline scores only: a clear-cut scan costs one
+      // call as before, and only a knife-edge one pays for three readings
+      // (skeptical + charitable lenses, per-gate median). See
+      // ClaudeKycService.scanWithConsensus.
+      const consensus = await this.claudeKyc.scanWithConsensus({
         selfieBase64,
         documentUrl: isPdfDoc ? undefined : user.kycIdDocumentUrl,
         documentPdf,
         mode,
         haPhotoBase64,
       });
+      findings = consensus.findings;
+      consensusSamples = consensus.samples;
+      if (consensus.borderline) {
+        this.log.log(
+          `KYC borderline for ${clerkId} — merged ${consensus.samples} readings`,
+        );
+      }
     } catch (err) {
       this.log.error(
         `Claude KYC scan failed for ${clerkId}: ${(err as Error).message}`,
@@ -786,6 +802,7 @@ export class KycService {
       },
       tier,
       mode,
+      consensusSamples,
     } as unknown as Prisma.InputJsonValue;
 
     // Guarded transition — mirrors submitFaceMatch so two concurrent

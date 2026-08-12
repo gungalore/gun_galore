@@ -39,6 +39,144 @@ const clean: CrossCheckResult = { pass: true, hardFails: [], softFails: [] };
 const soft: CrossCheckResult = { pass: false, hardFails: [], softFails: ['doc-dob-mismatch'] };
 const hard: CrossCheckResult = { pass: false, hardFails: ['dob-id-digit-mismatch'], softFails: [] };
 
+describe('ClaudeKycService borderline consensus', () => {
+  const svc = new ClaudeKycService();
+
+  // Only knife-edge scans pay for three readings. Clear-cut ones must stay
+  // at one call, or the cost of the whole flow triples for no benefit.
+  it('a confident pass is NOT borderline (stays a single call)', () => {
+    expect(svc.isBorderline(findings(), 'standard')).toBe(false);
+  });
+
+  it('a confident fail is NOT borderline', () => {
+    expect(svc.isBorderline(findings({ same_person: 5 }), 'standard')).toBe(false);
+  });
+
+  it.each([
+    ['just under the reject line', 48],
+    ['mid uncertain band', 60],
+    ['just over the approve line', 72],
+    ['at the lower margin edge', 40],
+    ['at the upper margin edge', 80],
+  ])('borderline: %s (%i)', (_label, score) => {
+    expect(svc.isBorderline(findings({ same_person: score }), 'standard')).toBe(true);
+  });
+
+  it('a borderline anchored score triggers consensus only in anchored mode', () => {
+    const f = findings({ same_person_vs_ha_photo: 62 });
+    expect(svc.isBorderline(f, 'anchored')).toBe(true);
+    // In standard mode the HA gate is not consulted, so it must not drag an
+    // otherwise-clear scan into a needless second and third call.
+    expect(svc.isBorderline(f, 'standard')).toBe(false);
+  });
+
+  // The median is the point: it discards a single wild reading rather than
+  // averaging it in, so one outlying lens cannot move the verdict.
+  it('median of three ignores a lone outlier', async () => {
+    const svcM = new ClaudeKycService();
+    const scores = [55, 58, 5]; // charitable/skeptical agree; one wild low
+    let i = 0;
+    jest
+      .spyOn(svcM, 'scan')
+      .mockImplementation(async () =>
+        findings({ same_person: scores[i++] ?? 55 }),
+      );
+    const out = await svcM.scanWithConsensus({
+      selfieBase64: 'x',
+      documentUrl: 'u',
+      mode: 'standard',
+    });
+    expect(out.samples).toBe(3);
+    expect(out.findings.face_match.same_person).toBe(55);
+    // 55 would have been UNDER_REVIEW; the outlying 5 would have REJECTED.
+    expect(svcM.statusFromFindings(out.findings, clean, 'standard')).toBe(
+      'UNDER_REVIEW',
+    );
+  });
+
+  it('a failing lens degrades to the surviving readings, never to an error', async () => {
+    const svcM = new ClaudeKycService();
+    let call = 0;
+    jest.spyOn(svcM, 'scan').mockImplementation(async () => {
+      call += 1;
+      if (call === 1) return findings({ same_person: 60 });
+      if (call === 2) throw new Error('lens timeout');
+      return findings({ same_person: 64 });
+    });
+    const out = await svcM.scanWithConsensus({
+      selfieBase64: 'x',
+      documentUrl: 'u',
+      mode: 'standard',
+    });
+    expect(out.samples).toBe(2);
+    expect(out.findings.face_match.same_person).toBe(62); // median of 2 = mean
+  });
+
+  it('all extra lenses failing falls back to the baseline reading alone', async () => {
+    const svcM = new ClaudeKycService();
+    let call = 0;
+    jest.spyOn(svcM, 'scan').mockImplementation(async () => {
+      call += 1;
+      if (call === 1) return findings({ same_person: 60 });
+      throw new Error('down');
+    });
+    const out = await svcM.scanWithConsensus({
+      selfieBase64: 'x',
+      documentUrl: 'u',
+      mode: 'standard',
+    });
+    expect(out.samples).toBe(1);
+    expect(out.findings.face_match.same_person).toBe(60);
+  });
+
+  it('OCR takes a majority vote — two lenses outvote one misread digit', async () => {
+    const svcM = new ClaudeKycService();
+    const ids = ['8001015009087', '8001015009087', '8OO1015009087'];
+    let i = 0;
+    jest.spyOn(svcM, 'scan').mockImplementation(async () => {
+      const f = findings({ same_person: 60 });
+      f.document.extracted_id_number = ids[i++] ?? ids[0];
+      return f;
+    });
+    const out = await svcM.scanWithConsensus({
+      selfieBase64: 'x',
+      documentUrl: 'u',
+      mode: 'standard',
+    });
+    expect(out.findings.document.extracted_id_number).toBe('8001015009087');
+  });
+
+  it('three disagreeing OCR reads keep the deterministic baseline, not an arbitrary pick', async () => {
+    const svcM = new ClaudeKycService();
+    const ids = ['8001015009087', '9001015009087', '7001015009087'];
+    let i = 0;
+    jest.spyOn(svcM, 'scan').mockImplementation(async () => {
+      const f = findings({ same_person: 60 });
+      f.document.extracted_id_number = ids[i++] ?? ids[0];
+      return f;
+    });
+    const out = await svcM.scanWithConsensus({
+      selfieBase64: 'x',
+      documentUrl: 'u',
+      mode: 'standard',
+    });
+    expect(out.findings.document.extracted_id_number).toBe(ids[0]);
+  });
+
+  it('never synthesises an anchored score that no lens produced', async () => {
+    const svcM = new ClaudeKycService();
+    jest
+      .spyOn(svcM, 'scan')
+      .mockImplementation(async () => findings({ same_person: 60 }));
+    const out = await svcM.scanWithConsensus({
+      selfieBase64: 'x',
+      documentUrl: 'u',
+      mode: 'standard',
+    });
+    expect(out.findings.face_match.same_person_vs_ha_photo).toBeUndefined();
+  });
+});
+
 describe('ClaudeKycService.statusFromFindings', () => {
   const svc = new ClaudeKycService();
 

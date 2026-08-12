@@ -264,8 +264,12 @@ describe('submitSelfieClaudeVerdict', () => {
     });
     const res = await service.submitSelfieClaudeVerdict('clerk_1', 'c2VsZmll');
     expect(verifyNow.verifyIdNumber).toHaveBeenCalled();
+    // Second arg is the consensus lens — the anchored scan now runs through
+    // scanWithConsensus, which labels each reading (BASELINE here; a
+    // borderline score would add the SKEPTICAL/CHARITABLE passes).
     expect(scanMock).toHaveBeenCalledWith(
       expect.objectContaining({ mode: 'anchored', haPhotoBase64: expect.any(String) }),
+      'BASELINE',
     );
     expect(res.status).toBe('VERIFIED');
     expect(
