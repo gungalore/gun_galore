@@ -131,7 +131,7 @@ session's changes]"`.
 Confirm the push succeeded. Do NOT touch main.
 
 **STEP 5 — DEPLOY TO SERVER**
-SSH alias: `ssh gungalore` (server IP `139.84.231.220`, user
+SSH alias: `ssh gungalore` (server IP `<ORIGIN_IP — see password manager>`, user
 `gungalore`, Vultr VPS). Project lives at `/home/gungalore/app`,
 pm2 services are named `gungalore-backend` and `gungalore-frontend`.
 
@@ -229,13 +229,24 @@ unfinished modules dark in production (see Feature Flags).
 - **Email:** Resend
 - **KYC:** VerifyNow
 - **Shipping:** Pudo (lockers) + The Courier Guy / TCG (door)
-- **Payments:** Stitch Express (only — see Payments). Hosted
-  payment-links + Svix webhooks. (Migrated off Peach 2026-06; do
-  NOT reintroduce Peach.)
+- **Payments:** **Peach Payments** — Checkout V2 + Payouts + BANV.
+  Deployed but INERT until `PEACH_*` creds are set and
+  `PAYMENT_MODE=paygate` + `PAYMENTS_LIVE=true`. See
+  `payments/peach.service.ts`, `PeachModule`, and the four `peach*`
+  columns on `Transaction`.
+
+  > ⚠️ This line used to read "Stitch Express (only) … do NOT
+  > reintroduce Peach", which has been backwards since 2026-07-23.
+  > Stitch was evaluated and dropped; Peach is the rail. A developer
+  > trusting the old text would rip out the live payment integration.
+  > `STITCH_CLIENT_ID` / `STITCH_CLIENT_SECRET` still sit in the env
+  > as dead vars, and a stale comment at
+  > `payments/transactions.service.ts:65` still says "the gateway is
+  > now Stitch" — both are leftovers, not instructions.
 - **AI:** Anthropic API (listing moderation, Ask GG, ballistic
   bullet lookup, listing-quality scoring)
 - **Accounting:** Zoho Books (live); Odoo planning is archived
-- **Hosting:** Vultr VPS at `139.84.231.220` — Nginx + PM2 (NOT
+- **Hosting:** Vultr VPS — Nginx + PM2 (NOT
   Hetzner — operator has corrected this multiple times)
 - **Error monitoring:** Sentry
 - **Uptime monitoring:** UptimeRobot
@@ -248,8 +259,8 @@ unfinished modules dark in production (see Feature Flags).
 ## Server Layout (Vultr)
 
 - App lives at `/home/gungalore/app` on the Vultr VPS
-  (`139.84.231.220`). SSH via the `gungalore` alias only —
-  `ssh gungalore` works, `ssh gungalore@139.84.231.220` bypasses
+  (`<ORIGIN_IP — see password manager>`). SSH via the `gungalore` alias only —
+  `ssh gungalore` works, `ssh gungalore@<ORIGIN_IP — see password manager>` bypasses
   the operator's local key config and prompts for a password they
   don't have.
 - The marketing landing page at `/var/www/html` is separate —
@@ -1468,9 +1479,9 @@ they survive any future memory wipe:
   Use "funds held" / "payment held" everywhere.
 - **Never expose real names to other users** — username only on
   public surfaces, no `@` prefix.
-- **Production server is Vultr, NOT Hetzner** (139.84.231.220).
+- **Production server is Vultr, NOT Hetzner** (<ORIGIN_IP — see password manager>).
 - **SSH via the `gungalore` alias** only — never
-  `gungalore@139.84.231.220` (bypasses the alias config).
+  `gungalore@<ORIGIN_IP — see password manager>` (bypasses the alias config).
 - **Ballistic Calculator is its own app** at
   `ballistics.gungalore.co.za` (own DB, pm2 services, nginx block,
   lives at `~/ballistics-app/`).
