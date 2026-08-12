@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   // is stated in three places (here, the intro line, and the sell-flow
   // HelpTip on /listings/new) — keep them in step.
   description:
-    'The four ways to sell on All Outdoor — Marketplace (Buy Now), Auction, Take a Shot and Swop / Trade — what each one is, who it suits, and how it works, so you list your item the right way.',
+    'The four ways to sell on All Outdoor — Buy Now, Auction, Take a Shot and Swop / Trade — what each one is, who it suits, and how it works, so you list your item the right way.',
   alternates: { canonical: '/how-selling-works' },
 };
 
@@ -21,7 +21,7 @@ const MODES: {
   how: string[];
 }[] = [
   {
-    name: 'Marketplace (Buy Now)',
+    name: 'Buy Now',
     tagline: 'A fixed price — the fastest, cleanest way to sell.',
     bestFor: [
       'Everyday gear with a known, fair market price',

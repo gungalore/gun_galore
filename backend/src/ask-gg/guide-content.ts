@@ -68,7 +68,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     ctas: [
       { label: 'How does buying work?', ask: 'Walk me through buying something on All Outdoor from start to finish, including how my payment is protected.' },
       { label: 'Start selling', href: '/listings/new' },
-      { label: 'Browse the marketplace', href: '/listings' },
+      { label: 'Browse the store', href: '/listings' },
     ],
   },
 
@@ -77,7 +77,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     title: 'Finding what you want',
     points: [
       'Use the filters — price range, brand/make and category — to narrow things fast.',
-      'Tell me what you’re after in plain words and I’ll search the marketplace for you.',
+      'Tell me what you’re after in plain words and I’ll search the store for you.',
       'Save a search and get notified when a matching item is listed.',
     ],
     ctas: [
@@ -326,7 +326,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     ],
     ctas: [
       { label: 'Compare my saved items', ask: 'Help me compare the items on my wishlist and decide which is the best buy.' },
-      { label: 'Browse the marketplace', href: '/' },
+      { label: 'Browse the store', href: '/' },
     ],
   },
 
@@ -334,7 +334,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     key: 'saved-searches',
     title: 'Saved searches',
     points: [
-      'Save any search and we’ll watch the marketplace for you — you get an alert when a new matching item is listed.',
+      'Save any search and we’ll watch the store for you — you get an alert when a new matching item is listed.',
       'It’s the fastest way to be first on a hard-to-find item without checking back every day.',
       'Toggle alerts on or off per search whenever you like.',
     ],
