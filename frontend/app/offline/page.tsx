@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import { av } from '@/lib/asset-version';
 import Link from 'next/link';
 
 // Offline fallback — the service worker serves this page in place of a
@@ -32,7 +33,7 @@ export default function OfflinePage() {
     >
       <div style={{ maxWidth: 400, textAlign: 'center' }}>
         <Image
-          src="/logo.svg"
+          src={av('/logo.svg')}
           alt="All Outdoor"
           width={200}
           height={40}

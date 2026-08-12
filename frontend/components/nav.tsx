@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { av } from '@/lib/asset-version';
 import Image from 'next/image';
 import { SignInButton, useUser, useClerk } from '@clerk/nextjs';
 import { useRouter, usePathname } from 'next/navigation';
@@ -131,7 +132,7 @@ export function Nav() {
             aria-label="All Outdoor"
           >
             <Image
-              src="/logo.svg"
+              src={av('/logo.svg')}
               alt="All Outdoor"
               width={220}
               height={44}
@@ -547,7 +548,7 @@ export function Nav() {
               style={{ borderBottom: '0.5px solid var(--border)' }}
             >
               <Image
-                src="/logo.svg"
+                src={av('/logo.svg')}
                 alt="All Outdoor"
                 width={160}
                 height={32}

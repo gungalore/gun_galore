@@ -1,3 +1,4 @@
+import { av } from '@/lib/asset-version';
 /**
  * Coming-soon gate page.
  *
@@ -43,7 +44,7 @@ export default function ComingSoonPage() {
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/logo-mark.svg"
+        src={av('/logo-mark.svg')}
         alt="All Outdoor"
         style={{ width: 96, height: 96, marginBottom: '2rem' }}
       />

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useId, FormEvent } from 'react';
+import { av } from '@/lib/asset-version';
 import Link from 'next/link';
 // We import the LEGACY useSignUp from @clerk/nextjs/legacy because Clerk 7
 // has a new "Signals"-based API that returns a SignUpFutureResource — that
@@ -383,7 +384,7 @@ export default function SignUpForm() {
       <div className="flex justify-center mb-6">
         <Link href="/" aria-label="All Outdoor">
           <img
-            src="/logo.svg"
+            src={av('/logo.svg')}
             alt="All Outdoor"
             style={{ height: 48, width: 'auto' }}
           />
@@ -792,7 +793,7 @@ function VerifyStep({
       <div className="flex justify-center mb-6">
         <Link href="/" aria-label="All Outdoor">
           <img
-            src="/logo.svg"
+            src={av('/logo.svg')}
             alt="All Outdoor"
             style={{ height: 48, width: 'auto' }}
           />

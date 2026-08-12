@@ -544,8 +544,13 @@ export class NotificationsService {
   // browser) can't reach localhost:3000. Override via EMAIL_LOGO_URL
   // when you want to point at a Cloudinary copy.
   private email(content: EmailContent): string {
+    // ?v= is a CACHE BUSTER, not decoration. Cloudflare fronts /public with a
+    // 30-day max-age, so replacing email-logo.png in place left the edge — and
+    // every mail client that had already cached it — serving the old artwork.
+    // Bump this whenever the file is replaced. Mirrors frontend/lib/asset-version.ts.
     const logoUrl =
-      process.env.EMAIL_LOGO_URL ?? 'https://gungalore.co.za/email-logo.png';
+      process.env.EMAIL_LOGO_URL ??
+      'https://gungalore.co.za/email-logo.png?v=20260812';
     return renderEmail(content, logoUrl);
   }
 

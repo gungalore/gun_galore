@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, Suspense, type CSSProperties } from 'react';
+import { av } from '@/lib/asset-version';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import Image from 'next/image';
@@ -642,7 +643,7 @@ function VerifyKycPageInner() {
       <div style={{ width: '100%', maxWidth: 390 }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <Image
-            src="/logo.svg"
+            src={av('/logo.svg')}
             alt="All Outdoor"
             width={180}
             height={36}

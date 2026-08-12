@@ -1,4 +1,5 @@
 import { SignIn } from '@clerk/nextjs';
+import { av } from '@/lib/asset-version';
 import Link from 'next/link';
 
 export default function SignInPage() {
@@ -8,7 +9,7 @@ export default function SignInPage() {
       style={{ background: 'var(--bg-deep)' }}
     >
       <Link href="/" aria-label="All Outdoor">
-        <img src="/logo.svg" alt="All Outdoor" style={{ height: 44, width: 'auto' }} />
+        <img src={av('/logo.svg')} alt="All Outdoor" style={{ height: 44, width: 'auto' }} />
       </Link>
       <SignIn
         signUpUrl="/sign-up"

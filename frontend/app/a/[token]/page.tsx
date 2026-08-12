@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { av } from '@/lib/asset-version';
 import { apiFetch } from '@/lib/api';
 import { ActionTokenError } from './error-screen';
 import { OfferDecisionPage, type OfferDecisionPayload } from './offer-decision';
@@ -167,7 +168,7 @@ function LogoHeader() {
     <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/logo-mark.svg"
+        src={av('/logo-mark.svg')}
         alt="All Outdoor"
         style={{ width: 56, height: 56, display: 'inline-block' }}
       />

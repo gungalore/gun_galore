@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { av } from '@/lib/asset-version';
 import { BRAND_NAME, BRAND_BLURB } from '@/lib/brand';
 import { Suspense } from 'react';
 import { ClerkProvider } from '@clerk/nextjs';
@@ -112,7 +113,7 @@ export const metadata: Metadata = {
     url: SITE_URL,
     images: [
       {
-        url: '/og-default.jpg',
+        url: av('/og-default.jpg'),
         width: 1200,
         height: 630,
         alt: `${BRAND_NAME} — ${BRAND_BLURB}`,
@@ -126,7 +127,7 @@ export const metadata: Metadata = {
       PUBLIC_DESCRIPTION,
     // summary_large_image needs a landscape image or X falls back to the
     // small card — same 1200x630 asset as Open Graph.
-    images: ['/og-default.jpg'],
+    images: [av('/og-default.jpg')],
   },
   alternates: {
     canonical: SITE_URL,
@@ -150,10 +151,14 @@ export const metadata: Metadata = {
   // browsers + iOS proper sized assets to choose from.
   icons: {
     icon: [
-      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+      // Cloudflare caches /public for 30 days, so these carry a version —
+      // see lib/asset-version.ts. `shortcut` pins favicon.ico too, which
+      // Next's file convention would otherwise emit unversioned.
+      { url: av('/icon-192.png'), sizes: '192x192', type: 'image/png' },
+      { url: av('/icon-512.png'), sizes: '512x512', type: 'image/png' },
     ],
-    apple: '/apple-icon-180.png',
+    shortcut: av('/favicon.ico'),
+    apple: av('/apple-icon-180.png'),
   },
 };
 
@@ -235,7 +240,7 @@ export default function RootLayout({
           <link
             rel="preload"
             as="image"
-            href="/hero-outdoor.webp"
+            href={av('/hero-outdoor.webp')}
             type="image/webp"
           />
           {/* iOS apple-touch-startup-image splash screens. iOS picks
@@ -367,24 +372,24 @@ export default function RootLayout({
 // Then paste the printed <link> list into this array (drop the
 // `public/` prefix on hrefs since /public is served at root).
 const APPLE_SPLASH_LINKS: Array<{ href: string; media: string }> = [
-  { href: '/splash/apple-splash-2048-2732.jpeg', media: '(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1668-2388.jpeg', media: '(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1536-2048.jpeg', media: '(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1640-2360.jpeg', media: '(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1668-2224.jpeg', media: '(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1620-2160.jpeg', media: '(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1488-2266.jpeg', media: '(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1320-2868.jpeg', media: '(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1206-2622.jpeg', media: '(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1260-2736.jpeg', media: '(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1290-2796.jpeg', media: '(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1179-2556.jpeg', media: '(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1170-2532.jpeg', media: '(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1284-2778.jpeg', media: '(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1125-2436.jpeg', media: '(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1242-2688.jpeg', media: '(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-828-1792.jpeg', media: '(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-1242-2208.jpeg', media: '(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-750-1334.jpeg', media: '(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
-  { href: '/splash/apple-splash-640-1136.jpeg', media: '(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-2048-2732.jpeg'), media: '(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1668-2388.jpeg'), media: '(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1536-2048.jpeg'), media: '(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1640-2360.jpeg'), media: '(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1668-2224.jpeg'), media: '(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1620-2160.jpeg'), media: '(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1488-2266.jpeg'), media: '(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1320-2868.jpeg'), media: '(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1206-2622.jpeg'), media: '(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1260-2736.jpeg'), media: '(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1290-2796.jpeg'), media: '(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1179-2556.jpeg'), media: '(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1170-2532.jpeg'), media: '(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1284-2778.jpeg'), media: '(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1125-2436.jpeg'), media: '(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1242-2688.jpeg'), media: '(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-828-1792.jpeg'), media: '(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-1242-2208.jpeg'), media: '(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-750-1334.jpeg'), media: '(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+  { href: av('/splash/apple-splash-640-1136.jpeg'), media: '(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
 ];

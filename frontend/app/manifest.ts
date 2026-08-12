@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import { av } from '@/lib/asset-version';
 
 // PWA manifest — served at /manifest.webmanifest by Next.js when this
 // file is present in the app dir. The combination of this manifest +
@@ -48,35 +49,35 @@ export default function manifest(): MetadataRoute.Manifest {
         short_name: 'Browse',
         description: 'Browse everything in stock',
         url: '/',
-        icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+        icons: [{ src: av('/icon-192.png'), sizes: '192x192', type: 'image/png' }],
       },
       {
         name: 'Sell an item',
         short_name: 'Sell',
         description: 'Create a new listing',
         url: '/listings/new',
-        icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+        icons: [{ src: av('/icon-192.png'), sizes: '192x192', type: 'image/png' }],
       },
       {
         name: 'Live auctions',
         short_name: 'Auctions',
         description: 'Browse open auctions',
         url: '/?listingType=AUCTION',
-        icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+        icons: [{ src: av('/icon-192.png'), sizes: '192x192', type: 'image/png' }],
       },
       {
         name: 'Daily Deals',
         short_name: 'Deals',
         description: 'Today’s limited-time deal',
         url: '/deals',
-        icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+        icons: [{ src: av('/icon-192.png'), sizes: '192x192', type: 'image/png' }],
       },
       {
         name: 'Prize Draw',
         short_name: 'Prize Draw',
         description: 'The GG PRO members’ prize draw',
         url: '/raffle',
-        icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+        icons: [{ src: av('/icon-192.png'), sizes: '192x192', type: 'image/png' }],
       },
     ],
     // SCREENSHOTS REMOVED at the All Outdoor rebrand.
@@ -92,25 +93,25 @@ export default function manifest(): MetadataRoute.Manifest {
     // fresh labels. The old PNGs are still in /public for reference.
     icons: [
       {
-        src: '/icon-192.png',
+        src: av('/icon-192.png'),
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/icon-512.png',
+        src: av('/icon-512.png'),
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/icon-maskable-192.png',
+        src: av('/icon-maskable-192.png'),
         sizes: '192x192',
         type: 'image/png',
         purpose: 'maskable',
       },
       {
-        src: '/icon-maskable-512.png',
+        src: av('/icon-maskable-512.png'),
         sizes: '512x512',
         type: 'image/png',
         purpose: 'maskable',

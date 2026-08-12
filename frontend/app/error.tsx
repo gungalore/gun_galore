@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { av } from '@/lib/asset-version';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -38,7 +39,7 @@ export default function GlobalError({
     >
       <div style={{ maxWidth: 480, textAlign: 'center' }}>
         <Image
-          src="/logo.svg"
+          src={av('/logo.svg')}
           alt="All Outdoor"
           width={200}
           height={40}

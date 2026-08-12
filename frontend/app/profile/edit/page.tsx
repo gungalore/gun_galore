@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, FormEvent, ReactNode } from 'react';
+import { av } from '@/lib/asset-version';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth, useUser } from '@clerk/nextjs';
@@ -1158,7 +1159,7 @@ export default function EditProfilePage() {
               }}
             >
               <Image
-                src="/logo.svg"
+                src={av('/logo.svg')}
                 alt="All Outdoor"
                 width={180}
                 height={36}

@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import { av } from '@/lib/asset-version';
 import Link from 'next/link';
 
 // Catches every unmatched route. Brand-styled, dark theme, no Clerk
@@ -22,7 +23,7 @@ export default function NotFound() {
     >
       <div style={{ maxWidth: 480, textAlign: 'center' }}>
         <Image
-          src="/logo.svg"
+          src={av('/logo.svg')}
           alt="All Outdoor"
           width={200}
           height={40}
