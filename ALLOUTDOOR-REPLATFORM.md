@@ -1043,6 +1043,36 @@ doing it twice.
 
 ### Phase 4 — Reference data
 
+> **EXECUTED 2026-08-12. Everything below is what actually happened, not what was
+> planned.** Five defects were hit on this exact path; all are fixed in the repo now,
+> so a rebuild from `33fdb84` onwards will not meet them. Recorded because they show
+> what kind of thing breaks.
+>
+> | What broke | Why |
+> |---|---|
+> | `prisma migrate deploy` died at migration 15 of 98 | 27 of 70 models had no `CREATE TABLE` anywhere. Replaced with a baseline — see the archive README. |
+> | `seed-cartridge-specs.ts` — `PrismaClientInitializationError` | Prisma 7 needs a driver adapter; three scripts were missed when the others were migrated. |
+> | Same script — `SASL: client password must be a string` | It never loaded `.env`, so `DATABASE_URL` was undefined and pg reported it as a password *type* error. |
+> | 8 cartridges differed from production by 1 bar | `maxPressureBar` is a float in the JSON and `Int?` in the column; Prisma rounded in one version and truncated in another. Now rounded explicitly. |
+> | Manual restore failed on a foreign key | `ReloadingManual.uploadedByAdminId` is NOT NULL and pointed at the old GunGalore admin. Remap it to this box's admin id. |
+>
+> **Two things the seed does that you must know about.** It creates a SUPERADMIN — it
+> now refuses under `NODE_ENV=production` unless `ADMIN_SEED_PASSWORD` is set, because
+> the old fallback password is committed to this repository. And `npm run seed` was
+> silently doing nothing at all until 2b7ea24 (`ts-node -e` swallowed the filename and
+> exited 0), which is very likely how the schema and taxonomy drifted in the first place.
+>
+> **Verified results, by comparison against live production rather than by row count:**
+> Categories 188 = 188 · CartridgeSpec **0 rows differ** · ManualLoad 50,789 = 50,789 ·
+> ReloadingManual 19 + 3,894 pages · 19 PDFs, all 626 MB checksum-identical, every
+> database row pointing at a file that exists · all 3,894 `tsvector` values populated by
+> the generated columns, and a real full-text query returns 740 hits.
+>
+> **`npm run seed:help` is BLOCKED until Clerk is live.** It attributes authorship to an
+> existing `User` row and there are none — nobody can sign in until Clerk is configured.
+> Run it in Phase 5 once the operator has signed in once, or set
+> `ASK_GG_KB_SEED_AUTHOR_EMAIL`.
+
 Order matters: categories first (other seeds reference them), then everything else.
 
 > **Two things verified against the live database on 2026-08-12, before the box existed.**
