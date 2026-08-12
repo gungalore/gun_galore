@@ -1045,6 +1045,22 @@ doing it twice.
 
 Order matters: categories first (other seeds reference them), then everything else.
 
+> **Two things verified against the live database on 2026-08-12, before the box existed.**
+>
+> **Do NOT import the `Setting` table.** It looks like configuration and is mostly runtime
+> state: 46 of its 54 rows are `cron:lastrun:*` timestamps, and importing stale ones either
+> suppresses a cron's first run or trips the watchdog. Of the eight that are real, seven are
+> feature flags to be set deliberately on the new box — and one is `house_seller_user_id`,
+> which points at a User row that will not exist. Carrying it breaks Daily Deals in a way
+> that looks like a code bug. Set the flags by hand, and set the house-seller id after the
+> house-seller account is created.
+>
+> **`Category` has a circular foreign key** (`parentId` is self-referencing), so a
+> `--data-only` dump will not restore without `--disable-triggers` or parent-ordered inserts.
+> This is another reason the seed path below is the right one — `prisma/seed.ts` builds the
+> tree in dependency order and carries the `publicVisible` flags and the `membersOnly`
+> carve-outs with it. Do not be tempted to dump this table.
+
 ```bash
 cd ~/app/backend
 
@@ -1069,9 +1085,23 @@ Then the two things that genuinely came off the old box:
 rsync -avz --progress gungalore:~/app/manuals/       alloutdoor:~/app/manuals/
 rsync -avz --progress gungalore:~/app/manual-inbox/  alloutdoor:~/app/manual-inbox/
 
-# The two exported tables
-scp /c/dev/gun-galore/_migration/reference-manuals.dump alloutdoor:/tmp/
-ssh alloutdoor "sudo -u postgres pg_restore -d alloutdoor_prod --no-owner --role=alloutdoor /tmp/reference-manuals.dump"
+# The reloading-manual tables — the ONLY database content that is not
+# reproducible from the repo. Already exported and verified on the old box:
+#   ~/ao-export/reference-data.sql      18 MB
+#   ~/ao-export/reference-data.sql.gz   3.5 MB
+#   sha256 begins 0e34a3a969160262bcf20a51
+# Dumped with no warnings and in dependency order (ReloadingManual before
+# ReloadingManualPage). CartridgeSpec is included as a belt-and-braces copy to
+# diff against the seeded result — it is NOT the import path.
+scp gungalore:~/ao-export/reference-data.sql.gz /tmp/
+scp /tmp/reference-data.sql.gz alloutdoor:/tmp/
+ssh alloutdoor "gunzip -c /tmp/reference-data.sql.gz | sudo -u postgres psql -d alloutdoor_prod"
+
+# Prove the seeded CartridgeSpec matches the live one — this is the table where
+# a 43-agent audit found 12 dangerous chamber/pressure mismatches.
+ssh alloutdoor "sudo -u postgres psql -d alloutdoor_prod -t -A -c   'SELECT count(*), md5(string_agg(name || coalesce(\"maxPressureBar\"::text,\"\"), \",\" ORDER BY name)) FROM \"CartridgeSpec\";'"
+# Compare against the same query on the old box. A mismatch means the seed and
+# the audited data have diverged — stop and find out why before going live.
 ```
 
 **Verify:**
