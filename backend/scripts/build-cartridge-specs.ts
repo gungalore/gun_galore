@@ -1,4 +1,26 @@
 /**
+ * ⚠️ DO NOT RUN THIS TO "REFRESH" THE SEED DATA. ⚠️
+ *
+ * The output of this script, prisma/seed-data/cartridge-specs.json, is NOT raw
+ * generator output. After it was last produced, a 43-agent adversarial audit
+ * found TWELVE cartridges where the fuzzy matcher below had attached the wrong
+ * chamber dimensions or the wrong maximum pressure to the wrong cartridge.
+ * Those were corrected by hand via an OVERRIDES map.
+ *
+ * Re-running this regenerates the file from the matcher and silently discards
+ * those corrections. The failure mode is a handloader reading a maximum
+ * pressure for a different cartridge than the one on their bench.
+ *
+ * The committed JSON is the source of truth. To load it, run
+ * scripts/seed-cartridge-specs.ts, which is what Phase 4 of the replatform
+ * runbook calls.
+ *
+ * If you genuinely must regenerate — a new GRT extraction, say — set
+ * I_HAVE_RE_VERIFIED_THE_OVERRIDES=yes, and then actually re-verify all twelve
+ * against a printed reference before shipping the result.
+ *
+ * ---
+ *
  * Build the CartridgeSpec seed from our GRT-extracted caliber data
  * (prisma/seed-data/grt-caliber.csv — our own Frida extraction of Gordon's
  * Reloading Tool) matched against Load Lab's canonical cartridgeKeys.
@@ -20,6 +42,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { cartridgeKey } from '../src/load-lab/recommended-loads.service';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 function parseCsvLine(line: string): string[] {
   const out: string[] = [];
@@ -78,7 +101,9 @@ async function loadLabKeys(
         return { key, display };
       });
   }
-  const prisma = new PrismaClient();
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg(process.env.DATABASE_URL!),
+  });
   try {
     const rows = await prisma.manualLoad.groupBy({
       by: ['cartridgeKey', 'cartridge'],
@@ -109,6 +134,22 @@ interface GrtRow {
 }
 
 async function main() {
+  // A comment is not a guard. Overwriting the audited JSON is a safety issue,
+  // not a tidiness one — see the header.
+  if (process.env.I_HAVE_RE_VERIFIED_THE_OVERRIDES !== 'yes') {
+    console.error(
+      '\nRefusing to run.\n\n' +
+        'This regenerates prisma/seed-data/cartridge-specs.json from the fuzzy\n' +
+        'matcher and DISCARDS the hand-corrected OVERRIDES — twelve cartridges\n' +
+        'where an audit found the wrong chamber dimensions or the wrong maximum\n' +
+        'pressure attached to the wrong cartridge.\n\n' +
+        'To LOAD the audited data (what you almost certainly want):\n' +
+        '  npx ts-node --transpile-only --project tsconfig.json scripts/seed-cartridge-specs.ts\n\n' +
+        'To genuinely regenerate, re-verify all twelve overrides first, then:\n' +
+        '  I_HAVE_RE_VERIFIED_THE_OVERRIDES=yes npx ts-node ... scripts/build-cartridge-specs.ts\n',
+    );
+    process.exit(1);
+  }
   const root = path.resolve(__dirname, '..');
   const csv = fs
     .readFileSync(path.join(root, 'prisma/seed-data/grt-caliber.csv'), 'utf8')

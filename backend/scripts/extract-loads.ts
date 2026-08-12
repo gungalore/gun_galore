@@ -11,6 +11,7 @@
  */
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { ReloadingService } from '../src/reloading/reloading.service';
 import { LoadDataExtractionService } from '../src/reloading/load-data-extraction.service';
 
@@ -47,7 +48,9 @@ async function main() {
     process.exit(1);
   }
 
-  const prisma = new PrismaClient();
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg(process.env.DATABASE_URL!),
+  });
   // Manual DI — no Nest bootstrap, so no scheduled jobs run.
   const reloading = new ReloadingService(prisma as never);
   const extractor = new LoadDataExtractionService(prisma as never, reloading);
