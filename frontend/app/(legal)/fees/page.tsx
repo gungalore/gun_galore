@@ -217,7 +217,7 @@ export default function FeesPage() {
       <h2>6. Currency and VAT</h2>
       <p>
         All prices are quoted and charged in South African Rand (ZAR).
-        GunGalore (Pty) Ltd is not currently registered for VAT and
+        ALLOUTDOOR (PTY) LTD is not currently registered for VAT and
         therefore does not charge VAT on its commission. Any VAT shown at
         checkout is the payment processor's own VAT on the processing fee.
       </p>

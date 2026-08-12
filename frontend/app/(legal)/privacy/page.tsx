@@ -20,7 +20,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Privacy Policy',
   description:
-    'How GunGalore (Pty) Ltd collects, uses and protects your personal information under POPIA.',
+    'How ALLOUTDOOR (PTY) LTD collects, uses and protects your personal information under POPIA.',
 };
 
 export default function PrivacyPage() {
@@ -30,7 +30,7 @@ export default function PrivacyPage() {
 
       <h2>1. Who we are</h2>
       <p>
-        This Privacy Policy explains how <strong>GunGalore (Pty) Ltd</strong>{' '}
+        This Privacy Policy explains how <strong>ALLOUTDOOR (PTY) LTD</strong>{' '}
         ("<strong>All Outdoor</strong>", "<strong>we</strong>",
         "<strong>us</strong>") collects, uses, shares and protects your
         personal information when you use the All Outdoor platform at{' '}
@@ -62,7 +62,7 @@ export default function PrivacyPage() {
       >
         <strong>Gerhard Johan Petrus Fourie</strong>
         <br />
-        GunGalore (Pty) Ltd, 36 Sterappel Crescent, Langeberg Glen,
+        ALLOUTDOOR (PTY) LTD, 36 Sterappel Crescent, Langeberg Glen,
         Cape Town, 7570
         <br />
         <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>

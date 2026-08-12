@@ -242,7 +242,7 @@ export function SiteFooter() {
         }}
       >
         <p style={{ margin: 0 }}>
-          © {year} GunGalore (Pty) Ltd · Registration No. 2026/393321/07 · 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa ·{' '}
+          © {year} ALLOUTDOOR (PTY) LTD · Registration No. 2026/639713/07 · 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa ·{' '}
           <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--text-tertiary-on-card)', textDecoration: 'underline' }}>
             support@gungalore.co.za
           </a>

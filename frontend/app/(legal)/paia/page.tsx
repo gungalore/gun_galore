@@ -15,7 +15,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'PAIA Manual',
   description:
-    'GunGalore (Pty) Ltd information manual under section 51 of the Promotion of Access to Information Act 2 of 2000.',
+    'ALLOUTDOOR (PTY) LTD information manual under section 51 of the Promotion of Access to Information Act 2 of 2000.',
 };
 
 export default function PaiaPage() {
@@ -27,7 +27,7 @@ export default function PaiaPage() {
       />
 
       <p>
-        This manual is published by <strong>GunGalore (Pty) Ltd</strong>{' '}
+        This manual is published by <strong>ALLOUTDOOR (PTY) LTD</strong>{' '}
         in terms of section 51 of the Promotion of Access to Information
         Act 2 of 2000 (<strong>"PAIA"</strong>). It tells you what
         records we hold, how to request access to them, and what to
@@ -45,9 +45,9 @@ export default function PaiaPage() {
           lineHeight: 1.7,
         }}
       >
-        <strong>Full registered name:</strong> GunGalore (Pty) Ltd
+        <strong>Full registered name:</strong> ALLOUTDOOR (PTY) LTD
         <br />
-        <strong>Registration number:</strong> 2026/393321/07
+        <strong>Registration number:</strong> 2026/639713/07
         <br />
         <strong>Trading as:</strong> All Outdoor
         <br />
@@ -86,7 +86,7 @@ export default function PaiaPage() {
       >
         <strong>Gerhard Johan Petrus Fourie</strong>
         <br />
-        GunGalore (Pty) Ltd, 36 Sterappel Crescent, Langeberg Glen,
+        ALLOUTDOOR (PTY) LTD, 36 Sterappel Crescent, Langeberg Glen,
         Cape Town, 7570
         <br />
         <a href="mailto:support@gungalore.co.za" style={{ color: 'var(--red)' }}>

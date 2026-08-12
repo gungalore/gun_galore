@@ -29,7 +29,7 @@ export default function ComplaintsPage() {
 
       <p>
         We take every complaint seriously. This page explains how to
-        raise a complaint with <strong>GunGalore (Pty) Ltd</strong>, how
+        raise a complaint with <strong>ALLOUTDOOR (PTY) LTD</strong>, how
         quickly we aim to respond, and — if we cannot resolve the matter
         to your satisfaction — which independent body you can escalate
         it to, depending on the subject.

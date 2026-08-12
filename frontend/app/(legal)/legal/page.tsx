@@ -96,7 +96,7 @@ export default function LegalIndexPage() {
 
       <p>
         This page collects every legal document and statutory
-        disclosure that applies to GunGalore (Pty) Ltd. Each document
+        disclosure that applies to ALLOUTDOOR (PTY) LTD. Each document
         is binding to the extent set out in its own text; together
         they form the legal framework of the Platform.
       </p>
@@ -163,9 +163,9 @@ export default function LegalIndexPage() {
         }}
       >
         <p style={{ margin: 0 }}>
-          <strong>Full registered name:</strong> GunGalore (Pty) Ltd
+          <strong>Full registered name:</strong> ALLOUTDOOR (PTY) LTD
           <br />
-          <strong>Registration number:</strong> 2026/393321/07
+          <strong>Registration number:</strong> 2026/639713/07
           <br />
           <strong>Trading as:</strong> All Outdoor
           <br />

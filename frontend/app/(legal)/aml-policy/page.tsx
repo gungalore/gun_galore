@@ -24,7 +24,7 @@ export default function AmlPolicyPage() {
       <h2>1. Why this policy exists</h2>
       <p>
         This document explains the anti-money-laundering
-        ("<strong>AML</strong>") controls GunGalore (Pty) Ltd applies
+        ("<strong>AML</strong>") controls ALLOUTDOOR (PTY) LTD applies
         voluntarily across the marketplace. All Outdoor is not a
         designated accountable institution, but we choose to disclose
         these controls publicly so buyers, sellers, partners and

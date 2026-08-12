@@ -76,7 +76,7 @@ export default function AboutPage() {
 
       <h2>Who runs it</h2>
       <p>
-        All Outdoor is operated by GunGalore (Pty) Ltd, a South African
+        All Outdoor is operated by ALLOUTDOOR (PTY) LTD, a South African
         private company, directed by Gerhard Johan Petrus Fourie.
       </p>
       <div
@@ -90,9 +90,9 @@ export default function AboutPage() {
         }}
       >
         <p style={{ margin: 0 }}>
-          <strong>Full registered name:</strong> GunGalore (Pty) Ltd
+          <strong>Full registered name:</strong> ALLOUTDOOR (PTY) LTD
           <br />
-          <strong>Registration number:</strong> 2026/393321/07
+          <strong>Registration number:</strong> 2026/639713/07
           <br />
           <strong>Trading as:</strong> All Outdoor
           <br />

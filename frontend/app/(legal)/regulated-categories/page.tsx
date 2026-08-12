@@ -31,7 +31,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Regulated Categories — Statutory Schedule',
   description:
-    'Statutory schedule identifying the legislation under which GunGalore (Pty) Ltd keeps records for regulated categories, and the categories of those records.',
+    'Statutory schedule identifying the legislation under which ALLOUTDOOR (PTY) LTD keeps records for regulated categories, and the categories of those records.',
   robots: { index: false, follow: false },
 };
 
@@ -46,7 +46,7 @@ export default function RegulatedCategoriesSchedulePage() {
       />
 
       <p>
-        This schedule is published by <strong>GunGalore (Pty) Ltd</strong>{' '}
+        This schedule is published by <strong>ALLOUTDOOR (PTY) LTD</strong>{' '}
         ("<strong>All Outdoor</strong>") as a supplement to our{' '}
         <a href="/privacy" style={linkStyle}>
           Privacy Policy

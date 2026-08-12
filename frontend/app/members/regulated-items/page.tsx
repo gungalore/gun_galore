@@ -653,7 +653,7 @@ export default function RegulatedItemsAnnexPage() {
         <a href="/paia" style={linkStyle}>
           PAIA manual
         </a>
-        , GunGalore (Pty) Ltd holds records in accordance with the FCA
+        , ALLOUTDOOR (PTY) LTD holds records in accordance with the FCA
         and the regulations made under it. These include
         dealer-transfer records; completed SAP 534 firearm-transfer
         forms; the particulars of the receiving licensed dealer; the

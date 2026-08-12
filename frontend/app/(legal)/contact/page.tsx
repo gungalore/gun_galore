@@ -11,7 +11,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Contact',
   description:
-    'How to reach GunGalore (Pty) Ltd — email, phone and registered company details.',
+    'How to reach ALLOUTDOOR (PTY) LTD — email, phone and registered company details.',
 };
 
 export default function ContactPage() {
@@ -20,7 +20,7 @@ export default function ContactPage() {
       <LegalDocHeader title="Contact us" lastUpdated="Effective 16 July 2026" />
 
       <p>
-        All Outdoor is operated by GunGalore (Pty) Ltd. You can reach us
+        All Outdoor is operated by ALLOUTDOOR (PTY) LTD. You can reach us
         by email or phone using the details below. We aim to respond
         within <strong>2 business days</strong>.
       </p>
@@ -61,9 +61,9 @@ export default function ContactPage() {
         }}
       >
         <p style={{ margin: 0 }}>
-          <strong>Full registered name:</strong> GunGalore (Pty) Ltd
+          <strong>Full registered name:</strong> ALLOUTDOOR (PTY) LTD
           <br />
-          <strong>Registration number:</strong> 2026/393321/07
+          <strong>Registration number:</strong> 2026/639713/07
           <br />
           <strong>Trading as:</strong> All Outdoor
           <br />
@@ -91,7 +91,7 @@ export default function ContactPage() {
       <p>
         Our full set of legal documents and statutory disclosures —
         including the Electronic Communications and Transactions Act
-        § 43 details for GunGalore (Pty) Ltd — is collected on the{' '}
+        § 43 details for ALLOUTDOOR (PTY) LTD — is collected on the{' '}
         <a href="/legal" style={{ color: 'var(--red)' }}>
           Legal &amp; compliance
         </a>{' '}

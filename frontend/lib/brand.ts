@@ -1,11 +1,16 @@
 // THE single source of truth for how this platform names itself.
 //
-// The site trades as ALL OUTDOOR — a new-and-secondhand outdoor store. The
-// registered company behind it is still GunGalore (Pty) Ltd, and ECT s43
-// requires the REGISTERED name (not the trading name) to be disclosed on every
-// page, so both live here and the footer renders "All Outdoor, a trading name
-// of GunGalore (Pty) Ltd". If/when CIPC approves a company-name change, that
-// is a one-line edit to LEGAL_ENTITY and nothing else moves.
+// The site trades as ALL OUTDOOR and the registered company IS
+// ALLOUTDOOR (PTY) LTD, reg 2026/639713/07 — a NEW entity registered at CIPC
+// 2026-08. Trading name and registered name now match, so the ECT s43
+// disclosure is a plain "ALLOUTDOOR (PTY) LTD (Reg. …)" rather than the
+// "trading as" form used while the company was still GunGalore (Pty) Ltd.
+//
+// GunGalore (Pty) Ltd (reg 2026/393321/07) is a DIFFERENT legal entity and is
+// being wound down. It must not appear anywhere in this codebase: contracts,
+// merchant accounts, the accounting ledger and the TPPP application all belong
+// to the new company now. If you find the old name in a legal page, it is a
+// bug, not history.
 //
 // Why a constant module and not a find-and-replace: the name appears in page
 // titles, OG tags, the PWA manifest, every transactional email and SMS, and
@@ -19,15 +24,15 @@
 /** Trading name. What users, crawlers and customers see everywhere. */
 export const BRAND_NAME = 'All Outdoor';
 
-/** Registered company — ECT s43 disclosure only. Swap after a CIPC change. */
-export const LEGAL_ENTITY = 'GunGalore (Pty) Ltd';
-export const LEGAL_REG_NO = '2026/393321/07';
+/** Registered company — ECT s43 disclosure. Matches the trading name. */
+export const LEGAL_ENTITY = 'ALLOUTDOOR (PTY) LTD';
+export const LEGAL_REG_NO = '2026/639713/07';
 
 /**
- * ECT s43 line. Uses the "trading as" form so the disclosure stays accurate
- * while the site presents under its trading name.
+ * ECT s43 line. The registered and trading names now match, so no "trading as"
+ * qualifier is needed — using one would imply a separate operating company.
  */
-export const LEGAL_DISCLOSURE = `${BRAND_NAME}, a trading name of ${LEGAL_ENTITY} (Reg. ${LEGAL_REG_NO})`;
+export const LEGAL_DISCLOSURE = `${LEGAL_ENTITY} (Reg. ${LEGAL_REG_NO})`;
 
 /** One-line self-description. STORE, not marketplace — the whole point of the
  *  repositioning. Auctions and offers remain features of the store rather than

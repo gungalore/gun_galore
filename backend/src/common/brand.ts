@@ -17,8 +17,8 @@
 export const BRAND_NAME = 'All Outdoor';
 
 /** Registered company. ECT s43 disclosure only. */
-export const LEGAL_ENTITY = 'GunGalore (Pty) Ltd';
-export const LEGAL_REG_NO = '2026/393321/07';
+export const LEGAL_ENTITY = 'ALLOUTDOOR (PTY) LTD';
+export const LEGAL_REG_NO = '2026/639713/07';
 
 /**
  * SMS prefix. Every outbound SMS opens with this so the recipient knows who

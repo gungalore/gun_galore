@@ -5,7 +5,7 @@
 //   - Protection of Personal Information Act 4 of 2013
 //
 // Conventions in this file:
-//   - "All Outdoor" / "we" / "us" / "our" = GunGalore (Pty) Ltd
+//   - "All Outdoor" / "we" / "us" / "our" = ALLOUTDOOR (PTY) LTD
 //   - "you" / "your" = any user of the platform
 //   - This page is PUBLIC. Category-specific statutory procedure for
 //     restricted categories lives in the members-only Regulated Items
@@ -23,7 +23,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Terms of Service',
   description:
-    'The contract governing your use of GunGalore (Pty) Ltd. Drafted under South African law.',
+    'The contract governing your use of ALLOUTDOOR (PTY) LTD. Drafted under South African law.',
 };
 
 export default function TermsPage() {
@@ -34,8 +34,8 @@ export default function TermsPage() {
       <h2>1. About us</h2>
       <p>
         These Terms of Service (<strong>"Terms"</strong>) form a binding
-        agreement between you and <strong>GunGalore (Pty) Ltd</strong>{' '}
-        (registration number <strong>2026/393321/07</strong>), a private
+        agreement between you and <strong>ALLOUTDOOR (PTY) LTD</strong>{' '}
+        (registration number <strong>2026/639713/07</strong>), a private
         company registered in the Republic of South Africa with its
         registered office at <strong>36 Sterappel Crescent, Langeberg
         Glen, Cape Town, 7570</strong>{' '}
@@ -329,7 +329,7 @@ export default function TermsPage() {
       <p>
         <strong>Daily Deals</strong> are limited-time offers in which
         All Outdoor itself is the seller of record: your purchase
-        contract for a Daily Deal is with GunGalore (Pty) Ltd, not
+        contract for a Daily Deal is with ALLOUTDOOR (PTY) LTD, not
         with a marketplace member. Deal purchases are delivered by
         courier from our supplier's warehouse within the delivery
         window shown on the deal, are covered by the same funds-held
@@ -509,7 +509,7 @@ export default function TermsPage() {
         <br />
         <strong>Telephone:</strong> {SUPPORT_PHONE_DISPLAY}
         <br />
-        <strong>Postal:</strong> GunGalore (Pty) Ltd, 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570
+        <strong>Postal:</strong> ALLOUTDOOR (PTY) LTD, 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570
       </p>
 
       <h2>24. ECT Act § 43 disclosures</h2>
@@ -518,8 +518,8 @@ export default function TermsPage() {
         and Transactions Act 25 of 2002:
       </p>
       <ul>
-        <li><strong>Full registered name:</strong> GunGalore (Pty) Ltd</li>
-        <li><strong>Registration number:</strong> 2026/393321/07</li>
+        <li><strong>Full registered name:</strong> ALLOUTDOOR (PTY) LTD</li>
+        <li><strong>Registration number:</strong> 2026/639713/07</li>
         <li><strong>Trading as:</strong> All Outdoor</li>
         <li><strong>Director:</strong> Gerhard Johan Petrus Fourie</li>
         <li><strong>Physical address:</strong> 36 Sterappel Crescent, Langeberg Glen, Cape Town, 7570, South Africa</li>
