@@ -91,20 +91,23 @@ export class ShippingController {
     return this.shipping.quoteForListing(body);
   }
 
-  // Priced pickup points near the buyer's address (Bob Go rail).
+  // The buyer's full delivery menu — door AND collection points, priced, in
+  // one call. The delivery option is the buyer's to decide, so this returns
+  // everything Bob Go will actually carry for this parcel and route rather
+  // than a seller-curated subset.
   //
   // POST, not GET, because it carries a delivery address — a GET would put the
   // buyer's street address in a URL, and URLs end up in logs and referrers.
-  @Post('pickup-points')
+  @Post('delivery-options')
   @HttpCode(200)
-  async pickupPoints(
+  async deliveryOptions(
     @Body()
     body: {
       listingId: string;
       deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>;
     },
   ) {
-    return this.shipping.bobgoPickupPoints(body.listingId, body.deliveryAddress);
+    return this.shipping.bobgoDeliveryOptions(body.listingId, body.deliveryAddress);
   }
 
   // ---------------------------------------------------------------

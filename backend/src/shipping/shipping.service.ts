@@ -57,6 +57,46 @@ const PROVINCE_LONG: Record<Province, string> = {
   WESTERN_CAPE: 'Western Cape',
 };
 
+/**
+ * The two courier delivery shapes. Everything else on ShippingMethod
+ * (DEALER_TRANSFER, PRIVATE_ARRANGE, COLLECTION, ON_SITE_SERVICE) is a
+ * non-courier hand-over and is NOT the buyer's to choose.
+ */
+const COURIER_METHODS = ['PUDO', 'TCG'] as const;
+
+/**
+ * Does this listing offer couriering at all?
+ *
+ * Operator decision (2026-08-13): the DELIVERY OPTION IS THE BUYER'S TO
+ * DECIDE. A seller who has opted into couriering no longer curates *which*
+ * courier option the buyer gets — door versus collection point is the buyer's
+ * call, and Bob Go's rate response is the authority on what is actually
+ * possible for that parcel and route.
+ *
+ * What the seller (and the law, and physics) still decide is whether the item
+ * is couriered AT ALL: firearms are dealer-transfer only, collection-only and
+ * dangerous-goods items stay collection-only, and a parcel too big for a
+ * locker simply never comes back with a pickup-point rate because Bob Go is
+ * size-aware. Those constraints enforce themselves; seller preference between
+ * two courier options does not need to.
+ *
+ * So: if a seller offered NO courier method, that is respected absolutely. If
+ * they offered ANY, the buyer gets the full set.
+ *
+ * ONLY ON THE BOB GO RAIL. On the legacy rail the seller's pick is not a
+ * preference between two deliveries — it is a choice about their OWN
+ * hand-over: PUDO means they drop at a locker and need no pickup address at
+ * all, TCG means a courier comes to them. Letting a buyer pick PUDO on a
+ * TCG-only listing would quote a locker drop the seller never agreed to, and
+ * picking TCG on a PUDO-only listing would quote against a pickup address that
+ * does not exist. Bob Go removes the distinction — it collects from an address
+ * either way — which is exactly what makes the choice the buyer's to make.
+ */
+function offersCourier(shippingMethods: string[]): boolean {
+  if (shippingMethods.length === 0) return true; // unset = no restriction
+  return shippingMethods.some((m) => (COURIER_METHODS as readonly string[]).includes(m));
+}
+
 export interface QuoteRequestBody {
   listingId: string;
   shippingMethod: ShippingMethod;
@@ -296,7 +336,23 @@ export class ShippingService {
         'This listing is missing parcel weight / dimensions. Ask the seller to update it.',
       );
     }
-    if (
+    const useBobGo = await this.settings.get(FLAGS.bobgoEnabled);
+
+    // On the Bob Go rail the buyer chooses the courier option — see
+    // offersCourier(). A seller who offered no courier at all is still
+    // respected; one who offered any gets the full set. On the legacy rail the
+    // seller's pick is honoured exactly as before, because there it describes
+    // their own hand-over rather than the buyer's preference.
+    const courierRequested = (COURIER_METHODS as readonly string[]).includes(
+      body.shippingMethod,
+    );
+    if (useBobGo && courierRequested) {
+      if (!offersCourier(listing.shippingMethods)) {
+        throw new BadRequestException(
+          'This item is not available for courier delivery — arrange collection with the seller.',
+        );
+      }
+    } else if (
       listing.shippingMethods.length > 0 &&
       !listing.shippingMethods.includes(body.shippingMethod)
     ) {
@@ -311,8 +367,6 @@ export class ShippingService {
       heightCm: listing.heightCm,
       weightGrams: listing.weightGrams,
     };
-
-    const useBobGo = await this.settings.get(FLAGS.bobgoEnabled);
 
     if (useBobGo && (body.shippingMethod === 'PUDO' || body.shippingMethod === 'TCG')) {
       // Bob Go needs a delivery address for BOTH slots — a pickup-point parcel
@@ -473,30 +527,38 @@ export class ShippingService {
   }
 
   /**
-   * Priced pickup points near a buyer's address, for the checkout picker.
+   * EVERY delivery option available to this buyer, priced, in one call.
    *
-   * Built from a QUOTE, not a directory. Bob Go returns pickup-point options
-   * already priced, already distance-ranked and already bookable (the location
-   * id is baked into the service code), so there is no "find points, then price
-   * them" round trip — and, unlike the Pudo directory, every point returned is
-   * one Bob Go has confirmed will take THIS parcel.
+   * This is the buyer's menu, and it is deliberately the whole menu: the
+   * operator's decision is that the delivery option is the BUYER'S to decide,
+   * so the door option and the collection points are returned together and the
+   * buyer picks. The seller does not curate it and neither does this method.
    *
-   * Deduped by location: rates are generated per location and the sandbox has
-   * been seen returning the same locker twice.
+   * Built from a QUOTE, not a directory. Bob Go returns options already priced,
+   * already distance-ranked and already bookable (the location id is baked into
+   * the service code), so there is no "find points, then price them" round
+   * trip — and every point returned is one Bob Go has confirmed will take THIS
+   * parcel, which the Pudo directory could never promise. A parcel too big for
+   * a locker simply comes back with no pickup points, so the size limit
+   * enforces itself rather than needing the seller to police it.
+   *
+   * An empty `door` AND empty `pickupPoints` means Bob Go serves neither for
+   * this route — distinct from the throw below, which means we could not ask.
    */
-  async bobgoPickupPoints(
+  async bobgoDeliveryOptions(
     listingId: string,
     deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>,
-  ): Promise<
-    Array<{
+  ): Promise<{
+    door: { priceCents: number; serviceName: string; serviceCode: string } | null;
+    pickupPoints: Array<{
       locationId: number;
       name: string;
       description?: string;
       distanceKm?: number;
       priceCents: number;
       serviceCode: string;
-    }>
-  > {
+    }>;
+  }> {
     const listing = await this.prisma.listing.findUnique({
       where: { id: listingId },
     });
@@ -557,14 +619,24 @@ export class ShippingService {
       );
     }
 
-    return pickupPointOptions(rates).map((r) => ({
-      locationId: r.pickupPointLocationId!,
-      name: r.serviceName,
-      description: r.description,
-      distanceKm: r.pickupPointDistanceKm,
-      priceCents: rateToQuote(r).priceCents,
-      serviceCode: r.serviceCode,
-    }));
+    const doorRate = selectRateForSlot(rates, 'TCG');
+    return {
+      door: doorRate
+        ? {
+            priceCents: rateToQuote(doorRate).priceCents,
+            serviceName: doorRate.serviceName,
+            serviceCode: doorRate.serviceCode,
+          }
+        : null,
+      pickupPoints: pickupPointOptions(rates).map((r) => ({
+        locationId: r.pickupPointLocationId!,
+        name: r.serviceName,
+        description: r.description,
+        distanceKm: r.pickupPointDistanceKm,
+        priceCents: rateToQuote(r).priceCents,
+        serviceCode: r.serviceCode,
+      })),
+    };
   }
 
   // P6.2 — quote ONE consolidated parcel for 2+ items from the SAME seller,
@@ -584,6 +656,7 @@ export class ShippingService {
     },
   ): Promise<ShippingQuote | null> {
     if (items.length === 0) return null;
+    const bobgoRail = await this.settings.get(FLAGS.bobgoEnabled);
     const listings = await this.prisma.listing.findMany({
       where: { id: { in: items.map((i) => i.listingId) } },
     });
@@ -609,7 +682,14 @@ export class ShippingService {
         // Any ineligible / dimensionless item → don't consolidate this group.
         return null;
       }
-      if (l.shippingMethods.length > 0 && !l.shippingMethods.includes(method)) {
+      // Same rule as the single-line quote, and gated the same way: the
+      // buyer's choice only overrides the seller's on the Bob Go rail.
+      if (bobgoRail) {
+        if (!offersCourier(l.shippingMethods)) return null;
+      } else if (
+        l.shippingMethods.length > 0 &&
+        !l.shippingMethods.includes(method)
+      ) {
         return null;
       }
       weightGrams += l.weightGrams * qty;

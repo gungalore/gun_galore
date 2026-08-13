@@ -67,7 +67,9 @@ const PICKUP = {
   pickupPointDistanceKm: 0.05,
 };
 
-function makeService(bobgoBehaviour: { rates?: unknown[]; throws?: Error } = {}) {
+function makeService(
+  bobgoBehaviour: { rates?: unknown[]; throws?: Error; flag?: boolean } = {},
+) {
   const prisma = {
     listing: {
       findUnique: jest.fn().mockResolvedValue(LISTING),
@@ -88,7 +90,7 @@ function makeService(bobgoBehaviour: { rates?: unknown[]; throws?: Error } = {})
     {} as never,
     {} as never,
     bobgo as never,
-    { get: jest.fn().mockResolvedValue(true) } as never, // bobgo_enabled ON
+    { get: jest.fn().mockResolvedValue(bobgoBehaviour.flag ?? true) } as never,
   );
   return { svc, bobgo, prisma };
 }
@@ -211,21 +213,97 @@ describe('quoteCombined on the Bob Go rail', () => {
   });
 });
 
-describe('bobgoPickupPoints', () => {
-  it('returns priced, deduped, nearest-first points', async () => {
+describe('bobgoDeliveryOptions — the buyer decides', () => {
+  it('returns the WHOLE menu: door and collection points together', async () => {
     const far = { ...PICKUP, pickupPointLocationId: 900, pickupPointDistanceKm: 9, totalPrice: 70 };
     const dupe = { ...PICKUP, totalPrice: 80 }; // same location 545, dearer
     const { svc } = makeService({ rates: [DOOR, far, PICKUP, dupe] });
 
-    const points = await svc.bobgoPickupPoints('L1', DELIVERY);
+    const opts = await svc.bobgoDeliveryOptions('L1', DELIVERY);
 
-    expect(points.map((p) => p.locationId)).toEqual([545, 900]);
-    expect(points[0].priceCents).toBe(6443); // cheaper of the two for 545
-    expect(points[0].serviceCode).toBe('bobgo_PP_3084_104_545_1');
+    expect(opts.door?.priceCents).toBe(11495);
+    expect(opts.pickupPoints.map((p) => p.locationId)).toEqual([545, 900]);
+    expect(opts.pickupPoints[0].priceCents).toBe(6443); // cheaper of two for 545
+    expect(opts.pickupPoints[0].serviceCode).toBe('bobgo_PP_3084_104_545_1');
   });
 
-  it('surfaces an outage as a retryable message', async () => {
-    const { svc } = makeService({ throws: new Error('Bob Go unreachable') });
-    await expect(svc.bobgoPickupPoints('L1', DELIVERY)).rejects.toThrow(/try again/i);
+  it('offers no collection point when the parcel fits none', async () => {
+    // Bob Go is size-aware, so an oversized parcel simply comes back with door
+    // rates only — the locker size limit enforces itself.
+    const { svc } = makeService({ rates: [DOOR] });
+    const opts = await svc.bobgoDeliveryOptions('L1', DELIVERY);
+    expect(opts.door).not.toBeNull();
+    expect(opts.pickupPoints).toEqual([]);
+  });
+
+  it('distinguishes "nothing serves this route" from "we could not ask"', async () => {
+    const { svc } = makeService({ rates: [] });
+    const opts = await svc.bobgoDeliveryOptions('L1', DELIVERY);
+    expect(opts.door).toBeNull();
+    expect(opts.pickupPoints).toEqual([]);
+
+    const outage = makeService({ throws: new Error('Bob Go unreachable') });
+    await expect(outage.svc.bobgoDeliveryOptions('L1', DELIVERY)).rejects.toThrow(
+      /try again/i,
+    );
+  });
+});
+
+describe('the seller no longer curates the courier option', () => {
+  it('quotes a collection point even when the seller only listed door', async () => {
+    const { svc } = makeService({ rates: [DOOR, PICKUP] });
+    const prisma = (svc as unknown as { prisma: { listing: { findUnique: jest.Mock } } })
+      .prisma;
+    prisma.listing.findUnique.mockResolvedValue({
+      ...LISTING,
+      shippingMethods: ['TCG'],
+    });
+    const q = await svc.quoteForListing({
+      listingId: 'L1',
+      shippingMethod: 'PUDO',
+      deliveryAddress: DELIVERY,
+    });
+    expect(q.priceCents).toBe(6443);
+  });
+
+  it('still refuses a courier when the seller offered none at all', async () => {
+    // Collection-only stays the seller's (and physics') call.
+    const { svc } = makeService({ rates: [DOOR, PICKUP] });
+    const prisma = (svc as unknown as { prisma: { listing: { findUnique: jest.Mock } } })
+      .prisma;
+    prisma.listing.findUnique.mockResolvedValue({
+      ...LISTING,
+      shippingMethods: ['COLLECTION'],
+    });
+    await expect(
+      svc.quoteForListing({
+        listingId: 'L1',
+        shippingMethod: 'TCG',
+        deliveryAddress: DELIVERY,
+      }),
+    ).rejects.toThrow(/not available for courier/i);
+  });
+});
+
+describe("the LEGACY rail still honours the seller's pick", () => {
+  it('refuses a courier option the seller did not offer', async () => {
+    // Not a preference there — PUDO means the seller drops at a locker and may
+    // have no pickup address at all, TCG means a courier comes to them. The
+    // buyer-decides rule must not leak onto that rail.
+    const { svc } = makeService({ rates: [DOOR, PICKUP], flag: false });
+    const prisma = (svc as unknown as { prisma: { listing: { findUnique: jest.Mock } } })
+      .prisma;
+    prisma.listing.findUnique.mockResolvedValue({
+      ...LISTING,
+      shippingMethods: ['TCG'],
+    });
+    await expect(
+      svc.quoteForListing({
+        listingId: 'L1',
+        shippingMethod: 'PUDO',
+        toLockerId: 'CG929',
+        deliveryAddress: DELIVERY,
+      }),
+    ).rejects.toThrow(/not offering/i);
   });
 });

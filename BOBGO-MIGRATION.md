@@ -356,6 +356,50 @@ the backstop for anything the webhook misses.
 
 ---
 
+## Who chooses the delivery option
+
+**Operator decision, 2026-08-13: the delivery option is the BUYER'S to decide.**
+
+The seller no longer curates door versus collection point. What still is not
+the buyer's call — because it is law, physics or a genuine seller constraint:
+
+- firearms are dealer-transfer only (absolute)
+- collection-only and dangerous-goods items stay collection-only
+- a seller who offered **no** courier at all is respected absolutely
+- a parcel too big for a locker never comes back with a pickup-point rate,
+  because Bob Go is size-aware — the limit enforces itself rather than needing
+  the seller to police it
+
+`POST /shipping/delivery-options` returns the whole menu in one call — the door
+option and every nearby collection point, priced and distance-ranked — so the
+buyer picks from what Bob Go will actually carry.
+
+### Why this is gated on the Bob Go rail
+
+On the LEGACY rail the seller's pick is **not** a preference between two
+deliveries; it describes their own hand-over. `PUDO` means they drop at a locker
+and may have no pickup address at all. `TCG` means a courier comes to them.
+Letting a buyer pick PUDO on a TCG-only listing would quote a locker drop the
+seller never agreed to; picking TCG on a PUDO-only listing would quote against a
+pickup address that does not exist.
+
+Bob Go removes that distinction — it collects from an address either way — which
+is precisely what makes the choice the buyer's to make. So the rule applies only
+when the flag is on, and there is a regression test pinning the legacy behaviour.
+
+### What this leaves outstanding
+
+- **The sell form still asks.** Sellers are shown Pudo/TCG pills whose answer
+  the Bob Go rail now ignores. It cannot simply be removed, because the same
+  form drives the live legacy rail where the answer still matters — so it needs
+  to become flag-aware, not deleted.
+- **Every courier listing now needs a pickup address.** `pickupStreet` is
+  optional today, so locker-only listings may have none; under Bob Go those
+  cannot be quoted at all. Needs a count against production and a seller nudge
+  before the flag flips.
+
+---
+
 ## Open questions
 
 ### Answered by the accepted shipment (16625)
