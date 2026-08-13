@@ -39,13 +39,30 @@ export class BobGoWebhookService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Statuses we have actually seen from Bob Go, and what each means.
+   * Bob Go tracking status -> our ShippingStatus.
    *
-   * DELIBERATELY an allowlist of observed strings, not a pattern match.
-   * Anything absent is reported, not guessed.
+   * DELIBERATELY an allowlist, not a pattern match. status-map.ts collapses by
+   * substring, which is how an unseen "ready_for_pickup" would be read as
+   * OUT_FOR_DELIVERY and "expired" as a terminal DELIVERY_FAILED.
+   *
+   * Provenance is tracked per entry, because it is the difference between
+   * evidence and inference:
+   *
+   *   OBSERVED — arrived in a real `status` field on a real webhook.
+   *   CANONICAL — a key of Bob Go's own `tracking_steps` object, which
+   *     enumerates the lifecycle it models (created 1, collected 2,
+   *     in-transit 3, out-for-delivery 4, delivered 5). These are Bob Go's
+   *     names for its own stages, so they are far better than a guess — but
+   *     we have not yet seen one arrive as a `status`, so they are labelled
+   *     rather than silently mixed in with what we have proven.
    */
   private static readonly KNOWN_TRACKING_STATUS: Record<string, string> = {
-    'pending-collection': 'PENDING',
+    'pending-collection': 'PENDING', // OBSERVED 2026-08-13
+    created: 'PENDING', // CANONICAL (tracking_steps step 1)
+    collected: 'COLLECTED', // CANONICAL (step 2)
+    'in-transit': 'IN_TRANSIT', // CANONICAL (step 3)
+    'out-for-delivery': 'OUT_FOR_DELIVERY', // CANONICAL (step 4)
+    delivered: 'DELIVERED', // CANONICAL (step 5)
   };
 
   async handle(
@@ -119,6 +136,15 @@ export class BobGoWebhookService {
   private async onTracking(
     body: Record<string, unknown>,
   ): Promise<{ handled: boolean }> {
+    // WATCH THE IDENTIFIER. On this topic — and only this topic — `id` is the
+    // TRACKING REFERENCE ("UASSW3HJ"), not the numeric shipment id every other
+    // payload carries. Verified: a single booking produced four events keyed on
+    // 16626 and one keyed on UASSW3HJ.
+    //
+    // That is convenient rather than awkward: Transaction.trackingReference is
+    // exactly what the existing poll and both legacy webhooks already match on.
+    // But it means a query like `WHERE shipmentId = '16626'` will NOT find the
+    // tracking rows, so the column holds whichever identifier the topic used.
     const shipmentId = this.shipmentIdOf(body);
     const status = String(body.status ?? '').trim().toLowerCase();
     this.record('tracking/updated', body, shipmentId);

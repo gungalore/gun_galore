@@ -2263,9 +2263,13 @@ model PushSubscription {
 model BobGoWebhookEvent {
   id         String   @id @default(cuid())
   topic      String
-  // Bob Go's shipment id, when the payload carried one. Nullable because an
-  // unrecognised topic may not, and a payload we cannot attribute is still
-  // worth keeping.
+  // WHICHEVER identifier the topic carried. Most topics send the numeric
+  // shipment id ("16626"); `tracking/updated` sends the TRACKING REFERENCE
+  // ("UASSW3HJ") in the same `id` field. Verified: one booking produced four
+  // events keyed on the number and one keyed on the reference. So a query for
+  // a numeric id will NOT return that shipment's tracking rows — look them up
+  // by trackingReference too. Nullable: an unrecognised topic may carry
+  // neither, and a payload we cannot attribute is still worth keeping.
   shipmentId String?
   payload    Json
   createdAt  DateTime @default(now())

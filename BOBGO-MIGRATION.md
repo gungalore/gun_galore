@@ -249,7 +249,51 @@ Payloads land whole in `BobGoWebhookEvent`. The receiver applies ONLY statuses
 it has actually observed and logs everything else loudly — that table is the
 evidence `status-map.ts` should be widened from.
 
-### Registration is blocked — the API silently no-ops
+### Registered and PROVEN LIVE (2026-08-13)
+
+All five subscriptions are **Active** on the sandbox account, registered in the
+portal. A single booking (shipment 16626) produced **five webhook deliveries in
+four seconds**, all captured in `BobGoWebhookEvent`:
+
+```
+shipment_submission_status/updated   16626      pending-submission
+shipment_charged_amount/updated      16626
+shipment_submission_status/updated   16626      success
+shipment_health_status/updated       16626      warning-late-collection
+tracking/updated                     UASSW3HJ   pending-collection
+```
+
+**The vocabulary is no longer guesswork.** Bob Go's own `tracking_steps` object
+enumerates the lifecycle it models:
+
+| step | key | our ShippingStatus |
+|---|---|---|
+| 1 | `created` | PENDING |
+| 2 | `collected` | COLLECTED |
+| 3 | `in-transit` | IN_TRANSIT |
+| 4 | `out-for-delivery` | OUT_FOR_DELIVERY |
+| 5 | `delivered` | DELIVERED |
+
+It maps one-to-one onto the existing enum. Note there is **no ready-for-pickup
+step on a door shipment** — that stays unmapped until a locker booking succeeds.
+
+Two more things the live events taught us:
+
+- **A fourth submission status: `pending-submission`** (after `pending-rates`,
+  `success`, `no-rates`). The fail-closed allowlist handled it correctly
+  without a code change, which is the design working as intended.
+- **On `tracking/updated`, and only there, `id` is the TRACKING REFERENCE**
+  (`UASSW3HJ`), not the numeric shipment id the other four topics send. That is
+  convenient — `Transaction.trackingReference` is what the poll already matches
+  on — but it means a query by numeric id will not return a shipment's tracking
+  rows.
+- There is a **public tracking page**: `https://track.sandbox.bobgo.co.za/<ref>`.
+
+Bob Go can also **sign payloads** — a `bobgo-webhook-signature` header, keyed on
+a secret generated in the portal. Not yet enabled; the path secret is doing the
+authentication today. Worth upgrading to HMAC verification.
+
+### How registration works (the API route is a trap)
 
 The create contract was reverse-engineered to
 `{ topic, delivery_url, status: "active"|"inactive" }` — each field name came
@@ -269,10 +313,9 @@ is the third time Bob Go has returned a success-shaped response that isn't** —
 after the 201 for refused shipments and `app_status: "completed"` on a failure.
 It is a pattern worth assuming holds elsewhere in their API.
 
-Remaining route: register the five subscriptions in the **Bob Go portal UI**,
-or ask Bob Go why `POST /webhooks` no-ops. Until then the 5-minute poll remains
-the only resolution path — which works, but leaves the status vocabulary
-unobserved.
+Registration therefore has to happen in the **portal** (Settings → Webhook
+subscriptions), which is where the five above were created. The poll remains as
+the backstop for anything the webhook misses.
 
 ---
 

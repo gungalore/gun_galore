@@ -55,13 +55,33 @@ describe('BobGoWebhookService', () => {
     it('refuses to apply a status it has never seen', async () => {
       // status-map.ts collapses by substring, so an unseen "ready_for_pickup"
       // would otherwise be read as OUT_FOR_DELIVERY and the buyer told their
-      // parcel is coming while it sits in a locker.
+      // parcel is coming while it sits in a locker. Bob Go's own lifecycle has
+      // no ready-for-pickup step for a DOOR shipment, and we have never seen a
+      // successful locker booking — so this stays unmapped until we do.
       const { svc } = makeService();
       const res = await svc.handle('tracking/updated', {
         id: 16625,
         status: 'ready_for_pickup',
       });
       expect(res.handled).toBe(false);
+    });
+
+    it('accepts the lifecycle Bob Go documents in tracking_steps', async () => {
+      // created 1 -> collected 2 -> in-transit 3 -> out-for-delivery 4 ->
+      // delivered 5, read straight off a real tracking payload.
+      const { svc } = makeService();
+      for (const s of ['created', 'collected', 'in-transit', 'out-for-delivery', 'delivered']) {
+        const res = await svc.handle('tracking/updated', { id: 'UASSW3HJ', status: s });
+        expect(res.handled).toBe(true);
+      }
+    });
+
+    it('keys a tracking event on the tracking reference, not a numeric id', async () => {
+      // On this topic alone, `id` is the tracking reference.
+      const { svc, created } = makeService();
+      await svc.handle('tracking/updated', { id: 'UASSW3HJ', status: 'pending-collection' });
+      await settle();
+      expect((created[0] as { shipmentId: string }).shipmentId).toBe('UASSW3HJ');
     });
 
     it('keeps the raw payload of an unmapped status for review', async () => {
