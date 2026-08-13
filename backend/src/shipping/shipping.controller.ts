@@ -97,6 +97,19 @@ export class ShippingController {
     return this.shipping.quoteForListing(body);
   }
 
+  // What the SELL FORM should ask a seller about couriering.
+  //
+  // Exists so the sell form never needs to read a feature flag. On the legacy
+  // rail the seller genuinely chooses their own hand-over (drop at a locker vs
+  // wait for a courier), so they pick. On the Bob Go rail a courier collects
+  // from their address either way and the buyer chooses how they receive it,
+  // so there is only one thing to opt into and asking again would be asking a
+  // question whose answer we ignore.
+  @Get('seller-courier-model')
+  async sellerCourierModel() {
+    return this.shipping.sellerCourierModel();
+  }
+
   // The failure ticklist, so the admin UI renders exactly the reasons the
   // policy knows about instead of keeping its own copy that can drift.
   // `sellerPays` is surfaced so the UI can warn BEFORE a reason is submitted

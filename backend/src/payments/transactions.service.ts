@@ -6,6 +6,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  isShipmentFailureReason,
+  requiresRemeasure,
+  SHIPMENT_FAILURE_LABEL,
+} from '../common/shipment-failure-policy';
 import { FeeCalculator, SHIPPING_HANDLING_FEE_CENTS } from './fee.calculator';
 import { PeachService, PeachPaymentResult } from './peach.service';
 import { evaluateBanvMatches, banvFlagsSummary } from './peach-banks';
@@ -2803,6 +2808,76 @@ export class TransactionsService {
     return {
       pdf,
       filename: `waybill-${tx.trackingReference ?? transactionId}.pdf`,
+    };
+  }
+
+  /**
+   * Seller re-books a shipment that failed.
+   *
+   * Ownership-checked here rather than in ShippingService, which has no notion
+   * of who is asking — same split the waybill endpoint uses.
+   */
+  async rebookShipmentForSeller(
+    transactionId: string,
+    sellerClerkId: string,
+  ): Promise<{ rebooked: boolean; reason?: string }> {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: { seller: { select: { clerkId: true } } },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.seller.clerkId !== sellerClerkId) {
+      throw new ForbiddenException('Not authorised');
+    }
+    return this.shipping.rebookShipment(transactionId);
+  }
+
+  /**
+   * What the seller is shown about a failed shipment.
+   *
+   * Returns the reason in the seller's own language plus whether they were
+   * charged, because being billed without being told why is how a support
+   * ticket starts.
+   */
+  async shipmentFailureForSeller(
+    transactionId: string,
+    sellerClerkId: string,
+  ): Promise<{
+    reason: string | null;
+    label: string | null;
+    note: string | null;
+    failedAt: Date | null;
+    chargedCents: number;
+    mustRemeasure: boolean;
+    rebookCount: number;
+  } | null> {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: {
+        shipmentFailureReason: true,
+        shipmentFailureNote: true,
+        shipmentFailureAt: true,
+        failedShipmentChargeCents: true,
+        shipmentRebookCount: true,
+        seller: { select: { clerkId: true } },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    if (tx.seller.clerkId !== sellerClerkId) {
+      throw new ForbiddenException('Not authorised');
+    }
+    if (!tx.shipmentFailureAt) return null;
+
+    const reason = tx.shipmentFailureReason;
+    const valid = isShipmentFailureReason(reason);
+    return {
+      reason,
+      label: valid ? SHIPMENT_FAILURE_LABEL[reason] : null,
+      note: tx.shipmentFailureNote,
+      failedAt: tx.shipmentFailureAt,
+      chargedCents: tx.failedShipmentChargeCents,
+      mustRemeasure: valid ? requiresRemeasure(reason) : false,
+      rebookCount: tx.shipmentRebookCount,
     };
   }
 

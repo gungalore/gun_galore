@@ -18,6 +18,8 @@ import { DealerVerificationService } from '../payments/dealer-verification.servi
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { Throttle } from '@nestjs/throttler';
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
+import { ShippingService } from '../shipping/shipping.service';
+import { isShipmentFailureReason } from '../common/shipment-failure-policy';
 import { SuperadminGuard } from './guards/superadmin.guard';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
 import { AdminAuthService } from './admin-auth.service';
@@ -393,6 +395,8 @@ export class AdminUsersController {
 export class AdminTransactionsController {
   constructor(
     private readonly adminService: AdminService,
+    private readonly adminAudit: AdminAuditService,
+    private readonly shippingService: ShippingService,
     private readonly dealerVerification: DealerVerificationService,
     // ZohoBooksService used by the /zoho-retry endpoint — admin
     // dossier's "Retry Books sync" button calls it to re-fire the
@@ -449,6 +453,44 @@ export class AdminTransactionsController {
   @HttpCode(200)
   release(@Param('id') id: string, @CurrentAdmin() admin: { sub: string }) {
     return this.adminService.releaseTransaction(id, admin.sub);
+  }
+
+  // Record WHY a courier shipment failed, and bill the seller when the reason
+  // is one they controlled.
+  //
+  // Admin-only because the carrier tells us THAT a delivery failed, almost
+  // never whose fault it was — that judgement is a person's, and it moves
+  // money. GET /shipping/failure-reasons serves the ticklist, including which
+  // reasons charge, so the UI can warn before this is submitted.
+  @Post(':id/shipment-failure')
+  @HttpCode(200)
+  async recordShipmentFailure(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body('reason') reason?: string,
+    @Body('note') note?: string,
+  ) {
+    if (!isShipmentFailureReason(reason)) {
+      throw new BadRequestException(
+        'Pick a failure reason from the list — an unrecognised reason must never move money.',
+      );
+    }
+    const out = await this.shippingService.recordShipmentFailure(id, reason, note);
+    // Audited because it moves money. The reason string carries the amount so
+    // the trail answers "why was this seller docked?" without a second lookup.
+    await this.adminAudit.record({
+      adminUserId: admin.sub,
+      action: 'SHIPMENT_FAILURE_RECORDED',
+      resourceType: 'Transaction',
+      resourceId: id,
+      newValue: { reason, chargedCents: out.chargeCents, note: note ?? null },
+      reason: `Shipment failed: ${reason}${
+        out.charged
+          ? ` — seller charged R${(out.chargeCents / 100).toFixed(2)}`
+          : ' — no seller charge'
+      }${note ? ` (${note})` : ''}`,
+    });
+    return out;
   }
 
   @Post(':id/refund')

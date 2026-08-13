@@ -166,6 +166,29 @@ export class TransactionsController {
   // Seller prints the platform-booked waybill/label (PDF). Seller-only,
   // key-safe proxy — carrier auth is applied server-side in the service.
   // ---------------------------------------------------------------
+  // Seller re-books a shipment that failed. The service refuses until they
+  // have actually corrected whatever broke it (see rebookShipment) — a parcel
+  // that did not fit will not fit the second time.
+  @Post(':id/shipment/rebook')
+  @UseGuards(ClerkGuard)
+  async rebookShipment(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+  ) {
+    return this.txService.rebookShipmentForSeller(id, clerkId);
+  }
+
+  // What the seller is told about a failed shipment: the reason in their own
+  // language, whether they were charged, and whether they must re-measure.
+  @Get(':id/shipment/failure')
+  @UseGuards(ClerkGuard)
+  async shipmentFailure(
+    @Param('id') id: string,
+    @CurrentUser() clerkId: string,
+  ) {
+    return this.txService.shipmentFailureForSeller(id, clerkId);
+  }
+
   @Get(':id/waybill')
   @UseGuards(ClerkGuard)
   async waybill(

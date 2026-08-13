@@ -533,6 +533,40 @@ export class ShippingService {
   }
 
   /**
+   * What the sell form should ask a seller about couriering.
+   *
+   * `sellerPicksOption: false` means: offer ONE "courier delivery" choice and
+   * store both slots, because the buyer decides door versus collection point
+   * and the seller's hand-over is the same either way.
+   *
+   * Returned from the server so the sell form never needs a feature flag —
+   * same reasoning as the delivery menu.
+   */
+  async sellerCourierModel(): Promise<{
+    sellerPicksOption: boolean;
+    /** What to store on Listing.shippingMethods when they opt into couriering. */
+    courierMethods: Array<'PUDO' | 'TCG'>;
+    /** Copy for the single-option case. */
+    label: string;
+    hint: string;
+  }> {
+    if (await this.settings.get(FLAGS.bobgoEnabled)) {
+      return {
+        sellerPicksOption: false,
+        courierMethods: ['PUDO', 'TCG'],
+        label: 'Courier delivery',
+        hint: 'A courier collects from your address between 08:00 and 17:00. The buyer chooses whether it goes to their door or to a collection point near them.',
+      };
+    }
+    return {
+      sellerPicksOption: true,
+      courierMethods: ['PUDO', 'TCG'],
+      label: 'Courier delivery',
+      hint: 'Pick which couriers you offer.',
+    };
+  }
+
+  /**
    * EVERY delivery option available to this buyer, priced, in one call.
    *
    * This is the buyer's menu, and it is deliberately the whole menu: the
