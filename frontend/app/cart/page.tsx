@@ -357,7 +357,7 @@ export default function CartPage() {
           <>From <strong>{groups.length} sellers</strong> — each ships and is paid
           separately. </>
         )}
-        One payment. Courier items ship via Pudo or The Courier Guy (quoted at
+        One payment. Courier items ship by courier (quoted at
         payment, R15 handling per parcel).
         {firearmItems.length > 0 && (
           <> Firearms route through a licensed dealer or in person — confirm each

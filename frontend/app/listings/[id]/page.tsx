@@ -843,7 +843,7 @@ export default async function ListingDetailPage({
                 • Firearms always route through a SAPS-licensed dealer
                   (no courier, no locker, no meet-up). This is the
                   default and there's no opt-out.
-                • Non-firearms ship via Pudo or The Courier Guy with
+                • Non-firearms ship by courier with
                   payment held until delivery is confirmed.
                 • PRIVATE_ARRANGE exists as an explicit opt-out at
                   checkout (firearm-only) — the buyer waives payment

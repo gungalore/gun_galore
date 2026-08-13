@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { Category, CategoryAttributeDef, Me, ExperienceType } from '@/lib/types';
+import { BRAND_NAME } from '@/lib/brand';
 import { CONDITION_LABELS, EXPERIENCE_TYPE_LABELS, PROVINCE_LABELS } from '@/lib/utils';
 import { CategoryPicker } from '@/components/category-picker';
 import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
@@ -4964,8 +4965,8 @@ export default function NewListingPage() {
                   <strong style={{ color: 'var(--text-primary)' }}>
                     Buyer pays, funds are held.
                   </strong>{' '}
-                  When the sale closes, payment is held safely by Gun
-                  Galore — neither side can pull out.
+                  When the sale closes, payment is held safely by{' '}
+                  {BRAND_NAME} — neither side can pull out.
                 </li>
                 <li>
                   <strong style={{ color: 'var(--text-primary)' }}>

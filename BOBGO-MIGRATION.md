@@ -514,6 +514,43 @@ verify against, not a hopeful patch.
 
 ---
 
+## Status: the build is complete
+
+Every seam is written, tested and deployed **inert behind `bobgo_enabled`**
+(default OFF — the legacy Pudo + TCG rail is what is live).
+
+| Seam | State |
+|---|---|
+| Client (rates, locations, book, track) | done, live-verified against the sandbox |
+| Booking — three-way submission | done |
+| Webhooks — 5 registered | done, proven live end to end |
+| Quote routing (single + consolidated) | done |
+| Rail-agnostic delivery menu | done |
+| Status map | done, from Bob Go's own lifecycle |
+| Failed shipment, rebook, seller charge | done |
+| Seller notification copy | done, follows the carrier not the slot |
+| Checkout, sell form, dispatch panel, admin | done |
+
+~1,088 backend tests; frontend and backend production builds clean.
+
+### What must happen before the flag is flipped
+
+1. **Walk a test sale end to end on staging.** Nothing in this migration has
+   been exercised by a human through a browser — the checkout was verified by
+   types and a production build, which is not the same thing. Treat this as a
+   hard gate.
+2. **Point `BOBGO_BASE_URL` at production.** It defaults to the SANDBOX, which
+   is the safe default but makes the dangerous mistake the quiet one. The
+   backend logs a warning at boot naming the host it is using.
+3. **Backfill pickup addresses.** `pickupStreet` is optional today, so
+   locker-only listings may have none. Under Bob Go a courier has to come
+   somewhere, and those listings cannot be quoted at all. Count them against
+   production and nudge those sellers first.
+4. **Re-register the webhooks** against the production Bob Go account — the
+   five that exist are on the sandbox account, and registration is portal-only.
+
+---
+
 ## Open questions
 
 ### Answered by the accepted shipment (16625)
