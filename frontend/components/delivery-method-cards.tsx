@@ -50,8 +50,12 @@ function HandshakeIcon() {
 const META: Record<string, { title: string; subtitle: string; icon: ReactNode }> = {
   PUDO: { title: 'Pudo locker', subtitle: 'Collect from a nearby locker', icon: <LockerIcon /> },
   TCG: { title: 'Door delivery', subtitle: 'The Courier Guy, to your address', icon: <TruckIcon /> },
-  DEALER_TRANSFER: { title: 'Dealer transfer', subtitle: 'Collect from a licensed dealer', icon: <DealerIcon /> },
-  PRIVATE_ARRANGE: { title: 'Private arrangement', subtitle: 'Arrange the handover with the seller', icon: <HandshakeIcon /> },
+  // Firearms have exactly TWO hand-over options and both go through a licensed
+  // dealer. Never describe either as a "private collection" — a firearm is
+  // never simply handed over, and copy that implies otherwise misdescribes what
+  // the platform does.
+  DEALER_TRANSFER: { title: 'Dealer stock', subtitle: 'Seller books it in at their dealer, you collect from yours', icon: <DealerIcon /> },
+  PRIVATE_ARRANGE: { title: 'Arrange privately', subtitle: 'Meet at a dealer to do the licence transfer', icon: <HandshakeIcon /> },
 };
 
 export function DeliveryMethodCards({
