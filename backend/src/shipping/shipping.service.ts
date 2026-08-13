@@ -1938,6 +1938,7 @@ export class ShippingService {
         where: { id: transactionId },
         select: {
           shippingMethod: true,
+          carrierProvider: true,
           trackingReference: true,
           carrierDropoffPin: true,
           listing: { select: { title: true, isDealListing: true } },
@@ -1967,6 +1968,11 @@ export class ShippingService {
         listingTitle: tx.listing.title,
         transactionId,
         carrier: tx.shippingMethod as 'PUDO' | 'TCG',
+        // Decides what the seller is actually told to DO — see the copy branch
+        // in notifications.service. Without it a Bob Go pickup-point sale would
+        // tell them to walk the parcel to a locker while a courier is on its
+        // way to their door.
+        provider: tx.carrierProvider as 'PUDO' | 'TCG' | 'BOBGO' | null,
         trackingReference: tx.trackingReference,
         dropoffPin: tx.carrierDropoffPin ?? null,
       });

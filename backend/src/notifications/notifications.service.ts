@@ -1570,6 +1570,15 @@ export class NotificationsService {
     listingTitle: string;
     transactionId: string;
     carrier: 'PUDO' | 'TCG';
+    /**
+     * WHICH carrier actually holds the parcel.
+     *
+     * `carrier` above is only the SLOT (PUDO = pickup-point, TCG = door) and
+     * on the Bob Go rail it no longer names the company or, more importantly,
+     * describes what the SELLER has to do. Absent on legacy rows, which is
+     * read as "derive from the slot" exactly as before.
+     */
+    provider?: 'PUDO' | 'TCG' | 'BOBGO' | null;
     trackingReference: string;
     dropoffPin?: string | null;
     // DD-F (deal JIT fulfilment): present only for house-deal sales. When
@@ -1581,23 +1590,40 @@ export class NotificationsService {
     dealSupplierName?: string;
   }) {
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    const isPudo = d.carrier === 'PUDO';
+    // THE SELLER'S JOB IS DECIDED BY THE PROVIDER, NOT THE SLOT.
+    //
+    // On the legacy rail the slot WAS the seller's job: PUDO meant they walked
+    // a parcel to a locker, TCG meant a courier came to them. Bob Go collects
+    // from an address either way — verified against a real shipment, which
+    // carried collection_location_type "door" and an 08:00-17:00 collection
+    // window even for a booking delivering to a Bob Box, and exposes no
+    // collection-side pickup-point field at all.
+    //
+    // So under Bob Go a "PUDO" sale must NOT tell the seller to drop at a
+    // locker. They would make a wasted trip and then miss the courier who is
+    // actually coming to their door.
+    const isBobGo = d.provider === 'BOBGO';
+    const isPudo = !isBobGo && d.carrier === 'PUDO';
     // Truthy only for deal sales; also narrows to `string` inside each
     // `supplier ? … : …` branch below (no non-null assertions needed).
     const supplier = d.dealSupplierName;
-    const courier = isPudo
-      ? 'Pudo (locker-to-locker)'
-      : 'The Courier Guy (door-to-door)';
-    const handover = isPudo
-      ? 'Drop your parcel at any Pudo locker using the drop-off PIN below.'
-      : 'The Courier Guy will collect the parcel from your pickup address.';
+    const courier = isBobGo
+      ? 'Bob Go'
+      : isPudo
+        ? 'Pudo (locker-to-locker)'
+        : 'The Courier Guy (door-to-door)';
+    const handover = isBobGo
+      ? 'A courier will collect the parcel from your pickup address between 08:00 and 17:00 — have it packed and ready.'
+      : isPudo
+        ? 'Drop your parcel at any Pudo locker using the drop-off PIN below.'
+        : 'The Courier Guy will collect the parcel from your pickup address.';
 
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
       type: 'shipment_booked',
       title: supplier ? 'Deal collection booked' : 'Ship your sale',
       body: supplier
-        ? `Collection booked from ${supplier} — The Courier Guy will collect. Waybill ${d.trackingReference}.`
+        ? `Collection booked from ${supplier} — ${courier} will collect. Waybill ${d.trackingReference}.`
         : `${d.listingTitle} — waybill ${d.trackingReference}${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}`,
       url: `/transactions/${d.transactionId}`,
       iconKey: 'dispatch',
@@ -1611,20 +1637,28 @@ export class NotificationsService {
       { label: 'Waybill / tracking', value: d.trackingReference },
     ];
     if (d.dropoffPin) {
-      rows.push({ label: 'Pudo drop-off PIN', value: d.dropoffPin });
+      // Only Pudo's PIN is a DROP-OFF PIN. Whether Bob Go issues one at all is
+      // still unproven, so the label stays neutral rather than instructing a
+      // seller to use it at a locker screen they are not going to.
+      rows.push({
+        label: isPudo ? 'Pudo drop-off PIN' : 'Collection PIN',
+        value: d.dropoffPin,
+      });
     }
 
     const html = this.email({
       status: { tone: 'success', label: supplier ? 'Collection booked' : 'Ready to ship' },
       headline: supplier ? 'Deal collection booked' : 'Your sale is booked — ship it now',
       body: supplier
-        ? `Hi ${b(d.sellerName)}, a courier collection has been booked from ${b(supplier)} for ${b(d.listingTitle)}. The Courier Guy will collect the parcel — there's nothing to drop off on your side.` +
+        ? `Hi ${b(d.sellerName)}, a courier collection has been booked from ${b(supplier)} for ${b(d.listingTitle)}. ${courier} will collect the parcel — there's nothing to drop off on your side.` +
           `<br><br>Waybill number ${b(d.trackingReference)}. Open the sale to print the label if the collection needs it.`
         : `Hi ${b(d.sellerName)}, great news — ${b(d.listingTitle)} is paid and we've booked the courier for you. ${handover}` +
           `<br><br>Open your sale to <b>print the waybill</b> and tape it to the parcel. ` +
           `<b>If you can't print it, write the waybill number ${b(d.trackingReference)} clearly on the package</b> so the courier can match it.` +
           (d.dropoffPin
-            ? `<br><br>Your locker drop-off PIN is ${b(d.dropoffPin)} — you'll need it at the locker screen.`
+            ? isPudo
+              ? `<br><br>Your locker drop-off PIN is ${b(d.dropoffPin)} — you'll need it at the locker screen.`
+              : `<br><br>Your collection PIN is ${b(d.dropoffPin)} — give it to the courier.`
             : ''),
       rows,
       cta: { label: 'Print waybill & view details', url: txUrl },
@@ -1636,13 +1670,15 @@ export class NotificationsService {
       html,
     );
 
-    const smsHandover = isPudo
-      ? `Drop at any Pudo locker${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`
-      : 'Courier Guy will collect.';
+    const smsHandover = isBobGo
+      ? `Courier collects from your address 08:00-17:00${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`
+      : isPudo
+        ? `Drop at any Pudo locker${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`
+        : 'Courier Guy will collect.';
     await this.sendSms(
       d.sellerPhone,
       supplier
-        ? `All Outdoor: Collection booked from ${supplier} — The Courier Guy will collect. Waybill ${d.trackingReference}.`
+        ? `All Outdoor: Collection booked from ${supplier} — ${courier} will collect. Waybill ${d.trackingReference}.`
         : `All Outdoor: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,
       `booked-${d.transactionId}`,
       // Waybill + Pudo PIN are delivery-essential — without them the
@@ -4971,14 +5007,21 @@ function truncate(s: string, max: number): string {
 function prettyShippingMethod(method: string | null | undefined): string {
   if (!method) return 'TBD';
   switch (method) {
+    // These describe the SHAPE of the delivery, not the company carrying it.
+    // The enum stopped naming a carrier when Bob Go moved in behind both slots,
+    // and a buyer told "Pudo Locker" about a Bob Box parcel would go looking
+    // for the wrong thing. The shape is true on either rail, and where a
+    // specific point matters the copy already names that point.
     case 'PUDO':
-      return 'Pudo Locker';
+      return 'Collection point';
     case 'TCG':
-      return 'Door delivery (The Courier Guy)';
+      return 'Door delivery';
+    // Firearms: exactly two hand-overs, both through a licensed dealer.
+    // Never "private collection".
     case 'DEALER_TRANSFER':
-      return 'Licensed dealer transfer';
+      return 'Dealer stock transfer';
     case 'PRIVATE_ARRANGE':
-      return 'Private dealer arrangement';
+      return 'Arrange privately at a dealer';
     default:
       return method.replace(/_/g, ' ').toLowerCase();
   }
@@ -4989,8 +5032,11 @@ function prettyShippingMethod(method: string | null | undefined): string {
 // once we're at the dispatched stage. Anything else collapses to a
 // generic label.
 function prettyCourier(method: string | null | undefined): string {
-  if (method === 'PUDO') return 'Pudo';
-  if (method === 'TCG') return 'The Courier Guy';
+  // Same reasoning as prettyShippingMethod: the slot is not a carrier name any
+  // more. This one feeds a "courier" row, so it says how the parcel travels
+  // rather than inventing a company that may not be carrying it.
+  if (method === 'PUDO') return 'Collection point delivery';
+  if (method === 'TCG') return 'Door delivery';
   return 'Courier';
 }
 

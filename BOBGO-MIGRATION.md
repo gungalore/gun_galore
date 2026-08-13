@@ -250,12 +250,36 @@ Deliberately narrow: any row where a booking genuinely completed, and every row
 on the legacy rails, is the seller's responsibility exactly as before. Widening
 it beyond our own carrier failures would hand every late seller a free excuse.
 
-### 7. Copy
+### 7. Copy — seller notifications ✅ DONE, dispatch panel outstanding
 
-Every user-facing "Pudo" / "The Courier Guy" string needs rewriting — seller SMS
-and email (`notifications.service.ts:1592, 1614, 1640`), the dispatch panel
-(`dispatch-button.tsx:137-201`), admin labels. Not a rename if there is no PIN:
-the entire locker hand-over instruction changes shape.
+**It was never a rename.** The slot stopped naming the carrier, and more
+importantly it stopped describing what the SELLER has to do. On the legacy rail
+`PUDO` meant "walk the parcel to a locker"; under Bob Go the courier collects
+from the seller's address in an 08:00–17:00 window **either way** — verified on
+a real shipment carrying `collection_location_type: "door"` and that window even
+while delivering to a Bob Box.
+
+So a Bob Go pickup-point sale must not tell the seller to visit a locker. They
+would make a wasted trip and miss the courier coming to their door. And this is
+the `critical: true` SMS that bypasses their SMS mute — the one message
+guaranteed to reach them.
+
+`shipmentBooked` now branches on the PROVIDER, not the slot:
+
+| | Legacy PUDO | Legacy TCG | Bob Go (either slot) |
+|---|---|---|---|
+| Seller does | drops at a locker | waits for collection | waits for collection, 08:00–17:00 |
+| Named as | Pudo | The Courier Guy | Bob Go |
+| PIN wording | "locker drop-off PIN" | — | "collection PIN", only if one exists |
+
+The shared `prettyShippingMethod` / `prettyCourier` helpers now describe the
+SHAPE of the delivery ("Collection point", "Door delivery") rather than naming a
+company the parcel may not be travelling with. Firearm labels corrected to
+"Dealer stock transfer" and "Arrange privately at a dealer".
+
+Still outstanding: the seller dispatch panel (`dispatch-button.tsx`), which
+shows a Pudo-worded PIN block and a Print-waybill button that Bob Go cannot
+serve.
 
 ---
 
