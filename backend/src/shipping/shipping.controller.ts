@@ -112,8 +112,12 @@ export class ShippingController {
 
   // The buyer's full delivery menu — door AND collection points, priced, in
   // one call. The delivery option is the buyer's to decide, so this returns
-  // everything Bob Go will actually carry for this parcel and route rather
-  // than a seller-curated subset.
+  // everything that can actually carry this parcel rather than a
+  // seller-curated subset.
+  //
+  // RAIL-AGNOSTIC: answers from Bob Go or from Pudo+TCG depending on the
+  // flag, in one shape. The checkout never learns which carrier it is
+  // talking to, which is what lets the UI be written once.
   //
   // POST, not GET, because it carries a delivery address — a GET would put the
   // buyer's street address in a URL, and URLs end up in logs and referrers.
@@ -126,7 +130,7 @@ export class ShippingController {
       deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>;
     },
   ) {
-    return this.shipping.bobgoDeliveryOptions(body.listingId, body.deliveryAddress);
+    return this.shipping.deliveryOptions(body.listingId, body.deliveryAddress);
   }
 
   // ---------------------------------------------------------------

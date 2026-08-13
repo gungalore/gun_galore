@@ -551,7 +551,7 @@ export class ShippingService {
    * An empty `door` AND empty `pickupPoints` means Bob Go serves neither for
    * this route — distinct from the throw below, which means we could not ask.
    */
-  async bobgoDeliveryOptions(
+  async deliveryOptions(
     listingId: string,
     deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>,
   ): Promise<{
@@ -579,6 +579,15 @@ export class ShippingService {
         'This listing is missing parcel weight / dimensions. Ask the seller to update it.',
       );
     }
+    // RAIL-AGNOSTIC ON PURPOSE. The frontend has no way to read a feature flag
+    // and should not be given one: that would make the checkout care which
+    // carrier we use, and the whole point of the slot design is that it does
+    // not have to. This answers for whichever rail is live, in one shape, so
+    // the buyer's UI is written once and the swap is invisible to it.
+    if (!(await this.settings.get(FLAGS.bobgoEnabled))) {
+      return this.legacyDeliveryOptions(listing, deliveryAddress);
+    }
+
     const from = listing.isDealListing
       ? await this.dealCollectionOrigin(listing.id)
       : {
@@ -643,6 +652,156 @@ export class ShippingService {
         serviceCode: r.serviceCode,
       })),
     };
+  }
+
+  /**
+   * The same menu, built from the legacy Pudo + TCG rails.
+   *
+   * Keeps the endpoint's contract identical while the old rail is live, so the
+   * checkout is written once and the carrier swap is invisible to it.
+   *
+   * The shapes differ underneath, and the difference is the whole argument for
+   * migrating: Pudo has no server-side proximity search, so collection points
+   * come from a cached directory ranked by postal code, and every locker costs
+   * the SAME flat locker-to-locker rate rather than carrying its own price.
+   * Door needs a separate TCG call. Two round trips and a directory where Bob
+   * Go needs one call.
+   */
+  private async legacyDeliveryOptions(
+    listing: {
+      id: string;
+      isDealListing: boolean;
+      weightGrams: number | null;
+      lengthCm: number | null;
+      widthCm: number | null;
+      heightCm: number | null;
+      price: number | null;
+      province: Province;
+      pickupStreet: string | null;
+      pickupSuburb: string | null;
+      pickupCity: string | null;
+      pickupPostalCode: string | null;
+      pickupLat: number | null;
+      pickupLng: number | null;
+    },
+    deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>,
+  ): Promise<{
+    door: { priceCents: number; serviceName: string; serviceCode: string } | null;
+    pickupPoints: Array<{
+      locationId: number;
+      name: string;
+      description?: string;
+      distanceKm?: number;
+      priceCents: number;
+      serviceCode: string;
+    }>;
+  }> {
+    const parcel: ParcelDims = {
+      lengthCm: listing.lengthCm!,
+      widthCm: listing.widthCm!,
+      heightCm: listing.heightCm!,
+      weightGrams: listing.weightGrams!,
+    };
+
+    // Door — one TCG quote. Null on failure is TcgService's own contract and
+    // here means simply "no door option", matching the Bob Go branch.
+    let door: {
+      priceCents: number;
+      serviceName: string;
+      serviceCode: string;
+    } | null = null;
+    try {
+      const from: TcgResidentialAddress = listing.isDealListing
+        ? await this.dealCollectionOrigin(listing.id)
+        : {
+            streetAddress: listing.pickupStreet ?? '',
+            suburb: listing.pickupSuburb ?? '',
+            city: listing.pickupCity ?? '',
+            postalCode: listing.pickupPostalCode ?? '',
+            province: PROVINCE_LONG[listing.province],
+            lat: listing.pickupLat ?? undefined,
+            lng: listing.pickupLng ?? undefined,
+          };
+      if (from.streetAddress && from.city) {
+        const q = await this.tcg.getQuote(
+          from,
+          {
+            streetAddress: deliveryAddress.streetAddress,
+            suburb: deliveryAddress.suburb,
+            city: deliveryAddress.city,
+            postalCode: deliveryAddress.postalCode,
+            province: PROVINCE_LONG[deliveryAddress.province],
+            lat: deliveryAddress.lat,
+            lng: deliveryAddress.lng,
+          },
+          {
+            weightKg: parcel.weightGrams / 1000,
+            lengthCm: parcel.lengthCm,
+            widthCm: parcel.widthCm,
+            heightCm: parcel.heightCm,
+          },
+          listing.price ?? 0,
+        );
+        if (q) {
+          door = {
+            priceCents: q.priceCents,
+            serviceName: q.serviceName,
+            serviceCode: q.serviceCode,
+          };
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`Legacy door quote failed: ${(err as Error).message}`);
+    }
+
+    // Collection points — nearest lockers from the cached directory. The L2L
+    // rate is FLAT across lockers, so one quote prices the whole list; if that
+    // one quote comes back null the parcel fits no locker at all and the list
+    // is empty, which is the same answer Bob Go gives by returning no
+    // pickup-point rates.
+    const points: Array<{
+      locationId: number;
+      name: string;
+      description?: string;
+      distanceKm?: number;
+      priceCents: number;
+      serviceCode: string;
+    }> = [];
+    try {
+      const lockers = await this.pudo.getNearbyLockers({
+        lat: deliveryAddress.lat,
+        lng: deliveryAddress.lng,
+        postalCode: deliveryAddress.postalCode,
+        limit: 10,
+      });
+      const flat = lockers.length
+        ? await this.pudo.quoteL2L(lockers[0].lockerId, parcel)
+        : null;
+      if (flat) {
+        for (const l of lockers) {
+          points.push({
+            // Pudo terminal codes are alphanumeric ("CG929") and this field is
+            // numeric for Bob Go location ids. NaN would be worse than
+            // useless, so the code travels in serviceCode and this stays 0 —
+            // the legacy checkout keys on the code, never on this.
+            locationId: 0,
+            name: l.name,
+            description: [l.address, l.suburb, l.city]
+              .filter(Boolean)
+              .join(', '),
+            distanceKm: l.distanceKm,
+            priceCents: flat.priceCents,
+            serviceCode: l.lockerId,
+          });
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Legacy locker options failed: ${(err as Error).message}`,
+      );
+    }
+
+    return { door, pickupPoints: points };
   }
 
   // P6.2 — quote ONE consolidated parcel for 2+ items from the SAME seller,

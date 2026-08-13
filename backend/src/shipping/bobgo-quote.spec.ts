@@ -213,13 +213,13 @@ describe('quoteCombined on the Bob Go rail', () => {
   });
 });
 
-describe('bobgoDeliveryOptions — the buyer decides', () => {
+describe('deliveryOptions — the buyer decides', () => {
   it('returns the WHOLE menu: door and collection points together', async () => {
     const far = { ...PICKUP, pickupPointLocationId: 900, pickupPointDistanceKm: 9, totalPrice: 70 };
     const dupe = { ...PICKUP, totalPrice: 80 }; // same location 545, dearer
     const { svc } = makeService({ rates: [DOOR, far, PICKUP, dupe] });
 
-    const opts = await svc.bobgoDeliveryOptions('L1', DELIVERY);
+    const opts = await svc.deliveryOptions('L1', DELIVERY);
 
     expect(opts.door?.priceCents).toBe(11495);
     expect(opts.pickupPoints.map((p) => p.locationId)).toEqual([545, 900]);
@@ -231,19 +231,19 @@ describe('bobgoDeliveryOptions — the buyer decides', () => {
     // Bob Go is size-aware, so an oversized parcel simply comes back with door
     // rates only — the locker size limit enforces itself.
     const { svc } = makeService({ rates: [DOOR] });
-    const opts = await svc.bobgoDeliveryOptions('L1', DELIVERY);
+    const opts = await svc.deliveryOptions('L1', DELIVERY);
     expect(opts.door).not.toBeNull();
     expect(opts.pickupPoints).toEqual([]);
   });
 
   it('distinguishes "nothing serves this route" from "we could not ask"', async () => {
     const { svc } = makeService({ rates: [] });
-    const opts = await svc.bobgoDeliveryOptions('L1', DELIVERY);
+    const opts = await svc.deliveryOptions('L1', DELIVERY);
     expect(opts.door).toBeNull();
     expect(opts.pickupPoints).toEqual([]);
 
     const outage = makeService({ throws: new Error('Bob Go unreachable') });
-    await expect(outage.svc.bobgoDeliveryOptions('L1', DELIVERY)).rejects.toThrow(
+    await expect(outage.svc.deliveryOptions('L1', DELIVERY)).rejects.toThrow(
       /try again/i,
     );
   });

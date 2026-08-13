@@ -456,6 +456,40 @@ rebook. They are the record of what happened and why the seller is being billed.
 
 ---
 
+## The checkout seam
+
+`POST /shipping/delivery-options` is **rail-agnostic**: it answers from Bob Go
+or from Pudo+TCG depending on the flag, in one shape.
+
+That is the seam that hides the whole migration. The frontend has no way to read
+a feature flag and is deliberately not given one — exposing it would make the
+checkout care which carrier we use, and the entire point of the slot design is
+that it does not have to. Written this way, the buyer's UI is built once and the
+carrier swap needs no frontend release.
+
+The two rails genuinely differ underneath, and the difference is the argument
+for migrating:
+
+| | Legacy (Pudo + TCG) | Bob Go |
+|---|---|---|
+| Calls | TCG quote **+** locker directory **+** L2L quote | one `getRates` |
+| Point prices | one flat L2L rate for every locker | per-point, real |
+| Fit checked | no — discovered at drop-off | yes, size-aware |
+| Points offered | whatever the directory lists | only ones that will take **this** parcel |
+
+`components/delivery-options-picker.tsx` renders it: one radio list mixing door
+and collection points, each with its own price and distance, keyed on the
+`serviceCode` that gets replayed at booking. It distinguishes three states that
+used to look identical — loading, "we could not ask" (retryable), and "the
+courier does not serve this parcel to that address" (not an error).
+
+**Still to wire:** the checkout form itself still uses the old method cards plus
+the directory-backed locker picker. That edit is deliberately not done blind —
+it is a live money path and wants a working local stack or a staging flip to
+verify against, not a hopeful patch.
+
+---
+
 ## Open questions
 
 ### Answered by the accepted shipment (16625)
