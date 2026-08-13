@@ -39,6 +39,9 @@ describe('PudoService.createShipment (L2L)', () => {
 
     expect(res).toEqual({
       carrier: 'PUDO',
+      // Pudo is booked-or-throw, so returning at all IS the confirmation.
+      provider: 'PUDO',
+      submission: 'SUBMITTED',
       shipmentId: '297',
       trackingReference: 'PUDOD000570',
       pin: '270089',
@@ -120,6 +123,8 @@ describe('TcgService.createShipment (D2D)', () => {
 
     expect(res).toEqual({
       carrier: 'TCG',
+      provider: 'TCG',
+      submission: 'SUBMITTED',
       shipmentId: '8881',
       trackingReference: 'TCG12345',
       status: 'pending-collection',

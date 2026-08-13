@@ -264,13 +264,25 @@ export class SwapFundingService {
       // recipient's address; a firearm leg has no carrier cost — its flat
       // dealer-handling fee (R100) is applied via breakdownSwapLeg(isFirearm).
       const initiatorQuote = initiatorIsFirearm
-        ? { priceCents: 0, serviceCode: null as string | null }
+        ? {
+            // A firearm leg never books a courier, so it carries no rate key.
+            priceCents: 0,
+            serviceCode: null as string | null,
+            providerSlug: null as string | null,
+            serviceLevelCode: null as string | null,
+          }
         : await this.quoteLeg(
             initiatorGives.listingId,
             initiatorGives.deliveryAddress,
           );
       const ownerQuote = ownerIsFirearm
-        ? { priceCents: 0, serviceCode: null as string | null }
+        ? {
+            // A firearm leg never books a courier, so it carries no rate key.
+            priceCents: 0,
+            serviceCode: null as string | null,
+            providerSlug: null as string | null,
+            serviceLevelCode: null as string | null,
+          }
         : await this.quoteLeg(ownerGives.listingId, ownerGives.deliveryAddress);
 
       const initiatorCash =
@@ -314,6 +326,8 @@ export class SwapFundingService {
           data: {
             shippingCost: initiatorQuote.priceCents,
             shippingServiceCode: initiatorQuote.serviceCode,
+            shippingProviderSlug: initiatorQuote.providerSlug ?? null,
+            shippingServiceLevelCode: initiatorQuote.serviceLevelCode ?? null,
             shippingMethod: initiatorIsFirearm
               ? ShippingMethod.DEALER_TRANSFER
               : ShippingMethod.TCG,
@@ -324,6 +338,8 @@ export class SwapFundingService {
           data: {
             shippingCost: ownerQuote.priceCents,
             shippingServiceCode: ownerQuote.serviceCode,
+            shippingProviderSlug: ownerQuote.providerSlug ?? null,
+            shippingServiceLevelCode: ownerQuote.serviceLevelCode ?? null,
             shippingMethod: ownerIsFirearm
               ? ShippingMethod.DEALER_TRANSFER
               : ShippingMethod.TCG,

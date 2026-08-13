@@ -15,6 +15,7 @@ import {
   ShippingService,
   type QuoteRequestBody,
 } from './shipping.service';
+import { BobGoWebhookService } from './bobgo-webhook.service';
 import { LockerSearchDto } from './dto/locker-search.dto';
 import { DealerQueryDto } from './dto/dealer-query.dto';
 
@@ -26,6 +27,7 @@ export class ShippingController {
     private readonly pudo: PudoService,
     private readonly dealers: DealersService,
     private readonly shipping: ShippingService,
+    private readonly bobgoWebhook: BobGoWebhookService,
   ) {}
 
   // ---------------------------------------------------------------
@@ -87,6 +89,54 @@ export class ShippingController {
   @HttpCode(200)
   async quote(@Body() body: QuoteRequestBody) {
     return this.shipping.quoteForListing(body);
+  }
+
+  // ---------------------------------------------------------------
+  // Bob Go webhook — public route, no JWT.
+  //
+  // The TOPIC and the SECRET both travel in the PATH, which is unusual and
+  // deliberate. Bob Go subscriptions are registered one topic at a time and WE
+  // choose the callback URL, so:
+  //
+  //   • Putting the topic in the path means we never have to guess which
+  //     header or body field carries it — each subscription self-identifies.
+  //   • Putting the secret in the path authenticates the caller without
+  //     depending on Bob Go supporting custom headers, which is unverified.
+  //     The URL is only ever known to Bob Go and is never logged in full.
+  //
+  // Registered as:
+  //   https://<host>/api/shipping/webhook/bobgo/<secret>/tracking/updated
+  //
+  // Always returns 200 (CLAUDE.md rule): Bob Go retries on non-2xx, and a
+  // retry storm caused by our own handler bug is worse than a dropped event —
+  // the 5-minute poll is still there as the backstop.
+  // ---------------------------------------------------------------
+  @Post('webhook/bobgo/:secret/:group/:action')
+  @HttpCode(200)
+  async bobgoWebhookEndpoint(
+    @Param('secret') secret: string,
+    @Param('group') group: string,
+    @Param('action') action: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const expected = process.env.BOBGO_WEBHOOK_SECRET;
+    // Fail CLOSED in production, exactly as the TCG webhook does: an
+    // unconfigured secret must not turn this into an open endpoint that lets
+    // anyone post shipment events at us.
+    if (!expected) {
+      if (process.env.NODE_ENV === 'production') {
+        this.logger.error(
+          'Bob Go webhook rejected — BOBGO_WEBHOOK_SECRET not configured in production',
+        );
+        return { received: true };
+      }
+    } else if (secret !== expected) {
+      this.logger.warn('Bob Go webhook rejected — invalid secret');
+      return { received: true };
+    }
+
+    await this.bobgoWebhook.handle(`${group}/${action}`, body);
+    return { received: true };
   }
 
   // ---------------------------------------------------------------

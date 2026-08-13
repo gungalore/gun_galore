@@ -82,6 +82,9 @@ function makeService(currentStatus: string | null) {
     notifications as never,
     {} as never,
     {} as never,
+    {} as never,
+    // Webhook ingestion never reads a flag; a stub keeps the constructor happy.
+    { get: jest.fn().mockResolvedValue(false) } as never,
   );
   return { svc, notifications, prisma, txClient };
 }

@@ -93,6 +93,18 @@ export const FLAGS = {
     parse: (s) =>
       s === 'WEEKLY' || s === 'BIWEEKLY' || s === 'MONTHLY' ? s : 'MONTHLY',
   } as FlagDefinition<string>,
+  // Courier provider switch. OFF = Pudo (lockers) + TCG (door), the rail that
+  // has always run. ON = Bob Go behind BOTH slots: its pickup-point rates serve
+  // the PUDO slot and its door rates the TCG slot, so no enum, cron filter or
+  // consolidation rule has to change. Deliberately a runtime flag rather than a
+  // deploy: Bob Go's sandbox has no courier that accepts shipments, so the
+  // ability to flip back mid-incident without a build is the whole point.
+  // Fails safe — an unset or unparseable value keeps the old rail.
+  bobgoEnabled: {
+    key: 'bobgo_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
   // Dangerous-goods gate — a loose lithium battery (the `battery_wh` attribute)
   // above this watt-hour value is forced collection-only, never couriered
   // (carriers won't carry >100 Wh loose cells, UN3480). Admin-tunable without a

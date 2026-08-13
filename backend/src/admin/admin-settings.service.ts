@@ -88,6 +88,18 @@ const FLAGS: SettingFlag[] = [
 
   // ─── Shipping ─────────────────────────────────────────────────
   {
+    key: 'bobgo_enabled',
+    label: 'Bob Go courier rail',
+    hint: 'OFF = Pudo lockers + The Courier Guy door delivery (the rail that has always run). ON = Bob Go behind both, quoting and booking every courier parcel. Needs BOBGO_API_KEY set on the server first — with the flag ON and no key, checkout shows no shipping options at all. Reversible: parcels already with a carrier stay with that carrier, so flipping back only affects new sales.',
+    group: 'Shipping',
+    type: 'boolean',
+    default: 'false',
+    // Spends real money (every booking bills the courier wallet) and swaps the
+    // rail carrying every parcel on the platform. Exactly what the typed-key
+    // gate and the longer audit reason exist for.
+    danger: true,
+  },
+  {
     key: 'dg_lithium_wh_threshold',
     label: 'Lithium battery courier limit (Wh)',
     hint: 'A loose lithium battery (the battery_wh listing attribute) above this energy is forced collection-only — couriers won\'t carry >100 Wh loose cells (UN3480). Lower this if a carrier tightens its limit. Default 100.',

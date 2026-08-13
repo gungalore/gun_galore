@@ -13,9 +13,35 @@ export interface CarrierContact {
   mobile: string;
 }
 
-/** Normalised result of a successful shipment booking. */
+/** Normalised result of a shipment booking attempt. */
 export interface CarrierShipmentResult {
+  /**
+   * The SLOT the shipment was booked into: PUDO = pickup-point, TCG = door.
+   *
+   * No longer the same thing as the company carrying the parcel — Bob Go sits
+   * behind both slots. Use `provider` for anything that has to call an API.
+   */
   carrier: 'PUDO' | 'TCG';
+  /**
+   * WHICH carrier API actually holds this shipment. Persisted to
+   * Transaction.carrierProvider, and what every later operation (waybill,
+   * cancel, tracking) must route on.
+   */
+  provider: 'PUDO' | 'TCG' | 'BOBGO';
+  /**
+   * How far the booking actually got.
+   *
+   * Pudo and TCG are booked-or-throw, so they always report 'SUBMITTED' — for
+   * them, returning at all WAS the confirmation. Bob Go is not: it returns
+   * HTTP 201 for shipments the courier then refuses, so it can report 'PENDING'
+   * (created, not yet accepted — tell nobody) or 'FAILED' (refused).
+   *
+   * Callers must not stamp shipmentBookedAt, print a waybill, or notify the
+   * seller on anything other than 'SUBMITTED'.
+   */
+  submission: 'SUBMITTED' | 'PENDING' | 'FAILED';
+  /** Why the carrier refused, when submission is 'FAILED'. */
+  failedReason?: string;
   /** ShipLogic shipment id — used to fetch the waybill/label PDF + to cancel. */
   shipmentId: string;
   /** The waybill / tracking number the carrier issued. Doubles as the

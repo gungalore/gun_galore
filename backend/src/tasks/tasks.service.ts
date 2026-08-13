@@ -10,6 +10,7 @@ import {
 } from '../featured/featured.service';
 import { KycService } from '../kyc/kyc.service';
 import { TrackingService } from '../shipping/tracking.service';
+import { ShippingService } from '../shipping/shipping.service';
 import { DispatchSlaService } from '../payments/dispatch-sla.service';
 import { ExperienceSlaService } from '../payments/experience-sla.service';
 import { TransactionsService } from '../payments/transactions.service';
@@ -66,6 +67,7 @@ export class TasksService {
     private readonly featured: FeaturedService,
     private readonly kycService: KycService,
     private readonly trackingService: TrackingService,
+    private readonly shipping: ShippingService,
     private readonly dispatchSla: DispatchSlaService,
     private readonly experienceSla: ExperienceSlaService,
     private readonly transactions: TransactionsService,
@@ -1210,6 +1212,36 @@ export class TasksService {
       this.logger.warn(`Pudo tracking poll failed: ${(err as Error).message}`);
     }
     await this.recordCronRun('shipping-poll');
+  }
+
+  // Resolve Bob Go bookings the courier had not yet accepted.
+  //
+  // Bob Go answers HTTP 201 for a shipment and only afterwards reports whether
+  // a courier took it, so bookForTransaction can end with a shipment that
+  // exists but is not agreed. Those rows are deliberately left un-stamped, the
+  // seller is deliberately not told, and the booking claim is deliberately held
+  // — which makes this sweep the only thing that will ever finish them.
+  //
+  // Every 5 minutes: fast enough that a seller waiting on a waybill is not left
+  // wondering, cheap enough to be harmless — the whole sweep is ONE Bob Go
+  // request regardless of how many rows are pending, and it returns immediately
+  // when there are none. Inert while the Bob Go rail is off, because no row can
+  // have carrierProvider BOBGO.
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async resolvePendingBobGoBookings() {
+    try {
+      const r = await this.shipping.resolvePendingBobGoBookings();
+      if (r.checked > 0) {
+        this.logger.log(
+          `Bob Go pending bookings: ${r.checked} checked, ${r.booked} accepted, ${r.failed} refused, ${r.stillPending} still waiting`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Bob Go pending-booking sweep failed: ${(err as Error).message}`,
+      );
+    }
+    await this.recordCronRun('bobgo-pending-bookings');
   }
 
   // Dispatch SLA — both passes run hourly. Cheap (one indexed query

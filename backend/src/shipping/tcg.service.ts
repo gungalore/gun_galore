@@ -271,6 +271,11 @@ export class TcgService {
     }
     return {
       carrier: 'TCG',
+      provider: 'TCG',
+      // Booked-or-throw: reaching this line IS the confirmation. Any
+      // non-2xx or unparseable response threw above, so there is no
+      // created-but-unaccepted state to report the way Bob Go has.
+      submission: 'SUBMITTED',
       shipmentId: String(json.id),
       trackingReference,
       status: json.status,

@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { BobGoService } from './bobgo.service';
+import { BobGoWebhookService } from './bobgo-webhook.service';
 import { PudoService } from './pudo.service';
 import { TcgService } from './tcg.service';
 import { DealersService } from './dealers.service';
@@ -9,6 +11,8 @@ import { ShippingController } from './shipping.controller';
 
 @Module({
   providers: [
+    BobGoService,
+    BobGoWebhookService,
     PudoService,
     TcgService,
     DealersService,
@@ -19,6 +23,8 @@ import { ShippingController } from './shipping.controller';
   controllers: [ShippingController],
   exports: [
     ShippingService,
+    BobGoService,
+    BobGoWebhookService,
     PudoService,
     TcgService,
     DealersService,

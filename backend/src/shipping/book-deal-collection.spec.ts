@@ -132,11 +132,16 @@ function makeService(over: { tx?: unknown; supplier?: unknown } = {}) {
     shipmentBooked: jest.fn().mockResolvedValue(undefined),
     shipmentBookingFailed: jest.fn().mockResolvedValue(undefined),
   };
+  const bobgo = { createShipment: jest.fn(), listShipments: jest.fn() };
   const svc = new ShippingService(
     prisma as never,
     notifications as never,
     pudo as never,
     tcg as never,
+    bobgo as never,
+    // Flag OFF — these specs assert the LEGACY Pudo/TCG rail, which must keep
+    // behaving identically while Bob Go rides behind the same enum slots.
+    { get: jest.fn().mockResolvedValue(false) } as never,
   );
   return { svc, prisma, pudo, tcg, notifications };
 }

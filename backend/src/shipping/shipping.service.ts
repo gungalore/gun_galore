@@ -14,6 +14,9 @@ import {
   type ShippingQuote,
 } from './pudo.service';
 import { TcgService, type TcgResidentialAddress } from './tcg.service';
+import { BobGoService } from './bobgo.service';
+import type { BobGoAddress } from './bobgo.types';
+import { SettingsService, FLAGS } from '../settings/settings.service';
 import { CarrierContact, CarrierShipmentResult } from './carrier.types';
 import { shiplogicToShippingStatus } from './status-map';
 
@@ -97,6 +100,8 @@ export class ShippingService {
     private readonly notifications: NotificationsService,
     private readonly pudo: PudoService,
     private readonly tcg: TcgService,
+    private readonly bobgo: BobGoService,
+    private readonly settings: SettingsService,
   ) {}
 
   /**
@@ -523,6 +528,12 @@ export class ShippingService {
         return null;
       }
 
+      // Which rail carries this parcel. Read ONCE and reused for the whole
+      // booking, so a flag flip (or a transient DB error inside settings.get,
+      // which fails back to the default) cannot have us quote against one
+      // carrier and book against the other halfway through.
+      const useBobGo = await this.settings.get(FLAGS.bobgoEnabled);
+
       // DD-F4 — a Daily Deal collects from the SUPPLIER's warehouse (the house
       // seller has no address/phone), so load the deal's supplier once up
       // front. SEPARATE query — supplier data never rides a listing payload.
@@ -623,22 +634,48 @@ export class ShippingService {
         mobile: tx.buyer.phone.trim(),
       };
 
-      let result: CarrierShipmentResult;
-      if (tx.shippingMethod === 'PUDO') {
-        if (!tx.pudoPickupLockerId) {
-          throw new Error('no destination locker on transaction');
-        }
-        result = await this.pudo.createShipment({
-          serviceCode: tx.shippingServiceCode,
-          toLockerId: tx.pudoPickupLockerId,
-          collectionContact,
-          deliveryContact,
-        });
-      } else {
+      // P6.2 — the physical parcel is the CARRIER line plus every live sibling
+      // that ships with it. Combine into one conservative stacked box (max L,
+      // max W, Σ height×qty; Σ weight×qty) so the booked shipment matches the
+      // combined quote the buyer was charged. Declared value = Σ line totals.
+      // A standalone tx has no siblings → identical to single-parcel behaviour.
+      //
+      // HOISTED out of the TCG branch (was inline there): Pudo never needed
+      // dimensions because its service code already encodes the reserved box
+      // size, but Bob Go's create call takes explicit parcel dimensions for
+      // BOTH door and pickup-point shipments. Computing it once above the
+      // branch keeps a single definition of "what is in the box" — the
+      // alternative was a second copy that could drift from the quoted price.
+      let weightGrams = (tx.listing.weightGrams ?? 0) * tx.quantity;
+      let lengthCm = tx.listing.lengthCm ?? 0;
+      let widthCm = tx.listing.widthCm ?? 0;
+      let heightCm = (tx.listing.heightCm ?? 0) * tx.quantity;
+      let declaredValueCents = tx.listingPrice;
+      // Defensive: the loader above always includes shippedWith, but this
+      // computation now runs for PUDO too, and the PUDO path never touched it
+      // before. A missing relation must degrade to "no siblings" — a thrown
+      // TypeError here would land in the catch below and downgrade a
+      // perfectly bookable sale to manual dispatch.
+      const siblings = Array.isArray(tx.shippedWith) ? tx.shippedWith : [];
+      for (const s of siblings) {
+        weightGrams += (s.listing.weightGrams ?? 0) * s.quantity;
+        lengthCm = Math.max(lengthCm, s.listing.lengthCm ?? 0);
+        widthCm = Math.max(widthCm, s.listing.widthCm ?? 0);
+        heightCm += (s.listing.heightCm ?? 0) * s.quantity;
+        declaredValueCents += s.listingPrice;
+      }
+
+      // Seller-side collection address, as a LAZY closure.
+      //
+      // Lazy on purpose: the legacy Pudo path never needed a street address
+      // (L2L collects from any locker), so evaluating this eagerly would start
+      // throwing 'seller pickup address incomplete' for Pudo sellers who have
+      // always booked fine. Bob Go needs it for BOTH slots, so it has to be
+      // reachable from both branches — but only actually run when asked.
+      const collectionAddress = (): TcgResidentialAddress => {
         const L = tx.listing;
         // DD-F4 — deals collect from the supplier warehouse (a business
         // address); ordinary sales collect from the seller's pickup* columns.
-        let fromAddress: TcgResidentialAddress;
         if (isDeal) {
           if (
             !supplier ||
@@ -648,7 +685,7 @@ export class ShippingService {
           ) {
             throw new Error('supplier warehouse address incomplete');
           }
-          fromAddress = {
+          return {
             streetAddress: supplier.warehouseStreet,
             suburb: supplier.warehouseSuburb ?? '',
             city: supplier.warehouseCity,
@@ -659,25 +696,111 @@ export class ShippingService {
             type: 'business',
             company: supplier.name,
           };
-        } else {
-          if (
-            !L.pickupStreet ||
-            !L.pickupCity ||
-            L.pickupLat == null ||
-            L.pickupLng == null
-          ) {
-            throw new Error('seller pickup address incomplete');
-          }
-          fromAddress = {
-            streetAddress: L.pickupStreet,
-            suburb: L.pickupSuburb ?? '',
-            city: L.pickupCity,
-            postalCode: L.pickupPostalCode ?? '',
-            province: PROVINCE_LONG[L.province],
-            lat: L.pickupLat,
-            lng: L.pickupLng,
-          };
         }
+        if (
+          !L.pickupStreet ||
+          !L.pickupCity ||
+          L.pickupLat == null ||
+          L.pickupLng == null
+        ) {
+          throw new Error('seller pickup address incomplete');
+        }
+        return {
+          streetAddress: L.pickupStreet,
+          suburb: L.pickupSuburb ?? '',
+          city: L.pickupCity,
+          postalCode: L.pickupPostalCode ?? '',
+          province: PROVINCE_LONG[L.province],
+          lat: L.pickupLat,
+          lng: L.pickupLng,
+        };
+      };
+
+      let result: CarrierShipmentResult;
+      if (useBobGo) {
+        // ONE call books either slot — Bob Go carries both door and
+        // pickup-point shipments, and the chosen locker (when there is one) is
+        // baked into the service code rather than passed separately.
+        //
+        // The rate snapshot must be COMPLETE. Bob Go needs provider_slug and
+        // service_level_code alongside service_code, and both vary per rate
+        // within a single quote response, so they cannot be inferred here. A
+        // row quoted on the legacy rail (or through a path that only ever
+        // snapshotted the service code) has no business being booked against
+        // Bob Go days later with a guessed provider — throw, and let the catch
+        // below hand it to the seller's manual dispatch fallback.
+        if (!tx.shippingProviderSlug || !tx.shippingServiceLevelCode) {
+          throw new Error(
+            'order was quoted before the Bob Go rail was enabled (no provider/service-level snapshot) — book this one manually',
+          );
+        }
+        const d = tx.deliveryAddress as {
+          streetAddress: string;
+          suburb: string;
+          city: string;
+          province: Province;
+          postalCode: string;
+        } | null;
+        // Bob Go needs a delivery address for BOTH slots — a pickup-point
+        // shipment is still routed from the buyer's address. Legacy Pudo orders
+        // never captured one, which is exactly why this must fail loudly rather
+        // than book the parcel to nowhere.
+        if (!d?.streetAddress || !d.suburb || !d.city || !d.postalCode || !d.province) {
+          throw new Error('delivery address is incomplete for courier booking');
+        }
+        if (!PROVINCE_LONG[d.province]) {
+          throw new Error(`invalid delivery province on transaction: ${d.province}`);
+        }
+        const from = collectionAddress();
+        result = await this.bookWithBobGo({
+          slot: tx.shippingMethod,
+          collection: {
+            company: from.company,
+            streetAddress: from.streetAddress,
+            suburb: from.suburb,
+            city: from.city,
+            province: from.province,
+            postalCode: from.postalCode,
+          },
+          delivery: {
+            streetAddress: d.streetAddress,
+            suburb: d.suburb,
+            city: d.city,
+            province: PROVINCE_LONG[d.province],
+            postalCode: d.postalCode,
+          },
+          collectionContact,
+          deliveryContact,
+          parcel: {
+            lengthCm,
+            widthCm,
+            heightCm,
+            weightKg: weightGrams / 1000,
+            description: isDeal
+              ? `All Outdoor Daily Deal collection${dealRef ? ` (ref ${dealRef})` : ''}: ${tx.listing.title}`.slice(0, 120)
+              : undefined,
+          },
+          declaredValueCents,
+          serviceCode: tx.shippingServiceCode,
+          providerSlug: tx.shippingProviderSlug,
+          serviceLevelCode: tx.shippingServiceLevelCode,
+          customerReference: transactionId,
+          instructions: isDeal
+            ? `Collection for All Outdoor Daily Deal${dealRef ? ` — ref ${dealRef}` : ''}.`
+            : undefined,
+        });
+      } else if (tx.shippingMethod === 'PUDO') {
+        if (!tx.pudoPickupLockerId) {
+          throw new Error('no destination locker on transaction');
+        }
+        result = await this.pudo.createShipment({
+          serviceCode: tx.shippingServiceCode,
+          toLockerId: tx.pudoPickupLockerId,
+          collectionContact,
+          deliveryContact,
+        });
+      } else {
+        const fromAddress = collectionAddress();
         const d = tx.deliveryAddress as {
           streetAddress: string;
           suburb: string;
@@ -697,24 +820,7 @@ export class ShippingService {
         if (!PROVINCE_LONG[d.province]) {
           throw new Error(`invalid delivery province on transaction: ${d.province}`);
         }
-        // P6.2 — the physical parcel is the CARRIER line plus every live
-        // sibling that ships with it. Combine into one conservative stacked
-        // box (max L, max W, Σ height×qty; Σ weight×qty) so the booked
-        // shipment matches the combined quote the buyer was charged. Declared
-        // value = Σ line totals. A standalone tx has no siblings → identical
-        // to the old single-parcel behaviour.
-        let weightGrams = (L.weightGrams ?? 0) * tx.quantity;
-        let lengthCm = L.lengthCm ?? 0;
-        let widthCm = L.widthCm ?? 0;
-        let heightCm = (L.heightCm ?? 0) * tx.quantity;
-        let declaredValueCents = tx.listingPrice;
-        for (const s of tx.shippedWith) {
-          weightGrams += (s.listing.weightGrams ?? 0) * s.quantity;
-          lengthCm = Math.max(lengthCm, s.listing.lengthCm ?? 0);
-          widthCm = Math.max(widthCm, s.listing.widthCm ?? 0);
-          heightCm += (s.listing.heightCm ?? 0) * s.quantity;
-          declaredValueCents += s.listingPrice;
-        }
+        // Parcel + declared value are computed once above the branch.
         result = await this.tcg.createShipment({
           serviceCode: tx.shippingServiceCode,
           from: fromAddress,
@@ -736,7 +842,7 @@ export class ShippingService {
             // parcel label + reference so the warehouse knows what TCG is
             // collecting; ordinary sales keep TCG's default description.
             description: isDeal
-              ? `All Outdoor Daily Deal collection${dealRef ? ` (ref ${dealRef})` : ''}: ${L.title}`.slice(
+              ? `All Outdoor Daily Deal collection${dealRef ? ` (ref ${dealRef})` : ''}: ${tx.listing.title}`.slice(
                   0,
                   120,
                 )
@@ -753,17 +859,60 @@ export class ShippingService {
 
       // Persist the booking. trackingReference is the carrier waybill the
       // existing tracking poll/webhook already keys on.
+      //
+      // A carrier that RESPONDED is not the same as a carrier that AGREED.
+      // Pudo and TCG are booked-or-throw, so for them reaching this line was
+      // always the confirmation. Bob Go returns HTTP 201 for shipments the
+      // courier then refuses, so the result has to be read, not assumed.
+      if (result.submission === 'FAILED') {
+        // Deliberately thrown rather than handled here: the catch below already
+        // does exactly the right things — releases the booking claim so an
+        // admin can retry, raises the dedup'd admin alert, and pings the seller
+        // to dispatch manually. A second, parallel failure path would only be
+        // a worse copy of it. The carrier's shipment id goes into the message
+        // because the refused shipment still exists on their side.
+        throw new Error(
+          `carrier refused the shipment (${result.provider} #${result.shipmentId}): ${result.failedReason ?? result.status ?? 'no reason given'}`,
+        );
+      }
+
+      if (result.submission === 'PENDING') {
+        // Created but not yet accepted — a state neither legacy carrier could
+        // produce. Record enough to poll and to cancel it, but do NOT stamp
+        // shipmentBookedAt and do NOT notify anybody: to the seller, the buyer
+        // and every cron, this order is still un-booked, which is the truth.
+        //
+        // The booking claim is deliberately NOT released. Releasing it would
+        // let a retry create a SECOND shipment (and a second wallet charge)
+        // while the first is still pending. resolvePendingBobGoBookings() owns
+        // this row now and will either finish it or release it.
+        await this.prisma.transaction.update({
+          where: { id: transactionId },
+          data: {
+            carrierShipmentId: result.shipmentId,
+            trackingReference: result.trackingReference,
+            carrierProvider: result.provider,
+          },
+        });
+        this.logger.warn(
+          `Shipment ${result.shipmentId} for ${transactionId} created but NOT yet accepted by ${result.provider} ` +
+            `(status "${result.status ?? 'unknown'}") — awaiting resolution, seller not notified`,
+        );
+        return result;
+      }
+
       await this.prisma.transaction.update({
         where: { id: transactionId },
         data: {
           carrierShipmentId: result.shipmentId,
           carrierDropoffPin: result.pin ?? null,
           trackingReference: result.trackingReference,
+          carrierProvider: result.provider,
           shipmentBookedAt: new Date(),
         },
       });
       this.logger.log(
-        `Shipment booked for ${transactionId}: ${result.carrier} waybill ${result.trackingReference}${result.pin ? ` (PIN ${result.pin})` : ''}`,
+        `Shipment booked for ${transactionId}: ${result.provider} (${result.carrier} slot) waybill ${result.trackingReference}${result.pin ? ` (PIN ${result.pin})` : ''}`,
       );
 
       // Notify the seller (SMS + email + inbox) with the waybill, Pudo PIN,
@@ -824,6 +973,200 @@ export class ShippingService {
     }
   }
 
+  /**
+   * Book a shipment with Bob Go, for either slot.
+   *
+   * Bob Go carries both door and pickup-point parcels, and the chosen locker
+   * (when there is one) is encoded in the service code, so unlike Pudo/TCG
+   * there is no per-slot request shape — the slot only decides which enum
+   * value we report back.
+   *
+   * IMPORTANT: this returns normally for refused shipments. The submission
+   * state on the result is the answer; a resolved promise is not.
+   */
+  private async bookWithBobGo(input: {
+    slot: 'PUDO' | 'TCG';
+    collection: BobGoAddress;
+    delivery: BobGoAddress;
+    collectionContact: CarrierContact;
+    deliveryContact: CarrierContact;
+    parcel: {
+      lengthCm: number;
+      widthCm: number;
+      heightCm: number;
+      weightKg: number;
+      description?: string;
+    };
+    declaredValueCents: number;
+    serviceCode: string;
+    providerSlug: string;
+    serviceLevelCode: string;
+    customerReference?: string;
+    instructions?: string;
+  }): Promise<CarrierShipmentResult> {
+    const r = await this.bobgo.createShipment({
+      collection: input.collection,
+      delivery: input.delivery,
+      collectionContact: input.collectionContact,
+      deliveryContact: input.deliveryContact,
+      parcels: [input.parcel],
+      serviceCode: input.serviceCode,
+      providerSlug: input.providerSlug,
+      serviceLevelCode: input.serviceLevelCode,
+      declaredValueCents: input.declaredValueCents,
+      customerReference: input.customerReference,
+      instructionsCollection: input.instructions,
+    });
+    return {
+      carrier: input.slot,
+      provider: 'BOBGO',
+      submission: r.submission,
+      failedReason: r.failedReason,
+      shipmentId: String(r.shipmentId),
+      trackingReference: r.trackingReference,
+      pin: r.pin,
+      // The RAW submission status, not a friendly one — when a booking sits
+      // PENDING this string is the only clue to which unrecognised word Bob Go
+      // used, and widening classifySubmission's allowlist depends on seeing it.
+      status: r.rawSubmissionStatus,
+    };
+  }
+
+  /**
+   * Finish (or abandon) Bob Go bookings the courier had not yet accepted.
+   *
+   * A PENDING booking is a shipment Bob Go created and answered 201 for, but
+   * which no courier has agreed to collect. bookForTransaction deliberately
+   * leaves those rows un-stamped and un-announced, and deliberately KEEPS the
+   * booking claim so nothing re-books them behind our back. That makes this
+   * method the sole owner of those rows — without it they sit in limbo for
+   * ever, and the seller is never told to dispatch manually.
+   *
+   * ONE list request per tick, matched locally. See BobGoService.listShipments.
+   *
+   * Never throws: it runs on a cron, and one bad row must not stop the rest.
+   */
+  async resolvePendingBobGoBookings(stuckAfterHours = 6): Promise<{
+    checked: number;
+    booked: number;
+    failed: number;
+    stillPending: number;
+  }> {
+    const out = { checked: 0, booked: 0, failed: 0, stillPending: 0 };
+    const pending = await this.prisma.transaction
+      .findMany({
+        where: {
+          carrierProvider: 'BOBGO',
+          carrierShipmentId: { not: null },
+          shipmentBookedAt: null,
+          shipmentBookingStartedAt: { not: null },
+        },
+        select: {
+          id: true,
+          carrierShipmentId: true,
+          shipmentBookingStartedAt: true,
+        },
+      })
+      .catch(() => []);
+    if (pending.length === 0) return out;
+    out.checked = pending.length;
+
+    let shipments: Awaited<ReturnType<BobGoService['listShipments']>>;
+    try {
+      shipments = await this.bobgo.listShipments();
+    } catch (err) {
+      // Bob Go unreachable — leave every row exactly as it is and try again
+      // next tick. Treating an outage as a refusal would refund live parcels.
+      this.logger.warn(
+        `resolvePendingBobGoBookings: could not reach Bob Go (${(err as Error).message}) — no rows touched`,
+      );
+      out.stillPending = pending.length;
+      return out;
+    }
+    const byId = new Map(shipments.map((s) => [String(s.shipmentId), s]));
+
+    for (const tx of pending) {
+      const live = byId.get(String(tx.carrierShipmentId));
+      if (!live) {
+        // The shipment we created is not in the account listing. That is not a
+        // refusal we can act on — it could be pagination or a filter we do not
+        // understand — so leave the row alone and surface it rather than
+        // guessing at a parcel's fate.
+        out.stillPending++;
+        this.logger.warn(
+          `resolvePendingBobGoBookings: shipment ${tx.carrierShipmentId} for ${tx.id} not present in the Bob Go listing`,
+        );
+        continue;
+      }
+
+      if (live.submission === 'SUBMITTED') {
+        await this.prisma.transaction
+          .update({
+            where: { id: tx.id },
+            data: {
+              shipmentBookedAt: new Date(),
+              carrierDropoffPin: live.pin ?? null,
+              trackingReference: live.trackingReference || undefined,
+            },
+          })
+          .catch(() => undefined);
+        out.booked++;
+        this.logger.log(
+          `Bob Go shipment ${live.shipmentId} accepted — ${tx.id} now booked`,
+        );
+        // Only NOW does the seller get the waybill: this is the first moment a
+        // courier has actually agreed to collect.
+        await this.notifySellerShipmentBooked(tx.id).catch(() => undefined);
+        continue;
+      }
+
+      if (live.submission === 'FAILED') {
+        // Release the claim so the order can be retried or dispatched by hand,
+        // and clear the carrier fields — keeping a tracking reference for a
+        // refused shipment is what puts a dead waybill in front of a buyer.
+        await this.prisma.transaction
+          .update({
+            where: { id: tx.id },
+            data: {
+              shipmentBookingStartedAt: null,
+              carrierShipmentId: null,
+              trackingReference: null,
+              carrierProvider: null,
+            },
+          })
+          .catch(() => undefined);
+        out.failed++;
+        this.logger.error(
+          `Bob Go refused shipment ${live.shipmentId} for ${tx.id}: ${live.failedReason ?? live.rawSubmissionStatus}`,
+        );
+        await this.raiseBookingFailedAlert(
+          tx.id,
+          `Bob Go refused the shipment after creating it: ${live.failedReason ?? live.rawSubmissionStatus}`,
+        );
+        void this.notifyBookingFailedSeller(tx.id).catch(() => undefined);
+        continue;
+      }
+
+      out.stillPending++;
+      // A booking that never resolves is worse than one that fails, because
+      // nothing else in the system will ever look at it again. Escalate once
+      // it has outlived any plausible courier response time.
+      const startedAt = tx.shipmentBookingStartedAt?.getTime() ?? Date.now();
+      const ageHours = (Date.now() - startedAt) / 3_600_000;
+      if (ageHours >= stuckAfterHours) {
+        await this.raiseBookingFailedAlert(
+          tx.id,
+          `Bob Go shipment ${live.shipmentId} has been awaiting courier acceptance for ${Math.floor(ageHours)}h (status "${live.rawSubmissionStatus}") — check the Bob Go portal`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `resolvePendingBobGoBookings: ${out.checked} checked, ${out.booked} booked, ${out.failed} failed, ${out.stillPending} still pending`,
+    );
+    return out;
+  }
+
   // Cancel a booked shipment when a sale is reversed before hand-over (admin
   // refund / seller reject / buyer cancel). Best-effort, idempotent, never
   // throws. Only cancels while the parcel hasn't entered the network yet —
@@ -834,13 +1177,20 @@ export class ShippingService {
         where: { id: transactionId },
         select: {
           shippingMethod: true,
+          carrierProvider: true,
           carrierShipmentId: true,
           shipmentBookedAt: true,
           shippingStatus: true,
         },
       })
       .catch(() => null);
-    if (!tx?.shipmentBookedAt || !tx.carrierShipmentId) return; // nothing booked
+    // Gate on the SHIPMENT ID, not on shipmentBookedAt. A Bob Go booking that
+    // is still awaiting the courier's acceptance deliberately has no
+    // shipmentBookedAt — but it does have a real shipment on the carrier's
+    // side, and a reversed sale must still cancel it. Gating on the booked
+    // stamp (as this did) would silently walk past exactly those rows and
+    // leave a live parcel against a refunded order.
+    if (!tx?.carrierShipmentId) return; // nothing was ever created
 
     const moving =
       tx.shippingStatus && tx.shippingStatus !== 'PENDING';
@@ -852,12 +1202,31 @@ export class ShippingService {
       return;
     }
 
+    // Route on the carrier that actually HOLDS the parcel, never on the enum
+    // slot — Bob Go sits behind both slots, so shippingMethod no longer names
+    // an API. Null carrierProvider means a row booked before the column
+    // existed, which can only be Pudo or TCG, so the slot is the right
+    // fallback for those and only those.
+    const provider = tx.carrierProvider ?? tx.shippingMethod;
+
     let ok = false;
+    if (provider === 'BOBGO') {
+      // Bob Go exposes no cancel endpoint that we have been able to verify, so
+      // there is nothing honest to call here. Say so loudly rather than
+      // returning a quiet false that reads like "the carrier declined": an
+      // operator has to reclaim this one by hand, and the wallet charge and a
+      // collectable parcel are both still live until they do.
+      await this.raiseBookingFailedAlert(
+        transactionId,
+        `Sale reversed but Bob Go shipment ${tx.carrierShipmentId} cannot be cancelled automatically (no cancel API) — cancel it in the Bob Go portal to reclaim the charge and stop the collection`,
+      );
+      return;
+    }
     try {
       ok =
-        tx.shippingMethod === 'PUDO'
+        provider === 'PUDO'
           ? await this.pudo.cancelShipment(tx.carrierShipmentId)
-          : tx.shippingMethod === 'TCG'
+          : provider === 'TCG'
             ? await this.tcg.cancelShipment(tx.carrierShipmentId)
             : false;
     } catch {
@@ -874,13 +1243,75 @@ export class ShippingService {
         })
         .catch(() => undefined);
       this.logger.log(
-        `Shipment cancelled for ${transactionId} (${tx.shippingMethod} ${tx.carrierShipmentId})`,
+        `Shipment cancelled for ${transactionId} (${provider} ${tx.carrierShipmentId})`,
       );
     } else {
       // Keep the marker (so the orphan stays visible) + alert for manual cleanup.
       await this.raiseBookingFailedAlert(
         transactionId,
         'Shipment cancel failed — cancel manually with the carrier to reclaim the wallet charge',
+      );
+    }
+  }
+
+  /**
+   * Send the seller their "ship it now" pack (inbox + email + critical SMS).
+   *
+   * Loads its own row rather than taking a payload, because it is called from
+   * two places that know very different things: bookForTransaction, which has
+   * everything in hand, and resolvePendingBobGoBookings, which is finishing a
+   * booking made minutes or hours earlier in a different process.
+   *
+   * The SMS this triggers is sent `critical: true` — it bypasses the seller's
+   * SMS mute. Only ever call it once a courier has actually accepted the job.
+   */
+  private async notifySellerShipmentBooked(
+    transactionId: string,
+  ): Promise<void> {
+    const tx = await this.prisma.transaction
+      .findUnique({
+        where: { id: transactionId },
+        select: {
+          shippingMethod: true,
+          trackingReference: true,
+          carrierDropoffPin: true,
+          listing: { select: { title: true, isDealListing: true } },
+          seller: {
+            select: {
+              email: true,
+              phone: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+            },
+          },
+        },
+      })
+      .catch(() => null);
+    if (!tx?.trackingReference) return;
+
+    const sellerName =
+      [tx.seller.firstName, tx.seller.lastName].filter(Boolean).join(' ') ||
+      tx.seller.username ||
+      'Seller';
+    try {
+      await this.notifications.shipmentBooked({
+        sellerEmail: tx.seller.email,
+        sellerName,
+        sellerPhone: tx.seller.phone,
+        listingTitle: tx.listing.title,
+        transactionId,
+        carrier: tx.shippingMethod as 'PUDO' | 'TCG',
+        trackingReference: tx.trackingReference,
+        dropoffPin: tx.carrierDropoffPin ?? null,
+      });
+    } catch (e) {
+      this.logger.warn(
+        `shipmentBooked notify failed for ${transactionId}: ${(e as Error).message}`,
+      );
+      await this.raiseBookingFailedAlert(
+        transactionId,
+        'Shipment booked but seller notification failed: ' + (e as Error).message,
       );
     }
   }

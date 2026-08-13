@@ -139,7 +139,14 @@ export class TransactionsService {
     // quote; sibling lines = 0) and passes it here, so this line's fee
     // breakdown is computed with the CONSOLIDATED shipping from the start
     // (no re-quote, no re-derive). Undefined = quote per-line as normal.
-    shippingOverride?: { costCents: number; serviceCode: string | null },
+    shippingOverride?: {
+      costCents: number;
+      serviceCode: string | null;
+      // Carried through with the code so a consolidated cart line books against
+      // the same rate it was priced on. Omitted on the legacy carriers.
+      providerSlug?: string | null;
+      serviceLevelCode?: string | null;
+    },
   ) {
     const buyer = await this.prisma.user.findUnique({ where: { clerkId: buyerClerkId } });
     if (!buyer) throw new NotFoundException('Buyer not found');
@@ -446,6 +453,12 @@ export class TransactionsService {
     // courier rate; shippingCost = 0 and we skip the quote call.
     let shippingCostCents = 0;
     let shippingServiceCode: string | null = null;
+    // Bob Go needs the provider and service tier replayed at booking alongside
+    // the service code, and both vary per rate inside one quote response — so
+    // they are snapshotted here with it, not inferred later. Null on the legacy
+    // carriers, where the shippingMethod already implies the provider.
+    let shippingProviderSlug: string | null = null;
+    let shippingServiceLevelCode: string | null = null;
     if (
       shippingOverride !== undefined &&
       (dto.shippingMethod === 'PUDO' || dto.shippingMethod === 'TCG')
@@ -455,6 +468,8 @@ export class TransactionsService {
       // risk. Skip the per-line quote entirely.
       shippingCostCents = shippingOverride.costCents;
       shippingServiceCode = shippingOverride.serviceCode;
+      shippingProviderSlug = shippingOverride.providerSlug ?? null;
+      shippingServiceLevelCode = shippingOverride.serviceLevelCode ?? null;
     } else if (
       dto.shippingMethod === 'PUDO' ||
       dto.shippingMethod === 'TCG'
@@ -485,6 +500,8 @@ export class TransactionsService {
       });
       shippingCostCents = quote.priceCents;
       shippingServiceCode = quote.serviceCode;
+      shippingProviderSlug = quote.providerSlug ?? null;
+      shippingServiceLevelCode = quote.serviceLevelCode ?? null;
     }
 
     // P6.4 — flat R15 handling margin charged ONCE per waybill GG creates.
@@ -627,6 +644,8 @@ export class TransactionsService {
         shippingCost,
         shippingHandlingCents, // P6.4 — R15/waybill GG margin (0 for firearm/collection/sibling)
         shippingServiceCode,
+        shippingProviderSlug,
+        shippingServiceLevelCode,
         passFeeToBuyer: listing.passFeeToBuyer,
         buyerTotal,
         sellerPayout: effectiveSellerPayout, // DD-2 — 0 for a house deal (GG doesn't pay itself)
@@ -965,7 +984,12 @@ export class TransactionsService {
     }
     const shipOverride = new Map<
       string,
-      { costCents: number; serviceCode: string | null }
+      {
+        costCents: number;
+        serviceCode: string | null;
+        providerSlug?: string | null;
+        serviceLevelCode?: string | null;
+      }
     >();
     // sibling listingId -> carrier listingId (resolved to tx ids after create)
     const carrierOfSibling = new Map<string, string>();
@@ -1026,11 +1050,19 @@ export class TransactionsService {
         shipOverride.set(carrier.listingId, {
           costCents: combined.priceCents,
           serviceCode: combined.serviceCode,
+          // The carrier line is the one that actually books, so it needs the
+          // WHOLE rate key, not just the code.
+          providerSlug: combined.providerSlug ?? null,
+          serviceLevelCode: combined.serviceLevelCode ?? null,
         });
         for (let i = 1; i < group.length; i++) {
           shipOverride.set(group[i].listingId, {
             costCents: 0,
             serviceCode: null,
+            // Siblings ride the carrier line's waybill and never book their
+            // own, so they carry no rate key at all.
+            providerSlug: null,
+            serviceLevelCode: null,
           });
           carrierOfSibling.set(group[i].listingId, carrier.listingId);
         }
@@ -2729,7 +2761,9 @@ export class TransactionsService {
       where: { id: transactionId },
       select: {
         shippingMethod: true,
+        carrierProvider: true,
         carrierShipmentId: true,
+        shipmentBookedAt: true,
         trackingReference: true,
         seller: { select: { clerkId: true } },
       },
@@ -2744,8 +2778,26 @@ export class TransactionsService {
     ) {
       throw new BadRequestException('No waybill is available for this order yet.');
     }
+    // A shipment id is NOT proof a courier accepted the job. Bob Go issues one
+    // with its 201 and can still refuse the shipment afterwards, so a booking
+    // awaiting acceptance has an id but no shipmentBookedAt. Without this the
+    // seller downloads a real-looking label, tapes it to the box, and waits for
+    // a collection that was never agreed.
+    if (!tx.shipmentBookedAt) {
+      throw new BadRequestException(
+        'This order is still being booked with the courier. The waybill will be available once the collection is confirmed.',
+      );
+    }
+    const provider = tx.carrierProvider ?? tx.shippingMethod;
+    if (provider === 'BOBGO') {
+      // No verified Bob Go label endpoint exists yet. Say that plainly instead
+      // of falling through to a legacy carrier that has never heard of this id.
+      throw new BadRequestException(
+        'Printable waybills are not available for this courier yet — write the tracking reference on the parcel instead.',
+      );
+    }
     const pdf = await this.shipping.getWaybillPdf(
-      tx.shippingMethod,
+      provider === 'PUDO' ? 'PUDO' : 'TCG',
       tx.carrierShipmentId,
     );
     return {

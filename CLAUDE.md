@@ -228,7 +228,15 @@ unfinished modules dark in production (see Feature Flags).
 - **SMS:** SMSPortal
 - **Email:** Resend
 - **KYC:** VerifyNow
-- **Shipping:** Pudo (lockers) + The Courier Guy / TCG (door)
+- **Shipping:** Pudo (lockers) + The Courier Guy / TCG (door).
+  **Bob Go** is replacing BOTH — built and deployed but INERT behind the
+  `bobgo_enabled` flag (default OFF). It sits behind the EXISTING enum
+  slots: `PUDO` = pickup-point, `TCG` = door. So `shippingMethod` now
+  names the SHAPE of the delivery, not the company; route post-booking
+  work on `Transaction.carrierProvider`. ⚠️ Bob Go answers **HTTP 201
+  before a courier has agreed** — every booking starts unconfirmed
+  (`pending-rates`). Branch on `submission`, never on "it didn't throw".
+  See `BOBGO-MIGRATION.md`.
 - **Payments:** **Peach Payments** — Checkout V2 + Payouts + BANV.
   Deployed but INERT until `PEACH_*` creds are set and
   `PAYMENT_MODE=paygate` + `PAYMENTS_LIVE=true`. See
@@ -302,7 +310,8 @@ Backend (`.env`): `DATABASE_URL`, `CLERK_SECRET_KEY`,
 `VERIFYNOW_BASE_URL`, `ANTHROPIC_API_KEY`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`,
 `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY`, `SMSPORTAL_CLIENT_ID`,
 `SMSPORTAL_API_SECRET`, `RESEND_API_KEY`, `PUDO_API_KEY`,
-`TCG_API_KEY`, `TCG_WEBHOOK_SECRET`, `GOOGLE_MAPS_API_KEY`,
+`TCG_API_KEY`, `TCG_WEBHOOK_SECRET`, `BOBGO_API_KEY`,
+`BOBGO_BASE_URL`, `BOBGO_WEBHOOK_SECRET`, `GOOGLE_MAPS_API_KEY`,
 `ODOO_API_KEY`, `ODOO_URL`, `ODOO_DB`, `PEACH_ENTITY_ID`,
 `PEACH_ACCESS_TOKEN`, `PEACH_BASE_URL`.
 
@@ -903,6 +912,16 @@ handlers must exist as **public routes — no JWT**.
   Auth: `TCG_WEBHOOK_SECRET` header.
 - **Pudo** → `https://gungalore.co.za/api/shipping/webhook/pudo`
   Tracking status changes. No auth key.
+- **Bob Go** → `/api/shipping/webhook/bobgo/<secret>/<group>/<action>`
+  Seven topics exist; five are registered: `shipment_submission_status/
+  updated`, `tracking/updated`, `shipment_charged_amount/updated`,
+  `shipment_charged_weight/updated`, `shipment_health_status/updated`.
+  The topic AND the secret travel in the PATH — subscriptions are
+  registered one topic at a time and we choose the URL, so each one
+  self-identifies and authenticates without relying on custom headers
+  (unverified on Bob Go). Auth: `BOBGO_WEBHOOK_SECRET`.
+  Register with `PATCH /webhooks` (NOT POST — POST returns 200 and
+  silently creates nothing).
 
 Both handlers: idempotent, use a shared
 `findTransactionByTrackingNumber` helper, map provider status to

@@ -60,6 +60,18 @@ export interface ShippingQuote {
   priceCents: number;
   /** The box size Pudo will reserve at the source locker (L2L only). */
   boxName?: string;
+  /**
+   * Bob Go only. Booking needs the provider and service tier REPLAYED from the
+   * quote alongside serviceCode, and both vary per rate within a single quote
+   * response — one sandbox reply carried provider "sandbox" on its door rate
+   * and "demo" on its pickup-point rate. Pudo and TCG each had exactly one
+   * provider, so serviceCode alone was enough for them; it is not enough here.
+   * Optional so the legacy carriers are untouched.
+   */
+  providerSlug?: string;
+  serviceLevelCode?: string;
+  /** Bob Go pickup-point rates — the locker this rate delivers to. */
+  pickupPointLocationId?: number;
 }
 
 @Injectable()
@@ -346,6 +358,11 @@ export class PudoService {
     }
     return {
       carrier: 'PUDO',
+      provider: 'PUDO',
+      // Booked-or-throw: reaching this line IS the confirmation. Any
+      // non-2xx or unparseable response threw above, so there is no
+      // created-but-unaccepted state to report the way Bob Go has.
+      submission: 'SUBMITTED',
       shipmentId: String(json.id),
       trackingReference,
       pin: json.pincode != null ? String(json.pincode) : undefined,

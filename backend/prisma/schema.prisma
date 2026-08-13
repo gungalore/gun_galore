@@ -1314,6 +1314,15 @@ model Transaction {
   // straight from Pudo's response so we can pass it back into the
   // shipment-create call without re-fetching the quote.
   shippingServiceCode   String?
+  // Bob Go only — the rest of the chosen rate's identity. Bob Go's
+  // POST /shipments needs provider_slug and service_level_code alongside
+  // service_code, and BOTH vary per rate inside one quote response (a sandbox
+  // reply carried provider "sandbox" on the door rate and "demo" on the
+  // pickup-point rate). Pudo and TCG each had a single provider, so the
+  // service code alone was a sufficient snapshot for them — it is not here.
+  // Null on every legacy-carrier row and on non-courier sales.
+  shippingProviderSlug     String?
+  shippingServiceLevelCode String?
   passFeeToBuyer        Boolean // snapshot of listing.passFeeToBuyer
   buyerTotal            Int // what buyer is charged by Peach
   sellerPayout          Int // what seller receives after deductions
@@ -1427,6 +1436,23 @@ model Transaction {
   // never double-book; shipmentBookedAt marks a confirmed booking.
   carrierShipmentId        String?
   carrierDropoffPin        String?
+  // WHICH API actually booked this shipment: "PUDO", "TCG" or "BOBGO".
+  //
+  // Not derivable from shippingMethod any more. Bob Go sits behind BOTH enum
+  // slots (its pickup-point rates serve PUDO, its door rates serve TCG), so the
+  // method now describes the SHAPE of the delivery, not the company holding the
+  // parcel. Every post-booking operation — waybill PDF, cancel, tracking poll,
+  // webhook match — must route on THIS, or it will call the wrong carrier's API
+  // with an id that carrier has never heard of.
+  //
+  // It also makes the bobgo_enabled flag genuinely reversible: flip it off
+  // mid-flight and shipments already with Bob Go keep being tracked and
+  // cancelled through Bob Go, while new sales go back to Pudo/TCG. Without the
+  // column, flipping the flag orphans every parcel in the network.
+  //
+  // Null on historical rows, which all predate Bob Go and are therefore
+  // Pudo/TCG — readers must treat null as "derive from shippingMethod".
+  carrierProvider          String?
   shipmentBookingStartedAt DateTime?
   shipmentBookedAt         DateTime?
 
@@ -2221,6 +2247,33 @@ model PushSubscription {
 // Single-row settings table for feature flags + global config.
 // Looked up by key. Values are strings (parse as needed).
 // PAYMENT_MODE = 'manual' (FNB EFT) | 'paygate' (Stitch, dormant) lives here.
+// Raw Bob Go webhook payloads, kept verbatim.
+//
+// Bob Go's status vocabulary is only partly known — we have observed
+// pending-rates, success, no-rates and pending-collection, and nothing else.
+// status-map.ts maps carrier statuses by SUBSTRING, which is how an unseen
+// "ready_for_pickup" would be read as "out for delivery" and "expired" as a
+// terminal delivery failure. Rather than guess the rest, the webhook receiver
+// stores every payload whole and refuses to apply statuses it does not know.
+// This table is the evidence the map gets widened from.
+//
+// Stored whole (Json, not parsed columns) precisely because the value is in the
+// fields we did NOT know to ask for. Prunable — it is an observation log, not
+// money state, and nothing reads it on a hot path.
+model BobGoWebhookEvent {
+  id         String   @id @default(cuid())
+  topic      String
+  // Bob Go's shipment id, when the payload carried one. Nullable because an
+  // unrecognised topic may not, and a payload we cannot attribute is still
+  // worth keeping.
+  shipmentId String?
+  payload    Json
+  createdAt  DateTime @default(now())
+
+  @@index([shipmentId])
+  @@index([topic, createdAt])
+}
+
 model Setting {
   key       String   @id
   value     String
