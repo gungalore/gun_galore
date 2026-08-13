@@ -77,6 +77,17 @@ export interface KycScanInput {
   mode: 'standard' | 'anchored';
   /** Official Home Affairs photo (bare base64) — anchored mode only. */
   haPhotoBase64?: string;
+  /**
+   * The holder's age now, derived from the SA ID number's YYMMDD prefix
+   * (see ageFromSaIdNumber). Optional — omitted when the digits don't parse.
+   *
+   * Told to the model so the age gap is a stated fact rather than something
+   * it has to infer from two photographs. A green ID book issued at 16 to
+   * someone now 45 means a ~29-year gap, and knowing that is the difference
+   * between "these look like different people" and "this is what that person
+   * looks like 29 years later".
+   */
+  subjectAgeYears?: number;
 }
 
 const SYSTEM_PROMPT = `You are the identity-verification scanner for All Outdoor, a South African online marketplace. You will be shown:
@@ -97,7 +108,24 @@ CRITICAL — SEPARATE "I CANNOT SEE" FROM "THIS IS THE WRONG PERSON". These are 
 - Only score same_person low when you can actually SEE both faces well enough to judge and they genuinely look like different people.
 - If you cannot see well enough to have an opinion at all, same_person belongs in the 50-79 uncertain band — never below 50.
 
-Judging same_person — compare STABLE FACIAL STRUCTURE, not surface appearance. Weigh the geometry: eye spacing and shape, nose bridge and width, jawline and chin, ear position, brow ridge, the proportions between these. Explicitly DISCOUNT: hairstyle, facial hair, glasses, make-up, weight change, skin tone under different lighting, expression, image colour cast, and AGE. South African green ID books are frequently 10-25 years old, so a genuine holder can look substantially older than their document photo — that alone is NOT a mismatch. Smart ID cards carry holographic overlays that cause glare and colour shifts across the printed photo; judge through the glare rather than treating it as a different face.
+Judging same_person — compare STABLE FACIAL STRUCTURE, not surface appearance.
+
+RANK THE EVIDENCE. Some features cannot be changed by ageing, grooming or weight, and those decide the match. In descending order of reliability:
+1. Inter-pupillary distance as a RATIO of face width, and the eye-to-eye-to-nose triangle. Skull geometry; effectively fixed after adolescence.
+2. Ear morphology where visible — helix shape, lobe attachment, tragus, position relative to the eye line. Highly individual and stable for life.
+3. Nose BRIDGE width and the nasal profile at the bridge (the bony part, not the fleshy tip, which softens with age).
+4. Inter-ocular distance relative to nose-bridge width; philtrum length relative to nose width.
+5. Eye shape and canthal tilt (the angle between inner and outer corners).
+6. Brow ridge prominence and orbital shape.
+LOW-VALUE, easily changed, must never decide a verdict: hairstyle, hairline, facial hair, glasses, make-up, weight, skin tone under different lighting, expression, image colour cast, jewellery.
+
+OCCLUSION IS MISSING EVIDENCE, NOT CONTRARY EVIDENCE. This is the single most important rule here. If a beard hides the jaw and chin, you have NO jaw evidence — you do not have evidence of a DIFFERENT jaw. Long hair or a hat covering the ears and hairline removes ear evidence; it does not contradict it. Glasses obscure the orbital rim; they do not change it. When a feature is occluded, drop it from the comparison and weigh the features you CAN see. Never lower same_person because a feature was hidden — if too many high-value features are hidden to judge at all, that is the 50-79 uncertain band (a human looks), not a low score.
+
+AGEING CHANGES SOFT TISSUE, NOT SKULL. Over 10-25 years expect: heavier or hollower cheeks, jowling and a softer jawline, deeper nasolabial folds, thinner lips, a slightly broader and droopier nasal tip, hooding of the upper eyelid, receded or greyed hair, and a generally heavier or thinner face. NONE of these are evidence of a different person. What does NOT change: the ratios in the ranked list above. A South African green ID book is frequently 10-25 years old and its photo may be small, faded, low-contrast or monochrome — a genuine holder will look substantially older and heavier than it. That alone is NOT a mismatch and must not be scored as one.
+
+Smart ID cards carry holographic overlays that cause glare, banding and colour shifts across the printed photo; judge through the glare rather than treating it as a different face.
+
+Where an "official record photo" is supplied it is the authoritative likeness: it comes from the government's own record rather than from the card the applicant is holding, and it is usually far more recent and better quality than a green-book photo. When the official record photo and the document photo disagree, trust the official record photo for WHO the person is, and treat the document-photo difference as a question about the DOCUMENT (age, wear, or possible tampering) — report that through the document scores and issues, not by lowering same_person_vs_ha_photo.
 
 Judging selfie_live_capture — score SPOOF ARTEFACTS, not sharpness. Red flags are screen re-shoots (moiré, pixel grid, monitor bezels, backlight glow), a photograph of a printed photograph (paper texture, uniform print grain, visible edges), and obvious digital editing. A genuinely live capture that happens to be blurry, dim or grainy is STILL a live capture and must score high on this gate. Do not punish a bad camera.
 
@@ -213,6 +241,14 @@ export class ClaudeKycService {
       : { type: 'image', source: { type: 'url', url: this.jpegUrl(input.documentUrl!) } };
 
     const userContent: ContentBlock[] = [
+      ...(typeof input.subjectAgeYears === 'number'
+        ? [
+            {
+              type: 'text' as const,
+              text: `Context: the holder of this ID number is ${input.subjectAgeYears} years old today (derived from the ID number itself, not from the document image). A South African green ID book is typically issued at 16 and never reissued, so if this is a green book the photo may be up to ${Math.max(0, input.subjectAgeYears - 16)} years old. A smart ID card is usually more recent. Expect the selfie to show that much ageing, and weigh the comparison accordingly.`,
+            },
+          ]
+        : []),
       {
         type: 'text',
         text: 'Identity document (photo or PDF — if a PDF, find the page carrying the ID and its photo):',
@@ -505,16 +541,44 @@ export class ClaudeKycService {
       return Number.isFinite(n) ? n : 0;
     };
 
+    const docPhotoMatch = toGate(findings.face_match?.same_person);
+    const haPhotoMatch = toGate(findings.face_match?.same_person_vs_ha_photo);
+
     const identityGates: number[] = [
-      toGate(findings.face_match?.same_person),
       toGate(findings.face_match?.selfie_live_capture),
       toGate(findings.document?.looks_genuine_sa_id),
     ];
     if (mode === 'anchored') {
       // The anchored gate is the whole point of the tier — a missing score
       // (model omitted it) counts as 0 so it can never silently pass.
-      identityGates.push(toGate(findings.face_match?.same_person_vs_ha_photo));
+      identityGates.push(haPhotoMatch);
     }
+
+    // Which face comparison is allowed to REJECT on its own?
+    //
+    // In standard mode there is only one: the document photo. It carries the
+    // decision because there is nothing else to go on.
+    //
+    // In anchored mode there are two, and they are NOT equal evidence. The
+    // Home Affairs photo comes from the government's own record, keyed to the
+    // ID number and pulled live — the applicant cannot influence it, and it is
+    // usually far more recent than the card in their hand. The document photo
+    // sits on a card they physically hold, and on a green book it can be
+    // 25 years old, faded and monochrome.
+    //
+    // So a strong HA match with a weak document match does NOT mean "wrong
+    // person" — Home Affairs has just confirmed the person. It means the
+    // DOCUMENT photo disagrees, which is either ordinary ageing on an old
+    // book or a tampered card. Those need a human, not an automatic refusal.
+    //
+    // Previously same_person sat in the reject list unconditionally, so
+    // ha_photo=95 against the official record was overridden by
+    // same_person=45 against a 25-year-old photo, and an honest seller with
+    // an old green book was rejected outright. That is the age-gap failure
+    // this split exists to fix.
+    const docPhotoDecides =
+      mode !== 'anchored' || haPhotoMatch < AUTO_APPROVE_FLOOR;
+    if (docPhotoDecides) identityGates.push(docPhotoMatch);
     const qualityGates: number[] = [
       toGate(findings.document?.legibility),
       toGate(findings.face_match?.document_photo_visible),
@@ -530,6 +594,14 @@ export class ClaudeKycService {
     if (qualityGates.some((g) => g < AUTO_REJECT_CEILING)) return 'RETAKE';
 
     if (crossCheck.softFails.length > 0) return 'UNDER_REVIEW';
+
+    // Identity is established (HA photo strong) but the card's own photo
+    // disagrees. Not auto-approvable: it could be a very old green book, or a
+    // substituted photo on a real card. A human compares the three images.
+    if (!docPhotoDecides && docPhotoMatch < AUTO_APPROVE_FLOOR) {
+      return 'UNDER_REVIEW';
+    }
+
     if (
       [...identityGates, ...qualityGates].every((g) => g >= AUTO_APPROVE_FLOOR)
     ) {

@@ -39,6 +39,84 @@ const clean: CrossCheckResult = { pass: true, hardFails: [], softFails: [] };
 const soft: CrossCheckResult = { pass: false, hardFails: [], softFails: ['doc-dob-mismatch'] };
 const hard: CrossCheckResult = { pass: false, hardFails: ['dob-id-digit-mismatch'], softFails: [] };
 
+// The scenario this exists for: a genuine seller whose green ID book photo
+// is 20+ years old, or who has grown a beard since. Home Affairs confirms
+// them from the government's own recent photograph, but the ancient card
+// photo scores badly. Before this split that combination was REJECTED.
+describe('age gap: the official record photo outranks an old document photo', () => {
+  const svc = new ClaudeKycService();
+
+  it('strong HA match + weak document photo → human review, NOT rejection', () => {
+    expect(
+      svc.statusFromFindings(
+        findings({ same_person: 45, same_person_vs_ha_photo: 95 }),
+        clean,
+        'anchored',
+      ),
+    ).toBe('UNDER_REVIEW');
+  });
+
+  it('strong HA match + strong document photo still auto-verifies', () => {
+    expect(
+      svc.statusFromFindings(
+        findings({ same_person: 88, same_person_vs_ha_photo: 95 }),
+        clean,
+        'anchored',
+      ),
+    ).toBe('VERIFIED');
+  });
+
+  it('a WEAK HA match still REJECTS — the authoritative photo governs', () => {
+    // The protection that must survive: if Home Affairs' own photo says this
+    // is not them, a flattering document-photo score cannot rescue it.
+    expect(
+      svc.statusFromFindings(
+        findings({ same_person: 95, same_person_vs_ha_photo: 20 }),
+        clean,
+        'anchored',
+      ),
+    ).toBe('REJECTED');
+  });
+
+  it('in STANDARD mode the document photo still decides — nothing else to go on', () => {
+    expect(
+      svc.statusFromFindings(findings({ same_person: 45 }), clean, 'standard'),
+    ).toBe('REJECTED');
+  });
+
+  it('a merely adequate HA match does not license a bad document photo', () => {
+    // ha=65 is below the approve floor, so it has not established identity
+    // confidently enough to override anything: the document photo still counts.
+    expect(
+      svc.statusFromFindings(
+        findings({ same_person: 30, same_person_vs_ha_photo: 65 }),
+        clean,
+        'anchored',
+      ),
+    ).toBe('REJECTED');
+  });
+
+  it('a forged document still REJECTS even with a perfect HA match', () => {
+    expect(
+      svc.statusFromFindings(
+        findings({ looks_genuine_sa_id: 15, same_person_vs_ha_photo: 98 }),
+        clean,
+        'anchored',
+      ),
+    ).toBe('REJECTED');
+  });
+
+  it('a spoofed selfie still REJECTS even with a perfect HA match', () => {
+    expect(
+      svc.statusFromFindings(
+        findings({ selfie_live_capture: 10, same_person_vs_ha_photo: 98 }),
+        clean,
+        'anchored',
+      ),
+    ).toBe('REJECTED');
+  });
+});
+
 describe('ClaudeKycService borderline consensus', () => {
   const svc = new ClaudeKycService();
 

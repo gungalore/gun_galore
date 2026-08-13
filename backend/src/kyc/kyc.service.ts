@@ -21,7 +21,11 @@ import { ActionTokensService } from '../actions/action-tokens.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { ClaudeKycService, type KycClaudeFindings } from './claude-kyc.service';
-import { crossCheckIdentity, saIdLuhnValid } from './kyc-cross-check';
+import {
+  ageFromSaIdNumber,
+  crossCheckIdentity,
+  saIdLuhnValid,
+} from './kyc-cross-check';
 
 // SHA-256 hash of a SA ID number with a per-app salt. We never store
 // the raw 13-digit number — only the hash — so even if the User table
@@ -699,6 +703,9 @@ export class KycService {
         documentPdf,
         mode,
         haPhotoBase64,
+        // Derived from the ID number's own YYMMDD digits — free, and it
+        // turns "allow for ageing" into a stated number of years.
+        subjectAgeYears: ageFromSaIdNumber(idNumber) ?? undefined,
       });
       findings = consensus.findings;
       consensusSamples = consensus.samples;

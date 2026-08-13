@@ -81,6 +81,53 @@ export function dobMatchesIdDigits(idNumber: string, dob: string): boolean {
  * attempted (Claude + VerifyNow both emit numeric forms). Returns '' when
  * unparseable so callers treat it as absent rather than mismatched.
  */
+/**
+ * The holder's age in whole years, derived from the SA ID number's own
+ * YYMMDD prefix. Pure and deterministic — no API call, no extra cost.
+ *
+ * This exists to tell the vision model HOW BIG the age gap actually is
+ * instead of leaving it to guess. "Discount age differences" is weak
+ * guidance; "this person was 19 in the document photo and is 42 now" is a
+ * concrete instruction that changes how the comparison is weighted.
+ *
+ * The century is inferred: SA ID numbers carry only two digits of year, so a
+ * '52' is 1952 rather than 2052. Anything that would imply a future birth
+ * date belongs to the previous century. Returns null rather than guessing
+ * when the digits are not a real date — a caller must be able to tell "no
+ * age context" apart from "age 0".
+ */
+export function ageFromSaIdNumber(
+  idNumber: string,
+  now: Date = new Date(),
+): number | null {
+  const digits = (idNumber ?? '').replace(/\D/g, '');
+  if (digits.length < 6) return null;
+  const yy = Number(digits.slice(0, 2));
+  const mm = Number(digits.slice(2, 4));
+  const dd = Number(digits.slice(4, 6));
+  if (!Number.isFinite(yy) || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+
+  const currentYY = now.getFullYear() % 100;
+  const century = yy <= currentYY ? 2000 : 1900;
+  const year = century + yy;
+  const dob = new Date(Date.UTC(year, mm - 1, dd));
+  // Reject impossible dates that Date silently rolls over (e.g. 31 Feb).
+  if (
+    dob.getUTCFullYear() !== year ||
+    dob.getUTCMonth() !== mm - 1 ||
+    dob.getUTCDate() !== dd
+  ) {
+    return null;
+  }
+
+  let age = now.getUTCFullYear() - year;
+  const beforeBirthday =
+    now.getUTCMonth() < mm - 1 ||
+    (now.getUTCMonth() === mm - 1 && now.getUTCDate() < dd);
+  if (beforeBirthday) age -= 1;
+  return age >= 0 && age <= 120 ? age : null;
+}
+
 export function normaliseDob(raw: string | null | undefined): string {
   if (!raw) return '';
   const s = raw.trim();
