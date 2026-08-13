@@ -91,6 +91,22 @@ export class ShippingController {
     return this.shipping.quoteForListing(body);
   }
 
+  // Priced pickup points near the buyer's address (Bob Go rail).
+  //
+  // POST, not GET, because it carries a delivery address — a GET would put the
+  // buyer's street address in a URL, and URLs end up in logs and referrers.
+  @Post('pickup-points')
+  @HttpCode(200)
+  async pickupPoints(
+    @Body()
+    body: {
+      listingId: string;
+      deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>;
+    },
+  ) {
+    return this.shipping.bobgoPickupPoints(body.listingId, body.deliveryAddress);
+  }
+
   // ---------------------------------------------------------------
   // Bob Go webhook — public route, no JWT.
   //

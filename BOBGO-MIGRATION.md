@@ -135,24 +135,30 @@ The resolution cron must fetch the shipment list **once per tick** and match
 locally. Calling `getShipment` per row re-downloads the account's whole shipment
 list per row, because the `?id=` filter has never been observed to work.
 
-### 2. Quoting — units, and fail-soft
+### 2. Quoting ✅ DONE (increment 5)
 
-- `quoteCombined` (`transactions.service.ts:1002`) has **no try/catch** and its
-  only error contract is `return null`. Since the Bob Go client throws, one
-  unreachable call turns a whole multi-item cart checkout into a 500 instead of
-  the designed silent fallback to per-line quoting.
-- Both `BadRequestException` branches at `shipping.service.ts:229` and `:295`
-  become unreachable for the same reason, and their copy is wrong under Bob Go
-  ("too large for Pudo locker shipping" also fires when there is simply no
-  pickup point near the address).
-- The consolidated-cart override tuple (`transactions.service.ts:966`) and both
-  swap legs (`swap-funding.service.ts:312-331`) snapshot **only**
-  `serviceCode` — they must also carry provider and service level, or the
-  booking days later goes out with a guessed provider.
+`quoteForListing` and `quoteCombined` both route through one shared helper when
+the flag is on. A single `getRates` call serves BOTH slots — door rates fill the
+TCG slot, pickup-point rates the PUDO slot — replacing two carrier calls.
 
-Declared-value units were a live trap and are **already fixed**: the client takes
-cents (`declaredValueCents`) and converts on the wire, matching what every caller
-already passes. Passing rand would have declared a R1,500 parcel as R150,000.
+**Outage and no-rate are now different answers.** Both legacy clients returned
+null for everything, so "no rate for this route" and "the carrier is down" were
+indistinguishable: the buyer saw an empty shipping list either way and the sale
+was lost silently. Now an outage tells the buyer to retry, and a genuine
+no-rate says so. `quoteCombined` still returns **null for everything including
+an outage**, because `createOrderCheckout` calls it with no try/catch and treats
+null as "fall back to per-line quoting" — a throw there would 500 a whole cart.
+
+The rate snapshot (provider + service level) is written on all three paths, and
+`bobgoPickupPoints()` + `POST /shipping/pickup-points` serve the inverted
+picker: priced, deduped, nearest-first points built from the quote itself.
+
+**The UX change is now enforced in code**: the pickup-point slot demands a
+delivery address and says so plainly. Frontend still to follow.
+
+Declared-value units were a live trap and are fixed: the client takes cents and
+converts on the wire. Passing rand would have declared a R1,500 parcel as
+R150,000.
 
 ### 3. Tracking — an unknown vocabulary meeting a lexical map
 

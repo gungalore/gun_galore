@@ -15,7 +15,12 @@ import {
 } from './pudo.service';
 import { TcgService, type TcgResidentialAddress } from './tcg.service';
 import { BobGoService } from './bobgo.service';
-import type { BobGoAddress } from './bobgo.types';
+import type { BobGoAddress, BobGoRate } from './bobgo.types';
+import {
+  pickupPointOptions,
+  rateToQuote,
+  selectRateForSlot,
+} from './bobgo-adapter';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { CarrierContact, CarrierShipmentResult } from './carrier.types';
 import { shiplogicToShippingStatus } from './status-map';
@@ -167,6 +172,92 @@ export class ShippingService {
   }
 
   /**
+   * Quote a route through Bob Go and pick the rate for one slot.
+   *
+   * ONE call replaces the Pudo-or-TCG fork: Bob Go returns door and
+   * pickup-point rates together, so the slot only decides which of them we
+   * keep. Shared by quoteForListing and quoteCombined so the unit conversion
+   * and the selection policy exist in exactly one place.
+   *
+   * Returns `outage` separately from an empty quote because the two mean
+   * opposite things to a buyer. Both legacy clients returned null for
+   * everything, which made "no rate for this route" and "the carrier is down"
+   * indistinguishable — the buyer saw the same empty shipping list either way
+   * and the sale was lost silently. The Bob Go client throws on an outage, and
+   * this is where that distinction is preserved for callers to act on.
+   */
+  private async bobgoQuoteForSlot(input: {
+    slot: 'PUDO' | 'TCG';
+    collection: TcgResidentialAddress;
+    delivery: {
+      streetAddress: string;
+      suburb: string;
+      city: string;
+      postalCode: string;
+      province: Province;
+    };
+    parcel: ParcelDims;
+    declaredValueCents: number;
+    /** Pickup-point slot — the locker the buyer chose, when they chose one. */
+    lockerId?: number;
+    description?: string;
+  }): Promise<{ quote: ShippingQuote | null; outage: boolean }> {
+    const toBobGo = (a: {
+      streetAddress: string;
+      suburb: string;
+      city: string;
+      postalCode: string;
+    }): BobGoAddress => ({
+      streetAddress: a.streetAddress,
+      suburb: a.suburb,
+      city: a.city,
+      postalCode: a.postalCode,
+      province: '',
+    });
+
+    const collection: BobGoAddress = {
+      ...toBobGo(input.collection),
+      // The collection address already carries the LONG province name (it is
+      // built for TCG, which wants the same form Bob Go does).
+      province: input.collection.province,
+      company: input.collection.company,
+    };
+    const delivery: BobGoAddress = {
+      ...toBobGo(input.delivery),
+      province: PROVINCE_LONG[input.delivery.province],
+    };
+
+    let rates: BobGoRate[];
+    try {
+      const q = await this.bobgo.getRates({
+        collection,
+        delivery,
+        parcels: [
+          {
+            lengthCm: input.parcel.lengthCm,
+            widthCm: input.parcel.widthCm,
+            heightCm: input.parcel.heightCm,
+            weightKg: input.parcel.weightGrams / 1000,
+            description: input.description,
+          },
+        ],
+        declaredValueCents: input.declaredValueCents,
+      });
+      rates = q.rates;
+    } catch (err) {
+      this.logger.warn(
+        `Bob Go quote failed (${input.slot}): ${(err as Error).message}`,
+      );
+      return { quote: null, outage: true };
+    }
+
+    const rate = selectRateForSlot(rates, input.slot, {
+      lockerId: input.lockerId,
+    });
+    return { quote: rate ? rateToQuote(rate) : null, outage: false };
+  }
+
+  /**
    * Live rate quote for a listing. Resolves seller-side address /
    * locker from the listing row, then asks Pudo for an L2L or D2D
    * price. Returns a ShippingQuote the buyer sees on the checkout
@@ -220,6 +311,70 @@ export class ShippingService {
       heightCm: listing.heightCm,
       weightGrams: listing.weightGrams,
     };
+
+    const useBobGo = await this.settings.get(FLAGS.bobgoEnabled);
+
+    if (useBobGo && (body.shippingMethod === 'PUDO' || body.shippingMethod === 'TCG')) {
+      // Bob Go needs a delivery address for BOTH slots — a pickup-point parcel
+      // is still routed from the buyer's address, and the points it offers are
+      // the ones near that address.
+      //
+      // THIS IS A REAL UX CHANGE for the locker slot. Today a buyer picks a
+      // locker from a cached directory before entering an address; under Bob Go
+      // the flow inverts to "quote the route, then choose from the points it
+      // returns". Everything offered is then a point Bob Go has confirmed it
+      // will carry this parcel to, which the Pudo directory could never
+      // promise — but the address has to come first. Fail with a clear
+      // instruction rather than silently quoting the wrong thing.
+      if (!body.deliveryAddress) {
+        throw new BadRequestException(
+          'Enter your delivery address first so we can find the closest collection points and prices.',
+        );
+      }
+      const from =
+        listing.isDealListing
+          ? await this.dealCollectionOrigin(listing.id)
+          : ((): TcgResidentialAddress => {
+              if (!listing.pickupStreet || !listing.pickupCity) {
+                throw new BadRequestException(
+                  "Seller hasn't provided a collection address yet.",
+                );
+              }
+              return {
+                streetAddress: listing.pickupStreet,
+                suburb: listing.pickupSuburb ?? '',
+                city: listing.pickupCity,
+                postalCode: listing.pickupPostalCode ?? '',
+                province: PROVINCE_LONG[listing.province],
+                lat: listing.pickupLat ?? undefined,
+                lng: listing.pickupLng ?? undefined,
+              };
+            })();
+
+      const { quote, outage } = await this.bobgoQuoteForSlot({
+        slot: body.shippingMethod,
+        collection: from,
+        delivery: body.deliveryAddress,
+        parcel,
+        declaredValueCents: listing.price ?? 0,
+        lockerId: body.toLockerId ? Number(body.toLockerId) : undefined,
+      });
+      if (outage) {
+        // Deliberately distinct from "no rate": an outage is temporary and the
+        // buyer should be told to retry, not that we cannot deliver to them.
+        throw new BadRequestException(
+          'We could not reach the courier for a price just now. Please try again in a moment.',
+        );
+      }
+      if (!quote) {
+        throw new BadRequestException(
+          body.shippingMethod === 'PUDO'
+            ? 'No collection point near that address can take this parcel. Try door delivery instead.'
+            : 'No door-delivery rate available for this route right now.',
+        );
+      }
+      return quote;
+    }
 
     if (body.shippingMethod === 'PUDO') {
       // Pudo L2L doesn't bind the parcel to a specific SOURCE locker —
@@ -317,6 +472,101 @@ export class ShippingService {
     );
   }
 
+  /**
+   * Priced pickup points near a buyer's address, for the checkout picker.
+   *
+   * Built from a QUOTE, not a directory. Bob Go returns pickup-point options
+   * already priced, already distance-ranked and already bookable (the location
+   * id is baked into the service code), so there is no "find points, then price
+   * them" round trip — and, unlike the Pudo directory, every point returned is
+   * one Bob Go has confirmed will take THIS parcel.
+   *
+   * Deduped by location: rates are generated per location and the sandbox has
+   * been seen returning the same locker twice.
+   */
+  async bobgoPickupPoints(
+    listingId: string,
+    deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>,
+  ): Promise<
+    Array<{
+      locationId: number;
+      name: string;
+      description?: string;
+      distanceKm?: number;
+      priceCents: number;
+      serviceCode: string;
+    }>
+  > {
+    const listing = await this.prisma.listing.findUnique({
+      where: { id: listingId },
+    });
+    if (!listing) throw new NotFoundException('Listing not found');
+    if (
+      !listing.weightGrams ||
+      !listing.lengthCm ||
+      !listing.widthCm ||
+      !listing.heightCm
+    ) {
+      throw new BadRequestException(
+        'This listing is missing parcel weight / dimensions. Ask the seller to update it.',
+      );
+    }
+    const from = listing.isDealListing
+      ? await this.dealCollectionOrigin(listing.id)
+      : {
+          streetAddress: listing.pickupStreet ?? '',
+          suburb: listing.pickupSuburb ?? '',
+          city: listing.pickupCity ?? '',
+          postalCode: listing.pickupPostalCode ?? '',
+          province: PROVINCE_LONG[listing.province],
+        };
+    if (!from.streetAddress || !from.city) {
+      throw new BadRequestException(
+        "Seller hasn't provided a collection address yet.",
+      );
+    }
+
+    let rates: BobGoRate[];
+    try {
+      const q = await this.bobgo.getRates({
+        collection: { ...from, province: from.province },
+        delivery: {
+          streetAddress: deliveryAddress.streetAddress,
+          suburb: deliveryAddress.suburb,
+          city: deliveryAddress.city,
+          postalCode: deliveryAddress.postalCode,
+          province: PROVINCE_LONG[deliveryAddress.province],
+        },
+        parcels: [
+          {
+            lengthCm: listing.lengthCm,
+            widthCm: listing.widthCm,
+            heightCm: listing.heightCm,
+            weightKg: listing.weightGrams / 1000,
+          },
+        ],
+        declaredValueCents: listing.price ?? 0,
+      });
+      rates = q.rates;
+    } catch (err) {
+      this.logger.warn(
+        `Bob Go pickup-point lookup failed: ${(err as Error).message}`,
+      );
+      throw new BadRequestException(
+        'We could not reach the courier just now. Please try again in a moment.',
+      );
+    }
+
+    return pickupPointOptions(rates).map((r) => ({
+      locationId: r.pickupPointLocationId!,
+      name: r.serviceName,
+      description: r.description,
+      distanceKm: r.pickupPointDistanceKm,
+      priceCents: rateToQuote(r).priceCents,
+      serviceCode: r.serviceCode,
+    }));
+  }
+
   // P6.2 — quote ONE consolidated parcel for 2+ items from the SAME seller,
   // shipping via the SAME method to the SAME destination. Combined weight =
   // Σ(item weight × qty); combined box = a conservative STACKED bounding box
@@ -369,6 +619,44 @@ export class ShippingService {
       declaredValueCents += (l.price ?? 0) * qty;
     }
     const parcel: ParcelDims = { lengthCm, widthCm, heightCm, weightGrams };
+
+    if (await this.settings.get(FLAGS.bobgoEnabled)) {
+      // Consolidated groups quote exactly like a single line, just with the
+      // combined box. Everything here returns null rather than throwing —
+      // including an outage — because this method's ONLY error contract is
+      // null, and the caller (transactions.service.ts createOrderCheckout)
+      // invokes it without a try/catch. A thrown error would turn a whole
+      // multi-item cart checkout into a 500 instead of falling back to
+      // per-line quoting, which is the designed behaviour.
+      const first = byId.get(items[0].listingId)!;
+      if (!dest.deliveryAddress) return null;
+      let from: TcgResidentialAddress;
+      try {
+        from = first.isDealListing
+          ? await this.dealCollectionOrigin(first.id)
+          : {
+              streetAddress: first.pickupStreet ?? '',
+              suburb: first.pickupSuburb ?? '',
+              city: first.pickupCity ?? '',
+              postalCode: first.pickupPostalCode ?? '',
+              province: PROVINCE_LONG[first.province],
+              lat: first.pickupLat ?? undefined,
+              lng: first.pickupLng ?? undefined,
+            };
+      } catch {
+        return null;
+      }
+      if (!from.streetAddress || !from.city) return null;
+      const { quote } = await this.bobgoQuoteForSlot({
+        slot: method,
+        collection: from,
+        delivery: dest.deliveryAddress,
+        parcel,
+        declaredValueCents,
+        lockerId: dest.toLockerId ? Number(dest.toLockerId) : undefined,
+      });
+      return quote;
+    }
 
     if (method === 'PUDO') {
       if (!dest.toLockerId) return null;
