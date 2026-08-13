@@ -24,6 +24,12 @@ import {
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { CarrierContact, CarrierShipmentResult } from './carrier.types';
 import { shiplogicToShippingStatus } from './status-map';
+import {
+  failedShipmentChargeCents,
+  requiresRemeasure,
+  sellerPaysFor,
+  type ShipmentFailureReason,
+} from '../common/shipment-failure-policy';
 
 export type ShippingMethod = 'PUDO' | 'TCG' | 'DEALER_TRANSFER';
 
@@ -1533,6 +1539,138 @@ export class ShippingService {
       `resolvePendingBobGoBookings: ${out.checked} checked, ${out.booked} booked, ${out.failed} failed, ${out.stillPending} still pending`,
     );
     return out;
+  }
+
+  /**
+   * Record WHY a courier shipment failed, and bill the seller when it was
+   * their error.
+   *
+   * Called by an admin working a failed shipment, so the reason is a human's
+   * judgement rather than a carrier string — the carrier tells us THAT a
+   * delivery failed, almost never whose fault it was.
+   *
+   * The charge accumulates on the transaction and is subtracted at payout. It
+   * does NOT touch sellerPayout, which stays a snapshot of the agreed sale.
+   */
+  async recordShipmentFailure(
+    transactionId: string,
+    reason: ShipmentFailureReason,
+    note?: string,
+  ): Promise<{ charged: boolean; chargeCents: number }> {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: {
+        id: true,
+        shippingCost: true,
+        failedShipmentChargeCents: true,
+        sellerId: true,
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+
+    const charge = sellerPaysFor(reason) ? failedShipmentChargeCents(tx) : 0;
+
+    await this.prisma.transaction.update({
+      where: { id: transactionId },
+      data: {
+        shipmentFailureReason: reason,
+        shipmentFailureNote: note?.slice(0, 500) ?? null,
+        shipmentFailureAt: new Date(),
+        // ACCUMULATES — a second failure adds a second wasted courier charge.
+        failedShipmentChargeCents: { increment: charge },
+      },
+    });
+
+    this.logger.warn(
+      `Shipment failed for ${transactionId}: ${reason}` +
+        (charge > 0
+          ? ` — R${(charge / 100).toFixed(2)} charged to the seller (deducted at payout)`
+          : ' — no seller charge'),
+    );
+    return { charged: charge > 0, chargeCents: charge };
+  }
+
+  /**
+   * Clear a failed booking so the sale can be booked with the carrier again.
+   *
+   * Does NOT itself call the carrier. It returns the sale to the state
+   * bookForTransaction expects — no shipment, no claim — and that one method
+   * stays the only thing that ever books, keeping the idempotency claim and
+   * the three-way submission handling in a single place.
+   *
+   * Refuses when the seller has not fixed what broke it. A parcel that did not
+   * fit will not fit the second time, and rebooking without corrected
+   * measurements just burns another courier charge (theirs) and delays the
+   * buyer again.
+   */
+  async rebookShipment(transactionId: string): Promise<{ rebooked: boolean; reason?: string }> {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: {
+        id: true,
+        paymentStatus: true,
+        shipmentFailureReason: true,
+        shipmentFailureAt: true,
+        listing: {
+          select: { weightGrams: true, lengthCm: true, widthCm: true, heightCm: true, updatedAt: true },
+        },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+
+    // Same money backstop bookForTransaction uses: never re-book a sale whose
+    // funds are not held.
+    if (tx.paymentStatus !== 'HELD') {
+      return { rebooked: false, reason: 'Funds are no longer held for this sale.' };
+    }
+    if (!tx.shipmentFailureAt || !tx.shipmentFailureReason) {
+      return { rebooked: false, reason: 'This shipment has not been marked as failed.' };
+    }
+
+    const failureReason = tx.shipmentFailureReason as ShipmentFailureReason;
+    if (requiresRemeasure(failureReason)) {
+      const L = tx.listing;
+      const measured =
+        !!L.weightGrams && !!L.lengthCm && !!L.widthCm && !!L.heightCm;
+      // The measurements must have been touched SINCE the failure — merely
+      // having dimensions is what got us here.
+      const remeasured = measured && L.updatedAt > tx.shipmentFailureAt;
+      if (!remeasured) {
+        return {
+          rebooked: false,
+          reason:
+            'Update the parcel size and weight on the listing first — the parcel did not fit the measurements given.',
+        };
+      }
+    }
+
+    await this.prisma.transaction.update({
+      where: { id: transactionId },
+      data: {
+        // Release the booking so bookForTransaction can claim it afresh. The
+        // old carrier shipment is dead — it already failed — so its id and
+        // waybill must go, or the seller's UI keeps showing a dead waybill and
+        // cancelForTransaction would chase a shipment that no longer matters.
+        carrierShipmentId: null,
+        carrierDropoffPin: null,
+        trackingReference: null,
+        carrierProvider: null,
+        shipmentBookedAt: null,
+        shipmentBookingStartedAt: null,
+        shippingStatus: null,
+        shipmentRebookCount: { increment: 1 },
+        // The failure itself is deliberately NOT cleared: the reason, the note
+        // and the accumulated charge are the record of what happened and why
+        // the seller is being billed. Only the booking is reset.
+      },
+    });
+
+    const result = await this.bookForTransaction(transactionId);
+    if (!result) {
+      return { rebooked: false, reason: 'The courier could not be booked. Try again shortly.' };
+    }
+    this.logger.log(`Shipment re-booked for ${transactionId} after ${failureReason}`);
+    return { rebooked: true };
   }
 
   // Cancel a booked shipment when a sale is reversed before hand-over (admin

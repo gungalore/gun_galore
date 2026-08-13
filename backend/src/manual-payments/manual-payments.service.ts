@@ -26,6 +26,31 @@ export interface SkippedDueRow {
   reason: string;
 }
 
+// What a seller is actually paid: the agreed payout, less refund slices being
+// paid to the buyer, less any wasted courier charge they owe.
+//
+// sellerPayout is a POINT-OF-SALE SNAPSHOT and is never mutated — so both
+// deductions are applied here, at the moment money moves, and stay visible as
+// separate explainable lines rather than silently rewriting the sale.
+//
+// failedShipmentChargeCents is set when a shipment failed through the seller's
+// own error (see common/shipment-failure-policy.ts) — most often a parcel
+// measured smaller than it really is, which then does not fit the collection
+// point. It accumulates across repeat failures. Clamped at zero: a charge
+// larger than the payout must never invert into money owed TO us on a payout
+// run — recovering more than the sale is worth is a decision for a human.
+export function netPayoutCents(p: {
+  sellerPayout: number;
+  failedShipmentChargeCents?: number | null;
+  refundChildren?: { buyerTotal: number }[] | null;
+}): number {
+  const refunded = (p.refundChildren ?? []).reduce((s, x) => s + x.buyerTotal, 0);
+  return Math.max(
+    0,
+    p.sellerPayout - refunded - (p.failedShipmentChargeCents ?? 0),
+  );
+}
+
 @Injectable()
 export class ManualPaymentsService {
   private readonly logger = new Logger(ManualPaymentsService.name);
@@ -77,7 +102,7 @@ export class ManualPaymentsService {
     // Rows that can't be mapped/paid are skipped WITH a reason, never guessed.
     const beneficiaries: (PeachPayoutBeneficiary & { txId: string })[] = [];
     for (const p of payable) {
-      const amountCents = Math.max(0, p.sellerPayout - childrenSum(p.refundChildren));
+      const amountCents = netPayoutCents(p);
       const bank = normaliseBankName(p.seller.bankName);
       if (!bank) {
         collected.skipped.push({
@@ -355,6 +380,9 @@ export class ManualPaymentsService {
       },
       select: {
         sellerPayout: true,
+        // REQUIRED by netPayoutCents — omit it and the deduction is silently
+        // zero, which looks exactly like a working payout.
+        failedShipmentChargeCents: true,
         refundChildren: { select: { buyerTotal: true } },
       },
     });
@@ -479,6 +507,9 @@ export class ManualPaymentsService {
         id: true,
         orderReference: true,
         sellerPayout: true,
+        // REQUIRED by netPayoutCents — omit it and the deduction is silently
+        // zero, which looks exactly like a working payout.
+        failedShipmentChargeCents: true,
         refundedAmount: true,
         // P0.3 review fix — the seller is docked only for refund slices the
         // buyer is ACTUALLY being paid (i.e. minted children), never for
@@ -581,7 +612,7 @@ export class ManualPaymentsService {
       // the buyer (minted children). Legacy pre-deploy refundedAmount without
       // children never moved money.
       const covered = childrenSum(p.refundChildren);
-      const payoutAmount = Math.max(0, p.sellerPayout - covered);
+      const payoutAmount = netPayoutCents(p);
       if (payoutAmount <= 0) {
         // Fully consumed by refunds — nets to R0.
         zeroNetIds.push(p.id);

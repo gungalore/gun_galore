@@ -16,6 +16,12 @@ import {
   type QuoteRequestBody,
 } from './shipping.service';
 import { BobGoWebhookService } from './bobgo-webhook.service';
+import {
+  isShipmentFailureReason,
+  SHIPMENT_FAILURE_LABEL,
+  SHIPMENT_FAILURE_REASONS,
+  sellerPaysFor,
+} from '../common/shipment-failure-policy';
 import { LockerSearchDto } from './dto/locker-search.dto';
 import { DealerQueryDto } from './dto/dealer-query.dto';
 
@@ -89,6 +95,19 @@ export class ShippingController {
   @HttpCode(200)
   async quote(@Body() body: QuoteRequestBody) {
     return this.shipping.quoteForListing(body);
+  }
+
+  // The failure ticklist, so the admin UI renders exactly the reasons the
+  // policy knows about instead of keeping its own copy that can drift.
+  // `sellerPays` is surfaced so the UI can warn BEFORE a reason is submitted
+  // that picking it will bill the seller.
+  @Get('failure-reasons')
+  failureReasons() {
+    return SHIPMENT_FAILURE_REASONS.map((value) => ({
+      value,
+      label: SHIPMENT_FAILURE_LABEL[value],
+      sellerPays: sellerPaysFor(value),
+    }));
   }
 
   // The buyer's full delivery menu — door AND collection points, priced, in

@@ -1452,6 +1452,26 @@ model Transaction {
   //
   // Null on historical rows, which all predate Bob Go and are therefore
   // Pudo/TCG — readers must treat null as "derive from shippingMethod".
+  // ── Failed shipment + rebook (operator 2026-08-13) ──
+  //
+  // When a courier collection or delivery fails, the reason is recorded from a
+  // fixed ticklist (common/shipment-failure-policy.ts) and the seller may
+  // rebook. Where the failure was the SELLER's error — most often a parcel
+  // measured smaller than it really is — the wasted courier charge is theirs.
+  //
+  // failedShipmentChargeCents ACCUMULATES across failures and is subtracted
+  // where payouts are computed. It is deliberately NOT applied by mutating
+  // sellerPayout: that column is a point-of-sale snapshot of what was agreed
+  // and must stay one, so the deduction shows up as its own explainable line
+  // rather than silently rewriting the sale.
+  shipmentFailureReason     String?
+  shipmentFailureNote       String?
+  shipmentFailureAt         DateTime?
+  failedShipmentChargeCents Int       @default(0)
+  // How many times this sale has been re-booked with a carrier. A rising count
+  // is the signal that something is wrong with the listing's measurements
+  // rather than with any one collection.
+  shipmentRebookCount       Int       @default(0)
   carrierProvider          String?
   shipmentBookingStartedAt DateTime?
   shipmentBookedAt         DateTime?

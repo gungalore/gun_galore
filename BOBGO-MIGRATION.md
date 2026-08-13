@@ -400,6 +400,62 @@ when the flag is on, and there is a regression test pinning the legacy behaviour
 
 ---
 
+## Failed shipments, rebooking, and who pays
+
+**Operator rule, 2026-08-13:** when a shipment fails because the seller got it
+wrong — most often a parcel measured smaller than it really is, which then does
+not fit the collection point — the wasted courier charge is theirs. They rebook,
+and the amount comes off what they are paid for the sale.
+
+Reasons are a fixed ticklist (`common/shipment-failure-policy.ts`), exposed at
+`GET /shipping/failure-reasons` so the admin UI cannot keep a copy that drifts.
+
+| Seller pays | No charge |
+|---|---|
+| Parcel too large / overweight | Collection point full |
+| Nobody available at collection | Buyer unreachable / wrong delivery address |
+| Collection address wrong | Courier error, parcel lost or damaged |
+| Parcel not packed and ready | **Other** |
+
+Two judgement calls worth stating:
+
+- **A full collection point is not the seller's fault.** It looks like a parcel
+  that did not fit, but they could not have prevented it.
+- **"Other" never charges.** It is the reason picked when nobody is sure, and
+  money should not move on an unexplained failure.
+
+### How the money is applied
+
+The charge accumulates in `Transaction.failedShipmentChargeCents` and is
+subtracted in `netPayoutCents()` where payouts are computed. **`sellerPayout` is
+never mutated** — it is a point-of-sale snapshot of what buyer and seller
+agreed, so the deduction stays a separate, explainable line rather than silently
+rewriting the sale. Clamped at zero: recovering more than the sale is worth is a
+decision for a human, not something a payout run should do.
+
+The amount is the carrier rate (`shippingCost`), NOT including GG's own
+handling margin — we did not lose our margin to the carrier, and billing it on
+top would charge twice for one mistake.
+
+⚠️ Both payout queries must select `failedShipmentChargeCents`. Omit it and the
+deduction is silently zero, which looks exactly like a working payout.
+
+### Rebooking
+
+`rebookShipment()` clears the dead booking and hands back to
+`bookForTransaction`, which stays the only thing that ever books — so the
+idempotency claim and the three-way submission handling live in one place.
+
+It **refuses until the listing has actually been re-measured** (updated *after*
+the failure) when the failure was a size or weight error. A parcel that did not
+fit will not fit the second time; rebooking without corrected measurements just
+burns another courier charge — theirs — and delays the buyer again.
+
+The failure reason, note and accumulated charge are deliberately NOT cleared on
+rebook. They are the record of what happened and why the seller is being billed.
+
+---
+
 ## Open questions
 
 ### Answered by the accepted shipment (16625)
