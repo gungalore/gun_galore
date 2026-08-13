@@ -47,6 +47,24 @@ export interface KycClaudeFindings {
     document_photo_visible: number;
     /** anchored tier only: selfie person == OFFICIAL Home Affairs photo. */
     same_person_vs_ha_photo?: number;
+    /**
+     * Selfie person == the photo on the driving licence, when one was
+     * supplied. The most valuable comparison available in South Africa: a
+     * licence is renewed every five years WITH A NEW PHOTOGRAPH, so unlike
+     * the ID book, the ID card and the Home Affairs record — all of which
+     * freeze the issue-day photo forever — this one is actually recent.
+     */
+    same_person_vs_licence_photo?: number;
+    issues: string[];
+  };
+  /** Present only when a driving licence was supplied. */
+  licence?: {
+    /** Looks like a genuine, untampered SA driving licence card. */
+    looks_genuine_sa_licence: number;
+    /** The ID number printed on the licence — must match the ID document. */
+    extracted_id_number: string | null;
+    /** The licence photo is clear enough to compare against. */
+    photo_visible: number;
     issues: string[];
   };
   document: {
@@ -78,6 +96,17 @@ export interface KycScanInput {
   /** Official Home Affairs photo (bare base64) — anchored mode only. */
   haPhotoBase64?: string;
   /**
+   * OPTIONAL South African driving licence card, as a Cloudinary image URL.
+   *
+   * The only routinely-recent photo ID in South Africa: licences expire
+   * every five years and are reissued with a fresh photograph, whereas the
+   * green book, the smart ID card and the Home Affairs record all preserve
+   * the issue-day photo indefinitely. Supplying one collapses a 25-year age
+   * gap to at most five, which is the difference between a face comparison
+   * that can be trusted and one that cannot.
+   */
+  licenceUrl?: string;
+  /**
    * The holder's age now, derived from the SA ID number's YYMMDD prefix
    * (see ageFromSaIdNumber). Optional — omitted when the digits don't parse.
    *
@@ -91,15 +120,21 @@ export interface KycScanInput {
 }
 
 const SYSTEM_PROMPT = `You are the identity-verification scanner for All Outdoor, a South African online marketplace. You will be shown:
-1. A South African identity document — a smart ID card or a green ID book — as a photo or PDF.
+1. A South African identity document, as a photo or PDF. There are exactly two valid formats and BOTH are in wide circulation:
+   - GREEN_BOOK — the old green bar-coded identity book. A small booklet with a dark green cover. The photo inside is often small, low-contrast, monochrome or colour-faded, and sits behind a laminate that yellows and scuffs. Issued at 16 and NEVER reissued, so the photo can be decades old and the book itself visibly worn. Wear is normal; judge tampering, not age.
+   - SMART_ID_CARD — the newer credit-card sized card, WHITE/pale with a green-and-gold South African coat of arms, holographic overlays and a laser-engraved portrait. Introduced in 2013. Also not routinely reissued, so its photo can still be over a decade old. Holograms cause glare, banding and colour shifts across the portrait — that is the card working as designed, not evidence of tampering.
+   Anything else (passport, foreign ID, birth certificate, expired temporary ID) is OTHER.
 2. A live selfie of the person submitting it, captured moments ago by their webcam or phone camera.
-3. Sometimes, a third reference photograph labelled "official record photo".
+3. Sometimes, a reference photograph labelled "official record photo".
+4. Sometimes, a South African DRIVING LICENCE card — credit-card sized, with a photo, the holder's ID number, and validity dates. Unlike every other document here, a licence is renewed every five years WITH A NEW PHOTOGRAPH, so its portrait is the most recent official likeness of the person that exists.
 
 Your tasks:
 A. FACE MATCH — score (0-100) your confidence that the person in the selfie is the SAME PERSON as the photo printed on the identity document. If an "official record photo" is also provided, separately score selfie-vs-official-photo as same_person_vs_ha_photo.
 B. LIVENESS IMPRESSION — score whether the selfie looks like a genuine live camera capture rather than a photograph of a photograph, a phone/monitor screen re-shoot, or a heavily edited image. Screen glare, moiré patterns, visible bezels, paper texture and uniform print grain are red flags.
 C. DOCUMENT OCR — read from the identity document: the 13-digit ID number, the surname, the given names, and the date of birth. Output the date of birth normalised to YYYY-MM-DD. If any field is not clearly readable, output null for it — NEVER guess.
 D. DOCUMENT AUTHENTICITY — score whether this looks like a genuine, untampered South African identity document: correct layout and fonts, coat of arms, no visible edits, pasted-over photos, or font inconsistencies. Green ID books are often OLD and WORN — judge signs of tampering, not ordinary wear. Classify document_type as SMART_ID_CARD, GREEN_BOOK, or OTHER.
+
+E. DRIVING LICENCE — ONLY when a licence image is supplied. Emit the "licence" object and score same_person_vs_licence_photo. Score looks_genuine_sa_licence on the card's own integrity (layout, fonts, the photo not pasted over) and read the ID number printed on it — that number is checked against the identity document, so read it carefully and output null rather than guessing. Because a licence carries a photograph at most five years old, this comparison is the most reliable face evidence available; the heavy ageing allowance you apply to a green book does NOT apply here. If no licence image is supplied, omit the "licence" object entirely and do not emit same_person_vs_licence_photo.
 
 Scoring guidance: be honest, not generous. When you are genuinely uncertain whether two faces match, score in the 50-79 band (that routes to a human) rather than guessing high or low. Recommend REJECT only when you are confident something is wrong; recommend ADMIN_REVIEW when uncertain.
 
@@ -133,7 +168,8 @@ Judging selfie_live_capture — score SPOOF ARTEFACTS, not sharpness. Red flags 
 
 Output ONLY a single valid JSON object. The first character of your reply MUST be the literal '{'. No markdown fences, no commentary. Schema:
 {
-  "face_match": { "same_person": 0-100, "selfie_live_capture": 0-100, "document_photo_visible": 0-100, "same_person_vs_ha_photo": 0-100 (ONLY when an official record photo was provided), "issues": ["..."] },
+  "face_match": { "same_person": 0-100, "selfie_live_capture": 0-100, "document_photo_visible": 0-100, "same_person_vs_ha_photo": 0-100 (ONLY when an official record photo was provided), "same_person_vs_licence_photo": 0-100 (ONLY when a driving licence was provided), "issues": ["..."] },
+  "licence": { "looks_genuine_sa_licence": 0-100, "extracted_id_number": "13 digits or null", "photo_visible": 0-100, "issues": ["..."] }  (OMIT this whole object when no licence was provided),
   "document": { "looks_genuine_sa_id": 0-100, "document_type": "SMART_ID_CARD"|"GREEN_BOOK"|"OTHER"|null, "extracted_id_number": "13 digits or null", "extracted_surname": "string or null", "extracted_names": "string or null", "extracted_dob": "YYYY-MM-DD or null", "legibility": 0-100, "issues": ["..."] },
   "overall_confidence": 0-100,
   "recommendation": "APPROVE"|"ADMIN_REVIEW"|"REJECT",
@@ -299,6 +335,19 @@ export class ClaudeKycService {
         source: { type: 'base64', media_type: 'image/jpeg', data: input.selfieBase64 },
       },
     ];
+
+    if (input.licenceUrl) {
+      userContent.push(
+        {
+          type: 'text',
+          text: 'South African driving licence card (its photograph is at most five years old — treat it as the most recent likeness):',
+        },
+        {
+          type: 'image',
+          source: { type: 'url', url: this.jpegUrl(input.licenceUrl) },
+        },
+      );
+    }
 
     if (input.mode === 'anchored' && input.haPhotoBase64) {
       userContent.push(
@@ -640,6 +689,39 @@ export class ClaudeKycService {
     const docPhotoMatch = toGate(findings.face_match?.same_person);
     const haPhotoMatch = toGate(findings.face_match?.same_person_vs_ha_photo);
 
+    // ── Driving licence: a RECENT reference, but only once it is proven to
+    // belong to this person ────────────────────────────────────────────────
+    //
+    // A licence is the only SA photo ID that is reissued with a fresh
+    // photograph (every five years), so it collapses a 25-year age gap to at
+    // most five. That makes it the strongest face evidence available — and
+    // therefore the most attractive thing to forge or borrow.
+    //
+    // So it counts for NOTHING until three things hold:
+    //   1. the card itself looks genuine,
+    //   2. its photo is actually legible, and
+    //   3. the ID number printed on it matches the identity document.
+    //
+    // (3) is the one that matters. Without it, anyone could hold up a
+    // stranger's licence whose face happens to resemble theirs and use it to
+    // out-vote their own ID photo. The number is compared digits-only, since
+    // SA licences and ID books space and group them differently. A licence
+    // that fails any of these is IGNORED rather than held against the
+    // applicant — a bad photo of a real licence must not become a rejection.
+    const licence = findings.licence;
+    const licenceIdDigits = (licence?.extracted_id_number ?? '').replace(/\D/g, '');
+    const docIdDigits = (findings.document?.extracted_id_number ?? '').replace(/\D/g, '');
+    const licenceBelongsToHolder =
+      licenceIdDigits.length === 13 &&
+      docIdDigits.length === 13 &&
+      licenceIdDigits === docIdDigits;
+    const licenceUsable =
+      !!licence &&
+      licenceBelongsToHolder &&
+      toGate(licence.looks_genuine_sa_licence) >= AUTO_APPROVE_FLOOR &&
+      toGate(licence.photo_visible) >= AUTO_APPROVE_FLOOR;
+    const licenceMatch = toGate(findings.face_match?.same_person_vs_licence_photo);
+
     // Anti-spoofing and document authenticity. These are unaffected by how
     // old the reference photo is, so they keep the standard floor.
     const integrityGates: number[] = [
@@ -675,8 +757,17 @@ export class ClaudeKycService {
     // same_person=45 against a 25-year-old photo, and an honest seller with
     // an old green book was rejected outright. That is the age-gap failure
     // this split exists to fix.
+    // A usable licence is a recent likeness, so a strong match against it
+    // establishes the person as surely as the HA original does — and unlike
+    // the HA photo it does so WITHOUT the age gap. It therefore relieves the
+    // decades-old ID photo of having to carry the decision on its own, in
+    // exactly the same way and for a better reason.
+    const licenceCarries =
+      licenceUsable && licenceMatch >= AUTO_APPROVE_FLOOR;
+
     const docPhotoDecides =
-      mode !== 'anchored' || haPhotoMatch < AUTO_APPROVE_FLOOR;
+      (mode !== 'anchored' || haPhotoMatch < AUTO_APPROVE_FLOOR) &&
+      !licenceCarries;
 
     // Face gates get an age-adjusted reject floor; the others keep the
     // standard one. See FACE_FLOOR_MIN for why only faces move.
@@ -690,6 +781,10 @@ export class ClaudeKycService {
       // (model omitted it) is 0 via toGate, so it can never silently pass.
       faceGates.push(haPhotoMatch);
     }
+    // A licence that IS usable is held to the FULL floor, with no age relief:
+    // its photo is at most five years old, so a poor match against it is a
+    // real finding rather than the fog of a decades-old portrait.
+    if (licenceUsable && licenceMatch < AUTO_REJECT_CEILING) return 'REJECTED';
     // A confident face mismatch is a finding in its own right and outranks
     // capture quality — it must not be excused as "the photo was bad".
     if (faceGates.some((g) => g < faceFloor)) return 'REJECTED';
@@ -704,17 +799,30 @@ export class ClaudeKycService {
 
     if (crossCheck.softFails.length > 0) return 'UNDER_REVIEW';
 
-    // Identity is established (HA photo strong) but the card's own photo
-    // disagrees. Not auto-approvable: it could be a very old green book, or a
-    // substituted photo on a real card. A human compares the three images.
-    if (!docPhotoDecides && docPhotoMatch < AUTO_APPROVE_FLOOR) {
+    // Identity is established by a better reference (the HA original, or a
+    // recent licence) but the ID document's own photo disagrees.
+    //
+    // Where a licence carried it, this is the ordinary green-book case — a
+    // 25-year-old portrait that no longer resembles its owner — and the
+    // recent licence has already settled who they are. Auto-approve it: the
+    // whole point of accepting a licence is that these stop needing a human.
+    //
+    // Where only the HA original carried it, the two photos are the SAME
+    // sitting, so disagreement means the card is degraded or its photo was
+    // substituted. That still wants human eyes.
+    if (!docPhotoDecides && docPhotoMatch < AUTO_APPROVE_FLOOR && !licenceCarries) {
       return 'UNDER_REVIEW';
     }
 
     if (
-      [...integrityGates, ...faceGates, ...qualityGates].every(
-        (g) => g >= AUTO_APPROVE_FLOOR,
-      )
+      [
+        ...integrityGates,
+        ...faceGates,
+        ...qualityGates,
+        // A usable licence must also clear the approve bar before it can
+        // contribute to an automatic pass — it cannot merely avoid rejecting.
+        ...(licenceUsable ? [licenceMatch] : []),
+      ].every((g) => g >= AUTO_APPROVE_FLOOR)
     ) {
       return 'VERIFIED';
     }

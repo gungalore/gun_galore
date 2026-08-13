@@ -185,6 +185,131 @@ describe('age-relaxed face floor', () => {
   });
 });
 
+// A SA driving licence is renewed every five years WITH a new photograph —
+// the only routinely-recent photo ID in the country. It is therefore the
+// best face evidence available, and the most attractive document to forge or
+// borrow. These tests pin both halves of that.
+describe('driving licence as a recent reference photo', () => {
+  const svc = new ClaudeKycService();
+  const ID = '8001015009087';
+
+  /** Old green book (weak match) + a licence with whatever properties. */
+  function withLicence(
+    lic: Partial<{
+      looks_genuine_sa_licence: number;
+      extracted_id_number: string | null;
+      photo_visible: number;
+      match: number;
+    }> = {},
+    docScore = 40,
+  ): KycClaudeFindings {
+    const f = findings({ same_person: docScore });
+    f.document.document_type = 'GREEN_BOOK';
+    f.document.extracted_id_number = ID;
+    f.face_match.same_person_vs_licence_photo = lic.match ?? 95;
+    f.licence = {
+      looks_genuine_sa_licence: lic.looks_genuine_sa_licence ?? 92,
+      extracted_id_number:
+        lic.extracted_id_number === undefined ? ID : lic.extracted_id_number,
+      photo_visible: lic.photo_visible ?? 90,
+      issues: [],
+    };
+    return f;
+  }
+
+  it('a good licence rescues a 29-year-old green book: VERIFIED, no human needed', () => {
+    // The whole point — this case used to be a rejection, then a review.
+    expect(svc.statusFromFindings(withLicence(), clean, 'standard', 45)).toBe(
+      'VERIFIED',
+    );
+  });
+
+  it('a licence for a DIFFERENT ID number is ignored entirely', () => {
+    // Someone holding up a stranger's licence must not out-vote their own ID
+    // photo. Falls back to the doc photo alone → age-relieved review at 40.
+    expect(
+      svc.statusFromFindings(
+        withLicence({ extracted_id_number: '9002025009086' }),
+        clean,
+        'standard',
+        45,
+      ),
+    ).toBe('UNDER_REVIEW');
+  });
+
+  it('a forged-looking licence is ignored, not trusted', () => {
+    expect(
+      svc.statusFromFindings(
+        withLicence({ looks_genuine_sa_licence: 20 }),
+        clean,
+        'standard',
+        45,
+      ),
+    ).toBe('UNDER_REVIEW');
+  });
+
+  it('an unreadable licence photo is ignored, and does NOT reject the applicant', () => {
+    // A bad photo of a real licence must not become an accusation.
+    expect(
+      svc.statusFromFindings(
+        withLicence({ photo_visible: 20 }),
+        clean,
+        'standard',
+        45,
+      ),
+    ).toBe('UNDER_REVIEW');
+  });
+
+  it('a licence with no readable ID number is ignored', () => {
+    expect(
+      svc.statusFromFindings(
+        withLicence({ extracted_id_number: null }),
+        clean,
+        'standard',
+        45,
+      ),
+    ).toBe('UNDER_REVIEW');
+  });
+
+  it('a VALID licence that does not match the face REJECTS — full floor, no age relief', () => {
+    // Its photo is at most five years old, so a bad match is a real finding
+    // and must not hide behind the green book's ageing allowance.
+    expect(
+      svc.statusFromFindings(withLicence({ match: 35 }), clean, 'standard', 45),
+    ).toBe('REJECTED');
+  });
+
+  it('a valid licence with a middling match does not auto-approve', () => {
+    expect(
+      svc.statusFromFindings(withLicence({ match: 65 }), clean, 'standard', 45),
+    ).toBe('UNDER_REVIEW');
+  });
+
+  it('a licence cannot rescue a spoofed selfie', () => {
+    const f = withLicence();
+    f.face_match.selfie_live_capture = 15;
+    expect(svc.statusFromFindings(f, clean, 'standard', 45)).toBe('REJECTED');
+  });
+
+  it('a licence cannot rescue a forged ID document', () => {
+    const f = withLicence();
+    f.document.looks_genuine_sa_id = 15;
+    expect(svc.statusFromFindings(f, clean, 'standard', 45)).toBe('REJECTED');
+  });
+
+  it('a licence cannot rescue a hard cross-check lie', () => {
+    expect(svc.statusFromFindings(withLicence(), hard, 'standard', 45)).toBe(
+      'REJECTED',
+    );
+  });
+
+  it('no licence supplied behaves exactly as before', () => {
+    const f = findings({ same_person: 40 });
+    f.document.document_type = 'GREEN_BOOK';
+    expect(svc.statusFromFindings(f, clean, 'standard', 45)).toBe('UNDER_REVIEW');
+  });
+});
+
 describe('ClaudeKycService borderline consensus', () => {
   const svc = new ClaudeKycService();
 
