@@ -117,6 +117,74 @@ describe('age gap: the official record photo outranks an old document photo', ()
   });
 });
 
+// In SA the Home Affairs record photo is the ISSUE-DAY photo — the same
+// sitting as the one on the card. There is no fresher official image, so an
+// old green book leaves face matching genuinely unreliable. The reject floor
+// therefore relaxes with the age of the reference photo: a middling score on
+// a 29-year-old photo goes to a human instead of being refused outright.
+describe('age-relaxed face floor', () => {
+  const svc = new ClaudeKycService();
+  const greenBook = (o: Parameters<typeof findings>[0] = {}) => {
+    const f = findings(o);
+    f.document.document_type = 'GREEN_BOOK';
+    return f;
+  };
+
+  it('a 45-year-old with a 29-year-old green book: 38 reviews, not rejects', () => {
+    expect(svc.statusFromFindings(greenBook({ same_person: 38 }), clean, 'standard', 45)).toBe(
+      'UNDER_REVIEW',
+    );
+  });
+
+  it('the SAME score on a recent photo still rejects', () => {
+    // 21-year-old: photo is ~5 years old, so no relief — 38 is a real fail.
+    expect(svc.statusFromFindings(greenBook({ same_person: 38 }), clean, 'standard', 21)).toBe(
+      'REJECTED',
+    );
+  });
+
+  it('with no age known, the standard floor applies', () => {
+    expect(svc.statusFromFindings(greenBook({ same_person: 38 }), clean, 'standard')).toBe(
+      'REJECTED',
+    );
+  });
+
+  it('relief is bounded — a clear mismatch still rejects however old the photo', () => {
+    // 70-year-old, 54-year-old photo: maximum relief, floor bottoms at 30.
+    expect(svc.statusFromFindings(greenBook({ same_person: 25 }), clean, 'standard', 70)).toBe(
+      'REJECTED',
+    );
+  });
+
+  it('a smart ID card gets less relief than a green book at the same age', () => {
+    // Cards cannot predate 2013, so a 45-year-old's card photo is at most
+    // ~13 years old, not 29 — less relief, so 38 still rejects.
+    const smart = findings({ same_person: 38 });
+    smart.document.document_type = 'SMART_ID_CARD';
+    expect(svc.statusFromFindings(smart, clean, 'standard', 45)).toBe('REJECTED');
+  });
+
+  it('age relief NEVER applies to liveness — a screen re-shoot still rejects', () => {
+    expect(
+      svc.statusFromFindings(greenBook({ selfie_live_capture: 35 }), clean, 'standard', 60),
+    ).toBe('REJECTED');
+  });
+
+  it('age relief NEVER applies to document authenticity — a forgery still rejects', () => {
+    expect(
+      svc.statusFromFindings(greenBook({ looks_genuine_sa_id: 35 }), clean, 'standard', 60),
+    ).toBe('REJECTED');
+  });
+
+  it('age relief does not lower the bar for AUTO-APPROVAL', () => {
+    // Deliberately asymmetric: an old photo buys review instead of refusal,
+    // never an easier pass. 65 is below the approve floor either way.
+    expect(svc.statusFromFindings(greenBook({ same_person: 65 }), clean, 'standard', 60)).toBe(
+      'UNDER_REVIEW',
+    );
+  });
+});
+
 describe('ClaudeKycService borderline consensus', () => {
   const svc = new ClaudeKycService();
 

@@ -770,7 +770,15 @@ export class KycService {
     } else if (!findings || (tier === 'ANCHORED' && mode === 'standard')) {
       status = 'UNDER_REVIEW';
     } else {
-      status = this.claudeKyc.statusFromFindings(findings, crossCheck, mode);
+      status = this.claudeKyc.statusFromFindings(
+        findings,
+        crossCheck,
+        mode,
+        // Lets the verdict relax the face-match reject floor when the
+        // reference photo is old — a green book photo can be 25+ years old
+        // and there is no fresher official image in SA to fall back on.
+        ageFromSaIdNumber(idNumber) ?? undefined,
+      );
     }
 
     // RETAKE — the images were too poor to read, with nothing pointing at

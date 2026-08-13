@@ -125,7 +125,9 @@ AGEING CHANGES SOFT TISSUE, NOT SKULL. Over 10-25 years expect: heavier or hollo
 
 Smart ID cards carry holographic overlays that cause glare, banding and colour shifts across the printed photo; judge through the glare rather than treating it as a different face.
 
-Where an "official record photo" is supplied it is the authoritative likeness: it comes from the government's own record rather than from the card the applicant is holding, and it is usually far more recent and better quality than a green-book photo. When the official record photo and the document photo disagree, trust the official record photo for WHO the person is, and treat the document-photo difference as a question about the DOCUMENT (age, wear, or possible tampering) — report that through the document scores and issues, not by lowering same_person_vs_ha_photo.
+Where an "official record photo" is supplied it is the authoritative likeness — but NOT a newer one. In South Africa the Home Affairs record holds the photograph captured on the day the ID was issued, which is the same sitting as the photo printed on the document. Expect it to show the person at the SAME age as the document photo. What it gives you is a clean original rather than a fresher face: no print screen, no lamination glare, no wear, fading or photocopy loss. So it is better EVIDENCE of the same moment, not evidence of a later one — the age gap to the selfie is identical for both, and you must apply the same ageing allowance to each.
+
+Because the two are the same sitting, they should agree closely. If the official record photo matches the selfie well and the DOCUMENT photo does not, the likely explanation is the physical card — wear, fading, a bad capture, or a substituted photo — not a different person. Trust the official record photo for WHO the person is, and report the document-photo discrepancy through the document scores and issues rather than by lowering same_person_vs_ha_photo.
 
 Judging selfie_live_capture — score SPOOF ARTEFACTS, not sharpness. Red flags are screen re-shoots (moiré, pixel grid, monitor bezels, backlight glow), a photograph of a printed photograph (paper texture, uniform print grain, visible edges), and obvious digital editing. A genuinely live capture that happens to be blurry, dim or grainy is STILL a live capture and must score high on this gate. Do not punish a bad camera.
 
@@ -187,6 +189,43 @@ ADDITIONAL INSTRUCTION FOR THIS PASS — benefit-of-the-doubt review. Before sco
  */
 const BORDERLINE_MARGIN = 10;
 
+/**
+ * How far the face-match reject floor may drop for an old photograph, and
+ * the age gap at which it bottoms out.
+ *
+ * Face comparison degrades with the age of the reference photo, and in South
+ * Africa that reference is old by design: a green book is issued at 16 and
+ * never reissued, and Home Affairs keeps only the issue-day photograph, so
+ * there is no fresher official image to fall back on. A 45-year-old with a
+ * green book is being matched against a photo of themselves at 16 — and no
+ * amount of prompting makes that comparison as reliable as a recent one.
+ *
+ * Treating a middling score on a 29-year-old photo the same as a middling
+ * score on a 2-year-old one is what refuses honest people. So for old
+ * photographs the automatic REJECT floor drops and those cases land in human
+ * review instead.
+ *
+ * Only the FACE gates move. Liveness and document authenticity are unaffected
+ * by how old the photo is — a screen re-shoot or a tampered card is just as
+ * detectable either way — so their floors never move.
+ *
+ * Deliberately asymmetric: the reject floor drops, the approve floor does
+ * NOT rise. Raising it would push honest sellers with old books into the
+ * review queue wholesale, which is the workload this is meant to reduce.
+ * Identity fraud is caught independently of the face by controls that ageing
+ * cannot degrade — the ID number's Luhn digit, the typed DOB against the ID
+ * number's own YYMMDD, the name against the Home Affairs record, and the
+ * one-ID-one-account hash. Nothing compensates for wrongly refusing a real
+ * person, so that is the side to give ground on.
+ */
+const FACE_FLOOR_MIN = 30;
+const FACE_FLOOR_FULL_RELIEF_YEARS = 20;
+const FACE_FLOOR_NO_RELIEF_YEARS = 5;
+/** SA smart ID cards did not exist before this year. */
+const SMART_ID_FIRST_YEAR = 2013;
+/** Earliest age at which a South African is issued an ID. */
+const ID_ISSUE_AGE = 16;
+
 type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg'; data: string } }
@@ -245,7 +284,7 @@ export class ClaudeKycService {
         ? [
             {
               type: 'text' as const,
-              text: `Context: the holder of this ID number is ${input.subjectAgeYears} years old today (derived from the ID number itself, not from the document image). A South African green ID book is typically issued at 16 and never reissued, so if this is a green book the photo may be up to ${Math.max(0, input.subjectAgeYears - 16)} years old. A smart ID card is usually more recent. Expect the selfie to show that much ageing, and weigh the comparison accordingly.`,
+              text: `Context: the holder of this ID number is ${input.subjectAgeYears} years old today (derived from the ID number itself, not from the document image). A South African green ID book is typically issued at 16 and never reissued, so if this is a green book the photo may be up to ${Math.max(0, input.subjectAgeYears - 16)} years old — the person could be showing you ${Math.max(0, input.subjectAgeYears - 16)} years of ageing. A smart ID card is newer (they were only introduced in 2013) but is also never routinely reissued, so its photo can still be over a decade old. If an official record photo is supplied it was captured at that same issue sitting and is the SAME age as the document photo, not a fresher one. Expect that much ageing against the selfie and weigh the comparison accordingly.`,
             },
           ]
         : []),
@@ -351,6 +390,62 @@ export class ClaudeKycService {
       samples: all.length,
       borderline: true,
     };
+  }
+
+  /**
+   * How old the reference photograph probably is, in years.
+   *
+   * There is no issue date to read reliably off a worn card, so this is
+   * inferred from two things we do know: the holder's age (from the ID
+   * number's own digits) and which document the model identified.
+   *
+   *   GREEN_BOOK     — issued at 16 and never reissued, so the photo is
+   *                    (age - 16) years old. For a 45-year-old that is 29.
+   *   SMART_ID_CARD  — cannot predate 2013, and is also not routinely
+   *                    reissued, so it is the smaller of (age - 16) and the
+   *                    years since 2013.
+   *   unknown        — treated as a green book. The consequence of guessing
+   *                    "old" is that a borderline case goes to a human; the
+   *                    consequence of guessing "new" is refusing someone
+   *                    whose photo really is decades old. Only one of those
+   *                    is recoverable.
+   *
+   * Returns undefined when the holder's age is unknown, which leaves the
+   * standard floor in place.
+   */
+  private estimatedPhotoAgeYears(
+    findings: KycClaudeFindings,
+    subjectAgeYears?: number,
+    now: Date = new Date(),
+  ): number | undefined {
+    if (typeof subjectAgeYears !== 'number' || !Number.isFinite(subjectAgeYears)) {
+      return undefined;
+    }
+    const sinceIssueAge = Math.max(0, subjectAgeYears - ID_ISSUE_AGE);
+    if (findings.document?.document_type === 'SMART_ID_CARD') {
+      const maxSmartCardAge = Math.max(0, now.getFullYear() - SMART_ID_FIRST_YEAR);
+      return Math.min(sinceIssueAge, maxSmartCardAge);
+    }
+    return sinceIssueAge;
+  }
+
+  /**
+   * The REJECT floor for face comparisons, relaxed for old photographs.
+   * 50 up to 5 years, sliding to 30 at 20 years and no lower.
+   */
+  private faceRejectFloor(photoAgeYears?: number): number {
+    if (
+      typeof photoAgeYears !== 'number' ||
+      photoAgeYears <= FACE_FLOOR_NO_RELIEF_YEARS
+    ) {
+      return AUTO_REJECT_CEILING;
+    }
+    const capped = Math.min(photoAgeYears, FACE_FLOOR_FULL_RELIEF_YEARS);
+    const span = FACE_FLOOR_FULL_RELIEF_YEARS - FACE_FLOOR_NO_RELIEF_YEARS;
+    const t = (capped - FACE_FLOOR_NO_RELIEF_YEARS) / span;
+    return Math.round(
+      AUTO_REJECT_CEILING - t * (AUTO_REJECT_CEILING - FACE_FLOOR_MIN),
+    );
   }
 
   /** Any gate within BORDERLINE_MARGIN of either decision threshold. */
@@ -530,6 +625,7 @@ export class ClaudeKycService {
     findings: KycClaudeFindings,
     crossCheck: CrossCheckResult,
     mode: 'standard' | 'anchored',
+    subjectAgeYears?: number,
   ): 'VERIFIED' | 'UNDER_REVIEW' | 'REJECTED' | 'RETAKE' {
     if (crossCheck.hardFails.length > 0) return 'REJECTED';
 
@@ -544,32 +640,35 @@ export class ClaudeKycService {
     const docPhotoMatch = toGate(findings.face_match?.same_person);
     const haPhotoMatch = toGate(findings.face_match?.same_person_vs_ha_photo);
 
-    const identityGates: number[] = [
+    // Anti-spoofing and document authenticity. These are unaffected by how
+    // old the reference photo is, so they keep the standard floor.
+    const integrityGates: number[] = [
       toGate(findings.face_match?.selfie_live_capture),
       toGate(findings.document?.looks_genuine_sa_id),
     ];
-    if (mode === 'anchored') {
-      // The anchored gate is the whole point of the tier — a missing score
-      // (model omitted it) counts as 0 so it can never silently pass.
-      identityGates.push(haPhotoMatch);
-    }
+    if (integrityGates.some((g) => g < AUTO_REJECT_CEILING)) return 'REJECTED';
 
     // Which face comparison is allowed to REJECT on its own?
     //
     // In standard mode there is only one: the document photo. It carries the
     // decision because there is nothing else to go on.
     //
-    // In anchored mode there are two, and they are NOT equal evidence. The
-    // Home Affairs photo comes from the government's own record, keyed to the
-    // ID number and pulled live — the applicant cannot influence it, and it is
-    // usually far more recent than the card in their hand. The document photo
-    // sits on a card they physically hold, and on a green book it can be
-    // 25 years old, faded and monochrome.
+    // In anchored mode there are two, and they are NOT equal evidence — but
+    // NOT because one is newer. Home Affairs keeps the photograph taken on
+    // ISSUE DAY, the same sitting as the one printed on the card, so both
+    // comparisons face an identical age gap to the selfie. Nothing here
+    // shortens that gap.
     //
-    // So a strong HA match with a weak document match does NOT mean "wrong
-    // person" — Home Affairs has just confirmed the person. It means the
-    // DOCUMENT photo disagrees, which is either ordinary ageing on an old
-    // book or a tampered card. Those need a human, not an automatic refusal.
+    // What the HA photo is, is a clean ORIGINAL: pulled live, keyed to the ID
+    // number, beyond the applicant's reach, and free of the lamination glare,
+    // fading, wear and photocopy loss that degrade a card photo — especially
+    // a green book carried in a wallet for twenty years.
+    //
+    // Since the two are the same sitting they ought to agree closely. When
+    // the clean original matches and the card does not, the difference is
+    // telling us about the CARD (degraded, badly captured, or the photo
+    // substituted), not about the person. That is a human question, not an
+    // automatic refusal.
     //
     // Previously same_person sat in the reject list unconditionally, so
     // ha_photo=95 against the official record was overridden by
@@ -578,19 +677,29 @@ export class ClaudeKycService {
     // this split exists to fix.
     const docPhotoDecides =
       mode !== 'anchored' || haPhotoMatch < AUTO_APPROVE_FLOOR;
-    if (docPhotoDecides) identityGates.push(docPhotoMatch);
+
+    // Face gates get an age-adjusted reject floor; the others keep the
+    // standard one. See FACE_FLOOR_MIN for why only faces move.
+    const faceFloor = this.faceRejectFloor(
+      this.estimatedPhotoAgeYears(findings, subjectAgeYears),
+    );
+    const faceGates: number[] = [];
+    if (docPhotoDecides) faceGates.push(docPhotoMatch);
+    if (mode === 'anchored') {
+      // The anchored gate is the whole point of the tier — a missing score
+      // (model omitted it) is 0 via toGate, so it can never silently pass.
+      faceGates.push(haPhotoMatch);
+    }
+    // A confident face mismatch is a finding in its own right and outranks
+    // capture quality — it must not be excused as "the photo was bad".
+    if (faceGates.some((g) => g < faceFloor)) return 'REJECTED';
+
+    // Nothing is provably wrong, but we could not read the document well
+    // enough to decide. Ask for a better photo instead of accusing anyone.
     const qualityGates: number[] = [
       toGate(findings.document?.legibility),
       toGate(findings.face_match?.document_photo_visible),
     ];
-
-    // A confident identity/authenticity failure outranks everything: a
-    // screen re-shoot or a tampered document is a finding in its own right,
-    // and must not be excused as "the photo was bad".
-    if (identityGates.some((g) => g < AUTO_REJECT_CEILING)) return 'REJECTED';
-
-    // Nothing is provably wrong, but we could not read the document well
-    // enough to decide. Ask for a better photo instead of accusing anyone.
     if (qualityGates.some((g) => g < AUTO_REJECT_CEILING)) return 'RETAKE';
 
     if (crossCheck.softFails.length > 0) return 'UNDER_REVIEW';
@@ -603,7 +712,9 @@ export class ClaudeKycService {
     }
 
     if (
-      [...identityGates, ...qualityGates].every((g) => g >= AUTO_APPROVE_FLOOR)
+      [...integrityGates, ...faceGates, ...qualityGates].every(
+        (g) => g >= AUTO_APPROVE_FLOOR,
+      )
     ) {
       return 'VERIFIED';
     }
