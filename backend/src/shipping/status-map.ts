@@ -141,6 +141,59 @@ export function mapShiplogicStatus(raw: string): string {
 export const mapPudoStatus = mapShiplogicStatus;
 export const mapTcgStatus = mapShiplogicStatus;
 
+// ─── Bob Go ───────────────────────────────────────────────────────────────
+//
+// A SEPARATE map, deliberately. Bob Go is not Shiplogic and does not share its
+// vocabulary, and two of its plausible words collide with Shiplogic words that
+// mean something else here:
+//
+//   READY_FOR_PICKUP  Shiplogic -> AT_LOCKER -> OUT_FOR_DELIVERY. Correct for
+//                     Pudo ("arrived at your collection locker"). If Bob Go
+//                     ever sends it for a parcel that has NOT yet moved, the
+//                     shared map would tell the buyer it is out for delivery
+//                     and the backward-transition guard would pin it there.
+//   EXPIRED           Shiplogic -> PIN_EXPIRED -> DELIVERY_FAILED, a TERMINAL
+//                     state that notifies the buyer and raises an admin alert.
+//                     Far too destructive to hand to an unknown word.
+//
+// So Bob Go gets its own exact-key table, and anything absent returns null —
+// recorded on the timeline, never rolling shippingStatus. Widen it only from
+// statuses actually observed.
+//
+// Sources, tracked because they are not equally strong:
+//   OBSERVED  arrived in a real `status` field on a real webhook/API response.
+//   CANONICAL a key of Bob Go's own `tracking_steps`, which enumerates the
+//             lifecycle it models (created 1, collected 2, in-transit 3,
+//             out-for-delivery 4, delivered 5). Bob Go's own names for its own
+//             stages — strong, but not yet seen arriving as a status.
+const BOBGO_STATUS_MAP: Record<string, PrismaShippingStatus> = {
+  PENDING_COLLECTION: 'PENDING', // OBSERVED 2026-08-13
+  CREATED: 'PENDING', // CANONICAL step 1
+  COLLECTED: 'COLLECTED', // CANONICAL step 2
+  IN_TRANSIT: 'IN_TRANSIT', // CANONICAL step 3
+  OUT_FOR_DELIVERY: 'OUT_FOR_DELIVERY', // CANONICAL step 4
+  DELIVERED: 'DELIVERED', // CANONICAL step 5
+};
+
+/**
+ * Bob Go tracking status → Prisma ShippingStatus, or null when we do not know.
+ *
+ * Null is a real answer and the caller must respect it: record the event, leave
+ * shippingStatus alone, and let a human widen the table from the payload we
+ * kept. Guessing here is how a buyer gets told their parcel is out for delivery
+ * while it sits in a locker, or that delivery failed when nothing failed.
+ */
+export function bobgoToShippingStatus(
+  raw: string,
+): PrismaShippingStatus | null {
+  return BOBGO_STATUS_MAP[normalise(raw)] ?? null;
+}
+
+/** True when Bob Go's status is one we can act on. */
+export function isKnownBobGoStatus(raw: string): boolean {
+  return normalise(raw) in BOBGO_STATUS_MAP;
+}
+
 /**
  * Roll a collapsed internal status down to the coarse Prisma ShippingStatus.
  * Returns null when there's no mapping — caller leaves shippingStatus alone.

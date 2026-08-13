@@ -160,7 +160,34 @@ Declared-value units were a live trap and are fixed: the client takes cents and
 converts on the wire. Passing rand would have declared a R1,500 parcel as
 R150,000.
 
-### 3. Tracking — an unknown vocabulary meeting a lexical map
+### 3. Tracking ✅ DONE (increment 6)
+
+Bob Go gets its **own** status table in `status-map.ts`, kept apart from the
+Shiplogic one rather than bolted onto it. Two words collide with meanings we
+must not inherit:
+
+| word | Shiplogic reading | correct for Pudo? | if Bob Go sent it |
+|---|---|---|---|
+| `ready-for-pickup` | → AT_LOCKER → OUT_FOR_DELIVERY | yes | buyer told "out for delivery" for a parcel that may not have moved, then pinned there by the backward-transition guard |
+| `expired` | → PIN_EXPIRED → **DELIVERY_FAILED** | yes | a TERMINAL failure written, buyer notified, admin alert raised |
+
+Both now return **null** on the Bob Go table — recorded, never applied. Entries
+are labelled OBSERVED vs CANONICAL so the difference between evidence and
+inference stays visible.
+
+`tracking/updated` webhooks now advance the order through
+`applyShippingUpdate` — the same entry point the poll and both legacy webhooks
+use, so all three share one decision about backward transitions, notifications
+and the delivered/payout gate.
+
+**And a live bug fixed:** a Bob Go pickup-point order has `shippingMethod
+PUDO`, so the Pudo poll would have queried Bob Go waybills against Pudo's API —
+a permanent 404. `fetchTrackingEvents` returns null on 404 and the loop just
+`continue`s, so there would be no error, no alert and no log line: the rail
+would have gone blind while every downstream state silently stopped advancing.
+Bob Go rows are now excluded from that poll.
+
+### 3b. Original analysis — an unknown vocabulary meeting a lexical map
 
 `status-map.ts` collapses on substrings, and Bob Go's status strings are unknown.
 Two collisions are live:
@@ -211,13 +238,17 @@ Without cancel, every reversed sale becomes manual operator work, and the
 auto-refund sweep (`dispatch-sla.service.ts:200`) would leave live waybills on
 refunded orders.
 
-### 6. Seller fairness
+### 6. Seller fairness ✅ DONE (increment 6)
 
-`dispatch-sla.service.ts:118` auto-refunds undispatched orders, increments
-`dispatchStrikes`, and queues the seller for suspension review at three. Nothing
-distinguishes "seller ignored it" from "our booking was silently refused". Bob Go
-submission failures would be **charged to innocent sellers as strikes**. This one
-is a fairness bug, not just a technical one.
+A seller is no longer struck when the platform never gave them a shipment to
+send — a Bob Go booking the courier refused, or one still unaccepted. In both
+cases there is no waybill and no PIN; they could not have dispatched if they
+wanted to. The refund and restock still happen (the buyer must not be left
+holding a sale that will never ship) — only the blame is withheld.
+
+Deliberately narrow: any row where a booking genuinely completed, and every row
+on the legacy rails, is the seller's responsibility exactly as before. Widening
+it beyond our own carrier failures would hand every late seller a free excuse.
 
 ### 7. Copy
 

@@ -113,6 +113,19 @@ export class TrackingService {
     const candidates = await this.prisma.transaction.findMany({
       where: {
         shippingMethod: 'PUDO',
+        // EXCLUDE parcels that are actually with Bob Go.
+        //
+        // Since Bob Go sits behind the enum slots, a Bob Go pickup-point order
+        // has shippingMethod PUDO — but its waybill means nothing to Pudo's
+        // API, which would answer 404 for ever. fetchTrackingEvents returns
+        // null on 404 and the loop just `continue`s, so there would be no
+        // error, no alert and no log line: the rail would simply go blind
+        // while every downstream state (dispatchedAt, deliveredAt, the buyer's
+        // timeline) silently stopped advancing.
+        //
+        // Null carrierProvider means a row booked before that column existed,
+        // which can only be genuine Pudo — so those must stay in.
+        OR: [{ carrierProvider: null }, { carrierProvider: { not: 'BOBGO' } }],
         trackingReference: { not: null },
         shippingStatus: {
           notIn: ['DELIVERED', 'DELIVERY_FAILED', 'RETURNED'],

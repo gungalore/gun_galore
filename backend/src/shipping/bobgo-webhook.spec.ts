@@ -1,6 +1,10 @@
+// BobGoWebhookService -> ShippingService -> PudoService -> SearchService ->
+// ESM-only meilisearch.
+jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
+
 import { BobGoWebhookService } from './bobgo-webhook.service';
 
-function makeService() {
+function makeService(over: { tx?: unknown } = {}) {
   const created: unknown[] = [];
   const prisma = {
     bobGoWebhookEvent: {
@@ -9,8 +13,19 @@ function makeService() {
         return Promise.resolve({});
       }),
     },
+    transaction: {
+      findFirst: jest
+        .fn()
+        .mockResolvedValue(over.tx === undefined ? { id: 'TX9' } : over.tx),
+    },
   };
-  return { svc: new BobGoWebhookService(prisma as never), prisma, created };
+  const shipping = { applyShippingUpdate: jest.fn().mockResolvedValue('COLLECTED') };
+  return {
+    svc: new BobGoWebhookService(prisma as never, shipping as never),
+    prisma,
+    shipping,
+    created,
+  };
 }
 
 // Flush the fire-and-forget record() write.
@@ -84,6 +99,31 @@ describe('BobGoWebhookService', () => {
       expect((created[0] as { shipmentId: string }).shipmentId).toBe('UASSW3HJ');
     });
 
+    it('advances the order through the SHARED update path', async () => {
+      // Not a Bob Go-specific shortcut: the poll and both legacy webhooks use
+      // applyShippingUpdate too, so all three share one decision about
+      // backward transitions, notifications and the delivered/payout gate.
+      const { svc, shipping } = makeService();
+      await svc.handle('tracking/updated', { id: 'UASSW3HJ', status: 'collected' });
+      expect(shipping.applyShippingUpdate).toHaveBeenCalledWith('TX9', 'COLLECTED');
+    });
+
+    it('does NOT advance the order on a status it cannot map', async () => {
+      const { svc, shipping } = makeService();
+      await svc.handle('tracking/updated', { id: 'UASSW3HJ', status: 'expired' });
+      expect(shipping.applyShippingUpdate).not.toHaveBeenCalled();
+    });
+
+    it('ignores a reference that is not one of ours', async () => {
+      const { svc, shipping } = makeService({ tx: null });
+      const res = await svc.handle('tracking/updated', {
+        id: 'NOTOURS1',
+        status: 'delivered',
+      });
+      expect(res.handled).toBe(false);
+      expect(shipping.applyShippingUpdate).not.toHaveBeenCalled();
+    });
+
     it('keeps the raw payload of an unmapped status for review', async () => {
       const { svc, created } = makeService();
       await svc.handle('tracking/updated', { id: 16625, status: 'expired' });
@@ -109,13 +149,13 @@ describe('BobGoWebhookService', () => {
       // Completing a booking sends a critical:true SMS that bypasses the
       // seller's mute. That belongs in exactly one place — ShippingService —
       // or a webhook racing the sweep sends it twice.
-      const { svc, prisma } = makeService();
+      const { svc, shipping } = makeService();
       await svc.handle('shipment_submission_status/updated', {
         id: 16625,
         submission_status: 'success',
       });
       await settle();
-      expect(Object.keys(prisma)).toEqual(['bobGoWebhookEvent']);
+      expect(shipping.applyShippingUpdate).not.toHaveBeenCalled();
     });
 
     it('copes with a payload carrying no shipment id', async () => {
@@ -148,8 +188,11 @@ describe('BobGoWebhookService', () => {
       bobGoWebhookEvent: {
         create: jest.fn().mockRejectedValue(new Error('db down')),
       },
+      transaction: { findFirst: jest.fn().mockResolvedValue({ id: 'TX9' }) },
     };
-    const svc = new BobGoWebhookService(prisma as never);
+    const svc = new BobGoWebhookService(prisma as never, {
+      applyShippingUpdate: jest.fn(),
+    } as never);
     await expect(
       svc.handle('tracking/updated', { id: 1, status: 'pending-collection' }),
     ).resolves.toEqual({ handled: true });

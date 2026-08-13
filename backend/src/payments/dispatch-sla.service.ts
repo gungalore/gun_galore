@@ -18,6 +18,27 @@ import { reversalListingData } from './inventory';
 const NUDGE_BEFORE_REFUND_HOURS = 24;
 const DISPATCH_WINDOW_DAYS = 5;
 
+/**
+ * Was the seller actually at fault for an undispatched courier order?
+ *
+ * They are blameless when the platform never handed them a shipment to send:
+ * a Bob Go booking that the courier refused, or one still awaiting acceptance.
+ * In both cases there is no waybill, no PIN and nothing to hand over — the
+ * seller could not have dispatched if they wanted to.
+ *
+ * Deliberately NARROW. Any row where a booking genuinely completed
+ * (shipmentBookedAt set), or one on the legacy Pudo/TCG rails where a create
+ * call returning meant a courier was committed, is the seller's responsibility
+ * exactly as before. Widening this beyond our own carrier failures would hand
+ * every late seller a free excuse.
+ */
+export function blamelessSeller(tx: {
+  carrierProvider: string | null;
+  shipmentBookedAt: Date | null;
+}): boolean {
+  return tx.carrierProvider === 'BOBGO' && tx.shipmentBookedAt === null;
+}
+
 @Injectable()
 export class DispatchSlaService {
   private readonly logger = new Logger(DispatchSlaService.name);
@@ -234,6 +255,20 @@ export class DispatchSlaService {
               data: { status: 'LIVE', soldOutAt: null },
             })
             .catch(() => undefined);
+        } else if (blamelessSeller(tx)) {
+          // OUR failure, not theirs. Under Bob Go a booking can be created and
+          // then refused by the courier, or sit unaccepted — in either case the
+          // seller was never given a waybill and had nothing to dispatch.
+          // Striking them for that is unjust twice over: three strikes queues a
+          // seller for suspension review, so the platform's own carrier
+          // problems would build a case against innocent people.
+          //
+          // The refund and restock still happen — the buyer must not be left
+          // holding a sale that will never ship. Only the blame is withheld.
+          await this.prisma.$transaction([restock]);
+          this.logger.warn(
+            `Auto-refunded ${tx.id} WITHOUT a seller strike — the courier booking never completed (provider ${tx.carrierProvider ?? 'unknown'})`,
+          );
         } else {
           await this.prisma.$transaction([
             restock,

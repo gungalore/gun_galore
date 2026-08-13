@@ -4,6 +4,7 @@ import {
   toShippingStatus,
   shiplogicToShippingStatus,
   STATUS_LABEL,
+  bobgoToShippingStatus,
 } from './status-map';
 
 describe('status-map (Shiplogic — shared by webhook + Pudo poll)', () => {
@@ -103,5 +104,44 @@ describe('status-map (Shiplogic — shared by webhook + Pudo poll)', () => {
         );
       }
     });
+  });
+});
+
+describe('bobgoToShippingStatus', () => {
+  it('maps the lifecycle Bob Go documents in tracking_steps', () => {
+    expect(bobgoToShippingStatus('created')).toBe('PENDING');
+    expect(bobgoToShippingStatus('pending-collection')).toBe('PENDING');
+    expect(bobgoToShippingStatus('collected')).toBe('COLLECTED');
+    expect(bobgoToShippingStatus('in-transit')).toBe('IN_TRANSIT');
+    expect(bobgoToShippingStatus('out-for-delivery')).toBe('OUT_FOR_DELIVERY');
+    expect(bobgoToShippingStatus('delivered')).toBe('DELIVERED');
+  });
+
+  it('normalises case and separators like the Shiplogic map does', () => {
+    expect(bobgoToShippingStatus('In Transit')).toBe('IN_TRANSIT');
+    expect(bobgoToShippingStatus('OUT_FOR_DELIVERY')).toBe('OUT_FOR_DELIVERY');
+  });
+
+  it('does NOT inherit the Shiplogic reading of ready-for-pickup', () => {
+    // Shiplogic: READY_FOR_PICKUP -> AT_LOCKER -> OUT_FOR_DELIVERY, which is
+    // right for Pudo. If Bob Go sent it for a parcel that had not moved, that
+    // would tell the buyer it is out for delivery and the backward-transition
+    // guard would pin it there.
+    expect(shiplogicToShippingStatus('ready-for-pickup')).toBe('OUT_FOR_DELIVERY');
+    expect(bobgoToShippingStatus('ready-for-pickup')).toBeNull();
+  });
+
+  it('does NOT inherit the Shiplogic reading of expired', () => {
+    // Shiplogic: EXPIRED -> PIN_EXPIRED -> DELIVERY_FAILED. Terminal, notifies
+    // the buyer and raises an admin alert — far too destructive to hand to a
+    // word we have never seen from this carrier.
+    expect(shiplogicToShippingStatus('expired')).toBe('DELIVERY_FAILED');
+    expect(bobgoToShippingStatus('expired')).toBeNull();
+  });
+
+  it('returns null for anything unobserved so the caller leaves the order alone', () => {
+    for (const s of ['', 'at-locker', 'on-hold', 'floor-check', 'whatever-next']) {
+      expect(bobgoToShippingStatus(s)).toBeNull();
+    }
   });
 });

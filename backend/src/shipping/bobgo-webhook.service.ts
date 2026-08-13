@@ -1,5 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { bobgoToShippingStatus } from './status-map';
+import { ShippingService } from './shipping.service';
 
 /**
  * Bob Go webhook ingestion.
@@ -36,34 +38,14 @@ import { PrismaService } from '../prisma/prisma.service';
 export class BobGoWebhookService {
   private readonly logger = new Logger(BobGoWebhookService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // forwardRef: ShippingService owns the webhook controller's other handlers
+    // and Nest would otherwise see a cycle through ShippingModule.
+    @Inject(forwardRef(() => ShippingService))
+    private readonly shipping: ShippingService,
+  ) {}
 
-  /**
-   * Bob Go tracking status -> our ShippingStatus.
-   *
-   * DELIBERATELY an allowlist, not a pattern match. status-map.ts collapses by
-   * substring, which is how an unseen "ready_for_pickup" would be read as
-   * OUT_FOR_DELIVERY and "expired" as a terminal DELIVERY_FAILED.
-   *
-   * Provenance is tracked per entry, because it is the difference between
-   * evidence and inference:
-   *
-   *   OBSERVED — arrived in a real `status` field on a real webhook.
-   *   CANONICAL — a key of Bob Go's own `tracking_steps` object, which
-   *     enumerates the lifecycle it models (created 1, collected 2,
-   *     in-transit 3, out-for-delivery 4, delivered 5). These are Bob Go's
-   *     names for its own stages, so they are far better than a guess — but
-   *     we have not yet seen one arrive as a `status`, so they are labelled
-   *     rather than silently mixed in with what we have proven.
-   */
-  private static readonly KNOWN_TRACKING_STATUS: Record<string, string> = {
-    'pending-collection': 'PENDING', // OBSERVED 2026-08-13
-    created: 'PENDING', // CANONICAL (tracking_steps step 1)
-    collected: 'COLLECTED', // CANONICAL (step 2)
-    'in-transit': 'IN_TRANSIT', // CANONICAL (step 3)
-    'out-for-delivery': 'OUT_FOR_DELIVERY', // CANONICAL (step 4)
-    delivered: 'DELIVERED', // CANONICAL (step 5)
-  };
 
   async handle(
     topic: string,
@@ -145,20 +127,46 @@ export class BobGoWebhookService {
     // exactly what the existing poll and both legacy webhooks already match on.
     // But it means a query like `WHERE shipmentId = '16626'` will NOT find the
     // tracking rows, so the column holds whichever identifier the topic used.
-    const shipmentId = this.shipmentIdOf(body);
-    const status = String(body.status ?? '').trim().toLowerCase();
-    this.record('tracking/updated', body, shipmentId);
+    const trackingReference = this.shipmentIdOf(body);
+    const rawStatus = String(body.status ?? '').trim();
+    this.record('tracking/updated', body, trackingReference);
+    if (!trackingReference || !rawStatus) return { handled: false };
 
-    if (status && !(status in BobGoWebhookService.KNOWN_TRACKING_STATUS)) {
+    // status-map owns the vocabulary — Bob Go has its OWN table there, kept
+    // apart from the Shiplogic one because two words collide with meanings we
+    // must not inherit (READY_FOR_PICKUP -> OUT_FOR_DELIVERY, EXPIRED ->
+    // a TERMINAL DELIVERY_FAILED).
+    const mapped = bobgoToShippingStatus(rawStatus);
+    if (!mapped) {
       // The loudest line in this file, on purpose. Every one of these is a
       // status we would otherwise have to guess at, and each is a chance to
-      // widen the map from evidence instead of from a hunch.
+      // widen the table from evidence instead of from a hunch. The event is
+      // already stored whole, so nothing is lost by refusing to act.
       this.logger.warn(
-        `Bob Go tracking status not yet mapped: "${status}" (shipment ${shipmentId ?? '?'}) — ` +
+        `Bob Go tracking status not yet mapped: "${rawStatus}" (${trackingReference}) — ` +
           `recorded for review; NOT applied to the order`,
       );
       return { handled: false };
     }
+
+    const tx = await this.prisma.transaction
+      .findFirst({
+        where: { trackingReference },
+        select: { id: true },
+      })
+      .catch(() => null);
+    if (!tx) {
+      // Not ours, or a shipment booked outside the platform. Recorded, ignored.
+      this.logger.warn(
+        `Bob Go tracking event for unknown reference ${trackingReference}`,
+      );
+      return { handled: false };
+    }
+
+    // Same entry point the poll and both legacy webhooks use, so all three
+    // share ONE decision about backward transitions, notifications and the
+    // delivered/payout gate. There is no Bob Go-specific shortcut here.
+    await this.shipping.applyShippingUpdate(tx.id, mapped);
     return { handled: true };
   }
 
