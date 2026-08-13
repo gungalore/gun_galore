@@ -222,6 +222,60 @@ the entire locker hand-over instruction changes shape.
 
 ---
 
+## Webhooks
+
+Seven topics exist. The API will not tell you this directly — it lists them in
+the error when you send an invalid one:
+
+```
+fulfillment/created
+shipment_submission_status/updated     <- resolves a PENDING booking in seconds
+tracking/updated                       <- the real status vocabulary
+shipment_charged_amount/updated        <- what we are actually billed changed
+shipment_charged_weight/updated        <- they re-weighed the parcel
+shipment_health_status/updated         <- e.g. warning-late-collection
+order/updated
+```
+
+**Receiver is BUILT and DEPLOYED** (`576ca77`), inert until subscriptions
+exist. `POST /api/shipping/webhook/bobgo/<secret>/<group>/<action>` — the topic
+AND the secret travel in the path, because subscriptions are registered one
+topic at a time and *we* choose the URL, so each one self-identifies and
+authenticates without relying on custom-header support we have not verified.
+Verified live: routes, returns 200, rejects a bad secret, fails closed when
+`BOBGO_WEBHOOK_SECRET` is unset in production.
+
+Payloads land whole in `BobGoWebhookEvent`. The receiver applies ONLY statuses
+it has actually observed and logs everything else loudly — that table is the
+evidence `status-map.ts` should be widened from.
+
+### Registration is blocked — the API silently no-ops
+
+The create contract was reverse-engineered to
+`{ topic, delivery_url, status: "active"|"inactive" }` — each field name came
+out of an error message (`Invalid delivery url.`, then
+`Unsupported status. Possible values are: active,inactive.`).
+
+With all three fields valid:
+
+| Verb | Result |
+|---|---|
+| `POST /webhooks` | **200, body `null`, creates nothing.** `count` stays 0. |
+| `PATCH /webhooks` | 404 — it updates an existing subscription, and there are none |
+| `PUT /webhooks` | 405 |
+
+So the sandbox accepts a webhook-creation call and does nothing with it. **This
+is the third time Bob Go has returned a success-shaped response that isn't** —
+after the 201 for refused shipments and `app_status: "completed"` on a failure.
+It is a pattern worth assuming holds elsewhere in their API.
+
+Remaining route: register the five subscriptions in the **Bob Go portal UI**,
+or ask Bob Go why `POST /webhooks` no-ops. Until then the 5-minute poll remains
+the only resolution path — which works, but leaves the status vocabulary
+unobserved.
+
+---
+
 ## Open questions
 
 ### Answered by the accepted shipment (16625)
