@@ -160,3 +160,62 @@ describe('deliveryOptions is rail-agnostic', () => {
     expect(opts.pickupPoints).toEqual([]);
   });
 });
+
+describe('the legacy menu never offers what the legacy quote will refuse', () => {
+  // deliveryOptions is unfiltered on the Bob Go rail because the choice is the
+  // buyer's. On the LEGACY rail quoteForListing still honours the seller's
+  // pick, so an unfiltered menu would hand the buyer a price and then 400 at
+  // the Pay button — the worst possible place to discover it.
+  function legacyFor(shippingMethods: string[]) {
+    const prisma = {
+      listing: {
+        findUnique: jest.fn().mockResolvedValue({ ...LISTING, shippingMethods }),
+      },
+    };
+    return new ShippingService(
+      prisma as never,
+      {} as never,
+      {
+        getNearbyLockers: jest.fn().mockResolvedValue(LOCKERS),
+        quoteL2L: jest.fn().mockResolvedValue({
+          serviceCode: 'L2LXS - ECO',
+          serviceName: 'L2L',
+          priceCents: 6000,
+        }),
+      } as never,
+      {
+        getQuote: jest.fn().mockResolvedValue({
+          serviceCode: 'ECO',
+          serviceName: 'Economy',
+          priceCents: 12300,
+        }),
+      } as never,
+      {} as never,
+      { get: jest.fn().mockResolvedValue(false) } as never,
+    );
+  }
+
+  it('hides door when the seller only offered lockers', async () => {
+    const opts = await legacyFor(['PUDO']).deliveryOptions('L1', DELIVERY);
+    expect(opts.door).toBeNull();
+    expect(opts.pickupPoints.length).toBeGreaterThan(0);
+  });
+
+  it('hides collection points when the seller only offered door', async () => {
+    const opts = await legacyFor(['TCG']).deliveryOptions('L1', DELIVERY);
+    expect(opts.pickupPoints).toEqual([]);
+    expect(opts.door).not.toBeNull();
+  });
+
+  it('offers both when the seller offered both', async () => {
+    const opts = await legacyFor(['PUDO', 'TCG']).deliveryOptions('L1', DELIVERY);
+    expect(opts.door).not.toBeNull();
+    expect(opts.pickupPoints.length).toBeGreaterThan(0);
+  });
+
+  it('treats an empty list as no restriction, as the quote gate does', async () => {
+    const opts = await legacyFor([]).deliveryOptions('L1', DELIVERY);
+    expect(opts.door).not.toBeNull();
+    expect(opts.pickupPoints.length).toBeGreaterThan(0);
+  });
+});

@@ -711,6 +711,7 @@ export class ShippingService {
       heightCm: number | null;
       price: number | null;
       province: Province;
+      shippingMethods?: string[];
       pickupStreet: string | null;
       pickupSuburb: string | null;
       pickupCity: string | null;
@@ -737,6 +738,18 @@ export class ShippingService {
       weightGrams: listing.weightGrams!,
     };
 
+    // HONOUR THE SELLER'S PICK HERE, unlike the Bob Go branch.
+    //
+    // The buyer-decides rule is Bob Go's, because there a courier collects from
+    // an address either way so the seller has no stake in which shape the buyer
+    // chooses. On this rail the pick describes the SELLER'S own hand-over, and
+    // quoteForListing still enforces it — so offering an option they did not
+    // agree to would hand the buyer a price and then refuse it at the Pay
+    // button, which is the worst possible place to find out.
+    const offered = listing.shippingMethods ?? [];
+    const offers = (m: 'PUDO' | 'TCG') =>
+      offered.length === 0 || offered.includes(m);
+
     // Door — one TCG quote. Null on failure is TcgService's own contract and
     // here means simply "no door option", matching the Bob Go branch.
     let door: {
@@ -745,6 +758,7 @@ export class ShippingService {
       serviceCode: string;
     } | null = null;
     try {
+      if (!offers('TCG')) throw new Error('seller does not offer door delivery');
       const from: TcgResidentialAddress = listing.isDealListing
         ? await this.dealCollectionOrigin(listing.id)
         : {
@@ -785,7 +799,10 @@ export class ShippingService {
         }
       }
     } catch (err) {
-      this.logger.warn(`Legacy door quote failed: ${(err as Error).message}`);
+      // Covers both a genuine quote failure and the seller simply not offering
+      // door delivery — either way there is no door option, which is a valid
+      // menu rather than an error.
+      this.logger.debug(`No legacy door option: ${(err as Error).message}`);
     }
 
     // Collection points — nearest lockers from the cached directory. The L2L
@@ -802,6 +819,7 @@ export class ShippingService {
       serviceCode: string;
     }> = [];
     try {
+      if (!offers('PUDO')) throw new Error('seller does not offer locker delivery');
       const lockers = await this.pudo.getNearbyLockers({
         lat: deliveryAddress.lat,
         lng: deliveryAddress.lng,
@@ -830,8 +848,8 @@ export class ShippingService {
         }
       }
     } catch (err) {
-      this.logger.warn(
-        `Legacy locker options failed: ${(err as Error).message}`,
+      this.logger.debug(
+        `No legacy collection points: ${(err as Error).message}`,
       );
     }
 

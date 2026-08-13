@@ -483,9 +483,13 @@ export class TransactionsService {
         listingId: listing.id,
         shippingMethod: dto.shippingMethod,
         toLockerId: dto.pudoPickupLockerId,
-        deliveryAddress:
-          dto.shippingMethod === 'TCG' && dto.deliveryAddress
-            ? {
+        // Forwarded for BOTH slots, not just door. Bob Go needs a delivery
+        // address for a collection-point parcel too — the points it offers are
+        // the ones near that address. Gating this on TCG made a collection
+        // checkout fail at Pay asking for an address the buyer had already
+        // given. The legacy locker path simply ignores it.
+        deliveryAddress: dto.deliveryAddress
+          ? {
                 streetAddress: dto.deliveryAddress.streetAddress,
                 suburb: dto.deliveryAddress.suburb,
                 city: dto.deliveryAddress.city,

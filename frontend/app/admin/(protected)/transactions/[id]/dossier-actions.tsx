@@ -11,12 +11,22 @@
 //                                   chars for the audit log)
 //   - RELEASED / REFUNDED         → Already resolved, no actions
 //
+// Independent of paymentStatus, for as long as the sale is still live,
+// "Shipment failed" records WHY a courier booking came to nothing. The
+// ticklist is fetched from GET /shipping/failure-reasons and never kept
+// here — that endpoint also says which reasons bill the seller, so this
+// UI cannot drift from the policy that moves the money. Reasons that
+// charge are marked in the picker and need a separate tick before the
+// confirm button will fire. Not offered once the payment is resolved:
+// the charge is deducted where the payout is computed, so recording one
+// against an already-released payout would bill nobody.
+//
 // Every action that touches money requires explicit confirmation +
 // (for refund and dispute resolution) a reason. The reason is recorded
 // in the AdminAuditEvent table so an admin reviewing later can see
 // exactly why this admin made this call.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/admin-auth';
 
@@ -24,7 +34,16 @@ type Action =
   | { kind: 'release' }
   | { kind: 'refund' }
   | { kind: 'dispute-release' }
-  | { kind: 'dispute-refund' };
+  | { kind: 'dispute-refund' }
+  | { kind: 'shipment-failure' };
+
+// GET /shipping/failure-reasons — the policy's own ticklist. `sellerPays`
+// is what tells the picker which reasons cost the seller money.
+interface FailureReasonOption {
+  value: string;
+  label: string;
+  sellerPays: boolean;
+}
 
 interface Props {
   txId: string;
@@ -46,10 +65,55 @@ export default function DossierActions({
   const [amountRands, setAmountRands] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Shipment-failure picker: the ticklist from the API (null = not loaded
+  // yet), the picked reason, its optional note, the explicit tick an admin
+  // must give before a charging reason can be submitted, and the outcome
+  // the backend reported so it can be shown instead of vanishing.
+  const [failureReasons, setFailureReasons] = useState<
+    FailureReasonOption[] | null
+  >(null);
+  const [reasonsError, setReasonsError] = useState<string | null>(null);
+  const [failureReason, setFailureReason] = useState('');
+  const [note, setNote] = useState('');
+  const [chargeAck, setChargeAck] = useState(false);
+  const [failureResult, setFailureResult] = useState<{
+    charged: boolean;
+    chargeCents: number;
+  } | null>(null);
+
+  // Load the ticklist the first time the picker is opened. Deliberately
+  // not hard-coded: the same list is what the backend validates against.
+  useEffect(() => {
+    if (action?.kind !== 'shipment-failure' || failureReasons !== null) return;
+    let cancelled = false;
+    setReasonsError(null);
+    adminFetch('/shipping/failure-reasons')
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Error ${res.status}`);
+        return (await res.json()) as FailureReasonOption[];
+      })
+      .then((list) => {
+        if (!Array.isArray(list)) throw new Error('Unexpected response');
+        if (!cancelled) setFailureReasons(list);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReasonsError(
+            "Couldn't load the failure reasons — nothing has been recorded. Close this and try again.",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [action, failureReasons]);
 
   const remainingCents = Math.max(0, buyerTotal - refundedAmount);
   const isRefundAction =
     action?.kind === 'refund' || action?.kind === 'dispute-refund';
+  const isShipmentFailure = action?.kind === 'shipment-failure';
+  const pickedReason =
+    failureReasons?.find((r) => r.value === failureReason) ?? null;
   // Parse the Rands input → cents. Empty string => full refund (undefined).
   const parsedAmountCents =
     amountRands.trim() === ''
@@ -85,8 +149,42 @@ export default function DossierActions({
     action?.kind === 'dispute-release' ||
     action?.kind === 'dispute-refund';
   const reasonOk = !requiresReason || reason.trim().length >= 5;
+  // A failure needs a reason off the list, and a reason that bills the
+  // seller needs the charge ticked as well — so nobody is billed by a
+  // stray click on a radio button.
+  const failureOk =
+    !isShipmentFailure ||
+    (pickedReason !== null && (!pickedReason.sellerPays || chargeAck));
+  // The outcome panel belongs to the failure modal only — a leftover
+  // result must never change how the refund modal behaves.
+  const showFailureResult = isShipmentFailure && failureResult !== null;
   const canSubmit =
-    action !== null && reasonOk && (!isRefundAction || amountValid) && !busy;
+    action !== null &&
+    reasonOk &&
+    (!isRefundAction || amountValid) &&
+    failureOk &&
+    !showFailureResult &&
+    !busy;
+  // Green for the two release outcomes, red for anything that takes money
+  // off someone. A failure only takes money when the picked reason charges,
+  // so it sits at amber until it does.
+  const accent =
+    action?.kind === 'release' || action?.kind === 'dispute-release'
+      ? '#22c55e'
+      : isShipmentFailure && !pickedReason?.sellerPays
+        ? 'var(--amber, #f59e0b)'
+        : 'var(--red)';
+
+  // Shared by the overlay and the Cancel/Close button. Closing a recorded
+  // failure is also when the dossier is refreshed, so the page picks it up.
+  function dismiss() {
+    if (busy) return;
+    setAction(null);
+    if (showFailureResult) {
+      setFailureResult(null);
+      router.refresh();
+    }
+  }
 
   async function execute() {
     if (!action) return;
@@ -98,21 +196,29 @@ export default function DossierActions({
           ? `/admin/transactions/${txId}/release`
           : action.kind === 'dispute-release'
             ? `/admin/transactions/${txId}/resolve-dispute-release`
-            : `/admin/transactions/${txId}/refund`; // covers both refund + dispute-refund
+            : action.kind === 'shipment-failure'
+              ? `/admin/transactions/${txId}/shipment-failure`
+              : `/admin/transactions/${txId}/refund`; // covers both refund + dispute-refund
 
       const body =
         action.kind === 'release'
           ? undefined
           : action.kind === 'dispute-release'
             ? JSON.stringify({ reason: reason.trim() })
-            : JSON.stringify({
-                note: reason.trim(),
-                // Partial refund: only sent when the admin typed an amount;
-                // omitted => backend refunds the full remaining balance.
-                ...(parsedAmountCents !== undefined
-                  ? { amountZarCents: parsedAmountCents }
-                  : {}),
-              });
+            : action.kind === 'shipment-failure'
+              ? JSON.stringify({
+                  reason: failureReason,
+                  // Optional — left out entirely rather than sent blank.
+                  ...(note.trim() ? { note: note.trim() } : {}),
+                })
+              : JSON.stringify({
+                  note: reason.trim(),
+                  // Partial refund: only sent when the admin typed an amount;
+                  // omitted => backend refunds the full remaining balance.
+                  ...(parsedAmountCents !== undefined
+                    ? { amountZarCents: parsedAmountCents }
+                    : {}),
+                });
 
       const res = await adminFetch(path, {
         method: 'POST',
@@ -122,6 +228,21 @@ export default function DossierActions({
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { message?: string };
         throw new Error(data.message ?? `Error ${res.status}`);
+      }
+      if (action.kind === 'shipment-failure') {
+        // Stays open on purpose: an admin who may have just docked a
+        // seller has to see what was recorded and how much, not a modal
+        // that disappears. The backend is the one that decides whether
+        // this reason charged, so the answer comes from its response.
+        const out = (await res.json().catch(() => ({}))) as {
+          charged?: boolean;
+          chargeCents?: number;
+        };
+        setFailureResult({
+          charged: !!out.charged,
+          chargeCents: out.chargeCents ?? 0,
+        });
+        return;
       }
       setAction(null);
       setReason('');
@@ -139,6 +260,7 @@ export default function DossierActions({
     refund: 'Refund buyer?',
     'dispute-release': 'Resolve dispute — release to seller?',
     'dispute-refund': 'Resolve dispute — refund buyer?',
+    'shipment-failure': 'Record a failed courier shipment',
   };
 
   const SUBTITLE: Record<Action['kind'], string> = {
@@ -150,6 +272,8 @@ export default function DossierActions({
       'You have investigated and found in favour of the seller. Payment moves to RELEASED, seller payout is initiated, dispute alert closes. The reason below is recorded in the audit log and visible to the buyer.',
     'dispute-refund':
       'You have investigated and found in favour of the buyer. Payment moves to REFUNDED, full amount goes back to the buyer, dispute alert closes. Reason recorded in the audit log and visible to the seller.',
+    'shipment-failure':
+      'Say what went wrong with the courier booking. The carrier tells us that a collection or delivery failed, not whose fault it was — that call is yours and it is recorded in the audit log. Reasons marked “Seller pays” bill the seller the wasted courier cost for this booking, deducted from their payout for this sale.',
   };
 
   return (
@@ -204,11 +328,27 @@ export default function DossierActions({
             />
           </>
         )}
+        {/* A courier booking can fail at any point while the sale is live,
+            so this one is not tied to a paymentStatus like the money
+            actions above. Opening it clears whatever a previous action
+            left behind — a stale reason must never become a note. */}
+        <ActionButton
+          label="Shipment failed"
+          tone="warn"
+          onClick={() => {
+            setFailureReason('');
+            setNote('');
+            setChargeAck(false);
+            setFailureResult(null);
+            setError(null);
+            setAction({ kind: 'shipment-failure' });
+          }}
+        />
       </div>
 
       {action && (
         <div
-          onClick={() => !busy && setAction(null)}
+          onClick={dismiss}
           style={{
             position: 'fixed',
             inset: 0,
@@ -225,14 +365,12 @@ export default function DossierActions({
             style={{
               maxWidth: 520,
               width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
               padding: 24,
               borderRadius: 10,
               background: 'var(--bg-card)',
-              border: `0.5px solid ${
-                action.kind === 'release' || action.kind === 'dispute-release'
-                  ? '#22c55e'
-                  : 'var(--red)'
-              }`,
+              border: `0.5px solid ${accent}`,
             }}
           >
             <p
@@ -280,6 +418,177 @@ export default function DossierActions({
               </div>
             )}
 
+            {isShipmentFailure && !failureResult && (
+              <>
+                {reasonsError && (
+                  <p className="text-sm mb-4" style={{ color: 'var(--red)' }}>
+                    {reasonsError}
+                  </p>
+                )}
+                {!reasonsError && failureReasons === null && (
+                  <p
+                    className="text-sm mb-4"
+                    style={{ color: 'var(--text-tertiary)' }}
+                  >
+                    Loading reasons…
+                  </p>
+                )}
+                {failureReasons !== null && (
+                  <div
+                    className="mb-4 space-y-1"
+                    style={{ maxHeight: 260, overflowY: 'auto' }}
+                  >
+                    {failureReasons.map((r) => {
+                      const picked = failureReason === r.value;
+                      return (
+                        <label
+                          key={r.value}
+                          className="flex items-start gap-2 px-3 py-2 rounded"
+                          style={{
+                            background: picked
+                              ? 'var(--bg-inset)'
+                              : 'transparent',
+                            border: `0.5px solid ${
+                              picked
+                                ? r.sellerPays
+                                  ? 'var(--red)'
+                                  : 'var(--border)'
+                                : 'transparent'
+                            }`,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="shipment-failure-reason"
+                            value={r.value}
+                            checked={picked}
+                            onChange={() => {
+                              setFailureReason(r.value);
+                              // Ticking the charge for one reason must
+                              // never carry over to another.
+                              setChargeAck(false);
+                            }}
+                            style={{ marginTop: 3, cursor: 'pointer' }}
+                          />
+                          <span
+                            className="text-sm"
+                            style={{
+                              color: 'var(--text-primary)',
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            {r.label}
+                            {r.sellerPays && (
+                              <span
+                                className="text-xs ml-2 px-1.5 py-0.5 rounded-full"
+                                style={{
+                                  color: 'var(--red)',
+                                  border: '0.5px solid var(--red)',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                Seller pays
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="mb-4">
+                  <label
+                    className="text-xs uppercase tracking-wider mb-1 block"
+                    style={{ color: 'var(--text-tertiary)' }}
+                  >
+                    Note (optional — recorded in the audit log)
+                  </label>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={2}
+                    // Backend stores 500 chars — cap here so nothing an
+                    // admin typed is silently cut off.
+                    maxLength={500}
+                    placeholder="What the courier or the seller said — anything that explains this later."
+                    className="w-full px-3 py-2 rounded text-sm outline-none"
+                    style={{
+                      background: 'var(--bg-inset)',
+                      border: '0.5px solid var(--border)',
+                      color: 'var(--text-primary)',
+                      resize: 'vertical',
+                    }}
+                  />
+                </div>
+
+                {/* The deliberate step. Only appears for a reason that
+                    actually bills, and says the amount's basis in plain
+                    words — the confirm button stays dead until it's ticked. */}
+                {pickedReason?.sellerPays && (
+                  <label
+                    className="flex items-start gap-2 mb-4 px-3 py-2 rounded"
+                    style={{
+                      background: 'var(--red)18',
+                      border: '0.5px solid var(--red)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={chargeAck}
+                      onChange={(e) => setChargeAck(e.target.checked)}
+                      style={{ marginTop: 3, cursor: 'pointer' }}
+                    />
+                    <span
+                      className="text-xs"
+                      style={{
+                        color: 'var(--text-primary)',
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      I confirm the seller is charged the wasted courier cost
+                      for this failed booking, and that it comes off their
+                      payout for this sale. Each further failure adds a further
+                      charge.
+                    </span>
+                  </label>
+                )}
+              </>
+            )}
+
+            {showFailureResult && failureResult && (
+              <div
+                className="mb-4 px-3 py-2 rounded"
+                style={{
+                  background: failureResult.charged
+                    ? 'var(--red)18'
+                    : 'var(--bg-inset)',
+                  border: `0.5px solid ${
+                    failureResult.charged ? 'var(--red)' : 'var(--border)'
+                  }`,
+                }}
+              >
+                <p
+                  className="text-sm"
+                  style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+                >
+                  {failureResult.charged
+                    ? `Recorded — seller charged R${(failureResult.chargeCents / 100).toFixed(2)}`
+                    : 'Recorded — no seller charge'}
+                </p>
+                <p
+                  className="text-xs mt-1"
+                  style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+                >
+                  {failureResult.charged
+                    ? `R${(failureResult.chargeCents / 100).toFixed(2)} for the wasted courier booking is deducted from this seller's payout for this sale. The agreed sale figures are unchanged — the deduction shows as its own line.`
+                    : 'The failure is on the transaction record. Nothing is deducted from the seller.'}
+                </p>
+              </div>
+            )}
+
             {requiresReason && (
               <div className="mb-4">
                 <label
@@ -320,7 +629,7 @@ export default function DossierActions({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setAction(null)}
+                onClick={dismiss}
                 disabled={busy}
                 className="flex-1 py-2 rounded text-sm"
                 style={{
@@ -330,26 +639,31 @@ export default function DossierActions({
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {showFailureResult ? 'Close' : 'Cancel'}
               </button>
-              <button
-                type="button"
-                onClick={execute}
-                disabled={!canSubmit}
-                className="flex-1 py-2 rounded text-sm font-medium"
-                style={{
-                  background: canSubmit
-                    ? action.kind === 'release' || action.kind === 'dispute-release'
-                      ? '#22c55e'
-                      : 'var(--red)'
-                    : 'var(--bg-inset)',
-                  color: canSubmit ? '#fff' : 'var(--text-tertiary)',
-                  border: 'none',
-                  cursor: canSubmit ? 'pointer' : 'not-allowed',
-                }}
-              >
-                {busy ? 'Working…' : 'Confirm'}
-              </button>
+              {/* Gone once the failure is recorded — there is nothing left
+                  to confirm, and a live Confirm button next to a charge
+                  invites recording it twice. */}
+              {!showFailureResult && (
+                <button
+                  type="button"
+                  onClick={execute}
+                  disabled={!canSubmit}
+                  className="flex-1 py-2 rounded text-sm font-medium"
+                  style={{
+                    background: canSubmit ? accent : 'var(--bg-inset)',
+                    color: canSubmit ? '#fff' : 'var(--text-tertiary)',
+                    border: 'none',
+                    cursor: canSubmit ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  {busy
+                    ? 'Working…'
+                    : isShipmentFailure && pickedReason?.sellerPays
+                      ? 'Record and charge seller'
+                      : 'Confirm'}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -364,10 +678,17 @@ function ActionButton({
   onClick,
 }: {
   label: string;
-  tone: 'success' | 'danger';
+  // 'warn' opens something that MIGHT move money depending on what the
+  // admin picks — not the same promise as 'danger', which always does.
+  tone: 'success' | 'danger' | 'warn';
   onClick: () => void;
 }) {
-  const color = tone === 'success' ? '#22c55e' : 'var(--red)';
+  const color =
+    tone === 'success'
+      ? '#22c55e'
+      : tone === 'warn'
+        ? 'var(--amber, #f59e0b)'
+        : 'var(--red)';
   return (
     <button
       onClick={onClick}

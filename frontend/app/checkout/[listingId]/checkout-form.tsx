@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -16,7 +16,11 @@ import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
-import { LockerPicker, PudoLocker } from '@/components/locker-picker';
+import {
+  DeliveryOptionsPicker,
+  type DeliveryAddressInput,
+  type DeliveryOption,
+} from '@/components/delivery-options-picker';
 import {
   AddressAutocomplete,
   type ParsedAddressComponents,
@@ -140,6 +144,20 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       ? legalForClass.filter((m) => listing.shippingMethods.includes(m))
       : legalForClass;
 
+  // Non-firearm goods choose their courier option from DeliveryOptionsPicker —
+  // door delivery and every nearby collection point, priced, in one list. It
+  // replaces BOTH the PUDO/TCG method cards and the locker directory.
+  //
+  // The list is deliberately NOT narrowed to allowedMethods: the delivery
+  // option is the BUYER'S to decide (operator, 2026-08-13), so the seller's
+  // pick no longer curates what the buyer may choose.
+  //
+  // Firearms are untouched — their hand-over is a dealer route, not a courier
+  // one — and so are collection-only items and experiences, which have no
+  // courier leg at all.
+  const usesDeliveryPicker =
+    !isCollection && !isExperience && !listing.isFirearm;
+
   const [method, setMethod] = useState<ShippingMethod>(
     isExperience
       ? 'ON_SITE_SERVICE'
@@ -147,7 +165,13 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       ? 'COLLECTION'
       : allowedMethods[0] ?? (listing.isFirearm ? 'DEALER_TRANSFER' : 'PUDO'),
   );
-  const [selectedLocker, setSelectedLocker] = useState<PudoLocker | null>(null);
+  // The buyer's chosen delivery option (picker path). Its `kind` decides the
+  // shippingMethod: DOOR → 'TCG', PICKUP_POINT → 'PUDO'. Those enum values are
+  // SLOTS — the SHAPE of the delivery — not carrier names; the backend maps a
+  // slot onto whichever courier is live, so the mapping has to hold.
+  const [deliveryOption, setDeliveryOption] = useState<DeliveryOption | null>(
+    null,
+  );
   // Dealer-transfer self-arrange consent — the buyer must tick a box
   // acknowledging they'll organise the SAPS dealer transfer themselves
   // and upload SAPS 534 + stock register + firearm-serial photos after
@@ -190,10 +214,10 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     | { kind: 'ready'; quote: ShippingQuote }
   >({ kind: 'idle' });
 
-  // Buyer's saved address (from /users/me). For PUDO, the lat/lng feeds
-  // the LockerPicker so it can suggest the nearest 5 lockers. If the
-  // buyer has no saved address yet, the "address capture" block below
-  // appears in place of the picker — once they save, the picker reveals.
+  // Buyer's saved address (from /users/me). It's what the delivery options
+  // are priced against. If the buyer has no saved address yet, the "address
+  // capture" block below appears above the options — which stay in their own
+  // empty state until enough of it is filled in to price anything.
   const [me, setMe] = useState<Me | null>(null);
   const [meLoaded, setMeLoaded] = useState(false);
   // Inline address-capture state — only used when the buyer has no
@@ -264,15 +288,18 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   const maxParty = listing.capacitySlots ?? 1;
 
   // "Ship to a different address" toggle. Off by default — the
-  // delivering-to chip / saved-address LockerPicker uses the profile
-  // values. When ON, we render the inline address-capture form and
-  // the locker/TCG flows read from captureAddr instead of `me`.
-  // Reset on shipping-method change so the override doesn't silently
-  // leak between methods.
+  // delivering-to chip uses the profile values. When ON, we render the
+  // inline address-capture form and the delivery options + payload read
+  // from captureAddr instead of `me`. Reset on shipping-method change so
+  // the override doesn't silently leak between methods.
   const [useDifferentAddress, setUseDifferentAddress] = useState(false);
   useEffect(() => {
+    // On the picker path `method` is a CONSEQUENCE of the buyer's delivery
+    // choice, not a choice of its own — resetting here would throw away the
+    // very address that produced those options the instant they picked one.
+    if (usesDeliveryPicker) return;
     setUseDifferentAddress(false);
-  }, [method]);
+  }, [method, usesDeliveryPicker]);
 
 
   useEffect(() => {
@@ -303,8 +330,8 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           setCaptureLng(data.addrLng ?? null);
         }
       } catch {
-        // Non-fatal — the user can still pick a locker via search even
-        // if /users/me fails to load.
+        // Non-fatal — the user can still type a delivery address by hand
+        // even if /users/me fails to load.
       } finally {
         if (!cancelled) setMeLoaded(true);
       }
@@ -315,15 +342,15 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   }, [getToken]);
 
   // True if the buyer has a coords-bearing address saved on their User.
-  // Coords are what the LockerPicker's nearest-3 needs; without them we
-  // either capture inline or fall through to the search-only path.
+  // Coords are what door delivery is priced and routed on; without them we
+  // capture inline instead of showing the saved-address chip.
   const hasSavedAddress = !!(me && me.addrLat != null && me.addrLng != null);
 
   // Single source of truth for "which address should this checkout
   // use?" — captureAddr / captureLat / captureLng if the buyer
   // doesn't have one saved OR has flipped "Use a different address"
-  // for this order; otherwise the profile values. Drives the
-  // LockerPicker props and TCG buildPayload uniformly.
+  // for this order; otherwise the profile values. Drives the delivery
+  // options and buildPayload uniformly.
   const usingCaptureAddr = !hasSavedAddress || useDifferentAddress;
 
   // UX-3 — a picked address-book entry drives the SAME capture state a typed
@@ -347,108 +374,38 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     setUseDifferentAddress(true);
   }
 
-  // ─── Live shipping quote ──────────────────────────────────────────
-  // Re-fetch whenever the buyer changes shipping method or destination.
-  // Three triggers:
-  //   • method = PUDO and a locker has been picked → quote L2L
-  //   • method = TCG and saved address has coords → quote D2D
-  //   • method = DEALER_TRANSFER / PRIVATE_ARRANGE → no rate, mark idle
-  // Race-guarded — a stale fetch never overwrites a newer one.
-  useEffect(() => {
-    if (method !== 'PUDO' && method !== 'TCG') {
-      setQuoteState({ kind: 'idle' });
-      return;
+  // The address DeliveryOptionsPicker prices against — the SAME effective
+  // address buildPayload ships to, so what the buyer was quoted is what we
+  // book. Memoised on the individual fields because the picker re-fetches
+  // whenever this prop changes identity; a fresh object every render would
+  // loop it.
+  const pickerAddress: DeliveryAddressInput = useMemo(() => {
+    if (usingCaptureAddr) {
+      return {
+        streetAddress: captureAddr.street.trim(),
+        suburb: captureAddr.suburb.trim(),
+        city: captureAddr.city.trim(),
+        postalCode: captureAddr.postalCode.trim(),
+        province: captureAddr.province || '',
+        lat: captureLat ?? undefined,
+        lng: captureLng ?? undefined,
+      };
     }
-    if (method === 'PUDO' && !selectedLocker) {
-      setQuoteState({ kind: 'idle' });
-      return;
-    }
-    // TCG needs a street + coords. Pull from override values when
-    // the toggle is on; else the saved profile values.
-    if (method === 'TCG') {
-      const street = usingCaptureAddr ? captureAddr.street.trim() : me?.addrStreet;
-      const lat = usingCaptureAddr ? captureLat : me?.addrLat;
-      const lng = usingCaptureAddr ? captureLng : me?.addrLng;
-      if (!street || lat == null || lng == null) {
-        setQuoteState({ kind: 'idle' });
-        return;
-      }
-    }
-
-    let cancelled = false;
-    setQuoteState({ kind: 'loading' });
-    (async () => {
-      try {
-        const body: Record<string, unknown> = {
-          listingId: listing.id,
-          shippingMethod: method,
-        };
-        if (method === 'PUDO') {
-          body.toLockerId = selectedLocker?.lockerId;
-        } else if (method === 'TCG') {
-          body.deliveryAddress = usingCaptureAddr
-            ? {
-                streetAddress: captureAddr.street.trim(),
-                suburb: captureAddr.suburb.trim(),
-                city: captureAddr.city.trim(),
-                postalCode: captureAddr.postalCode.trim(),
-                province: captureAddr.province,
-                lat: captureLat,
-                lng: captureLng,
-              }
-            : {
-                streetAddress: me?.addrStreet ?? '',
-                suburb: me?.addrSuburb ?? '',
-                city: me?.addrCity ?? '',
-                postalCode: me?.addrPostalCode ?? '',
-                province: me?.addrProvince,
-                lat: me?.addrLat,
-                lng: me?.addrLng,
-              };
-        }
-        const res = await fetch(`${API_URL}/shipping/quote`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const data = (await res.json().catch(() => ({}))) as
-          | ShippingQuote
-          | { message?: string };
-        if (cancelled) return;
-        if (!res.ok) {
-          setQuoteState({
-            kind: 'error',
-            message:
-              ('message' in data && data.message) ||
-              `Couldn't fetch shipping rate (HTTP ${res.status}).`,
-          });
-          return;
-        }
-        setQuoteState({ kind: 'ready', quote: data as ShippingQuote });
-      } catch (err) {
-        if (cancelled) return;
-        setQuoteState({
-          kind: 'error',
-          message:
-            err instanceof Error
-              ? err.message
-              : 'Could not fetch a shipping rate.',
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
+    return {
+      streetAddress: me?.addrStreet ?? '',
+      suburb: me?.addrSuburb ?? '',
+      city: me?.addrCity ?? '',
+      postalCode: me?.addrPostalCode ?? '',
+      province: me?.addrProvince ?? '',
+      lat: me?.addrLat ?? undefined,
+      lng: me?.addrLng ?? undefined,
     };
-    // Re-fetch the quote when EITHER the saved address OR the
-    // override-capture values change. usingCaptureAddr flips between
-    // them; capture* fields drive the override path; me is the
-    // saved-profile fallback. All present here so a single edit in
-    // the inline form re-prices live.
+    // Keyed on the individual address FIELDS rather than on `me` itself: the
+    // User object is replaced for unrelated reasons (the inline phone capture
+    // rewrites it), and a new identity there would re-price a destination that
+    // never moved — and clear the buyer's chosen option with it. A half-typed
+    // address is fine to return; the picker won't price an incomplete one.
   }, [
-    method,
-    selectedLocker,
-    me,
-    listing.id,
     usingCaptureAddr,
     captureAddr.street,
     captureAddr.suburb,
@@ -457,7 +414,65 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     captureAddr.province,
     captureLat,
     captureLng,
+    me?.addrStreet,
+    me?.addrSuburb,
+    me?.addrCity,
+    me?.addrPostalCode,
+    me?.addrProvince,
+    me?.addrLat,
+    me?.addrLng,
   ]);
+
+  // A changed address invalidates whatever was chosen — the collection points
+  // near the new address are DIFFERENT points at different prices. Drop the
+  // choice and the quote it drove, so Pay can never submit against a price
+  // that no longer exists.
+  useEffect(() => {
+    if (!usesDeliveryPicker) return;
+    setDeliveryOption(null);
+    setQuoteState({ kind: 'idle' });
+  }, [usesDeliveryPicker, pickerAddress]);
+
+  // The chosen option already carries its price for THIS parcel to THIS
+  // address, so it feeds the existing quote state directly instead of firing a
+  // second round-trip at /shipping/quote — same state, same order summary,
+  // same Pay total as before. DOOR → 'TCG', PICKUP_POINT → 'PUDO'.
+  function handleSelectDeliveryOption(option: DeliveryOption) {
+    setDeliveryOption(option);
+    setMethod(option.kind === 'DOOR' ? 'TCG' : 'PUDO');
+    setQuoteState({
+      kind: 'ready',
+      quote: {
+        serviceCode: option.serviceCode,
+        // What the "Shipping (…)" line in the order summary names: the
+        // carrier's own service name for door, the point's name for a
+        // collection point (which is the bit the buyer actually cares about).
+        serviceName:
+          option.kind === 'DOOR'
+            ? option.detail ?? 'Door delivery'
+            : option.label,
+        priceCents: option.priceCents,
+      },
+    });
+  }
+
+  // ─── Live shipping quote ──────────────────────────────────────────
+  // The courier rate now arrives WITH the buyer's chosen option —
+  // /shipping/delivery-options prices every option for this exact parcel and
+  // this exact address, so handleSelectDeliveryOption above puts the clicked
+  // price straight into quoteState. Re-asking /shipping/quote for the option
+  // they just clicked would only add a round-trip and a second chance to
+  // disagree with itself.
+  //
+  // What's left here is the other half of the old effect: everything that has
+  // no courier rate at all (DEALER_TRANSFER / PRIVATE_ARRANGE / COLLECTION /
+  // ON_SITE_SERVICE) goes back to idle, so a stale price can't survive a
+  // method change.
+  useEffect(() => {
+    if (method !== 'PUDO' && method !== 'TCG') {
+      setQuoteState({ kind: 'idle' });
+    }
+  }, [method]);
 
   function handleAddressComponents(c: ParsedAddressComponents) {
     setCaptureAddr((prev) => ({
@@ -558,14 +573,26 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     // Collection — no locker, no address, no quote. Just the base payload
     // with shippingMethod = 'COLLECTION' (+ the papers ack when required).
     if (method === 'COLLECTION') return base;
-    if (method === 'PUDO') return { ...base, pudoPickupLockerId: selectedLocker?.lockerId };
+    if (method === 'PUDO') {
+      // The destination collection point, in whatever form the rail that
+      // answered /shipping/delivery-options identifies it by — WITHOUT the
+      // frontend needing to know which rail that was. Bob Go points carry a
+      // numeric location id and the backend re-quotes against it; the legacy
+      // rail has no such id (it sends 0) and puts the Pudo terminal code in
+      // serviceCode instead. Reading the id only when there IS one keeps both
+      // correct off one field.
+      const pickupPointId = deliveryOption?.locationId
+        ? String(deliveryOption.locationId)
+        : deliveryOption?.serviceCode;
+      return { ...base, pudoPickupLockerId: pickupPointId };
+    }
     if (method === 'TCG') {
       // Effective address: captureAddr when toggle is on OR there's
-      // no saved address, else the profile values. Same flag drives
-      // the LockerPicker (PUDO path), so a one-off override stays
-      // consistent across both shipping methods. Contact name +
-      // phone are still pulled from User on the backend — even when
-      // shipping somewhere else this run we don't override identity.
+      // no saved address, else the profile values. The same flag drives
+      // the address the options were priced against, so what the buyer
+      // was quoted is what we ship to. Contact name + phone are still
+      // pulled from User on the backend — even when shipping somewhere
+      // else this run we don't override identity.
       if (!me && !usingCaptureAddr) return base;
       const addr = usingCaptureAddr
         ? {
@@ -634,20 +661,21 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     // papers gates above pass, the buyer can pay.
     if (method === 'COLLECTION') return true;
 
-    // PUDO + TCG also need a successful quote — the buyer can't pay
-    // until we know what the shipping line costs. DEALER_TRANSFER and
-    // PRIVATE_ARRANGE skip the quote step entirely.
+    // PUDO + TCG also need a chosen delivery option and the price it carried —
+    // the buyer can't pay until we know what the shipping line costs.
+    // DEALER_TRANSFER and PRIVATE_ARRANGE skip the rate step entirely.
     if (method === 'PUDO') {
-      return !!selectedLocker && quoteState.kind === 'ready';
+      return !!deliveryOption && quoteState.kind === 'ready';
     }
     if (method === 'TCG') {
-      // TCG quote needs coords for the destination. Source depends
-      // on whether the buyer's overriding (capture values) or using
-      // their saved profile address — usingCaptureAddr decides.
+      // Door delivery needs coords for the destination — they're handed to the
+      // courier to price and route the drop, and the backend re-quotes with
+      // them on Pay. Source depends on whether the buyer's overriding (capture
+      // values) or using their saved profile address — usingCaptureAddr decides.
       const hasCoords = usingCaptureAddr
         ? captureLat != null && captureLng != null
         : me?.addrLat != null && me?.addrLng != null;
-      return hasCoords && quoteState.kind === 'ready';
+      return !!deliveryOption && hasCoords && quoteState.kind === 'ready';
     }
     if (method === 'DEALER_TRANSFER') return dtConsentAccepted;
     if (method === 'PRIVATE_ARRANGE') return paConsentAccepted;
@@ -1019,246 +1047,27 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
         </>
       )}
 
-      {!isCollection && allowedMethods.length > 0 && (
+      {/* Firearm hand-over — the two dealer routes, as option cards. Goods
+          don't come through here any more: their courier options are the
+          buyer's to choose from the priced picker below. */}
+      {listing.isFirearm && allowedMethods.length > 0 && (
         // UX-8 — option cards; onSelect is the SAME setMethod, so state +
-        // payload are unchanged. Live courier quote shows on PUDO/TCG cards.
+        // payload are unchanged.
         <DeliveryMethodCards
           methods={allowedMethods}
           selected={method}
           onSelect={setMethod}
           isFirearm={listing.isFirearm}
-          quotePriceCents={
-            quoteState.kind === 'ready' ? quoteState.quote.priceCents : undefined
-          }
         />
       )}
 
-      {/* Pudo collection locker — gated on a saved address with
-          coords. If the buyer has one, we feed lat/lng into LockerPicker
-          so it suggests the nearest 5. If not, we render an inline
-          address capture (same components as /profile/edit) that saves
-          to /users/me on submit, then reveals the picker. */}
-      {method === 'PUDO' && (
-        <div>
-          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-            Choose your collection locker
-          </p>
-          {!meLoaded ? (
-            <p
-              className="text-xs"
-              style={{ color: 'var(--text-tertiary)' }}
-            >
-              Loading your address…
-            </p>
-          ) : (
-            <>
-              {/* Saved-address chip + "use a different address"
-                  toggle — only shown when the buyer DOES have a
-                  saved address AND hasn't flipped the override.
-                  Mirrors the chip used on the TCG branch below. */}
-              {hasSavedAddress && !useDifferentAddress && (
-                <DeliveringToChip
-                  me={me}
-                  onUseDifferent={() => setUseDifferentAddress(true)}
-                />
-              )}
-
-              {/* Address-capture block — shown when the buyer
-                  doesn't have a saved address OR has chosen to
-                  override it for this order. The LockerPicker below
-                  reads LIVE from these inputs (Google autocomplete
-                  or manual postal code typing), so suggestions
-                  populate the moment a 4-digit code or coords land —
-                  no "Save" step required to see lockers. The save
-                  button persists to /users/me so future checkouts
-                  skip this; when the override is on, the save button
-                  is hidden because we explicitly DON'T want a
-                  one-off address to leak into the profile. */}
-              {(!hasSavedAddress || useDifferentAddress) && (
-                <div
-                  className="rounded-[6px] p-4 space-y-3 mb-3"
-                  style={{
-                    background: 'var(--bg-inset)',
-                    border: '0.5px solid var(--border)',
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p
-                        className="text-xs uppercase mb-2"
-                        style={{
-                          color: 'var(--text-tertiary)',
-                          letterSpacing: '0.08em',
-                          fontWeight: 500,
-                        }}
-                      >
-                        {useDifferentAddress
-                          ? 'Different address for this order'
-                          : 'Your delivery address'}
-                      </p>
-                      <p
-                        className="text-xs"
-                        style={{
-                          color: 'var(--text-secondary)',
-                          lineHeight: 1.55,
-                        }}
-                      >
-                        {useDifferentAddress
-                          ? "We won't save this to your profile — it only applies to this purchase."
-                          : 'Type or pick an address — locker suggestions update live below as you fill it in. Save it to your profile to skip this on the next purchase.'}
-                      </p>
-                    </div>
-                    {useDifferentAddress && (
-                      <button
-                        type="button"
-                        onClick={() => setUseDifferentAddress(false)}
-                        className="text-xs whitespace-nowrap"
-                        style={{
-                          color: 'var(--text-tertiary)',
-                          background: 'transparent',
-                          border: 'none',
-                          cursor: 'pointer',
-                          textDecoration: 'underline',
-                        }}
-                      >
-                        ← Use saved address
-                      </button>
-                    )}
-                  </div>
-                  <AddressAutocomplete
-                    value={
-                      captureAddr.street
-                        ? `${captureAddr.street}${captureAddr.suburb ? `, ${captureAddr.suburb}` : ''}`
-                        : ''
-                    }
-                    onChange={(v) => {
-                      if (!captureAddr.street) {
-                        setCaptureAddr((p) => ({ ...p, street: v }));
-                      }
-                    }}
-                    onComponents={handleAddressComponents}
-                  />
-                  <ManualAddressFields
-                    value={captureAddr}
-                    onChange={setCaptureAddr}
-                    idPrefix="checkout"
-                  />
-                  {addrError && (
-                    <p className="text-xs" style={{ color: 'var(--red)' }}>
-                      {addrError}
-                    </p>
-                  )}
-                  {/* Save-to-profile button — only shown for the
-                      "no saved address yet" path. When the buyer is
-                      using a one-off override we hide it; the whole
-                      point of the override is to NOT touch the
-                      profile. */}
-                  {!useDifferentAddress && (
-                    <button
-                      type="button"
-                      onClick={saveCapturedAddress}
-                      disabled={
-                        savingAddr ||
-                        !captureAddr.street.trim() ||
-                        !captureAddr.city.trim() ||
-                        captureLat == null ||
-                        captureLng == null
-                      }
-                      className="px-4 py-2 rounded-[6px] text-sm"
-                      style={{
-                        background:
-                          savingAddr ||
-                          !captureAddr.street.trim() ||
-                          !captureAddr.city.trim() ||
-                          captureLat == null ||
-                          captureLng == null
-                            ? 'var(--bg-card)'
-                            : 'var(--red)',
-                        color:
-                          savingAddr ||
-                          !captureAddr.street.trim() ||
-                          !captureAddr.city.trim() ||
-                          captureLat == null ||
-                          captureLng == null
-                            ? 'var(--text-tertiary)'
-                            : '#fff',
-                        border: 'none',
-                        cursor: savingAddr ? 'not-allowed' : 'pointer',
-                        fontWeight: 500,
-                      }}
-                    >
-                      {savingAddr ? 'Saving…' : 'Save address to profile'}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* LIVE locker picker — fed by capture values first
-                  (Google autocomplete or manual typing in the form
-                  above) then falling back to the saved profile.
-                  Either a 4-digit postal code OR lat/lng triggers a
-                  fetch on the backend (tiered: exact match →
-                  Delaunay neighbours → distance). */}
-              <LockerPicker
-                lat={captureLat ?? me?.addrLat ?? null}
-                lng={captureLng ?? me?.addrLng ?? null}
-                postalCode={
-                  (captureAddr.postalCode || '').trim() ||
-                  me?.addrPostalCode ||
-                  null
-                }
-                onSelect={setSelectedLocker}
-                selectedId={selectedLocker?.lockerId}
-              />
-            </>
-          )}
-
-          {/* Confirmation chip — once a locker is picked, restate it
-              clearly so the buyer can see what they chose without
-              scrolling back up through the picker. */}
-          {selectedLocker && (
-            <div
-              className="rounded-[6px] p-3 mt-3 text-sm"
-              style={{
-                background: 'rgba(34,197,94,0.08)',
-                border: '0.5px solid rgba(34,197,94,0.45)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <span style={{ fontWeight: 500 }}>
-                  Collecting from {selectedLocker.name}
-                </span>
-                <span
-                  className="text-xs"
-                  style={{
-                    color: '#22c55e',
-                    fontFamily: 'ui-monospace, monospace',
-                  }}
-                >
-                  {selectedLocker.lockerId}
-                </span>
-              </div>
-              <div
-                className="text-xs mt-1"
-                style={{ color: 'var(--text-tertiary)' }}
-              >
-                {selectedLocker.address}
-                {selectedLocker.suburb ? `, ${selectedLocker.suburb}` : ''}
-                {selectedLocker.city ? `, ${selectedLocker.city}` : ''}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TCG door-to-door delivery — same address-capture gate as
-          PUDO. If the buyer has a saved address with coords on
-          /users/me we show a "Delivering to" confirmation chip; if
-          not, the inline capture form (AddressAutocomplete +
-          ManualAddressFields) appears and saves to their profile on
-          submit. Name + phone come from User, not from this form. */}
-      {method === 'TCG' && (
+      {/* Delivery address — captured BEFORE the options below, because the
+          options depend on it. Every collection point offered is one near
+          THIS address and every price is for this exact parcel to it, so
+          there is nothing honest to show until the address exists. The
+          picker renders its own "enter your address" state; this block's job
+          is to sit above it. */}
+      {usesDeliveryPicker && (
         <div>
           <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
             Delivery address
@@ -1349,7 +1158,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
               <ManualAddressFields
                 value={captureAddr}
                 onChange={setCaptureAddr}
-                idPrefix="checkout-tcg"
+                idPrefix="checkout"
               />
               {addrError && (
                 <p className="text-xs" style={{ color: 'var(--red)' }}>
@@ -1358,7 +1167,8 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
               )}
               {/* Save-to-profile only when this is the buyer's first
                   address. One-off overrides MUST NOT touch the
-                  saved profile. */}
+                  saved profile. The options below read LIVE from these
+                  inputs either way — no Save step needed to see prices. */}
               {!useDifferentAddress && (
                 <button
                   type="button"
@@ -1393,7 +1203,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
                     fontWeight: 500,
                   }}
                 >
-                  {savingAddr ? 'Saving…' : 'Save address & get rate'}
+                  {savingAddr ? 'Saving…' : 'Save address to profile'}
                 </button>
               )}
               {captureLat == null && (
@@ -1402,12 +1212,32 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
                   style={{ color: 'var(--text-tertiary)' }}
                 >
                   Tip: pick a result from the address suggestions so we
-                  can capture coordinates — TCG uses them to quote the
-                  delivery rate.
+                  can capture coordinates — door delivery needs them to
+                  price and route the drop-off.
                 </p>
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* The buyer's delivery menu — door delivery and every nearby
+          collection point, each priced for THIS parcel to the address
+          above, in one list. Deliberately NOT filtered by what the seller
+          offered: the option is the buyer's to decide. Picking one sets the
+          shippingMethod slot and hands its price to the order summary. */}
+      {usesDeliveryPicker && (
+        <div>
+          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+            How would you like it delivered?
+          </p>
+          <DeliveryOptionsPicker
+            listingId={listing.id}
+            deliveryAddress={pickerAddress}
+            selectedServiceCode={deliveryOption?.serviceCode}
+            onSelect={handleSelectDeliveryOption}
+            getToken={getToken}
+          />
         </div>
       )}
 
@@ -1564,11 +1394,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
               {isCourier && quoteState.kind === 'idle' && (
                 <BreakdownLine
                   label="Shipping"
-                  value={
-                    method === 'PUDO'
-                      ? 'Pick a locker above'
-                      : 'Add your address to /profile/edit'
-                  }
+                  value="Choose a delivery option above"
                   muted
                 />
               )}

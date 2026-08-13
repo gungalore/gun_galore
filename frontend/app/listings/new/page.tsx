@@ -464,6 +464,27 @@ export default function NewListingPage() {
   // Delivery + pickup-address state. Lives outside `form` because the
   // shipping-methods array doesn't fit the flat string-map.
   const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>([]);
+  // What the courier question should ASK this seller — answered by the
+  // server (GET /shipping/seller-courier-model), never by a flag this form
+  // reads. On the seller-picks model the answer describes the seller's OWN
+  // hand-over (walk it to a locker vs wait for a courier), so they tick the
+  // carriers they'll use. On the single-option model a courier collects from
+  // their address either way and the BUYER chooses door vs collection point,
+  // so there's exactly one thing to opt into — asking again would be asking a
+  // question whose answer we ignore. Seeded with today's behaviour and left
+  // there if the lookup is slow or fails: a courier question we couldn't ask
+  // must never be what stops someone listing.
+  const [courierModel, setCourierModel] = useState<{
+    sellerPicksOption: boolean;
+    courierMethods: ShippingMethod[];
+    label: string;
+    hint: string;
+  }>({
+    sellerPicksOption: true,
+    courierMethods: ['PUDO', 'TCG'],
+    label: 'Courier delivery',
+    hint: '',
+  });
   // Seller's consent to share phone + email with the buyer for a
   // PRIVATE_ARRANGE firearm transfer. Required to offer that option.
   const [paConsent, setPaConsent] = useState(false);
@@ -1048,6 +1069,44 @@ export default function NewListingPage() {
       .catch(() => {});
   }, []);
 
+  // Mirror the server's seller-courier model (see the courierModel state).
+  // One-shot on mount; a missing, failed or malformed response leaves the
+  // seller-picks default in place, which is byte-for-byte today's form.
+  useEffect(() => {
+    fetch(`${API_URL}/shipping/seller-courier-model`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: unknown) => {
+        const m = data as {
+          sellerPicksOption?: unknown;
+          courierMethods?: unknown;
+          label?: unknown;
+          hint?: unknown;
+        } | null;
+        if (!m || typeof m.sellerPicksOption !== 'boolean') return;
+        // Same sanitising as the relist prefill — the methods arrive as plain
+        // strings, and an unknown / retired one stored on the listing would
+        // just be rejected on publish.
+        const methods = Array.isArray(m.courierMethods)
+          ? m.courierMethods.filter((v): v is ShippingMethod =>
+              SHIPPING_METHOD_VALUES.includes(v as ShippingMethod),
+            )
+          : [];
+        // Nothing storable came back: a single tick that saves nothing is
+        // worse than the picker we already render, so keep the picker.
+        if (methods.length === 0) return;
+        setCourierModel({
+          sellerPicksOption: m.sellerPicksOption,
+          courierMethods: methods,
+          label:
+            typeof m.label === 'string' && m.label.trim()
+              ? m.label
+              : 'Courier delivery',
+          hint: typeof m.hint === 'string' ? m.hint : '',
+        });
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       router.push('/sign-in');
@@ -1183,6 +1242,20 @@ export default function NewListingPage() {
   // genuinely collection-only category (trailers). The papers attestation
   // stays on requiresPapers — batteries don't need registration papers.
   const effectiveCollectionOnly = collectionOnly || dgLithiumRestricted;
+
+  // Render ONE "Courier delivery" tick instead of the per-carrier pills.
+  // Firearms, collection-only and experiences are excluded outright — none of
+  // them is couriered (a firearm always moves through a licensed dealer), so
+  // no courier model has anything to say about them and their delivery UI is
+  // untouched. Every courier-copy branch in the delivery step keys on this.
+  const singleCourierOption =
+    !courierModel.sellerPicksOption &&
+    !isFirearm &&
+    !effectiveCollectionOnly &&
+    !isExperience;
+  // The single pill's own value. It stands for the WHOLE set — the onChange
+  // in the delivery step stores and clears every courierMethod together.
+  const courierPillValue = courierModel.courierMethods[0];
 
   // Fetch the per-category attribute definitions whenever the selected
   // category changes. Race-guarded: a fast-clicking seller can fire several
@@ -1335,11 +1408,40 @@ export default function NewListingPage() {
   // the parcel oversize, silently drop the PUDO pick — otherwise they'd
   // sail through step 3 with an invalid combo and the buyer would hit
   // "no rate available" at checkout.
+  //
+  // Only on the seller-picks model. When the seller doesn't pick there is no
+  // PUDO pill to drop — the methods travel as one set — and the size limit is
+  // the carrier's to enforce: an oversize parcel simply comes back with no
+  // collection points, leaving door-to-door. Stripping half the set here
+  // would block a listing the carrier would have happily carried.
   useEffect(() => {
+    if (!courierModel.sellerPicksOption) return;
     if (isOversizeForPudo && shippingMethods.includes('PUDO')) {
       setShippingMethods((prev) => prev.filter((m) => m !== 'PUDO'));
     }
-  }, [isOversizeForPudo, shippingMethods]);
+  }, [courierModel.sellerPicksOption, isOversizeForPudo, shippingMethods]);
+
+  // One tick, both methods. A draft or Relist captured while the seller still
+  // picked can carry just one of them, and so can an older listing whose PUDO
+  // pick the effect above once stripped — either way the single pill would
+  // read as ticked while only half the set gets published. Complete the set
+  // instead. ADD-only, so unticking (which clears the whole set in one go)
+  // isn't fought by this.
+  useEffect(() => {
+    if (!singleCourierOption) return;
+    const picked = courierModel.courierMethods.filter((m) =>
+      shippingMethods.includes(m),
+    );
+    if (
+      picked.length === 0 ||
+      picked.length === courierModel.courierMethods.length
+    ) {
+      return;
+    }
+    setShippingMethods((prev) =>
+      Array.from(new Set([...prev, ...courierModel.courierMethods])),
+    );
+  }, [singleCourierOption, courierModel, shippingMethods]);
 
   // The delivery-method options change when the seller switches between
   // a firearm and non-firearm category (PUDO + TCG vs DEALER_TRANSFER +
@@ -1483,6 +1585,10 @@ export default function NewListingPage() {
     // and fills the pickup address. NO locker selection here — for PUDO,
     // the seller drops at any locker using a delivery PIN; the buyer
     // picks the destination locker at checkout.
+    //
+    // The address is required on EVERY path and must stay that way: under the
+    // single-option courier model it's the address a courier is dispatched
+    // to, so "locker-only, no address" cannot be a listable state.
     const addressFilled =
       pickupAddress.street.trim().length > 0 &&
       pickupAddress.suburb.trim().length > 0 &&
@@ -3661,6 +3767,8 @@ export default function NewListingPage() {
                 ? 'Buyers collect this one from you — in person, or with a transporter they arrange themselves. No courier. Add your pickup address so buyers know where they’re collecting from.'
                 : isFirearm
                 ? 'Firearms must move through a SAPS-licensed dealer. Pick one or both arrangement options below, then add your pickup address.'
+                : singleCourierOption
+                ? 'Add the parcel size and the address a courier collects it from. Buyers choose door delivery or a collection point when they check out.'
                 : 'Pick which couriers you offer, then add the pickup address. We use it to suggest your nearest Pudo locker.'
             }
             status={statusFor(4)}
@@ -3672,6 +3780,10 @@ export default function NewListingPage() {
                   ? `${EXPERIENCE_TYPE_LABELS[exp.experienceType]} · ${exp.eventStartDate || 'date set'}`
                   : effectiveCollectionOnly
                   ? `Collection only · ${pickupAddress.city || 'pickup set'}`
+                  : singleCourierOption
+                  ? // One option, stored as a pair — counting methods here
+                    // would read "2 methods" for a single tick.
+                    `${courierModel.label} · ${pickupAddress.city || 'pickup set'}`
                   : `${shippingMethods.length} method${shippingMethods.length === 1 ? '' : 's'} · ${pickupAddress.city || 'pickup set'}`
                 : undefined
             }
@@ -3687,14 +3799,27 @@ export default function NewListingPage() {
               <Field
                 label="Parcel weight & size"
                 required
-                hint="We use this to quote real Pudo / TCG rates at checkout. Pudo's largest locker box is 60 × 41 × 69 cm at 20 kg — anything bigger ships TCG door-to-door."
+                hint={
+                  singleCourierOption
+                    ? 'We use this to quote real courier rates at checkout, and it decides what the buyer can choose — a parcel too big for a collection-point box is offered door-to-door only.'
+                    : "We use this to quote real Pudo / TCG rates at checkout. Pudo's largest locker box is 60 × 41 × 69 cm at 20 kg — anything bigger ships TCG door-to-door."
+                }
                 tip={
-                  <>
-                    Used to quote couriers in real time. Pudo (locker
-                    drops) is cheapest and capped at 60 × 41 × 69 cm /
-                    20 kg. Anything bigger or heavier ships via TCG
-                    door-to-door.
-                  </>
+                  singleCourierOption ? (
+                    <>
+                      Used to quote couriers in real time. The size also
+                      decides the buyer&apos;s options: a parcel too big for a
+                      collection-point box simply comes back with no
+                      collection points, so they get door-to-door delivery.
+                    </>
+                  ) : (
+                    <>
+                      Used to quote couriers in real time. Pudo (locker
+                      drops) is cheapest and capped at 60 × 41 × 69 cm /
+                      20 kg. Anything bigger or heavier ships via TCG
+                      door-to-door.
+                    </>
+                  )
                 }
               >
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -3731,9 +3856,19 @@ export default function NewListingPage() {
                       lineHeight: 1.55,
                     }}
                   >
-                    Too big for a Pudo locker — only door-to-door (TCG)
-                    will be offered to buyers. Buyers will see this listing
-                    as &ldquo;courier only&rdquo;.
+                    {singleCourierOption ? (
+                      <>
+                        Bigger than a collection-point box — buyers will only
+                        be offered door-to-door delivery for this parcel.
+                        Nothing to change; it still lists.
+                      </>
+                    ) : (
+                      <>
+                        Too big for a Pudo locker — only door-to-door (TCG)
+                        will be offered to buyers. Buyers will see this listing
+                        as &ldquo;courier only&rdquo;.
+                      </>
+                    )}
                   </p>
                 )}
               </Field>
@@ -4275,6 +4410,12 @@ export default function NewListingPage() {
                     meet at a dealer to do the licence transfer in person.
                     Use this for local sales.
                   </>
+                ) : singleCourierOption ? (
+                  // The server owns this copy — it's the only place that
+                  // knows how the parcel actually moves on the live rail. A
+                  // blank hint renders no ⓘ at all (Field skips a falsy tip)
+                  // rather than an empty tooltip.
+                  courierModel.hint
                 ) : (
                   <>
                     <strong>Pudo locker-to-locker:</strong> cheapest. You
@@ -4304,6 +4445,22 @@ export default function NewListingPage() {
                     ]);
                     return;
                   }
+                  // One pill standing for the whole set: a tick stores every
+                  // method the server named, an untick removes them all.
+                  // Toggling the pill on its own would leave the other value
+                  // behind and publish half a pair.
+                  if (singleCourierOption) {
+                    const ticked = next.includes(courierPillValue);
+                    const rest = shippingMethods.filter(
+                      (m) => !courierModel.courierMethods.includes(m),
+                    );
+                    setShippingMethods(
+                      ticked
+                        ? [...rest, ...courierModel.courierMethods]
+                        : rest,
+                    );
+                    return;
+                  }
                   setShippingMethods(next);
                 }}
                 options={
@@ -4323,25 +4480,47 @@ export default function NewListingPage() {
                             'Optional. Buyer + seller meet at a dealer to do the transfer in person.',
                         },
                       ]
-                    : [
-                        {
-                          value: 'PUDO',
-                          label: isOversizeForPudo
-                            ? 'Pudo locker (unavailable — too large)'
-                            : 'Pudo locker-to-locker',
-                          description: isOversizeForPudo
-                            ? 'Parcel exceeds Pudo locker box limits.'
-                            : 'Self-service drop & collect.',
-                          disabled: isOversizeForPudo,
-                        },
-                        {
-                          value: 'TCG',
-                          label: 'The Courier Guy',
-                          description: 'Door-to-door courier.',
-                        },
-                      ]
+                    : singleCourierOption
+                      ? [
+                          // Never disabled on size: the carrier decides what
+                          // it can carry, and an oversize parcel just loses
+                          // the collection-point half of the buyer's menu.
+                          {
+                            value: courierPillValue,
+                            label: courierModel.label,
+                            description: courierModel.hint,
+                          },
+                        ]
+                      : [
+                          {
+                            value: 'PUDO',
+                            label: isOversizeForPudo
+                              ? 'Pudo locker (unavailable — too large)'
+                              : 'Pudo locker-to-locker',
+                            description: isOversizeForPudo
+                              ? 'Parcel exceeds Pudo locker box limits.'
+                              : 'Self-service drop & collect.',
+                            disabled: isOversizeForPudo,
+                          },
+                          {
+                            value: 'TCG',
+                            label: 'The Courier Guy',
+                            description: 'Door-to-door courier.',
+                          },
+                        ]
                 }
               />
+              {/* MultiSelectPillGroup doesn't render option descriptions, and
+                  the hint is the whole explanation of what the seller just
+                  ticked — so it goes on the page, not only behind the ⓘ. */}
+              {singleCourierOption && courierModel.hint && (
+                <p
+                  className="text-xs mt-2"
+                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+                >
+                  {courierModel.hint}
+                </p>
+              )}
               {/* PRIVATE_ARRANGE contact-sharing consent — REQUIRED to offer
                   the option. When ticked, the buyer of a private-arrangement
                   sale sees the seller's phone + email to coordinate the meet. */}
@@ -4559,7 +4738,11 @@ export default function NewListingPage() {
             <Field
               label="Pickup address"
               required
-              hint="Search for your address, then check the details below."
+              hint={
+                singleCourierOption
+                  ? 'Search for your address, then check the details below. A courier collects the parcel from here between 08:00 and 17:00, so it has to be an address someone can reach you at.'
+                  : 'Search for your address, then check the details below.'
+              }
             >
               <AddressAutocomplete
                 value={
@@ -4585,10 +4768,12 @@ export default function NewListingPage() {
               </div>
             </Field>
 
-            {/* Friendly note for PUDO sellers — no locker selection here.
-                The seller drops at any Pudo locker using the delivery PIN
-                that gets issued at dispatch. */}
-            {shippingMethods.includes('PUDO') && (
+            {/* What happens at this address once it sells. On the
+                single-option model the seller drops the parcel NOWHERE — a
+                courier comes to them for both delivery shapes — so the Pudo
+                drop-off note below must not render there, even though PUDO is
+                one of the stored methods. */}
+            {singleCourierOption ? (
               <p
                 className="text-xs"
                 style={{
@@ -4596,10 +4781,26 @@ export default function NewListingPage() {
                   lineHeight: 1.5,
                 }}
               >
-                Pudo drop-off: once the listing sells you'll get a delivery
-                PIN — take the parcel to any Pudo locker, scan the PIN, and
-                load it. The buyer picks the destination locker at checkout.
+                Collection: once the listing sells, a courier comes to this
+                address between 08:00 and 17:00 — you don&apos;t drop the
+                parcel off anywhere. Have it packed and ready. The buyer
+                chooses whether it goes to their door or to a collection point
+                near them.
               </p>
+            ) : (
+              shippingMethods.includes('PUDO') && (
+                <p
+                  className="text-xs"
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Pudo drop-off: once the listing sells you'll get a delivery
+                  PIN — take the parcel to any Pudo locker, scan the PIN, and
+                  load it. The buyer picks the destination locker at checkout.
+                </p>
+              )
             )}
           </StepAccordion>
 
@@ -4770,8 +4971,12 @@ export default function NewListingPage() {
                   <strong style={{ color: 'var(--text-primary)' }}>
                     You dispatch.
                   </strong>{' '}
-                  Ship within 48 hours via Pudo or The Courier Guy, or
-                  drop at your dealer for firearm transfers.
+                  {/* Keyed on the rail, not the category — this line covers
+                      firearms too, so singleCourierOption (which excludes
+                      them) would leave the wrong half of it standing. */}
+                  {courierModel.sellerPicksOption
+                    ? 'Ship within 48 hours via Pudo or The Courier Guy, or drop at your dealer for firearm transfers.'
+                    : 'Have the parcel ready within 48 hours — a courier collects it from your pickup address — or drop at your dealer for firearm transfers.'}
                 </li>
                 <li>
                   <strong style={{ color: 'var(--text-primary)' }}>
