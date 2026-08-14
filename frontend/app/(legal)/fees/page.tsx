@@ -64,7 +64,7 @@ export default function FeesPage() {
             You type what you want to receive; our commission and the card
             transaction fee are included in the price buyers see. Nothing is
             deducted from you, and nothing is added at the buyer&apos;s checkout
-            except delivery.
+            except delivery charges.
           </li>
           <li>
             <strong>On auctions and accepted offers the price is whatever the bid or offer settled at.</strong>{' '}
@@ -109,8 +109,11 @@ export default function FeesPage() {
         </tbody>
       </table>
       <p>
-        A <strong>minimum commission of R30</strong> applies to a sale
-        (it is never more than the sale price itself). This keeps
+        The amount the bands are applied to is the seller&apos;s{' '}
+        <strong>asking price</strong> on a Buy Now listing, and the{' '}
+        <strong>settled sale price</strong> on an auction or an accepted
+        offer. A <strong>minimum commission of R30</strong> applies to a
+        sale (it is never more than the sale price itself). This keeps
         low-value sales workable.
       </p>
       <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16 }}>
@@ -173,16 +176,19 @@ export default function FeesPage() {
       <p>
         The buyer pays R511.97, plus delivery. The seller receives{' '}
         <strong>R450.00</strong>. Nothing is deducted from that R450.00,
-        and nothing is added to the buyer&apos;s total at checkout except
-        delivery (see section&nbsp;6).
+        and the only thing added to the buyer&apos;s total at checkout is
+        delivery — the courier&apos;s live rate and the R15 handling
+        charge that goes with a waybill (see section&nbsp;6). Neither can
+        be known before there is a delivery address.
       </p>
       <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16 }}>
-        Two things follow from the bands. Because the R30 minimum
-        commission applies to small sales, a low asking price carries a
-        proportionally larger markup — ask R100.00 and the listing shows
-        R136.96 (R100.00 + R30.00 commission + R6.96 transaction fee).
-        And because each unit is priced on its own, listing a quantity of
-        two costs the buyer exactly twice the listed price.
+        Two things worth knowing. Because the R30 minimum commission
+        applies to small sales, a low asking price carries a
+        proportionally larger markup — ask R100.00 and the listing shows{' '}
+        <strong>R136.96</strong> (R100.00 + R30.00 commission + R6.96
+        transaction fee). And because each unit is priced on its own,
+        listing a quantity of two costs the buyer exactly twice the listed
+        price.
       </p>
 
       <h2>3. Auctions and Take-a-Shot offers</h2>
@@ -198,10 +204,10 @@ export default function FeesPage() {
       <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16 }}>
         <strong>A worked example.</strong> A rifle scope sells at a
         winning bid of R450.00. Commission is R40.50, so the seller
-        receives <strong>R409.50</strong>. The buyer pays the R450.00 bid,
-        plus a transaction fee (R19.84 on R450.00 before delivery — the
-        fee is calculated on the item price and delivery together), plus
-        delivery.
+        receives <strong>R409.50</strong>. The buyer pays the R450.00
+        bid, delivery, and the transaction fee on the two together —
+        R19.84 on the R450.00 on its own, a little more once a delivery
+        charge is added.
       </p>
       <p>
         The same applies to a Swop / Trade cash top-up above the
@@ -218,16 +224,16 @@ export default function FeesPage() {
         card payments go live, every payment carries a transaction fee of{' '}
         <strong>3.5% + R1.50</strong> charged by that provider, plus VAT at
         15% — <strong>4.025% + R1.73 per transaction</strong> once VAT is
-        included. It is charged on the item price and delivery together.
+        included.
       </p>
       <p>
         On a <strong>Buy Now</strong> listing this fee is already inside
         the listed price on the item, as in the example above — it is not
         added again at checkout. On an <strong>auction</strong> or an
-        accepted <strong>offer</strong>, it appears as a separate{' '}
-        <strong>Transaction fee</strong> line at checkout. Either way the
-        buyer sees the exact amount, to the cent, before confirming
-        payment.
+        accepted <strong>offer</strong> it appears as a separate{' '}
+        <strong>Transaction fee</strong> line at checkout, calculated on
+        the item price and delivery together. Either way the buyer sees
+        the exact amount, to the cent, before confirming payment.
       </p>
 
       <h2>5. When the seller is paid</h2>

@@ -167,6 +167,15 @@ export const PUBLIC_LISTING_SELECT = {
 // own listing). Kept as a separate token-gated select so these never reach a
 // non-owner. claudeConfidence / claudeOriginalDescription stay admin-only.
 const OWNER_LISTING_EXTRAS_SELECT = {
+  // What the seller receives on a BUY_NOW sale. OWNER-ONLY, deliberately —
+  // Listing.price is the marked-up figure buyers see, and exposing the ask
+  // publicly would hand every shopper our exact margin on every item, plus
+  // give competitors a live fee sheet. It belongs here for exactly one reason:
+  // a relist has to seed the price field from the ASK, not from the marked-up
+  // price, or republishing would mark the item up a second time.
+  //
+  // NEVER add this to PUBLIC_LISTING_SELECT.
+  sellerAskCents: true,
   reservePrice: true,
   autoAcceptThreshold: true,
   autoDeclineThreshold: true,

@@ -31,7 +31,7 @@ export default function HowPaymentsWorkPage() {
     <>
       <LegalDocHeader
         title="How payments work"
-        lastUpdated="Effective 16 July 2026"
+        lastUpdated="Effective 15 August 2026"
       />
 
       <p>
@@ -75,9 +75,15 @@ export default function HowPaymentsWorkPage() {
           released.
         </li>
         <li>
-          <strong>The seller is paid.</strong> The seller's proceeds — the
-          sale price less our commission — are released to the seller's
-          bank account.
+          <strong>The seller is paid.</strong> The seller's proceeds are
+          released to the seller's bank account. On a{' '}
+          <strong>Buy Now</strong> sale that is the seller's full asking
+          price — our commission and the transaction fee are built into
+          the price the buyer saw, so nothing comes off the payout. On an{' '}
+          <strong>auction</strong> or an accepted{' '}
+          <strong>Take-a-Shot offer</strong> the price is whatever the bid
+          or offer settled at, and the proceeds are that price less our
+          commission.
         </li>
       </ol>
 
@@ -108,8 +114,14 @@ export default function HowPaymentsWorkPage() {
       <p>
         All Outdoor earns a <strong>commission</strong> on completed sales and
         nothing more — we do not take a spread on the buyer's money and we
-        do not earn interest that belongs to sellers. The full fee schedule
-        is on our{' '}
+        do not earn interest that belongs to sellers. On a Buy Now listing
+        that commission, and the card <strong>transaction fee</strong>, are
+        included in the price the buyer sees rather than deducted from the
+        seller; on an auction or accepted offer the commission comes out of
+        the settled price and the buyer pays the transaction fee. Both
+        numbers — what the seller receives and what the buyer will see —
+        are shown to the seller before a listing is published. The full fee
+        schedule is on our{' '}
         <a href="/fees" style={{ color: 'var(--red)' }}>Fees</a> page.
       </p>
 

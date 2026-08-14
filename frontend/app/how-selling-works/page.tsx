@@ -29,7 +29,8 @@ const MODES: {
       'Selling several identical units (set a quantity and the listing stays live until they all sell)',
     ],
     how: [
-      'You set one price. The buyer taps Buy and pays — no waiting, no negotiation.',
+      'You set one price — what you want to RECEIVE. Our commission and the card transaction fee are added on top, and that total is the price buyers see. You are shown both numbers before you publish, and you receive your asking price in full: nothing is deducted from your payout.',
+      'The buyer taps Buy and pays the listed price — no waiting, no negotiation. Nothing is added at their checkout except delivery.',
       'Payment is held by All Outdoor until the buyer confirms delivery, then released to you.',
       'List more than one unit by setting the quantity; the listing stays up until every unit is sold.',
     ],
@@ -46,6 +47,7 @@ const MODES: {
       'You set a duration and a starting bid. Buyers bid; the highest bid at the end wins.',
       'Set a hidden reserve to protect yourself — the item only sells if bidding reaches your minimum.',
       'Bids in the final 2 minutes extend the end time by 2 minutes, so nobody wins by sniping at the last second.',
+      'Because the bidding sets the price, there is nothing to build our fee into: the sale price is the winning bid, our commission comes out of it, and the buyer pays a transaction fee on top.',
     ],
   },
   {
@@ -59,6 +61,7 @@ const MODES: {
     how: [
       'Buyers send you an offer. You can accept, decline, or counter once.',
       'Set an optional hidden auto-accept price — offers at or above it are flagged to you for one-tap confirmation. Declining any offer needs a reason and records a strike (genuine buyer concerns go to admin review instead); keep your listings accurate — three strikes suspends selling on your account. Countering is always penalty-free.',
+      'The offer sets the price, so — as with an auction — our commission comes out of the agreed price and the buyer pays a transaction fee on top.',
       'As with every sale, payment is held until delivery is confirmed before it reaches you.',
     ],
   },
@@ -189,10 +192,17 @@ export default function HowSellingWorksPage() {
       </div>
 
       <p className="text-sm mt-6" style={{ color: 'var(--text-secondary)' }}>
-        Whichever you choose, the basics are the same: listings are checked
-        before they go live, the buyer&apos;s payment is{' '}
+        Whichever you choose, the basics are the same: listing is free,
+        listings are checked before they go live, the buyer&apos;s payment is{' '}
         <strong style={{ color: 'var(--text-primary)' }}>held until delivery is confirmed</strong>,
-        and our commission is shown up front before you list.
+        and you are shown{' '}
+        <strong style={{ color: 'var(--text-primary)' }}>both numbers — what you receive and what buyers will see</strong>{' '}
+        before you publish. Delivery is quoted at checkout and paid by the
+        buyer. The bands and a worked example are on our{' '}
+        <Link href="/fees" style={{ color: 'var(--red)', textDecoration: 'underline' }}>
+          Fees
+        </Link>{' '}
+        page.
       </p>
 
       <div className="mt-6 flex flex-wrap gap-3">

@@ -387,6 +387,15 @@ export class TransactionsService {
     // existed, which falls back to the old deduct-from-seller behaviour.
     const isMarkedUpBuyNow =
       !offerRecord && !auctionWin && listing.sellerAskCents != null;
+    // ⚠️ The null fallback below is a SAFETY NET, not a supported state. The
+    // buyer's checkout cannot tell a marked-up BUY_NOW from a legacy one —
+    // sellerAskCents is owner-gated and never reaches a buyer — so it assumes
+    // every BUY_NOW is marked up and shows no fee line. A legacy row with
+    // passFeeToBuyer=true would therefore be CHARGED a processing fee the
+    // buyer was never shown. That is safe today only because production has
+    // zero listings and every new one records an ask. If listings ever predate
+    // the markup model (a restore, an import), backfill sellerAskCents before
+    // they can be bought.
 
     // Quantity (Phase 8a). For every legacy/single-item listing
     // (trackInventory=false — the default) this resolves to exactly 1, so

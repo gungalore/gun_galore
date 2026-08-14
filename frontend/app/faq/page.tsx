@@ -49,7 +49,10 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'What does it cost to buy or sell?',
-    a: 'Browsing and bidding are free. Sellers pay a commission on a completed sale, shown transparently before you list. Buyers see the full price, any applicable processing fee, and shipping before paying — no hidden charges at checkout.',
+    // Operator decision 2026-08-15: on Buy Now our cut is built INTO the
+    // listed price instead of deducted from the seller, so this answer must
+    // separate the two modes. Full detail (bands, worked example) on /fees.
+    a: 'Listing is free, and browsing and bidding cost nothing. On a Buy Now listing you enter what you want to receive and get exactly that — our commission and the card transaction fee are included in the price buyers see, so nothing is deducted from you. On an auction or an accepted offer the price is whatever the bid or offer settled at, our commission comes out of that, and the buyer pays a transaction fee. Commission is banded (9% on the first R5,000, then 7%, 5% and 3% on higher portions, minimum R30). Delivery is quoted at checkout and paid by the buyer. See the Fees page for a worked example.',
   },
   {
     q: 'How can I pay?',

@@ -65,6 +65,13 @@ const PEACH_RATE = 0.035;
 const PEACH_FIXED_CENTS = 150; // R1.50
 const VAT_MULTIPLIER = 1.15;
 
+// Per-waybill handling margin the buyer pays on top of the courier quote —
+// mirrors SHIPPING_HANDLING_FEE_CENTS in fee.calculator.ts. Only relevant to
+// the "what else gets added at checkout" note; never part of the list price
+// (there is no waybill until there is an address, and a firearm handed over
+// through a dealer never gets one).
+const SHIPPING_HANDLING_FEE_CENTS = 1_500; // R15
+
 // The four ways to list — rendered as descriptive choice cards in Step 3
 // so sellers can compare and know where to list before picking. Copy mirrors
 // the /how-selling-works help page.
@@ -163,9 +170,50 @@ function calcCommissionCents(priceCents: number, isTopSeller = false): number {
   return rounded;
 }
 
-// Note: the buyer's payment-processing fee (Peach: 3.5% + R1.50) is
-// added to their checkout total and kept by the platform — the seller
-// never sees it, so the Sell form intentionally doesn't compute it here.
+// Card-gateway fee on a given base, VAT-inclusive — mirror of
+// FeeCalculator.calculateProcessingFee (paygate mode).
+function calcProcessingFeeCents(baseCents: number): number {
+  return Math.round(
+    (baseCents * PEACH_RATE + PEACH_FIXED_CENTS) * VAT_MULTIPLIER,
+  );
+}
+
+// BUY NOW — turn what the seller wants to RECEIVE into the price the buyer
+// sees. Mirror of FeeCalculator.listPriceFromSellerAsk (operator decision
+// 2026-08-15): our cut is no longer deducted from the seller, it is built
+// into the listed price. Same percentages, opposite direction.
+//
+// This exists so the seller sees BOTH numbers — their payout AND the
+// buyer-facing price — live as they type, before they publish. A seller who
+// asks R450 and then finds their listing showing R511.97 with no warning will
+// believe they were cheated, so this must never drift from the backend.
+//
+// AUCTION and TAKE_A_SHOT are NOT marked up: a bid or an offer discovers the
+// price, so there is nothing to mark up. Commission still comes off the sale
+// price on those, and the buyer pays the transaction fee on top at checkout.
+function listPriceFromSellerAsk(
+  askCents: number,
+  isTopSeller = false,
+): {
+  sellerAsk: number;
+  commissionZar: number;
+  processingFee: number;
+  listPrice: number;
+} {
+  const sellerAsk = Math.max(0, Math.round(askCents));
+  if (sellerAsk === 0) {
+    return { sellerAsk: 0, commissionZar: 0, processingFee: 0, listPrice: 0 };
+  }
+  const commissionZar = calcCommissionCents(sellerAsk, isTopSeller);
+  const subtotal = sellerAsk + commissionZar;
+  const processingFee = calcProcessingFeeCents(subtotal);
+  return {
+    sellerAsk,
+    commissionZar,
+    processingFee,
+    listPrice: subtotal + processingFee,
+  };
+}
 
 function formatRand(cents: number): string {
   return `R${(cents / 100).toLocaleString('en-ZA', {
@@ -648,9 +696,11 @@ export default function NewListingPage() {
     categoryId: '',
     condition: 'GOOD',
     province: 'GAUTENG',
-    // Buyer always pays the payment-processing fee — it's added to their
-    // total at checkout, and we keep it. The seller never sees this fee
-    // anywhere in the UI. Hardcoded so the API receives the right flag.
+    // The BUYER always carries the card fee, never the seller. On Buy Now it
+    // is built into the listed price (see listPriceFromSellerAsk); on auctions
+    // and offers it is added to their checkout total as the transaction fee.
+    // Either way it never comes off the payout. Hardcoded so the API receives
+    // the right flag.
     passFeeToBuyer: true,
     autoAcceptThreshold: '',
     autoDeclineThreshold: '',
@@ -714,6 +764,11 @@ export default function NewListingPage() {
   // a seller who lands on a form where Steps 2-4 are already open and filled
   // has no idea where the answers came from or what still needs their eyes.
   const [relistPrefilled, setRelistPrefilled] = useState(false);
+  // Set when a BUY_NOW relist couldn't carry its price across because the
+  // source listing only exposes the buyer-facing (marked-up) figure. The
+  // price field is left blank in that case and the relist notice says so —
+  // silently seeding the marked-up number would list it higher again.
+  const [relistPriceCleared, setRelistPriceCleared] = useState(false);
 
   // ?type=<mode> seed. Surfaces that send a seller here for a SPECIFIC selling
   // mode (the swap panel's "list an item to trade" CTA) can pre-pick it, so the
@@ -766,7 +821,11 @@ export default function NewListingPage() {
           categoryId?: string;
           condition?: string;
           province?: string;
-          price?: number; // cents
+          price?: number; // cents — BUY_NOW: the marked-up, buyer-facing price
+          // What the seller asked to receive on a BUY_NOW listing. Optional
+          // because the detail endpoint doesn't return it yet; the relist
+          // seeding below degrades to a blank price field when it's absent.
+          sellerAskCents?: number | null; // cents
           reservePrice?: number | null; // cents — owner-only field
           autoAcceptThreshold?: number | null; // cents — owner-only field
           autoDeclineThreshold?: number | null; // cents — owner-only field
@@ -854,7 +913,24 @@ export default function NewListingPage() {
           condition: l.condition ?? f.condition,
           province: l.province ?? f.province,
           // Rand strings for the inputs (state stores rand, submit multiplies).
-          price: l.price != null ? String(l.price / 100) : f.price,
+          //
+          // BUY_NOW is the exception: `l.price` is the BUYER-FACING price,
+          // which already carries our commission and the card fee, while this
+          // input now means the seller's take-home. Seeding one with the other
+          // would mark an already-marked-up number up a second time and quietly
+          // inflate every relist. `sellerAskCents` is the right source — it is
+          // not on the detail response yet, so until it is we leave the field
+          // blank and say so in the relist notice rather than seed a wrong
+          // number (the markup is banded and floored, so it can't be reversed
+          // reliably either).
+          price:
+            relistType === 'BUY_NOW'
+              ? l.sellerAskCents != null
+                ? String(l.sellerAskCents / 100)
+                : ''
+              : l.price != null
+                ? String(l.price / 100)
+                : f.price,
           reservePrice:
             l.reservePrice != null
               ? String(l.reservePrice / 100)
@@ -890,6 +966,9 @@ export default function NewListingPage() {
         // gated on stepComplete (photos included), so nothing skips validation.
         setFurthestStep(4);
         setRelistPrefilled(true);
+        if (relistType === 'BUY_NOW' && l.sellerAskCents == null) {
+          setRelistPriceCleared(true);
+        }
       } catch {
         // Source gone / network — fall through to a blank form.
       }
@@ -1204,6 +1283,20 @@ export default function NewListingPage() {
   // until they finish the modal.
   const [pendingRedirectId, setPendingRedirectId] = useState<string | null>(
     null,
+  );
+
+  // Top Seller pays 0.5% less commission, which changes the buyer-facing
+  // price on a Buy Now listing. Read off the /users/me snapshot the form
+  // already fetches; until it lands we show the standard (higher) figure,
+  // which then corrects itself downward — never the other way around, so
+  // the seller is never shown a price lower than the one that publishes.
+  const isTopSeller = currentMe?.sellerTier === 'TOP_SELLER';
+  // Live Buy Now markup quote. `form.price` is the seller's ASK — what they
+  // want to receive — so this is what turns it into the listed price. Only
+  // meaningful for BUY_NOW; every use site is guarded on the listing type.
+  const buyNowQuote = listPriceFromSellerAsk(
+    Math.round((parseFloat(form.price) || 0) * 100),
+    isTopSeller,
   );
 
   const selectedCategory = categories.find((c) => c.id === form.categoryId);
@@ -2035,6 +2128,11 @@ export default function NewListingPage() {
         ? { attributes: collectedAttributes }
         : {}),
     };
+    // `price` is sent exactly as the seller typed it. For BUY_NOW the server
+    // reads this field as the seller's ASK (what they want to receive) and
+    // applies the markup itself, storing it as Listing.sellerAskCents — so
+    // never send a marked-up number here or the fee would be charged twice.
+    // For AUCTION it is the starting bid, unchanged and unmarked-up.
     if (!isPriceless) {
       body.price = Math.round(parseFloat(form.price) * 100);
     }
@@ -2700,10 +2798,16 @@ export default function NewListingPage() {
           }}
         >
           <strong style={{ color: '#2f9e6b' }}>Details carried over</strong> —
-          your previous listing&apos;s description, specifications, selling
-          type, price and delivery options are already filled in, so every step
-          is open for review. Check each one, adjust your price if it
-          didn&apos;t sell last time, then add fresh photos before you publish.
+          {relistPriceCleared
+            ? ' your previous listing’s description, specifications, selling type and delivery options are already filled in, so every step is open for review. Check each one, then add fresh photos before you publish.'
+            : ' your previous listing’s description, specifications, selling type, price and delivery options are already filled in, so every step is open for review. Check each one, adjust your price if it didn’t sell last time, then add fresh photos before you publish.'}
+          {/* The price is the one thing a Buy Now relist can't carry over: the
+              old listing only exposes the buyer-facing figure, and that number
+              already includes our fee. Re-using it would list the item higher
+              every time it was relisted, so the seller states their take-home
+              again instead. */}
+          {relistPriceCleared &&
+            ' Set your price again in Step 3 — it now asks what you want to receive, and the old listing only carries the price buyers saw.'}
           {/* Compliance capture is deliberately never carried over: the serial
               and the licence/serial photos are re-verified on every publish. */}
           {isFirearm &&
@@ -3097,7 +3201,16 @@ export default function NewListingPage() {
                         : form.listingType === 'SWOP'
                           ? 'Swop / Trade'
                           : 'Take a Shot'
-                  }${form.price ? ` · R${form.price}` : ''}`
+                  }${
+                    form.price
+                      ? form.listingType === 'BUY_NOW'
+                        ? // The collapsed summary has to agree with the
+                          // breakdown: on Buy Now the typed number is the
+                          // seller's take-home, not the shelf price.
+                          ` · R${form.price} to you · buyers see ${formatRand(buyNowQuote.listPrice)}`
+                        : ` · R${form.price}`
+                      : ''
+                  }`
                 : undefined
             }
             onContinue={() => advanceFromStep(3)}
@@ -3325,6 +3438,23 @@ export default function NewListingPage() {
                           {Math.round(estimate.midpoint / 100).toLocaleString('en-ZA')}
                         </button>
                       )}
+                      {/* The estimate is what the item SELLS for. The price
+                          field takes the seller's take-home, so dropping the
+                          estimate straight in lists it slightly above the
+                          range — say so here rather than let them find out
+                          from the breakdown and assume it's a bug. */}
+                      <p
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--text-tertiary)',
+                          marginTop: 8,
+                        }}
+                      >
+                        This is what similar items sell for. It goes into the
+                        field as what you&apos;d receive, so buyers will see a
+                        little more — the breakdown under the price shows
+                        exactly how much.
+                      </p>
                       <p
                         style={{
                           fontSize: 11,
@@ -3350,11 +3480,17 @@ export default function NewListingPage() {
               </div>
             )}
 
+            {/* The Buy Now price field asks for the seller's TAKE-HOME, not
+                the shelf price. Our commission and the card fee are added on
+                top and built into what the buyer sees, so the label has to be
+                unambiguous and the breakdown below has to be impossible to
+                miss — a seller who types R450 and finds a R511.97 listing
+                with no warning will think they were cheated. */}
             {form.listingType === 'BUY_NOW' && (
               <Field
-                label="Price"
+                label="What you want to receive"
                 required
-                hint="Whole rands. Cents are accepted but rarely used."
+                hint="Type your take-home. This exact amount is paid out to you in full — our commission and the card fee are added on top, not taken off it."
               >
                 <div style={{ position: 'relative' }}>
                   <span
@@ -3380,17 +3516,27 @@ export default function NewListingPage() {
                     placeholder="0.00"
                   />
                 </div>
-                <PriceBreakdown
-                  priceCents={Math.round((parseFloat(form.price) || 0) * 100)}
+                <SellerAskBreakdown
+                  askCents={Math.round((parseFloat(form.price) || 0) * 100)}
+                  isTopSeller={isTopSeller}
                 />
               </Field>
             )}
 
-            {/* UX-7 — optional compare-at / "was" price (BUY_NOW only). */}
+            {/* UX-7 — optional compare-at / "was" price (BUY_NOW only).
+                The backend validates this against the price the BUYER sees
+                (> listed price, ≤ 4×), not the ask the seller typed — so the
+                hint quotes the live listed price rather than "your price",
+                which under the markup model is a different, smaller number
+                and would get the seller rejected on publish. */}
             {form.listingType === 'BUY_NOW' && (
               <Field
                 label="Original / retail price (optional)"
-                hint="Only if truthful — you're accountable for this claim (CPA s41). Shown to buyers as a strikethrough discount. Must be higher than your price."
+                hint={
+                  buyNowQuote.listPrice > 0
+                    ? `Only if truthful — you're accountable for this claim (CPA s41). Shown to buyers as a strikethrough discount. Must be higher than the ${formatRand(buyNowQuote.listPrice)} buyers see.`
+                    : "Only if truthful — you're accountable for this claim (CPA s41). Shown to buyers as a strikethrough discount. Must be higher than the price buyers see."
+                }
               >
                 <div style={{ position: 'relative' }}>
                   <span
@@ -3642,7 +3788,10 @@ export default function NewListingPage() {
                             maximumFractionDigits: 2,
                           })}
                         </p>
-                        <PriceBreakdown priceCents={reserveCents} />
+                        <PriceBreakdown
+                          priceCents={reserveCents}
+                          isTopSeller={isTopSeller}
+                        />
                       </div>
                     );
                   })()
@@ -3651,7 +3800,7 @@ export default function NewListingPage() {
                   <Field
                     label="Starting bid"
                     required
-                    hint="Whole rands. Cents are accepted but rarely used."
+                    hint="Whole rands. Bidding sets the final price, so nothing is added on top of it — our commission comes off the winning bid."
                   >
                     <div style={{ position: 'relative' }}>
                       <span
@@ -3681,6 +3830,7 @@ export default function NewListingPage() {
                       priceCents={Math.round(
                         (parseFloat(form.price) || 0) * 100,
                       )}
+                      isTopSeller={isTopSeller}
                     />
                   </Field>
                 )}
@@ -5006,9 +5156,14 @@ export default function NewListingPage() {
                   <strong style={{ color: 'var(--text-primary)' }}>
                     Payout to your bank.
                   </strong>{' '}
-                  Funds land in your verified bank account within 2-3
-                  business days of release. Fees (and our commission)
-                  are deducted automatically.
+                  {/* Buy Now is now a markup, not a deduction — saying "fees
+                      are deducted" here would contradict the breakdown under
+                      the price field and undo the trust it's there to build.
+                      Auctions and offers still deduct, so they keep the old
+                      wording. */}
+                  {form.listingType === 'BUY_NOW'
+                    ? 'Funds land in your verified bank account within 2-3 business days of release. You receive your full asking price — our commission and the card fee are built into what the buyer pays, not taken off your payout.'
+                    : 'Funds land in your verified bank account within 2-3 business days of release. Fees (and our commission) are deducted automatically.'}
                 </li>
               </ol>
             </div>
@@ -5025,7 +5180,16 @@ export default function NewListingPage() {
             {
               title: form.title.trim(),
               description: form.description.trim(),
-              price: form.price,
+              // The preview modal renders this as the listing's price tag —
+              // it is a picture of what buyers will see, so on Buy Now it has
+              // to be the marked-up figure, not the seller's ask. Handing the
+              // raw ask over would show one price in the preview and another
+              // on the published listing, which is exactly the surprise the
+              // breakdown under the price field exists to prevent.
+              price:
+                form.listingType === 'BUY_NOW' && buyNowQuote.listPrice > 0
+                  ? String(buyNowQuote.listPrice / 100)
+                  : form.price,
               listingType: form.listingType as PreviewSnapshot['listingType'],
               condition: form.condition as PreviewSnapshot['condition'],
               province: form.province as PreviewSnapshot['province'],
@@ -5133,20 +5297,29 @@ export default function NewListingPage() {
 
 // ─────────────────────────── Small sub-components ────────────────────
 
-// Live breakdown of what the seller actually receives. The payment
-// processing fee is paid by the BUYER at checkout (and we keep it), so
-// the seller never sees it in this breakdown — only the tiered platform
-// commission comes off the listing price.
-function PriceBreakdown({ priceCents }: { priceCents: number }) {
+// AUCTION breakdown — the old, deduct-from-the-seller model, which still
+// applies wherever a price is DISCOVERED rather than set: a bid finds the
+// price, so there is nothing to mark up. Commission comes off the sale price
+// and the seller keeps the rest. The buyer pays the transaction fee on top at
+// checkout, so it never touches this payout.
+//
+// Buy Now does NOT use this — see SellerAskBreakdown below.
+function PriceBreakdown({
+  priceCents,
+  isTopSeller,
+}: {
+  priceCents: number;
+  isTopSeller?: boolean;
+}) {
   if (priceCents <= 0) return null;
-  const commission = calcCommissionCents(priceCents);
+  const commission = calcCommissionCents(priceCents, isTopSeller);
   const payout = Math.max(0, priceCents - commission);
   const commissionPct = ((commission / priceCents) * 100).toFixed(1);
   // Tell the seller when the R30 minimum kicked in so they don't think
   // the band rate is broken — common on cheap (< ~R350) listings.
   const hitMinimum =
     commission === MIN_COMMISSION_CENTS &&
-    commission > calcUnflooredCommissionCents(priceCents);
+    commission > calcUnflooredCommissionCents(priceCents, isTopSeller);
 
   return (
     <div
@@ -5165,7 +5338,7 @@ function PriceBreakdown({ priceCents }: { priceCents: number }) {
       >
         You receive
       </p>
-      <BreakdownRow label="Listing price" value={formatRand(priceCents)} />
+      <BreakdownRow label="Sale price" value={formatRand(priceCents)} />
       <BreakdownRow
         label={
           hitMinimum
@@ -5210,6 +5383,10 @@ function PriceBreakdown({ priceCents }: { priceCents: number }) {
           How the platform fee works
         </p>
         <ul style={{ listStyle: 'disc', paddingLeft: 18, margin: 0 }}>
+          <li>
+            Bidding sets the price, so nothing is added to it — our
+            commission comes off the winning bid.
+          </li>
           {COMMISSION_BANDS.map((b) => (
             <li key={b.label}>{b.label}</li>
           ))}
@@ -5222,6 +5399,147 @@ function PriceBreakdown({ priceCents }: { priceCents: number }) {
           <li>
             Top Seller tier gets a 0.5% discount once you qualify.
           </li>
+          <li>
+            The buyer pays the transaction fee on top at checkout — it
+            never comes out of your payout.
+          </li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// BUY NOW breakdown — the markup model. The seller types what they want to
+// RECEIVE; our commission and the card fee are added on top to produce the
+// price buyers see. Four rows, and "Buyers see" is deliberately the loudest
+// thing in the box: it is the number that will appear on their listing, and a
+// seller surprised by it is the single biggest risk in this whole change.
+//
+// Mirrors listPriceFromSellerAsk above (which mirrors the backend), so the
+// figure shown here is the figure that publishes.
+function SellerAskBreakdown({
+  askCents,
+  isTopSeller,
+}: {
+  askCents: number;
+  isTopSeller?: boolean;
+}) {
+  if (askCents <= 0) return null;
+  const { commissionZar, processingFee, listPrice } = listPriceFromSellerAsk(
+    askCents,
+    isTopSeller,
+  );
+  const commissionPct = ((commissionZar / askCents) * 100).toFixed(1);
+  // Same R30-floor callout as the auction breakdown — without it the
+  // percentage label reads as broken on cheap items.
+  const hitMinimum =
+    commissionZar === MIN_COMMISSION_CENTS &&
+    commissionZar > calcUnflooredCommissionCents(askCents, isTopSeller);
+
+  return (
+    <div
+      className="rounded-[6px] p-4 mt-3"
+      style={{
+        background: 'var(--bg-inset)',
+        border: '0.5px solid rgba(47,158,107,0.45)',
+      }}
+    >
+      <p
+        className="text-xs uppercase mb-3"
+        style={{
+          color: 'var(--text-tertiary)',
+          letterSpacing: '0.08em',
+        }}
+      >
+        Before you publish
+      </p>
+      <BreakdownRow label="You receive" value={formatRand(askCents)} />
+      <BreakdownRow
+        label={
+          hitMinimum
+            ? 'Our commission (R30 minimum)'
+            : `Our commission (~${commissionPct}%, tiered)`
+        }
+        value={`+ ${formatRand(commissionZar)}`}
+        muted
+      />
+      <BreakdownRow
+        label="Card fee"
+        value={`+ ${formatRand(processingFee)}`}
+        muted
+      />
+      <div
+        className="flex justify-between items-baseline pt-3 mt-2"
+        style={{ borderTop: '0.5px solid var(--border)' }}
+      >
+        <span
+          className="text-sm"
+          style={{ color: 'var(--text-primary)', fontWeight: 600 }}
+        >
+          Buyers see
+        </span>
+        <span
+          style={{
+            color: 'var(--text-primary)',
+            fontWeight: 600,
+            fontSize: 26,
+            lineHeight: 1.1,
+            letterSpacing: '-0.02em',
+          }}
+        >
+          {formatRand(listPrice)}
+        </span>
+      </div>
+      <p
+        className="text-xs mt-2"
+        style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+      >
+        That is the price on your listing. You still receive{' '}
+        <strong style={{ color: 'var(--text-primary)' }}>
+          {formatRand(askCents)}
+        </strong>{' '}
+        in full — our commission and the card fee are built into what the
+        buyer pays, not deducted from your payout.
+      </p>
+      <div
+        className="text-xs mt-3 pt-3"
+        style={{
+          color: 'var(--text-tertiary)',
+          lineHeight: 1.55,
+          borderTop: '0.5px solid var(--border)',
+        }}
+      >
+        <p
+          className="mb-1"
+          style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
+        >
+          How the fees work
+        </p>
+        <ul style={{ listStyle: 'disc', paddingLeft: 18, margin: 0 }}>
+          {COMMISSION_BANDS.map((b) => (
+            <li key={b.label}>{b.label}</li>
+          ))}
+          <li>
+            Minimum platform fee:{' '}
+            <span style={{ color: 'var(--text-secondary)' }}>
+              R{(MIN_COMMISSION_CENTS / 100).toFixed(0)} per sale
+            </span>
+          </li>
+          <li>
+            Top Seller tier gets a 0.5% discount once you qualify.
+          </li>
+          <li>
+            Card fee: the gateway&apos;s{' '}
+            {(PEACH_RATE * 100).toFixed(1)}% + R
+            {(PEACH_FIXED_CENTS / 100).toFixed(2)} on the subtotal, plus VAT.
+          </li>
+          <li>
+            Courier shipping (and the R
+            {(SHIPPING_HANDLING_FEE_CENTS / 100).toFixed(0)} waybill handling
+            fee) is added for the buyer at checkout — it can&apos;t be known
+            until there&apos;s a delivery address. A firearm handed over
+            through a dealer has no waybill, so neither applies.
+          </li>
         </ul>
       </div>
     </div>
@@ -5229,10 +5547,13 @@ function PriceBreakdown({ priceCents }: { priceCents: number }) {
 }
 
 // Same commission math as calcCommissionCents but WITHOUT the R30 floor,
-// used by PriceBreakdown to detect when the floor kicked in (so we can
+// used by both breakdowns to detect when the floor kicked in (so we can
 // surface "R30 minimum" instead of a percentage label that looks weird
 // for tiny listings).
-function calcUnflooredCommissionCents(priceCents: number): number {
+function calcUnflooredCommissionCents(
+  priceCents: number,
+  isTopSeller = false,
+): number {
   let commission = 0;
   let remaining = priceCents;
   for (const band of COMMISSION_BANDS) {
@@ -5242,6 +5563,9 @@ function calcUnflooredCommissionCents(priceCents: number): number {
       : remaining;
     commission += chunk * band.rate;
     remaining -= chunk;
+  }
+  if (isTopSeller) {
+    commission -= priceCents * TOP_SELLER_DISCOUNT;
   }
   return Math.max(0, Math.round(commission));
 }

@@ -43,7 +43,7 @@ export default function RegulatedItemsAnnexPage() {
     <>
       <LegalDocHeader
         title="Regulated Items Annex"
-        lastUpdated="Effective 11 August 2026"
+        lastUpdated="Effective 15 August 2026"
       />
 
       <h2>1. About this Annex</h2>
@@ -481,9 +481,20 @@ export default function RegulatedItemsAnnexPage() {
       <h2>16. Fees and charges on regulated transactions</h2>
       <ul>
         <li>
-          <strong>No platform shipping fee.</strong> Firearm dealer
-          transfers and in-person collection use no courier and
-          therefore carry no All Outdoor shipping or handling fee.
+          <strong>Buy Now — the seller receives the asking price in
+          full.</strong> On a fixed-price listing the amount the seller
+          enters is what the seller receives; our commission and the card
+          transaction fee are included in the price the buyer sees, and
+          nothing is deducted from the seller. On an auction or an
+          accepted offer the price is whatever the bidding or the offer
+          settled at, our commission comes out of that price, and the
+          buyer pays a transaction fee on top.
+        </li>
+        <li>
+          <strong>No platform shipping fee.</strong> A firearm dealer
+          transfer and a privately arranged hand-over both create no
+          courier waybill and therefore carry no All Outdoor shipping or
+          handling charge.
         </li>
         <li>
           <strong>The dealer&apos;s own charges are yours.</strong> Any

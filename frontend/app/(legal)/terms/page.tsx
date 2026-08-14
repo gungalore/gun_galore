@@ -30,7 +30,7 @@ export const metadata = {
 export default function TermsPage() {
   return (
     <>
-      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 19 July 2026" />
+      <LegalDocHeader title="Terms of Service" lastUpdated="Effective 24 June 2026 · Updated 15 August 2026" />
 
       <h2>1. About us</h2>
       <p>
@@ -187,8 +187,8 @@ export default function TermsPage() {
         For most transactions, All Outdoor operates a{' '}
         <strong>funds-held mechanism</strong>: the Buyer's payment is
         captured by the payment service provider at checkout and the
-        resulting amount (less commission and processing fees) is held
-        until the Buyer confirms delivery of the item, the Buyer's
+        resulting amount (less commission and the transaction fee) is
+        held until the Buyer confirms delivery of the item, the Buyer's
         confirmation window elapses, or a dispute is resolved. Once one
         of these triggers occurs, All Outdoor instructs the payment
         service provider to release the seller payout to the Seller's
@@ -223,16 +223,37 @@ export default function TermsPage() {
 
       <h2>8. Fees, commission and payouts</h2>
       <p>
-        All Outdoor charges Sellers a <strong>banded commission</strong>{' '}
-        on the listing price of each completed sale, plus a{' '}
-        <strong>processing fee</strong> charged by the payment service
-        provider (passed through to the Seller in full). The exact
-        commission bands and processing-fee structure are displayed to
-        the Seller on the Sell form before publishing a listing and
-        snapshotted onto each Transaction record at the point of sale.
-        Sellers may review the current fee schedule at any time via the
-        in-product fee explainer. Our current commission bands and
-        processing fee are published at{' '}
+        All Outdoor charges a <strong>banded commission</strong> on each
+        completed sale, and the payment service provider charges a{' '}
+        <strong>transaction fee</strong> on each payment. How they are
+        collected depends on the sale mode:
+      </p>
+      <ul>
+        <li>
+          <strong>Buy Now.</strong> The amount the Seller enters when
+          creating the listing is the amount the Seller is to{' '}
+          <strong>receive</strong>. All Outdoor adds the commission and
+          the transaction fee to that amount and publishes the result as
+          the listing price payable by the Buyer. The Seller's payout is
+          the amount the Seller entered, without deduction, and nothing
+          further is added to the Buyer's total at checkout other than
+          delivery charges under paragraph 9.
+        </li>
+        <li>
+          <strong>Auction and Take-a-Shot.</strong> The sale price is the
+          price established by the winning bid or the accepted offer. The
+          commission is deducted from that price and the balance is the
+          Seller's payout; the transaction fee is payable by the Buyer in
+          addition to the sale price.
+        </li>
+      </ul>
+      <p>
+        Both figures — the amount the Seller receives and the price the
+        Buyer will see — are displayed to the Seller on the Sell form
+        before a listing is published, and are snapshotted onto each
+        Transaction record at the point of sale. Sellers may review the
+        current fee schedule at any time via the in-product fee explainer.
+        Our current commission bands and transaction fee are published at{' '}
         <a href="/fees" style={{ color: 'var(--red)' }}>gungalore.co.za/fees</a>.
       </p>
       <p>

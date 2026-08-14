@@ -37,6 +37,44 @@ const inputStyle: React.CSSProperties = {
   fontSize: '14px',
 };
 
+// ─── What the buyer pays on an accepted offer ────────────────────────────
+// An offer DISCOVERS the price the same way a bid does, so there is nothing
+// to mark up: the seller still pays the platform commission out of the agreed
+// price, and the BUYER carries the gateway cost — shown as its own
+// "Transaction fee" row (operator wording 2026-08-15; never "processing fee"
+// or "service fee"). This is not conditional on the listing's legacy
+// passFeeToBuyer flag: the server forces it on for every offer-backed
+// transaction.
+//
+// Contrast with a straight Buy Now, where the seller names what they want to
+// RECEIVE and the listed price already carries our commission plus the gateway
+// fee — nothing is added there, so that checkout shows no fee row at all.
+//
+// Formulas mirror the backend FeeCalculator exactly:
+//   paygate — (base × 3.5% + R1.50) × 1.15 VAT, i.e. the VAT-inclusive figure
+//             billed against the card
+//   manual  — flat 1.5% EFT handling, no fixed component
+// Presentation only; the amount actually charged is recomputed server-side on
+// POST /transactions.
+const PEACH_RATE = 0.035;
+const PEACH_FIXED_CENTS = 150; // R1.50
+const VAT_MULTIPLIER = 1.15;
+const MANUAL_RATE = 0.015;
+const PAYMENT_MODE =
+  process.env.NEXT_PUBLIC_PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
+// P6.4 — flat R15 handling per courier waybill. PUDO/TCG only; a firearm
+// dealer transfer creates no waybill and is never charged it.
+const SHIPPING_HANDLING_CENTS = 1500;
+
+function transactionFee(baseZarCents: number): number {
+  return PAYMENT_MODE === 'manual'
+    ? Math.round(baseZarCents * MANUAL_RATE)
+    : Math.round(
+        baseZarCents * PEACH_RATE * VAT_MULTIPLIER +
+          PEACH_FIXED_CENTS * VAT_MULTIPLIER,
+      );
+}
+
 // FLOW-F5 — the 9 SA provinces, values matching the Prisma Province enum.
 // The backend DeliveryAddressDto requires `province` (@IsNotEmpty) and the
 // TCG rate engine keys on PROVINCE_LONG[province], so a TCG offer checkout
@@ -107,6 +145,15 @@ export function OfferCheckoutForm({
   const [comingSoon, setComingSoon] = useState(false);
 
   const allowedMethods: ShippingMethod[] = isFirearm ? ['DEALER_TRANSFER'] : ['PUDO', 'TCG'];
+
+  // Courier routes carry a shipping leg the server only prices at payment
+  // time, and the transaction fee is charged on (item + shipping) — so on
+  // those neither the fee nor the final total can be stated honestly here.
+  // A dealer transfer has no courier leg and no waybill, so its total is
+  // knowable in full: agreed price + transaction fee, nothing else.
+  const isCourier = method === 'PUDO' || method === 'TCG';
+  const feeOnAgreedPrice = transactionFee(settledAmount);
+  const knownTotal = isCourier ? null : settledAmount + feeOnAgreedPrice;
 
   function buildPayload() {
     // M33 — firearm offers must carry the attestation flag.
@@ -308,15 +355,6 @@ export function OfferCheckoutForm({
         </div>
       )}
 
-      {/* P6.4 — flat R15 handling per courier waybill. Shipping + handling are
-          quoted at payment; the server response carries the exact total. */}
-      {(method === 'PUDO' || method === 'TCG') && (
-        <p className="text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-          Shipping is quoted at payment, plus a R15 handling fee for the courier
-          parcel.
-        </p>
-      )}
-
       {method === 'DEALER_TRANSFER' && (
         <DealerTransferConsent
           accepted={dtConsentAccepted}
@@ -379,6 +417,85 @@ export function OfferCheckoutForm({
         </div>
       )}
 
+      {/* What the buyer actually pays. The agreed price is the price — an
+          offer discovers it, so nothing is marked up on top of it — and the
+          gateway cost sits on the buyer as its own "Transaction fee" row.
+          P6.4: a courier parcel also carries the flat R15 handling. Shipping
+          (and therefore the exact fee, which is charged on item + shipping) is
+          only priced server-side at payment, so those rows say so rather than
+          show a number we'd have to guess at. */}
+      <div
+        className="rounded-[8px] p-4"
+        style={{
+          background: 'var(--bg-inset)',
+          border: '0.5px solid var(--border)',
+        }}
+      >
+        <p
+          className="text-xs uppercase mb-3"
+          style={{
+            color: 'var(--text-tertiary)',
+            letterSpacing: '0.08em',
+            fontWeight: 500,
+          }}
+        >
+          What you&apos;ll pay
+        </p>
+        <SummaryLine label="Agreed price" value={formatPrice(settledAmount)} />
+        {isCourier ? (
+          <>
+            <SummaryLine label="Shipping" value="Quoted at payment" muted />
+            <SummaryLine
+              label="Handling"
+              value={formatPrice(SHIPPING_HANDLING_CENTS)}
+            />
+            <SummaryLine
+              label="Transaction fee"
+              value="Calculated at payment"
+              muted
+            />
+          </>
+        ) : (
+          <SummaryLine
+            label="Transaction fee"
+            value={formatPrice(feeOnAgreedPrice)}
+            muted
+          />
+        )}
+        {knownTotal != null ? (
+          <div
+            className="flex justify-between items-baseline pt-2 mt-2"
+            style={{ borderTop: '0.5px solid var(--border)' }}
+          >
+            <span
+              className="text-sm"
+              style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+            >
+              Total
+            </span>
+            <span
+              className="text-base"
+              style={{ color: 'var(--red)', fontWeight: 500 }}
+            >
+              {formatPrice(knownTotal)}
+            </span>
+          </div>
+        ) : (
+          <p
+            className="text-xs mt-2 pt-2"
+            style={{
+              color: 'var(--text-tertiary)',
+              lineHeight: 1.5,
+              borderTop: '0.5px solid var(--border)',
+            }}
+          >
+            We can only price the courier leg once we have your delivery
+            details, so your final total is shown on the payment page before
+            you pay anything.
+          </p>
+        )}
+      </div>
+
       {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
       <PaymentMethodSection />
 
@@ -395,8 +512,42 @@ export function OfferCheckoutForm({
           border: 'none',
         }}
       >
-        {submitting ? 'Setting up payment…' : `Pay ${formatPrice(settledAmount)}`}
+        {/* Only claim a figure we can stand behind. On a courier route the
+            shipping leg (and the fee charged on it) isn't priced until the
+            server quotes it, so the old `Pay {agreed price}` label named a
+            number the buyer was never going to be charged. */}
+        {submitting
+          ? 'Setting up payment…'
+          : knownTotal != null
+            ? `Pay ${formatPrice(knownTotal)}`
+            : 'Continue to payment'}
       </button>
+    </div>
+  );
+}
+
+// Reusable row inside the "What you'll pay" card. Mirrors BreakdownLine in
+// /checkout/[listingId]/checkout-form.tsx — same reason as DealerTransferConsent
+// below: the two checkout forms have diverged too far to share a component.
+function SummaryLine({
+  label,
+  value,
+  muted,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex justify-between text-sm py-1">
+      <span style={{ color: 'var(--text-tertiary)' }}>{label}</span>
+      <span
+        style={{
+          color: muted ? 'var(--text-secondary)' : 'var(--text-primary)',
+        }}
+      >
+        {value}
+      </span>
     </div>
   );
 }
