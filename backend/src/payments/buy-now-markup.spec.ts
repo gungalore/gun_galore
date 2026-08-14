@@ -112,3 +112,31 @@ describe('breakdownBuyNow', () => {
     expect(shortfall).toBeLessThan(R(1)); // ~R0.86 on a R450 ask
   });
 });
+
+describe('multi-buy matches the price on the card', () => {
+  it('charges exactly twice the listed price for two units', () => {
+    // The listed price is a promise. If the line were re-banded, the second
+    // unit would fall into a cheaper band and the R30 floor would be charged
+    // once, so two would cost LESS than twice the card price — and the card
+    // would be lying.
+    const one = calc.breakdownBuyNow(R(450), false);
+    const two = calc.breakdownBuyNow(R(450), false, 0, 'paygate', 0, 2);
+    expect(two.listingPrice).toBe(one.listingPrice * 2);
+    expect(two.buyerTotal).toBe(one.buyerTotal * 2);
+  });
+
+  it('pays the seller their ask for every unit', () => {
+    const three = calc.breakdownBuyNow(R(450), false, 0, 'paygate', 0, 3);
+    expect(three.sellerPayout).toBe(R(450) * 3);
+  });
+
+  it('scales our margin per unit too', () => {
+    const two = calc.breakdownBuyNow(R(450), false, 0, 'paygate', 0, 2);
+    expect(two.commissionZar).toBe(R(40.5) * 2);
+  });
+
+  it('treats a zero or negative quantity as one', () => {
+    const one = calc.breakdownBuyNow(R(450), false);
+    expect(calc.breakdownBuyNow(R(450), false, 0, 'paygate', 0, 0)).toEqual(one);
+  });
+});

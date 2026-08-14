@@ -748,7 +748,27 @@ model Listing {
 
   title                  String
   description            String
-  price                  Int? // ZAR cents; null for TAKE_A_SHOT listings
+  // ZAR cents. THE PRICE THE BUYER SEES AND PAYS. Null for TAKE_A_SHOT.
+  //
+  // For BUY_NOW this is a MARKED-UP figure (operator 2026-08-15): the seller
+  // names what they want to receive in sellerAskCents, and our commission plus
+  // the Peach fee are built on top to produce this. Everything downstream —
+  // cards, search, the PDP, cart, checkout — keeps reading `price` and needs no
+  // change, because this has always been "the buyer-facing price" and still is.
+  //
+  // For AUCTION / SWOP it is the plain starting price: a bid discovers the
+  // price, so there is nothing to mark up, and the commission is deducted from
+  // the seller as it always was.
+  price                  Int?
+  // ZAR cents the SELLER receives on a BUY_NOW sale — what they typed in the
+  // sell form. Null on auctions, swaps, take-a-shot, and on any listing created
+  // before the markup model.
+  //
+  // Stored rather than derived because reversing the markup is not reliably
+  // invertible: the commission is banded, floored at R30 and can carry a Top
+  // Seller discount. Recomputing FORWARD from this always reproduces the number
+  // the seller was shown, which is the one that matters if it is ever disputed.
+  sellerAskCents         Int?
   // UX-7 — optional compare-at / "was" price (ZAR cents). DISPLAY-ONLY:
   // rendered as a strikethrough + "% off" chip on cards + the PDP. It NEVER
   // enters fee/checkout math (fee.calculator.ts must never read it). Guarded

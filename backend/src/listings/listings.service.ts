@@ -29,6 +29,7 @@ import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.servic
 import { ActivityService } from '../activity/activity.service';
 import { validateAndCleanAttributes } from './attribute-validation';
 import { Prisma } from '@prisma/client';
+import { FeeCalculator } from '../payments/fee.calculator';
 
 // Public-safe projection for the unauthenticated GET /listings/:id detail
 // endpoint. This is an explicit ALLOWLIST: every field named here is safe to
@@ -746,6 +747,10 @@ export class ListingsService {
     private readonly categories: CategoriesService,
     private readonly wishlistAlerts: WishlistAlertsService,
     private readonly activity: ActivityService,
+    // Appended LAST on purpose: the specs construct this service positionally,
+    // so a new dependency inserted earlier would silently shift every argument
+    // along and hand prisma to the wrong field.
+    private readonly fees: FeeCalculator,
   ) {}
 
   // AMMUNITION BAN — the single chokepoint every write path calls
@@ -1103,6 +1108,34 @@ export class ListingsService {
     throw new BadRequestException(
       'To offer Private Arrangement you must consent to share your phone number and email with the buyer so they can arrange the firearm transfer.',
     );
+  }
+
+
+  /**
+   * What to store for a listing's price, given the number the seller typed.
+   *
+   * BUY_NOW is now a MARKED-UP price (operator 2026-08-15): the seller types
+   * what they want to RECEIVE, and we build our commission plus the Peach fee
+   * on top to get the figure the buyer sees. `Listing.price` keeps meaning "the
+   * buyer-facing price", so nothing downstream changes; `sellerAskCents`
+   * carries the other half.
+   *
+   * Everything else is untouched. An AUCTION price is a STARTING price that a
+   * bid then discovers, so there is nothing to mark up — the commission comes
+   * out of the seller on those, exactly as it always did. SWOP has no sale
+   * price and TAKE_A_SHOT has none at all.
+   */
+  private priceFieldsFor(
+    listingType: ListingType,
+    typedPriceCents: number | null | undefined,
+    isTopSeller: boolean,
+  ): { price: number | null; sellerAskCents: number | null } {
+    if (typedPriceCents == null) return { price: null, sellerAskCents: null };
+    if (listingType !== ListingType.BUY_NOW) {
+      return { price: typedPriceCents, sellerAskCents: null };
+    }
+    const marked = this.fees.listPriceFromSellerAsk(typedPriceCents, isTopSeller);
+    return { price: marked.listPrice, sellerAskCents: marked.sellerAsk };
   }
 
   async create(clerkId: string, dto: CreateListingDto): Promise<Listing> {
@@ -1600,6 +1633,12 @@ export class ListingsService {
     // (attributes were validated + the DG collection-only flag computed above,
     // before the collection gates — see cleanedAttributes / attributesForDb /
     // effectiveCollectionOnly.)
+    const pricing = this.priceFieldsFor(
+      dto.listingType,
+      dto.price,
+      user.sellerTier === 'TOP_SELLER',
+    );
+
     const listing = await this.prisma.listing.create({
       data: {
         referenceNumber,
@@ -1607,7 +1646,11 @@ export class ListingsService {
         categoryId: dto.categoryId,
         title: dto.title,
         description: finalDescription,
-        price: dto.price,
+        // BUY_NOW: dto.price is what the SELLER WANTS TO RECEIVE; the stored
+        // price is that marked up by commission + the Peach fee. Other types
+        // store the typed number as-is.
+        price: pricing.price,
+        sellerAskCents: pricing.sellerAskCents,
         // UX-7 — display-only "was" price (validated above; BUY_NOW only).
         compareAtPriceZarCents: dto.compareAtPriceZarCents ?? null,
         listingType: dto.listingType,

@@ -381,6 +381,13 @@ export class TransactionsService {
 
     const isTopSeller = listing.seller.sellerTier === 'TOP_SELLER';
 
+    // A straight BUY_NOW purchase of a listing priced under the markup model.
+    // Offers and auction wins are excluded: their price was negotiated or bid,
+    // not listed. sellerAskCents is null on anything created before the model
+    // existed, which falls back to the old deduct-from-seller behaviour.
+    const isMarkedUpBuyNow =
+      !offerRecord && !auctionWin && listing.sellerAskCents != null;
+
     // Quantity (Phase 8a). For every legacy/single-item listing
     // (trackInventory=false — the default) this resolves to exactly 1, so
     // the entire flow below is byte-for-byte unchanged. Only an
@@ -546,14 +553,35 @@ export class TransactionsService {
           isTopSeller,
           PAYMENT_MODE,
         )
-      : this.fees.breakdown(
-          agreedPrice * quantity, // line subtotal — commission bands apply to the line
-          listing.passFeeToBuyer,
-          isTopSeller,
-          shippingCostCents,
-          PAYMENT_MODE, // manual = flat 1.5% EFT fee; paygate = card rate
-          handlingFeeCents,
-        );
+      : isMarkedUpBuyNow
+        ? // BUY NOW — our cut is already inside listing.price. The seller
+          // receives the ask they typed and NOTHING is added at checkout but
+          // shipping and the handling margin. Recomputed FORWARD from the ask
+          // rather than reversed out of the price: the markup is banded,
+          // floored and Top-Seller-discounted, so it is not reliably
+          // invertible, and forward always reproduces what the seller was shown.
+          this.fees.breakdownBuyNow(
+            listing.sellerAskCents!,
+            isTopSeller,
+            shippingCostCents,
+            PAYMENT_MODE,
+            handlingFeeCents,
+            quantity,
+          )
+        : this.fees.breakdown(
+            agreedPrice * quantity, // line subtotal — commission bands apply to the line
+            // AUCTIONS AND OFFERS: the buyer pays the gateway fee, surfaced as
+            // a "Transaction fee" (operator 2026-08-15). A bid discovers the
+            // price, so there is nothing to mark up — the commission comes out
+            // of the seller as it always did, and the gateway cost is the
+            // buyer's. Anything else (a legacy BUY_NOW with no ask recorded)
+            // keeps the seller's own passFeeToBuyer choice.
+            auctionWin || offerRecord ? true : listing.passFeeToBuyer,
+            isTopSeller,
+            shippingCostCents,
+            PAYMENT_MODE, // manual = flat 1.5% EFT fee; paygate = card rate
+            handlingFeeCents,
+          );
 
     // ─── DD-2 — Daily Deals first-party economics ──────────────────────
     // GG is the seller of a house deal (Listing.isDealListing), so there is

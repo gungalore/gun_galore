@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { FeeCalculator } from '../payments/fee.calculator';
 import { ListingsService } from './listings.service';
 import { ListingsController } from './listings.controller';
 import { FirearmLicenceService } from './firearm-licence.service';
@@ -29,6 +30,9 @@ import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
   // already imports ListingsModule; no cycle).
   providers: [
     ListingsService,
+    // Dependency-free calculator — BUY_NOW listings are priced by marking up
+    // the seller's ask at create/update time.
+    FeeCalculator,
     ListingQuestionsService,
     FirearmLicenceService,
     PriceEstimateService,

@@ -233,12 +233,28 @@ export class FeeCalculator {
     shippingCostZarCents = 0,
     mode: PaymentMode = 'paygate',
     handlingFeeCents = 0,
+    quantity = 1,
   ): FeeBreakdown {
-    const marked = this.listPriceFromSellerAsk(
+    // PER UNIT, then multiplied — NOT marked up on the line subtotal.
+    //
+    // The old model marks up the whole line because commission bands are
+    // marginal and taper. Doing that here would make two units cost LESS than
+    // twice the price on the card (the second unit falls into a cheaper band,
+    // and the R30 floor is charged once). The listed price is a promise: two
+    // of them cost exactly twice. Buyer-facing consistency wins over the few
+    // rand of banding, and each unit really is a separate item at that price.
+    const qty = Math.max(1, Math.round(quantity));
+    const unit = this.listPriceFromSellerAsk(
       sellerAskZarCents,
       isTopSeller,
       mode,
     );
+    const marked = {
+      sellerAsk: unit.sellerAsk * qty,
+      commissionZar: unit.commissionZar * qty,
+      processingFee: unit.processingFee * qty,
+      listPrice: unit.listPrice * qty,
+    };
     const shippingCost = Math.max(0, Math.round(shippingCostZarCents));
     const shippingHandlingCents = Math.max(0, Math.round(handlingFeeCents));
 
