@@ -939,7 +939,17 @@ export class ListingsService {
           'A compare-at (original) price is only available on Buy Now listings.',
         );
       }
-      const salePrice = dto.price ?? 0;
+      // Validate against the price the BUYER WILL SEE, not the number the
+      // seller typed. Under the markup model those differ by our commission
+      // plus the card fee (~13.8%), so comparing to the raw ask would let a
+      // seller set a "was" price BELOW their own listed price — a strikethrough
+      // under the live figure, and a misleading discount claim under CPA s41.
+      const salePrice =
+        this.priceFieldsFor(
+          dto.listingType,
+          dto.price,
+          user.sellerTier === 'TOP_SELLER',
+        ).price ?? 0;
       if (dto.compareAtPriceZarCents <= salePrice) {
         throw new BadRequestException(
           'The original price must be higher than the sale price.',
@@ -1193,7 +1203,17 @@ export class ListingsService {
           'A compare-at (original) price is only available on Buy Now listings.',
         );
       }
-      const salePrice = dto.price ?? 0;
+      // Validate against the price the BUYER WILL SEE, not the number the
+      // seller typed. Under the markup model those differ by our commission
+      // plus the card fee (~13.8%), so comparing to the raw ask would let a
+      // seller set a "was" price BELOW their own listed price — a strikethrough
+      // under the live figure, and a misleading discount claim under CPA s41.
+      const salePrice =
+        this.priceFieldsFor(
+          dto.listingType,
+          dto.price,
+          user.sellerTier === 'TOP_SELLER',
+        ).price ?? 0;
       if (dto.compareAtPriceZarCents <= salePrice) {
         throw new BadRequestException(
           'The original price must be higher than the sale price.',

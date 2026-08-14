@@ -41,6 +41,7 @@
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
 import { BadRequestException } from '@nestjs/common';
+import { FeeCalculator } from '../payments/fee.calculator';
 import {
   ListingsService,
   findLiveAmmunitionTerm,
@@ -934,6 +935,9 @@ function makeService(
     { getEffectiveAttributes: jest.fn().mockResolvedValue([]) } as never,
     { notifyPriceDrop: jest.fn().mockResolvedValue(undefined) } as never,
     { record: jest.fn() } as never, // activity
+    // Real calculator, not a stub — dependency-free, and it keeps the
+    // BUY_NOW markup maths honest wherever a spec touches pricing.
+    new FeeCalculator(),
   );
   return { service, prisma, search, moderation };
 }

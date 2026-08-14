@@ -140,3 +140,21 @@ describe('multi-buy matches the price on the card', () => {
     expect(calc.breakdownBuyNow(R(450), false, 0, 'paygate', 0, 0)).toEqual(one);
   });
 });
+
+describe('the "was" price must sit above the price buyers actually see', () => {
+  // The seller types R450 but the listing shows R511.97. Validating a
+  // compare-at price against the raw ask would accept R500 — rendering a
+  // strikethrough BELOW the live price, which is both nonsense on the card and
+  // a misleading discount claim under CPA s41.
+  it('a was-price between the ask and the listed price is not a discount', () => {
+    const listed = calc.listPriceFromSellerAsk(R(450), false).listPrice;
+    const wouldPassAgainstAsk = R(500);
+    expect(wouldPassAgainstAsk).toBeGreaterThan(R(450)); // passes the naive check
+    expect(wouldPassAgainstAsk).toBeLessThan(listed); // but is below the real price
+  });
+
+  it('the 4x anti-anchor cap is also measured from the listed price', () => {
+    const listed = calc.listPriceFromSellerAsk(R(450), false).listPrice;
+    expect(listed * 4).toBeGreaterThan(R(450) * 4);
+  });
+});

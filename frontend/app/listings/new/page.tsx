@@ -54,6 +54,17 @@ const COMMISSION_BANDS: { limit: number; rate: number; label: string }[] = [
 ];
 const MIN_COMMISSION_CENTS = 3_000; // R30 floor — see backend fee.calculator.ts
 
+// Top Seller discount — 0.5% off the ask, applied BEFORE the R30 floor.
+// Mirrors TOP_SELLER_DISCOUNT in fee.calculator.ts.
+const TOP_SELLER_DISCOUNT = 0.005;
+
+// Card-gateway fee (Peach). Published rate is 3.5% + R1.50, VAT-EXCLUSIVE;
+// SA VAT of 15% goes on top, which is what the card is actually billed.
+// Same three constants the backend uses — keep them in step.
+const PEACH_RATE = 0.035;
+const PEACH_FIXED_CENTS = 150; // R1.50
+const VAT_MULTIPLIER = 1.15;
+
 // The four ways to list — rendered as descriptive choice cards in Step 3
 // so sellers can compare and know where to list before picking. Copy mirrors
 // the /how-selling-works help page.
@@ -127,7 +138,7 @@ const SPECIES_OPTIONS = [
   'Duiker',
 ] as const;
 
-function calcCommissionCents(priceCents: number): number {
+function calcCommissionCents(priceCents: number, isTopSeller = false): number {
   let commission = 0;
   let remaining = priceCents;
   for (const band of COMMISSION_BANDS) {
@@ -138,9 +149,14 @@ function calcCommissionCents(priceCents: number): number {
     commission += chunk * band.rate;
     remaining -= chunk;
   }
+  // Top Seller's 0.5% comes off BEFORE the round + floor, same order as
+  // the backend — otherwise the discount can vanish into the rounding.
+  if (isTopSeller) {
+    commission -= priceCents * TOP_SELLER_DISCOUNT;
+  }
   const rounded = Math.max(0, Math.round(commission));
-  // R30 minimum platform fee — surfaced in PriceBreakdown so the seller
-  // knows up-front. Floor never exceeds the price itself.
+  // R30 minimum platform fee — surfaced in the breakdowns below so the
+  // seller knows up-front. Floor never exceeds the price itself.
   if (priceCents > 0 && rounded < MIN_COMMISSION_CENTS) {
     return Math.min(MIN_COMMISSION_CENTS, priceCents);
   }

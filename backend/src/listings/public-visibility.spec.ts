@@ -11,6 +11,7 @@
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
 import { NotFoundException } from '@nestjs/common';
+import { FeeCalculator } from '../payments/fee.calculator';
 import { ListingsService } from './listings.service';
 import { CategoriesService } from '../categories/categories.service';
 
@@ -48,6 +49,9 @@ function makeListings(over: Record<string, unknown> = {}) {
     {} as never,
     {} as never,
     { record: jest.fn() } as never,
+    // Real calculator, not a stub — dependency-free, and it keeps the
+    // BUY_NOW markup maths honest wherever a spec touches pricing.
+    new FeeCalculator(),
   );
   return { service, prisma };
 }

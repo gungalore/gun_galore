@@ -3,6 +3,7 @@
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
 import { NotFoundException } from '@nestjs/common';
+import { FeeCalculator } from '../payments/fee.calculator';
 import { ListingsService, PUBLIC_LISTING_SELECT } from './listings.service';
 
 /**
@@ -42,6 +43,9 @@ describe('ListingsService — browse filters & brand facet', () => {
       {} as never, // categories
       {} as never, // wishlistAlerts (P5.2)
       { record: jest.fn() } as never, // activity
+      // Real calculator, not a stub — it is dependency-free and keeps the
+      // BUY_NOW markup maths honest wherever a spec touches pricing.
+      new FeeCalculator(),
     );
   });
 
@@ -124,6 +128,9 @@ describe('ListingsService — findById projection & owner-awareness', () => {
       {} as never, // categories
       {} as never, // wishlistAlerts
       { record: jest.fn() } as never, // activity
+      // Real calculator, not a stub — it is dependency-free and keeps the
+      // BUY_NOW markup maths honest wherever a spec touches pricing.
+      new FeeCalculator(),
     );
   });
 
