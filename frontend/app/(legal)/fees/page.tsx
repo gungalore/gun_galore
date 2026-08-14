@@ -1,7 +1,7 @@
 // Fees & Charges — the public fee schedule. Every number here is
 // sourced directly from the code so the page can never drift from
 // what is actually charged:
-//   - Seller commission bands + R30 minimum + Top Seller discount:
+//   - Seller commission bands + R10 minimum + Top Seller discount:
 //     backend/src/payments/fee.calculator.ts (BANDS, MIN_COMMISSION_CENTS,
 //     TOP_SELLER_DISCOUNT)
 //   - Card transaction fee (3.5% + R1.50 net, ×1.15 VAT): same file
@@ -71,7 +71,7 @@ export default function FeesPage() {
             There is nothing to build in, so our commission comes out of that
             price and the buyer pays a transaction fee on top.
           </li>
-          <li><strong>Commission is banded</strong> — a lower percentage applies the higher the price (see below), with a R30 minimum.</li>
+          <li><strong>Commission is banded</strong> — a lower percentage applies the higher the price (see below), with a R10 minimum.</li>
           <li><strong>No charge until a sale completes.</strong> Nothing is billed up front, in either mode.</li>
           <li>Optional extras (an {PRO_NAME} membership or a featured homepage slot) are the only things you can choose to pay for separately.</li>
         </ul>
@@ -112,7 +112,7 @@ export default function FeesPage() {
         The amount the bands are applied to is the seller&apos;s{' '}
         <strong>asking price</strong> on a Buy Now listing, and the{' '}
         <strong>settled sale price</strong> on an auction or an accepted
-        offer. A <strong>minimum commission of R30</strong> applies to a
+        offer. A <strong>minimum commission of R10</strong> applies to a
         sale (it is never more than the sale price itself). This keeps
         low-value sales workable.
       </p>
@@ -182,10 +182,10 @@ export default function FeesPage() {
         be known before there is a delivery address.
       </p>
       <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16 }}>
-        Two things worth knowing. Because the R30 minimum commission
+        Two things worth knowing. Because the R10 minimum commission
         applies to small sales, a low asking price carries a
         proportionally larger markup — ask R100.00 and the listing shows{' '}
-        <strong>R136.96</strong> (R100.00 + R30.00 commission + R6.96
+        <strong>R116.15</strong> (R100.00 + R10.00 commission + R6.15
         transaction fee). And because each unit is priced on its own,
         listing a quantity of two costs the buyer exactly twice the listed
         price.

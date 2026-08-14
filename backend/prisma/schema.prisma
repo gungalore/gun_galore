@@ -916,7 +916,19 @@ model Listing {
   // ----- AUCTION-specific fields -----
   // price (above) = starting bid for AUCTION listings
   reservePrice    Int? // optional hidden reserve; never exposed publicly
-  buyNowPrice     Int? // optional Buy Now price — only honoured while bidCount == 0
+  // Optional Buy Now price on an auction — only honoured while bidCount == 0.
+  //
+  // ⚠️ STORED AND VALIDATED, BUT NOT YET PURCHASABLE. Nothing in the checkout
+  // path reads this: transactions.service resolves an auction price from
+  // currentBid (a win) and everything else from Listing.price. Whoever wires
+  // the actual buy-now flow inherits this rule —
+  //
+  // OPERATOR 2026-08-15: BUY NOW ON AN AUCTION FOLLOWS THE AUCTION RULES.
+  // It is NOT marked up like a BUY_NOW listing. Commission comes OUT of the
+  // seller, and the buyer pays the gateway fee as a "Transaction fee".
+  // Concretely: leave sellerAskCents null, keep isMarkedUpBuyNow false, and
+  // force passFeeToBuyer true — the same branch an auction win takes.
+  buyNowPrice     Int?
   isFeatured      Boolean   @default(false) // R150 paid placement
   currentBid      Int? // current visible high bid in ZAR cents
   currentBidderId String? // current high bidder

@@ -746,7 +746,12 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     const isCourier = method === 'PUDO' || method === 'TCG';
     const shipping =
       quoteState.kind === 'ready' ? quoteState.quote.priceCents : 0;
-    const handling = isCourier ? SHIPPING_HANDLING_CENTS : 0;
+    // NO separate handling row. Our delivery margin (10% of the carrier rate)
+    // is already inside the quoted shipping figure the buyer chose, exactly as
+    // our commission is already inside the item price. Adding it again here
+    // would both double-charge and re-introduce the checkout surprise this
+    // pricing model exists to remove.
+    const handling = 0;
     // The transaction fee is charged on (item + shipping) ONLY — the R15
     // handling margin is EXCLUDED from the base, matching the backend
     // FeeCalculator.breakdown() (we don't charge the % on our own margin).
@@ -756,7 +761,11 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     // Zero on a BUY_NOW: the gateway fee is already inside listing.price under
     // the marked-up model, so adding it here would charge it to the buyer
     // twice — once invisibly in the item line and once on its own row.
-    const base = item + shipping;
+    // The transaction fee is charged on the item plus the CARRIER's rate —
+    // never on our own delivery margin. `shipping` above is the buyer-facing
+    // figure with the margin folded in, so the base uses the carrier rate the
+    // option carried, matching FeeCalculator.breakdown() on the server.
+    const base = item + (deliveryOption?.carrierRateCents ?? shipping);
     const processing = !buyerPaysTransactionFee
       ? 0
       : PAYMENT_MODE === 'manual'
@@ -1441,12 +1450,9 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
                   value={formatPrice(b.shipping)}
                 />
               )}
-              {b.handling > 0 && (
-                <BreakdownLine
-                  label="Handling"
-                  value={formatPrice(b.handling)}
-                />
-              )}
+              {/* No handling row: our delivery margin is inside the shipping
+                  figure above, the same way our commission is inside the item
+                  price. One number per thing the buyer is buying. */}
               {/* Operator wording (2026-08-15): the buyer-paid gateway fee is
                   a "Transaction fee". Never "processing fee" / "service fee".
                   Only ever rendered on the models where it is genuinely added

@@ -5,7 +5,8 @@ import { Injectable } from '@nestjs/common';
 // rate only applies to the rand that fall inside that slice.
 //
 // Reduced 2026-05-20: every band dropped by 1 percentage point and a
-// R30 minimum platform fee added (see MIN_COMMISSION_CENTS below). The
+// minimum platform fee added (see MIN_COMMISSION_CENTS below — R30 then,
+// lowered to R10 in 2026-08). The
 // minimum protects the platform on small-ticket sales — a R50 item at
 // 9% is only R4.50, which doesn't cover the processing overhead.
 export const BANDS: { limit: number; rate: number; label: string }[] = [
@@ -18,7 +19,16 @@ export const BANDS: { limit: number; rate: number; label: string }[] = [
 // Floor on platform commission. The bands above are applied first, then
 // the result is bumped up to MIN_COMMISSION_CENTS if it falls below.
 // Surfaced to the seller in the Sell form so there are no surprises.
-export const MIN_COMMISSION_CENTS = 3_000; // R30
+//
+// LOWERED R30 -> R10 on 2026-08-15. The R30 floor existed to cover VerifyNow
+// KYC at ~R28 per seller; that cost is gone — identity checks now run through
+// the Claude-vision flow at roughly R3. Holding R30 was charging sellers for a
+// bill we no longer pay.
+//
+// It also became visible when the markup model shipped: the floor used to be a
+// quiet deduction, but it is now ON THE PRICE TAG. At R30 a R50 ask listed at
+// R84.94 — a ~70% markup a buyer can see. At R10 the same item lists at R64.14.
+export const MIN_COMMISSION_CENTS = 1_000; // R10
 
 // Top Seller discount — 0.5% off total price. LOCKED per CLAUDE.md.
 const TOP_SELLER_DISCOUNT = 0.005;
@@ -49,7 +59,36 @@ export type PaymentMode = 'paygate' | 'manual';
 // the carrier line only). Firearm dealer/in-person transfers and collection
 // create no waybill and are never charged this. Operator decision 2026-07-03:
 // R15/waybill.
-export const SHIPPING_HANDLING_FEE_CENTS = 1_500; // R15 — per courier waybill
+// Our margin on delivery, as a share of the carrier's own rate.
+//
+// Replaced a flat R15 per waybill on 2026-08-15. A flat fee is regressive on
+// cheap legs and invisible on dear ones — R15 was 19% of a R79 collection-point
+// leg but only 6% of a R250 one. A percentage tracks the cost of the thing we
+// are actually carrying risk and admin on.
+//
+// IT IS NEVER SHOWN SEPARATELY. The buyer sees ONE delivery figure, already
+// inclusive — same principle as the item price carrying its own markup. The
+// split is preserved server-side (Transaction.shippingCost is the pure carrier
+// remittance, shippingHandlingCents is ours) because those are two different
+// obligations at payout time, not because the buyer needs the arithmetic.
+export const SHIPPING_HANDLING_RATE = 0.1; // 10% of the carrier rate
+
+/**
+ * Our delivery margin in cents, from the carrier's quoted rate.
+ *
+ * Rounded, and never negative — a carrier rate of zero (a firearm dealer
+ * transfer, a collection, a consolidated sibling riding another parcel's
+ * waybill) earns nothing, which is correct: there is no waybill to service.
+ */
+export function shippingHandlingCentsFor(carrierRateCents: number): number {
+  return Math.max(0, Math.round(Math.max(0, carrierRateCents) * SHIPPING_HANDLING_RATE));
+}
+
+/** What the buyer sees for delivery: the carrier rate with our margin folded in. */
+export function displayShippingCents(carrierRateCents: number): number {
+  const rate = Math.max(0, Math.round(carrierRateCents));
+  return rate + shippingHandlingCentsFor(rate);
+}
 
 // ── Swop / Trade (SWOP) service fees — ZAR cents ────────────────────────
 // A swap has no sale price, so GG earns a service fee per shipment leg
@@ -102,7 +141,7 @@ export interface SwapLegFeeBreakdown {
 export interface FeeBreakdown {
   listingPrice: number;   // ZAR cents
   shippingCost: number;   // ZAR cents — courier rate at checkout time (remitted to carrier)
-  shippingHandlingCents: number; // ZAR cents — P6.4 flat GG per-waybill margin (buyer-paid, GG-retained)
+  shippingHandlingCents: number; // ZAR cents — GG delivery margin (10% of the carrier rate; buyer-paid, GG-retained, never shown separately)
   commissionZar: number;  // ZAR cents — platform commission off the listing price only
   processingFee: number;  // ZAR cents — gateway/EFT fee, charged on (listing + shipping)
   buyerTotal: number;     // ZAR cents — what the buyer pays

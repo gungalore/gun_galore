@@ -11,7 +11,7 @@ import {
   requiresRemeasure,
   SHIPMENT_FAILURE_LABEL,
 } from '../common/shipment-failure-policy';
-import { FeeCalculator, SHIPPING_HANDLING_FEE_CENTS } from './fee.calculator';
+import { FeeCalculator, shippingHandlingCentsFor } from './fee.calculator';
 import { PeachService, PeachPaymentResult } from './peach.service';
 import { evaluateBanvMatches, banvFlagsSummary } from './peach-banks';
 import { FraudRiskService } from './fraud-risk.service';
@@ -540,7 +540,11 @@ export class TransactionsService {
     const producesWaybill =
       (dto.shippingMethod === 'PUDO' || dto.shippingMethod === 'TCG') &&
       !isConsolidatedSibling;
-    const handlingFeeCents = producesWaybill ? SHIPPING_HANDLING_FEE_CENTS : 0;
+    // 10% of the carrier's rate, not a flat fee. Folded into the single
+    // delivery figure the buyer was quoted — never itemised to them.
+    const handlingFeeCents = producesWaybill
+      ? shippingHandlingCentsFor(shippingCostCents)
+      : 0;
 
     const {
       listingPrice,
@@ -585,6 +589,12 @@ export class TransactionsService {
             // of the seller as it always did, and the gateway cost is the
             // buyer's. Anything else (a legacy BUY_NOW with no ask recorded)
             // keeps the seller's own passFeeToBuyer choice.
+            // ⚠️ When a buy-now-on-auction flow is built (Listing.buyNowPrice
+            // is stored but nothing purchases it yet), it belongs on THIS
+            // branch too — operator 2026-08-15: buy now on an auction follows
+            // the AUCTION rules, not the marked-up BUY_NOW ones. Widen this to
+            // cover it rather than letting it fall through to the listing's
+            // legacy passFeeToBuyer flag.
             auctionWin || offerRecord ? true : listing.passFeeToBuyer,
             isTopSeller,
             shippingCostCents,

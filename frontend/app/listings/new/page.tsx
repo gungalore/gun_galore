@@ -52,9 +52,13 @@ const COMMISSION_BANDS: { limit: number; rate: number; label: string }[] = [
   { limit: 8_000_000, rate: 0.05, label: 'R20,001–R100,000 at 5%' },
   { limit: Infinity, rate: 0.03, label: 'Above R100,000 at 3%' },
 ];
-const MIN_COMMISSION_CENTS = 3_000; // R30 floor — see backend fee.calculator.ts
+// R10 floor — see backend fee.calculator.ts. Lowered from R30 on 2026-08-15:
+// that figure existed to cover VerifyNow KYC at ~R28 per seller, a cost that no
+// longer exists (Claude-vision KYC is ~R3), and under the markup model the floor
+// is visible on the price tag rather than a quiet deduction.
+const MIN_COMMISSION_CENTS = 1_000;
 
-// Top Seller discount — 0.5% off the ask, applied BEFORE the R30 floor.
+// Top Seller discount — 0.5% off the ask, applied BEFORE the R10 floor.
 // Mirrors TOP_SELLER_DISCOUNT in fee.calculator.ts.
 const TOP_SELLER_DISCOUNT = 0.005;
 
@@ -162,7 +166,7 @@ function calcCommissionCents(priceCents: number, isTopSeller = false): number {
     commission -= priceCents * TOP_SELLER_DISCOUNT;
   }
   const rounded = Math.max(0, Math.round(commission));
-  // R30 minimum platform fee — surfaced in the breakdowns below so the
+  // R10 minimum platform fee — surfaced in the breakdowns below so the
   // seller knows up-front. Floor never exceeds the price itself.
   if (priceCents > 0 && rounded < MIN_COMMISSION_CENTS) {
     return Math.min(MIN_COMMISSION_CENTS, priceCents);
@@ -5315,7 +5319,7 @@ function PriceBreakdown({
   const commission = calcCommissionCents(priceCents, isTopSeller);
   const payout = Math.max(0, priceCents - commission);
   const commissionPct = ((commission / priceCents) * 100).toFixed(1);
-  // Tell the seller when the R30 minimum kicked in so they don't think
+  // Tell the seller when the R10 minimum kicked in so they don't think
   // the band rate is broken — common on cheap (< ~R350) listings.
   const hitMinimum =
     commission === MIN_COMMISSION_CENTS &&
@@ -5342,7 +5346,7 @@ function PriceBreakdown({
       <BreakdownRow
         label={
           hitMinimum
-            ? 'Platform commission (R30 minimum)'
+            ? 'Platform commission (R10 minimum)'
             : `Platform commission (~${commissionPct}%, tiered)`
         }
         value={`− ${formatRand(commission)}`}
@@ -5430,7 +5434,7 @@ function SellerAskBreakdown({
     isTopSeller,
   );
   const commissionPct = ((commissionZar / askCents) * 100).toFixed(1);
-  // Same R30-floor callout as the auction breakdown — without it the
+  // Same R10-floor callout as the auction breakdown — without it the
   // percentage label reads as broken on cheap items.
   const hitMinimum =
     commissionZar === MIN_COMMISSION_CENTS &&
@@ -5457,7 +5461,7 @@ function SellerAskBreakdown({
       <BreakdownRow
         label={
           hitMinimum
-            ? 'Our commission (R30 minimum)'
+            ? 'Our commission (R10 minimum)'
             : `Our commission (~${commissionPct}%, tiered)`
         }
         value={`+ ${formatRand(commissionZar)}`}
@@ -5546,9 +5550,9 @@ function SellerAskBreakdown({
   );
 }
 
-// Same commission math as calcCommissionCents but WITHOUT the R30 floor,
+// Same commission math as calcCommissionCents but WITHOUT the R10 floor,
 // used by both breakdowns to detect when the floor kicked in (so we can
-// surface "R30 minimum" instead of a percentage label that looks weird
+// surface "R10 minimum" instead of a percentage label that looks weird
 // for tiny listings).
 function calcUnflooredCommissionCents(
   priceCents: number,

@@ -221,9 +221,15 @@ describe('deliveryOptions — the buyer decides', () => {
 
     const opts = await svc.deliveryOptions('L1', DELIVERY);
 
-    expect(opts.door?.priceCents).toBe(11495);
+    // Prices carry the R15 per-waybill handling margin, quoted up front rather
+    // than added at checkout — see delivery-options-rail.spec.
+    // Prices carry our 10% delivery margin, quoted up front rather than added
+    // at checkout. quoteForListing (above) still returns the BARE carrier rate —
+    // only the buyer-facing menu folds the margin in.
+    const withMargin = (c: number) => c + Math.round(c * 0.1);
+    expect(opts.door?.priceCents).toBe(withMargin(11495));
     expect(opts.pickupPoints.map((p) => p.locationId)).toEqual([545, 900]);
-    expect(opts.pickupPoints[0].priceCents).toBe(6443); // cheaper of two for 545
+    expect(opts.pickupPoints[0].priceCents).toBe(withMargin(6443)); // cheaper of two for 545
     expect(opts.pickupPoints[0].serviceCode).toBe('bobgo_PP_3084_104_545_1');
   });
 

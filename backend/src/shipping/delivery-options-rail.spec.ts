@@ -4,6 +4,13 @@ import { ShippingService } from './shipping.service';
 
 // The delivery menu must look the SAME whichever rail is live.
 //
+// Every price here is the CARRIER RATE with our 10% delivery margin folded in.
+// The margin was always charged; it just used to appear at checkout as a
+// separate R15 line, after the buyer had chosen from a list showing the bare
+// rate. One quoted figure means the number beside an option is the number that
+// lands on the total.
+const withMargin = (carrier: number) => carrier + Math.round(carrier * 0.1);
+//
 // The frontend has no way to read a feature flag and is deliberately not given
 // one — so this endpoint is the seam that hides the migration. If the two rails
 // answered in different shapes, the checkout would have to know which carrier
@@ -94,7 +101,7 @@ describe('deliveryOptions is rail-agnostic', () => {
     const { svc, bobgo, pudo } = makeService({ bobgoOn: true, rates: [DOOR_RATE] });
     const opts = await svc.deliveryOptions('L1', DELIVERY);
 
-    expect(opts.door?.priceCents).toBe(11495);
+    expect(opts.door?.priceCents).toBe(withMargin(11495));
     expect(bobgo.getRates).toHaveBeenCalled();
     expect(pudo.getNearbyLockers).not.toHaveBeenCalled();
   });
@@ -111,7 +118,10 @@ describe('deliveryOptions is rail-agnostic', () => {
 
     expect(bobgo.getRates).not.toHaveBeenCalled();
     expect(opts.door).toEqual({
-      priceCents: 12300,
+      priceCents: withMargin(12300),
+      // Carried for the fee maths only — the transaction fee is charged on the
+      // carrier's rate, never on our own margin. Never displayed.
+      carrierRateCents: 12300,
       serviceName: 'Economy',
       serviceCode: 'ECO',
     });
@@ -129,7 +139,10 @@ describe('deliveryOptions is rail-agnostic', () => {
     });
     const opts = await svc.deliveryOptions('L1', DELIVERY);
     expect(pudo.quoteL2L).toHaveBeenCalledTimes(1);
-    expect(opts.pickupPoints.map((p) => p.priceCents)).toEqual([6000, 6000]);
+    expect(opts.pickupPoints.map((p) => p.priceCents)).toEqual([
+      withMargin(6000),
+      withMargin(6000),
+    ]);
   });
 
   it('offers no legacy collection point when the parcel fits no locker', async () => {
@@ -156,7 +169,7 @@ describe('deliveryOptions is rail-agnostic', () => {
 
     const opts = await svc.deliveryOptions('L1', DELIVERY);
     // Losing lockers must not lose the door option too.
-    expect(opts.door?.priceCents).toBe(12300);
+    expect(opts.door?.priceCents).toBe(withMargin(12300));
     expect(opts.pickupPoints).toEqual([]);
   });
 });
@@ -217,5 +230,43 @@ describe('the legacy menu never offers what the legacy quote will refuse', () =>
     const opts = await legacyFor([]).deliveryOptions('L1', DELIVERY);
     expect(opts.door).not.toBeNull();
     expect(opts.pickupPoints.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the 10% delivery margin is quoted, not sprung at checkout', () => {
+  it('is included in the door price the buyer picks from', async () => {
+    const { svc } = makeService({ bobgoOn: true, rates: [DOOR_RATE] });
+    const opts = await svc.deliveryOptions('L1', DELIVERY);
+    // R114.95 carrier + 10%. Showing the bare rate and adding the margin
+    // later is the surprise the built-in-markup model exists to remove.
+    expect(opts.door?.priceCents).toBe(withMargin(11495));
+  });
+
+  it('is included on collection points too — they produce a waybill as well', async () => {
+    const PICKUP = {
+      ...DOOR_RATE,
+      id: 3084,
+      serviceCode: 'bobgo_PP_3084_104_545_1',
+      serviceName: 'Bob Box Locker',
+      totalPrice: 79,
+      type: 'pickup-point' as const,
+      pickupPointLocationId: 545,
+      pickupPointDistanceKm: 1.2,
+    };
+    const { svc } = makeService({ bobgoOn: true, rates: [PICKUP] });
+    const opts = await svc.deliveryOptions('L1', DELIVERY);
+    expect(opts.pickupPoints[0].priceCents).toBe(withMargin(7900));
+  });
+
+  it('applies on the legacy rail identically', async () => {
+    const { svc } = makeService({
+      bobgoOn: false,
+      lockers: LOCKERS,
+      l2l: { serviceCode: 'L2LXS - ECO', serviceName: 'L2L', priceCents: 6000 },
+      tcgQuote: { serviceCode: 'ECO', serviceName: 'Economy', priceCents: 12300 },
+    });
+    const opts = await svc.deliveryOptions('L1', DELIVERY);
+    expect(opts.door?.priceCents).toBe(withMargin(12300));
+    expect(opts.pickupPoints[0].priceCents).toBe(withMargin(6000));
   });
 });

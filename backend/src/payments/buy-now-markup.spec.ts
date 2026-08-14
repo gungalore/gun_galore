@@ -45,12 +45,22 @@ describe('listPriceFromSellerAsk', () => {
     expect(calc.listPriceFromSellerAsk(R(100000), false).commissionZar).toBe(R(5500));
   });
 
-  it('still honours the R30 minimum on a small ask', () => {
-    // 9% of R50 is R4.50 — the floor lifts it to R30, so a cheap item carries
-    // a visibly large markup. That is the floor working, not a bug.
+  it('honours the R10 minimum on a small ask', () => {
+    // 9% of R50 is R4.50, so the floor lifts it to R10. Lowered from R30 on
+    // 2026-08-15: that figure covered VerifyNow KYC at ~R28 per seller, a cost
+    // that no longer exists. It matters more now than it used to because the
+    // floor is ON THE PRICE TAG rather than a quiet deduction — at R30 this
+    // item listed at R84.94, a ~70% markup a buyer could see.
     const m = calc.listPriceFromSellerAsk(R(50), false);
     expect(m.commissionZar).toBe(MIN_COMMISSION_CENTS);
-    expect(m.listPrice).toBeGreaterThan(R(80));
+    expect(MIN_COMMISSION_CENTS).toBe(R(10));
+    expect(m.listPrice).toBe(R(64.14));
+  });
+
+  it('leaves prices above the floor completely unchanged', () => {
+    // The floor only ever bites on low-ticket items; a R450 ask is banded well
+    // clear of it and must not move because the floor did.
+    expect(calc.listPriceFromSellerAsk(R(450), false).listPrice).toBe(R(511.97));
   });
 
   it('passes the Top Seller discount on to the BUYER as a lower price', () => {

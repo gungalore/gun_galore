@@ -1,4 +1,4 @@
-import { FeeCalculator } from './fee.calculator';
+import { FeeCalculator, MIN_COMMISSION_CENTS } from './fee.calculator';
 
 // EXP-E1 — breakdownExperience: full-value-held hunting-package booking.
 // Commission uses the SAME tiered bands as goods; shipping + handling are
@@ -64,10 +64,13 @@ describe('FeeCalculator.breakdownExperience', () => {
     expect(b.shippingHandlingCents).toBe(0);
   });
 
-  it('R30 minimum commission floor still applies on a tiny package', () => {
-    const price = 10_000; // R100 → 9% = R9 < R30 floor
+  it('the minimum commission floor still applies on a tiny package', () => {
+    // Asserted through the exported constant rather than a literal, so the
+    // floor can be repriced (R30 -> R10 on 2026-08-15) without this test
+    // silently pinning a stale number.
+    const price = 10_000; // R100 → 9% = R9, below the floor
     const b = fc.breakdownExperience(price, true, false, 'manual');
-    expect(b.commissionZar).toBe(3_000); // R30 floor
+    expect(b.commissionZar).toBe(MIN_COMMISSION_CENTS);
   });
 
   it('clamps a negative price to zero (no negative held value)', () => {

@@ -37,6 +37,13 @@ export interface DeliveryAddressInput {
 
 export interface DeliveryOption {
   kind: 'DOOR' | 'PICKUP_POINT';
+  /**
+   * The carrier's own rate, our delivery margin excluded. NEVER displayed —
+   * the buyer sees one delivery figure (priceCents). It exists because the
+   * transaction fee is charged on the carrier rate only, so the checkout
+   * preview needs it to match the server to the cent.
+   */
+  carrierRateCents: number;
   /** Echoed back at checkout so the booking replays the exact rate chosen. */
   serviceCode: string;
   label: string;
@@ -47,13 +54,19 @@ export interface DeliveryOption {
 }
 
 interface ApiResponse {
-  door: { priceCents: number; serviceName: string; serviceCode: string } | null;
+  door: {
+    priceCents: number;
+    carrierRateCents: number;
+    serviceName: string;
+    serviceCode: string;
+  } | null;
   pickupPoints: Array<{
     locationId: number;
     name: string;
     description?: string;
     distanceKm?: number;
     priceCents: number;
+    carrierRateCents: number;
     serviceCode: string;
   }>;
 }
@@ -143,6 +156,7 @@ export function DeliveryOptionsPicker({
           label: 'Deliver to my address',
           detail: data.door.serviceName,
           priceCents: data.door.priceCents,
+          carrierRateCents: data.door.carrierRateCents,
         });
       }
       for (const p of data?.pickupPoints ?? []) {
@@ -153,6 +167,7 @@ export function DeliveryOptionsPicker({
           detail: p.description,
           distanceKm: p.distanceKm,
           priceCents: p.priceCents,
+          carrierRateCents: p.carrierRateCents,
           locationId: p.locationId,
         });
       }

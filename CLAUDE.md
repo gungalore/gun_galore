@@ -556,9 +556,11 @@ across the board and a R30 minimum platform fee was added.
 | R20,001 – R100,000 | 5% |
 | Above R100,000 | 3% |
 
-- **Minimum platform fee:** R30 per sale. Floor never exceeds the
-  listing price itself. ⚠️ Under the markup model below this floor is
-  now VISIBLE: a R50 ask lists at R84.94 (a ~70% markup on the card).
+- **Minimum platform fee:** R10 per sale (lowered from R30 on
+  2026-08-15 — R30 existed to cover VerifyNow KYC at ~R28/seller, a
+  cost that no longer exists). Floor never exceeds the listing price
+  itself. Under the markup model the floor is VISIBLE on the price
+  tag: a R50 ask lists at R64.14 (was R84.94 at the old floor).
 
 ### BUY NOW — the fee is built INTO the price (operator 2026-08-15)
 
@@ -585,9 +587,18 @@ ask                                    R450.00   Listing.sellerAskCents
   so it is not reliably invertible.
 - Multi-buy is priced PER UNIT and multiplied. Re-banding the line would
   make two cost less than twice the card price.
-- **Nothing is added at checkout** but shipping and the R15/waybill
-  handling. No processing-fee row on a Buy Now order summary — it is
-  already inside the price and a row would double-count it to the reader.
+- **Nothing is added at checkout but delivery.** No processing-fee row
+  on a Buy Now order summary — it is already inside the price and a row
+  would double-count it to the reader.
+- **Delivery carries a 10% margin** (was a flat R15/waybill; changed
+  2026-08-15). It is QUOTED INCLUSIVE — the buyer sees ONE delivery
+  figure in the picker and pays exactly that. Never render it as
+  "quote + 10%" or as a separate Handling row. The split is kept
+  server-side only (`Transaction.shippingCost` = carrier remittance,
+  `shippingHandlingCents` = ours) because they are different
+  obligations at payout. The gateway fee is charged on the item plus
+  the CARRIER rate — never on our own delivery margin, which is why
+  `/shipping/delivery-options` also returns `carrierRateCents`.
 - The compare-at ("was") price validates against the MARKED-UP price, not
   the ask. Otherwise a "was" could sit below the live price — a
   misleading discount claim under CPA s41.
@@ -604,6 +615,11 @@ A bid discovers the price, so there is nothing to mark up.
 - Top Seller tier gets a 0.5% commission discount. Under the Buy Now
   markup that discount now surfaces as a CHEAPER listing rather than a
   bigger payout, since the seller already receives 100%.
+- **Buy Now ON AN AUCTION follows the AUCTION rules** (operator
+  2026-08-15) — not marked up, commission out of the seller, buyer pays
+  the Transaction fee. `Listing.buyNowPrice` is stored and validated
+  but nothing purchases it yet; the rule is recorded on the schema
+  field and at the fee branch for whoever builds it.
 
 ---
 

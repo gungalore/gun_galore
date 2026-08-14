@@ -22,6 +22,7 @@ import {
   selectRateForSlot,
 } from './bobgo-adapter';
 import { SettingsService, FLAGS } from '../settings/settings.service';
+import { displayShippingCents } from '../payments/fee.calculator';
 import { CarrierContact, CarrierShipmentResult } from './carrier.types';
 import { shiplogicToShippingStatus } from './status-map';
 import {
@@ -141,6 +142,29 @@ const STATUS_RANK: Record<ShippingStatus, number> = {
   DELIVERY_FAILED: 4,
   RETURNED: 4,
 };
+
+
+/**
+ * What a courier option COSTS THE BUYER: the carrier's rate with our 10%
+ * delivery margin already folded in.
+ *
+ * ONE figure, never "quote + 10%". The margin has always been charged — it was
+ * just added at checkout, after the buyer had chosen from a list showing the
+ * bare carrier rate, so the delivery line jumped at the last step. That is the
+ * same surprise the built-in-markup item pricing exists to remove, and it is
+ * removed the same way: quote the real number.
+ *
+ * The split is preserved SERVER-SIDE (Transaction.shippingCost is the pure
+ * carrier remittance, shippingHandlingCents is ours) because those are two
+ * different obligations at payout time. This only changes what is displayed;
+ * checkout recomputes both parts itself, so the figures agree without
+ * double-counting.
+ *
+ * Applies to door and collection point alike — both produce a waybill.
+ */
+function withHandling(carrierRateCents: number): number {
+  return displayShippingCents(carrierRateCents);
+}
 
 @Injectable()
 export class ShippingService {
@@ -589,13 +613,27 @@ export class ShippingService {
     listingId: string,
     deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>,
   ): Promise<{
-    door: { priceCents: number; serviceName: string; serviceCode: string } | null;
+    door: {
+      /** What the buyer sees and pays — carrier rate + our 10% margin. */
+      priceCents: number;
+      /**
+       * The carrier's own rate, margin excluded. NOT for display — the buyer
+       * sees one delivery figure. It is here because the transaction fee is
+       * charged on the carrier rate only (we do not charge a gateway
+       * percentage on our own margin), and the checkout preview has to agree
+       * with the server's arithmetic to the cent.
+       */
+      carrierRateCents: number;
+      serviceName: string;
+      serviceCode: string;
+    } | null;
     pickupPoints: Array<{
       locationId: number;
       name: string;
       description?: string;
       distanceKm?: number;
       priceCents: number;
+      carrierRateCents: number;
       serviceCode: string;
     }>;
   }> {
@@ -672,7 +710,8 @@ export class ShippingService {
     return {
       door: doorRate
         ? {
-            priceCents: rateToQuote(doorRate).priceCents,
+            priceCents: withHandling(rateToQuote(doorRate).priceCents),
+            carrierRateCents: rateToQuote(doorRate).priceCents,
             serviceName: doorRate.serviceName,
             serviceCode: doorRate.serviceCode,
           }
@@ -682,7 +721,8 @@ export class ShippingService {
         name: r.serviceName,
         description: r.description,
         distanceKm: r.pickupPointDistanceKm,
-        priceCents: rateToQuote(r).priceCents,
+        priceCents: withHandling(rateToQuote(r).priceCents),
+        carrierRateCents: rateToQuote(r).priceCents,
         serviceCode: r.serviceCode,
       })),
     };
@@ -721,13 +761,27 @@ export class ShippingService {
     },
     deliveryAddress: NonNullable<QuoteRequestBody['deliveryAddress']>,
   ): Promise<{
-    door: { priceCents: number; serviceName: string; serviceCode: string } | null;
+    door: {
+      /** What the buyer sees and pays — carrier rate + our 10% margin. */
+      priceCents: number;
+      /**
+       * The carrier's own rate, margin excluded. NOT for display — the buyer
+       * sees one delivery figure. It is here because the transaction fee is
+       * charged on the carrier rate only (we do not charge a gateway
+       * percentage on our own margin), and the checkout preview has to agree
+       * with the server's arithmetic to the cent.
+       */
+      carrierRateCents: number;
+      serviceName: string;
+      serviceCode: string;
+    } | null;
     pickupPoints: Array<{
       locationId: number;
       name: string;
       description?: string;
       distanceKm?: number;
       priceCents: number;
+      carrierRateCents: number;
       serviceCode: string;
     }>;
   }> {
@@ -754,6 +808,7 @@ export class ShippingService {
     // here means simply "no door option", matching the Bob Go branch.
     let door: {
       priceCents: number;
+      carrierRateCents: number;
       serviceName: string;
       serviceCode: string;
     } | null = null;
@@ -792,7 +847,8 @@ export class ShippingService {
         );
         if (q) {
           door = {
-            priceCents: q.priceCents,
+            priceCents: withHandling(q.priceCents),
+            carrierRateCents: q.priceCents,
             serviceName: q.serviceName,
             serviceCode: q.serviceCode,
           };
@@ -816,6 +872,7 @@ export class ShippingService {
       description?: string;
       distanceKm?: number;
       priceCents: number;
+      carrierRateCents: number;
       serviceCode: string;
     }> = [];
     try {
@@ -842,7 +899,8 @@ export class ShippingService {
               .filter(Boolean)
               .join(', '),
             distanceKm: l.distanceKm,
-            priceCents: flat.priceCents,
+            priceCents: withHandling(flat.priceCents),
+            carrierRateCents: flat.priceCents,
             serviceCode: l.lockerId,
           });
         }
