@@ -546,8 +546,21 @@ Every seam is written, tested and deployed **inert behind `bobgo_enabled`**
    locker-only listings may have none. Under Bob Go a courier has to come
    somewhere, and those listings cannot be quoted at all. Count them against
    production and nudge those sellers first.
-4. **Re-register the webhooks** against the production Bob Go account — the
-   five that exist are on the sandbox account, and registration is portal-only.
+4. ~~Re-register the webhooks against the production account~~ — **DONE
+   2026-08-13.** All five are Active on `my.bobgo.co.za`, account ALL071.
+
+### Production account facts
+
+`my.bobgo.co.za` — **ALL071 · ALL Outdoor**. Separate portal, separate account
+code and separate API key from the sandbox (ALL002); the sandbox key returns
+`401` against `https://api.bobgo.co.za/v2`.
+
+A production API key exists (created 2026-08-13 07:41) but Bob Go **masks it and
+cannot show it again** — "if you lose or forget your secret key, you cannot
+retrieve it. Instead, create a new access key and make the old key inactive."
+
+**Balance: R0.00.** Bob Go bills per shipment, so bookings cannot succeed until
+the account is funded. That is a harder gate than the flag.
 
 ---
 
