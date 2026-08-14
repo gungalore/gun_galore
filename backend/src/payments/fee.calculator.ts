@@ -151,6 +151,111 @@ export class FeeCalculator {
   }
 
   /**
+   * BUY NOW — turn what the SELLER wants to receive into the price the buyer
+   * sees. Operator decision 2026-08-15.
+   *
+   * The old model took our cut OUT of the seller's price: they listed R450,
+   * we deducted commission, they got R409.50. The new one builds it IN: they
+   * ask R450, we list at R511.97, and they receive the R450 they asked for.
+   * Same percentages, opposite direction.
+   *
+   * Why it is worth the change: "list free, keep 100%" is a far stronger
+   * message to a seller than "we take 9%", even though the money comes from
+   * the same transaction. Yaga runs on exactly this and charges sellers
+   * nothing at all.
+   *
+   * WHERE WE DIFFER FROM YAGA, deliberately: they show "R450 + Buyer
+   * Protection fee" and reveal the real number at checkout. We bake it into
+   * the listed price, so the number on the card IS the number you pay. No
+   * surprise at the last step.
+   *
+   * The stack, in order — each layer applies to the running total, because
+   * that is what the next layer is actually charged on:
+   *
+   *   ask                                    R450.00   seller receives this
+   *   + commission (banded, min R30)         R 40.50   our margin
+   *   = subtotal                             R490.50
+   *   + Peach on the subtotal (4.025%+R1.73) R 21.47   recovers the gateway
+   *   = LIST PRICE                           R511.97   the buyer sees this
+   *
+   * KNOWN, ACCEPTED RESIDUAL: Peach charges its percentage on the FINAL
+   * amount the buyer is billed, not on the subtotal we applied it to — so
+   * marking up by 4.025% of R490.50 recovers slightly less than the fee
+   * eventually charged on R511.97. About R0.86 on a R450 ask (0.17%). Exact
+   * recovery would need `list = (ask + commission + fixed) / (1 - rate)`;
+   * that is a one-line change here if the leak is ever worth closing.
+   *
+   * Shipping is NOT in this base — it is unknown until checkout. Peach's
+   * percentage on the shipping leg is covered by the R15/waybill handling
+   * margin, which comfortably exceeds it (R15 against ~R3 on a R79 leg).
+   */
+  listPriceFromSellerAsk(
+    sellerAskZarCents: number,
+    isTopSeller: boolean,
+    mode: PaymentMode = 'paygate',
+  ): {
+    sellerAsk: number;
+    commissionZar: number;
+    processingFee: number;
+    listPrice: number;
+  } {
+    const sellerAsk = Math.max(0, Math.round(sellerAskZarCents));
+    if (sellerAsk === 0) {
+      return { sellerAsk: 0, commissionZar: 0, processingFee: 0, listPrice: 0 };
+    }
+    const commissionZar = this.calculateCommission(sellerAsk, isTopSeller);
+    const subtotal = sellerAsk + commissionZar;
+    const processingFee = this.calculateProcessingFee(subtotal, mode);
+    return {
+      sellerAsk,
+      commissionZar,
+      processingFee,
+      listPrice: subtotal + processingFee,
+    };
+  }
+
+  /**
+   * BUY NOW breakdown, from a listing whose price ALREADY carries the markup.
+   *
+   * The buyer pays the listed price full stop — nothing is added at checkout
+   * except shipping and the handling margin, neither of which can be known
+   * before an address exists.
+   *
+   * Takes the seller's ask rather than re-deriving it from the list price:
+   * the ask is what was agreed with the seller and is stored on the listing,
+   * and reversing a banded, minimum-floored, top-seller-discounted markup is
+   * not reliably invertible. Recomputing forward from the ask always agrees
+   * with what the seller was shown.
+   */
+  breakdownBuyNow(
+    sellerAskZarCents: number,
+    isTopSeller: boolean,
+    shippingCostZarCents = 0,
+    mode: PaymentMode = 'paygate',
+    handlingFeeCents = 0,
+  ): FeeBreakdown {
+    const marked = this.listPriceFromSellerAsk(
+      sellerAskZarCents,
+      isTopSeller,
+      mode,
+    );
+    const shippingCost = Math.max(0, Math.round(shippingCostZarCents));
+    const shippingHandlingCents = Math.max(0, Math.round(handlingFeeCents));
+
+    return {
+      // What the buyer is charged for the goods — the number on the card.
+      listingPrice: marked.listPrice,
+      shippingCost,
+      shippingHandlingCents,
+      commissionZar: marked.commissionZar,
+      processingFee: marked.processingFee,
+      buyerTotal: marked.listPrice + shippingCost + shippingHandlingCents,
+      // The whole point: the seller receives exactly what they asked for.
+      sellerPayout: marked.sellerAsk,
+    };
+  }
+
+  /**
    * Processing fee on a given subtotal (listing price + shipping).
    * - 'paygate': card rate, VAT-inclusive — (base × 3.5% + R1.50) × 1.15.
    * - 'manual': flat 1.5% EFT handling fee, no fixed component.
