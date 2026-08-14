@@ -533,34 +533,54 @@ Every seam is written, tested and deployed **inert behind `bobgo_enabled`**
 
 ~1,088 backend tests; frontend and backend production builds clean.
 
-### What must happen before the flag is flipped
+### LIVE as of 2026-08-14
 
-1. **Walk a test sale end to end on staging.** Nothing in this migration has
-   been exercised by a human through a browser — the checkout was verified by
-   types and a production build, which is not the same thing. Treat this as a
-   hard gate.
-2. **Point `BOBGO_BASE_URL` at production.** It defaults to the SANDBOX, which
-   is the safe default but makes the dangerous mistake the quiet one. The
-   backend logs a warning at boot naming the host it is using.
-3. **Backfill pickup addresses.** `pickupStreet` is optional today, so
-   locker-only listings may have none. Under Bob Go a courier has to come
-   somewhere, and those listings cannot be quoted at all. Count them against
-   production and nudge those sellers first.
-4. ~~Re-register the webhooks against the production account~~ — **DONE
-   2026-08-13.** All five are Active on `my.bobgo.co.za`, account ALL071.
+`bobgo_enabled = true` on production. The rail is Bob Go.
 
-### Production account facts
+| | |
+|---|---|
+| `BOBGO_BASE_URL` | `https://api.bobgo.co.za/v2` — app logs "(live)" at boot |
+| API key | production key installed; the sandbox key now 401s, as it should |
+| Webhooks | 5 Active on account ALL071 |
+| Balance | funded |
+| Flag | `true` — `settings.get()` is uncached, so it took effect immediately |
 
-`my.bobgo.co.za` — **ALL071 · ALL Outdoor**. Separate portal, separate account
-code and separate API key from the sandbox (ALL002); the sandbox key returns
-`401` against `https://api.bobgo.co.za/v2`.
+**Production is materially better than the sandbox suggested**, and it settles
+two open questions:
 
-A production API key exists (created 2026-08-13 07:41) but Bob Go **masks it and
-cannot show it again** — "if you lose or forget your secret key, you cannot
-retrieve it. Instead, create a new access key and make the old key inactive."
+| | Sandbox | Production |
+|---|---|---|
+| Rates per quote | 2 | 7 |
+| Door | R114.95 | **R77.44** (TCG was ~R124) |
+| Collection points | Bob Box only | Bob Box **R79** + Pargo **R93.86** |
+| Western Cape points | **none** | **yes** — Cape Gate, Brackenfell, Kraaifontein |
+| Providers | `demo` / `sandbox` | `ie`, `mtexpress`, `pargo` |
 
-**Balance: R0.00.** Bob Go bills per shipment, so bookings cannot succeed until
-the account is funded. That is a harder gate than the flag.
+So the Western Cape gap was a sandbox limitation, not the real network — and
+door delivery is now *cheaper* than the TCG rate it replaces.
+
+### Still unproven, and now testable for the first time
+
+The sandbox could never answer these because its only pickup-point provider
+refused every booking. Production has real ones, so the next real sale settles:
+
+1. **Does a collection-point booking issue a PIN?** The seller dispatch panel
+   and the notification copy both handle "no PIN" already, so either answer is
+   safe — but until one is seen, that is untested rather than proven.
+2. **Is there a cancel endpoint?** Without it, `cancelForTransaction` raises an
+   operator alert instead of cancelling, and every reversed sale is manual.
+3. **Does `total_price` include VAT?** `pricingVerified` is still hard-coded
+   false. The `shipment_charged_amount/updated` webhook is the reconciliation
+   rail — watch the first few against what was quoted.
+
+### Watch on the first live sale
+
+- `resolvePendingBobGoBookings` (5-minute cron) — every booking starts
+  unconfirmed, so this is the normal path, not an edge case.
+- Any `Bob Go tracking status not yet mapped:` warning — that is a status we
+  refused to act on, stored whole in `BobGoWebhookEvent` for review.
+- The seller SMS: it should say a courier collects 08:00–17:00, never "drop at
+  a locker".
 
 ---
 
