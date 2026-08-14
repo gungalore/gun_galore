@@ -557,22 +557,53 @@ across the board and a R30 minimum platform fee was added.
 | Above R100,000 | 3% |
 
 - **Minimum platform fee:** R30 per sale. Floor never exceeds the
-  listing price itself.
-- **Absorb-only commission:** commission is always deducted from the
-  seller's payout.
-- **The BUYER pays the payment-processing fee** (Peach's
-  per-transaction fee). It is added to the buyer's total at checkout, and
-  the platform keeps it — no part of it flows back to the seller.
-  `passFeeToBuyer` on `Listing` is hardcoded `true` in the Sell form;
-  it is not exposed in the UI.
-- **Never show the processing fee to the seller** anywhere — not in
-  the Sell-form breakdown, the order page, the payout statement, or
-  the trust dashboard. From the seller's perspective the only
-  deduction is the platform commission.
-- Top Seller tier gets a 0.5% commission discount.
-- The Sell form shows a live "you receive" breakdown below the price
-  input: `Listing price − Platform commission = Your payout`.
-  Nothing else.
+  listing price itself. ⚠️ Under the markup model below this floor is
+  now VISIBLE: a R50 ask lists at R84.94 (a ~70% markup on the card).
+
+### BUY NOW — the fee is built INTO the price (operator 2026-08-15)
+
+**The seller lists for free and receives their full asking price.** Our
+commission and the Peach fee are added ON TOP to produce the price the
+buyer sees. Same percentages, opposite direction from the old model.
+
+```
+ask                                    R450.00   Listing.sellerAskCents
++ commission (bands above, min R30)    R 40.50
+= subtotal                             R490.50
++ Peach on the subtotal                R 21.47   (4.025% + R1.73 incl VAT)
+= Listing.price                        R511.97   what the buyer sees & pays
+```
+
+- `Listing.price` keeps its meaning: **the buyer-facing price**. Every
+  card, search result, PDP and cart reads it unchanged.
+- `Listing.sellerAskCents` is the seller's take-home. **OWNER-GATED —
+  never add it to `PUBLIC_LISTING_SELECT`**, it is our margin per item.
+- `POST /listings` still takes `price`; for BUY_NOW that field MEANS the
+  ask and the server marks it up. Never send a marked-up number.
+- Checkout uses `FeeCalculator.breakdownBuyNow()` and recomputes FORWARD
+  from the ask — the markup is banded, floored and Top-Seller-discounted,
+  so it is not reliably invertible.
+- Multi-buy is priced PER UNIT and multiplied. Re-banding the line would
+  make two cost less than twice the card price.
+- **Nothing is added at checkout** but shipping and the R15/waybill
+  handling. No processing-fee row on a Buy Now order summary — it is
+  already inside the price and a row would double-count it to the reader.
+- The compare-at ("was") price validates against the MARKED-UP price, not
+  the ask. Otherwise a "was" could sit below the live price — a
+  misleading discount claim under CPA s41.
+- Known residual: Peach bills on the final amount, not the subtotal we
+  mark up, so ~R0.86 per R450 sale is unrecovered (0.17%). Pinned by test.
+
+### AUCTIONS & OFFERS — unchanged direction
+
+A bid discovers the price, so there is nothing to mark up.
+
+- Commission is **deducted from the seller** exactly as before.
+- The **BUYER pays the gateway fee**, surfaced as a **"Transaction fee"**
+  row. Never label it "processing fee" or "service fee".
+- Top Seller tier gets a 0.5% commission discount. Under the Buy Now
+  markup that discount now surfaces as a CHEAPER listing rather than a
+  bigger payout, since the seller already receives 100%.
 
 ---
 
