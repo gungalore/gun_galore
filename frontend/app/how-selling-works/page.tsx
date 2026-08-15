@@ -32,7 +32,7 @@ const MODES: {
     how: [
       'You set one price — what you want to RECEIVE. Our commission and the card transaction fee are added on top, and that total is the price buyers see. You are shown both numbers before you publish, and you receive your asking price in full: nothing is deducted from your payout.',
       'The buyer taps Buy and pays the listed price — no waiting, no negotiation. Nothing is added at their checkout except delivery.',
-      'Payment is held by All Outdoor until the buyer confirms delivery, then released to you.',
+      'You are paid out once the buyer confirms delivery.',
       'List more than one unit by setting the quantity; the listing stays up until every unit is sold.',
     ],
   },
