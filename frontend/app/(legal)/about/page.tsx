@@ -52,15 +52,13 @@ export default function AboutPage() {
         Items that require a licence or permit are never couriered to a
         residential address. Where the law requires it, they are handed
         over through an authorised dealer and you collect them there
-        once the required paperwork is complete. For every order, your
-        payment is held by All Outdoor and only released to the seller
-        after delivery is confirmed — or, where an item is handed over
-        through a dealer, after that hand-over is verified — so you are
-        not out of pocket if something goes wrong. Everything else
-        ships via our courier partners, Pudo (locker-to-locker) and The
-        Courier Guy (door-to-door). Seller identity is verified through
-        VerifyNow, a South African KYC provider, before any payout is
-        released.
+        once the required paperwork is complete. For every order, the
+        seller is only paid after delivery is confirmed — or, where an
+        item is handed over through a dealer, after that hand-over is
+        verified — so you are not out of pocket if something goes
+        wrong. Everything else ships by courier, to your door or to a
+        pickup point near you, with tracking on the order page. Every
+        seller&apos;s identity is verified before they can be paid out.
       </p>
       <p>
         For the full detail on how money moves, see{' '}
