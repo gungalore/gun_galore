@@ -39,6 +39,7 @@ import { RecordVisit } from '@/components/record-visit';
 import { UrgencyChip } from '@/components/urgency-chip';
 import { SellerRating } from '@/components/seller-rating';
 import { TrustBullets } from '@/components/trust-bullets';
+import { ListingDescription } from '@/components/listing-description';
 import {
   getListingDeliveryEstimate,
   getCollectionMode,
@@ -786,12 +787,7 @@ export default async function ListingDetailPage({
             >
               Description
             </p>
-            <p
-              className="leading-relaxed whitespace-pre-wrap"
-              style={{ color: 'var(--text-primary)' }}
-            >
-              {listing.description}
-            </p>
+            <ListingDescription text={listing.description} />
           </div>
 
           {/* Specifications (P4.2) — structured per-category attributes,

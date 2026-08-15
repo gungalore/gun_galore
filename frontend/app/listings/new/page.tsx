@@ -37,6 +37,11 @@ import {
   shouldSuppressProfileModal,
 } from '@/components/profile-completion-modal';
 import { HelpTip } from '@/components/help-tip';
+import { ListingDescription } from '@/components/listing-description';
+
+// Mirrors MAX_VISION_PHOTOS in the backend's moderation service — sending a
+// sixth photo just wastes the upload, the server drops it.
+const ENHANCE_PHOTO_LIMIT = 5;
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -481,6 +486,9 @@ export default function NewListingPage() {
   const [enhancing, setEnhancing] = useState(false);
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<string | null>(null);
+  // How many photos the assistant actually read — shown on the suggestion so
+  // the seller knows where the "From the photos" bullets came from.
+  const [enhancePhotosUsed, setEnhancePhotosUsed] = useState(0);
 
   // Resale-value estimator (RVE) — button-triggered "Suggest a price" that
   // returns an INDICATIVE range from recent sales / typical retail. Button, not
@@ -1907,6 +1915,14 @@ export default function NewListingPage() {
     setEnhancing(true);
     try {
       const token = await getToken();
+      // Send the staged photos so the assistant can add a "From the photos"
+      // section — included accessories, a mounted optic, the case and papers.
+      // Capped at the service-side limit of 5 so we don't upload a sixth
+      // image the server will drop anyway; the cover photo goes first
+      // because that's the one the seller chose as most representative.
+      const encoded = await Promise.all(
+        images.slice(0, ENHANCE_PHOTO_LIMIT).map(fileToBase64),
+      );
       const res = await fetch(`${API_URL}/listings/enhance-description`, {
         method: 'POST',
         headers: {
@@ -1918,11 +1934,15 @@ export default function NewListingPage() {
           title: form.title || undefined,
           categoryId: form.categoryId || undefined,
           condition: form.condition || undefined,
+          imagesBase64: encoded.length ? encoded : undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
       const enhanced = typeof data.enhanced === 'string' ? data.enhanced : '';
+      setEnhancePhotosUsed(
+        typeof data.photosUsed === 'number' ? data.photosUsed : 0,
+      );
       if (enhanced && enhanced.trim() !== form.description.trim()) {
         setSuggestion(enhanced);
       } else {
@@ -3060,6 +3080,19 @@ export default function NewListingPage() {
                       ? 'Researching…'
                       : 'Polish + add specs'}
                   </button>
+                  {/* Say plainly that the photos get read — a seller who
+                      knows that will upload the case and the box before
+                      pressing it, which is exactly what we want. */}
+                  <span
+                    className="text-xs"
+                    style={{ color: 'var(--text-tertiary)' }}
+                  >
+                    {images.length > 0
+                      ? `Tidies your wording, researches the specs, and reads your ${
+                          images.length === 1 ? 'photo' : 'photos'
+                        }.`
+                      : 'Tidies your wording and researches the specs. Add photos first and it can list what it sees.'}
+                  </span>
                 </div>
               )}
 
@@ -3087,27 +3120,43 @@ export default function NewListingPage() {
                     border: '0.5px solid var(--border)',
                   }}
                 >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+                    <p
+                      className="text-xs uppercase"
+                      style={{
+                        color: 'var(--text-tertiary)',
+                        letterSpacing: '0.1em',
+                        fontWeight: 500,
+                      }}
+                    >
+                      Suggested wording
+                    </p>
+                    {enhancePhotosUsed > 0 && (
+                      <p
+                        className="text-xs"
+                        style={{ color: 'var(--text-tertiary)' }}
+                      >
+                        Read {enhancePhotosUsed} photo
+                        {enhancePhotosUsed === 1 ? '' : 's'}
+                      </p>
+                    )}
+                  </div>
+                  <ListingDescription className="text-sm" text={suggestion} />
+                  {/* Said plainly at the moment of decision. The specs are
+                      researched from the model name, and a model name usually
+                      covers several variants — you are the one holding the
+                      item, and the listing goes out under your name. */}
                   <p
-                    className="text-xs uppercase mb-2"
+                    className="text-xs mt-3"
                     style={{
                       color: 'var(--text-tertiary)',
-                      letterSpacing: '0.1em',
-                      fontWeight: 500,
+                      lineHeight: 1.5,
                     }}
                   >
-                    Suggested wording
+                    Check the specs before you use this — they&rsquo;re
+                    researched from the make and model, not from your item.
                   </p>
-                  <div
-                    className="text-sm"
-                    style={{
-                      color: 'var(--text-primary)',
-                      lineHeight: 1.6,
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    {suggestion}
-                  </div>
-                  <div className="flex gap-2 mt-4">
+                  <div className="flex gap-2 mt-3">
                     <button
                       type="button"
                       onClick={handleUseSuggestion}

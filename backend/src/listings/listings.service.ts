@@ -860,10 +860,13 @@ export class ListingsService {
       model?: string;
       calibre?: string;
       condition?: string;
+      /** Staged photos, so the polish can cite what is visibly included. */
+      imageUrls?: string[];
+      imagesBase64?: { mediaType: string; data: string }[];
     },
   ) {
     if (!description?.trim()) {
-      return { enhanced: '', changed: false, specsAdded: false };
+      return { enhanced: '', changed: false, specsAdded: false, photosUsed: 0 };
     }
     let categoryName: string | undefined;
     let isFirearm = false;
@@ -885,6 +888,8 @@ export class ListingsService {
       model: context.model,
       calibre: context.calibre,
       condition: context.condition,
+      imageUrls: context.imageUrls,
+      imagesBase64: context.imagesBase64 as never,
     });
   }
 

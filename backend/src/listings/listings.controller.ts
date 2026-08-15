@@ -256,6 +256,10 @@ export class ListingsController {
       model?: string;
       calibre?: string;
       condition?: string;
+      /** Staged photo URLs (already uploaded) — preferred, smaller payload. */
+      imageUrls?: string[];
+      /** Base64 photos not yet uploaded. Capped service-side at 5 total. */
+      imagesBase64?: { mediaType: string; data: string }[];
     },
   ) {
     return this.listingsService.enhanceDescription(body.description ?? '', {
@@ -265,6 +269,8 @@ export class ListingsController {
       model: body.model,
       calibre: body.calibre,
       condition: body.condition,
+      imageUrls: body.imageUrls,
+      imagesBase64: body.imagesBase64,
     });
   }
 
