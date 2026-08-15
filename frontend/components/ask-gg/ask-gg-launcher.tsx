@@ -452,10 +452,14 @@ export function AskGgLauncher({
       id="askgg-dock"
       className={[
         'app-chrome fixed z-[60] flex flex-col items-end gap-1',
-        // Boet's footprint — the design's 210px on desktop, trimmed on
-        // mobile so a taller character doesn't crowd content. The id
-        // selector in globals.css lifts this whole dock over the install card.
-        'w-[150px] md:w-[210px]',
+        // Boet's footprint — the design's 210px on desktop, trimmed harder
+        // on mobile. At 150px he was 38% of a 390px viewport, standing over
+        // whatever sat bottom-right: on the landing page that was the trust
+        // card's last bullet, clipped mid-word. 118px still reads as a
+        // character (a chat FAB is 56px) while giving the content its corner
+        // back. The id selector in globals.css lifts the whole dock over the
+        // install card.
+        'w-[118px] md:w-[210px]',
         'right-3 md:right-[26px]',
         // Inset at every breakpoint — an iPad in browser mode is md+ and
         // still has a home indicator under Boet's feet.
