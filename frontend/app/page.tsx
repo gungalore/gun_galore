@@ -486,10 +486,10 @@ export default async function HomePage({
                   maxWidth: '46ch',
                 }}
               >
-                {BRAND_NAME} has just opened. Camping and overlanding kit,
-                fishing tackle, optics, knives, outdoor clothing — if it&rsquo;s
-                good gear you no longer use, it can go up today. Listing is
-                free and you keep the full asking price.
+                {/* One template literal, not JSX text around {BRAND_NAME}:
+                    JSX dropped the space after the expression and shipped
+                    "All Outdoorhas just opened" to production. */}
+                {`${BRAND_NAME} has just opened. Camping and overlanding kit, fishing tackle, optics, knives, outdoor clothing — if it’s good gear you no longer use, it can go up today. Listing is free and you keep the full asking price.`}
               </p>
               <div className="flex flex-wrap items-center justify-center gap-2">
                 <Link
