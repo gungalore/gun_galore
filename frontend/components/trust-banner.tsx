@@ -8,11 +8,14 @@
 // pure marketing. Where mechanics matter (checkout, order pages), phrase it
 // as when the seller is paid, and never the word "escrow" anywhere.
 
+// Store trust only. "ID-verified sellers" was KYC/fintech vocabulary — a
+// payments platform verifies counterparties; a shop vets what goes on its
+// shelves. And the seller-fee pitch didn't belong on a buyer trust card.
 const POINTS = [
-  'Secure checkout',
-  'ID-verified sellers',
+  'Secure card checkout',
   'Couriered & tracked, door to door',
-  'List free — keep your full asking price',
+  'Every item checked before it goes up',
+  'Local support that actually answers',
 ];
 
 export function TrustCard() {

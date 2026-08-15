@@ -19,7 +19,7 @@ const DEFAULT_HEADLINE = 'Buying gear just stopped being a gamble.';
 
 const POINTS: { text: React.ReactNode }[] = [
   { text: <>The seller only gets paid once your delivery is confirmed. <em>Not a cent sooner.</em></> },
-  { text: <>Every seller is ID-verified before they&apos;re ever paid.</> },
+  { text: <>Every seller is vetted before a single item goes up.</> },
   { text: <>Couriered &amp; tracked to your door. <em>No parking-lot meetups.</em></> },
   { text: <>Buy now, bid, make an offer — or swap your gear for theirs, ± cash.</> },
   { text: <>Listing is free. <em>No upfront fees to advertise.</em></> },
@@ -208,7 +208,7 @@ export function WelcomeBanner() {
         </button>
 
         <p className="ggw-foot ggw-stage">
-          ID-verified sellers · secure checkout · couriered &amp; tracked
+          Vetted sellers · secure checkout · couriered &amp; tracked
         </p>
       </div>
     </div>

@@ -37,7 +37,7 @@ export function FoundingSellerSection({
             fontWeight: 600,
           }}
         >
-          Open for sellers
+          Sell through the store
         </p>
 
         <h2
@@ -45,7 +45,7 @@ export function FoundingSellerSection({
           className="text-3xl sm:text-4xl lg:text-5xl m-0 mb-5"
           style={{ color: 'var(--text-primary)', lineHeight: 1.08 }}
         >
-          Be the first to sell on {BRAND_NAME}
+          Be first on the shelf
         </h2>
 
         <p
@@ -57,9 +57,9 @@ export function FoundingSellerSection({
           }}
         >
           Camping and overlanding kit, fishing tackle, optics, knives, outdoor
-          clothing. If it&rsquo;s good gear you no longer use, it can be listed
-          today — and the first listings on a new store get every buyer who
-          walks through the door.
+          clothing. {BRAND_NAME} has just opened — if it&rsquo;s good gear
+          you&rsquo;re not using, put it up today. First on the shelf gets
+          every buyer who walks in.
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
@@ -109,18 +109,18 @@ export function FoundingSellerSection({
         {[
           {
             n: '01',
-            title: 'List it free',
-            body: 'Photos, a description and your asking price. No listing fee, no subscription, nothing charged up front.',
+            title: 'Put it on the shelf',
+            body: 'Photos, a description and the price you want. Listing is free — no fees, no subscription, nothing charged up front.',
           },
           {
             n: '02',
-            title: 'A buyer pays securely',
-            body: 'Card checkout, and you get told the moment it sells. You set what you want to receive and you receive exactly that.',
+            title: 'We do the selling',
+            body: 'Your gear goes in front of every buyer in the store — search, the categories, and the front page if you take a featured spot. You get told the moment it sells.',
           },
           {
             n: '03',
-            title: 'Courier collects — you get paid',
-            body: 'We book the courier and send you the waybill. Once the buyer confirms delivery, your payout goes out.',
+            title: 'Sold — we handle the rest',
+            body: 'We book the courier and send you the waybill. Once delivery is confirmed, you’re paid — you set what you wanted for it, and that’s exactly what you get.',
           },
         ].map((step) => (
           <div key={step.n}>
