@@ -67,10 +67,9 @@ export function SiteFooter() {
             All Outdoor
           </p>
           <p style={{ color: 'var(--text-tertiary-on-card)', lineHeight: 1.6, margin: 0 }}>
-            South Africa&apos;s new and secondhand outdoor store.
-            Seller identity verified before payout · Buyer / Seller
-            Protection System on every deal — payment held until delivery
-            is confirmed.
+            South Africa&apos;s online store for new and secondhand
+            outdoor gear. ID-verified sellers · every listing checked ·
+            couriered and tracked to your door.
           </p>
         </div>
 

@@ -288,11 +288,11 @@ export default function ConditionGuidePage() {
           className="text-sm mt-1"
           style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}
         >
-          Payment is held until the buyer confirms the item arrived as
-          described. If it did not, raise it from your order page before
-          confirming — our team reviews it and the payment stays held while we
-          do. Sellers who consistently over-grade lose their standing on the
-          platform.
+          The buyer confirms the item arrived as described before the
+          seller is paid. If it did not, raise it from your order page before
+          confirming — our team reviews it, and the seller is not paid while
+          we do. Sellers who consistently over-grade lose their standing on
+          the platform.
         </p>
         <p className="text-sm mt-3">
           <Link

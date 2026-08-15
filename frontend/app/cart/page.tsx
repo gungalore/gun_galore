@@ -759,7 +759,7 @@ export default function CartPage() {
                   : 'Enter a delivery address to continue'}
       </button>
       <p className="text-xs mt-2 text-center" style={{ color: 'var(--text-tertiary)' }}>
-        Your payment is held until you confirm delivery.
+        The seller is only paid once you confirm delivery.
       </p>
 
       {/* UX-1e — trust bullets under the cart summary CTA. Same component

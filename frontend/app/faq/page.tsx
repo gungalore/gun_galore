@@ -5,13 +5,15 @@ import { BRAND_NAME, SUPPORT_EMAIL } from '@/lib/brand';
 export const metadata: Metadata = {
   title: `Help & FAQ — ${BRAND_NAME}`,
   description:
-    'Answers to common questions about buying and selling on All Outdoor: how payment is held until delivery, KYC, refunds and disputes, fees, and delivery.',
+    'Answers to common questions about buying and selling on All Outdoor: ordering, delivery, refunds and disputes, verification and fees.',
   alternates: { canonical: '/faq' },
 };
 
 // Curated, indexable FAQ. Plain data so we can also emit FAQPage JSON-LD.
 // Keep answers accurate to current platform behaviour. NOTE: never use the
-// word "escrow" — we are not registered for it; say "funds held".
+// word "escrow" — we are not registered for it. And per the operator
+// (2026-08-15): never advertise that we hold funds — we present as an online
+// store. Where mechanics need explaining, say when the SELLER IS PAID.
 //
 // PUBLIC SURFACE — this array feeds FAQPage structured data that Google can
 // lift straight into the SERP, so it is one of the most crawler-visible things
@@ -31,7 +33,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'How does payment protection work?',
-    a: 'When you pay for an order, the funds are held by All Outdoor and only released to the seller after delivery is confirmed. If something goes wrong before then, you can raise a dispute and request a refund. This protects buyers from paying for items that never arrive.',
+    a: 'Every order is covered: the seller is only paid after your delivery is confirmed. If something goes wrong before then, you can raise a dispute and request a refund — so you never pay for an item that does not arrive.',
   },
   {
     // The operator's hard line, stated plainly where buyers and platform
@@ -45,7 +47,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'How do refunds and disputes work?',
-    a: 'If your order has been paid but a problem arises before you confirm delivery, open a dispute from the order page. An admin reviews it and either releases the funds to the seller or refunds you. Because payment is held until delivery, you are not out of pocket while a dispute is resolved. See our Refund & Dispute Policy for full detail.',
+    a: 'If a problem arises before you confirm delivery, open a dispute from the order page. Our team reviews it and either completes the sale or refunds you — and the seller is not paid while a dispute is open, so you are not out of pocket while it is resolved. See our Refund & Dispute Policy for full detail.',
   },
   {
     q: 'What does it cost to buy or sell?',
@@ -56,7 +58,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: 'How can I pay?',
-    a: 'Secure card payments are launching soon. You can browse, bid and list in the meantime — card checkout switches on as soon as it is ready. Whichever method you use, your payment is held until delivery is confirmed.',
+    a: 'Secure card payments are launching soon. You can browse, bid and list in the meantime — card checkout switches on as soon as it is ready. Whichever method you use, the seller is only paid once your delivery is confirmed.',
   },
   {
     // Regulated-category delivery rules (dealer transfer) are legally
@@ -64,7 +66,7 @@ const FAQS: { q: string; a: string }[] = [
     // Regulated Items Annex rather than the public FAQ. Nothing here is
     // softened — it simply describes the catalogue this page's reader can buy.
     q: 'How is my order delivered?',
-    a: 'Most items ship via our courier partners — Pudo locker-to-locker or The Courier Guy door-to-door — with live rate quotes at checkout and tracking on the order page. Bulky items are collected, or you can arrange your own transporter; either way your payment is held until you confirm you have the item.',
+    a: 'Most items ship by courier — to your door or to a pickup point near you — with live rate quotes at checkout and tracking on the order page. Bulky items are collected, or you can arrange your own transporter; either way the seller is only paid once you confirm you have the item.',
   },
   {
     q: 'How do I sell on All Outdoor?',

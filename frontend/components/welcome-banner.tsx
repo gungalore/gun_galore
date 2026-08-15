@@ -18,7 +18,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 const DEFAULT_HEADLINE = 'Buying gear just stopped being a gamble.';
 
 const POINTS: { text: React.ReactNode }[] = [
-  { text: <>Your payment is held until delivery is confirmed. <em>Not a cent sooner.</em></> },
+  { text: <>The seller only gets paid once your delivery is confirmed. <em>Not a cent sooner.</em></> },
   { text: <>Every seller is ID-verified before they&apos;re ever paid.</> },
   { text: <>Couriered &amp; tracked to your door. <em>No parking-lot meetups.</em></> },
   { text: <>Buy now, bid, make an offer — or swap your gear for theirs, ± cash.</> },
@@ -208,7 +208,7 @@ export function WelcomeBanner() {
         </button>
 
         <p className="ggw-foot ggw-stage">
-          ID-verified sellers · payment held until delivery · couriered &amp; tracked
+          ID-verified sellers · secure checkout · couriered &amp; tracked
         </p>
       </div>
     </div>

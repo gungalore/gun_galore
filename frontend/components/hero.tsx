@@ -196,8 +196,8 @@ export function Hero() {
               textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
             }}
           >
-            Camping, overlanding, fishing, optics, knives and clothing.
-            Verified sellers, payment held until delivery is confirmed.
+            Camping, overlanding, fishing, optics, knives and clothing —
+            new and secondhand, couriered to your door.
           </p>
 
           {/* Primary CTA — drops the user straight into the Marketplace

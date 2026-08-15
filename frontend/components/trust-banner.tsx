@@ -3,13 +3,16 @@
 // gentle loop so the eye is drawn to them. Square-ish card so it sits neatly
 // beside the headline on desktop and stacks under it on mobile.
 //
-// House rule: never the word "escrow" — "payment is held" is correct.
+// House rules (operator): we present as an online STORE that buys and sells
+// new and secondhand goods. Never advertise funds-holding here — this card is
+// pure marketing. Where mechanics matter (checkout, order pages), phrase it
+// as when the seller is paid, and never the word "escrow" anywhere.
 
 const POINTS = [
-  'Buyer / Seller Protection System',
+  'Secure checkout',
   'ID-verified sellers',
-  'Couriered & tracked',
-  'No upfront fees to advertise',
+  'Couriered & tracked, door to door',
+  'List free — keep your full asking price',
 ];
 
 export function TrustCard() {
@@ -54,7 +57,7 @@ export function TrustCard() {
           className="text-sm font-semibold"
           style={{ color: 'var(--text-primary)' }}
         >
-          Every deal, protected
+          Shop with confidence
         </span>
       </div>
 

@@ -218,7 +218,7 @@ export default async function DealDetailPage({
                   </p>
                 )}
                 <p className="text-xs" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Secure checkout — your payment is held until the item ships.
+                  Secure checkout — couriered and tracked to your door.
                 </p>
               </>
             ) : (

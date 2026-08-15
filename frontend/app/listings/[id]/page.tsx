@@ -678,8 +678,8 @@ export default async function ListingDetailPage({
                 )}
                 <div className="mb-5">
                   <HelpText>
-                    Takes you to secure checkout. Your payment is held until the
-                    sale completes, then released to the seller.
+                    Takes you to secure checkout. The seller is only paid
+                    once the sale completes.
                   </HelpText>
                 </div>
               </>
@@ -881,9 +881,9 @@ export default async function ListingDetailPage({
                     <strong style={{ color: 'var(--text-primary)' }}>
                       Collection only
                     </strong>{' '}
-                    — no courier is quoted for this item. Payment held until
-                    you confirm you have it. After you pay, we share contact
-                    details so you can arrange a time.
+                    — no courier is quoted for this item. The seller is only
+                    paid once you confirm you have it. After you pay, we share
+                    contact details so you can arrange a time.
                   </p>
                   {/* Big-4 copy interim. The hard "same city only" wall this
                       removes is imaginary: the buyer never has to be the

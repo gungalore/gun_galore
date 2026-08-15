@@ -39,9 +39,13 @@ export const SITE_CATEGORY_KEYWORDS =
  * and is dropped in mid-sentence, e.g. `'fishing listings'`,
  * `'Leupold gear for sale'`, `'gear by brand'`.
  *
- * Note the payment wording: "payment held until delivery" — never the word
- * "escrow" anywhere on this platform.
+ * Positioning (operator, 2026-08-15): we present as an online STORE that
+ * buys and sells new and secondhand goods — never advertise that we hold
+ * funds. Payment mechanics stay off marketing surfaces entirely; where the
+ * mechanics must be explained, say WHEN THE SELLER IS PAID ("sellers are
+ * paid once delivery is confirmed"), never where the buyer's money sits.
+ * And never the word "escrow" anywhere, on any surface.
  */
 export function browseMetaDescription(what: string): string {
-  return `Browse ${what} on ${BRAND_NAME} — ${SITE_MARKETPLACE_BLURB}: ${SITE_CATEGORY_KEYWORDS}. New and used, with payment held until delivery.`;
+  return `Browse ${what} on ${BRAND_NAME} — ${SITE_MARKETPLACE_BLURB}: ${SITE_CATEGORY_KEYWORDS}. New and secondhand, couriered to your door.`;
 }

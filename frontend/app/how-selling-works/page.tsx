@@ -13,7 +13,8 @@ export const metadata: Metadata = {
 };
 
 // Keep this copy in sync with the SELL_MODES cards on /listings/new.
-// NOTE: never use the word "escrow" — say "funds held".
+// NOTE: never the word "escrow", and never advertise funds-holding — we
+// present as an online store. Phrase mechanics as when the seller is PAID.
 const MODES: {
   name: string;
   tagline: string;
@@ -62,7 +63,7 @@ const MODES: {
       'Buyers send you an offer. You can accept, decline, or counter once.',
       'Set an optional hidden auto-accept price — offers at or above it are flagged to you for one-tap confirmation. Declining any offer needs a reason and records a strike (genuine buyer concerns go to admin review instead); keep your listings accurate — three strikes suspends selling on your account. Countering is always penalty-free.',
       'The offer sets the price, so — as with an auction — our commission comes out of the agreed price and the buyer pays a transaction fee on top.',
-      'As with every sale, payment is held until delivery is confirmed before it reaches you.',
+      'As with every sale, you are paid out once delivery is confirmed.',
     ],
   },
   {
@@ -75,7 +76,7 @@ const MODES: {
     ],
     how: [
       'You list the item you want to trade — no price. Buyers browse and propose a swap: their item, plus optional cash in either direction.',
-      'You accept, decline, or counter the cash once. All Outdoor arranges both couriers and any cash is held until both parcels are delivered, then released.',
+      'You accept, decline, or counter the cash once. All Outdoor arranges both couriers, and any cash difference is paid over once both parcels are delivered.',
       'Items in a regulated category can be swopped too, but they are not couriered — each side is handed over the same way it would be on a normal sale in that category.',
     ],
   },
@@ -193,8 +194,8 @@ export default function HowSellingWorksPage() {
 
       <p className="text-sm mt-6" style={{ color: 'var(--text-secondary)' }}>
         Whichever you choose, the basics are the same: listing is free,
-        listings are checked before they go live, the buyer&apos;s payment is{' '}
-        <strong style={{ color: 'var(--text-primary)' }}>held until delivery is confirmed</strong>,
+        listings are checked before they go live, you are{' '}
+        <strong style={{ color: 'var(--text-primary)' }}>paid out once delivery is confirmed</strong>,
         and you are shown{' '}
         <strong style={{ color: 'var(--text-primary)' }}>both numbers — what you receive and what buyers will see</strong>{' '}
         before you publish. Delivery is quoted at checkout and paid by the

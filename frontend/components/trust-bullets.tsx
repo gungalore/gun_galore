@@ -1,9 +1,10 @@
 // UX-1d / UX-1e — point-of-decision trust bullets.
 //
 // Reused under the PDP CTA (UX-1d) and under the cart summary CTA (UX-1e) so
-// the reassurance copy lives in exactly one place. Copy is verbatim from the
-// parity report and house-rule-safe: NEVER the word "escrow" — always
-// "payment held" (regulated SA term; see feedback memory no-escrow-term).
+// the reassurance copy lives in exactly one place. House rules: NEVER the
+// word "escrow", and never "we hold your payment" — we present as a store,
+// so trust copy describes WHEN THE SELLER IS PAID, not where the buyer's
+// money sits (see feedback memory no-escrow-term).
 //
 // Pure presentational component (no hooks / no client-only APIs) so it works
 // inside both a server component (PDP) and a client component (cart).
@@ -20,7 +21,7 @@ export function TrustBullets({
   className?: string;
 }) {
   const bullets = [
-    'Payment held until you confirm delivery',
+    'Sellers are only paid once you confirm delivery',
     'Auto-refunded if the seller does not ship in time',
     "Sellers ID-verified before they're paid",
     'Dispute protection on every order',
