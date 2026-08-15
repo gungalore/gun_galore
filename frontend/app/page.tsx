@@ -431,10 +431,97 @@ export default async function HomePage({
                 </div>
               ))}
           </DraggableMarquee>
-          {/* Availability indicator + bid entry, below the featured
-              slots: "X of N spots open" + a "Bid for a spot" CTA. */}
-          <FeaturedAvailabilityBar />
           </>)}
+          {/* Availability indicator + bid entry: "X of N spots open" + a
+              "Bid for a spot" CTA.
+
+              OUTSIDE the occupiedFeatured block on purpose. The component's
+              own contract is "always renders a bid entry point so the
+              homepage is never a dead end for sellers" — but it used to sit
+              inside the marquee block, which only renders once a slot is
+              ALREADY sold. So the one moment it was truly needed (no spots
+              sold, nobody has ever bid) was the one moment it was hidden,
+              and there was no way to reach /featured/bid from the homepage
+              at all. The compact fallback link further down doesn't cover
+              this either — it's gated on browse.total > 0, so a store with
+              no listings loses that too.
+
+              It self-hides when the summary can't load or no slots exist,
+              so an unconfigured install still doesn't show a bare CTA. */}
+          <FeaturedAvailabilityBar />
+
+          {/* Cold start — the store has no listings at all.
+
+              Until now the landing page offered a signed-out visitor only
+              buyer-shaped routes: "Browse the store" and a category grid,
+              every one of which leads to an empty shelf. The one place that
+              says "yours could be the first" was the browse grid's empty
+              state, which you only reach AFTER hitting a dead end. The nav
+              "Sell" button was the sole path from here, and it competes with
+              everything else in the header.
+
+              browseFailed is checked deliberately: on a backend hiccup
+              browse.total is also 0, and telling people the shop is empty
+              when we simply couldn't read it is worse than saying nothing.
+              The retry card at the browseFailed site below owns that case. */}
+          {!browseFailed && browse.total === 0 && (
+            <div
+              className="mt-10 rounded-[10px] p-6 sm:p-8 text-center"
+              style={{
+                background: 'var(--bg-card)',
+                border: '0.5px solid var(--border)',
+              }}
+            >
+              <h2
+                className="text-xl sm:text-2xl m-0 mb-2"
+                style={{ color: 'var(--text-primary)', fontWeight: 600 }}
+              >
+                Nothing listed yet — yours could be the first
+              </h2>
+              <p
+                className="text-sm mx-auto mb-5"
+                style={{
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.6,
+                  maxWidth: '46ch',
+                }}
+              >
+                {BRAND_NAME} has just opened. Camping and overlanding kit,
+                fishing tackle, optics, knives, outdoor clothing — if it&rsquo;s
+                good gear you no longer use, it can go up today. Listing is
+                free and you keep the full asking price.
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Link
+                  href="/listings/new"
+                  className="inline-flex items-center justify-center px-5 rounded-[6px] text-sm"
+                  style={{
+                    background: 'var(--red)',
+                    color: '#fff',
+                    fontWeight: 500,
+                    textDecoration: 'none',
+                    minHeight: 44,
+                  }}
+                >
+                  List your first item →
+                </Link>
+                <Link
+                  href="/how-selling-works"
+                  className="inline-flex items-center justify-center px-5 rounded-[6px] text-sm"
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--text-secondary)',
+                    border: '0.5px solid var(--border)',
+                    textDecoration: 'none',
+                    minHeight: 44,
+                  }}
+                >
+                  How selling works
+                </Link>
+              </div>
+            </div>
+          )}
+
           {/* Shop by category — the FALLBACK breadth entry point, shown
               only while the Featured marquee above has nothing to show.
 
@@ -752,7 +839,10 @@ export default async function HomePage({
                     ? 'Check the spelling or try a broader term — or save this search and we’ll alert you the moment something matches.'
                     : hasNonQFilters
                       ? 'Try clearing some filters — or save this search and we’ll alert you the moment something matches.'
-                      : 'Nothing listed here yet — got one lying in the safe or the garage? Yours could be the first.'}
+                      : // "in the safe" read as a gun safe — a firearm cue on
+                        // the public, deliberately non-firearm storefront, and
+                        // this copy shows to signed-out visitors and crawlers.
+                        'Nothing listed here yet — got good gear sitting in the garage? Yours could be the first.'}
             </p>
             <div className="flex gap-2 justify-center flex-wrap">
               {stalePage && (

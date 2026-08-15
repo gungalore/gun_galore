@@ -70,6 +70,12 @@ export function FeaturedAvailabilityBar() {
 
   const { openCount, takingBidsCount, totalSlots, topBidCents } = sum;
 
+  // No slots configured at all. Distinct from "all taken": openCount is 0 in
+  // both cases, so the copy below would have announced "All spots taken right
+  // now" on a site with zero spots, over a CTA to bid on one of them. Render
+  // nothing instead — there is genuinely nothing to sell here yet.
+  if (totalSlots === 0) return null;
+
   return (
     <div className="flex flex-col items-center gap-2.5 mt-7 mb-2" data-reveal>
       {/* Indicator line: how many open + how many taking bids. */}

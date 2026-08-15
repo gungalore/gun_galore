@@ -744,6 +744,40 @@ async function main() {
   });
   console.log(`  ✓ ${adminEmail} (SUPERADMIN)`);
 
+  // ─── Featured slots ────────────────────────────────────────────────
+  //
+  // The schema says slotNumber is "1-10, hard-allocated at seed" — but
+  // nothing ever seeded them. The only featuredSlot.create in the repo was
+  // in the offline dummy-run harness, so a real database came up with ZERO
+  // slots: /featured/summary returned totalSlots 0, the homepage Featured
+  // section had nothing to render, and no seller could bid for a spot
+  // because there was no spot to bid on. Found on production 2026-08-15.
+  //
+  // Count comes from FeaturedSlotConfig.slotCount (default 10) so the two
+  // cannot disagree. Idempotent: re-running the seed never disturbs a live
+  // slot's status, occupant or auction — `update: {}` deliberately leaves
+  // existing rows completely alone.
+  //
+  // New rows land VACANT with no auction. The featured-tick cron (every
+  // minute) then opens an AD_HOC auction on each, at closesAt = null — the
+  // countdown only starts when a seller places the first bid. That is the
+  // documented cold-start path, so this seeds nothing that starts a timer
+  // or charges anyone.
+  const featuredCfg = await prisma.featuredSlotConfig.upsert({
+    where: { id: 'default' },
+    update: {},
+    create: { id: 'default' },
+  });
+  for (let n = 1; n <= featuredCfg.slotCount; n++) {
+    await prisma.featuredSlot.upsert({
+      where: { slotNumber: n },
+      update: {},
+      create: { slotNumber: n, status: 'VACANT' },
+    });
+  }
+  const slotTotal = await prisma.featuredSlot.count();
+  console.log(`  ✓ ${slotTotal} featured slots (config slotCount=${featuredCfg.slotCount})`);
+
   console.log('Done.');
 }
 
