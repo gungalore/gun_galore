@@ -256,8 +256,23 @@ export function AskGgLauncher({
         });
     }
 
-    const t = window.setTimeout(
-      () => {
+    // WHEN Boet speaks. This used to be a flat 3.5s, which lands while the
+    // visitor is still reading the hero — and because the bubble is fixed to
+    // the bottom-right, it physically covered whatever sat there: the trust
+    // card's first bullet on mobile, and both call-to-action buttons on the
+    // landing page. A mascot that talks over the primary CTA costs more than
+    // it earns.
+    //
+    // Now it waits for a sign of engagement: the first real scroll, or a long
+    // idle beat if they simply read the hero and stop — whichever comes
+    // first. Either way first paint stays fully composed, and by the time he
+    // speaks the visitor has moved past the fold. He still auto-dismisses
+    // after 14s (see the effect below).
+    let fired = false;
+    const speak = () => {
+      if (fired) return;
+      fired = true;
+      {
         if (spentThisPageRef.current) return;
         if (document.visibilityState !== 'visible') return;
         if (document.body.hasAttribute('data-install-prompt')) return;
@@ -292,10 +307,18 @@ export function AskGgLauncher({
           greetIdxRef.current += 1;
           setBubble({ kind: 'hello', text });
         }
-      },
-      coach ? 4200 : 3500,
-    );
-    return () => clearTimeout(t);
+      }
+    };
+
+    const onScroll = () => {
+      if (window.scrollY > 240) speak();
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    const t = window.setTimeout(speak, coach ? 11_000 : 12_000);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('scroll', onScroll);
+    };
   }, [pathname, panelArmed, muted, minimized]);
 
   // ── Linger prompt ────────────────────────────────────────────────

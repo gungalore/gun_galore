@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { av } from '@/lib/asset-version';
+import { fontDisplay, fontBody } from './fonts';
 import { BRAND_NAME, BRAND_BLURB, SITE_URL } from '@/lib/brand';
 import { Suspense } from 'react';
 import { ClerkProvider } from '@clerk/nextjs';
@@ -194,7 +195,10 @@ export default function RootLayout({
           on sign-in (Set<string>) and makes the toggle helper
           available to every heart icon in the app. Mounted inside
           ClerkProvider because the hook depends on useAuth/useUser. */}
-      <html lang="en-ZA">
+      <html
+        lang="en-ZA"
+        className={`${fontDisplay.variable} ${fontBody.variable}`}
+      >
         <head>
           {/* Defense-in-depth fallback for the HTTP Referrer-Policy
               header set in next.config.mjs. Some older browsers and

@@ -18,13 +18,16 @@ const POINTS = [
 export function TrustCard() {
   return (
     <div
-      className="gg-tc w-full md:w-[320px] lg:w-[340px] shrink-0 rounded-[16px] p-5 sm:p-6"
+      className="gg-tc w-full md:w-[320px] lg:w-[340px] shrink-0 p-5 sm:p-6"
       style={{
         background:
           'linear-gradient(160deg, rgba(26,22,23,0.92), rgba(16,13,14,0.92))',
-        border: '0.5px solid rgba(200,16,46,0.35)',
-        boxShadow: '0 18px 44px rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(2px)',
+        border: '1px solid rgba(200,16,46,0.30)',
+        borderRadius: 'var(--r-lg)',
+        // No boxShadow: globals.css sets `* { box-shadow: none !important }`
+        // (a CLAUDE.md house rule), which outranks even inline styles — the
+        // 0 18px 44px shadow that used to be declared here never rendered.
+        backdropFilter: 'blur(3px)',
       }}
     >
       {/* Kicker — shield mark + short label (the old scary headline is gone). */}

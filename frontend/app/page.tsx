@@ -10,6 +10,7 @@ import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
 import { FeaturedAvailabilityBar } from '@/components/featured-availability-bar';
+import { FoundingSellerSection } from '@/components/founding-seller-section';
 import { DraggableMarquee } from '@/components/draggable-marquee';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
@@ -298,7 +299,7 @@ export default async function HomePage({
 
       {/* Hero now carries the trust card on its right, so the competitive
           "why All Outdoor" proof lives inside <Hero /> — no separate banner. */}
-      {showHero && <Hero />}
+      {showHero && <Hero storeIsEmpty={!browseFailed && browse.total === 0} />}
 
       {/* ─── Bare landing page: featured-only grid, no rail, no filter ───
           When the user lands on "/" with no filters, the main grid
@@ -426,78 +427,24 @@ export default async function HomePage({
 
               It self-hides when the summary can't load or no slots exist,
               so an unconfigured install still doesn't show a bare CTA. */}
-          <FeaturedAvailabilityBar />
+          {/* Seller block vs. bare availability bar.
 
-          {/* Cold start — the store has no listings at all.
+              With NOTHING listed, the two seller-facing pitches (be the first
+              to list; buy a featured spot) are composed into one section with
+              a single argument — see components/founding-seller-section.tsx.
+              Previously they were two orphans floating in black.
 
-              Until now the landing page offered a signed-out visitor only
-              buyer-shaped routes: "Browse the store" and a category grid,
-              every one of which leads to an empty shelf. The one place that
-              says "yours could be the first" was the browse grid's empty
-              state, which you only reach AFTER hitting a dead end. The nav
-              "Sell" button was the sole path from here, and it competes with
-              everything else in the header.
+              With stock on the shelves the pitch is unnecessary, so the bar
+              goes back to standing alone under the marquee.
 
               browseFailed is checked deliberately: on a backend hiccup
-              browse.total is also 0, and telling people the shop is empty
-              when we simply couldn't read it is worse than saying nothing.
-              The retry card at the browseFailed site below owns that case. */}
-          {!browseFailed && browse.total === 0 && (
-            <div
-              className="mt-10 rounded-[10px] p-6 sm:p-8 text-center"
-              style={{
-                background: 'var(--bg-card)',
-                border: '0.5px solid var(--border)',
-              }}
-            >
-              <h2
-                className="text-xl sm:text-2xl m-0 mb-2"
-                style={{ color: 'var(--text-primary)', fontWeight: 600 }}
-              >
-                Nothing listed yet — yours could be the first
-              </h2>
-              <p
-                className="text-sm mx-auto mb-5"
-                style={{
-                  color: 'var(--text-secondary)',
-                  lineHeight: 1.6,
-                  maxWidth: '46ch',
-                }}
-              >
-                {/* One template literal, not JSX text around {BRAND_NAME}:
-                    JSX dropped the space after the expression and shipped
-                    "All Outdoorhas just opened" to production. */}
-                {`${BRAND_NAME} has just opened. Camping and overlanding kit, fishing tackle, optics, knives, outdoor clothing — if it’s good gear you no longer use, it can go up today. Listing is free and you keep the full asking price.`}
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <Link
-                  href="/listings/new"
-                  className="inline-flex items-center justify-center px-5 rounded-[6px] text-sm"
-                  style={{
-                    background: 'var(--red)',
-                    color: '#fff',
-                    fontWeight: 500,
-                    textDecoration: 'none',
-                    minHeight: 44,
-                  }}
-                >
-                  List your first item →
-                </Link>
-                <Link
-                  href="/how-selling-works"
-                  className="inline-flex items-center justify-center px-5 rounded-[6px] text-sm"
-                  style={{
-                    background: 'transparent',
-                    color: 'var(--text-secondary)',
-                    border: '0.5px solid var(--border)',
-                    textDecoration: 'none',
-                    minHeight: 44,
-                  }}
-                >
-                  How selling works
-                </Link>
-              </div>
-            </div>
+              browse.total is also 0, and announcing an empty shop we merely
+              failed to READ is worse than saying nothing. The retry card
+              below owns that case. */}
+          {!browseFailed && browse.total === 0 ? (
+            <FoundingSellerSection featuredSlot={<FeaturedAvailabilityBar />} />
+          ) : (
+            <FeaturedAvailabilityBar />
           )}
 
           {/* "Shop by category" curtain REMOVED (operator, 2026-08-15).
