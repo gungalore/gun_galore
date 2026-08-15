@@ -52,14 +52,14 @@ export const PAYMENT_STATUS: Record<string, StatusEntry> = {
     // collection. Render sites that know the shipping method should call
     // paymentStatusHint() below for the precise sentence; this stays as
     // the honest fallback for surfaces that don't.
-    label: 'Payment held',
+    label: 'Paid — awaiting delivery',
     tone: 'pending',
-    hint: "Funds are held securely by All Outdoor while the sale completes. They're released to the seller once the hand-over is confirmed — usually within a few days.",
+    hint: 'The order is paid and protected while the sale completes. The seller is paid once the hand-over is confirmed — usually within a few days.',
   },
   PENDING_ADMIN_VERIFICATION: {
     label: 'Verifying',
     tone: 'info',
-    hint: 'Our team is reviewing this transaction. It moves to Payment held once verification completes.',
+    hint: 'Our team is reviewing this transaction. It moves to Paid — awaiting delivery once verification completes.',
   },
   RELEASED: {
     label: 'Payout released',
@@ -95,13 +95,13 @@ export function paymentStatusHint(
 ): string | undefined {
   if (code === 'HELD') {
     if (shippingMethod === 'DEALER_TRANSFER') {
-      return "Funds are held securely by All Outdoor. A firearm has no delivery confirmation step — payment is released once we've verified the firearm is booked into the receiving dealer's stock.";
+      return "The order is paid and protected. A firearm has no delivery-confirmation step — the seller is paid once we've verified the firearm is booked into the receiving dealer's stock.";
     }
     if (shippingMethod === 'COLLECTION') {
-      return 'Funds are held securely by All Outdoor until the buyer confirms they have collected the item in person.';
+      return 'The order is paid and protected. The seller is paid once the buyer confirms they have collected the item in person.';
     }
     if (shippingMethod === 'ON_SITE_SERVICE') {
-      return 'Funds are held securely by All Outdoor until the buyer confirms the booking went ahead.';
+      return 'The order is paid and protected. The seller is paid once the buyer confirms the booking went ahead.';
     }
   }
   return resolveStatus(PAYMENT_STATUS, code).hint;

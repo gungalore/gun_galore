@@ -21,7 +21,7 @@ import AwaitingAcceptChip from './awaiting-accept-chip';
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
-  HELD: 'Payment held',
+  HELD: 'Paid — awaiting delivery',
   PENDING_ADMIN_VERIFICATION: 'Pending verification',
   RELEASED: 'Payout released',
   DISPUTED: 'Disputed',

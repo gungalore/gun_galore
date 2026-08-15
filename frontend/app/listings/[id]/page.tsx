@@ -933,11 +933,11 @@ export default async function ListingDetailPage({
                 <>
                   <p className="mb-1.5">
                     <strong style={{ color: 'var(--text-primary)' }}>
-                      Payment held by All Outdoor
+                      The seller is only paid
                     </strong>{' '}
-                    until the firearm is stocked at a licensed dealer
-                    and verified — funds release automatically once
-                    verification passes. Neither side can pull out
+                    once the firearm is stocked at a licensed dealer
+                    and verified — payment goes through automatically
+                    when verification passes. Neither side can pull out
                     unilaterally before then.
                   </p>
                   <p>
@@ -946,7 +946,7 @@ export default async function ListingDetailPage({
                     </strong>{' '}
                     seller drops the firearm at their nearest
                     SAPS-licensed dealer. We verify the SAPS 534 +
-                    stock-in document + photos, release the funds, and
+                    stock-in document + photos, pay the seller, and
                     send you the dealer&apos;s contact details. You
                     collect from the same dealer with your own licence.
                   </p>
@@ -959,8 +959,8 @@ export default async function ListingDetailPage({
                       offered — you and the seller pick a dealer
                       together and do the licence transfer in person.
                       You waive All Outdoor&apos;s payment protection
-                      (no platform-held funds, no dispute or refund
-                      via us). Use only if you know the seller.
+                      (the seller is paid immediately; no dispute or
+                      refund via us). Use only if you know the seller.
                     </p>
                   )}
                 </>
@@ -968,11 +968,12 @@ export default async function ListingDetailPage({
                 <>
                   <p className="mb-1.5">
                     <strong style={{ color: 'var(--text-primary)' }}>
-                      Payment held by All Outdoor
+                      The seller is only paid
                     </strong>{' '}
-                    until you confirm the item arrived. If anything goes
-                    wrong before delivery, we hold the funds — neither
-                    side can pull out unilaterally.
+                    once you confirm the item arrived. If anything goes
+                    wrong before delivery you are refunded, not the
+                    seller paid — and neither side can pull out
+                    unilaterally.
                   </p>
                   <p>
                     <strong style={{ color: 'var(--text-primary)' }}>

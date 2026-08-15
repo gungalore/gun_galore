@@ -84,7 +84,7 @@ function nextActionCue(tx: Transaction, now: number): OrderCue | null {
     return {
       text: 'Dispute under review — our team will be in touch',
       tone: 'error',
-      hint: 'Your payment stays held while we investigate.',
+      hint: 'The seller is not paid while we investigate.',
     };
   }
   if (tx.paymentStatus === 'PENDING_ADMIN_VERIFICATION') {

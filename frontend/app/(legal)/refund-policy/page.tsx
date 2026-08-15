@@ -44,30 +44,31 @@ export default function RefundPolicyPage() {
           <strong>If your item never arrived, arrived damaged or is
           not what was listed:</strong> raise a dispute on the
           transaction page <em>before</em> you click "Confirm
-          delivery". Payment is held while the admin team reviews
+          delivery". The seller is not paid while the admin team reviews
           (typically within 48 hours). Don't click confirm if you're
-          unhappy — that releases payment to the seller and is final.
+          unhappy — confirming triggers payment to the seller and is
+          final.
         </p>
       </div>
 
-      <h2>1. How payment held works</h2>
+      <h2>1. How payment protection works</h2>
       {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
-        For most transactions, All Outdoor holds the buyer's payment
-        through our appointed third-party payment service provider (a
-        licensed South African payment service provider) until delivery
-        is confirmed:
+        For most transactions, the buyer's payment is collected by our
+        appointed third-party payment service provider (a licensed South
+        African payment service provider), and the seller is only paid
+        once delivery is confirmed:
       </p>
       <ol>
-        <li><strong>You pay</strong> — the payment service provider captures the amount from your chosen payment method and the transaction moves to <strong>Payment held</strong>.</li>
-        <li><strong>Seller dispatches</strong> — they confirm dispatch on the platform, which starts your delivery clock.</li>
+        <li><strong>You pay</strong> — the payment service provider captures the amount from your chosen payment method and the transaction moves to <strong>Paid — awaiting delivery</strong>.</li>
+        <li><strong>Seller dispatches</strong> — they confirm dispatch, which starts your delivery clock.</li>
         <li><strong>You receive the parcel</strong> — inspect it before doing anything else.</li>
-        <li><strong>You confirm delivery</strong> — the funds release to the seller and the transaction completes.</li>
+        <li><strong>You confirm delivery</strong> — the seller is paid and the transaction completes.</li>
       </ol>
       <p>
         The "Confirm delivery" button is intentionally a two-step
         flow with a three-point inspection checklist. Once you confirm,
-        funds release immediately and the transaction is final — you
+        the seller is paid immediately and the transaction is final — you
         will <strong>not</strong> be able to raise a dispute afterwards
         on the same issue.
       </p>
@@ -76,8 +77,9 @@ export default function RefundPolicyPage() {
         <strong>Private Arrangement</strong> transfer option for an item
         that requires a licence or permit (buyer and seller attend a
         licensed dealer together and complete the transfer in person),
-        payment captures and releases immediately. The funds-held mechanism
-        does not apply, because the buyer expressly waives it at checkout
+        payment captures and is paid over to the seller immediately.
+        Delivery-confirmation protection does not apply, because the
+        buyer expressly waives it at checkout
         and physical possession happens face-to-face. See our{' '}
         <a href="/terms" style={{ color: 'var(--red)' }}>Terms of Service</a>{' '}
         paragraph 7 for the binding text. Additional terms apply to
@@ -94,7 +96,7 @@ export default function RefundPolicyPage() {
         of the following are true</strong>:
       </p>
       <ul>
-        <li>The transaction's payment status is still <strong>Payment held</strong>.</li>
+        <li>The transaction's payment status is still <strong>Paid — awaiting delivery</strong>.</li>
         <li>The seller has confirmed dispatch (we don't accept disputes against undispatched orders — see paragraph 4 for what happens there instead).</li>
         <li>You have not already confirmed delivery on this transaction.</li>
       </ul>
@@ -111,14 +113,14 @@ export default function RefundPolicyPage() {
       <h2>3. How a dispute is reviewed and resolved</h2>
       <ol>
         <li>You click <strong>Raise dispute</strong> on the transaction page, pick a reason and write at least 10 characters describing what happened. (The admin team may ask for photos by email if relevant.)</li>
-        <li>The transaction moves to <strong>Disputed</strong> status. The funds stay held; the dispatch-SLA auto-refund cron is paused; both you and the seller see a "Dispute raised — admin is reviewing" notice on the transaction page.</li>
+        <li>The transaction moves to <strong>Disputed</strong> status. The seller is not paid while it is open; the dispatch-SLA auto-refund cron is paused; both you and the seller see a "Dispute raised — admin is reviewing" notice on the transaction page.</li>
         <li>An admin alert is raised with the dispute details so the team sees it immediately. <strong>We aim to make first contact within 48 hours.</strong></li>
         <li>The admin team gathers evidence from you, the seller and (where relevant) the courier's tracking record.</li>
         <li>One of four outcomes is recorded, with a written reason in the audit log:
           <ul>
             <li><strong>Full refund to you</strong> — payment is reversed to your original payment method; you receive the full amount including shipping (typically 3–7 business days).</li>
-            <li><strong>Partial refund</strong> — for cases where the item is usable but not as-described; agreed split is refunded to you, the balance released to the seller.</li>
-            <li><strong>Release to seller</strong> — where the dispute is not upheld; payment releases as normal. You will be told why.</li>
+            <li><strong>Partial refund</strong> — for cases where the item is usable but not as-described; agreed split is refunded to you, the balance paid to the seller.</li>
+            <li><strong>Payment to seller</strong> — where the dispute is not upheld; the seller is paid as normal. You will be told why.</li>
             <li><strong>Escalation</strong> — where there is suspected fraud or criminal conduct, the matter is referred to the relevant law-enforcement authority and may be paused indefinitely.</li>
           </ul>
         </li>
@@ -126,7 +128,7 @@ export default function RefundPolicyPage() {
 
       <h2>4. Seller doesn't dispatch — automatic refund</h2>
       <p>
-        For courier orders (PUDO and The Courier Guy), the seller has{' '}
+        For courier orders, the seller has{' '}
         <strong>5 days from accepting your order</strong> to dispatch it.
         We send them a reminder before the deadline. If they still haven't
         dispatched by the end of that window, the system{' '}
@@ -147,7 +149,7 @@ export default function RefundPolicyPage() {
         <Link href="/complaints/new" style={{ color: 'var(--red)' }}>
           formal complaint
         </Link>
-        ) within 48&nbsp;hours of delivery. Your payment stays held while we
+        ) within 48&nbsp;hours of delivery. The seller is not paid while we
         investigate with you, the seller and the courier. Where the courier is
         at fault we pursue the courier claim; where the item was misrepresented
         or poorly packed we resolve it in line with sections&nbsp;2 and&nbsp;3.
@@ -208,8 +210,8 @@ export default function RefundPolicyPage() {
 
       <h2>7. Items sold directly by All Outdoor (Daily Deals)</h2>
       <p>
-        Most listings on the platform are sold by independent sellers, with
-        All Outdoor acting as facilitator. <strong>Daily Deals are
+        Most items in the store are sold by independent sellers on their
+        own behalf. <strong>Daily Deals are
         different</strong>: these are first-party sales where{' '}
         <strong>All Outdoor is the seller</strong> and supplier. Because we are
         the supplier for a Daily Deal, the following apply to us directly:
@@ -235,7 +237,7 @@ export default function RefundPolicyPage() {
         </li>
         <li>
           <strong>Damaged, faulty or not-as-described</strong> — you are covered
-          by the same held-payment and dispute process as the rest of the site
+          by the same delivery-confirmation and dispute process as the rest of the site
           (paragraphs 1–3 above): raise it before confirming delivery and we
           make it right at our cost.
         </li>
@@ -246,9 +248,8 @@ export default function RefundPolicyPage() {
           {SUPPORT_EMAIL}
         </a>{' '}
         with your order reference within the applicable window and we will
-        arrange the return and refund. Your payment for a Daily Deal is held in
-        the same way as any other order and only released once the item has
-        shipped.
+        arrange the return and refund. A Daily Deal order carries the same
+        delivery-confirmation protection as any other order.
       </p>
 
       <h2>8. Chargebacks</h2>
@@ -256,7 +257,7 @@ export default function RefundPolicyPage() {
         If you initiate a chargeback through your bank or card
         provider without first raising a dispute with All Outdoor, your
         account may be suspended while the chargeback is investigated.
-        We strongly prefer the in-platform dispute route — it is
+        We strongly prefer the on-site dispute route — it is
         faster, your seller is protected from punitive chargeback
         fees, and the outcome is generally the same.
       </p>

@@ -222,7 +222,7 @@ export function SiteFooter() {
       >
         <p style={{ margin: 0 }}>
           {BRAND_NAME} does not sell ammunition. Live ammunition may not be
-          listed, sold or traded on this platform under any circumstances.
+          listed, sold or traded in this store under any circumstances.
         </p>
       </div>
 

@@ -6,15 +6,19 @@
 //
 // Conventions in this file:
 //   - "All Outdoor" / "we" / "us" / "our" = ALLOUTDOOR (PTY) LTD
-//   - "you" / "your" = any user of the platform
+//   - "you" / "your" = any user of the store
 //   - This page is PUBLIC. Category-specific statutory procedure for
 //     restricted categories lives in the members-only Regulated Items
 //     Annex (/members/regulated-items), which these Terms incorporate
 //     by reference. Keep the obligations here; keep the detail there.
-//   - Per the operator's policy, this document NEVER uses the word
+//   - Per the operator's policy this document NEVER uses the word
 //     "escrow" (regulated SA financial term that All Outdoor is not
-//     registered to operate). The funds-held mechanism is described
-//     as "payment held" or "funds held" throughout.
+//     registered to operate), and — while the TPPP application is
+//     pending — never describes All Outdoor as holding funds. Payment
+//     is COLLECTED by the licensed payment service provider and the
+//     Seller is PAID after delivery confirmation ("deferred
+//     settlement"). Substance of every clause unchanged; drafting
+//     awaits attorney review (operator's call, 2026-08-15).
 
 import { PRO_NAME } from '@/lib/brand';
 import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
@@ -43,15 +47,17 @@ export default function TermsPage() {
         (collectively "<strong>All Outdoor</strong>", "<strong>we</strong>",
         "<strong>us</strong>" or "<strong>our</strong>"). All Outdoor
         operates the website and applications available at{' '}
-        <a href="https://gungalore.co.za" style={{ color: 'var(--red)' }}>
-          gungalore.co.za
+        <a href="https://alloutdoor.co.za" style={{ color: 'var(--red)' }}>
+          alloutdoor.co.za
         </a>{' '}
-        (the "<strong>Platform</strong>").
+        (the "<strong>Store</strong>"). Any reference to the
+        "Platform" in a policy or annex incorporated into these Terms
+        is a reference to the Store.
       </p>
 
       <h2>2. What All Outdoor does</h2>
       <p>
-        All Outdoor is an online marketplace for <strong>new and
+        All Outdoor is an online store for <strong>new and
         secondhand outdoor goods</strong>. It allows registered users
         ("<strong>Sellers</strong>") to list items — including optics,
         camping, hiking and fishing gear, knives and multi-tools,
@@ -74,18 +80,20 @@ export default function TermsPage() {
       </p>
       <p>
         <strong>All Outdoor does not sell ammunition. Live ammunition
-        may not be listed, sold or traded on this platform under any
+        may not be listed, sold or traded in this store under any
         circumstances. The same absolute prohibition applies to primers
         and propellant powder.</strong>{' '}
         Reloading components are limited to projectiles and brass cases,
         which registered members may list in the appropriate category.
       </p>
       <p>
-        For marketplace listings All Outdoor is a{' '}
-        <strong>platform</strong> — we do not own, stock, dispatch or
-        directly sell the goods members list. The one exception is{' '}
-        <strong>Daily Deals</strong> (section 12), where All Outdoor
-        itself is the seller of record. Where a transaction involves an
+        Most items in the Store are listed and sold by their owners.
+        Except for <strong>Daily Deals</strong> (section 12), where
+        All Outdoor itself is the seller of record, we do not own,
+        stock or dispatch the goods members list: the agreement of
+        sale for each such item is concluded between the Seller and
+        the Buyer, with All Outdoor providing the Store, the checkout,
+        delivery arrangement and support. Where a transaction involves an
         item that requires a licence or permit to possess, physical
         possession is transferred only through the authorised channel
         prescribed for that category. All Outdoor is not an authorised
@@ -108,9 +116,9 @@ export default function TermsPage() {
       </p>
       <p>
         We may amend these Terms from time to time. Material amendments
-        will be notified to you by email and posted on the Platform at
+        will be notified to you by email and posted on the Store at
         least <strong>14 days before</strong> they take effect. Your
-        continued use of the Platform after that period constitutes
+        continued use of the Store after that period constitutes
         acceptance of the amended Terms. If you do not agree, you may
         close your account at any time.
       </p>
@@ -125,7 +133,7 @@ export default function TermsPage() {
         <li>have the legal capacity to enter into a binding contract;</li>
         <li>not have been previously banned by All Outdoor;</li>
         <li>where you list, bid on or purchase any item in a <strong>restricted category</strong>, hold (and continue to hold for the whole duration of the transaction) every competency, licence, permit or other authorisation that the relevant authority requires for that item, as set out in the <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>; and</li>
-        <li>where applicable, complete our identity verification (KYC) process before payouts are released to you.</li>
+        <li>where applicable, complete our identity verification (KYC) process before you can be paid.</li>
       </ul>
 
       <h2>5. Your account</h2>
@@ -148,7 +156,7 @@ export default function TermsPage() {
       <h2>6. Listings, content and conduct</h2>
       <p>
         All listings, photographs, descriptions, questions, answers,
-        ratings, notes and other content you submit to the Platform must
+        ratings, notes and other content you submit to the Store must
         comply with our{' '}
         <a href="/acceptable-use" style={{ color: 'var(--red)' }}>Acceptable Use Policy</a>.
         We reserve the right (but assume no obligation) to remove,
@@ -161,17 +169,17 @@ export default function TermsPage() {
         content you grant All Outdoor a non-exclusive, royalty-free,
         worldwide licence to host, display, copy, distribute and make
         derivative works of that content for the purpose of operating
-        and promoting the Platform.
+        and promoting the Store.
       </p>
       <p>
         Listings, ratings and pre-purchase Q&amp;A are automatically
         moderated for prohibited content (including contact details
-        intended to route around the Platform). Repeated attempts to
+        intended to route around the Store). Repeated attempts to
         bypass these controls may result in suspension or permanent
         ban.
       </p>
 
-      <h2>7. Payments and the funds-held mechanism</h2>
+      <h2>7. Payments and settlement</h2>
       {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
       <p>
         All payments on All Outdoor are processed by{' '}
@@ -179,30 +187,30 @@ export default function TermsPage() {
         (a licensed South African payment service provider). By making a
         payment you authorise the payment service provider to capture
         funds from your chosen payment instrument, and you authorise
-        All Outdoor to instruct release of the seller payout in accordance
-        with these Terms. All prices are quoted and charged in South
+        All Outdoor to instruct payment of the Seller's proceeds in
+        accordance with these Terms. All prices are quoted and charged in South
         African Rand (ZAR).
       </p>
       <p>
-        For most transactions, All Outdoor operates a{' '}
-        <strong>funds-held mechanism</strong>: the Buyer's payment is
-        captured by the payment service provider at checkout and the
-        resulting amount (less commission and the transaction fee) is
-        held until the Buyer confirms delivery of the item, the Buyer's
-        confirmation window elapses, or a dispute is resolved. Once one
-        of these triggers occurs, All Outdoor instructs the payment
-        service provider to release the seller payout to the Seller's
-        verified bank account.
+        For most transactions, settlement to the Seller is{' '}
+        <strong>deferred</strong>: the Buyer's payment is collected by
+        the payment service provider at checkout, and the Seller is
+        paid (less commission and the transaction fee, as set out in
+        section 8) only once the Buyer confirms delivery of the item,
+        the Buyer's confirmation window elapses, or a dispute is
+        resolved. Once one of these triggers occurs, All Outdoor
+        instructs the payment service provider to pay the Seller's
+        proceeds to the Seller's bank account.
       </p>
       <p>
-        For the avoidance of doubt: the funds-held mechanism is a{' '}
-        <strong>buyer-protection mechanism</strong> and not a
-        regulated banking, savings or investment product. All Outdoor is
-        not a bank and does not provide deposit-taking or fund-custody
-        financial services. All Outdoor does not pay interest on funds held, does not
-        guarantee the availability of those funds against the
-        insolvency of the payment service provider, and is not a registered financial
-        services provider.
+        For the avoidance of doubt: deferred settlement is a{' '}
+        <strong>buyer-protection measure</strong> and not a regulated
+        banking, savings or investment product. All Outdoor is not a
+        bank, does not provide deposit-taking or fund-custody
+        financial services, does not pay interest on amounts pending
+        settlement, does not guarantee amounts pending settlement
+        against the insolvency of the payment service provider, and is
+        not a registered financial services provider.
       </p>
       <p>
         Where a Buyer and Seller elect to use the{' '}
@@ -210,9 +218,9 @@ export default function TermsPage() {
         on certain restricted categories (where both parties travel to
         an authorised third party and complete the handover
         themselves), the Buyer explicitly consents that payment is
-        captured and released immediately to the Seller upon successful
-        payment, and that the funds-held mechanism does not apply to
-        that transaction. The categories on which this option is
+        captured and paid over to the Seller immediately upon
+        successful payment, and that deferred settlement does not
+        apply to that transaction. The categories on which this option is
         available, and the conditions attached to it, are set out in
         the{' '}
         <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>
@@ -234,7 +242,7 @@ export default function TermsPage() {
           creating the listing is the amount the Seller is to{' '}
           <strong>receive</strong>. All Outdoor adds the commission and
           the transaction fee to that amount and publishes the result as
-          the listing price payable by the Buyer. The Seller's payout is
+          the listing price payable by the Buyer. The Seller is paid
           the amount the Seller entered, without deduction, and nothing
           further is added to the Buyer's total at checkout other than
           delivery charges under paragraph 9.
@@ -243,7 +251,7 @@ export default function TermsPage() {
           <strong>Auction and Take-a-Shot.</strong> The sale price is the
           price established by the winning bid or the accepted offer. The
           commission is deducted from that price and the balance is the
-          Seller's payout; the transaction fee is payable by the Buyer in
+          Seller's proceeds; the transaction fee is payable by the Buyer in
           addition to the sale price.
         </li>
       </ul>
@@ -254,21 +262,21 @@ export default function TermsPage() {
         Transaction record at the point of sale. Sellers may review the
         current fee schedule at any time via the in-product fee explainer.
         Our current commission bands and transaction fee are published at{' '}
-        <a href="/fees" style={{ color: 'var(--red)' }}>gungalore.co.za/fees</a>.
+        <a href="/fees" style={{ color: 'var(--red)' }}>alloutdoor.co.za/fees</a>.
       </p>
       <p>
-        Where the Platform offers paid placement features (for example,
+        Where the Store offers paid placement features (for example,
         Featured Slot auctions), the cost of those features is
         non-refundable except as expressly set out in the relevant
         product T&amp;Cs.
       </p>
       <p>
-        Payouts are made in South African Rand (ZAR) by electronic
-        funds transfer to the Seller's bank account. Before the first
-        payout we manually review the Seller's bank details against
-        their verified identity to confirm the account belongs to the
-        Seller. We do not pay out to third parties or to accounts not
-        in the Seller's name.
+        Sellers are paid in South African Rand (ZAR) by electronic
+        funds transfer to their bank account. Before a Seller is paid
+        for the first time, we manually review the Seller's bank
+        details against their verified identity to confirm the account
+        belongs to the Seller. We do not pay third parties, or
+        accounts not in the Seller's name.
       </p>
 
       <h2>9. Shipping and delivery</h2>
@@ -276,9 +284,9 @@ export default function TermsPage() {
         Shipping is the responsibility of the Seller, using the
         shipping method chosen by the Buyer at checkout from the
         options the Seller has enabled. Available methods include
-        locker-to-locker (Pudo), door-to-door courier (The Courier
-        Guy), <strong>authorised-agent transfer</strong> (for items
-        that require a licence or permit) and{' '}
+        courier delivery — to the Buyer's door or to a pickup point,
+        quoted live at checkout — <strong>authorised-agent
+        transfer</strong> (for items that require a licence or permit) and{' '}
         <strong>private arrangement</strong> (for those restricted
         categories only — see paragraph 7). Shipping costs are quoted
         live at checkout and paid by the Buyer.
@@ -312,7 +320,7 @@ export default function TermsPage() {
         with optional reserve and snipe-protection extension) and{' '}
         <strong>Take-a-Shot</strong> (buyer-initiated price offer with
         a 48-hour Seller response window and a one-counter limit). The
-        operating rules of each mode are summarised on the Platform
+        operating rules of each mode are summarised on the Store
         and described in detail in our help materials. Swop / Trade, our fourth sale mode, is governed by section 11 below. Submitting a
         bid, offer or Buy Now purchase constitutes a binding offer to
         purchase the listed item at the stated price, subject only to
@@ -352,10 +360,10 @@ export default function TermsPage() {
         <strong>Daily Deals</strong> are limited-time offers in which
         All Outdoor itself is the seller of record: your purchase
         contract for a Daily Deal is with ALLOUTDOOR (PTY) LTD, not
-        with a marketplace member. Deal purchases are delivered by
+        with another member. Deal purchases are delivered by
         courier from our supplier's warehouse within the delivery
-        window shown on the deal, are covered by the same funds-held
-        protection as marketplace purchases, and buyers receive a
+        window shown on the deal, are covered by the same
+        delivery-confirmation protection as every other purchase, and buyers receive a
         formal receipt by email. Returns and refunds for Daily Deals
         are governed by our{' '}
         <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>{' '}
@@ -392,7 +400,7 @@ export default function TermsPage() {
         <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>.
         Disputes are reviewed by the All Outdoor admin team within{' '}
         <strong>48 hours of receipt</strong>, and outcomes may include
-        full refund, partial refund, release to Seller or referral to
+        full refund, partial refund, payment to the Seller or referral to
         the appropriate authorities. Nothing in these Terms limits the
         rights you have under the Consumer Protection Act, in
         particular Section 56 (which gives Buyers a 6-month right to
@@ -428,7 +436,7 @@ export default function TermsPage() {
         trade mark and other intellectual-property laws. Except as
         expressly permitted by these Terms, you may not copy, modify,
         reverse-engineer, sublicense or create derivative works from
-        the Platform.
+        the Store.
       </p>
 
       <h2>17. Limitation of liability</h2>
@@ -437,7 +445,7 @@ export default function TermsPage() {
         will not be liable to you for any indirect, incidental,
         consequential, special or punitive damages (including but not
         limited to loss of profits, loss of goodwill or loss of data)
-        arising out of or in connection with your use of the Platform.
+        arising out of or in connection with your use of the Store.
       </p>
       <p>
         All Outdoor's aggregate liability to you in respect of any
@@ -466,7 +474,7 @@ export default function TermsPage() {
         you deal in, including the Consumer Protection Act, the
         Protection of Personal Information Act and any legislation
         governing a restricted category, (c) any goods you list or
-        transact on the Platform, or (d) any content you submit to the
+        transact on the Store, or (d) any content you submit to the
         Platform.
       </p>
 
@@ -476,9 +484,9 @@ export default function TermsPage() {
         performance caused by events beyond its reasonable control,
         including natural disasters, war, civil unrest, government
         action, power or internet outages, or acts or omissions of
-        third-party service providers (including our payment service
-        provider, VerifyNow, Pudo, The Courier Guy, Cloudinary, Resend
-        or Clerk).
+        third-party service providers (including our payment,
+        identity-verification, courier, media-hosting, email or
+        authentication service providers).
       </p>
 
       <h2>20. Notices and communications</h2>

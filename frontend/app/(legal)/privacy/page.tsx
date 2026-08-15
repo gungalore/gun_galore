@@ -34,17 +34,17 @@ export default function PrivacyPage() {
         This Privacy Policy explains how <strong>ALLOUTDOOR (PTY) LTD</strong>{' '}
         ("<strong>All Outdoor</strong>", "<strong>we</strong>",
         "<strong>us</strong>") collects, uses, shares and protects your
-        personal information when you use the All Outdoor platform at{' '}
+        personal information when you use the All Outdoor online store at{' '}
         <a href="https://gungalore.co.za" style={{ color: 'var(--red)' }}>
           gungalore.co.za
         </a>{' '}
-        ("the Platform").
+        (the "Store").
       </p>
       <p>
         For the purposes of the Protection of Personal Information Act
         4 of 2013 (<strong>"POPIA"</strong>), All Outdoor is the{' '}
         <strong>responsible party</strong> in respect of personal
-        information processed through the Platform.
+        information processed through the Store.
       </p>
 
       <h2>2. Information Officer</h2>
@@ -93,7 +93,7 @@ export default function PrivacyPage() {
 
       <h3>3.2 KYC and identity verification (Sellers only)</h3>
       <ul>
-        <li>South African ID number (stored encrypted at rest with AES-GCM; we also derive a salted SHA-256 hash for duplicate-registration checks. We retain the encrypted ID — see &ldquo;How long we keep your information&rdquo; below — so that we can confirm the person receiving a payout is the person we verified, prevent fraud and impersonation, and meet the record-keeping and transfer-documentation obligations that apply to certain regulated categories, where the seller&rsquo;s identity number must be reproduced on a prescribed statutory form)</li>
+        <li>South African ID number (stored encrypted at rest with AES-GCM; we also derive a salted SHA-256 hash for duplicate-registration checks. We retain the encrypted ID — see &ldquo;How long we keep your information&rdquo; below — so that we can confirm the person being paid is the person we verified, prevent fraud and impersonation, and meet the record-keeping and transfer-documentation obligations that apply to certain regulated categories, where the seller&rsquo;s identity number must be reproduced on a prescribed statutory form)</li>
         <li>VerifyNow Home Affairs lookup result (full name, date of birth, status), which may include the official record photograph held by the Department of Home Affairs</li>
         <li>An image of the identity document you upload during verification (an identity card, identity book page or passport, or a PDF of one). This image is stored with our image-hosting provider, Cloudinary, in the United States, and is retained as an audit record of the verification for the life of your account.</li>
         <li><strong>Selfie image captured during face-match verification.</strong> The image is <strong>stored</strong> with our image-hosting provider, Cloudinary, in the United States. We retain it as an audit record of the verification for the life of your account, and we re-use it only to re-run a verification check on that same account. If you delete your account we remove the link to the image from your account record, but the stored image itself is <strong>not deleted today</strong> — deletion of the copy held by the image-hosting provider is a follow-up we have not yet implemented, and we will not describe it as done until it is.</li>
@@ -117,7 +117,7 @@ export default function PrivacyPage() {
       <h3>3.3 Banking (Sellers only)</h3>
       <ul>
         <li>Bank name, account holder name, account number, branch code, account type</li>
-        <li>The outcome of our manual review of these bank details before your first payout (we check the account-holder name matches your verified identity)</li>
+        <li>The outcome of our manual review of these bank details before you are first paid (we check the account-holder name matches your verified identity)</li>
       </ul>
 
       <h3>3.4 Address</h3>
@@ -126,7 +126,7 @@ export default function PrivacyPage() {
         <li>Approximate geolocation (latitude / longitude) where you allow your browser to share it for shipping rate calculation</li>
       </ul>
 
-      <h3>3.5 Transactional and marketplace activity</h3>
+      <h3>3.5 Purchases, sales and account activity</h3>
       <ul>
         <li>Listings you create, edit and cancel</li>
         <li>Bids, offers, purchases and sales</li>
@@ -139,12 +139,12 @@ export default function PrivacyPage() {
       <h3>3.6 Device and session</h3>
       <ul>
         <li>IP address, browser type, operating system, login times, session activity (handled by Clerk and visible to you in your Clerk account settings)</li>
-        <li>Performance and error metrics used to keep the Platform working</li>
+        <li>Performance and error metrics used to keep the Store working</li>
       </ul>
 
       <h3>3.7 Usage and activity analytics</h3>
       <p>
-        To understand how the Platform is used, improve it, and decide what
+        To understand how the Store is used, improve it, and decide what
         to feature and promote, we collect first-party analytics about your
         activity on All Outdoor. This includes the pages and listings you view,
         the searches you run, items you save or make offers/bids on, and when
@@ -162,10 +162,10 @@ export default function PrivacyPage() {
       <p>
         We collect personal information directly from you when you
         register, complete your profile, create a listing, make a
-        purchase or use any other feature of the Platform. We also
+        purchase or use any other feature of the Store. We also
         collect information from our service providers (for example,
         VerifyNow returns your name, ID status and face-match score)
-        and automatically when you interact with the Platform (session,
+        and automatically when you interact with the Store (session,
         device, activity). Payment-instrument and transaction data
         will be processed by our appointed licensed South African
         payment service provider once card payments launch.
@@ -174,13 +174,13 @@ export default function PrivacyPage() {
       <h2>5. Why we collect it (purposes)</h2>
       <p>We process personal information for the following purposes:</p>
       <ul>
-        <li><strong>To provide the Platform</strong> — register and authenticate your account, display your listings, route your transactions, accept your payments and pay out your earnings.</li>
-        <li><strong>To verify your identity</strong> — meet our KYC obligations before releasing seller payouts, prevent fraud and identity theft.</li>
+        <li><strong>To provide the Store</strong> — register and authenticate your account, display your listings, route your transactions, accept your payments and pay you what you are owed.</li>
+        <li><strong>To verify your identity</strong> — meet our KYC obligations before sellers can be paid, prevent fraud and identity theft.</li>
         <li><strong>To comply with the law</strong> — including the sector-specific legislation that governs licence- and age-restricted categories of goods, which is identified by name in our{' '}
           <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>, together with the Consumer Protection Act, the Financial Intelligence Centre Act (FICA) and tax obligations.</li>
-        <li><strong>To detect and prevent fraud, abuse and platform misuse</strong> — including off-platform contact-detail sharing, sock-puppet accounts and money-laundering risk.</li>
+        <li><strong>To detect and prevent fraud, abuse and misuse of the Store</strong> — including off-platform contact-detail sharing, sock-puppet accounts and money-laundering risk.</li>
         <li><strong>To communicate with you</strong> — transactional notifications (order updates, dispatch confirmations, dispute outcomes) and, with your opt-in consent, marketing communications.</li>
-        <li><strong>To improve the Platform</strong> — analytics, debugging, A/B testing (always against aggregated or de-identified data where possible).</li>
+        <li><strong>To improve the Store</strong> — analytics, debugging, A/B testing (always against aggregated or de-identified data where possible).</li>
         <li><strong>To resolve disputes</strong> — gather and review evidence between buyer, seller, courier and admin.</li>
       </ul>
 
@@ -190,10 +190,10 @@ export default function PrivacyPage() {
         specific purpose:
       </p>
       <ul>
-        <li><strong>Performance of a contract:</strong> processing necessary to deliver the Platform you signed up for (§ 11(1)(b)).</li>
+        <li><strong>Performance of a contract:</strong> processing necessary to deliver the service you signed up for (§ 11(1)(b)).</li>
         <li><strong>Compliance with legal obligation:</strong> KYC, the statutory records we must keep for licence- and age-restricted categories, tax (§ 11(1)(c)). The particular legislation imposing that obligation, and the records kept under it, are identified in our{' '}
           <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>, which is publicly available and which we also give you as the notification required by § 18(1)(f).</li>
-        <li><strong>Legitimate interest:</strong> fraud prevention, platform safety, dispute investigation (§ 11(1)(f)) — balanced against your rights.</li>
+        <li><strong>Legitimate interest:</strong> fraud prevention, user safety, dispute investigation (§ 11(1)(f)) — balanced against your rights.</li>
         <li><strong>Consent:</strong> KYC Home Affairs lookup, direct marketing, and the sharing of contact details where you agree that hand-over of an item that requires a licence or permit will be arranged directly between the parties or through an authorised third party (§ 11(1)(a)).</li>
       </ul>
       <p>
@@ -282,7 +282,7 @@ export default function PrivacyPage() {
         <li><strong>Transaction records:</strong> 5 years from completion, in line with FICA record-keeping requirements.</li>
         <li><strong>Listings, ratings and Q&amp;A:</strong> for the lifetime of your account (kept for public-history integrity); permanently de-identified within 90 days of account deletion.</li>
         <li><strong>KYC ID hash:</strong> retained while your account is active, plus 12 months after deletion to prevent duplicate registration.</li>
-        <li><strong>Encrypted SA ID number:</strong> retained (AES-GCM encrypted at rest) while your account is active, so that we can confirm payout identity, prevent impersonation, and complete any prescribed statutory transfer or record-keeping document required for the regulated categories we handle; where such a document has been completed, the encrypted ID is kept for the period that legislation requires that record to be retained, and is otherwise deleted on account closure. The legislation imposing that requirement is identified in our{' '}
+        <li><strong>Encrypted SA ID number:</strong> retained (AES-GCM encrypted at rest) while your account is active, so that we can confirm the identity of the person being paid, prevent impersonation, and complete any prescribed statutory transfer or record-keeping document required for the regulated categories we handle; where such a document has been completed, the encrypted ID is kept for the period that legislation requires that record to be retained, and is otherwise deleted on account closure. The legislation imposing that requirement is identified in our{' '}
           <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>.</li>
         <li><strong>KYC selfie (face image):</strong> stored with our image-hosting provider, Cloudinary, and retained as an audit record of the verification for the life of your account; re-used only to re-run a verification check on that same account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present; deleting the copy held by the image-hosting provider is a tracked follow-up and is not yet implemented.</li>
         <li><strong>KYC identity-document image:</strong> stored with our image-hosting provider, Cloudinary, and retained as an audit record of the verification for the life of your account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present, on the same basis as the selfie above.</li>
@@ -314,7 +314,7 @@ export default function PrivacyPage() {
         All Outdoor sends two kinds of communications:
       </p>
       <ul>
-        <li><strong>Transactional</strong> — order updates, dispatch confirmations, dispute outcomes, account-security alerts. These are necessary to operate the Platform and are sent regardless of your marketing preferences.</li>
+        <li><strong>Transactional</strong> — order updates, dispatch confirmations, dispute outcomes, account-security alerts. These are necessary to operate the Store and are sent regardless of your marketing preferences.</li>
         <li><strong>Marketing</strong> — newsletters and promotional offers. These are only sent if you have <strong>opted in</strong> at sign-up or in your profile settings. You may withdraw consent at any time by clicking the unsubscribe link in any marketing message or by changing your preferences in your account.</li>
       </ul>
 
