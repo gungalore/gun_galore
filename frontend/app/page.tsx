@@ -1,9 +1,8 @@
 import Link from 'next/link';
 import { BRAND_NAME } from '@/lib/brand';
 import { viewerFetch } from '@/lib/api-viewer';
-import { BrowseResponse, Category, CategoryWithCount } from '@/lib/types';
+import { BrowseResponse, Category } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
-import { CategoryCurtain } from '@/components/category-curtain';
 import { FilterBar } from '@/components/filter-bar';
 import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
@@ -167,7 +166,6 @@ export default async function HomePage({
     featuredListings,
     brands,
     facetData,
-    categoryCounts,
   ] = await Promise.all([
     // Sentinel on failure (null) — a backend hiccup must NOT render the
     // genuine-empty "nothing listed yet" copy; the two states get
@@ -205,16 +203,6 @@ export default async function HomePage({
       : Promise.resolve({
           facets: {} as Record<string, Record<string, number>>,
         }),
-    // Category tiles for the landing-page "Shop by category" curtain. Same
-    // /categories/with-counts the nav flyout uses — counts arrive rolled up
-    // (a root = its own actives + its children's), so a tile never
-    // under-reports. Only the hero view renders the grid, so every filtered
-    // surface skips the round-trip entirely. Failure degrades to no section.
-    showHero
-      ? viewerFetch<CategoryWithCount[]>('/categories/with-counts').catch(
-          () => [] as CategoryWithCount[],
-        )
-      : Promise.resolve([] as CategoryWithCount[]),
   ]);
 
   // null = the listings API call FAILED (network/backend) — distinct from a
@@ -242,16 +230,6 @@ export default async function HomePage({
   // landing page — a wall of "Featured spot available" placeholders reads
   // as a dead site to buyers; sellers get one compact bid link instead.
   const occupiedFeatured = featuredListings.filter((s) => s.listing);
-
-  // Root-level tiles for the "Shop by category" curtain. Roots only: the
-  // grid is a breadth entry point and every child is one click deeper on
-  // /category/[slug]. The endpoint already orders by sortOrder then name, so
-  // filter without re-sorting to keep the curated taxonomy order. Empty on
-  // every non-hero surface (we don't fetch there) — the section self-hides.
-  // CategoryWithCount is a superset of CurtainTile, so it passes straight in.
-  const curtainTiles = categoryCounts.filter(
-    (c) => c.parentId === null && c.isActive,
-  );
 
   const crossSellFromCategoryId =
     params.categoryId ??
@@ -522,41 +500,14 @@ export default async function HomePage({
             </div>
           )}
 
-          {/* Shop by category — the FALLBACK breadth entry point, shown
-              only while the Featured marquee above has nothing to show.
-
-              The operator wants Featured to be the homepage's centrepiece
-              (the scrolling ads, as on the old site). It already is: the
-              marquee renders directly above and takes the prime slot the
-              moment any slot carries a listing. But Featured is dark until
-              slots are both created AND claimed — and with the store at
-              zero listings, deleting the category grid outright would leave
-              the whole page between hero and footer blank, which is worse
-              than the thing being fixed.
-
-              So the two are mutually exclusive, and the handover is
-              automatic: no featured listings -> categories give people
-              somewhere to go; the first featured listing -> categories step
-              aside and Featured owns the page, permanently. Nothing to
-              remember to switch over later.
-
-              Also self-hides when the taxonomy call failed or returned
-              nothing, rather than leaving a bare heading over empty space. */}
-          {occupiedFeatured.length === 0 && curtainTiles.length > 0 && (
-            <div className="mt-10">
-              <h2
-                className="text-2xl sm:text-3xl m-0 mb-5"
-                style={{
-                  color: 'var(--text-primary)',
-                  fontWeight: 500,
-                  letterSpacing: '-0.01em',
-                }}
-              >
-                Shop by category
-              </h2>
-              <CategoryCurtain tiles={curtainTiles} />
-            </div>
-          )}
+          {/* "Shop by category" curtain REMOVED (operator, 2026-08-15).
+              It was the fallback breadth entry while Featured was dark, but
+              the category tree already lives in the nav's Categories flyout
+              and the mobile drawer, and on the landing page the grid pushed
+              the sell-side content down while every tile led to an empty
+              shelf. Featured + the cold-start band own this stretch now.
+              The component (components/category-curtain.tsx) is kept for
+              reuse elsewhere; only the homepage stopped rendering it. */}
 
           {/* Recently viewed — self-hides if the user has < 2 entries
               on this device, so cold-start visitors don't see an empty
