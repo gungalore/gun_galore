@@ -172,6 +172,21 @@ html:not([data-standalone='true']) body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Footer link tap targets.
+
+   The link lists set line-height 1.9, so each row is already ~25px tall —
+   but the <a> is an inline box hugging its 17px of text, and the remaining
+   8px of leading is dead space that looks tappable and isn't. On a phone
+   that reads as the site ignoring your taps.
+
+   Making the anchor fill its own line box converts that leading into hit
+   area and clears the 24px WCAG 2.5.8 minimum, WITHOUT adding a single
+   pixel of height — which matters, because there are ~30 of these links
+   and padding them would have added roughly 240px of scroll on mobile. */
+footer li > a {
+  display: block;
+}
+
 /* When installed as a PWA we hide the top public nav + the legal
    footer (the bottom tab bar replaces them). The detection script in
    app/layout.tsx sets the data-standalone attr before paint, so this

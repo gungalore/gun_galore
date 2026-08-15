@@ -17,7 +17,10 @@ export function CartButton() {
       href="/cart"
       aria-label={n === 0 ? 'Cart, empty' : `Cart, ${n} item${n === 1 ? '' : 's'}`}
       className="relative inline-flex items-center justify-center"
-      style={{ width: 36, height: 36 }}
+      // 44x44 is the Apple HIG / WCAG 2.5.5 minimum for a touch target, and
+      // this is a primary control on every page of a phone-first site. The
+      // icon inside stays 20px — only the tappable box grows.
+      style={{ width: 44, height: 44 }}
     >
       <svg
         width="20"

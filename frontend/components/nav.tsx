@@ -172,8 +172,16 @@ export function Nav() {
             <div className="flex items-center gap-2 sm:gap-3 ml-auto md:ml-0 shrink-0">
               <Link
                 href="/listings/new"
-                className="text-sm px-3 py-1.5 rounded-[6px] transition-colors"
-                style={{ background: 'var(--red)', color: '#fff', fontWeight: 500 }}
+                className="text-sm px-3 rounded-[6px] transition-colors inline-flex items-center justify-center"
+                // py-1.5 left this 32px tall. Height comes from minHeight now
+                // so it matches the 44px cart and menu beside it — a row of
+                // controls at three different heights also just looks untidy.
+                style={{
+                  background: 'var(--red)',
+                  color: '#fff',
+                  fontWeight: 500,
+                  minHeight: 44,
+                }}
               >
                 Sell
               </Link>
@@ -426,10 +434,15 @@ export function Nav() {
               <button
                 type="button"
                 onClick={() => setMobileOpen(true)}
-                className="md:hidden p-2 rounded-[6px]"
+                className="md:hidden p-2 rounded-[6px] inline-flex items-center justify-center"
                 style={{
                   color: 'var(--text-secondary)',
                   border: '0.5px solid var(--border)',
+                  // 44x44 minimum — see CartButton. This is the only way into
+                  // navigation on a phone, so it is the last control that
+                  // should be fiddly to hit.
+                  minWidth: 44,
+                  minHeight: 44,
                 }}
                 aria-label="Open menu"
               >

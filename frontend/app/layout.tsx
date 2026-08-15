@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { av } from '@/lib/asset-version';
-import { BRAND_NAME, BRAND_BLURB } from '@/lib/brand';
+import { BRAND_NAME, BRAND_BLURB, SITE_URL } from '@/lib/brand';
 import { Suspense } from 'react';
 import { ClerkProvider } from '@clerk/nextjs';
 import { PublicNav, PublicFooter } from '@/components/public-chrome';
@@ -70,9 +70,8 @@ const CHUNK_HEAL_SCRIPT = `(function(){try{var KEY='gg-chunk-reload-at';var seen
 // appinstalled clears the stash + flags installed. See useInstallPrompt().
 const INSTALL_CAPTURE_SCRIPT = `(function(){try{window.__ggInstallEvent=window.__ggInstallEvent||null;window.__ggInstalled=window.__ggInstalled||false;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__ggInstallEvent=e;try{window.dispatchEvent(new Event('gg:install-available'));}catch(_){}});window.addEventListener('appinstalled',function(){window.__ggInstallEvent=null;window.__ggInstalled=true;try{window.dispatchEvent(new Event('gg:installed'));}catch(_){}});}catch(_){}})();`;
 
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ??
-  'https://gungalore.co.za';
+// Canonical origin now lives in lib/brand.ts so the manifest and this file
+// cannot disagree — see the note there.
 
 // The single sentence a crawler, a WhatsApp unfurl and a Google result all
 // read first. STORE framing, public catalogue only: this is the site's own

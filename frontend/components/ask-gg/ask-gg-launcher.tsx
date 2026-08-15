@@ -479,11 +479,22 @@ export function AskGgLauncher({
             style={{
               background: 'none',
               border: 'none',
-              padding: '0 2px',
               cursor: 'pointer',
               fontSize: 16,
               lineHeight: 1,
               color: 'var(--text-tertiary)',
+              // Was 15x16 — the smallest target on the site, and it's the
+              // control for getting an unsolicited bubble off your screen.
+              // Missing it taps the suggestion instead, which opens the very
+              // thing you were trying to close. 28px keeps the × visually
+              // small while clearing the 24px WCAG 2.5.8 minimum.
+              minWidth: 28,
+              minHeight: 28,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              flexShrink: 0,
             }}
           >
             ×

@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { av } from '@/lib/asset-version';
-import { PRO_NAME } from '@/lib/brand';
+import { PRO_NAME, SITE_URL } from '@/lib/brand';
 
 // PWA manifest — served at /manifest.webmanifest by Next.js when this
 // file is present in the app dir. The combination of this manifest +
@@ -38,10 +38,15 @@ export default function manifest(): MetadataRoute.Manifest {
     // Android user apart from a first-timer, so we keep nagging them to install.
     // We still prefer the web app itself over any native app.
     prefer_related_applications: false,
+    // ⚠️ This URL must match the manifest URL of the page being viewed, or
+    // getInstalledRelatedApps() never matches and we nag installed users to
+    // install forever — the exact failure this entry exists to prevent. It
+    // was hardcoded to gungalore.co.za and survived the domain move, so it
+    // reads from the same env the canonical URL uses.
     related_applications: [
       {
         platform: 'webapp',
-        url: 'https://gungalore.co.za/manifest.webmanifest',
+        url: `${SITE_URL}/manifest.webmanifest`,
       },
     ],
     shortcuts: [
@@ -91,7 +96,9 @@ export default function manifest(): MetadataRoute.Manifest {
     //
     // TO RESTORE: recapture at 390x844 @2x (780x1688), narrow form factor,
     // signed OUT so the public storefront is what appears, then re-add with
-    // fresh labels. The old PNGs are still in /public for reference.
+    // fresh labels. The old PNGs have since been deleted from /public, so
+    // there is nothing to copy the framing from — recapture from scratch,
+    // and do it AFTER public stock is loaded or the shot shows an empty shop.
     icons: [
       {
         src: av('/icon-192.png'),

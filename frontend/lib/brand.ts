@@ -60,3 +60,18 @@ export const PRO_NAME = 'AO PRO';
  * domain with the DNS cutover: one edit here.
  */
 export const SUPPORT_EMAIL = 'support@gungalore.co.za';
+
+/**
+ * Canonical public origin, no trailing slash.
+ *
+ * Everything that has to name the site's own URL reads this — `metadataBase`,
+ * the canonical link, og:url, and the manifest's `related_applications`. It
+ * lived in two places before and one of them was missed at the domain move,
+ * which is precisely the drift this constant exists to stop.
+ *
+ * The env var is set on production; the fallback is only for a local build
+ * with no env, so it names the CURRENT domain rather than the retired one.
+ */
+export const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ??
+  'https://alloutdoor.co.za';
