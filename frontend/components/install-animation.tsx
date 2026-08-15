@@ -13,6 +13,7 @@
 // previous text-only step list with a visual walkthrough.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { av } from '@/lib/asset-version';
 
 // ─── Stage layout (verbatim from the design) ───────────────────────
 const STAGE_W = 1080;
@@ -91,34 +92,48 @@ interface SceneDef {
 // the ORIGINAL captures and the redaction deliberately left every one of those
 // regions untouched — so if you recapture, re-check all four targets.
 //
+// 2026-08-15, second pass — the redaction removed the old brand but left two
+// details that were still wrong for the live site:
+//   * the domain read gungalore.co.za in the Safari address bar (step 1), the
+//     share-sheet subtitle (step 3) and the URL field (step 4). Repainted to
+//     alloutdoor.co.za. Showing an iPhone user a URL they are not on is
+//     confusing, and it put the retired brand back in front of every installer.
+//   * the app tile in steps 3 and 4 was a red mountain placeholder invented
+//     during the redaction, not a real asset. Step 4 says "an icon will be
+//     added to your Home Screen", so it now composites the actual
+//     apple-icon-180.png — the exact file iOS puts there.
+// All four `target` regions were re-checked against the edits and none overlap
+// (halos sit at y1490, y843, y1458 and y202; the edits are at y138-175,
+// y274-310, y419-456 and the two icon tiles).
+//
 // Recapturing properly (iPhone Safari, signed out, current site) is still worth
 // doing; these are correct but plainer than real screenshots.
 const SCENES: SceneDef[] = [
   {
     n: 1,
     label: 'Tap the more menu',
-    img: '/install-steps/step1-safari.jpeg',
+    img: av('/install-steps/step1-safari.jpeg'),
     target: T(658, 1490),
     haloW: 130, haloH: 130, haloShape: 'circle',
   },
   {
     n: 2,
     label: 'Tap Share',
-    img: '/install-steps/step2-menu.jpeg',
+    img: av('/install-steps/step2-menu.jpeg'),
     target: T(450, 843),
     haloW: 480, haloH: 110, haloShape: 'rounded',
   },
   {
     n: 3,
     label: 'Tap Add to Home Screen',
-    img: '/install-steps/step3-sharesheet.jpeg',
+    img: av('/install-steps/step3-sharesheet.jpeg'),
     target: T(370, 1458),
     haloW: 660, haloH: 110, haloShape: 'rounded',
   },
   {
     n: 4,
     label: "Tap Add — you're done",
-    img: '/install-steps/step4-addhome.jpeg',
+    img: av('/install-steps/step4-addhome.jpeg'),
     target: T(635, 202),
     haloW: 170, haloH: 110, haloShape: 'pill',
   },
