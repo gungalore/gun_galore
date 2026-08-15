@@ -3655,8 +3655,9 @@ export default function NewListingPage() {
                   publishing the item you want to trade — buyers browse, then
                   propose a swap (their item, plus optional cash either way) on
                   your listing. You review each proposal and accept, decline, or
-                  counter the cash. All Outdoor arranges both couriers and the
-                  funds are held until both parcels are delivered.
+                  counter the cash. All Outdoor arranges both couriers, and any
+                  cash difference is only paid over once both parcels are
+                  delivered.
                 </div>
               </Field>
             )}
@@ -4513,12 +4514,12 @@ export default function NewListingPage() {
                 </p>
                 <p style={{ color: 'var(--text-secondary)' }}>
                   {dgLithiumRestricted && !collectionOnly
-                    ? `Batteries rated over ${dgWhThreshold} Wh can’t be couriered (dangerous-goods rules), so this listing is collection-only — the buyer collects in person and their payment is held until they confirm collection.`
+                    ? `Batteries rated over ${dgWhThreshold} Wh can’t be couriered (dangerous-goods rules), so this listing is collection-only — the buyer collects in person, and you’re only paid once they confirm collection.`
                     : // Big-4 copy interim: buyers are told they may send their
                       // own transporter, so the seller must be told too — a
                       // seller who reads "in person" and then meets a hired
                       // truck at the gate has been mis-set by us.
-                      'No courier on this one. The buyer collects after they pay — either in person or with a transporter they arrange and pay for themselves. You’ll coordinate the pickup with them, and their payment is held until they confirm they have the item.'}
+                      'No courier on this one. The buyer collects after they pay — either in person or with a transporter they arrange and pay for themselves. You’ll coordinate the pickup with them, and you’re only paid once they confirm they have the item.'}
                 </p>
               </div>
             )}
@@ -5182,10 +5183,10 @@ export default function NewListingPage() {
               >
                 <li>
                   <strong style={{ color: 'var(--text-primary)' }}>
-                    Buyer pays, funds are held.
+                    It sells.
                   </strong>{' '}
-                  When the sale closes, payment is held safely by{' '}
-                  {BRAND_NAME} — neither side can pull out.
+                  When the sale closes the order is locked in — neither side
+                  can pull out.
                 </li>
                 <li>
                   <strong style={{ color: 'var(--text-primary)' }}>
@@ -5195,19 +5196,19 @@ export default function NewListingPage() {
                       firearms too, so singleCourierOption (which excludes
                       them) would leave the wrong half of it standing. */}
                   {courierModel.sellerPicksOption
-                    ? 'Ship within 48 hours via Pudo or The Courier Guy, or drop at your dealer for firearm transfers.'
+                    ? 'Ship within 48 hours by courier — to their door or a pickup point — or drop at your dealer for firearm transfers.'
                     : 'Have the parcel ready within 48 hours — a courier collects it from your pickup address — or drop at your dealer for firearm transfers.'}
                 </li>
                 <li>
                   <strong style={{ color: 'var(--text-primary)' }}>
                     Buyer confirms delivery.
                   </strong>{' '}
-                  Once they accept the item, payment is released —
-                  usually within a day of arrival.
+                  Once they accept the item you&apos;re paid — usually
+                  within a day of arrival.
                 </li>
                 <li>
                   <strong style={{ color: 'var(--text-primary)' }}>
-                    Payout to your bank.
+                    Money in your bank.
                   </strong>{' '}
                   {/* Buy Now is now a markup, not a deduction — saying "fees
                       are deducted" here would contradict the breakdown under
@@ -5215,8 +5216,8 @@ export default function NewListingPage() {
                       Auctions and offers still deduct, so they keep the old
                       wording. */}
                   {form.listingType === 'BUY_NOW'
-                    ? 'Funds land in your verified bank account within 2-3 business days of release. You receive your full asking price — our commission and the card fee are built into what the buyer pays, not taken off your payout.'
-                    : 'Funds land in your verified bank account within 2-3 business days of release. Fees (and our commission) are deducted automatically.'}
+                    ? 'It lands in your bank account within 2-3 business days. You receive your full asking price — our commission and the card fee are built into what the buyer pays, never taken off what you receive.'
+                    : 'It lands in your bank account within 2-3 business days. Our commission and fees are deducted automatically.'}
                 </li>
               </ol>
             </div>
