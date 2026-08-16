@@ -10,15 +10,16 @@ import { av } from '@/lib/asset-version';
 export function Hero() {
   return (
     <section
-      className="relative w-full overflow-hidden"
-      style={{
-        // The image is very wide (~5:1) so we let it crop top/bottom on
-        // narrow viewports. Kept fairly short so the paid Featured strip
-        // below is visible when a visitor first lands.
-        minHeight: 'clamp(340px, 44vh, 460px)',
-        background: 'var(--bg-deep)',
-      }}
+      className="hero-section relative w-full overflow-hidden"
+      style={{ background: 'var(--bg-deep)' }}
     >
+      {/* The frame carries the plate's OWN aspect ratio, so the whole
+          photograph is always visible. It used to be a fixed band —
+          clamp(340px, 44vh, 460px) — with background-size: cover, which on a
+          desktop width cropped roughly 40% off the top and bottom of a 16:9
+          plate. (The old comment claiming "~5:1" described a previous
+          image; the current one is 1672x941.) */}
+      <div className="hero-frame">
       {/* Background image — WebP for modern browsers (~29 KB) with PNG
           fallback (~1.2 MB) for ancient ones. Lighthouse mobile audit
           flagged hero.png as the LCP-killer (9.9s). Switching to WebP
@@ -119,13 +120,40 @@ export function Hero() {
             background-position: center center;
           }
           .hero-overlay {
-            /* Vertical fade — soft top, near-black at bottom where
-               the headline + subhead live. Layered with the red glow
-               so the brand accent still reads in the corner. */
+            /* Mobile: the copy now sits BELOW the picture, so this no longer
+               has to carry text contrast — it only needs to blend the foot
+               of the photograph into the page. Much lighter than the old
+               near-black wash, which existed to make an overlaid headline
+               legible and would now just be muddying the image for nothing. */
             background:
-              linear-gradient(180deg, rgba(10,10,10,0.55) 0%, rgba(10,10,10,0.78) 55%, rgba(10,10,10,0.94) 100%),
-              radial-gradient(circle at 0% 100%, rgba(200,16,46,0.22) 0%, transparent 50%);
+              linear-gradient(180deg, rgba(10,10,10,0) 55%, rgba(10,10,10,0.35) 85%, rgba(10,10,10,0.9) 100%);
           }
+        }
+
+        /* ── Frame + content placement ───────────────────────────────
+           Mobile: the picture is a full-width band at its natural ratio
+           (~220px at 390px wide) and the copy sits BELOW it — there is no
+           way to legibly overlay a headline, subhead, CTA and trust card on
+           a band that short.
+           Desktop: the copy is absolutely positioned over the frame, in the
+           empty left third of the photograph, which is what that negative
+           space is for. */
+        .hero-frame {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 1672 / 941;
+        }
+        @media (min-width: 768px) {
+          .hero-section { position: relative; }
+          .hero-content {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+          }
+          /* Very tall viewports would otherwise give the hero an absurd
+             height on ultrawide monitors; the frame is capped and the plate
+             fills it from the centre, losing only the outer edges. */
+          .hero-frame { max-height: 88vh; }
         }
 
         .hero-reveal { opacity: 1; transform: translateX(0); }
@@ -146,7 +174,9 @@ export function Hero() {
         }
       `}</style>
 
-      <div className="relative max-w-[var(--page-max)] mx-auto px-4 sm:px-6 py-12 sm:py-14 flex flex-col md:flex-row md:items-center md:justify-between gap-8 lg:gap-12" style={{ minHeight: 'inherit' }}>
+      </div>
+
+      <div className="hero-content relative max-w-[var(--page-max)] mx-auto px-4 sm:px-6 py-10 sm:py-14 flex flex-col md:flex-row md:items-center md:justify-between gap-8 lg:gap-12">
         <div className="max-w-[600px]">
           {/* Eyebrow */}
           <p
