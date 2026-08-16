@@ -107,10 +107,15 @@ const LINKS: [string, string][] = [
 export function HomeInfoPanel() {
   return (
     <section className="mt-20 sm:mt-24" aria-labelledby="good-to-know">
+      {/* Two columns on desktop: the title block holds the left rail while
+          the answers run down the right. A single 760px column left-aligned
+          in a 1600px container left the whole right-hand side empty, which
+          reads as an unfinished page rather than a composed one. */}
       <div
-        className="pt-12"
+        className="pt-12 grid gap-8 lg:gap-16 lg:grid-cols-[minmax(260px,1fr)_minmax(0,1.6fr)]"
         style={{ borderTop: '1px solid var(--hairline)' }}
       >
+        <div>
         <p
           className="text-[11px] uppercase mb-3"
           style={{
@@ -129,7 +134,22 @@ export function HomeInfoPanel() {
           Everything you need, one tap away
         </h2>
 
-        <div className="max-w-[760px]">
+        {/* Deep links ride in the left rail on desktop, under the heading. */}
+        <div className="hidden lg:flex flex-col gap-2 mt-8">
+          {LINKS.map(([label, href]) => (
+            <Link
+              key={href}
+              href={href}
+              className="text-sm"
+              style={{ color: 'var(--text-tertiary)', textDecoration: 'none' }}
+            >
+              {label} →
+            </Link>
+          ))}
+        </div>
+        </div>
+
+        <div>
           {SECTIONS.map((s) => (
             <details
               key={s.q}
@@ -168,7 +188,7 @@ export function HomeInfoPanel() {
         </div>
 
         {/* Deep links for anyone who wants the full documents. */}
-        <div className="flex flex-wrap gap-x-6 gap-y-2 mt-8">
+        <div className="flex lg:hidden flex-wrap gap-x-6 gap-y-2 mt-8">
           {LINKS.map(([label, href]) => (
             <Link
               key={href}

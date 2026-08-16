@@ -77,7 +77,11 @@ export function FeaturedAvailabilityBar() {
   if (totalSlots === 0) return null;
 
   return (
-    <div className="flex flex-col items-center gap-2.5 mt-7 mb-2" data-reveal>
+    // py rather than a bare margin: with no marquee above it (an empty store)
+    // this bar was a small centred element adrift in a large black gap. The
+    // padding makes it read as a deliberate band instead of something the
+    // layout forgot.
+    <div className="flex flex-col items-center gap-2.5 py-10 sm:py-12" data-reveal>
       {/* Indicator line: how many open + how many taking bids. */}
       <div
         className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[13px]"
