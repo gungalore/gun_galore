@@ -266,8 +266,8 @@ export default function FeesPage() {
         Delivery is quoted at checkout at the courier's live rate for the
         parcel and is paid by the buyer — it is the one thing that cannot
         be built into a listed price, because it depends on an address
-        that does not exist until checkout. Couriers are Pudo
-        (locker-to-locker) and The Courier Guy (door-to-door). A flat{' '}
+        that does not exist until checkout. Delivery is either to your door
+        or to a pickup point near you, whichever you choose. A flat{' '}
         <strong>R15 handling charge applies per courier waybill</strong>{' '}
         (items combined into one parcel produce one waybill and are
         charged once). An item handed over through a licensed dealer, or a

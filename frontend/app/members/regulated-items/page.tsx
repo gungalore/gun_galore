@@ -147,8 +147,8 @@ export default function RegulatedItemsAnnexPage() {
         Items such as scopes, optics, slings, holsters, cleaning kits,
         magazines (within legal capacity), gun safes, range gear and
         cases are <strong>not</strong> firearms for the purposes of
-        this Annex and may be shipped through ordinary courier channels
-        (Pudo / The Courier Guy). The reloading components you may list
+        this Annex and may be shipped through ordinary courier channels.
+        The reloading components you may list
         are limited to <strong>projectiles/bullets and brass
         cases</strong>: those are lawful to list, are members-only, and
         remain subject to the law applicable to them; they are not
@@ -420,7 +420,7 @@ export default function RegulatedItemsAnnexPage() {
       </p>
       <ul>
         <li>may not be sent by ordinary courier;</li>
-        <li>may not be sent by locker-to-locker service;</li>
+        <li>may not be sent to a parcel locker or unattended pickup point;</li>
         <li>may not be delivered to a residential address.</li>
       </ul>
       <p>
@@ -428,8 +428,9 @@ export default function RegulatedItemsAnnexPage() {
         delivery method that bypasses the licensed-dealer channel. By
         law a firearm is transferred through a SAPS-licensed dealer and
         the buyer collects it there once the required paperwork is
-        complete. Non-firearm gear ships via our courier partners, Pudo
-        (locker-to-locker) and The Courier Guy (door-to-door).
+        complete. Non-firearm gear ships by courier — either to the buyer's
+        door or to a pickup point — with the carrier and the price quoted
+        at checkout.
       </p>
 
       <h2>13. Swop / Trade</h2>

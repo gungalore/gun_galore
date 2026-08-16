@@ -225,8 +225,7 @@ export default function PrivacyPage() {
           {[
             ['Clerk', 'United States', 'Email, name, sessions, login activity'],
             ['VerifyNow', 'South Africa', 'ID number, name, selfie image (KYC face-match)'],
-            ['Pudo', 'South Africa', 'Buyer address, parcel size + weight, shipping reference'],
-            ['The Courier Guy', 'South Africa', 'Buyer address, parcel size + weight, waybill reference'],
+            ['Bob Go', 'South Africa', 'Buyer address, collection address, parcel size + weight, contact phone, waybill reference'],
             ['Cloudinary', 'United States', 'Listing photos; identity-verification images (ID document, selfie) and compliance documents you upload'],
             ['Resend', 'United States', 'Email address, content of transactional emails'],
             ['SMSPortal', 'South Africa', 'Phone number, content of transactional SMS'],

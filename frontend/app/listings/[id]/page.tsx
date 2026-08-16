@@ -979,8 +979,8 @@ export default async function ListingDetailPage({
                     <strong style={{ color: 'var(--text-primary)' }}>
                       Shipping:
                     </strong>{' '}
-                    Pudo locker-to-locker or The Courier Guy door
-                    delivery — both quoted at checkout.
+                    courier delivery to your door, or to a pickup point
+                    near you — the price is quoted at checkout.
                   </p>
                 </>
               )}
