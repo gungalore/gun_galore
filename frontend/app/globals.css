@@ -80,12 +80,34 @@
 
 html,
 body {
-  background-color: var(--bg);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-weight: 400;
   letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
+}
+
+/* The page colour lives on <html> ONLY, and <body> is deliberately
+   transparent. Both matter for the PageBackground plates.
+
+   <html>'s background propagates to the canvas, which is painted before
+   anything else — including negative-z-index layers. <body>'s background
+   does NOT propagate once <html> has one; it paints as an ordinary in-flow
+   block background, which lands ABOVE those layers and hid the plates
+   completely. Leaving it transparent gives the correct sandwich:
+
+     canvas (--bg)  <  the fixed z-index:-1 plates  <  every in-flow
+     background: cards, panels and the footer's opaque --bg-card.
+
+   So the scenery shows through the gaps between cards and stops dead at
+   the footer, with no page needing a z-index of its own. Setting a colour
+   on <body> again will silently black out every backdrop on the site. */
+body {
+  background-color: transparent;
+}
+
+html {
+  background-color: var(--bg);
 }
 
 /* ── Headings ──────────────────────────────────────────────────────
