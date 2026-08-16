@@ -6,13 +6,27 @@ import { useSearchParams } from 'next/navigation';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import TransactionActions from './transaction-actions';
+import { formatPrice } from '@/lib/utils';
 
 interface Tx {
   id: string;
   paymentStatus: string;
-  amount: number;
+  // What the buyer was charged, in ZAR CENTS. Two bugs lived here:
+  //
+  //   1. The admin endpoint returns raw Transaction rows and there is no
+  //      `amount` column, but this was typed as a required `amount: number`
+  //      and rendered `tx.amount.toLocaleString()` — so the FIRST row of real
+  //      data threw and took the page into the error boundary. It only ever
+  //      looked healthy because the table was empty. `amount` survives as an
+  //      optional alias in case a caller ever maps one.
+  //   2. Both money columns were rendered raw, with no cents-to-rand
+  //      conversion, so a R511,97 order would have displayed as "R51 197".
+  //      Both now go through formatPrice(), the same helper the listings
+  //      admin page uses.
+  buyerTotal: number;
+  amount?: number;
   createdAt: string;
-  listing: { title: string; price: number };
+  listing: { title: string; price: number | null };
   buyer: { firstName: string | null; lastName: string | null; email: string };
   seller: { firstName: string | null; lastName: string | null; email: string };
 }
@@ -191,7 +205,7 @@ export default function AdminTransactionsPage() {
                       >
                         <div className="font-medium">{tx.listing.title}</div>
                         <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                          R{tx.listing.price.toLocaleString('en-ZA')}
+                          {formatPrice(tx.listing.price ?? 0)}
                         </div>
                       </Link>
                     </td>
@@ -202,7 +216,7 @@ export default function AdminTransactionsPage() {
                       {name(tx.seller)}
                     </td>
                     <td className="px-4 py-3 text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
-                      R{tx.amount.toLocaleString('en-ZA')}
+                      {formatPrice(tx.amount ?? tx.buyerTotal ?? 0)}
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
                       {new Date(tx.createdAt).toLocaleDateString('en-ZA')}
