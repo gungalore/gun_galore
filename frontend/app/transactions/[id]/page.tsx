@@ -46,8 +46,17 @@ function trackingUrl(
 ): string | null {
   if (!method || !reference) return null;
   const ref = encodeURIComponent(reference.trim());
-  if (method === 'PUDO') return `https://www.pudo.co.za/tracking?tracking=${ref}`;
-  if (method === 'TCG') return `https://www.thecourierguy.co.za/track-a-parcel?waybill=${ref}`;
+  // NO CARRIER DEEP LINK. These used to point at pudo.co.za and
+  // thecourierguy.co.za, chosen off the ShippingMethod — but PUDO and TCG are
+  // SLOTS (a collection point and a door), not carriers, and since Bob Go
+  // became the rail a waybill will not resolve on either site. A dead tracking
+  // link is worse than none: it tells a buyer their parcel does not exist.
+  //
+  // To restore real links, plumb `carrierProvider` through to this page — the
+  // server already selects it (transactions.service.ts) but the buyer payload
+  // and the frontend type do not carry it yet — and branch on the actual
+  // carrier rather than on the slot.
+  void ref;
   return null;
 }
 
@@ -518,9 +527,9 @@ export default async function TransactionPage({
                 <span style={{ color: 'var(--text-tertiary)' }}>Method</span>
                 <span style={{ color: 'var(--text-primary)' }}>
                   {tx.shippingMethod === 'PUDO'
-                    ? 'Pudo Locker'
+                    ? 'Collection point'
                     : tx.shippingMethod === 'TCG'
-                    ? 'Door Delivery (TCG)'
+                    ? 'Door delivery'
                     : tx.shippingMethod === 'DEALER_TRANSFER'
                     ? 'Dealer Transfer'
                     : tx.shippingMethod === 'COLLECTION'

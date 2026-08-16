@@ -50,8 +50,10 @@ interface Shipment {
 }
 
 const METHOD_LABEL: Record<Shipment['method'], string> = {
-  PUDO: 'Pudo locker',
-  TCG: 'Courier (door-to-door)',
+  // Slots, not carriers — a PUDO shipment is a collection point on whichever
+  // rail carried it, which since 2026-08-14 is Bob Go, not Pudo.
+  PUDO: 'Collection point',
+  TCG: 'Door delivery',
   DEALER_TRANSFER: 'Dealer-stocked transfer',
   PRIVATE_ARRANGE: 'Private arrangement',
   COLLECTION: 'Collection in person',
