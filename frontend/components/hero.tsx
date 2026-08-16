@@ -105,12 +105,12 @@ export function Hero() {
           /* Real golden-hour photo — keep its warm colour (no grayscale).
              A slight darken keeps the white headline crisp over the left of
              the frame, where the overlay gradient below also sits. */
-          filter: brightness(0.9);
+          filter: brightness(0.95);
         }
         .hero-overlay {
           /* Desktop default — horizontal fade with red corner glow. */
           background:
-            linear-gradient(90deg, rgba(10,10,10,0.92) 0%, rgba(10,10,10,0.70) 28%, rgba(10,10,10,0.15) 58%, rgba(10,10,10,0) 100%),
+            linear-gradient(90deg, rgba(10,10,10,0.84) 0%, rgba(10,10,10,0.56) 32%, rgba(10,10,10,0.12) 62%, rgba(10,10,10,0) 100%),
             radial-gradient(circle at 0% 100%, rgba(200,16,46,0.18) 0%, transparent 45%);
         }
         @media (max-width: 768px) {
