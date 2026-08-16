@@ -259,8 +259,9 @@ export function PrivateArrangeConsent({
           style={{ marginTop: 3, accentColor: 'var(--red)' }}
         />
         <span style={{ color: 'var(--text-secondary)' }}>
-          I understand that the seller will be paid immediately and I
-          waive my right to refund or dispute this purchase.
+          I understand that the seller is paid immediately, so All
+          Outdoor is not holding the payment and cannot reverse it if
+          something goes wrong at the hand-over.
         </span>
       </label>
 

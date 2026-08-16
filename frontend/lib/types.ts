@@ -278,6 +278,11 @@ export interface Listing {
   status: ListingStatus;
   condition: Condition;
   province: Province;
+  // PUBLIC vicinity — town/city only, never a street, unit or suburb. This is
+  // what a buyer must see before paying, and it is the factual basis for
+  // "location is not a refund ground". Null on a listing created before the
+  // column existed; render the province alone in that case.
+  publicLocality?: string | null;
   isFirearm: boolean;
   // False for a members-only (regulated / weapon-adjacent) listing. The API
   // 404s these for anonymous callers, so a listing carrying `false` here has
@@ -686,6 +691,12 @@ export interface Offer {
     collectionOnly?: boolean;
     // Requires a papers attestation at checkout (trailers / caravans).
     requiresPapers?: boolean;
+    // Vicinity for the offer checkout's pre-payment acknowledgement — the
+    // buyer must be told where the item is before paying, on this path as much
+    // as on a straight Buy Now.
+    province?: Province;
+    publicLocality?: string | null;
+    plannedDealerLocation?: string | null;
     // Public-facing offer surfaces — username only per platform policy.
     // Backend offers.service.ts selects username + clerkId only.
     seller: { username: string | null; clerkId: string };

@@ -292,6 +292,24 @@ export default function TermsPage() {
         live at checkout and paid by the Buyer.
       </p>
       <p>
+        <strong>Some items cannot be sent by courier at all.</strong> Trailers
+        and caravans, oversized or awkward goods, and dangerous goods such as
+        batteries sold on their own are marked <strong>collection only</strong>.
+        No courier is quoted for them. The Buyer collects the item in person
+        from the Seller, or sends their own transporter; All Outdoor does not
+        arrange, quote, carry or insure that transport. A courier pickup point
+        is not the same thing as collecting from a Seller.
+      </p>
+      <p>
+        <strong>Every listing shows the town and province the item is in before
+        purchase</strong>, and the Buyer confirms they have seen it at checkout
+        before paying. That location is the agreed place for collection or
+        hand-over for the purposes of section&nbsp;19 of the Consumer Protection
+        Act. Getting to it — travel, fuel, a transporter, or a licensed dealer's
+        own fees — is the Buyer's cost and the Buyer's responsibility, and is
+        not part of the price shown.
+      </p>
+      <p>
         Items that require a licence or permit may not be sent by
         ordinary courier and may not be delivered to a residential
         address. They must be routed through the authorised transfer
@@ -401,7 +419,21 @@ export default function TermsPage() {
         Disputes are reviewed by the All Outdoor admin team within{' '}
         <strong>48 hours of receipt</strong>, and outcomes may include
         full refund, partial refund, payment to the Seller or referral to
-        the appropriate authorities. Nothing in these Terms limits the
+        the appropriate authorities.
+      </p>
+      <p>
+        <strong>An item's location, or the distance to it, is not a ground for
+        a refund or a dispute.</strong> The town and province are shown on every
+        listing before purchase and confirmed by the Buyer at checkout, as set
+        out in paragraph&nbsp;9 and in paragraph&nbsp;5 of our{' '}
+        <a href="/refund-policy" style={{ color: 'var(--red)' }}>Refund &amp; Dispute Policy</a>.
+        A Buyer who cannot reach an item they have paid for should lodge a{' '}
+        <a href="/complaints" style={{ color: 'var(--red)' }}>complaint</a>{' '}
+        rather than a dispute; we will try to help the parties resolve it, and
+        that route does not hold the Seller's payment.
+      </p>
+      <p>
+        Nothing in these Terms limits the
         rights you have under the Consumer Protection Act, in
         particular Section 56 (which gives Buyers a 6-month right to
         return defective goods).

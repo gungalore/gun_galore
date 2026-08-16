@@ -15,6 +15,7 @@ import { formatPrice } from '@/lib/utils';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
 import { PaymentMethodSection } from '@/components/payment-method-section';
+import { BuyerTermsAck, vicinityLabel } from '@/components/buyer-terms-ack';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import {
   DeliveryOptionsPicker,
@@ -253,6 +254,10 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // without collectionPapersAccepted === true, so this gate is mirrored
   // on Pay/isReady. Ignored for listings that don't require papers.
   const [collectionPapersAck, setCollectionPapersAck] = useState(false);
+  // Unconditional pre-payment acknowledgement — the buyer has seen where the
+  // item is, and location/distance is not a refund ground. Applies to every
+  // listing class, so unlike the two above it is not gated on a listing flag.
+  const [buyerTermsAck, setBuyerTermsAck] = useState(false);
 
   // Hunting Packages / Experiences (Phase E) — booking date + party size +
   // the five required attestations. The backend HARD-refuses an experience
@@ -561,6 +566,10 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     const base = {
       listingId: listing.id,
       shippingMethod: method,
+      // Unconditional — every branch below returns `base`, so there is no
+      // path to Pay that omits it. The server refuses the transaction
+      // without it.
+      buyerTermsAccepted: buyerTermsAck,
       // P8a — units to buy. Backend resolves to 1 for non-tracked listings.
       ...(listing.trackInventory ? { quantity } : {}),
       ...attestation,
@@ -636,6 +645,10 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   }
 
   function isReady() {
+    // Unconditional, and FIRST — ahead of the `method === 'COLLECTION'` early
+    // return below, which would otherwise let a collection buyer pay without
+    // ever ticking it. Mirrors the server gate in reserveAndCreateLine.
+    if (!buyerTermsAck) return false;
     // Hard gate — every buyer needs a phone on file before Pay enables
     // (the inline BuyerPhoneCapture block surfaces above when missing).
     // No phone = no dispatch SMS = lost parcel risk.
@@ -926,7 +939,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
               fontWeight: 600,
             }}
           >
-            Collection only
+            Collection only &mdash; {vicinityLabel(listing)}
           </p>
           {/* Bulky-goods copy interim (audit Big-4). "You'll collect this in
               person" reads as "same city only", which is what caps trailers
@@ -938,18 +951,19 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
               take it, so there the original wording is the correct one. */}
           {getCollectionMode(listing) === 'FREIGHT_OK' ? (
             <p style={{ color: 'var(--text-secondary)' }}>
-              You can collect this item yourself, or send your own
-              transporter — it doesn&apos;t have to be you at the gate. After
-              you pay, we&apos;ll share contact details so you can arrange the
-              pickup. Your payment is held until you confirm the item is with
+              This item is in <strong>{vicinityLabel(listing)}</strong>. You
+              can collect it yourself, or send your own transporter — it
+              doesn&apos;t have to be you at the gate. After you pay,
+              we&apos;ll share contact details so you can arrange the pickup. Your payment is held until you confirm the item is with
               you. All Outdoor doesn&apos;t arrange, quote or insure that
               transport.
             </p>
           ) : (
             <p style={{ color: 'var(--text-secondary)' }}>
-              You&apos;ll collect this item in person from the seller. After
-              you pay, we&apos;ll share contact details so you can arrange a
-              pickup time. Your payment is held until you confirm you&apos;ve
+              You&apos;ll collect this item in person from the seller in{' '}
+              <strong>{vicinityLabel(listing)}</strong>. After you pay,
+              we&apos;ll share contact details so you can arrange a pickup
+              time. Your payment is held until you confirm you&apos;ve
               collected it.
             </p>
           )}
@@ -1510,6 +1524,25 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
       <PaymentMethodSection />
 
+      {/* Location + no-refund acknowledgement. Directly above Pay on purpose:
+          CPA s49 asks that the buyer's attention be drawn to a term limiting
+          their rights, and the last thing before the button is where attention
+          actually is. It also carries the Terms / Refund Policy links, because
+          the site footer is suppressed on /checkout/* — without them there is
+          no route from this screen to the documents being agreed to. */}
+      <BuyerTermsAck
+        variant={
+          listing.isFirearm
+            ? 'firearm'
+            : isCollection
+              ? 'collection'
+              : 'courier'
+        }
+        location={vicinityLabel(listing)}
+        checked={buyerTermsAck}
+        onChange={setBuyerTermsAck}
+      />
+
       {/* Proceed button */}
       <button
         type="button"
@@ -2033,8 +2066,9 @@ function PrivateArrangeConsent({
           style={{ marginTop: 3, accentColor: 'var(--red)' }}
         />
         <span style={{ color: 'var(--text-secondary)' }}>
-          I understand that the seller will be paid immediately and I
-          waive my right to refund or dispute this purchase.
+          I understand that the seller is paid immediately, so All
+          Outdoor is not holding the payment and cannot reverse it if
+          something goes wrong at the hand-over.
         </span>
       </label>
 

@@ -13,6 +13,7 @@ import { NumberStepper } from '@/components/number-stepper';
 import { formatPrice } from '@/lib/utils';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
+import { BuyerTermsAck, vicinityLabel } from '@/components/buyer-terms-ack';
 import { LockerPicker, type PudoLocker } from '@/components/locker-picker';
 import {
   ManualAddressFields,
@@ -52,6 +53,8 @@ interface FirearmState {
 interface LineStock {
   trackInventory: boolean;
   sellable: number;
+  /** Town + province, kept from the stock read we were already making. */
+  vicinity?: string;
 }
 
 export default function CartPage() {
@@ -106,6 +109,11 @@ export default function CartPage() {
               id,
               {
                 trackInventory,
+                // Town + province, from the read we were already making. The
+                // acknowledgement above "Continue to payment" names every
+                // item's town, so the buyer cannot tick "I've seen where these
+                // items are" against nothing.
+                vicinity: vicinityLabel(l),
                 sellable: trackInventory
                   ? Math.max(
                       0,
@@ -235,7 +243,12 @@ export default function CartPage() {
     return s.route && s.attestationAccepted && s.consentAccepted;
   });
 
+  // One acknowledgement for the whole cart — the buyer ticks once, over a list
+  // naming each item's town. It rides on CreateOrderDto, not per line.
+  const [buyerTermsAck, setBuyerTermsAck] = useState(false);
+
   const shippingReady =
+    buyerTermsAck &&
     courierReady &&
     firearmsReady &&
     collectionItems.length === 0 &&
@@ -293,7 +306,7 @@ export default function CartPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ lines }),
+        body: JSON.stringify({ buyerTermsAccepted: buyerTermsAck, lines }),
       });
       const data = await res.json().catch(() => ({}));
       // Phase-1 payment gate: the API returns 503 "card payments are
@@ -734,6 +747,17 @@ export default function CartPage() {
         </p>
       )}
 
+      <BuyerTermsAck
+        variant="courier"
+        location=""
+        items={items.map((i) => ({
+          title: i.title,
+          location: stock[i.listingId]?.vicinity ?? 'the seller’s area',
+        }))}
+        checked={buyerTermsAck}
+        onChange={setBuyerTermsAck}
+      />
+
       <button
         type="button"
         disabled={!shippingReady || submitting}
@@ -750,6 +774,8 @@ export default function CartPage() {
           ? 'Creating your order…'
           : shippingReady
             ? 'Continue to payment'
+            : !buyerTermsAck
+              ? 'Tick the acknowledgement to continue'
             : soldOutItems.length > 0
               ? 'Remove the sold-out item to continue'
               : !firearmsReady

@@ -13,6 +13,7 @@ import {
   LISTING_TYPE_LABELS,
   discountPercent,
 } from '@/lib/utils';
+import { vicinityLabel } from '@/components/buyer-terms-ack';
 import SellerControls from './seller-controls';
 import OfferPanel from './offer-panel';
 import AuctionPanel from './auction-panel';
@@ -533,7 +534,7 @@ export default async function ListingDetailPage({
                 </>
               ) : deliveryEstimate.kind === 'COLLECTION' ? (
                 <>
-                  Collection from seller ({PROVINCE_LABELS[listing.province]})
+                  Collection from the seller in {vicinityLabel(listing)}
                   {/* Big-4 copy interim — the half-sentence that stops an
                       out-of-province buyer bouncing off "collection only".
                       Suppressed for the dangerous-goods battery case, where
@@ -995,7 +996,7 @@ export default async function ListingDetailPage({
 
           {/* Province */}
           <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-            {PROVINCE_LABELS[listing.province]}
+            {vicinityLabel(listing)}
           </p>
 
           {/* Phase M dealer-lock — surface the seller's optional

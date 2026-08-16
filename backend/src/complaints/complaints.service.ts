@@ -22,6 +22,16 @@ export const COMPLAINT_CATEGORIES = [
   'DELIVERY',
   'ACCOUNT',
   'LISTING',
+  // "I can't get to the item / it's further than I thought."
+  //
+  // DELIBERATELY absent from PAYOUT_AFFECTING and URGENT_CATEGORIES below. The
+  // policy says location is not a refund ground; if lodging it froze the
+  // seller's money, the term would be defeated on day one by the very
+  // complaint it refuses. It exists so a buyer in that position has somewhere
+  // real to go — otherwise they pick NOT_ARRIVED, which IS payout-affecting
+  // and CAS-flips the order to DISPUTED. This category is the pressure valve
+  // that keeps that from happening.
+  'LOCATION_OR_ACCESS',
   'OTHER',
 ] as const;
 export type ComplaintCategory = (typeof COMPLAINT_CATEGORIES)[number];

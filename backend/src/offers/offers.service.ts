@@ -577,6 +577,13 @@ export class OffersService {
             // hard-rejected at submit with no path to complete.
             isFirearm: true,
             shippingMethods: true,
+            // Vicinity for the offer checkout's pre-payment acknowledgement.
+            // An accepted offer is still a purchase, so the buyer must be told
+            // where the item is on this path too — and the tick asks them to
+            // confirm they were. Town/province only; never the street.
+            province: true,
+            publicLocality: true,
+            plannedDealerLocation: true,
             // Seller email retained — only seller themselves sees
             // their own email via this endpoint (gated by isSeller
             // check below). Username is the public handle.

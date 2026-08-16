@@ -23,6 +23,14 @@ const CATEGORIES = [
   { value: 'PAYOUT', label: 'Payout / payment', item: false },
   { value: 'ACCOUNT', label: 'Account or privacy', item: false },
   { value: 'LISTING', label: 'A listing or another user', item: false },
+  // Not payout-affecting by design — see complaints.service.ts. It exists so a
+  // buyer who can't reach an item has somewhere real to go instead of filing
+  // "Item didn't arrive", which would freeze the seller's money.
+  {
+    value: 'LOCATION_OR_ACCESS',
+    label: "I can't get to the item / it's further than I thought",
+    item: true,
+  },
   { value: 'OTHER', label: 'Something else', item: false },
 ];
 

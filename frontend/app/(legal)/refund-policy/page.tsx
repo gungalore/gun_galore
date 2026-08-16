@@ -109,6 +109,13 @@ export default function RefundPolicyPage() {
         <li><strong>Never arrived</strong> — seller marked dispatched but the parcel never showed up.</li>
         <li><strong>Other</strong> — describe in your own words.</li>
       </ul>
+      <p>
+        <strong>Distance and location are not dispute grounds.</strong> If you
+        cannot reach an item you have paid for, lodge a{' '}
+        <a href="/complaints" style={{ color: 'var(--red)' }}>complaint</a>{' '}
+        instead and we will try to help you and the seller sort it out. That
+        route does not hold the seller's payment.
+      </p>
 
       <h2>3. How a dispute is reviewed and resolved</h2>
       <ol>
@@ -159,6 +166,19 @@ export default function RefundPolicyPage() {
       <ul>
         <li><strong>Featured-slot bid wins</strong> — the cost of buying a featured-listing slot at auction is non-refundable except where the listing is removed by us for an admin-side error.</li>
         <li><strong>Shipping costs on cancelled orders</strong> where the cancellation is the buyer's choice and the parcel has already been collected by the courier.</li>
+        <li>
+          <strong>Where the item is, or how far you have to travel to it.</strong>{' '}
+          Every listing shows the town and province the item is in before you
+          buy, and you confirm at checkout that you have seen it. The location
+          shown is part of what you agree to buy. We do not refund an order
+          because the item turned out to be further away than you wanted,
+          because you could not get there, because collecting it cost more than
+          you expected, or because a licensed dealer you have to use is
+          inconvenient. This does not affect your other rights: if an item never
+          arrives, arrives damaged, is not what was listed, or the seller never
+          hands it over, the dispute route in sections&nbsp;2 and&nbsp;3 applies
+          in full.
+        </li>
       </ul>
 
       <h2>6. Your statutory rights under the Consumer Protection Act</h2>
@@ -170,7 +190,7 @@ export default function RefundPolicyPage() {
         <li><strong>Section 55</strong> — the right to safe, good-quality goods that are reasonably suitable for the purposes for which they are generally intended, are of good quality, in good working order and free of any defects.</li>
         <li><strong>Section 56</strong> — an implied warranty of quality lasting <strong>6 months</strong> from the date of delivery; if the goods fail to meet the standards in Section 55 within that period, you may require the supplier (the seller) to repair them, replace them or refund the price. (For private-individual sellers, All Outdoor acts only as facilitator; for goods sold by a business or licensed-dealer Seller, Section 56 applies directly to that Seller.)</li>
         <li><strong>Section 17</strong> — the right to cancel an advance reservation within reasonable terms.</li>
-        <li><strong>Section 19</strong> — the right to delivery at the agreed time and place.</li>
+        <li><strong>Section 19</strong> — the right to delivery at the agreed time and place. Section&nbsp;19 applies <em>unless otherwise expressly provided or anticipated in an agreement</em>: where a listing is marked collection-only, or is a regulated item that transfers through a licensed dealer, the town shown on the listing is the agreed place, and you confirm it at checkout before paying.</li>
       </ul>
       <p>
         Where a dispute cannot be resolved by All Outdoor and falls

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
+import { BuyerTermsAck } from '@/components/buyer-terms-ack';
 import { formatPrice } from '@/lib/utils';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
@@ -108,11 +109,16 @@ export function OfferCheckoutForm({
   listingId,
   settledAmount,
   isFirearm,
+  vicinity,
 }: {
   offerId: string;
   listingId: string;
   settledAmount: number;
   isFirearm: boolean;
+  /** Town + province (or the planned dealer for a firearm) — the exact string
+   *  the server snapshots onto the transaction as evidence of what this buyer
+   *  was shown before paying. */
+  vicinity: string;
 }) {
   const { getToken } = useAuth();
 
@@ -139,6 +145,9 @@ export function OfferCheckoutForm({
     contactPhone: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  // Unconditional pre-payment acknowledgement — same component and same
+  // server gate as the single-item checkout. An offer is still a purchase.
+  const [buyerTermsAck, setBuyerTermsAck] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Phase-1 payment gate — card payments aren't live yet, so a checkout POST
   // returns 503 "launching soon". True once we've detected that.
@@ -160,7 +169,14 @@ export function OfferCheckoutForm({
     const attestation = isFirearm
       ? { firearmAttestation18Plus: firearmAttestation }
       : {};
-    const base = { listingId, offerId, shippingMethod: method, ...attestation };
+    const base = {
+      listingId,
+      offerId,
+      shippingMethod: method,
+      // Unconditional — every branch returns `base`, so no path to Pay omits it.
+      buyerTermsAccepted: buyerTermsAck,
+      ...attestation,
+    };
     if (method === 'PUDO') return { ...base, pudoPickupLockerId: selectedLocker?.lockerId };
     if (method === 'TCG') return { ...base, deliveryAddress: tcgAddress };
     // No dealerId — see /checkout/[listingId]/checkout-form.tsx for
@@ -171,6 +187,9 @@ export function OfferCheckoutForm({
   }
 
   function isReady() {
+    // Unconditional, and first — see the single-item checkout for why this
+    // must sit ahead of every method-specific early return.
+    if (!buyerTermsAck) return false;
     // M33 — firearm offers gated on the attestation checkbox.
     if (isFirearm && !firearmAttestation) return false;
     if (method === 'PUDO') return !!selectedLocker;
@@ -498,6 +517,16 @@ export function OfferCheckoutForm({
 
       {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
       <PaymentMethodSection />
+
+      {/* Same shared component as the single-item checkout — an accepted offer
+          is still a purchase, and the server gate does not care how the buyer
+          arrived at the price. */}
+      <BuyerTermsAck
+        variant={isFirearm ? 'firearm' : 'courier'}
+        location={vicinity}
+        checked={buyerTermsAck}
+        onChange={setBuyerTermsAck}
+      />
 
       <button
         type="button"
