@@ -851,10 +851,16 @@ function trackingHref(
   method: string | null | undefined,
   reference: string,
 ): React.ReactNode {
-  const ref = encodeURIComponent(reference.trim());
-  let url: string | null = null;
-  if (method === 'PUDO') url = `https://www.pudo.co.za/tracking?tracking=${ref}`;
-  if (method === 'TCG') url = `https://www.thecourierguy.co.za/track-a-parcel?waybill=${ref}`;
+  // NO CARRIER DEEP LINK — same reason as the buyer page. PUDO and TCG are
+  // SLOTS (a collection point and a door), not carriers, so choosing a
+  // tracking site off the method sends an admin to pudo.co.za for what is
+  // actually a Bob Go waybill. Showing the bare reference is more useful than
+  // a link that reports "not found" on a parcel that exists.
+  //
+  // Restore by branching on `carrierProvider` (already on the dossier query)
+  // rather than on the slot.
+  void method;
+  const url: string | null = null;
   if (!url) return reference;
   return (
     <a
