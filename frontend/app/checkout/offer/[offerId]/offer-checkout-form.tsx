@@ -63,10 +63,6 @@ const VAT_MULTIPLIER = 1.15;
 const MANUAL_RATE = 0.015;
 const PAYMENT_MODE =
   process.env.NEXT_PUBLIC_PAYMENT_MODE === 'paygate' ? 'paygate' : 'manual';
-// P6.4 — flat R15 handling per courier waybill. PUDO/TCG only; a firearm
-// dealer transfer creates no waybill and is never charged it.
-const SHIPPING_HANDLING_CENTS = 1500;
-
 function transactionFee(baseZarCents: number): number {
   return PAYMENT_MODE === 'manual'
     ? Math.round(baseZarCents * MANUAL_RATE)
@@ -463,11 +459,7 @@ export function OfferCheckoutForm({
         <SummaryLine label="Agreed price" value={formatPrice(settledAmount)} />
         {isCourier ? (
           <>
-            <SummaryLine label="Shipping" value="Quoted at payment" muted />
-            <SummaryLine
-              label="Handling"
-              value={formatPrice(SHIPPING_HANDLING_CENTS)}
-            />
+            <SummaryLine label="Delivery" value="Quoted at payment" muted />
             <SummaryLine
               label="Transaction fee"
               value="Calculated at payment"

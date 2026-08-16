@@ -15,7 +15,11 @@ import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { BuyerTermsAck } from '@/components/buyer-terms-ack';
 import { vicinityLabel } from '@/lib/vicinity';
-import { LockerPicker, type PudoLocker } from '@/components/locker-picker';
+import {
+  CartDeliveryPicker,
+  type CartDeliveryOption,
+  type CartDeliveryGroupView,
+} from '@/components/cart-delivery-picker';
 import {
   ManualAddressFields,
   emptyManualAddress,
@@ -33,7 +37,6 @@ import type { Address } from '@/lib/types';
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
-type ShipMethod = 'PUDO' | 'TCG';
 type FirearmRoute = 'DEALER_TRANSFER' | 'PRIVATE_ARRANGE';
 
 // Per-firearm state — route + the two required confirmations, keyed by
@@ -62,8 +65,12 @@ export default function CartPage() {
   const items = useCart();
   const { getToken } = useAuth();
 
-  const [method, setMethod] = useState<ShipMethod>('PUDO');
-  const [locker, setLocker] = useState<PudoLocker | null>(null);
+  // What the buyer chose, per parcel the cart will ship as. The groups are
+  // the server's — a cart consolidates, and every Daily Deal shares the house
+  // seller id, so a client-side grouping would show one parcel where two
+  // suppliers each ship one.
+  const [chosenDelivery, setChosenDelivery] = useState<Record<string, CartDeliveryOption>>({});
+  const [deliveryGroups, setDeliveryGroups] = useState<CartDeliveryGroupView[]>([]);
   const [addr, setAddr] = useState<ManualAddressValue>(emptyManualAddress);
   // Per-firearm route + consent state, keyed by listingId.
   const [firearmState, setFirearmState] = useState<Record<string, FirearmState>>({});
@@ -233,9 +240,27 @@ export default function CartPage() {
     addr.province &&
     addr.postalCode.trim().length >= 4;
   // Courier shipping only needs to be ready when there ARE shippable items.
+  //
+  // THE STRUCTURAL CHANGE. This used to prove "a locker or an address exists",
+  // which is not the same as "we know what delivery costs". Now every parcel
+  // the cart ships as must have a chosen, priced option — so the total on
+  // screen is the total that gets charged, and a group the courier cannot
+  // serve blocks checkout instead of silently pricing at zero.
   const courierReady =
     shippableItems.length === 0 ||
-    (method === 'PUDO' ? Boolean(locker) : Boolean(addrComplete));
+    (Boolean(addrComplete) &&
+      deliveryGroups.length > 0 &&
+      deliveryGroups.every(
+        (g) => !g.unavailableReason && !!chosenDelivery[g.groupKey],
+      ));
+
+  // Delivery for the whole cart: the sum of the chosen options. Each figure is
+  // already margin-inclusive (one number for the buyer), and a consolidated
+  // group contributes ONE charge, not one per line.
+  const deliveryTotalCents = deliveryGroups.reduce(
+    (sum, g) => sum + (chosenDelivery[g.groupKey]?.priceCents ?? 0),
+    0,
+  );
 
   // Every firearm must have a chosen route, its 18+ attestation, and the
   // consent for the chosen route accepted.
@@ -257,6 +282,24 @@ export default function CartPage() {
     // it here. Only ever true off a SUCCESSFUL stock read; a failed fetch
     // leaves the line unknown and never blocks checkout.
     soldOutItems.length === 0;
+
+  // The address in the shape the quoting endpoint takes.
+  const pickerAddress =
+    addrComplete
+      ? {
+          streetAddress: addr.street.trim(),
+          suburb: addr.suburb.trim(),
+          city: addr.city.trim(),
+          postalCode: addr.postalCode.trim(),
+          province: addr.province,
+        }
+      : null;
+
+  // Changing the address invalidates every price already chosen against the
+  // old one. Clearing here stops a stale figure surviving into the payload.
+  useEffect(() => {
+    setChosenDelivery({});
+  }, [addr.street, addr.suburb, addr.city, addr.postalCode, addr.province]);
 
   async function checkout() {
     if (!shippingReady || items.length === 0) return;
@@ -282,23 +325,35 @@ export default function CartPage() {
         // always did. The server re-resolves against live stock and reserves
         // that many units atomically before the order exists.
         const units = qtyOf(i.quantity);
+        // Which parcel is this line in, and what did the buyer choose for it?
+        const group = deliveryGroups.find((g) =>
+          g.listingIds.includes(i.listingId),
+        );
+        const option = group ? chosenDelivery[group.groupKey] : undefined;
+        // The METHOD is derived from the delivery the buyer picked, never
+        // asked for. PUDO and TCG are slots — a collection point and a door —
+        // not carriers, and the buyer chooses the shape of the hand-over.
+        const shippingMethod = option?.kind === 'PICKUP_POINT' ? 'PUDO' : 'TCG';
         return {
           listingId: i.listingId,
-          shippingMethod: method,
+          shippingMethod,
           ...(units > 1 ? { quantity: units } : {}),
-          ...(method === 'PUDO'
-            ? { pudoPickupLockerId: locker?.lockerId }
-            : {
-                deliveryAddress: {
-                  building: addr.building.trim() || undefined,
-                  streetAddress: addr.street.trim(),
-                  address2: addr.address2.trim() || undefined,
-                  suburb: addr.suburb.trim(),
-                  city: addr.city.trim(),
-                  province: addr.province,
-                  postalCode: addr.postalCode.trim(),
-                },
-              }),
+          // The address rides on EVERY courier line regardless of slot. A
+          // collection point pins where within an area the parcel lands; it
+          // does not tell the carrier which area, and the server's re-quote
+          // returns null without it.
+          deliveryAddress: {
+            building: addr.building.trim() || undefined,
+            streetAddress: addr.street.trim(),
+            address2: addr.address2.trim() || undefined,
+            suburb: addr.suburb.trim(),
+            city: addr.city.trim(),
+            province: addr.province,
+            postalCode: addr.postalCode.trim(),
+          },
+          ...(option?.kind === 'PICKUP_POINT' && option.locationId != null
+            ? { pudoPickupLockerId: String(option.locationId) }
+            : {}),
         };
       });
       const res = await fetch(`${API_URL}/orders/checkout`, {
@@ -371,8 +426,8 @@ export default function CartPage() {
           <>From <strong>{groups.length} sellers</strong> — each ships and is paid
           separately. </>
         )}
-        One payment. Courier items ship by courier (quoted at
-        payment, R15 handling per parcel).
+        One payment. Courier items are priced once you enter your delivery
+        address, and anything shipping together is charged once.
         {firearmItems.length > 0 && (
           <> Firearms route through a licensed dealer or in person — confirm each
           firearm&apos;s details below before you can continue.</>
@@ -590,48 +645,46 @@ export default function CartPage() {
           <h2 className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
             Delivery
           </h2>
-          <div className="flex gap-2 mb-3">
-            {(['PUDO', 'TCG'] as ShipMethod[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMethod(m)}
-                className="flex-1 py-2.5 rounded-[6px] text-sm"
-                style={{
-                  background: method === m ? 'var(--red)' : 'var(--bg-card)',
-                  color: method === m ? '#fff' : 'var(--text-secondary)',
-                  border: '0.5px solid var(--border)',
-                  fontWeight: 500,
-                }}
-              >
-                {m === 'PUDO' ? 'Pudo locker (cheapest)' : 'Courier to my door'}
-              </button>
-            ))}
+          {/* Address FIRST — nothing can be priced without it. There is no
+              carrier toggle any more: the buyer chooses a delivery, and which
+              carrier fulfils it is ours to decide. */}
+          <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
+            Where should we deliver? Delivery is priced once we have your
+            address.
+          </p>
+          <div className="mb-4">
+            {/* UX-3 — saved-address picker (2+ book addresses only).
+                Picking one fills the same `addr` state the payload reads. */}
+            <SavedAddressPicker
+              onSelect={(a: Address) =>
+                setAddr({
+                  building: a.building ?? '',
+                  street: a.street,
+                  address2: a.address2 ?? '',
+                  suburb: a.suburb ?? '',
+                  city: a.city,
+                  postalCode: a.postalCode,
+                  province: a.province,
+                })
+              }
+            />
+            <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
           </div>
 
           <div className="mb-5">
-            {method === 'PUDO' ? (
-              <LockerPicker selectedId={locker?.lockerId} onSelect={setLocker} />
-            ) : (
-              <>
-                {/* UX-3 — saved-address picker (2+ book addresses only).
-                    Picking one fills the same `addr` state the payload reads. */}
-                <SavedAddressPicker
-                  onSelect={(a: Address) =>
-                    setAddr({
-                      building: a.building ?? '',
-                      street: a.street,
-                      address2: a.address2 ?? '',
-                      suburb: a.suburb ?? '',
-                      city: a.city,
-                      postalCode: a.postalCode,
-                      province: a.province,
-                    })
-                  }
-                />
-                <ManualAddressFields value={addr} onChange={setAddr} idPrefix="cart" />
-              </>
-            )}
+            <CartDeliveryPicker
+              lines={shippableItems.map((i) => ({
+                listingId: i.listingId,
+                quantity: qtyOf(i.quantity),
+              }))}
+              deliveryAddress={pickerAddress}
+              chosen={chosenDelivery}
+              onChoose={(groupKey, option) =>
+                setChosenDelivery((prev) => ({ ...prev, [groupKey]: option }))
+              }
+              onGroups={setDeliveryGroups}
+              getToken={getToken}
+            />
           </div>
         </>
       )}
@@ -729,16 +782,24 @@ export default function CartPage() {
           </span>
         </div>
         <div className="flex justify-between text-sm py-1">
-          <span style={{ color: 'var(--text-tertiary)' }}>Shipping</span>
-          <span style={{ color: 'var(--text-tertiary)' }}>Quoted at payment</span>
-        </div>
-        <div className="flex justify-between text-sm py-1">
-          <span style={{ color: 'var(--text-tertiary)' }}>Handling — R15 per parcel</span>
-          <span style={{ color: 'var(--text-tertiary)' }}>Quoted at payment</span>
+          <span style={{ color: 'var(--text-tertiary)' }}>Delivery</span>
+          <span
+            style={{
+              color: deliveryTotalCents > 0 ? 'var(--text-primary)' : 'var(--text-tertiary)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {shippableItems.length === 0
+              ? '—'
+              : deliveryTotalCents > 0
+                ? formatPrice(deliveryTotalCents)
+                : 'Choose an option above'}
+          </span>
         </div>
         <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-          A R15 handling fee applies to each courier parcel. Firearms shipped via
-          a dealer or in person have no courier fee.
+          Delivery is one figure — nothing is added on top. Items that ship
+          together count once. Firearms move through a licensed dealer or are
+          arranged in person, and carry no courier charge.
         </p>
       </div>
 
@@ -781,9 +842,11 @@ export default function CartPage() {
               ? 'Remove the sold-out item to continue'
               : !firearmsReady
                 ? 'Confirm the firearm details to continue'
-                : method === 'PUDO'
-                  ? 'Pick a locker to continue'
-                  : 'Enter a delivery address to continue'}
+                : collectionItems.length > 0
+                  ? 'Remove the collection-only item to continue'
+                  : !addrComplete
+                    ? 'Enter a delivery address to continue'
+                    : 'Choose a delivery option to continue'}
       </button>
       <p className="text-xs mt-2 text-center" style={{ color: 'var(--text-tertiary)' }}>
         The seller is only paid once you confirm delivery.
