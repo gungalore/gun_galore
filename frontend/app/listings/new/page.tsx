@@ -7,6 +7,7 @@ import { Category, CategoryAttributeDef, Me, ExperienceType } from '@/lib/types'
 import { BRAND_NAME } from '@/lib/brand';
 import { CONDITION_LABELS, EXPERIENCE_TYPE_LABELS, PROVINCE_LABELS } from '@/lib/utils';
 import { CategoryPicker } from '@/components/category-picker';
+import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
 import { PhotoDropzone } from '@/components/photo-dropzone';
 import { StepAccordion, StepStatus } from '@/components/step-accordion';
@@ -467,6 +468,9 @@ function AttributeField({
 
 export default function NewListingPage() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
+  // Viewer-aware fetch for the category tree. See the effect below for WHY
+  // this cannot be a bare fetch.
+  const { viewerFetch } = useViewerFetch();
   const router = useRouter();
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -477,6 +481,12 @@ export default function NewListingPage() {
   const [dgWhThreshold, setDgWhThreshold] = useState(100);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // True when form.categoryId holds an id that isn't in the loaded tree —
+  // a draft or relist pointing at a category that has since been deactivated.
+  // Step 2 already refuses to complete in that state; this drives the banner
+  // that tells the seller WHY, instead of leaving them staring at a picker
+  // with nothing selected and a Continue button that won't respond.
+  const [categoryUnavailable, setCategoryUnavailable] = useState(false);
   const [images, setImages] = useState<File[]>([]);
 
   // Description AI state — preview-box pattern (lifted from the old
@@ -1152,14 +1162,57 @@ export default function NewListingPage() {
     window.location.reload();
   }
 
+  // The category tree is VIEWER-VARYING and must carry the Clerk token.
+  //
+  // GET /categories is OptionalClerkGuard + publicOnly(clerkId): with no
+  // Authorization header the server returns only `publicVisible` rows. This
+  // used to be a bare `fetch`, which meant a signed-in seller was served the
+  // ANONYMOUS tree — 71 of 187 active categories missing, including the whole
+  // Firearms root, Barrels, air rifles, reloading, self-defence, shooting
+  // accessories and the members-only optics/crossbow children. Every
+  // `isFirearm: true` category is members-only, so `isFirearm` below was
+  // structurally unreachable and the regulated half of the marketplace had no
+  // seller intake at all.
+  //
+  // useViewerFetch (not a hand-rolled Authorization header) because it also
+  // forces `cache: 'no-store'`, which is load-bearing: the browser HTTP cache
+  // keys on URL and ignores the Authorization header, so a member's full
+  // regulated taxonomy would cache under /api/categories and replay to a
+  // signed-out session on the same device — the exact leak the members-only
+  // wall exists to prevent.
+  //
+  // Depends on isLoaded: the old empty dep array fired before Clerk hydrated,
+  // so getToken() returned null even for a signed-in seller.
   useEffect(() => {
-    fetch(`${API_URL}/categories`)
+    if (!isLoaded) return;
+    let cancelled = false;
+    viewerFetch(`${API_URL}/categories`)
       .then((r) => (r.ok ? r.json() : []))
       .then((data: unknown) => {
+        if (cancelled) return;
         if (Array.isArray(data)) setCategories(data as Category[]);
       })
       .catch(() => {});
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, viewerFetch]);
+
+  // Detect a categoryId that doesn't resolve against the loaded tree.
+  //
+  // Deliberately does NOT clear form.categoryId. Clearing would destroy the
+  // relist's intent and, worse, race the draft autosave — the cleared value
+  // gets persisted and a refresh can't bring it back. Step 2 is already
+  // blocked by the `!!selectedCategory` gate, so the seller cannot proceed on
+  // a category we can't resolve; all this has to do is say so.
+  useEffect(() => {
+    if (categories.length === 0) return; // tree hasn't landed yet
+    if (!form.categoryId) {
+      setCategoryUnavailable(false);
+      return;
+    }
+    setCategoryUnavailable(!categories.some((c) => c.id === form.categoryId));
+  }, [categories, form.categoryId]);
 
   // Mirror the admin-tunable DG lithium-Wh limit so the sell-form notice can't
   // drift from the server gate. One-shot on mount; fail-open leaves the 100 Wh
@@ -1679,7 +1732,16 @@ export default function NewListingPage() {
     // always override / fill manually.
     const step2 =
       form.title.trim().length >= 5 &&
-      !!form.categoryId &&
+      // RESOLVED category, not merely a truthy id. `form.categoryId` is a
+      // plain string that can outlive the row it points at — restored from a
+      // draft, seeded by relist, or left behind when a category is
+      // deactivated. When it doesn't resolve, `selectedCategory` is undefined
+      // and isFirearm / collectionOnly / requiresPapers / isExperience all
+      // collapse to false via `?? false`, silently switching OFF the
+      // compliance UI those flags exist to switch ON. Gating on the id alone
+      // let a seller walk through Step 2 with no serial field, no dealer
+      // transfer and no licence attestation on what is actually a firearm.
+      !!selectedCategory &&
       !!form.condition &&
       form.description.trim().length >= 10 &&
       // Required per-category attributes (P4.2) live in this step's
@@ -1797,6 +1859,7 @@ export default function NewListingPage() {
     requiresPapers,
     papersAttested,
     missingRequiredAttrs,
+    selectedCategory,
     serialNumber,
     serialPhoto,
     licencePhoto,
@@ -2838,6 +2901,30 @@ export default function NewListingPage() {
         </div>
       )}
 
+      {/* Failed review check.
+
+          runAudit() catches into `auditError` and returns null; handlePreview
+          then does `if (result) setPreviewResult(result)`. So when the review
+          check fails — expired token, moderation service down, a 400 — the
+          seller clicked "Preview listing" and NOTHING happened: no modal, no
+          spinner, no message, because `auditError` was set but rendered
+          nowhere. Every publish path was reachable only through that button,
+          so this was the terminal dead end on the whole form. */}
+      {auditError && (
+        <div
+          role="alert"
+          className="mb-6 px-4 py-3 rounded-[6px] text-sm max-w-[760px]"
+          style={{
+            background: 'rgba(200,16,46,0.08)',
+            border: '0.5px solid var(--red)',
+            color: 'var(--red)',
+          }}
+        >
+          {auditError} — nothing has been published. Try Preview again in a
+          moment; your details are saved on this device.
+        </div>
+      )}
+
       {/* Top-of-form error */}
       {error && (
         <div
@@ -2966,6 +3053,22 @@ export default function NewListingPage() {
                 onChange={(id) => set('categoryId', id)}
                 secondhandOnly
               />
+              {categoryUnavailable && (
+                <p
+                  role="status"
+                  className="mt-3 text-sm"
+                  style={{
+                    color: 'var(--text-secondary)',
+                    background: 'rgba(200, 16, 46, 0.10)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--r-md)',
+                    padding: '10px 12px',
+                  }}
+                >
+                  The category this listing was saved under isn&rsquo;t
+                  available any more. Pick the closest one above to carry on.
+                </p>
+              )}
             </Field>
 
             <Field

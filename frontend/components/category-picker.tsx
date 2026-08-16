@@ -103,7 +103,16 @@ export function CategoryPicker({
       setPendingParentId(null);
       // If the user previously selected a child of THIS parent, keep it.
       // Otherwise clear so the form prompts them to pick a leaf.
-      if (selectedNode?.parentId !== parent.id) {
+      //
+      // `selectedNode` undefined means the current value doesn't resolve in
+      // `byId` at all — a stale draft, or a category the caller wasn't served.
+      // That is NOT "the seller picked something under a different parent", so
+      // clearing it here was wrong: merely opening a parent to browse wiped
+      // the selection (and, on the sell form, the attribute values keyed to
+      // it), and the wipe was autosaved so a refresh couldn't recover it.
+      // Leave an unresolvable value alone and let the owner of the value
+      // decide what to do with it.
+      if (selectedNode && selectedNode.parentId !== parent.id) {
         onChange('');
       }
     }, FLASH_MS);
