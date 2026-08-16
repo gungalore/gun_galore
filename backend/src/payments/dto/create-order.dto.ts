@@ -69,6 +69,15 @@ export class CreateOrderLineDto {
   @IsBoolean()
   firearmAttestation18Plus?: boolean;
 
+  // Collection papers acknowledgement (trailer / caravan). Was missing here,
+  // which made a requiresPapers listing unbuyable from the cart: the service
+  // gate demands it, the line had no way to carry it, and the failure was
+  // masked only because the one requiresPapers category is also collectionOnly
+  // and the cart rejects those earlier. Mirrors CreateTransactionDto.
+  @IsOptional()
+  @IsBoolean()
+  collectionPapersAccepted?: boolean;
+
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -82,4 +91,19 @@ export class CreateOrderDto {
   @ValidateNested({ each: true })
   @Type(() => CreateOrderLineDto)
   lines: CreateOrderLineDto[];
+
+  // On the ORDER, not on each line: one tick covers the whole cart, and the
+  // cart screen lists every item's town above it. Putting it per-line would
+  // ask the buyer to agree to the same sentence N times.
+  //
+  // MUST be mirrored into the per-line CreateTransactionDto that
+  // transactions.service builds for each line — that mapping is an explicit
+  // field list with an `as CreateTransactionDto` cast, so a field missed there
+  // compiles cleanly and fails at runtime on every single order.
+  @IsBoolean()
+  @Equals(true, {
+    message:
+      'You must confirm you have seen where these items are and that location is not a refund ground.',
+  })
+  buyerTermsAccepted!: boolean;
 }

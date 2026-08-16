@@ -51,6 +51,8 @@ import {
 // own internal use AND re-exported so every existing
 // `from '.../transactions.service'` importer keeps working.
 import { PAYMENT_MODE, PAYMENTS_LIVE, assertPaymentsLive } from './payment-mode';
+import { REFUND_TERMS_VERSION } from './refund-terms-version';
+import { vicinityLabel } from '../common/province-labels';
 import {
   applySellerRejectPenalty,
   consequencesForSaleReject,
@@ -361,6 +363,18 @@ export class TransactionsService {
     if (listing.requiresPapers && dto.collectionPapersAccepted !== true) {
       throw new BadRequestException(
         'You must confirm you will collect this item in person and receive the registration / roadworthy papers from the seller at handover.',
+      );
+    }
+
+    // UNCONDITIONAL — every class of purchase, including an ordinary couriered
+    // parcel. The buyer confirms they have seen where the item is and that
+    // location and travel distance are not refund grounds. The tick in the UI
+    // is convenience; this is the authoritative check, and it also covers the
+    // SMS action-token buyers who reach POST /transactions through
+    // ClerkOrTokenGuard rather than the checkout form.
+    if (dto.buyerTermsAccepted !== true) {
+      throw new BadRequestException(
+        'You must confirm you have seen where this item is and that we do not refund an order because of its location or the distance to it.',
       );
     }
 
@@ -732,6 +746,15 @@ export class TransactionsService {
           listing.requiresPapers && dto.collectionPapersAccepted
             ? new Date()
             : null,
+        // The no-refund-for-location acknowledgement. Three columns because a
+        // bare timestamp proves a box was ticked, not what it said: the version
+        // pins the wording, and buyerLocationShown snapshots the exact vicinity
+        // string rendered above the tick. Listing.publicLocality stays editable
+        // after the sale, so a join would show what the listing says today
+        // rather than what this buyer was shown.
+        buyerTermsAckAt: new Date(),
+        buyerTermsAckVersion: REFUND_TERMS_VERSION,
+        buyerLocationShown: vicinityLabel(listing),
         // EXP-E1 — experience booking + the 5 buyer-attestation evidence
         // stamps. All null for a non-experience checkout. experienceStampAt is
         // the single affirm instant captured once the hard gate passed above.
@@ -1150,6 +1173,20 @@ export class TransactionsService {
           dealerId: line.dealerId,
           privateArrangeConsent: line.privateArrangeConsent,
           firearmAttestation18Plus: line.firearmAttestation18Plus,
+          // The cart's ONE acknowledgement, fanned out to every line so the
+          // shared core's unconditional gate passes. It lives on CreateOrderDto,
+          // not on each line — the buyer ticks once, above a list naming each
+          // item's town.
+          //
+          // This object is an explicit field list behind an
+          // `as CreateTransactionDto` cast, so anything missed here compiles
+          // clean and then 400s at runtime on EVERY order. That is why
+          // collectionPapersAccepted below is here too: it was absent, which
+          // already made a requiresPapers listing unbuyable from the cart —
+          // masked only because the sole requiresPapers category also happens
+          // to be collectionOnly, which the cart rejects earlier.
+          collectionPapersAccepted: line.collectionPapersAccepted,
+          buyerTermsAccepted: dto.buyerTermsAccepted,
         } as CreateTransactionDto;
 
         const core = await this.reserveAndCreateLine(

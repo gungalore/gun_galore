@@ -62,6 +62,14 @@ export class CreateListingDto {
   @IsEnum(Province)
   province: Province;
 
+  // The province of the pickup address. Listing.province is DERIVED from this
+  // when supplied, so the published province and the courier collection address
+  // can never disagree. Optional for older clients, which fall back to
+  // `province` above.
+  @IsOptional()
+  @IsEnum(Province)
+  pickupProvince?: Province;
+
   @IsBoolean()
   passFeeToBuyer: boolean;
 

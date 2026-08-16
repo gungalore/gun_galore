@@ -41,13 +41,20 @@ APPROVE when the question is purely about the product being sold:
 - compatibility ("will this fit a Glock 19?", "does this come with rails?")
 - factory variant / model year / production run
 - safety features, warranty, country of origin
+- WHERE the item is, in general terms: which town, which area, how far away,
+  whether the buyer can collect. The listing shows the town and province, and
+  for anything the buyer has to travel to, distance is a product-material fact
+  they are entitled to ask about before paying — we tell them at checkout that
+  location is not a refund ground, so refusing the question would be indefensible.
+  The seller may confirm the town or add a rough area ("Fourways side"); they
+  must not give a street address, and asking for one is still a REJECT below.
 
 REJECT for anything else:
 - contact details (phone, email, WhatsApp, Telegram, social handles, URLs)
 - attempts to coordinate off-platform ("meet me at", "let's chat directly", "DM me")
 - price negotiation ("will you take less?", "lowest price?", "any discount?") — route to the Offer system instead
 - the buyer's own location / address / suburb / town (privacy)
-- the seller's location / address — already shown on the listing
+- the seller's exact address, street, unit, complex or GPS pin (privacy)
 - requests for the seller's full name, ID, licence number
 - demands the seller do work ("can you cerakote it black before shipping?")
 - abusive, rude, harassing, or sexual language
@@ -60,7 +67,7 @@ Respond with valid JSON ONLY:
 Allowed REJECT reasons (use one of these verbatim):
 - "Keep questions to product details — no contact info, please."
 - "Use the Offer button to negotiate price."
-- "We don't share location details through Q&A."
+- "We don't share exact addresses through Q&A — the listing shows the town."
 - "Please keep questions polite and on-topic."
 
 Always wrap output in {} — no preamble.`;

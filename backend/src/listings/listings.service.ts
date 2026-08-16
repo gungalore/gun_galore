@@ -12,7 +12,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { BrowseListingsDto } from './dto/browse-listings.dto';
-import { Listing, ListingStatus, ListingType, ShippingMethod } from '@prisma/client';
+import { Listing, ListingStatus, ListingType, Province, ShippingMethod } from '@prisma/client';
 import {
   ListingModerationService,
   ListingModerationResult,
@@ -28,6 +28,7 @@ import { CategoriesService } from '../categories/categories.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { ActivityService } from '../activity/activity.service';
 import { validateAndCleanAttributes } from './attribute-validation';
+import { toPublicLocality } from './locality';
 import { Prisma } from '@prisma/client';
 import { FeeCalculator } from '../payments/fee.calculator';
 
@@ -74,6 +75,11 @@ export const PUBLIC_LISTING_SELECT = {
   status: true,
   condition: true,
   province: true,
+  // Town/city only — NEVER a street, unit, building or suburb. This is the
+  // vicinity a buyer must see before paying, and it is the factual basis for
+  // "location is not a refund ground". See listings/locality.ts for why the
+  // granularity stops at town.
+  publicLocality: true,
   isFirearm: true,
   // Needed by findById to decide whether an ANONYMOUS caller may see this row
   // at all (members-only categories 404 without a session). Harmless to
@@ -1305,6 +1311,36 @@ export class ListingsService {
     const effectiveCollectionOnly =
       category.collectionOnly || dgLithiumRestricted;
 
+    // ── Vicinity ────────────────────────────────────────────────────────
+    // The town a buyer sees before paying. Province is DERIVED from the pickup
+    // address rather than taken from its own field, because Listing.province is
+    // also stamped onto the courier collection address — when the two could
+    // drift, a courier could be sent to the right street in the wrong province.
+    const pickupProvince = dto.pickupProvince ?? dto.province;
+    const publicLocality = toPublicLocality(dto.pickupCity);
+
+    // A pickup address is required on EVERY path. The sell form has always
+    // enforced this, under a comment saying it must stay that way, but the API
+    // did not — so a crafted POST could publish a listing with no location of
+    // record at all.
+    if (
+      !dto.pickupStreet?.trim() ||
+      !dto.pickupCity?.trim() ||
+      !dto.pickupPostalCode?.trim()
+    ) {
+      throw new BadRequestException(
+        'A pickup address is required — it is where a courier collects from, and it is what tells buyers which town the item is in.',
+      );
+    }
+    // Harder gate where the buyer has to TRAVEL to the item. Mirrors the
+    // firearm planned-dealer gate: we tell buyers that location is not a refund
+    // ground, so a listing must never reach them without one.
+    if ((effectiveCollectionOnly || category.isFirearm) && !publicLocality) {
+      throw new BadRequestException(
+        'Buyers need to know the town this item is in before they buy. Add a pickup address with a town or city (no street numbers in the town field).',
+      );
+    }
+
     // COLLECTION is reserved for collection-only items (category-flagged OR
     // DG-forced). A normal listing must never carry it — a dead option no buyer
     // can select. (The firearm gate above only checks DEALER_TRANSFER presence.)
@@ -1694,7 +1730,11 @@ export class ListingsService {
         // The saved-search matcher keys "new" on this, not createdAt.
         listedAt: status === ListingStatus.ACTIVE ? new Date() : null,
         condition: dto.condition,
-        province: dto.province,
+        // Derived, not trusted from the client on its own — see the vicinity
+        // block above.
+        province: pickupProvince,
+        pickupProvince,
+        publicLocality,
         isFirearm: category.isFirearm,
         // Snapshot the signed-out visibility of the chosen category. Every
         // public-discovery query and the Meili document filter on this column,
@@ -3200,10 +3240,32 @@ export class ListingsService {
       }
     }
 
+    // Re-derive the published location whenever the pickup address is edited.
+    // Without this the two halves drift the moment a seller corrects an
+    // address: the buyer would keep seeing the old town while the courier
+    // collects from the new one — and the old town is the one the buyer's
+    // "location is not a refund ground" acknowledgement was based on.
+    const locationUpdate: {
+      province?: Province;
+      pickupProvince?: Province;
+      publicLocality?: string | null;
+    } = {};
+    if (dto.pickupProvince !== undefined || dto.province !== undefined) {
+      const p = dto.pickupProvince ?? dto.province;
+      if (p) {
+        locationUpdate.province = p;
+        locationUpdate.pickupProvince = p;
+      }
+    }
+    if (dto.pickupCity !== undefined) {
+      locationUpdate.publicLocality = toPublicLocality(dto.pickupCity);
+    }
+
     const updated = await this.prisma.listing.update({
       where: { id },
       data: {
         ...listingUpdate,
+        ...locationUpdate,
         ...(editDescription !== undefined
           ? { description: editDescription }
           : {}),

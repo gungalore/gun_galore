@@ -108,6 +108,10 @@ function firearmDto(over: Partial<CreateTransactionDto> = {}): CreateTransaction
     listingId: 'L1',
     shippingMethod: 'DEALER_TRANSFER',
     firearmAttestation18Plus: true,
+    // Unconditional on every checkout — see the gate in reserveAndCreateLine.
+    // This fixture is about the FIREARM attestation, so the location
+    // acknowledgement is just table stakes for reaching that code.
+    buyerTermsAccepted: true,
     ...over,
   } as CreateTransactionDto;
 }

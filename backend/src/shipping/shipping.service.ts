@@ -5,6 +5,9 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { Province } from '@prisma/client';
+// Shared so the address on a waybill and the location in a dispute record can
+// never name different places. See common/province-labels.ts.
+import { PROVINCE_LONG } from '../common/province-labels';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -52,17 +55,6 @@ const PROVINCE_ZONE: Record<Province, string> = {
 // TCG / Shiplogic expects the full province NAME (e.g. "Western Cape")
 // in its `zone` field, not the abbreviation Pudo uses. Confirmed from
 // the TCG Postman collection's "Getting rates" example.
-const PROVINCE_LONG: Record<Province, string> = {
-  EASTERN_CAPE: 'Eastern Cape',
-  FREE_STATE: 'Free State',
-  GAUTENG: 'Gauteng',
-  KWAZULU_NATAL: 'KwaZulu-Natal',
-  LIMPOPO: 'Limpopo',
-  MPUMALANGA: 'Mpumalanga',
-  NORTH_WEST: 'North West',
-  NORTHERN_CAPE: 'Northern Cape',
-  WESTERN_CAPE: 'Western Cape',
-};
 
 /**
  * The two courier delivery shapes. Everything else on ShippingMethod

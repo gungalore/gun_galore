@@ -778,7 +778,25 @@ model Listing {
   listingType            ListingType
   status                 ListingStatus @default(DRAFT)
   condition              Condition
+  // DERIVED from pickupProvince server-side — never trusted from the client on
+  // its own. The two used to be independent, and this one is also stamped onto
+  // the courier collection address, so a divergence sent a courier to the wrong
+  // province with the right street.
   province               Province
+
+  // The province of the seller's pickup address; `province` above is derived
+  // from it. Nullable only for rows created before this column existed.
+  pickupProvince         Province?
+  // PUBLIC, COARSE vicinity — town/city only, derived from pickupCity at write
+  // time and normalised. This is the ONLY sub-province location a buyer ever
+  // sees, and it is what makes "you knew where it was before you paid" true.
+  //
+  // Never the street, unit, building or suburb: in a small town, suburb + town
+  // narrows a residential address to a handful of properties. pickupSuburb is
+  // on PUBLIC_LISTING_SELECT's explicit NEVER list and there is a regression
+  // test holding it there — this column exists so that stays true while buyers
+  // still learn which town they would be driving to.
+  publicLocality         String?   @db.VarChar(80)
 
   isFirearm               Boolean   @default(false)
   // Snapshotted from Category.publicVisible at create time. Denormalised for
@@ -1653,6 +1671,27 @@ model Transaction {
   // registration / roadworthy papers at handover. Same boolean-gate →
   // *At-evidence pattern as the firearm attestation above.
   collectionPapersAckAt DateTime?
+
+  // UNCONDITIONAL buyer acknowledgement, ticked before payment on EVERY
+  // purchase: they have seen where the item is, and accept that location and
+  // travel distance are not refund grounds. Same boolean-gate → *At-evidence
+  // pattern as the two attestations above — the hard gate is in
+  // reserveAndCreateLine; these three columns are what you produce in a
+  // dispute.
+  //
+  // CPA s49 is the reason this is a tick and not a line in the Terms: a term
+  // limiting a consumer's rights has to be in plain language, the consumer's
+  // attention has to be drawn to it specifically, and they have to assent.
+  buyerTermsAckAt      DateTime?
+  // SERVER-derived version of the wording shown. Deliberately not the
+  // User.consentPolicyVersion pattern, which is client-supplied and
+  // overwritable — a version the client can choose is not evidence.
+  buyerTermsAckVersion String?   @db.VarChar(40)
+  // The exact vicinity string rendered above the tick, e.g. "Centurion,
+  // Gauteng". SNAPSHOTTED because Listing.publicLocality stays editable after
+  // the sale, so a join proves what the listing says today, not what the buyer
+  // was shown. A bare timestamp proves a box was ticked, not what it said.
+  buyerLocationShown   String?   @db.VarChar(120)
 
   // ─── Hunting Packages / Experiences (EXP-E1 checkout → HELD) ─────────
   // An experience is a future-dated ON-SITE service (ShippingMethod.

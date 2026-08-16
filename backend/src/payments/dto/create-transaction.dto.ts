@@ -132,6 +132,21 @@ export class CreateTransactionDto {
   @IsBoolean()
   collectionPapersAccepted?: boolean;
 
+  // UNCONDITIONAL — required on every checkout, not just a class of them. The
+  // buyer confirms they have seen where the item is and that location and
+  // travel distance are not refund grounds.
+  //
+  // @Equals(true) rather than @IsOptional (the privateArrangeConsent shape,
+  // not the firearmAttestation shape) because there is no listing class this
+  // does not apply to: a couriered parcel has an origin too, and the seller is
+  // the one who set it.
+  @IsBoolean()
+  @Equals(true, {
+    message:
+      'You must confirm you have seen where this item is and that location is not a refund ground.',
+  })
+  buyerTermsAccepted!: boolean;
+
   // Units to buy (Phase 8a). Only honoured for inventory-tracked BUY_NOW
   // listings; ignored (resolved to 1) for every other listing. Defaults
   // to 1 when omitted.

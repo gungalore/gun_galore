@@ -142,7 +142,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
 
     const res = await service.createOrderCheckout(
       'clerk_B',
-      { lines: [lineDto('L1'), lineDto('L2')] },
+      { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] },
       'https://x',
     );
 
@@ -165,7 +165,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
 
     const res = await service.createOrderCheckout(
       'clerk_B',
-      { lines: [lineDto('L1'), lineDto('L2')] },
+      { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] },
       'https://x',
     );
 
@@ -187,7 +187,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
 
     await service.createOrderCheckout(
       'clerk_B',
-      { lines: [lineDto('L1'), lineDto('L2')] }, // same seller, PUDO, same locker
+      { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] }, // same seller, PUDO, same locker
       'https://x',
     );
 
@@ -212,7 +212,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
     await expect(
       service.createOrderCheckout(
         'clerk_B',
-        { lines: [lineDto('L1'), lineDto('L1')] },
+        { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L1')] },
         'https://x',
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -222,7 +222,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
   it('rejects an empty cart', async () => {
     const { service } = makeService();
     await expect(
-      service.createOrderCheckout('clerk_B', { lines: [] }, 'https://x'),
+      service.createOrderCheckout('clerk_B', { buyerTermsAccepted: true, lines: [] }, 'https://x'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -232,7 +232,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
     await expect(
       service.createOrderCheckout(
         'clerk_B',
-        { lines: [lineDto('L1'), lineDto('L2')] },
+        { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] },
         'https://x',
       ),
     ).rejects.toThrow(/Item L2.*collection-only/);
@@ -256,7 +256,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
 
     const res = await service.createOrderCheckout(
       'clerk_B',
-      { lines: [firearmLineDto('L1'), lineDto('L2')] },
+      { buyerTermsAccepted: true, lines: [firearmLineDto('L1'), lineDto('L2')] },
       'https://x',
     );
 
@@ -284,7 +284,7 @@ describe.skip('TransactionsService.createOrderCheckout', () => {
 
     const res = await service.createOrderCheckout(
       'clerk_B',
-      { lines: [lineDto('L1'), lineDto('L2')] },
+      { buyerTermsAccepted: true, lines: [lineDto('L1'), lineDto('L2')] },
       'https://x',
     );
 
