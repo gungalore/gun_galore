@@ -68,8 +68,8 @@ export function SiteFooter() {
           </p>
           <p style={{ color: 'var(--text-tertiary-on-card)', lineHeight: 1.6, margin: 0 }}>
             South Africa&apos;s online store for new and secondhand
-            outdoor gear. Every item checked · secure card checkout ·
-            couriered and tracked to your door.
+            outdoor gear. Every item checked · couriered and tracked to
+            your door · buy, bid, offer or swop.
           </p>
         </div>
 

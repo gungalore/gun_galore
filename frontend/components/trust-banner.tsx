@@ -11,10 +11,15 @@
 // Store trust only. "ID-verified sellers" was KYC/fintech vocabulary — a
 // payments platform verifies counterparties; a shop vets what goes on its
 // shelves. And the seller-fee pitch didn't belong on a buyer trust card.
+// Every line here must be TRUE TODAY — "secure card checkout" sat on this
+// card while checkout was still switched off pre-launch, which is exactly
+// the kind of claim a visitor (or a bank underwriter) can falsify in one
+// click. The shopping modes, moderation gate, courier rail and support are
+// all live now.
 const POINTS = [
-  'Secure card checkout',
-  'Couriered & tracked, door to door',
+  'Buy now, bid, make an offer — or swop',
   'Every item checked before it goes up',
+  'Couriered & tracked, door to door',
   'Local support that actually answers',
 ];
 

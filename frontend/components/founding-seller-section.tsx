@@ -58,8 +58,11 @@ export function FoundingSellerSection({
         >
           Camping and overlanding kit, fishing tackle, optics, knives, outdoor
           clothing. {BRAND_NAME} has just opened — if it&rsquo;s good gear
-          you&rsquo;re not using, put it up today. First on the shelf gets
-          every buyer who walks in.
+          you&rsquo;re not using, put it up today. Sell it your way: at your
+          price, by auction, by taking offers, or swop it for something you
+          actually want. And on a fixed-price sale you receive exactly the
+          price you set — our commission is added on top for the buyer, never
+          taken out of your price.
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
@@ -95,6 +98,17 @@ export function FoundingSellerSection({
             How selling works
           </Link>
         </div>
+
+        {/* Honest urgency: checkout is genuinely pre-launch (the FAQ says the
+            same), and early listings genuinely inherit the whole first wave
+            of buyers. True twice over, and it converts. */}
+        <p
+          className="text-xs mt-4"
+          style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+        >
+          Card checkout is switching on shortly. Gear listed today is on the
+          shelf for the first buyers through the door.
+        </p>
       </div>
 
       {/* ── What actually happens ─────────────────────────────────────
