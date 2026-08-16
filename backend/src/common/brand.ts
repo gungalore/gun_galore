@@ -46,12 +46,18 @@ export const SMS_PREFIX = `${BRAND_NAME}:`;
 export const EMAIL_FROM = `${BRAND_NAME} <noreply@alloutdoor.co.za>`;
 
 /**
- * Support mailbox — the reply-to address we print in emails, receipts and
- * takedown notices. Same domain reasoning as EMAIL_FROM: gungalore.co.za mail
- * is live, alloutdoor.co.za is not wired yet, so the value moves with the DNS
- * cutover rather than ahead of it. One edit here, not twenty-five.
+ * Support mailbox — the reply-to we print in emails, receipts, the footer and
+ * takedown notices.
+ *
+ * Moved to alloutdoor.co.za on 2026-08-16, after the operator confirmed the
+ * mailbox is live. The order mattered: this address RECEIVES, so it needed a
+ * real mailbox behind it, not just the sending records Resend added. Mail for
+ * alloutdoor.co.za is hosted at Absolute Hosting (MX s1.ahmail.co.za) — which
+ * is why Resend's SPF sits on the `send` subdomain and the apex was left
+ * alone. Pointing buyers at an address nobody reads is worse than an
+ * off-brand one that works, so do not move this ahead of the mailbox again.
  */
-export const SUPPORT_EMAIL = 'support@gungalore.co.za';
+export const SUPPORT_EMAIL = 'support@alloutdoor.co.za';
 
 /**
  * Subscription tier name. Was "GG PRO" — GG meant Gun Galore, the wound-down

@@ -54,12 +54,18 @@ export const BRAND_BLURB =
 export const PRO_NAME = 'AO PRO';
 
 /**
- * Support mailbox. Still on gungalore.co.za because that domain's mail is
- * live and alloutdoor.co.za's is not yet wired — moving the address before
- * the MX/SPF/DKIM records exist would bounce every reply. Moves to the new
- * domain with the DNS cutover: one edit here.
+ * Support mailbox — the reply-to we print in emails, receipts, the footer and
+ * takedown notices.
+ *
+ * Moved to alloutdoor.co.za on 2026-08-16, after the operator confirmed the
+ * mailbox is live. The order mattered: this address RECEIVES, so it needed a
+ * real mailbox behind it, not just the sending records Resend added. Mail for
+ * alloutdoor.co.za is hosted at Absolute Hosting (MX s1.ahmail.co.za) — which
+ * is why Resend's SPF sits on the `send` subdomain and the apex was left
+ * alone. Pointing buyers at an address nobody reads is worse than an
+ * off-brand one that works, so do not move this ahead of the mailbox again.
  */
-export const SUPPORT_EMAIL = 'support@gungalore.co.za';
+export const SUPPORT_EMAIL = 'support@alloutdoor.co.za';
 
 /**
  * Canonical public origin, no trailing slash.
