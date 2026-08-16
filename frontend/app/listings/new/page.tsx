@@ -2712,7 +2712,7 @@ export default function NewListingPage() {
       {/* SA banknotes scenery behind the form, with a black vignette +
           dark tint so it stays "felt, not seen". File lives at
           public/sell-bg.jpeg. */}
-      <PageBackground imageSrc="/sell-bg.jpg" opacity={0.25} />
+      <PageBackground imageSrc="/sell-bg.jpg" opacity={0.36} />
 
       <PageReveal variant="slide-up">
       {/* Page header */}

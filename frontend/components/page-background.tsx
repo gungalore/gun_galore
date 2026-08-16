@@ -22,11 +22,15 @@ interface Props {
   /** Path to a background image (e.g. "/sell-bg.jpg"). When unset,
    *  falls back to the dot pattern. */
   imageSrc?: string;
-  /** 0..1 — overall image opacity (default 0.18). Lower = subtler. */
+  /** 0..1 — overall image opacity (default 0.45). Lower = subtler.
+   *  NB these three compound: the image is drawn at `opacity`, then a flat
+   *  black layer at `tint` covers it, then the vignette darkens the edges.
+   *  The old defaults (0.18 / 0.55 / 0.85) put roughly 8% of the picture in
+   *  front of the eye, which is why the plates read as almost nothing. */
   opacity?: number;
-  /** Dark-tint overlay on top of the image (default 0.55 = 55% black). */
+  /** Dark-tint overlay on top of the image (default 0.32 = 32% black). */
   tint?: number;
-  /** Vignette strength (0 = no vignette, 1 = pitch-black corners). Default 0.85. */
+  /** Vignette strength (0 = no vignette, 1 = pitch-black corners). Default 0.6. */
   vignette?: number;
   /** Tile size for the dot pattern mode only (default 40). */
   tile?: number;
@@ -34,9 +38,9 @@ interface Props {
 
 export function PageBackground({
   imageSrc,
-  opacity = 0.18,
-  tint = 0.55,
-  vignette = 0.85,
+  opacity = 0.45,
+  tint = 0.32,
+  vignette = 0.6,
   tile = 40,
 }: Props = {}) {
   // ── Image mode ────────────────────────────────────────────────────

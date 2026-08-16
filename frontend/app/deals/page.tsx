@@ -50,7 +50,7 @@ export default async function DealsPage() {
     <main className="max-w-[var(--page-max)] mx-auto px-4 py-8">
       {/* Daily Deals gets its own plate — wrapped parcels under string
           lights. Same faint treatment as the other browse surfaces. */}
-      <PageBackground imageSrc="/deals.jpg" opacity={0.18} />
+      <PageBackground imageSrc="/deals.jpg" />
       <BrowseRailShell>
       <PageReveal>
         <header className="mb-6" data-reveal>

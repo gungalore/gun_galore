@@ -284,21 +284,16 @@ export default async function HomePage({
           Take a Shot, Sell, dashboard and profile keep the defaults, since
           those are stock photos with no dead centre to sit content in. */}
       {isMarketplace && (
-        <PageBackground
-          imageSrc="/marketplace.jpg"
-          opacity={0.34}
-          tint={0.34}
-          vignette={0.72}
-        />
+        <PageBackground imageSrc="/marketplace.jpg" />
       )}
       {isAuction && (
-        <PageBackground imageSrc="/auction.jpg" opacity={0.18} />
+        <PageBackground imageSrc="/auction.jpg" />
       )}
       {isTakeAShot && (
-        <PageBackground imageSrc="/take-a-shot.jpg" opacity={0.18} />
+        <PageBackground imageSrc="/take-a-shot.jpg" />
       )}
       {isSwop && (
-        <PageBackground imageSrc="/swop.jpg" opacity={0.18} />
+        <PageBackground imageSrc="/swop.jpg" />
       )}
 
       {/* Hero now carries the trust card on its right, so the competitive

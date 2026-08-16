@@ -292,7 +292,7 @@ export default async function ListingDetailPage({
           detail to the marketplace index visually. opacity:0.18
           matches the marketplace homepage so the product photo stays
           dominant without the background washing the page out. */}
-      <PageBackground imageSrc="/marketplace.jpg" opacity={0.18} />
+      <PageBackground imageSrc="/marketplace.jpg" opacity={0.36} />
 
       {/* Layout: <FeaturedRail> sits next to the listing detail column on
           desktop; on MOBILE it stacks BELOW the product (order-2), because a
