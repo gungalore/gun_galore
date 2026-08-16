@@ -138,7 +138,8 @@ export default async function HomePage({
   const isAuction = params.listingType === 'AUCTION';
   const isTakeAShot = params.listingType === 'TAKE_A_SHOT';
   const isMarketplace = params.listingType === 'BUY_NOW';
-  const hasBackground = isAuction || isTakeAShot || isMarketplace;
+  const isSwop = params.listingType === 'SWOP';
+  const hasBackground = isAuction || isTakeAShot || isMarketplace || isSwop;
 
   const qs = new URLSearchParams();
   if (params.q) qs.set('q', params.q);
@@ -294,7 +295,10 @@ export default async function HomePage({
         <PageBackground imageSrc="/auction.jpg" opacity={0.18} />
       )}
       {isTakeAShot && (
-        <PageBackground imageSrc="/take%20shot.jpeg" opacity={0.18} />
+        <PageBackground imageSrc="/take-a-shot.jpg" opacity={0.18} />
+      )}
+      {isSwop && (
+        <PageBackground imageSrc="/swop.jpg" opacity={0.18} />
       )}
 
       {/* Hero now carries the trust card on its right, so the competitive

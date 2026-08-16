@@ -3,6 +3,7 @@ import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { apiFetch } from '@/lib/api';
 import type { DealsResponse } from '@/lib/types';
 import { DealCard } from '@/components/deal-card';
+import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 
 // ── Daily Deals storefront (DD-3) ─────────────────────────────────────
@@ -47,6 +48,9 @@ export default async function DealsPage() {
 
   return (
     <main className="max-w-[var(--page-max)] mx-auto px-4 py-8">
+      {/* Daily Deals gets its own plate — wrapped parcels under string
+          lights. Same faint treatment as the other browse surfaces. */}
+      <PageBackground imageSrc="/deals.jpg" opacity={0.18} />
       <BrowseRailShell>
       <PageReveal>
         <header className="mb-6" data-reveal>

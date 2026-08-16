@@ -1,5 +1,7 @@
 'use client';
 
+import { av } from '@/lib/asset-version';
+
 // Faint full-viewport background. Two modes:
 //
 //   1. Dot pattern (default) — subtle technical grid that ties the page
@@ -60,7 +62,11 @@ export function PageBackground({
             inset: 0,
             zIndex: -1,
             pointerEvents: 'none',
-            backgroundImage: `url(${imageSrc})`,
+            // Versioned here rather than at each call site: Cloudflare holds
+            // /public for thirty days, so a replaced plate under an unchanged
+            // filename would keep serving the old picture at the edge. Doing
+            // it inside the component means no caller can forget.
+            backgroundImage: `url(${av(imageSrc)})`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
