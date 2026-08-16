@@ -203,7 +203,6 @@ export default async function ProfilePage() {
   return (
     <main
       className="relative max-w-[1100px] mx-auto px-4 py-8"
-      style={{ zIndex: 1 }}
     >
       {/* House standard scenery — wrenches, matches /profile/edit so
           the identity pages feel like one suite. */}

@@ -268,10 +268,7 @@ export default async function HomePage({
   }
 
   return (
-    <main
-      className="relative"
-      style={hasBackground ? { zIndex: 1 } : undefined}
-    >
+    <main className="relative">
       {/* Per-surface scenery. Same PageBackground component the Sell
           page uses — each photo gets the dark tint + radial vignette
           so the listing cards stay primary. */}

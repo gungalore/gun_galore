@@ -54,6 +54,19 @@ export function PageBackground({
   // backdrop ended up on top. Pushing the layers to z=-1 puts them
   // unambiguously underneath all content without each page having to
   // remember to wrap its hero in a transformed/positioned container.
+  //
+  // DO NOT give the hosting <main> a z-index. "Behind everything in the
+  // PARENT stacking context" is the whole contract, and a z-index on the
+  // wrapper creates that context — which traps these fixed, inset:0 layers
+  // inside <main> while lifting <main> itself above the footer. The result
+  // is the photograph painting straight over the footer's opaque background,
+  // because a non-positioned <footer> paints at step 4 of the root context
+  // and a z-index:1 <main> paints at step 8. Six pages carried
+  // `style={{ zIndex: 1 }}` on <main> and all six showed it; it was only
+  // invisible while the defaults let ~8% of the picture through.
+  // `position: relative` on the wrapper is fine — with z-index:auto it
+  // creates no stacking context and these layers reach the root, landing
+  // below the cards AND below the footer, which is what we want.
   if (imageSrc) {
     return (
       <>

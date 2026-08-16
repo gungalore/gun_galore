@@ -272,7 +272,6 @@ export default async function ListingDetailPage({
   return (
     <main
       className="relative max-w-[var(--page-max)] mx-auto px-4 py-6"
-      style={{ zIndex: 1 }}
     >
       {/* Product/Offer structured data for search engines (not visible).
           Suppressed for members-only stock: the schema publishes name,
