@@ -18,6 +18,7 @@ import {
 } from './pudo.service';
 import { TcgService, type TcgResidentialAddress } from './tcg.service';
 import { BobGoService } from './bobgo.service';
+import { planShippingGroups } from './consolidation';
 import type { BobGoAddress, BobGoRate } from './bobgo.types';
 import {
   pickupPointOptions,
@@ -91,9 +92,64 @@ const COURIER_METHODS = ['PUDO', 'TCG'] as const;
  * does not exist. Bob Go removes the distinction — it collects from an address
  * either way — which is exactly what makes the choice the buyer's to make.
  */
+/**
+ * The stacked box a group of cart lines ships as.
+ *
+ * ONE implementation, shared by the delivery MENU and the checkout RE-QUOTE.
+ * If these two ever computed different boxes, the buyer would be shown a price
+ * for one parcel and charged for another — so this is deliberately the only
+ * place the arithmetic exists.
+ *
+ * Widest footprint, summed height, summed weight: the conservative shape, and
+ * the one booking already hands the carrier.
+ */
+export function stackParcel(
+  items: Array<{ weightGrams: number; lengthCm: number; widthCm: number; heightCm: number; priceCents: number; quantity: number }>,
+): { weightGrams: number; lengthCm: number; widthCm: number; heightCm: number; declaredValueCents: number } {
+  let weightGrams = 0, lengthCm = 0, widthCm = 0, heightCm = 0, declaredValueCents = 0;
+  for (const it of items) {
+    const qty = Math.max(1, it.quantity);
+    weightGrams += it.weightGrams * qty;
+    lengthCm = Math.max(lengthCm, it.lengthCm);
+    widthCm = Math.max(widthCm, it.widthCm);
+    heightCm += it.heightCm * qty;
+    declaredValueCents += it.priceCents * qty;
+  }
+  return { weightGrams, lengthCm, widthCm, heightCm, declaredValueCents };
+}
+
 function offersCourier(shippingMethods: string[]): boolean {
   if (shippingMethods.length === 0) return true; // unset = no restriction
   return shippingMethods.some((m) => (COURIER_METHODS as readonly string[]).includes(m));
+}
+
+/**
+ * One parcel's worth of delivery choices, as the cart sees it. Mirrors the
+ * single-listing `deliveryOptions` shape exactly so the same picker component
+ * renders both.
+ */
+export interface CartDeliveryGroup {
+  groupKey: string;
+  listingIds: string[];
+  /** True when these listings ship as ONE waybill - one delivery charge. */
+  consolidated: boolean;
+  door: {
+    priceCents: number;
+    carrierRateCents: number;
+    serviceName: string;
+    serviceCode: string;
+  } | null;
+  pickupPoints: Array<{
+    locationId: number;
+    name: string;
+    description?: string;
+    distanceKm?: number;
+    priceCents: number;
+    carrierRateCents: number;
+    serviceCode: string;
+  }>;
+  /** Set when THIS group alone could not be quoted; others still render. */
+  unavailableReason?: string;
 }
 
 export interface QuoteRequestBody {
@@ -733,6 +789,33 @@ export class ShippingService {
       );
     }
 
+    return this.menuFromRates(rates);
+  }
+
+  /**
+   * Turn a Bob Go rate list into the buyer-facing menu.
+   *
+   * Shared by the single-listing endpoint and the cart endpoint so both answer
+   * in one shape — which is what lets the picker component be written once and
+   * what keeps the frontend from ever learning which rail is live.
+   */
+  private menuFromRates(rates: BobGoRate[]): {
+    door: {
+      priceCents: number;
+      carrierRateCents: number;
+      serviceName: string;
+      serviceCode: string;
+    } | null;
+    pickupPoints: Array<{
+      locationId: number;
+      name: string;
+      description?: string;
+      distanceKm?: number;
+      priceCents: number;
+      carrierRateCents: number;
+      serviceCode: string;
+    }>;
+  } {
     const doorRate = selectRateForSlot(rates, 'TCG');
     return {
       door: doorRate
@@ -753,6 +836,217 @@ export class ShippingService {
         serviceCode: r.serviceCode,
       })),
     };
+  }
+
+  /**
+   * The delivery menu for a whole CART - one menu per parcel it will ship as.
+   *
+   * WHY THIS EXISTS. `deliveryOptions` above takes exactly one listingId and
+   * builds one parcel from it, so a cart could not use it: a cart consolidates
+   * same-seller lines into a single waybill, and the price of that combined
+   * box is arithmetically unrelated to the sum of its lines. The old cart
+   * dodged this by asking the buyer to pick a CARRIER (Pudo or The Courier
+   * Guy) instead of a delivery, which stopped being answerable the moment Bob
+   * Go became the rail.
+   *
+   * Grouping comes from planShippingGroups, the SAME function checkout uses to
+   * decide what to charge - see that module for why the frontend must not
+   * compute these keys itself.
+   *
+   * A group that cannot be quoted degrades to `unavailableReason` rather than
+   * failing the whole cart: with several sellers, one unservable parcel must
+   * not hide the others.
+   */
+  async deliveryOptionsForCart(
+    lines: Array<{ listingId: string; quantity?: number }>,
+    // Only the fields Bob Go actually prices against. Deliberately NOT
+    // NonNullable<QuoteRequestBody['deliveryAddress']>, which demands lat/lng:
+    // Bob Go quotes off the address and drops coordinates entirely, so
+    // requiring them here would force callers to invent 0,0 — which is exactly
+    // how the legacy path ends up quoting the Gulf of Guinea.
+    deliveryAddress: {
+      streetAddress: string;
+      suburb: string;
+      city: string;
+      postalCode: string;
+      province: Province;
+    },
+  ): Promise<CartDeliveryGroup[]> {
+    if (lines.length === 0) return [];
+
+    const listings = await this.prisma.listing.findMany({
+      where: { id: { in: lines.map((l) => l.listingId) } },
+    });
+    const byId = new Map(listings.map((l) => [l.id, l]));
+    const qtyById = new Map(
+      lines.map((l) => [l.listingId, Math.max(1, l.quantity ?? 1)]),
+    );
+
+    // Deal lines are owned by their SUPPLIER for grouping, not by the house
+    // seller id that every deal listing shares.
+    const dealSupplier = new Map<string, string | null>();
+    for (const l of listings) {
+      if (!l.isDealListing) continue;
+      const deal = await this.prisma.deal.findFirst({
+        where: { listingId: l.id },
+        select: { supplierId: true },
+      });
+      dealSupplier.set(l.id, deal?.supplierId ?? null);
+    }
+
+    const meta = new Map(
+      listings.map((l) => [
+        l.id,
+        {
+          sellerId: l.sellerId,
+          isFirearm: l.isFirearm,
+          dealSupplierId: dealSupplier.get(l.id) ?? null,
+        },
+      ]),
+    );
+
+    // Every courier line in a cart goes to ONE address, so the destination
+    // half of the key is constant here and groups degenerate to owner|slot -
+    // which is exactly "one delivery choice per seller", what we want shown.
+    // The slot is nominal at menu time; the buyer's pick decides it.
+    const groups = planShippingGroups(
+      lines.map((l) => ({
+        listingId: l.listingId,
+        shippingMethod: 'TCG',
+        quantity: qtyById.get(l.listingId),
+        deliveryAddress,
+      })),
+      meta,
+    );
+
+    const bobgoRail = await this.settings.get(FLAGS.bobgoEnabled);
+    const out: CartDeliveryGroup[] = [];
+
+    for (const g of groups) {
+      const base = {
+        groupKey: g.groupKey,
+        listingIds: g.listingIds,
+        consolidated: g.consolidated,
+      };
+      try {
+        const items = g.listingIds.map((id) => byId.get(id)!);
+
+        // Item-class gates, per listing. Same rules the single-listing
+        // endpoint applies: a group is courierable only if every line is.
+        const bad = items.find(
+          (l) =>
+            l.isFirearm ||
+            l.collectionOnly ||
+            l.isExperience ||
+            !offersCourier(l.shippingMethods) ||
+            !l.weightGrams ||
+            !l.lengthCm ||
+            !l.widthCm ||
+            !l.heightCm,
+        );
+        if (bad) {
+          out.push({
+            ...base,
+            door: null,
+            pickupPoints: [],
+            unavailableReason:
+              'One of these items cannot be sent by courier, so we cannot quote delivery for them together.',
+          });
+          continue;
+        }
+
+        if (!bobgoRail) {
+          // The legacy rails have no combined menu. Say so rather than
+          // invent a price we cannot honour.
+          out.push({
+            ...base,
+            door: null,
+            pickupPoints: [],
+            unavailableReason:
+              'Delivery options are briefly unavailable - please try again.',
+          });
+          continue;
+        }
+
+        const parcel = stackParcel(
+          items.map((l) => ({
+            weightGrams: l.weightGrams!,
+            lengthCm: l.lengthCm!,
+            widthCm: l.widthCm!,
+            heightCm: l.heightCm!,
+            priceCents: l.price ?? 0,
+            quantity: qtyById.get(l.id) ?? 1,
+          })),
+        );
+
+        const first = items[0];
+        const from = first.isDealListing
+          ? await this.dealCollectionOrigin(first.id)
+          : {
+              streetAddress: first.pickupStreet ?? '',
+              suburb: first.pickupSuburb ?? '',
+              city: first.pickupCity ?? '',
+              postalCode: first.pickupPostalCode ?? '',
+              province: PROVINCE_LONG[first.province],
+              lat: first.pickupLat ?? undefined,
+              lng: first.pickupLng ?? undefined,
+            };
+
+        const { rates } = await this.bobgo.getRates({
+          collection: { ...from, province: from.province },
+          delivery: {
+            streetAddress: deliveryAddress.streetAddress,
+            suburb: deliveryAddress.suburb,
+            city: deliveryAddress.city,
+            postalCode: deliveryAddress.postalCode,
+            province: PROVINCE_LONG[deliveryAddress.province],
+          },
+          parcels: [
+            {
+              weightKg: parcel.weightGrams / 1000,
+              lengthCm: parcel.lengthCm,
+              widthCm: parcel.widthCm,
+              heightCm: parcel.heightCm,
+              description: 'Order',
+            },
+          ],
+          declaredValueCents: parcel.declaredValueCents,
+        });
+
+        const menu = this.menuFromRates(rates);
+
+        // Daily Deals are door-only by policy, and the order path enforces
+        // that again - offering a collection point here would price
+        // something that 400s at Pay.
+        const hasDeal = items.some((l) => l.isDealListing);
+        const pickupPoints = hasDeal ? [] : menu.pickupPoints;
+
+        out.push({
+          ...base,
+          door: menu.door,
+          pickupPoints,
+          ...(menu.door === null && pickupPoints.length === 0
+            ? {
+                unavailableReason:
+                  'No courier option for these items to that address.',
+              }
+            : {}),
+        });
+      } catch (err) {
+        this.logger.warn(
+          `deliveryOptionsForCart: group ${g.groupKey} failed: ${(err as Error).message}`,
+        );
+        out.push({
+          ...base,
+          door: null,
+          pickupPoints: [],
+          unavailableReason:
+            'Delivery options are briefly unavailable - please try again.',
+        });
+      }
+    }
+
+    return out;
   }
 
   /**

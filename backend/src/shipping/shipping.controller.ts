@@ -24,6 +24,7 @@ import {
 } from '../common/shipment-failure-policy';
 import { LockerSearchDto } from './dto/locker-search.dto';
 import { DealerQueryDto } from './dto/dealer-query.dto';
+import { CartDeliveryOptionsDto } from './dto/cart-delivery-options.dto';
 
 @Controller('shipping')
 export class ShippingController {
@@ -123,14 +124,31 @@ export class ShippingController {
     }));
   }
 
-  // The buyer's full delivery menu — door AND collection points, priced, in
-  // one call. The delivery option is the buyer's to decide, so this returns
-  // everything that can actually carry this parcel rather than a
-  // seller-curated subset.
+  // The same menu for a whole CART — one entry per parcel it will ship as.
   //
-  // RAIL-AGNOSTIC: answers from Bob Go or from Pudo+TCG depending on the
-  // flag, in one shape. The checkout never learns which carrier it is
-  // talking to, which is what lets the UI be written once.
+  // Separate from the single-listing route above because a cart consolidates:
+  // same-seller lines share one waybill, and the price of that combined box is
+  // arithmetically unrelated to the sum of its lines. Grouping is computed
+  // server-side by the SAME function checkout uses to decide what to charge,
+  // so what the buyer is quoted and what they pay cannot drift.
+  //
+  // POST for the same reason as below: it carries a delivery address, and a
+  // GET would put the buyer's street address in a URL, which ends up in logs
+  // and referrers.
+  @Post('delivery-options/cart')
+  @HttpCode(200)
+  async cartDeliveryOptions(@Body() body: CartDeliveryOptionsDto) {
+    return this.shipping.deliveryOptionsForCart(body.lines, body.deliveryAddress);
+  }
+
+  // The buyer's full delivery menu for ONE listing — door AND collection
+  // points, priced, in one call. The delivery option is the buyer's to decide,
+  // so this returns everything that can actually carry this parcel rather than
+  // a seller-curated subset.
+  //
+  // RAIL-AGNOSTIC: answers from Bob Go or from Pudo+TCG depending on the flag,
+  // in one shape. The checkout never learns which carrier it is talking to,
+  // which is what lets the UI be written once.
   //
   // POST, not GET, because it carries a delivery address — a GET would put the
   // buyer's street address in a URL, and URLs end up in logs and referrers.
