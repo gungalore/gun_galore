@@ -5,6 +5,7 @@
 
 import Link from 'next/link';
 import { TrustCard } from './trust-banner';
+import { av } from '@/lib/asset-version';
 
 export function Hero() {
   return (
@@ -86,10 +87,16 @@ export function Hero() {
              LCP ELEMENT, and preloaded in <head> on EVERY page, so it is
              encoded tight: jpg q80 progressive (~290 KB), webp q76 (~190 KB).
              Almost every browser takes the WebP. */
-          background-image: url('/hero-outdoor.jpg');
+          /* Versioned to match the <link rel=preload> in layout.tsx. These
+             used to be bare paths while the preload carried ?v= — two
+             different URLs, so the LCP preload was fetching an image the
+             page never requested. Cloudflare also holds /public for 30 days,
+             so replacing the plate without a version bump would have served
+             the old scene at the edge for a month. */
+          background-image: url('${av('/hero-outdoor.jpg')}');
           background-image: image-set(
-            url('/hero-outdoor.webp') type('image/webp'),
-            url('/hero-outdoor.jpg') type('image/jpeg')
+            url('${av('/hero-outdoor.webp')}') type('image/webp'),
+            url('${av('/hero-outdoor.jpg')}') type('image/jpeg')
           );
           background-size: cover;
           background-position: center center;

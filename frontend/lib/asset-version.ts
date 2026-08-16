@@ -21,7 +21,7 @@
 //
 // Not needed for: anything under /_next/ (Next fingerprints those itself),
 // Cloudinary URLs (already versioned), or a genuinely new filename.
-export const ASSET_VERSION = '20260812';
+export const ASSET_VERSION = '20260816';
 
 /** Append the asset version to a /public path. `av('/logo.svg')` */
 export function av(path: string): string {
