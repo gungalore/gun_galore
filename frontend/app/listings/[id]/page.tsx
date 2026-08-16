@@ -13,7 +13,7 @@ import {
   LISTING_TYPE_LABELS,
   discountPercent,
 } from '@/lib/utils';
-import { vicinityLabel } from '@/components/buyer-terms-ack';
+import { vicinityLabel } from '@/lib/vicinity';
 import SellerControls from './seller-controls';
 import OfferPanel from './offer-panel';
 import AuctionPanel from './auction-panel';

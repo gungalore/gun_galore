@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Offer } from '@/lib/types';
 import { formatPrice } from '@/lib/utils';
 import { OfferCheckoutForm } from './offer-checkout-form';
-import { vicinityLabel } from '@/components/buyer-terms-ack';
+import { vicinityLabel } from '@/lib/vicinity';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 

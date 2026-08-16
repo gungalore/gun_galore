@@ -15,7 +15,8 @@ import { formatPrice } from '@/lib/utils';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
 import { DeliveryMethodCards } from '@/components/delivery-method-cards';
 import { PaymentMethodSection } from '@/components/payment-method-section';
-import { BuyerTermsAck, vicinityLabel } from '@/components/buyer-terms-ack';
+import { BuyerTermsAck } from '@/components/buyer-terms-ack';
+import { vicinityLabel } from '@/lib/vicinity';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import {
   DeliveryOptionsPicker,

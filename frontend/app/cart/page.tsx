@@ -13,7 +13,8 @@ import { NumberStepper } from '@/components/number-stepper';
 import { formatPrice } from '@/lib/utils';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
-import { BuyerTermsAck, vicinityLabel } from '@/components/buyer-terms-ack';
+import { BuyerTermsAck } from '@/components/buyer-terms-ack';
+import { vicinityLabel } from '@/lib/vicinity';
 import { LockerPicker, type PudoLocker } from '@/components/locker-picker';
 import {
   ManualAddressFields,

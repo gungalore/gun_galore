@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { PROVINCE_LABELS } from '@/lib/utils';
-import type { Province } from '@/lib/types';
+// vicinityLabel lives in a PLAIN module, not here: this file is 'use client',
+// and Server Components (the product page, the offer-checkout page) call it
+// during render. Importing a function out of a client module and invoking it
+// on the server throws at runtime with an opaque Next.js digest.
 
 /**
  * The buyer's pre-payment acknowledgement: they have seen where the item is,
@@ -30,23 +32,6 @@ import type { Province } from '@/lib/types';
 
 export type AckVariant = 'collection' | 'firearm' | 'courier';
 
-export function vicinityLabel(listing: {
-  isFirearm?: boolean;
-  plannedDealerLocation?: string | null;
-  publicLocality?: string | null;
-  province?: Province;
-}): string {
-  // A firearm never moves from the seller's address — it goes to a licensed
-  // dealer — so the meaningful location is the planned dealer.
-  if (listing.isFirearm && listing.plannedDealerLocation) {
-    return listing.plannedDealerLocation;
-  }
-  // A payload that did not select province must never render "undefined" at a
-  // buyer who is about to agree they were told where the item is.
-  const province = listing.province ? PROVINCE_LABELS[listing.province] : null;
-  if (listing.publicLocality && province) return `${listing.publicLocality}, ${province}`;
-  return listing.publicLocality ?? province ?? 'the seller’s area';
-}
 
 interface Props {
   variant: AckVariant;
