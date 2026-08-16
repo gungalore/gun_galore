@@ -178,13 +178,27 @@ export function Hero() {
 
       <div className="hero-content relative max-w-[var(--page-max)] mx-auto px-4 sm:px-6 py-10 sm:py-14 flex flex-col md:flex-row md:items-center md:justify-between gap-8 lg:gap-12">
         <div className="max-w-[600px]">
-          {/* Eyebrow */}
+          {/* Eyebrow.
+
+              Was var(--red) (#C8102E). That worked while the desktop wash
+              was near-black, but once the gradient was softened to let the
+              golden hour through, the eyebrow ended up sitting on lit sky
+              at 1.85:1 — under the 4.5:1 WCAG needs for text this small,
+              and visibly muddy. No red passes there: the token is dark
+              enough that reaching 4.5:1 means a pink that isn't the brand.
+
+              So the eyebrow goes warm-white and the brand red stays where
+              it still has the contrast to carry: "outdoor gear" at display
+              size in the headline, and the CTA. Same text-shadow as the
+              headline, for the same reason — a crisp edge against whatever
+              part of the photograph crops behind it. */}
           <p
             className="hero-reveal hero-reveal-1 text-xs uppercase mb-4"
             style={{
-              color: 'var(--red)',
+              color: 'rgba(255, 250, 245, 0.85)',
               letterSpacing: '0.18em',
               fontWeight: 500,
+              textShadow: '0 1px 6px rgba(0, 0, 0, 0.6)',
             }}
           >
             South Africa&apos;s outdoor store
