@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { formatPrice } from '@/lib/utils';
 
-// Same convention as locker-picker.tsx — the API is a separate origin, so a
+// Same convention as every other browse fetch — the API is a separate origin, so a
 // bare '/api/...' path would hit the Next server instead of the backend.
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 

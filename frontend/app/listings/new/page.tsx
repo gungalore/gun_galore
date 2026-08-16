@@ -23,10 +23,9 @@ import {
   emptyManualAddress,
   type ManualAddressValue,
 } from '@/components/manual-address-fields';
-// NOTE: LockerPicker is intentionally NOT used on the Sell form. The
-// seller drops at ANY Pudo locker using a delivery PIN — there's no
-// need for them to pre-select a drop-off locker here. The picker lives
-// in the buyer-side checkout flow where the destination locker matters.
+// NOTE: the seller never chooses a collection point on the Sell form. Where
+// the parcel is HANDED OVER is the buyer's decision, made at checkout against
+// their own address, so there is nothing for a seller to pre-select here.
 import type { ShippingMethod } from '@/lib/types';
 import {
   ListingPreviewModal,

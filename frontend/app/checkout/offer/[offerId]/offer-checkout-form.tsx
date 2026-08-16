@@ -7,7 +7,10 @@ import { formatPrice } from '@/lib/utils';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { FeeBreakdown, ShippingMethod, Address } from '@/lib/types';
-import { LockerPicker, PudoLocker } from '@/components/locker-picker';
+import {
+  DeliveryOptionsPicker,
+  type DeliveryOption,
+} from '@/components/delivery-options-picker';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -118,8 +121,12 @@ export function OfferCheckoutForm({
 }) {
   const { getToken } = useAuth();
 
-  const [method, setMethod] = useState<ShippingMethod>(isFirearm ? 'DEALER_TRANSFER' : 'PUDO');
-  const [selectedLocker, setSelectedLocker] = useState<PudoLocker | null>(null);
+  // Only meaningful for a firearm now - an ordinary item derives its slot
+  // from the delivery the buyer picks (see effectiveMethod).
+  const [method] = useState<ShippingMethod>(isFirearm ? 'DEALER_TRANSFER' : 'TCG');
+  // What the buyer chose, from the priced menu. The carrier is ours to
+  // decide; they choose a delivery.
+  const [deliveryOption, setDeliveryOption] = useState<DeliveryOption | null>(null);
   // M33 — 18+/competency attestation. Backend hard-refuses firearm
   // transactions without this flag === true.
   const [firearmAttestation, setFirearmAttestation] = useState(false);
@@ -149,14 +156,49 @@ export function OfferCheckoutForm({
   // returns 503 "launching soon". True once we've detected that.
   const [comingSoon, setComingSoon] = useState(false);
 
-  const allowedMethods: ShippingMethod[] = isFirearm ? ['DEALER_TRANSFER'] : ['PUDO', 'TCG'];
+  // PUDO and TCG are SLOTS - a collection point and a door - not carriers.
+  // For an ordinary item the buyer picks a delivery and the slot follows; a
+  // firearm never rides a courier at all and keeps its own route.
+  const effectiveMethod: ShippingMethod = isFirearm
+    ? method
+    : deliveryOption?.kind === 'PICKUP_POINT'
+      ? 'PUDO'
+      : 'TCG';
+
+  // The address the menu is priced against, in the picker's shape.
+  const addressComplete =
+    !!tcgAddress.streetAddress.trim() &&
+    !!tcgAddress.suburb.trim() &&
+    !!tcgAddress.city.trim() &&
+    !!tcgAddress.province &&
+    tcgAddress.postalCode.trim().length >= 4;
+  const pickerAddress = addressComplete
+    ? {
+        streetAddress: tcgAddress.streetAddress.trim(),
+        suburb: tcgAddress.suburb.trim(),
+        city: tcgAddress.city.trim(),
+        postalCode: tcgAddress.postalCode.trim(),
+        province: tcgAddress.province,
+      }
+    : null;
+
+  // A price quoted against the old address must never survive an edit.
+  useEffect(() => {
+    setDeliveryOption(null);
+  }, [
+    tcgAddress.streetAddress,
+    tcgAddress.suburb,
+    tcgAddress.city,
+    tcgAddress.province,
+    tcgAddress.postalCode,
+  ]);
 
   // Courier routes carry a shipping leg the server only prices at payment
   // time, and the transaction fee is charged on (item + shipping) — so on
   // those neither the fee nor the final total can be stated honestly here.
   // A dealer transfer has no courier leg and no waybill, so its total is
   // knowable in full: agreed price + transaction fee, nothing else.
-  const isCourier = method === 'PUDO' || method === 'TCG';
+  const isCourier = effectiveMethod === 'PUDO' || effectiveMethod === 'TCG';
   const feeOnAgreedPrice = transactionFee(settledAmount);
   const knownTotal = isCourier ? null : settledAmount + feeOnAgreedPrice;
 
@@ -168,13 +210,23 @@ export function OfferCheckoutForm({
     const base = {
       listingId,
       offerId,
-      shippingMethod: method,
+      shippingMethod: effectiveMethod,
       // Unconditional — every branch returns `base`, so no path to Pay omits it.
       buyerTermsAccepted: buyerTermsAck,
       ...attestation,
     };
-    if (method === 'PUDO') return { ...base, pudoPickupLockerId: selectedLocker?.lockerId };
-    if (method === 'TCG') return { ...base, deliveryAddress: tcgAddress };
+    if (isCourier) {
+      // The address rides on BOTH slots. A collection point pins where within
+      // an area the parcel lands; it does not tell the carrier which area, and
+      // the server's re-quote returns null without it.
+      return {
+        ...base,
+        deliveryAddress: tcgAddress,
+        ...(deliveryOption?.kind === 'PICKUP_POINT' && deliveryOption.locationId != null
+          ? { pudoPickupLockerId: String(deliveryOption.locationId) }
+          : {}),
+      };
+    }
     // No dealerId — see /checkout/[listingId]/checkout-form.tsx for
     // the full rationale. Buyer picks any SAPS-licensed dealer
     // themselves and verifies via the 3-photo upload after delivery.
@@ -188,19 +240,18 @@ export function OfferCheckoutForm({
     if (!buyerTermsAck) return false;
     // M33 — firearm offers gated on the attestation checkbox.
     if (isFirearm && !firearmAttestation) return false;
-    if (method === 'PUDO') return !!selectedLocker;
-    if (method === 'TCG') {
+    if (!isFirearm) {
+      // Not "an address exists" - a CHOSEN, PRICED option. Otherwise the
+      // buyer can reach Pay without us knowing what delivery costs.
       return !!(
-        tcgAddress.streetAddress &&
-        tcgAddress.suburb &&
-        tcgAddress.city &&
-        tcgAddress.province && // FLOW-F5 — required by the backend DTO + rate engine
-        tcgAddress.postalCode &&
+        addressComplete &&
         tcgAddress.contactName &&
-        tcgAddress.contactPhone
+        tcgAddress.contactPhone &&
+        deliveryOption
       );
     }
     if (method === 'DEALER_TRANSFER') return dtConsentAccepted;
+    if (method === 'PRIVATE_ARRANGE') return true;
     return false;
   }
 
@@ -268,37 +319,6 @@ export function OfferCheckoutForm({
       )}
 
       {!isFirearm && (
-        <div>
-          <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>Delivery method</p>
-          <div className="flex gap-2">
-            {allowedMethods.map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMethod(m)}
-                className="px-4 py-2 rounded-[6px] text-sm"
-                style={{
-                  background: method === m ? 'var(--red)' : 'var(--bg-inset)',
-                  color: method === m ? '#fff' : 'var(--text-secondary)',
-                  border: `0.5px solid ${method === m ? 'var(--red)' : 'var(--border)'}`,
-                  cursor: 'pointer',
-                }}
-              >
-                {m === 'PUDO' ? 'Pudo Locker' : 'Door Delivery (TCG)'}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {method === 'PUDO' && (
-        <div>
-          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Choose your collection locker</p>
-          <LockerPicker onSelect={setSelectedLocker} selectedId={selectedLocker?.lockerId} />
-        </div>
-      )}
-
-      {method === 'TCG' && (
         <div className="space-y-3">
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Delivery address</p>
           {/* UX-3 — saved-address picker (2+ book addresses only). Fills the
@@ -366,6 +386,22 @@ export function OfferCheckoutForm({
                 />
               </Field>
             ))}
+          </div>
+
+          {/* One priced list - door and collection points together. The buyer
+              is never asked to choose a carrier, and the same component serves
+              the Buy Now checkout, so the two cannot drift. */}
+          <div className="pt-1">
+            <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+              How would you like it delivered?
+            </p>
+            <DeliveryOptionsPicker
+              listingId={listingId}
+              deliveryAddress={pickerAddress}
+              selectedServiceCode={deliveryOption?.serviceCode}
+              onSelect={setDeliveryOption}
+              getToken={getToken}
+            />
           </div>
         </div>
       )}
@@ -459,7 +495,15 @@ export function OfferCheckoutForm({
         <SummaryLine label="Agreed price" value={formatPrice(settledAmount)} />
         {isCourier ? (
           <>
-            <SummaryLine label="Delivery" value="Quoted at payment" muted />
+            <SummaryLine
+              label="Delivery"
+              value={
+                deliveryOption
+                  ? formatPrice(deliveryOption.priceCents)
+                  : 'Choose an option above'
+              }
+              muted={!deliveryOption}
+            />
             <SummaryLine
               label="Transaction fee"
               value="Calculated at payment"
