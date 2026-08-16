@@ -953,8 +953,19 @@ export class ShippingService {
     items: Array<{ listingId: string; quantity: number }>,
     method: 'PUDO' | 'TCG',
     dest: {
-      toLockerId?: string;
+      /**
+       * The buyer's address. REQUIRED for both slots on the Bob Go rail: a
+       * pickup point is a destination *near an area*, not a substitute for
+       * knowing the area. The cart used to send this only for TCG and send
+       * `{ toLockerId }` alone for PUDO, so `if (!dest.deliveryAddress) return
+       * null` below fired for EVERY consolidated locker group — the caller
+       * then `continue`d to a per-line fallback that itself throws for a
+       * locker with no address. Every cart locker checkout was dead, masked
+       * only by assertPaymentsLive().
+       */
       deliveryAddress?: QuoteRequestBody['deliveryAddress'];
+      /** Bob Go collection-point id. Numeric; see the guard below. */
+      toLockerId?: string | number;
     },
   ): Promise<ShippingQuote | null> {
     if (items.length === 0) return null;
@@ -1035,14 +1046,29 @@ export class ShippingService {
         delivery: dest.deliveryAddress,
         parcel,
         declaredValueCents,
-        lockerId: dest.toLockerId ? Number(dest.toLockerId) : undefined,
+        lockerId: (() => {
+          if (dest.toLockerId == null) return undefined;
+          const n = Number(dest.toLockerId);
+          if (!Number.isFinite(n)) {
+            // A legacy Pudo code like 'CG929' coerces to NaN, which passes the
+            // `!= null` test in the adapter and then matches nothing. Fail as
+            // "no id" rather than as "no locker fits this parcel".
+            this.logger.warn(
+              `quoteCombined: non-numeric collection-point id ${String(dest.toLockerId)} ignored`,
+            );
+            return undefined;
+          }
+          return n;
+        })(),
       });
       return quote;
     }
 
     if (method === 'PUDO') {
       if (!dest.toLockerId) return null;
-      return this.pudo.quoteL2L(dest.toLockerId, parcel);
+      // Legacy Pudo takes an alphanumeric locker CODE ('CG929'), unlike Bob Go
+      // which takes a numeric location id — hence the widened parameter type.
+      return this.pudo.quoteL2L(String(dest.toLockerId), parcel);
     }
 
     // TCG door-to-door. Pickup is the (shared) seller's address — take it off

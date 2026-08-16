@@ -594,7 +594,16 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       const pickupPointId = deliveryOption?.locationId
         ? String(deliveryOption.locationId)
         : deliveryOption?.serviceCode;
-      return { ...base, pudoPickupLockerId: pickupPointId };
+      // The ADDRESS goes with it. A collection point pins where *within* an
+      // area the parcel lands; it does not tell the carrier which area. The
+      // server re-quotes this leg at Pay and, on the Bob Go rail, returns null
+      // without an address — so omitting it 400'd every collection-point
+      // purchase. The picker already priced against exactly this address.
+      return {
+        ...base,
+        pudoPickupLockerId: pickupPointId,
+        ...(pickerAddress ? { deliveryAddress: pickerAddress } : {}),
+      };
     }
     if (method === 'TCG') {
       // Effective address: captureAddr when toggle is on OR there's

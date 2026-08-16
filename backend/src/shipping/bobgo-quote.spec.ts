@@ -211,6 +211,38 @@ describe('quoteCombined on the Bob Go rail', () => {
     const { svc } = makeService({ rates: [DOOR] });
     await expect(svc.quoteCombined(items, 'PUDO', {})).resolves.toBeNull();
   });
+
+  // THE CART REGRESSION. A consolidated collection-point group must quote when
+  // it carries an address AND a point id. It never did: createOrderCheckout
+  // sent `{ toLockerId }` alone for PUDO, so the address guard above fired for
+  // every locker cart, the caller `continue`d to per-line quoting, and that
+  // threw. Every multi-item locker checkout was dead on the live rail — masked
+  // only because assertPaymentsLive() rejects first while payments are off.
+  it('quotes a collection-point group given an address AND a point id', async () => {
+    const { svc, bobgo } = makeService({ rates: [PICKUP] });
+    const q = await svc.quoteCombined(items, 'PUDO', {
+      deliveryAddress: DELIVERY,
+      toLockerId: 545,
+    });
+    expect(q).not.toBeNull();
+    expect(q!.priceCents).toBeGreaterThan(0);
+    // The point id must reach the adapter, or it matches nothing and the buyer
+    // is told no collection point can take the parcel.
+    expect(bobgo.getRates).toHaveBeenCalled();
+  });
+
+  // A legacy Pudo code coerces to NaN, which passes the adapter's `!= null`
+  // test and then matches no location — surfacing a data error as a capacity
+  // error ("no collection point can take this parcel").
+  it('ignores a non-numeric point id rather than sending NaN', async () => {
+    const { svc } = makeService({ rates: [DOOR] });
+    const q = await svc.quoteCombined(items, 'TCG', {
+      deliveryAddress: DELIVERY,
+      toLockerId: 'CG929',
+    });
+    // Falls back to the door rate rather than silently matching nothing.
+    expect(q?.priceCents).toBe(11495);
+  });
 });
 
 describe('deliveryOptions — the buyer decides', () => {

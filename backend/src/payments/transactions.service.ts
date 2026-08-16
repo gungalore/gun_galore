@@ -1108,23 +1108,35 @@ export class TransactionsService {
             quantity: (g as { quantity?: number }).quantity ?? 1,
           })),
           method,
-          method === 'PUDO'
-            ? { toLockerId: group[0].pudoPickupLockerId }
-            : {
-                deliveryAddress: a
-                  ? {
-                      streetAddress: a.streetAddress,
-                      suburb: a.suburb,
-                      city: a.city,
-                      postalCode: a.postalCode,
-                      province: a.province as Province,
-                      lat: (a as { lat?: number }).lat ?? 0,
-                      lng: (a as { lng?: number }).lng ?? 0,
-                    }
-                  : undefined,
-              },
+          {
+            // BOTH slots carry the address — see quoteCombined's dest docblock.
+            deliveryAddress: a
+              ? {
+                  streetAddress: a.streetAddress,
+                  suburb: a.suburb,
+                  city: a.city,
+                  postalCode: a.postalCode,
+                  province: a.province as Province,
+                  lat: (a as { lat?: number }).lat ?? 0,
+                  lng: (a as { lng?: number }).lng ?? 0,
+                }
+              : undefined,
+            // Pins the collection point within that area for a PUDO group.
+            ...(method === 'PUDO'
+              ? { toLockerId: group[0].pudoPickupLockerId }
+              : {}),
+          },
         );
-        if (!combined) continue; // too big / ineligible → per-line fallback
+        if (!combined) {
+          // Was `continue`, which fell through to per-line quoting — a
+          // DIFFERENT price from the one the buyer was shown for the group,
+          // and for a locker group a guaranteed 400 further down. If we cannot
+          // re-price the group the buyer chose, say so instead of quietly
+          // charging something else.
+          throw new BadRequestException(
+            'Delivery options for one of these sellers changed while you were checking out — please choose delivery again.',
+          );
+        }
         const carrier = group[0];
         shipOverride.set(carrier.listingId, {
           costCents: combined.priceCents,
