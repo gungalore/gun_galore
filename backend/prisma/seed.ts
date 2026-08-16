@@ -287,7 +287,20 @@ const subCategories: Record<string, SubCat[]> = {
     { name: 'Rooftop Tents' },
     { name: 'Awnings & Shade' },
     { name: 'Fridges & Freezers' },
-    { name: 'Dual-Battery & Solar' },
+    // Split out of the old mixed "Dual-Battery & Solar" leaf (2026-08-16).
+    //
+    // Operator rule: an item that CONTAINS a battery ships normally; a battery
+    // in its naked form does not. That is the UN3480 (loose cells) vs UN3481
+    // (contained in equipment) line, and it is a category question, not a
+    // measurement — so it needs no field on the sell form at all. Splitting
+    // the leaf lets `collectionOnly` carry the whole rule: pick Batteries and
+    // the courier picker and parcel inputs simply never appear.
+    //
+    // They were one leaf before, which is why the old dangerous-goods gate had
+    // to ask every seller for a Wh number ("enter 0 if not a battery") just to
+    // tell a battery apart from the solar panel listed beside it.
+    { name: 'Batteries', collectionOnly: true },
+    { name: 'Solar & Charging' },
     { name: 'Recovery Gear' },
     { name: 'Drawer & Storage Systems' },
     { name: 'Roof Racks & Load Bars' },
@@ -479,74 +492,38 @@ interface AttrDef {
   required?: boolean; // default false
 }
 
-// P4.4 — vehicle fitment, shared across the vehicle-mounted-gear categories.
-// vehicle_model is free text (searched + cross-sell signal), so filterable:false.
-const FITMENT: AttrDef[] = [
-  { key: 'vehicle_make', label: 'Vehicle make', type: 'SELECT', options: ['Toyota', 'Ford', 'Isuzu', 'Nissan', 'Volkswagen', 'Mitsubishi', 'Land Rover', 'Jeep', 'Mahindra', 'Suzuki', 'Other'] },
-  { key: 'vehicle_model', label: 'Vehicle model', type: 'TEXT', filterable: false },
-  { key: 'vehicle_year_from', label: 'Fits from year', type: 'NUMBER' },
-  { key: 'vehicle_year_to', label: 'Fits to year', type: 'NUMBER' },
-  { key: 'cab_type', label: 'Cab / body', type: 'SELECT', options: ['Single Cab', 'Double Cab', 'Extra Cab', 'SUV / Wagon', 'Not vehicle-specific'] },
-];
-
-const categoryAttributes: Record<string, AttrDef[]> = {
-  'overlanding--fridges-and-freezers': [
-    { key: 'capacity_litres', label: 'Capacity', type: 'NUMBER', unit: 'L' },
-    { key: 'fridge_type', label: 'Fridge type', type: 'SELECT', options: ['Compressor', 'Absorption', 'Thermoelectric'] },
-    { key: 'power_supply', label: 'Power supply', type: 'SELECT', options: ['12V', '240V', 'Dual 12V/240V'] },
-  ],
-  'overlanding--rooftop-tents': [
-    { key: 'sleeps', label: 'Sleeps', type: 'NUMBER' },
-    { key: 'shell_type', label: 'Shell type', type: 'SELECT', options: ['Soft-shell', 'Hard-shell', 'Wedge'] },
-    { key: 'mattress_width_cm', label: 'Mattress width', type: 'NUMBER', unit: 'cm' },
-  ],
-  'overlanding--dual-battery-and-solar': [
-    { key: 'battery_capacity_ah', label: 'Battery capacity', type: 'NUMBER', unit: 'Ah' },
-    { key: 'battery_chemistry', label: 'Battery chemistry', type: 'SELECT', options: ['LiFePO4', 'AGM', 'Gel', 'Lead-acid'] },
-    // REQUIRED — the dangerous-goods gate (P4.3b) forces a >100 Wh battery
-    // collection-only; requiring the value stops a DG battery being listed with
-    // the Wh blank + couriered. Non-battery items in this mixed category enter 0.
-    { key: 'battery_wh', label: 'Battery energy (Wh — enter 0 if not a battery)', type: 'NUMBER', unit: 'Wh', required: true },
-  ],
-  'fishing--rods': [
-    { key: 'rod_class', label: 'Rod class', type: 'SELECT', options: ['Ultra-light', 'Light', 'Medium', 'Medium-heavy', 'Heavy'] },
-    { key: 'rod_length_ft', label: 'Rod length', type: 'NUMBER', unit: 'ft' },
-    { key: 'rod_pieces', label: 'Pieces', type: 'NUMBER' },
-  ],
-  'fishing--reels': [
-    { key: 'reel_type', label: 'Reel type', type: 'SELECT', options: ['Spinning', 'Baitcaster', 'Fly', 'Conventional'] },
-    { key: 'reel_size', label: 'Reel size', type: 'SELECT', options: ['1000', '2500', '3000', '4000', '5000', '6000', '8000', '10000'] },
-    { key: 'gear_ratio', label: 'Gear ratio', type: 'TEXT', filterable: false },
-  ],
-  // ROOT — inherited by every clothing/footwear child via the resolver.
-  'outdoor-clothing-footwear': [
-    { key: 'gender', label: 'Gender', type: 'SELECT', options: ['Men', 'Women', 'Unisex', 'Kids'] },
-    { key: 'size', label: 'Size', type: 'SELECT', options: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'] },
-    { key: 'new_with_tags', label: 'New with tags', type: 'BOOLEAN' },
-  ],
-  'archery-bowhunting--compound-bows': [
-    { key: 'draw_weight_lbs', label: 'Draw weight', type: 'NUMBER', unit: 'lbs' },
-    { key: 'draw_length_in', label: 'Draw length', type: 'NUMBER', unit: 'in' },
-    { key: 'axle_to_axle_in', label: 'Axle-to-axle', type: 'NUMBER', unit: 'in' },
-    { key: 'hand', label: 'Hand', type: 'SELECT', options: ['Right', 'Left'] },
-  ],
-  'camping-outdoor--tents': [
-    { key: 'sleeps', label: 'Sleeps', type: 'NUMBER' },
-    { key: 'season_rating', label: 'Season rating', type: 'SELECT', options: ['3-season', '4-season'] },
-    { key: 'tent_type', label: 'Tent type', type: 'SELECT', options: ['Dome', 'Tunnel', 'Geodesic', 'A-frame'] },
-  ],
-  // P4.4 — vehicle fitment on the vehicle-mounted-gear categories.
-  'overlanding--roof-racks-and-load-bars': FITMENT,
-  'overlanding--drawer-and-storage-systems': FITMENT,
-  'overlanding--bull-bars-sliders-and-protection': FITMENT,
-  'overlanding--awnings-and-shade': FITMENT,
-  // P4.4 — footwear size override: define `size` with UK shoe sizes on the
-  // Boots leaf so the resolver's nearest-wins dedup overrides the Clothing
-  // root's apparel `size` (XS…3XL) for boots only.
-  'outdoor-clothing-footwear--hiking-and-hunting-boots': [
-    { key: 'size', label: 'Size (UK)', type: 'SELECT', options: ['UK 3', 'UK 4', 'UK 5', 'UK 6', 'UK 7', 'UK 8', 'UK 9', 'UK 10', 'UK 11', 'UK 12', 'UK 13'] },
-  ],
-};
+// ─── P4 — per-category attribute definitions ───────────────────────────
+//
+// DELIBERATELY EMPTY since 2026-08-16, on the operator's instruction: the sell
+// form is simple for every item, and the only extra questions belong to the
+// restricted goods (firearms and barrels), whose serial / licence / dealer-stock
+// fields are hard-coded form sections and were never part of this system.
+//
+// What used to live here: 46 rows across 13 categories — capacity_litres,
+// fridge_type, rod_class, reel_size, draw_weight_lbs, the five-field vehicle
+// FITMENT set, and battery_wh. All of them made a seller answer spec questions
+// to list a second-hand fridge.
+//
+// The rows are NOT deleted. `main()` deactivates them (isActive:false) and this
+// map reactivates anything still listed — the same deactivate-then-reseed
+// pattern the category tree uses above. Both `getEffectiveAttributes`
+// (categories.service.ts) and the Meili facet derivation
+// (search.service.ts filterableAttrFacets) filter on isActive, so one flag
+// switches specs off consistently everywhere: sell form, edit form, browse
+// filters, facets and the PDP specifications card. Re-adding an entry here
+// brings that category's fields back with its stored values intact.
+//
+// NOTE ON battery_wh: it is gone for good, not merely parked. It existed only
+// to tell a battery apart from the solar panel in the same category so the
+// dangerous-goods gate could force collection. That is now the Batteries /
+// Solar & Charging category split, so the question has no job left.
+//
+// If specs ever come back, add them per category and NEVER filter individual
+// keys out of a category that still has others: validateAndCleanAttributes
+// drops stored keys with no definition and listings.service REPLACES the whole
+// attributes column, so a seller editing their price would silently erase the
+// orphaned values. All-or-nothing per category is the safe shape.
+const categoryAttributes: Record<string, AttrDef[]> = {};
 
 async function main() {
   // Deactivate every existing category first. Anything still in our seed
@@ -641,7 +618,10 @@ async function main() {
       slug: {
         in: [
           'overlanding--fridges-and-freezers',
-          'overlanding--dual-battery-and-solar',
+          // Both halves of the old dual-battery-and-solar leaf: a battery and
+          // a solar controller are equally worth a "tested & working" claim.
+          'overlanding--batteries',
+          'overlanding--solar-and-charging',
           'overlanding--vehicle-lighting',
           'camping-outdoor--lights',
           'camping-outdoor--navigation-and-gps',
@@ -660,6 +640,13 @@ async function main() {
   // ─── P4 — per-category attribute definitions ───────────────────────────
   // Upsert each flagship attribute on its category by the (categoryId, key)
   // unique. Produces the identical rows to the 20260702170000 migration.
+  // Mirror of the category deactivation at the top of main(): clear the flag
+  // on every row first, then let the map below reactivate whatever is still
+  // declared. Without this, emptying the map would leave the old rows live —
+  // upsert only touches keys it is given.
+  console.log('Deactivating stale category attributes…');
+  await prisma.categoryAttribute.updateMany({ data: { isActive: false } });
+
   console.log('Seeding category attributes…');
   for (const [slug, attrs] of Object.entries(categoryAttributes)) {
     const category = await prisma.category.findUnique({ where: { slug } });

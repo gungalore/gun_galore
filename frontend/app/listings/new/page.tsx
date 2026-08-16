@@ -1401,6 +1401,18 @@ export default function NewListingPage() {
   // without the attribute behave byte-identically to before. Recomputes
   // reactively as attrDefs (category change), attrValues (typing), or the
   // fetched threshold change.
+  // DORMANT since 2026-08-16 and expected to stay that way. The `battery_wh`
+  // attribute was retired along with every other per-category spec input, so
+  // `attrDefs` no longer contains it and this is permanently false; the rule it
+  // used to enforce now lives in the category tree instead. A bare battery goes
+  // in Overlanding › Batteries, which is `collectionOnly`, so the courier
+  // picker and parcel inputs never appear — whereas a battery inside a device
+  // (power station, drone, fish finder) ships normally, which is the UN3480 /
+  // UN3481 line and the operator's own rule.
+  //
+  // Kept rather than deleted because it costs nothing and stays correct: if an
+  // admin ever re-creates a battery_wh attribute on some category, this gate
+  // resumes working as belt-and-braces.
   const dgLithiumRestricted = useMemo(() => {
     const hasBatteryWhDef = attrDefs.some((d) => d.key === 'battery_wh');
     if (!hasBatteryWhDef) return false;
