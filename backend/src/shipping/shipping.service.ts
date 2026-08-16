@@ -641,6 +641,41 @@ export class ShippingService {
       where: { id: listingId },
     });
     if (!listing) throw new NotFoundException('Listing not found');
+
+    // ITEM-CLASS GATE — if it can't be shipped, don't quote a courier for it.
+    //
+    // This runs BEFORE the parcel-dimension check on purpose, and covers both
+    // rails (Bob Go and the legacy Pudo/TCG path below), because the dimension
+    // check is not a class check and never was. A firearm carries weight and
+    // dimensions — the sell form requires them — so a firearm listing sailed
+    // straight past it and this endpoint returned live, priced, bookable-looking
+    // door and pickup-point rates for a rifle. The route is unauthenticated
+    // (shipping.controller.ts, no guard beyond the global throttler), so that
+    // was reachable by anyone with a listing id.
+    //
+    // A firearm moves as dealer stock through a licensed dealer, or the parties
+    // arrange privately and both attend one. It is never a parcel on our rail.
+    if (listing.isFirearm) {
+      throw new BadRequestException(
+        'This item transfers through a licensed dealer, so no courier rate applies.',
+      );
+    }
+    if (listing.collectionOnly) {
+      throw new BadRequestException(
+        'This item cannot be couriered — the buyer collects it from the seller.',
+      );
+    }
+    if (listing.isExperience) {
+      throw new BadRequestException(
+        'This is an on-site booking, not a parcel — no courier rate applies.',
+      );
+    }
+    if (!offersCourier(listing.shippingMethods)) {
+      throw new BadRequestException(
+        'This item is not available for courier delivery.',
+      );
+    }
+
     if (
       !listing.weightGrams ||
       !listing.lengthCm ||
