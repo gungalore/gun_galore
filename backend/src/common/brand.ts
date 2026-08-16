@@ -29,11 +29,21 @@ export const LEGAL_REG_NO = '2026/639713/07';
 export const SMS_PREFIX = `${BRAND_NAME}:`;
 
 /**
- * Email From header. NOTE the domain is still gungalore.co.za and stays that
- * way until the domain migration — changing the from-domain without matching
- * SPF/DKIM/DMARC records would put every transactional email in spam.
+ * Email From header.
+ *
+ * Moved to alloutdoor.co.za on 2026-08-16, once — and only once — the domain
+ * was verified in Resend. The DNS that makes it deliverable is in place:
+ * DKIM at `resend._domainkey`, and SPF + a bounce MX on the `send` subdomain.
+ *
+ * The `send` subdomain matters. alloutdoor.co.za already hosts mail (MX
+ * s1.ahmail.co.za) with its own apex SPF including _spf.absolutehosting.joburg,
+ * and a second apex SPF record would be a permerror that breaks BOTH sending
+ * and receiving. Keeping Resend's records under `send` leaves the apex alone.
+ *
+ * Do not move this ahead of the DNS again — a from-domain without matching
+ * SPF/DKIM puts every transactional email in spam.
  */
-export const EMAIL_FROM = `${BRAND_NAME} <noreply@gungalore.co.za>`;
+export const EMAIL_FROM = `${BRAND_NAME} <noreply@alloutdoor.co.za>`;
 
 /**
  * Support mailbox — the reply-to address we print in emails, receipts and
