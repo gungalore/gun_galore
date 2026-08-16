@@ -1095,6 +1095,25 @@ function VerifyKycPageInner() {
                         height: '100%',
                         objectFit: 'cover',
                         display: 'block',
+                        // MIRROR THE PREVIEW ONLY.
+                        //
+                        // Raw front-camera video is not mirrored, so moving
+                        // your head left moves the image right — every person
+                        // reads that as broken, because a camera pointed at
+                        // your own face is expected to behave like a mirror.
+                        //
+                        // This is CSS on the rendered element. captureFrame()
+                        // draws from the <video> element's own frames, which
+                        // are untouched by a CSS transform, so what we send to
+                        // the face-match stays the TRUE, unmirrored image.
+                        // Mirroring the captured bytes would be the actual bug.
+                        //
+                        // Safe here because this camera is selfie-only
+                        // (facingMode: 'user'); the ID document is uploaded as
+                        // a photo/PDF, never shot through this preview. If a
+                        // document camera is ever added it must NOT inherit
+                        // this — reversed text breaks OCR.
+                        transform: 'scaleX(-1)',
                       }}
                     />
                   ) : (
