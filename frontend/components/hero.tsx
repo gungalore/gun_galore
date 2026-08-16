@@ -6,13 +6,7 @@
 import Link from 'next/link';
 import { TrustCard } from './trust-banner';
 
-/**
- * `storeIsEmpty` flips which CTA is primary. Pointing the loudest button on
- * the site at "Browse the store" while the store has nothing in it sends
- * every visitor to an empty shelf; until stock lands, the useful action is
- * listing. It flips back on its own the moment anything is for sale.
- */
-export function Hero({ storeIsEmpty = false }: { storeIsEmpty?: boolean }) {
+export function Hero() {
   return (
     <section
       className="relative w-full overflow-hidden"
@@ -206,43 +200,28 @@ export function Hero({ storeIsEmpty = false }: { storeIsEmpty?: boolean }) {
             new and secondhand, couriered to your door.
           </p>
 
-          {/* CTAs. Primary drops into the Buy Now surface (the largest
-              catalogue) — unless there is no catalogue yet, in which case
-              selling is the only action that leads anywhere. */}
-          <div className="hero-reveal hero-reveal-4 flex flex-wrap items-center gap-3">
-            <Link
-              href={storeIsEmpty ? '/listings/new' : '/?listingType=BUY_NOW'}
-              className="inline-flex items-center justify-center px-7 text-sm transition-colors"
-              style={{
-                background: 'var(--red)',
-                color: '#fff',
-                fontWeight: 600,
-                textDecoration: 'none',
-                minHeight: 48,
-                borderRadius: 'var(--r-md)',
-              }}
-            >
-              {storeIsEmpty ? 'List your first item →' : 'Browse the store'}
-            </Link>
-            {storeIsEmpty && (
-              <Link
-                href="/?listingType=BUY_NOW"
-                className="inline-flex items-center justify-center px-7 text-sm transition-colors"
-                style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--hairline)',
-                  textDecoration: 'none',
-                  minHeight: 48,
-                  borderRadius: 'var(--r-md)',
-                  fontWeight: 500,
-                  backdropFilter: 'blur(2px)',
-                }}
-              >
-                Browse the store
-              </Link>
-            )}
-          </div>
+          {/* ONE call to action. The hero briefly carried a second button
+              and flipped its primary to "List your first item" while the
+              catalogue was empty; that put the selling flow in the loudest
+              position on the site and made the landing page read as a
+              recruitment pitch (operator, 2026-08-16). Selling now lives in
+              the nav and in the disclosure panel further down. One button,
+              buyer-facing, is also simply the cleaner composition. */}
+          <Link
+            href="/?listingType=BUY_NOW"
+            className="hero-reveal hero-reveal-4 inline-flex items-center justify-center px-8 text-sm transition-colors"
+            style={{
+              background: 'var(--red)',
+              color: '#fff',
+              fontWeight: 600,
+              textDecoration: 'none',
+              minHeight: 50,
+              borderRadius: 'var(--r-md)',
+              letterSpacing: '0.01em',
+            }}
+          >
+            Browse the store
+          </Link>
         </div>
 
         {/* Trust proof card — right on desktop, stacked under the copy on

@@ -10,7 +10,7 @@ import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
 import { FeaturedAvailabilityBar } from '@/components/featured-availability-bar';
-import { FoundingSellerSection } from '@/components/founding-seller-section';
+import { HomeInfoPanel } from '@/components/home-info-panel';
 import { DraggableMarquee } from '@/components/draggable-marquee';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
@@ -299,7 +299,7 @@ export default async function HomePage({
 
       {/* Hero now carries the trust card on its right, so the competitive
           "why All Outdoor" proof lives inside <Hero /> — no separate banner. */}
-      {showHero && <Hero storeIsEmpty={!browseFailed && browse.total === 0} />}
+      {showHero && <Hero />}
 
       {/* ─── Bare landing page: featured-only grid, no rail, no filter ───
           When the user lands on "/" with no filters, the main grid
@@ -411,41 +411,17 @@ export default async function HomePage({
               ))}
           </DraggableMarquee>
           </>)}
-          {/* Availability indicator + bid entry: "X of N spots open" + a
-              "Bid for a spot" CTA.
+          {/* Featured availability — "X of N spots open" + the bid entry.
+              Sits directly under the marquee it belongs to, and self-hides
+              when the summary can't load or no slots exist.
 
-              OUTSIDE the occupiedFeatured block on purpose. The component's
-              own contract is "always renders a bid entry point so the
-              homepage is never a dead end for sellers" — but it used to sit
-              inside the marquee block, which only renders once a slot is
-              ALREADY sold. So the one moment it was truly needed (no spots
-              sold, nobody has ever bid) was the one moment it was hidden,
-              and there was no way to reach /featured/bid from the homepage
-              at all. The compact fallback link further down doesn't cover
-              this either — it's gated on browse.total > 0, so a store with
-              no listings loses that too.
-
-              It self-hides when the summary can't load or no slots exist,
-              so an unconfigured install still doesn't show a bare CTA. */}
-          {/* Seller block vs. bare availability bar.
-
-              With NOTHING listed, the two seller-facing pitches (be the first
-              to list; buy a featured spot) are composed into one section with
-              a single argument — see components/founding-seller-section.tsx.
-              Previously they were two orphans floating in black.
-
-              With stock on the shelves the pitch is unnecessary, so the bar
-              goes back to standing alone under the marquee.
-
-              browseFailed is checked deliberately: on a backend hiccup
-              browse.total is also 0, and announcing an empty shop we merely
-              failed to READ is worse than saying nothing. The retry card
-              below owns that case. */}
-          {!browseFailed && browse.total === 0 ? (
-            <FoundingSellerSection featuredSlot={<FeaturedAvailabilityBar />} />
-          ) : (
-            <FeaturedAvailabilityBar />
-          )}
+              The seller pitch that used to live here (headline, paragraph,
+              two CTAs and a numbered three-step explainer) has moved to the
+              disclosure panel near the foot of the page — operator, 2026-08-16:
+              it pushed the paid featured placements down the page and made the
+              landing view read as a recruitment pitch instead of a storefront.
+              Nothing was dropped; see components/home-info-panel.tsx. */}
+          <FeaturedAvailabilityBar />
 
           {/* "Shop by category" curtain REMOVED (operator, 2026-08-15).
               It was the fallback breadth entry while Featured was dark, but
@@ -455,6 +431,11 @@ export default async function HomePage({
               shelf. Featured + the cold-start band own this stretch now.
               The component (components/category-curtain.tsx) is kept for
               reuse elsewhere; only the homepage stopped rendering it. */}
+
+          {/* Good to know — the selling / buying / fees / featured answers,
+              folded away behind disclosure rows so the page above stays a
+              storefront. No JavaScript; native <details>. */}
+          <HomeInfoPanel />
 
           {/* Recently viewed — self-hides if the user has < 2 entries
               on this device, so cold-start visitors don't see an empty

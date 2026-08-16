@@ -236,6 +236,31 @@ footer li > a {
   display: block;
 }
 
+/* Disclosure rows on the landing page (components/home-info-panel.tsx).
+   Native <details> so the answers cost no JavaScript and stay keyboard- and
+   screen-reader-accessible; these rules only remove the default marker and
+   give the +/- a considered transition. */
+.gg-disclose > summary::-webkit-details-marker { display: none; }
+.gg-disclose > summary::marker { content: ""; }
+.gg-disclose > summary { transition: color 0.15s ease; }
+.gg-disclose > summary:hover { color: #fff; }
+.gg-disclose-mark {
+  color: var(--text-tertiary);
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+.gg-disclose[open] > summary .gg-disclose-mark {
+  transform: rotate(45deg);
+  color: var(--red);
+}
+.gg-disclose-body p { margin: 0 0 10px; }
+.gg-disclose-body p:last-child { margin-bottom: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .gg-disclose-mark { transition: none; }
+}
+
 /* When installed as a PWA we hide the top public nav + the legal
    footer (the bottom tab bar replaces them). The detection script in
    app/layout.tsx sets the data-standalone attr before paint, so this
