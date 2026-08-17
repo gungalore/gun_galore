@@ -582,6 +582,13 @@ function VerifyKycPageInner() {
           gap: 8,
           marginBottom: 24,
           justifyContent: 'center',
+          // Wrap the ROW instead of letting individual labels wrap. Four
+          // steps do not fit across a narrow phone, and without this
+          // "ID document" broke onto a second line inside its own segment,
+          // pushing that segment taller than the connector beside it — which
+          // read as the text overlapping the box.
+          flexWrap: 'wrap',
+          rowGap: 10,
         }}
       >
         {items.map((s, i) => {
@@ -591,7 +598,12 @@ function VerifyKycPageInner() {
           return (
             <div
               key={s.key}
-              style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexShrink: 0,
+              }}
             >
               <div
                 style={{
@@ -614,13 +626,19 @@ function VerifyKycPageInner() {
                 style={{
                   fontSize: 11,
                   color: active ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {s.label}
               </span>
               {i < items.length - 1 && (
                 <div
-                  style={{ width: 24, height: '0.5px', background: 'var(--border)' }}
+                  style={{
+                    width: 24,
+                    height: '0.5px',
+                    background: 'var(--border)',
+                    flexShrink: 0,
+                  }}
                 />
               )}
             </div>
@@ -965,9 +983,46 @@ function VerifyKycPageInner() {
                 lineHeight: 1.5,
               }}
             >
-              On your phone you can take a photo of your ID directly. Max
-              10&nbsp;MB.
+              Max 10&nbsp;MB.
             </div>
+
+            {/* PHONE HANDOFF ON THE DOCUMENT STEP.
+                On a desktop "Choose photo or PDF" assumes the seller already
+                HAS a file — but the ID is a physical card, and photographing
+                it with a laptop webcam is miserable. This hands the step to
+                the phone, where the camera app is the natural tool.
+                Deliberately a disclosure: it is an option, not a fallback for
+                a missing camera, so it must not push the primary upload
+                button down the page. */}
+            {flow === 'CLAUDE' && (
+              <details className="gg-disclose" style={{ marginTop: 14 }}>
+                <summary
+                  style={{
+                    cursor: 'pointer',
+                    listStyle: 'none',
+                    textAlign: 'center',
+                    fontSize: 13,
+                    color: 'var(--red)',
+                  }}
+                >
+                  Rather photograph it with your phone →
+                </summary>
+                <div style={{ marginTop: 14 }}>
+                  <CameraUnavailableHandoff
+                    returnTo={returnTo}
+                    actionToken={actionToken}
+                    phoneMasked={phoneMasked}
+                    eyebrow="Continue on your phone"
+                    lead="Scan this with your phone to open this same step there, then photograph your ID with the camera app. It uploads straight back here — this page keeps your progress."
+                    onSmsRequest={async () => {
+                      const r = await apiPost('handoff-sms');
+                      return (r.phoneMasked as string) ?? phoneMasked ?? '';
+                    }}
+                  />
+                </div>
+              </details>
+            )}
+
             <SaveLaterLink />
           </div>
         )}
@@ -1460,11 +1515,17 @@ function CameraUnavailableHandoff({
   actionToken,
   phoneMasked,
   onSmsRequest,
+  eyebrow,
+  lead,
 }: {
   returnTo: string;
   actionToken: string | null;
   phoneMasked?: string | null;
   onSmsRequest?: () => Promise<string>;
+  /** Overrides for the ID-document step, where the panel is an OPTION the
+   *  seller may prefer rather than a fallback for a missing camera. */
+  eyebrow?: string;
+  lead?: string;
 }) {
   const [smsState, setSmsState] = useState<
     'idle' | 'sending' | 'sent' | 'cooldown'
@@ -1527,11 +1588,11 @@ function CameraUnavailableHandoff({
           textAlign: 'center',
         }}
       >
-        No camera on this device
+        {eyebrow ?? 'No camera on this device'}
       </p>
       <p style={{ marginBottom: 14, textAlign: 'center' }}>
-        Scan this QR code with your phone to finish identity
-        verification on a device with a camera.
+        {lead ??
+          'Scan this QR code with your phone to finish identity verification on a device with a camera.'}
       </p>
 
       {/* QR code on white background so dark-mode pixels stay scannable. */}
