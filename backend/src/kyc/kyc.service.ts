@@ -1261,15 +1261,20 @@ export class KycService {
       update: { value: JSON.stringify(cached) },
     });
 
-    // Trigger low-balance alerts AFTER the cache is updated, so even if
-    // the alert sender throws the cached value is still in place.
-    // Fire-and-forget so callers (the cron, the admin refresh button)
-    // never see SMS/email failures.
-    void this.maybeAlertLowBalance(live.available).catch((err) =>
-      this.log.warn(
-        `Low-balance alert failed: ${(err as Error).message}`,
-      ),
-    );
+    // NO ALERT FROM HERE ANY MORE.
+    //
+    // The credit-poll cron (TasksService.checkCreditThreshold) already alerts
+    // on VerifyNow, from the CreditThreshold table, with operator-tunable
+    // warn/alarm levels and edge-triggered dedup. This method was a second,
+    // older, VerifyNow-only path with its own threshold and its own 24h timer,
+    // so a single low balance produced alerts from two systems that knew
+    // nothing about each other — the operator got told the same fact twice
+    // over on different schedules.
+    //
+    // maybeAlertLowBalance is kept below (unused by this path) because it is
+    // still the only thing that clears the stale dedup flag; deleting it
+    // outright would strand that key. Refreshing the cache is now all this
+    // does, which is what the callers actually want from it.
 
     return cached;
   }

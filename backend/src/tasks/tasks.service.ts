@@ -40,7 +40,21 @@ import { NotificationCategory } from '@prisma/client';
 // same severity for that service until this window elapses. Stops
 // the 15-min cron from spamming the operator while the balance
 // hovers just under the line.
-const CREDIT_ALERT_DEDUP_MS = 6 * 60 * 60 * 1000; // 6 hours
+// A credit alert is EDGE-TRIGGERED: it fires when the balance crosses the
+// threshold, not repeatedly while it sits below one. The stamp is cleared the
+// moment the balance recovers, so the next dip alerts immediately.
+//
+// This used to be a 6-hour timer per severity, which meant a balance that
+// simply stayed low produced up to FOUR emails a day (warn + alarm, four
+// windows) plus an SMS on every alarm — and a second, independent VerifyNow
+// alert in KycService on top. Nothing was wrong; the operator was being told
+// the same fact over and over. An alert you receive twelve times is one you
+// stop reading, which is worse than not sending it.
+//
+// The floor below is the only repeat: if a balance is STILL below the line a
+// week later, say so once more, because silence on a genuinely unresolved
+// problem is its own failure.
+const CREDIT_ALERT_REPEAT_FLOOR_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 @Injectable()
 export class TasksService {
@@ -1691,9 +1705,11 @@ export class TasksService {
       crossed(balance, threshold.alarmThreshold)
     ) {
       const lastAlarm = threshold.lastAlarmAlertAt;
+      // Already alerted for this crossing? Stay quiet until it recovers, or
+      // until the weekly floor.
       if (
         !lastAlarm ||
-        now.getTime() - lastAlarm.getTime() >= CREDIT_ALERT_DEDUP_MS
+        now.getTime() - lastAlarm.getTime() >= CREDIT_ALERT_REPEAT_FLOOR_MS
       ) {
         await this.fanOutCreditAlert(
           service,
@@ -1710,6 +1726,21 @@ export class TasksService {
       return;
     }
 
+    // Healthy again — clear the stamps so the NEXT dip alerts straight away
+    // instead of being swallowed by a stale timer. Without this the edge
+    // trigger degenerates back into a timer.
+    if (
+      (threshold.warnThreshold == null ||
+        !crossed(balance, threshold.warnThreshold)) &&
+      (threshold.lastWarnAlertAt || threshold.lastAlarmAlertAt)
+    ) {
+      await this.prisma.creditThreshold.update({
+        where: { service },
+        data: { lastWarnAlertAt: null, lastAlarmAlertAt: null },
+      });
+      return;
+    }
+
     if (
       threshold.warnThreshold != null &&
       crossed(balance, threshold.warnThreshold)
@@ -1717,7 +1748,7 @@ export class TasksService {
       const lastWarn = threshold.lastWarnAlertAt;
       if (
         !lastWarn ||
-        now.getTime() - lastWarn.getTime() >= CREDIT_ALERT_DEDUP_MS
+        now.getTime() - lastWarn.getTime() >= CREDIT_ALERT_REPEAT_FLOOR_MS
       ) {
         await this.fanOutCreditAlert(
           service,
