@@ -52,6 +52,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
 import { PRO_NAME } from '@/lib/brand';
 import { useStandalone } from '@/lib/use-standalone';
+import { useCart } from '@/lib/cart-store';
 import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { useScrollDirection } from '@/lib/use-scroll-direction';
 import { PushToggleRow } from '@/components/push-opt-in-banner';
@@ -1395,8 +1396,9 @@ function ShopSheet({
 //   3. My account section — Dashboard, Profile, all /my/* destinations.
 //      Folded into the sheet because the "My" tab was replaced by
 //      Wishlist; the My destinations still need a permanent home.
-//   4. Shop section — secondary shop surfaces (Take a Shot, Swop).
-//      Wishlist is intentionally NOT here because it's a primary tab.
+//   4. Shop section — Cart + Wishlist (fallbacks for the routes where the
+//      top search bar that hosts them is hidden), then the secondary shop
+//      surfaces (Take a Shot, Swop, Deals, Prize Draw).
 //   5. Legal section — terms / privacy / refund / legal index.
 //   6. Sign out (signed-in only) — destructive-styled button below.
 //
@@ -1425,16 +1427,29 @@ function MoreSheet({
   onSignOut: () => void;
 }) {
   const { panelRef, dragHandlers, dragStyle } = useSwipeDown(onClose);
+  // UNITS, not lines — same rule as the nav's CartButton and TopCartButton.
+  const cartItems = useCart();
+  const cartCount = cartItems.reduce((sum, i) => sum + (i.quantity ?? 1), 0);
   // Secondary destinations — order = discoverability priority
   // (most-likely-used first).
   //
-  // Wishlist is listed FIRST as a fallback for the routes where the
-  // top sticky search bar (which hosts the primary Wishlist button)
+  // Cart and Wishlist are listed FIRST as fallbacks for the routes where the
+  // top sticky search bar (which hosts the primary Cart + Wishlist buttons)
   // is hidden: /admin, /checkout, /sign-in, /sign-up, /listings/new,
-  // /kyc/verify, /offline, /notifications, dealer-verification. On
-  // any of those pages users still have one tap to wishlist via
-  // this More-sheet entry.
+  // /kyc/verify, /offline, /notifications, dealer-verification. On any of
+  // those pages users still have one tap to either via this More-sheet entry.
+  //
+  // The cart carries its count here as well as on the button, because this
+  // sheet is the ONLY cart affordance on those pages — a buyer who parked
+  // three items and then went to check their notifications should still be
+  // told the basket is waiting.
   const shopLinks = [
+    {
+      href: '/cart',
+      label: 'Cart',
+      badge: cartCount,
+      badgeLabel: `${cartCount} item${cartCount === 1 ? '' : 's'}`,
+    },
     { href: '/wishlist', label: 'Wishlist' },
     { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
     { href: '/?listingType=SWOP', label: 'Swop / Trade' },
@@ -1662,6 +1677,8 @@ function MoreSheet({
               key={l.href}
               href={l.href}
               label={l.label}
+              badge={l.badge}
+              badgeLabel={l.badgeLabel}
               onNavigate={onNavigate}
             />
           ))}
@@ -1717,10 +1734,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function SheetLink({
   href,
   label,
+  badge,
+  badgeLabel,
   onNavigate,
 }: {
   href: string;
   label: string;
+  /** Optional count pill before the chevron. Hidden at 0/undefined. */
+  badge?: number;
+  /** How the count should be SPOKEN, e.g. "3 items". Falls back to the bare
+   *  number, which reads as "Cart, 3" — understandable but not English. */
+  badgeLabel?: string;
   onNavigate?: () => void;
 }) {
   return (
@@ -1730,6 +1754,10 @@ function SheetLink({
       <Link
         href={href}
         onClick={onNavigate}
+        // The count belongs in the accessible name, not just the pill —
+        // otherwise a screen-reader user hears "Cart" and learns nothing
+        // about the two items sitting in it.
+        aria-label={badge ? `${label}, ${badgeLabel ?? badge}` : undefined}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1742,7 +1770,35 @@ function SheetLink({
         }}
       >
         <span>{label}</span>
-        <span style={{ color: 'var(--text-tertiary)' }}>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            color: 'var(--text-tertiary)',
+          }}
+        >
+          {!!badge && badge > 0 && (
+            <span
+              aria-hidden
+              style={{
+                minWidth: 18,
+                height: 18,
+                padding: '0 5px',
+                borderRadius: 9,
+                background: 'var(--red)',
+                color: '#fff',
+                fontSize: 11,
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 1,
+              }}
+            >
+              {badge > 50 ? '50+' : badge}
+            </span>
+          )}
           <IconChevronRight />
         </span>
       </Link>

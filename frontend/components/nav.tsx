@@ -193,8 +193,11 @@ export function Nav() {
                   to signed-in users. */}
               <UrgentBell />
 
-              {/* Cart (Phase 8b) — single-seller multi-item basket. Hidden
-                  when empty. Visible on desktop + mobile-web. */}
+              {/* Cart (Phase 8b) — single-seller multi-item basket. Always
+                  rendered (only the count badge is conditional) so the cart is
+                  a permanent, findable destination. Desktop + mobile-web only:
+                  this whole nav is display:none in the installed PWA, which
+                  gets its cart from TopCartButton instead. */}
               <CartButton />
 
               {/* Desktop sign-in / account chip. Mobile uses hamburger. */}

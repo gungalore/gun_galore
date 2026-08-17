@@ -26,6 +26,7 @@ import { usePathname } from 'next/navigation';
 import { useStandalone } from '@/lib/use-standalone';
 import { LiveSearch } from '@/components/live-search';
 import { TopWishlistButton } from '@/components/top-wishlist-button';
+import { TopCartButton } from '@/components/top-cart-button';
 
 // Pathname prefixes where the sticky search bar should NOT render. All
 // of these are either focus flows (checkout / sell / KYC) where search
@@ -88,24 +89,27 @@ export function MobileSearchBar() {
           : 10,
       }}
     >
-      {/* Standalone: 75 / 25 split — LiveSearch dominant, TopWishlistButton
-          as a compact heart-icon button in the spare 25%. Wishlist used to
-          live in the bottom tab bar; pairing it with the search bar puts
-          "save for later" beside the most-used shopping affordance on every
-          page where this bar renders. min-width on the wishlist button stops
-          it crushing below ~320 px viewports.
+      {/* Standalone: search takes the remaining width, with wishlist + cart as
+          fixed-size icon buttons beside it. This bar IS the header in the
+          installed app, so it carries the two shopping affordances the hidden
+          nav used to own. The cart matters most: without an entry point here
+          an installed user could add items and then have nowhere to reach
+          them — the bottom tab bar has no cart slot (see TopCartButton).
+          The buttons are fixed-width and never shrink; only the search input
+          gives ground, so both stay tappable down to ~320px viewports.
           Browser mode gets the full width for search instead: the nav row
           right above already carries Sell / bell / cart / menu, and wishlist
-          has its entry in the drawer's Account section — a second heart here
+          has its entry in the drawer's Account section — duplicating them here
           would only crowd the one control we added this bar for. */}
       <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
-        <div style={{ flex: 3, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <LiveSearch />
         </div>
         {isStandalone && (
-          <div style={{ flex: 1, minWidth: 56, maxWidth: 110 }}>
+          <>
             <TopWishlistButton />
-          </div>
+            <TopCartButton />
+          </>
         )}
       </div>
     </div>
