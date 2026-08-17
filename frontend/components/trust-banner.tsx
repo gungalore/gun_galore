@@ -14,14 +14,46 @@
 // Every line here must be TRUE TODAY — "secure card checkout" sat on this
 // card while checkout was still switched off pre-launch, which is exactly
 // the kind of claim a visitor (or a bank underwriter) can falsify in one
-// click. The shopping modes, moderation gate, courier rail and support are
-// all live now.
+// click. The shopping modes, moderation gate, courier rail and seller
+// ratings are all live now.
+//
+// WRITTEN AS OBJECTION-HANDLING, NOT AS A FEATURE LIST. A secondhand buyer
+// arrives with four questions in this order — can I haggle, is this junk,
+// how do I get it, and who is this stranger — so each line answers one of
+// them. "Local support that actually answers" answered none of them: it is
+// a promise about US rather than a reason to buy, it invites the reader to
+// wonder why we felt the need to say "actually", and the public support
+// number is still the placeholder in lib/support-contact.ts, so it was the
+// weakest claim on the card as well as the least persuasive.
+//
+// ⚠️ FIRST-PERSON STORE VOICE IS DELIBERATE (operator, 2026-08-17). Lines 2
+// and 4 say "we buy and sell" / "we only buy from", which reads as a
+// first-party retailer rather than a marketplace of third-party sellers.
+// That is the store framing the operator has chosen for the public site; the
+// TRUE model goes to the banks (see the FNB/Nedbank TPPP packs). Before
+// editing these two lines, read the note in the commit that added them —
+// there is a live consistency risk against the EDD response, and it is a
+// decision that was taken with that risk on the table, not by accident.
 const POINTS = [
-  'Buy now, bid, make an offer — or swop',
-  'Every item checked before it goes up',
-  'Couriered & tracked, door to door',
-  'Local support that actually answers',
+  'Buy it now, bid, or make an offer — or swop',
+  'We buy and sell quality gear — new and secondhand',
+  'Couriered countrywide, tracked to your door',
+  'We only buy from sellers we trust',
 ];
+
+// ⚠️ SWAP THIS IN THE DAY PAYMENTS GO LIVE — it is the strongest line on the
+// card and the one buyers actually want answered ("what if I get scammed?").
+// Replace the delivery line with it (keep both "we" lines, they carry the
+// store framing).
+//
+// It is NOT on the card yet for the same reason "secure card checkout" was
+// pulled: checkout returns 503 while PAYMENTS_LIVE is false, so it is a
+// promise about a flow that does not run.
+//
+// Phrasing is fixed by operator rule (2026-08-15) — say when the SELLER IS
+// PAID. Never "we hold your payment", never "escrow", anywhere.
+export const PAYMENT_TRUST_POINT =
+  'Sellers are only paid once you confirm delivery';
 
 export function TrustCard() {
   return (
