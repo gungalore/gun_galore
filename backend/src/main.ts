@@ -151,6 +151,8 @@ async function bootstrap() {
   const { httpAdapter } = app.get(HttpAdapterHost);
   app.useGlobalFilters(new RetryAfterFilter(httpAdapter));
 
+  const corsLog = new Logger('CORS');
+
   // CORS — allow the configured production FRONTEND_URL plus any
   // localhost port for local development (next dev → 3000, prod
   // testing builds → typically 3002 or whatever we pick), PLUS the
@@ -187,7 +189,24 @@ async function bootstrap() {
       const ok = allowed.some((rule) =>
         rule instanceof RegExp ? rule.test(origin) : rule === origin,
       );
-      callback(ok ? null : new Error(`CORS blocked: ${origin}`), ok);
+      if (ok) {
+        callback(null, true);
+        return;
+      }
+      // A disallowed origin is a REJECTED REQUEST, not a server fault.
+      //
+      // Passing an Error here propagates to Nest's ExceptionsHandler, which
+      // logs it at ERROR and answers 500 — so a browser calling from the wrong
+      // origin reads in the logs exactly like the API crashing, and it drowns
+      // real faults. A stale tab polling once a minute filled hours of error
+      // log this way before anyone looked at what was actually calling.
+      //
+      // Deny by returning `false` with no error: the browser still blocks the
+      // request (no Access-Control-Allow-Origin header is sent, which is the
+      // whole enforcement mechanism), but our logs stay honest. Logged at WARN
+      // with the origin so a genuine misconfiguration is still discoverable.
+      corsLog.warn(`CORS denied for origin: ${origin}`);
+      callback(null, false);
     },
     credentials: true,
   });
