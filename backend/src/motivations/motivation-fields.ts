@@ -37,6 +37,7 @@ export type MotivationFieldKind =
   | 'long'
   | 'date'
   | 'choice'
+  | 'multi'
   | 'yesno';
 
 export interface MotivationField {
@@ -143,13 +144,20 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'What kind of home is it',
     kind: 'choice',
     section: 'About you',
+    // Free text on the form, whose own examples are "shack, flat, caravan,
+    // cottage, house, hostel or homeless" (item 17). A list is better data and
+    // a faster tap, so we offer one that covers the form's examples rather than
+    // a tidier set that would force people into "Other".
     choices: [
       'House',
       'Townhouse or complex',
-      'Flat or apartment',
-      'Cottage or granny flat',
+      'Flat',
+      'Cottage',
       'Smallholding',
       'Farm',
+      'Caravan',
+      'Shack',
+      'Hostel',
       'Other',
     ],
     help: 'The form asks, and it also bears on storage.',
@@ -194,6 +202,11 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Marital status',
     kind: 'choice',
     section: 'About you',
+    // The form's boxes are Single / Married / Divorced / Widow / Widower /
+    // Other (specify) — it splits widow and widower by gender. We do not make
+    // someone pick a gendered word about themselves in a wizard; "Widowed" maps
+    // to the right box from the gender the ID number already carries, and falls
+    // back to Other where it cannot be told.
     choices: ['Single', 'Married', 'Life partner', 'Divorced', 'Widowed'],
     required: true,
     formOnly: true,
@@ -229,6 +242,32 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     sensitive: true,
     maxLength: 60,
   },
+  {
+    key: 'competency_for',
+    label: 'What your competency covers',
+    kind: 'multi',
+    section: 'About you',
+    // Item 1.4 lets you mark more than one, and it must match the firearm you
+    // are applying for — a handgun application on a rifle-only competency is a
+    // refusal waiting to happen, and it is visible on the form.
+    choices: ['Handgun', 'Rifle', 'Shotgun'],
+    help: 'Tick everything your certificate covers.',
+    formOnly: true,
+  },
+  {
+    key: 'competency_issued',
+    label: 'Competency issued on',
+    kind: 'date',
+    section: 'About you',
+    formOnly: true,
+  },
+  {
+    key: 'competency_expiry',
+    label: 'Competency expires on',
+    kind: 'date',
+    section: 'About you',
+    formOnly: true,
+  },
   // THE FIREARM, IN ITS OWN BOXES. This was one free-text line until the SAPS
   // 271 analysis: the form wants type, action, make, model, calibre and serial
   // each in a separate box, and free text cannot fill separate boxes. It also
@@ -239,7 +278,10 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Type of firearm',
     kind: 'choice',
     section: 'The firearm',
-    choices: ['Handgun', 'Rifle', 'Shotgun', 'Combination firearm'],
+    // The form's own four, in its own order (SAPS 271 section E, item 1). It
+    // also offers "Other, specify (armament/indeterminable design type)", which
+    // no private applicant of ours will need.
+    choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
     required: true,
   },
   {
@@ -247,6 +289,13 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Action',
     kind: 'choice',
     section: 'The firearm',
+    // THE FORM IS COARSER THAN THIS, ON PURPOSE.
+    //
+    // SAPS 271 item 1.1 offers only Semi-automatic / Automatic / Manual. We ask
+    // the finer question because "a bolt-action .308" is something a motivation
+    // can actually reason about, where "Manual" is not — and then map back down
+    // to the form's three in saps271-form.ts. One question, both consumers.
+    //
     // Fully automatic is deliberately absent: it is not licensable to a private
     // person, so it must not be selectable on a form we help someone sign.
     choices: [
@@ -290,6 +339,10 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Serial number',
     kind: 'short',
     section: 'The firearm',
+    // The 271 has no single "serial number" box. It has barrel (1.7), frame
+    // (1.9) and receiver (1.11) serials, each with its own make, because the
+    // frame or receiver IS the firearm in law. One serial is what an applicant
+    // actually has, so we ask once and place it in the right box for the type.
     help: 'If you already know which firearm it is. Leave blank if not — the dealer fills it in.',
     sensitive: true,
     formOnly: true,
@@ -321,6 +374,45 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     required: true,
     sensitive: true,
     maxLength: 2000,
+  },
+  // ── THE SAFE, AS ITEMS 68 AND 69 ASK IT ─────────────────────────
+  // safe_storage_detail is prose for the motivation. These are the form's own
+  // discrete questions, and the mounting answer is the same fact the third
+  // required photograph shows — the bolts fixing it to the wall.
+  {
+    key: 'safe_present',
+    label: 'Do you have the prescribed safe?',
+    kind: 'yesno',
+    section: 'Storage and safety',
+    required: true,
+    formOnly: true,
+  },
+  {
+    key: 'safe_type',
+    label: 'What kind',
+    kind: 'choice',
+    section: 'Storage and safety',
+    choices: ['Handgun safe', 'Rifle safe', 'Strongroom', 'Other device'],
+    showIf: { key: 'safe_present', equals: 'Yes' },
+    required: true,
+  },
+  {
+    key: 'safe_mounted',
+    label: 'Is it mounted?',
+    kind: 'yesno',
+    section: 'Storage and safety',
+    showIf: { key: 'safe_present', equals: 'Yes' },
+    required: true,
+    formOnly: true,
+  },
+  {
+    key: 'safe_mounted_to',
+    label: 'Mounted to',
+    kind: 'choice',
+    section: 'Storage and safety',
+    choices: ['Wall', 'Floor'],
+    showIf: { key: 'safe_mounted', equals: 'Yes' },
+    required: true,
   },
   {
     key: 'other_licensed_firearms',
@@ -466,6 +558,245 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     required: true,
     sensitive: true,
     maxLength: 2000,
+  },
+  // ── THE BOXES BEHIND EACH "YES" (items 62-67) ───────────────────
+  //
+  // The form does not want prose here — it wants a police station, a CAS
+  // number and a charge in separate boxes, and it gives room for two incidents
+  // per question. The prose field above each of these stays, because the two
+  // do different jobs: these fill boxes, the prose is what the motivation uses
+  // to meet the disclosure head-on.
+  //
+  // All formOnly. A CAS number in a prompt achieves nothing.
+  {
+    key: 'history_conviction_station',
+    label: 'Police station',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_conviction', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 120,
+  },
+  {
+    key: 'history_conviction_case_number',
+    label: 'CAS / case number',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_conviction', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'history_conviction_charge',
+    label: 'Charge',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_conviction', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 200,
+  },
+  {
+    key: 'history_conviction_outcome',
+    label: 'Outcome',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_conviction', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 200,
+  },
+  {
+    key: 'history_pending_case_station',
+    label: 'Police station',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_pending_case', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 120,
+  },
+  {
+    key: 'history_pending_case_case_number',
+    label: 'CAS / case number',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_pending_case', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'history_pending_case_charge',
+    label: 'Offence',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_pending_case', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 200,
+  },
+  {
+    key: 'history_lost_stolen_station',
+    label: 'Police station',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_lost_stolen', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 120,
+  },
+  {
+    key: 'history_lost_stolen_case_number',
+    label: 'CAS / case number',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_lost_stolen', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'history_lost_stolen_circumstances',
+    label: 'Circumstances',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_lost_stolen', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 200,
+  },
+  {
+    key: 'history_lost_stolen_firearm',
+    label: 'Details of the firearm',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_lost_stolen', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 200,
+  },
+  {
+    key: 'history_negligence_station',
+    label: 'Police station',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_negligence', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 120,
+  },
+  {
+    key: 'history_negligence_case_number',
+    label: 'CAS / case number',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_negligence', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'history_negligence_charge',
+    label: 'Charge',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_negligence', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 200,
+  },
+  {
+    key: 'history_negligence_outcome',
+    label: 'Outcome',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_negligence', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 200,
+  },
+  {
+    key: 'history_declared_unfit_station',
+    label: 'Police station',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_declared_unfit', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 120,
+  },
+  {
+    key: 'history_declared_unfit_case_number',
+    label: 'CAS / case number',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_declared_unfit', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'history_declared_unfit_charge',
+    label: 'Charge',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_declared_unfit', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 200,
+  },
+  {
+    key: 'history_declared_unfit_period',
+    label: 'Period, and the date it ran from',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_declared_unfit', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 200,
+  },
+  {
+    key: 'history_confiscated_station',
+    label: 'Police station',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_confiscated', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 120,
+  },
+  {
+    key: 'history_confiscated_case_number',
+    label: 'CAS / case number',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_confiscated', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'history_confiscated_circumstances',
+    label: 'Circumstances',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_confiscated', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 200,
+  },
+  {
+    key: 'history_confiscated_outcome',
+    label: 'Outcome',
+    kind: 'short',
+    section: 'History',
+    showIf: { key: 'history_confiscated', equals: 'Yes' },
+    sensitive: true,
+    formOnly: true,
+    maxLength: 200,
   },
   {
     key: 'prior_refusals',
@@ -767,6 +1098,21 @@ export function sanitiseAnswers(
     // tidiness: these values are printed into boxes on a form the applicant
     // signs, so an arbitrary string arriving from a hand-rolled request would
     // become a false statement on a firearm licence application.
+    if (field.kind === 'multi') {
+      // Stored comma-joined. Every part must be a real choice, and the order is
+      // normalised to the offered order so two identical answers compare equal.
+      const allowed = field.choices ?? [];
+      const parts = trimmed
+        ? trimmed.split(',').map((x) => x.trim()).filter(Boolean)
+        : [];
+      if (parts.some((x) => !allowed.includes(x))) {
+        rejected.push(key);
+        continue;
+      }
+      answers[key] = allowed.filter((c) => parts.includes(c)).join(', ');
+      continue;
+    }
+
     if (field.kind === 'choice' || field.kind === 'yesno') {
       const allowed = field.choices ?? YES_NO;
       if (trimmed && !allowed.includes(trimmed)) {

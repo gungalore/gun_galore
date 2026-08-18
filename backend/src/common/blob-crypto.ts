@@ -28,7 +28,9 @@ import * as crypto from 'node:crypto';
 //
 // VERIFIED 2026-08-18: ID_HASH_SECRET is present on the live alloutdoor box.
 // If that ever stops being true this module throws at runtime with no
-// compile-time signal, so main.ts carries a boot check.
+// compile-time signal, so main.ts calls blobCryptoConfigured() in its boot
+// gate and logs loudly. (That call was asserted here before it existed — the
+// gate is real as of 2026-08-18.)
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;

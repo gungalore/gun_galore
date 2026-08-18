@@ -29,6 +29,10 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { adminJwtSecret } from './admin/admin-jwt-secret';
 import { RetryAfterFilter } from './common/filters/retry-after.filter';
+import {
+  BLOB_CRYPTO_SECRET_ENV,
+  blobCryptoConfigured,
+} from './common/blob-crypto';
 
 /**
  * Fail-closed production config gate. Runs after dotenv has loaded .env.
@@ -104,6 +108,24 @@ function assertProductionConfig() {
   if (!process.env.ANTHROPIC_ADMIN_API_KEY) {
     log.error(
       '⚠️  ANTHROPIC_ADMIN_API_KEY is not set — the AI spend monitor on /admin/credits cannot poll usage (no spend alerts).',
+    );
+  }
+  // WARN: ID_HASH_SECRET keys BOTH sensitive-data paths, and they fail in
+  // OPPOSITE directions, which is what makes a missing value hard to notice.
+  //
+  //   id-crypto / blob-crypto  THROW at first use — encrypted SA IDs and the
+  //                            motivation writer's stored ID scans 500.
+  //   kyc.service              falls back to a hardcoded salt, so ID hashes
+  //                            are computed and stored happily, and every one
+  //                            of them stops matching the moment the real
+  //                            secret is set.
+  //
+  // So "KYC still works" is NOT evidence the secret is configured. This check
+  // exists because blob-crypto.ts said main.ts carried it before it did, and
+  // the replatform is known to have left environment variables behind.
+  if (!blobCryptoConfigured()) {
+    log.error(
+      `⚠️  ${BLOB_CRYPTO_SECRET_ENV} is not set — encrypted SA ID numbers and stored identity documents will FAIL, and KYC ID hashes will be written under a fallback salt that never matches once it is set. Nothing recovers data written in this state.`,
     );
   }
 }
