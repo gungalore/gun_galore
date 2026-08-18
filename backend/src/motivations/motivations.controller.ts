@@ -1,37 +1,98 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ClerkGuard } from '../auth/clerk.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { MotivationQuotaService } from './motivation-quota.service';
+import { MotivationsService } from './motivations.service';
+import { CreateMotivationDto, SaveAnswersDto } from './dto/motivation.dto';
 
 /**
  * Firearm-licence motivation writer — the member-facing surface.
  *
- * BEHIND THE LOGIN, ENTIRELY (operator decision #4). There is nothing public
- * here and there must not be: the whole point of the auth wall is that
- * alloutdoor.co.za carries no firearm signal for signed-out visitors or
- * crawlers. Note this needs NO entry in the frontend's isPublicRoute — that
- * matcher is an allow-list and the default is deny, so a new route is
- * authenticated by doing nothing.
+ * BEHIND THE LOGIN, ENTIRELY (operator decision #4). Nothing here is public and
+ * nothing should be: the auth wall exists so alloutdoor.co.za carries no
+ * firearm signal for signed-out visitors or crawlers. This needs NO entry in
+ * the frontend's isPublicRoute — that matcher is an allow-list and the default
+ * is deny, so a new route is authenticated by doing nothing.
  *
- * Everything is gated in the SERVICE rather than here, so the cron and admin
- * paths get the same check. With the flag off these endpoints 404.
+ * Gating lives in the SERVICE, not here, so the cron and admin paths get the
+ * same check. With the flag off, everything below 404s — except /status, which
+ * answers `{ enabled: false }` so the UI knows not to render an entry point.
  */
 @Controller('motivations')
 @UseGuards(ClerkGuard)
 export class MotivationsController {
-  constructor(private readonly quota: MotivationQuotaService) {}
+  constructor(
+    private readonly quota: MotivationQuotaService,
+    private readonly motivations: MotivationsService,
+  ) {}
 
   /**
-   * What the module costs and whether it is open — the ONLY way the frontend
-   * learns the flag state. There is no generic public-config endpoint in this
+   * Whether the module is open, and what it costs. The ONLY way the frontend
+   * learns the flag state — there is no generic public-config endpoint in this
    * codebase, so each module exposes its own.
-   *
-   * Deliberately does NOT 404 when the flag is off: the caller is a signed-in
-   * member whose UI needs to know whether to render the entry point at all,
-   * and `{ enabled: false }` answers that in one round trip. Every endpoint
-   * that DOES something still 404s.
    */
   @Get('status')
   status() {
     return this.quota.status();
+  }
+
+  @Get()
+  list(@CurrentUser() clerkId: string) {
+    return this.motivations.listMine(clerkId);
+  }
+
+  // Starting one is cheap but allocates a document number, so it is rate
+  // limited well below the global 60/min.
+  @Post()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  create(@CurrentUser() clerkId: string, @Body() dto: CreateMotivationDto) {
+    return this.motivations.create(
+      clerkId,
+      dto.licenceType,
+      dto.applicationRef ?? '',
+    );
+  }
+
+  @Get(':id')
+  findOne(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.findOne(clerkId, id);
+  }
+
+  /**
+   * Autosaved from the wizard, so it is called often and deliberately not
+   * throttled below the global default.
+   */
+  @Patch(':id/answers')
+  saveAnswers(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body() dto: SaveAnswersDto,
+  ) {
+    return this.motivations.saveAnswers(clerkId, id, dto.answers ?? {});
+  }
+
+  @Post(':id/abandon')
+  abandon(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.abandon(clerkId, id);
+  }
+
+  /**
+   * POPIA erasure — deletes the record AND the encrypted ID/licence scans off
+   * our disk. Irreversible, so it is throttled hard.
+   */
+  @Delete(':id')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  erase(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.erase(clerkId, id);
   }
 }

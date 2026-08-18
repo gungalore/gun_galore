@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MotivationsController } from './motivations.controller';
 import { MotivationQuotaService } from './motivation-quota.service';
+import { MotivationsService } from './motivations.service';
 import { MotivationPdfService } from './motivation-pdf.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 
@@ -29,10 +30,11 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
 @Module({
   controllers: [MotivationsController],
   providers: [
+    MotivationsService,
     MotivationQuotaService,
     MotivationPdfService,
     SecureFileStorageService,
   ],
-  exports: [MotivationQuotaService],
+  exports: [MotivationsService, MotivationQuotaService],
 })
 export class MotivationsModule {}
