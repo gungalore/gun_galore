@@ -310,6 +310,12 @@ export class AdminHealthService {
       // motivations past their retention date. A retention job that stops
       // running is a POPIA problem, not a missing nicety, so it is watched.
       { key: 'motivation-retention', label: 'Motivation document retention purge', schedule: 'daily 02:40', expectedIntervalSec: 26 * 60 * 60 },
+      // NOT an app cron — infra/backup/backup.sh writes this heartbeat from the
+      // box's own crontab at 02:10, and ONLY on success. So this row goes red
+      // for the case an AdminAlert cannot cover: a backup that never ran at
+      // all, because the cron was removed, the box was off, or the script died
+      // before it finished. The "ran and failed" case raises BACKUP_FAILED.
+      { key: 'box-backup', label: 'Nightly backup (database + encrypted uploads)', schedule: 'daily 02:10', expectedIntervalSec: 26 * 60 * 60 },
       { key: 'auction-end', label: 'Auction end sweep', schedule: 'every 1 min', expectedIntervalSec: 60 },
       { key: 'offer-expire', label: 'Offer expiry sweep', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'dispatch-sla', label: 'Dispatch SLA enforcer', schedule: 'every 1 hour', expectedIntervalSec: 3600 },

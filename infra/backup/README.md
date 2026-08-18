@@ -38,7 +38,44 @@ fails on a script with CRLF line endings in a way that reads as nonsense.
   `DELETE` or a botched deploy. Does NOT protect against losing the disk or the
   machine. Off-box copies are a separate job and are not set up.
 - **The upload archive is worthless without `ID_HASH_SECRET`.** See `RESTORE.md`.
-- **Nothing alerts on failure.** The script exits non-zero and writes
-  `FINISHED WITH ERRORS` to `/var/backups/alloutdoor/backup.log`, but no one is
-  watching that file. Wiring it to the existing `/admin/alerts` inbox would be
-  the obvious next step.
+- Failures now reach `/admin/alerts` (see below), but **nothing pages anyone**.
+  Somebody still has to look at the inbox.
+
+## How a failure is noticed
+
+Two mechanisms, because they fail in different circumstances and neither covers
+both:
+
+| What went wrong | What you see |
+|---|---|
+| Ran and failed | A `BACKUP_FAILED` row in **/admin/alerts**, urgent |
+| Never ran at all | The **box-backup** row on `/admin/health` goes stale |
+
+The alert is written with `psql` rather than through the API, so it still works
+when the Node app is the thing that is down. It cannot fire when POSTGRES is
+down — the insert needs the database — and that is exactly the case the stale
+heartbeat catches. That is why both exist.
+
+The heartbeat is stamped **only on success**, so a failed run leaves the health
+row ageing rather than looking healthy.
+
+**One alert, not thirty.** A broken backup is usually broken every night, and an
+inbox with thirty identical rows is an inbox nobody reads. The insert is
+conditional on there being no unresolved `BACKUP_FAILED` already; the first
+failure raises it, the rest are silent, and the next successful run resolves it.
+The log still records every run.
+
+### Verified on the box, 2026-08-19
+
+Not reasoned about — actually exercised:
+
+- forced failure → alert raised, `urgent=true`
+- forced failure again → still **one** unresolved row, not two
+- successful run → alert resolved, heartbeat advanced
+- failed run → heartbeat **not** advanced
+
+That testing found a real bug. Every command appends stderr to the log, and
+**bash does not run a command whose redirection fails** — so an unwritable log
+did not merely lose the log, it stopped the `psql` calls that raise the alert,
+and the run failed in total silence. The log path now falls back to `/tmp`, and
+to `/dev/null` if even that is unwritable.
