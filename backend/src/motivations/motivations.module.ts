@@ -39,6 +39,15 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
     MotivationRetentionService,
     SecureFileStorageService,
   ],
-  exports: [MotivationsService, MotivationQuotaService],
+  // MotivationRetentionService is exported so the account-deletion path can
+  // remove a user's encrypted documents BEFORE the cascade takes the rows that
+  // point at them. SecureFileStorageService is deliberately NOT exported — it
+  // stays scoped to this module so nothing else can start writing user files
+  // into the encrypted store without a deliberate decision.
+  exports: [
+    MotivationsService,
+    MotivationQuotaService,
+    MotivationRetentionService,
+  ],
 })
 export class MotivationsModule {}

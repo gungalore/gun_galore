@@ -109,6 +109,82 @@ export class MotivationRetentionService {
     }
   }
 
+  /**
+   * Everything belonging to one user, now — for account deletion.
+   *
+   * THE HOLE THIS CLOSES. Motivation.userId is onDelete: Cascade, so deleting a
+   * User takes the motivations and their upload ROWS with it. A cascade cannot
+   * reach the filesystem, so the encrypted identity documents were left on disk
+   * with nothing left pointing at them: not reachable by the nightly sweep,
+   * which finds files through rows, and not deletable by anything short of
+   * someone going in by hand.
+   *
+   * The scrub branch of deleteByClerkId leaked differently and worse. It keeps
+   * the User row when financial FKs block a hard delete — so the motivations
+   * survived intact, and a POPIA erasure request left the applicant's ID
+   * number, home address and security circumstances exactly where they were.
+   *
+   * So this deletes both, files first, and is called BEFORE either branch runs.
+   *
+   * MUST NOT THROW. The caller is a Clerk webhook: an exception there makes
+   * Clerk retry forever and leaves the account undeleted. A failure is logged
+   * loudly and swallowed, and what could not be removed is returned so the
+   * caller can say so.
+   */
+  async purgeForUser(
+    userId: string,
+  ): Promise<{ filesRemoved: number; filesFailed: number; motivations: number }> {
+    let filesRemoved = 0;
+    let filesFailed = 0;
+    let motivations = 0;
+
+    try {
+      const rows = await this.prisma.motivation.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          uploads: { select: { id: true, storageKey: true } },
+        },
+      });
+      motivations = rows.length;
+      if (!rows.length) return { filesRemoved, filesFailed, motivations };
+
+      for (const row of rows) {
+        for (const up of row.uploads) {
+          if (!up.storageKey) continue;
+          try {
+            await this.files.remove(up.storageKey);
+            filesRemoved++;
+          } catch (err) {
+            // Keep going. One unreadable key must not strand the rest of an
+            // erasure, and the row is going regardless — leaving it would only
+            // preserve a pointer to a file we already failed to delete.
+            filesFailed++;
+            this.logger.error(
+              `Account deletion: could not remove ${up.storageKey} (motivation ${row.id}): ${(err as Error).message}`,
+            );
+          }
+        }
+      }
+
+      // The rows go even where a file did not: this is an erasure request, and
+      // the motivation text carries the ID number, the home address and the
+      // applicant's account of their own security circumstances.
+      await this.prisma.motivation.deleteMany({ where: { userId } });
+    } catch (err) {
+      this.logger.error(
+        `Account deletion: motivation purge for user ${userId} failed: ${(err as Error).message}`,
+      );
+    }
+
+    if (filesFailed > 0) {
+      this.logger.error(
+        `Account deletion: ${filesFailed} motivation file(s) for user ${userId} could NOT be deleted and are now orphaned on disk — remove them by hand.`,
+      );
+    }
+    return { filesRemoved, filesFailed, motivations };
+  }
+
   /** Stage 1 for applications that completed and carry a retention date. */
   private async purgeDueUploads(): Promise<number> {
     return this.purgeWhere({

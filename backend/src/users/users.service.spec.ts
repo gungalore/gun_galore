@@ -43,7 +43,15 @@ describe('UsersService — address book & notification prefs', () => {
       },
       $transaction: jest.fn(async (cb) => cb(prisma)),
     };
-    service = new UsersService(prisma as never, {} as never, { isBanvEnabled: () => false } as never, { resolveByEntity: jest.fn() } as never);
+    service = new UsersService(
+      prisma as never,
+      {} as never,
+      { isBanvEnabled: () => false } as never,
+      { resolveByEntity: jest.fn() } as never,
+      // Account deletion removes a member's encrypted licence documents before
+      // the cascade takes the rows that point at them.
+      { purgeForUser: jest.fn(async () => ({ filesRemoved: 0, filesFailed: 0, motivations: 0 })) } as never,
+    );
   });
 
   it('makes the first saved address the default', async () => {
@@ -96,5 +104,84 @@ describe('UsersService — address book & notification prefs', () => {
         data: { notifySmsEnabled: false },
       }),
     );
+  });
+});
+
+// ── account deletion ────────────────────────────────────────────────
+//
+// Both branches of deleteByClerkId used to leak a member's encrypted licence
+// documents, in opposite directions: a hard delete cascaded the rows away and
+// left the files unreachable, and the PII-scrub fallback kept the User row so
+// the motivations survived an erasure request entirely.
+
+describe('UsersService.deleteByClerkId', () => {
+  function build(opts: { hardDeleteFails?: boolean } = {}) {
+    const retention = {
+      purgeForUser: jest.fn(async () => ({
+        filesRemoved: 2,
+        filesFailed: 0,
+        motivations: 1,
+      })),
+    };
+    const order: string[] = [];
+    const prisma: any = {
+      user: {
+        findFirst: jest.fn(async () => ({ id: 'u-1' })),
+        deleteMany: jest.fn(async () => {
+          order.push('user.delete');
+          if (opts.hardDeleteFails) throw new Error('FK RESTRICT');
+          return { count: 1 };
+        }),
+        updateMany: jest.fn(async () => {
+          order.push('user.scrub');
+          return { count: 1 };
+        }),
+      },
+    };
+    retention.purgeForUser.mockImplementation(async () => {
+      order.push('motivations.purge');
+      return { filesRemoved: 2, filesFailed: 0, motivations: 1 };
+    });
+    const svc = new UsersService(
+      prisma as never,
+      {} as never,
+      { isBanvEnabled: () => false } as never,
+      { resolveByEntity: jest.fn() } as never,
+      retention as never,
+    );
+    return { svc, prisma, retention, order };
+  }
+
+  it('removes the licence documents BEFORE the row that points at them', async () => {
+    // A cascade cannot reach the filesystem, so the other order strands the
+    // encrypted files with nothing left referencing them.
+    const { svc, retention, order } = build();
+    await svc.deleteByClerkId('clerk_1');
+    expect(retention.purgeForUser).toHaveBeenCalledWith('u-1');
+    expect(order).toEqual(['motivations.purge', 'user.delete']);
+  });
+
+  it('still purges them when the hard delete is blocked and it falls back to scrubbing', async () => {
+    // This is the worse leak: the scrub keeps the User row, so without this the
+    // motivations — ID number, home address, security circumstances — survived
+    // the erasure request untouched.
+    const { svc, retention, order } = build({ hardDeleteFails: true });
+    await svc.deleteByClerkId('clerk_1');
+    expect(retention.purgeForUser).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['motivations.purge', 'user.delete', 'user.scrub']);
+  });
+
+  it('does not throw out of the webhook when the purge fails', async () => {
+    // Clerk retries forever on a non-2xx, and the account stays undeleted.
+    const { svc, retention } = build();
+    retention.purgeForUser.mockRejectedValueOnce(new Error('disk on fire'));
+    await expect(svc.deleteByClerkId('clerk_1')).resolves.toBeUndefined();
+  });
+
+  it('skips the purge for a clerk id we never had a row for', async () => {
+    const { svc, prisma, retention } = build();
+    prisma.user.findFirst.mockResolvedValueOnce(null);
+    await svc.deleteByClerkId('clerk_unknown');
+    expect(retention.purgeForUser).not.toHaveBeenCalled();
   });
 });

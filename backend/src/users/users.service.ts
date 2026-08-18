@@ -12,6 +12,7 @@ import { createClerkClient } from '@clerk/backend';
 import { encryptSaIdNumber, hashSaIdNumber, decryptSaIdNumber } from '../common/id-crypto';
 import { PeachService } from '../payments/peach.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { MotivationRetentionService } from '../motivations/motivation-retention.service';
 
 // Address-book create/update payload (Phase 2).
 export interface AddressInput {
@@ -115,6 +116,11 @@ export class UsersService {
     // @Global NotificationsModule — clears the "fix your banking details"
     // inbox task the moment the user re-saves details.
     private readonly notifications: NotificationsService,
+    // Not @Global on purpose: SecureFileStorageService stays scoped to
+    // MotivationsModule so nothing else can write to the encrypted store. Only
+    // the retention service is exported, and only so account deletion can
+    // remove a member's licence documents before their rows disappear.
+    private readonly motivationRetention: MotivationRetentionService,
   ) {}
 
   // ── Peach bank-account verification (AVS) ─────────────────────────
@@ -591,6 +597,47 @@ export class UsersService {
     // semantics) while preserving the financial history needed for
     // SARS / dispute defence. A proper soft-delete column + DTO
     // exclusion is tracked on the launch checklist.
+    // FIRST, and outside both branches: remove the member's encrypted licence
+    // documents and the motivations that point at them.
+    //
+    // Both branches below leaked, in different directions. A hard delete
+    // cascades the motivation rows away, and a cascade cannot reach the
+    // filesystem — so the ID copies and licence scans stayed on disk with
+    // nothing left pointing at them, invisible to the nightly retention sweep,
+    // which finds files THROUGH rows. The scrub branch leaked worse: it keeps
+    // the User row when financial FKs block the delete, so the motivations
+    // survived untouched and an erasure request left the applicant's ID number,
+    // home address and account of their own security circumstances exactly
+    // where they were.
+    //
+    // Never throws — this is a webhook, and an exception makes Clerk retry
+    // forever while the account stays undeleted.
+    const target = await this.prisma.user.findFirst({
+      where: { clerkId },
+      select: { id: true },
+    });
+    if (target) {
+      // Guarded HERE as well as inside purgeForUser. That method swallows its
+      // own failures, but a webhook must not depend on a promise another module
+      // makes — if it ever stops keeping it, Clerk retries forever and the
+      // account is never deleted at all.
+      try {
+        const purged = await this.motivationRetention.purgeForUser(target.id);
+        if (purged.motivations > 0) {
+          this.logger.log(
+            `Erasure for clerk user ${clerkId}: removed ${purged.motivations} motivation(s) and ${purged.filesRemoved} encrypted document(s)` +
+              (purged.filesFailed > 0
+                ? `; ${purged.filesFailed} file(s) FAILED to delete and need removing by hand`
+                : ''),
+          );
+        }
+      } catch (err) {
+        this.logger.error(
+          `Erasure for clerk user ${clerkId}: motivation purge threw, continuing with account deletion: ${(err as Error).message}`,
+        );
+      }
+    }
+
     try {
       await this.prisma.user.deleteMany({ where: { clerkId } });
     } catch (err) {
