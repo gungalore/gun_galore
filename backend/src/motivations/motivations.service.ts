@@ -401,9 +401,19 @@ export class MotivationsService {
   async abandon(clerkId: string, id: string) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
+    // Stamped HERE as well as on completion. retentionPurgeAt used to be
+    // written on exactly one branch — the transition to COMPLETED — so an
+    // abandoned draft never got a date and its encrypted ID scans would have
+    // sat on disk with nothing ever coming to look for them.
+    const retentionDays = await this.settings.get(FLAGS.motivationRetentionDays);
     const res = await this.prisma.motivation.updateMany({
       where: { id, userId: user.id, status: { in: EDITABLE } },
-      data: { status: MotivationStatus.ABANDONED },
+      data: {
+        status: MotivationStatus.ABANDONED,
+        retentionPurgeAt: new Date(
+          Date.now() + retentionDays * 24 * 60 * 60 * 1000,
+        ),
+      },
     });
     if (res.count === 0) {
       throw new NotFoundException('Motivation not found');
@@ -1150,10 +1160,14 @@ export class MotivationsService {
         generatedAt: new Date(),
       };
 
+      // Read once for BOTH terminal branches. A document that failed the gate
+      // needs a retention date every bit as much as one that passed — its
+      // uploads are the same identity documents.
+      const retentionDays = await this.settings.get(
+        FLAGS.motivationRetentionDays,
+      );
+
       if (graded.verdict.passed) {
-        const retentionDays = await this.settings.get(
-          FLAGS.motivationRetentionDays,
-        );
         await this.prisma.motivation.update({
           where: { id: row.id },
           data: {
@@ -1186,6 +1200,11 @@ export class MotivationsService {
             status: MotivationStatus.FAILED,
             gateCycles: nextCycles,
             failedAt: new Date(),
+            // Same reason as abandon(): a terminal state with no retention date
+            // is a document nothing ever comes back for.
+            retentionPurgeAt: new Date(
+              Date.now() + retentionDays * 24 * 60 * 60 * 1000,
+            ),
             failureReason:
               graded.verdict.issues.slice(0, 3).join('; ') ||
               'Quality gate not met',

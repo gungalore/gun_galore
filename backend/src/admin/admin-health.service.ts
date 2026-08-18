@@ -306,6 +306,10 @@ export class AdminHealthService {
       // deliberately NOT monitored: it only records a run when a drop
       // actually fires, so a freshness check would false-alarm forever.
       { key: 'shipping-poll', label: 'Shipping tracking poll', schedule: 'every 10 min', expectedIntervalSec: 600 },
+      // Nightly at 02:40. Deletes the encrypted identity documents behind
+      // motivations past their retention date. A retention job that stops
+      // running is a POPIA problem, not a missing nicety, so it is watched.
+      { key: 'motivation-retention', label: 'Motivation document retention purge', schedule: 'daily 02:40', expectedIntervalSec: 26 * 60 * 60 },
       { key: 'auction-end', label: 'Auction end sweep', schedule: 'every 1 min', expectedIntervalSec: 60 },
       { key: 'offer-expire', label: 'Offer expiry sweep', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'dispatch-sla', label: 'Dispatch SLA enforcer', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
