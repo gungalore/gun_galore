@@ -94,15 +94,39 @@ SAP 350(A). Private applicants only — leave blank.
 
 ## What this changes
 
-1. **Split `firearm_description`** into type / action / make / model / calibre / serial.
-   Needed for the form, and it makes the comparison argument stronger.
-2. **Add the personal fields** above — each is one line in the wizard and removes a
-   hand-written box.
-3. **Add the six history questions** as explicit yes/no + detail, and feed any "yes" into
-   the motivation so it is addressed rather than hidden.
-4. **Derive DOB, age, gender and citizenship** from the ID instead of asking.
-5. **A coordinate map** (`saps271-coords.ts`), measured once against the real PDF.
+**Done** (`b76e0e3`):
+
+1. ✅ **`firearm_description` split** into `firearm_type` / `firearm_action` / `firearm_make` /
+   `firearm_model` / `firearm_calibre` / `firearm_serial` / `barrel_length`. Fully automatic is
+   absent from the action list on purpose — it is not licensable to a private person, so it
+   must not be selectable on a form we help someone sign. The serial is optional: on a new
+   application the dealer still holds the firearm.
+2. ✅ **Personal fields added** — `postal_address`, `residence_type`, `home_telephone`,
+   `work_telephone`, `employer_name`, `employer_address`, `marital_status`, and spouse details
+   that appear only when married.
+3. ✅ **The six history questions**, each yes/no + detail, none defaulting to "No".
+4. ✅ **DOB, age, gender and citizenship derived** from the ID (`sa-id.ts`), never asked.
+
+Two mechanisms came out of it and are worth knowing about:
+
+- **`showIf`** — a conditional field is not "unanswered", it does not apply. `missingRequired`
+  no longer demands spouse details from someone single, or the detail of a conviction from
+  someone with none.
+- **`formOnly`** — collected for the form, never shown to the writer. Contact numbers and a
+  spouse's ID are PII with no argumentative value; and six "No" answers to the history
+  questions would be padding fuel for exactly the sentences ABSOLUTE RULE 7 bans. Where an
+  answer is "Yes" the linked detail field is *not* form-only, so a disclosure reaches the
+  writer in full.
+
+**Remaining:**
+
+5. ⬜ **A coordinate map** (`saps271-coords.ts`), measured once against the real PDF, plus the
+   fill service. `saps534.service.ts` already carries both helpers this needs — the
+   candidate-path asset loader and a shrink-to-fit `put()` for tight boxes.
+6. ⬜ **The blank form as a repo asset**, the way `assets/saps534-blank.pdf` already is.
+   ⚠️ Confirm we are shipping the current revision before go-live; the checklist already
+   marks the form reference `verifyBeforeUse`.
 
 Roughly **40 of the ~55 boxes a private applicant must complete** become automatic. The
-remainder are the ones only they can answer — marital status, spouse details, history
-answers — and those are single taps in the wizard, not paperwork.
+remainder are the ones only they can answer — marital status, spouse details, history answers —
+and those are single taps in the wizard, not paperwork.
