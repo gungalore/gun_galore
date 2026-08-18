@@ -19,12 +19,24 @@
 //
 //   node scripts/saps271-measure.mjs <blank-271.pdf> [fillable-271.pdf] [out.ts]
 //
-// Pass the FILLABLE template second and every measured box is also BOUND to the
-// AcroForm field that covers it. That binding is done by position, never by
-// name: the field names in a form prepared by Acrobat or PDFescape are
-// auto-generated ("text_36", "TextFormField 3") and differ between two
-// preparations of the same form, so a name is not a stable identifier. A
-// position is.
+// Optionally pass a FILLABLE template second and each measured box is also
+// BOUND to the AcroForm field covering it, by POSITION — the names in a form
+// prepared by Acrobat or PDFescape are auto-generated ("text_36",
+// "TextFormField 3") and differ between two preparations of the same document,
+// so a name identifies nothing. A position does.
+//
+// ⚠️ THE OPERATOR'S TEMPLATE CANNOT BE FILLED THIS WAY, and the guard below is
+// why. A PDF field may own MANY WIDGETS, and setting its value paints into
+// every one of them. That template carries 205 fields over 1136 widgets — 157
+// shared, some across twelve boxes on different pages — so filling one "field"
+// would scatter the same text across the form. The binder refuses a shared
+// name, which leaves 14 of 144 boxes bindable; mixing two fill paths for
+// fourteen boxes buys nothing, so the fill service draws everything onto the
+// FLAT form instead, exactly as saps534.service.ts does in production.
+//
+// The binding is kept because it is correct and would work the moment a
+// template with unshared names exists. Run without the second argument for the
+// map the fill service actually uses.
 //
 // Writes src/motivations/saps271-coords.ts. ANYTHING IT CANNOT RESOLVE IS
 // REPORTED AND OMITTED — never guessed. An omitted field is a box the applicant
@@ -596,6 +608,16 @@ async function loadWidgets(file) {
   // it put those on "page 0", so they matched nothing and their boxes were
   // silently reported as unfielded. The page's own annotation list is
   // authoritative and always present.
+  // HOW MANY BOXES EACH NAME COVERS. This is the whole ball game with a
+  // hand-prepared template: a PDF field may own MANY widgets, and setting its
+  // value paints into EVERY one of them. The operator's 271 has 205 fields over
+  // 1136 widgets — 157 of them shared, some across twelve boxes on different
+  // pages — so filling one "field" would scatter the same text across the form.
+  const widgetsPerName = new Map();
+  for (const { name } of byDict.values()) {
+    widgetsPerName.set(name, (widgetsPerName.get(name) ?? 0) + 1);
+  }
+
   const widgets = [];
   pdf.getPages().forEach((pg, i) => {
     const annots = pg.node.Annots();
@@ -606,6 +628,7 @@ async function loadWidgets(file) {
       const r = hit.w.getRectangle();
       widgets.push({
         name: hit.name, kind: hit.kind, page: i + 1,
+        shared: (widgetsPerName.get(hit.name) ?? 1) > 1,
         x: r.x, y: r.y, w: r.width, h: r.height,
       });
     }
@@ -629,7 +652,7 @@ function bind(name, f, widgets) {
       .filter((c) => !c.sep)
       .map((c) => {
         const w = widgets.find(
-          (w) => w.page === f.page && w.kind !== 'signature' &&
+          (w) => w.page === f.page && w.kind !== 'signature' && !w.shared &&
             c.x >= w.x && c.x <= w.x + w.w && ys >= w.y && ys <= w.y + w.h,
         );
         return w ? w.name : null;
@@ -639,14 +662,31 @@ function bind(name, f, widgets) {
       f.fields = names;
       return null;
     }
-    return `${name}: ${covered}/${names.length} digit cells have their own field — falling back to drawing the digits`;
+    return `${name}: ${covered}/${names.length} digit cells have their own unshared field — drawing the digits instead`;
   }
 
   const box = f.kind === 'tick' ? { x: f.x - f.w / 2, y: f.y - f.h / 2, w: f.w, h: f.h } : f;
+  // A SHARED NAME IS NOT A USABLE FIELD. Binding to one would set the same
+  // value in every other box that shares it — a filled form with the
+  // applicant's calibre repeated in eleven unrelated places.
+  const shared = widgets.find(
+    (w) => w.page === f.page && w.shared && areaOverlap(box, w) / (box.w * box.h) >= 0.5,
+  );
+
   const best = widgets
-    .filter((w) => w.page === f.page && w.kind !== 'signature' && areaOverlap(box, w) > 0)
+    .filter(
+      (w) =>
+        w.page === f.page &&
+        w.kind !== 'signature' &&
+        !w.shared &&
+        areaOverlap(box, w) > 0,
+    )
     .map((w) => ({ w, ov: areaOverlap(box, w) / (box.w * box.h) }))
     .sort((a, b) => b.ov - a.ov)[0];
+
+  if (!best && shared) {
+    return `${name}: the only field over this box ("${shared.name}") is shared with other boxes — drawing the value instead`;
+  }
 
   // A widget that barely clips the box is the NEIGHBOURING row, not this one.
   // Binding to it would put the value one line off — visible, wrong, and the

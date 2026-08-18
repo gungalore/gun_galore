@@ -76,9 +76,7 @@ export const SAPS271_COORDS = {
     "x": 540.9,
     "y": 728.8,
     "w": 38.7,
-    "h": 17.4,
-    "field": "text_36",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "d_section_15": {
     "page": 2,
@@ -86,9 +84,7 @@ export const SAPS271_COORDS = {
     "x": 540.9,
     "y": 694,
     "w": 38.7,
-    "h": 17.4,
-    "field": "text_21",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "d_section_16": {
     "page": 2,
@@ -96,9 +92,7 @@ export const SAPS271_COORDS = {
     "x": 540.9,
     "y": 676.6,
     "w": 38.7,
-    "h": 17.4,
-    "field": "text_16",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "e_type_rifle": {
     "page": 2,
@@ -106,9 +100,7 @@ export const SAPS271_COORDS = {
     "x": 164.4,
     "y": 449.4,
     "w": 22.7,
-    "h": 18.2,
-    "field": "CheckBoxFormField 1",
-    "fieldKind": "checkbox"
+    "h": 18.2
   },
   "e_type_shotgun": {
     "page": 2,
@@ -116,9 +108,7 @@ export const SAPS271_COORDS = {
     "x": 282,
     "y": 449.4,
     "w": 20,
-    "h": 18.2,
-    "field": "checkbox_9",
-    "fieldKind": "checkbox"
+    "h": 18.2
   },
   "e_type_handgun": {
     "page": 2,
@@ -126,9 +116,7 @@ export const SAPS271_COORDS = {
     "x": 418,
     "y": 449.4,
     "w": 19.8,
-    "h": 18.2,
-    "field": "checkbox_4",
-    "fieldKind": "checkbox"
+    "h": 18.2
   },
   "e_type_combination": {
     "page": 2,
@@ -136,9 +124,7 @@ export const SAPS271_COORDS = {
     "x": 550.8,
     "y": 449.4,
     "w": 18.9,
-    "h": 18.2,
-    "field": "checkbox_7",
-    "fieldKind": "checkbox"
+    "h": 18.2
   },
   "e_action_semi_auto": {
     "page": 2,
@@ -146,9 +132,7 @@ export const SAPS271_COORDS = {
     "x": 284.5,
     "y": 357.6,
     "w": 20.3,
-    "h": 18.5,
-    "field": "checkbox_1",
-    "fieldKind": "checkbox"
+    "h": 18.5
   },
   "e_action_manual": {
     "page": 2,
@@ -156,9 +140,7 @@ export const SAPS271_COORDS = {
     "x": 550.9,
     "y": 357.6,
     "w": 19.3,
-    "h": 18.5,
-    "field": "checkbox_6",
-    "fieldKind": "checkbox"
+    "h": 18.5
   },
   "e_calibre": {
     "page": 2,
@@ -166,9 +148,7 @@ export const SAPS271_COORDS = {
     "x": 155,
     "y": 266.6,
     "w": 211.7,
-    "h": 19.1,
-    "field": "text_30",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "e_make": {
     "page": 2,
@@ -176,9 +156,7 @@ export const SAPS271_COORDS = {
     "x": 155,
     "y": 248.5,
     "w": 406.4,
-    "h": 18.1,
-    "field": "text_23",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "e_model": {
     "page": 2,
@@ -186,9 +164,7 @@ export const SAPS271_COORDS = {
     "x": 155,
     "y": 230.3,
     "w": 406.4,
-    "h": 18.2,
-    "field": "TextFormField 3",
-    "fieldKind": "text"
+    "h": 18.2
   },
   "e_frame_serial": {
     "page": 2,
@@ -196,9 +172,7 @@ export const SAPS271_COORDS = {
     "x": 155,
     "y": 176.9,
     "w": 276.8,
-    "h": 17.2,
-    "field": "TextFormField 4",
-    "fieldKind": "text"
+    "h": 17.2
   },
   "e_receiver_serial": {
     "page": 2,
@@ -206,9 +180,7 @@ export const SAPS271_COORDS = {
     "x": 155,
     "y": 158.8,
     "w": 277.6,
-    "h": 18.1,
-    "field": "text_18",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_competency_number": {
     "page": 5,
@@ -216,9 +188,7 @@ export const SAPS271_COORDS = {
     "x": 180.8,
     "y": 393.9,
     "w": 380.6,
-    "h": 18.1,
-    "field": "TextFormField 20",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_competency_issued": {
     "page": 5,
@@ -266,16 +236,6 @@ export const SAPS271_COORDS = {
         "x": 283.8,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_136",
-      "text_126",
-      "text_127",
-      "text_128",
-      "text_107",
-      "text_109",
-      "text_102",
-      "text_110"
     ]
   },
   "g_competency_expiry": {
@@ -324,16 +284,6 @@ export const SAPS271_COORDS = {
         "x": 550.9,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_118",
-      "text_123",
-      "text_112",
-      "text_93",
-      "text_115",
-      "text_122",
-      "text_89",
-      "text_117"
     ]
   },
   "g_citizen_sa": {
@@ -342,9 +292,7 @@ export const SAPS271_COORDS = {
     "x": 128.9,
     "y": 472.5,
     "w": 19.8,
-    "h": 18.1,
-    "field": "checkbox_1",
-    "fieldKind": "checkbox"
+    "h": 18.1
   },
   "g_citizen_pr": {
     "page": 6,
@@ -424,21 +372,6 @@ export const SAPS271_COORDS = {
         "x": 551.2,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_118",
-      "text_126",
-      "text_95",
-      "text_85",
-      "text_82",
-      "text_65",
-      "text_89",
-      "text_92",
-      "text_93",
-      "text_103",
-      "text_119",
-      "text_98",
-      "text_123"
     ]
   },
   "g_surname": {
@@ -447,9 +380,7 @@ export const SAPS271_COORDS = {
     "x": 123.8,
     "y": 427.1,
     "w": 306.6,
-    "h": 19.1,
-    "field": "text_112",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_initials": {
     "page": 6,
@@ -473,12 +404,6 @@ export const SAPS271_COORDS = {
         "x": 551.1,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_111",
-      "text_90",
-      "text_109",
-      "text_110"
     ]
   },
   "g_full_names": {
@@ -487,9 +412,7 @@ export const SAPS271_COORDS = {
     "x": 123.8,
     "y": 409,
     "w": 437.6,
-    "h": 18.1,
-    "field": "text_143",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_date_of_birth": {
     "page": 6,
@@ -537,16 +460,6 @@ export const SAPS271_COORDS = {
         "x": 301.7,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_122",
-      "text_68",
-      "text_22",
-      "text_33",
-      "text_13",
-      "text_9",
-      "text_4",
-      "text_145"
     ]
   },
   "g_age": {
@@ -567,11 +480,6 @@ export const SAPS271_COORDS = {
         "x": 416.9,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_127",
-      "text_120",
-      "text_125"
     ]
   },
   "g_residential_address": {
@@ -580,9 +488,7 @@ export const SAPS271_COORDS = {
     "x": 140.5,
     "y": 372.8,
     "w": 420.9,
-    "h": 19.1,
-    "field": "text_116",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_postal_address": {
     "page": 6,
@@ -590,9 +496,7 @@ export const SAPS271_COORDS = {
     "x": 140.5,
     "y": 336.5,
     "w": 420.9,
-    "h": 18.2,
-    "field": "text_128",
-    "fieldKind": "text"
+    "h": 18.2
   },
   "g_residence_type": {
     "page": 6,
@@ -600,9 +504,7 @@ export const SAPS271_COORDS = {
     "x": 344,
     "y": 301.3,
     "w": 217.4,
-    "h": 17.1,
-    "field": "text_106",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_occupation": {
     "page": 6,
@@ -610,9 +512,7 @@ export const SAPS271_COORDS = {
     "x": 164,
     "y": 282.2,
     "w": 133.3,
-    "h": 19.1,
-    "field": "text_59",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_employer": {
     "page": 6,
@@ -620,9 +520,7 @@ export const SAPS271_COORDS = {
     "x": 164,
     "y": 264.1,
     "w": 397.4,
-    "h": 18.1,
-    "field": "text_96",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_business_address": {
     "page": 6,
@@ -630,9 +528,7 @@ export const SAPS271_COORDS = {
     "x": 164,
     "y": 245.9,
     "w": 397.4,
-    "h": 18.2,
-    "field": "text_94",
-    "fieldKind": "text"
+    "h": 18.2
   },
   "g_cellphone": {
     "page": 6,
@@ -640,9 +536,7 @@ export const SAPS271_COORDS = {
     "x": 161.7,
     "y": 191.6,
     "w": 211.8,
-    "h": 18.1,
-    "field": "text_78",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_email": {
     "page": 6,
@@ -650,9 +544,7 @@ export const SAPS271_COORDS = {
     "x": 161.7,
     "y": 174.4,
     "w": 399.4,
-    "h": 17.2,
-    "field": "text_101",
-    "fieldKind": "text"
+    "h": 17.2
   },
   "g_gender_male": {
     "page": 6,
@@ -661,9 +553,7 @@ export const SAPS271_COORDS = {
     "y": 400.5,
     "w": 38.4,
     "h": 17.1,
-    "overLabel": true,
-    "field": "TextFormField 22",
-    "fieldKind": "text"
+    "overLabel": true
   },
   "g_gender_female": {
     "page": 6,
@@ -672,9 +562,7 @@ export const SAPS271_COORDS = {
     "y": 400.5,
     "w": 38,
     "h": 17.1,
-    "overLabel": true,
-    "field": "TextFormField 23",
-    "fieldKind": "text"
+    "overLabel": true
   },
   "g_marital_single": {
     "page": 6,
@@ -682,9 +570,7 @@ export const SAPS271_COORDS = {
     "x": 131.1,
     "y": 127.5,
     "w": 19,
-    "h": 18.1,
-    "field": "TextFormField 24",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_marital_married": {
     "page": 6,
@@ -692,9 +578,7 @@ export const SAPS271_COORDS = {
     "x": 245.6,
     "y": 127.5,
     "w": 19.1,
-    "h": 18.1,
-    "field": "TextFormField 25",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_marital_divorced": {
     "page": 6,
@@ -702,9 +586,7 @@ export const SAPS271_COORDS = {
     "x": 341,
     "y": 127.5,
     "w": 19.1,
-    "h": 18.1,
-    "field": "TextFormField 26",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_marital_widow": {
     "page": 6,
@@ -712,9 +594,7 @@ export const SAPS271_COORDS = {
     "x": 455.5,
     "y": 127.5,
     "w": 19.1,
-    "h": 18.1,
-    "field": "checkbox_3",
-    "fieldKind": "checkbox"
+    "h": 18.1
   },
   "g_marital_widower": {
     "page": 6,
@@ -722,9 +602,7 @@ export const SAPS271_COORDS = {
     "x": 550.9,
     "y": 127.5,
     "w": 19.2,
-    "h": 18.1,
-    "field": "checkbox_2",
-    "fieldKind": "checkbox"
+    "h": 18.1
   },
   "g_spouse_id_type_sa": {
     "page": 7,
@@ -732,9 +610,7 @@ export const SAPS271_COORDS = {
     "x": 108,
     "y": 745,
     "w": 18,
-    "h": 18.1,
-    "field": "text_103",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_spouse_id_number": {
     "page": 7,
@@ -806,21 +682,6 @@ export const SAPS271_COORDS = {
         "x": 551.2,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_77",
-      "text_60",
-      "text_62",
-      "text_72",
-      "text_68",
-      "text_46",
-      "text_81",
-      "text_45",
-      "text_54",
-      "text_50",
-      "text_57",
-      "text_42",
-      "text_82"
     ]
   },
   "g_spouse_name": {
@@ -829,9 +690,7 @@ export const SAPS271_COORDS = {
     "x": 157.5,
     "y": 682.5,
     "w": 403.8,
-    "h": 17.2,
-    "field": "text_117",
-    "fieldKind": "text"
+    "h": 17.2
   },
   "d_holder_main": {
     "page": 2,
@@ -839,9 +698,7 @@ export const SAPS271_COORDS = {
     "x": 188.4,
     "y": 780.3,
     "w": 19.1,
-    "h": 16.7,
-    "field": "checkbox_5",
-    "fieldKind": "checkbox"
+    "h": 16.7
   },
   "d_holder_additional": {
     "page": 2,
@@ -849,9 +706,7 @@ export const SAPS271_COORDS = {
     "x": 355.4,
     "y": 780.3,
     "w": 18,
-    "h": 16.7,
-    "field": "checkbox_3",
-    "fieldKind": "checkbox"
+    "h": 16.7
   },
   "g_owned_1_type": {
     "page": 5,
@@ -859,9 +714,7 @@ export const SAPS271_COORDS = {
     "x": 47.2,
     "y": 294.1,
     "w": 72.6,
-    "h": 17.7,
-    "field": "text_23",
-    "fieldKind": "text"
+    "h": 17.7
   },
   "g_owned_1_calibre": {
     "page": 5,
@@ -869,9 +722,7 @@ export const SAPS271_COORDS = {
     "x": 123.8,
     "y": 294.1,
     "w": 72.6,
-    "h": 17.7,
-    "field": "text_32",
-    "fieldKind": "text"
+    "h": 17.7
   },
   "g_owned_1_make": {
     "page": 5,
@@ -879,9 +730,7 @@ export const SAPS271_COORDS = {
     "x": 200.4,
     "y": 294.1,
     "w": 72.5,
-    "h": 17.7,
-    "field": "text_30",
-    "fieldKind": "text"
+    "h": 17.7
   },
   "g_owned_1_barrel_serial": {
     "page": 5,
@@ -889,9 +738,7 @@ export const SAPS271_COORDS = {
     "x": 276.9,
     "y": 294.1,
     "w": 92.4,
-    "h": 17.7,
-    "field": "text_14",
-    "fieldKind": "text"
+    "h": 17.7
   },
   "g_owned_1_frame_serial": {
     "page": 5,
@@ -899,9 +746,7 @@ export const SAPS271_COORDS = {
     "x": 373.3,
     "y": 294.1,
     "w": 89.6,
-    "h": 17.7,
-    "field": "text_53",
-    "fieldKind": "text"
+    "h": 17.7
   },
   "g_owned_1_licence": {
     "page": 5,
@@ -909,9 +754,7 @@ export const SAPS271_COORDS = {
     "x": 466.9,
     "y": 294.1,
     "w": 91.4,
-    "h": 17.7,
-    "field": "text_29",
-    "fieldKind": "text"
+    "h": 17.7
   },
   "g_owned_2_type": {
     "page": 5,
@@ -919,9 +762,7 @@ export const SAPS271_COORDS = {
     "x": 47.2,
     "y": 277,
     "w": 72.6,
-    "h": 17.1,
-    "field": "text_60",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_owned_2_calibre": {
     "page": 5,
@@ -929,9 +770,7 @@ export const SAPS271_COORDS = {
     "x": 123.8,
     "y": 277,
     "w": 72.6,
-    "h": 17.1,
-    "field": "text_51",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_owned_2_make": {
     "page": 5,
@@ -939,9 +778,7 @@ export const SAPS271_COORDS = {
     "x": 200.4,
     "y": 277,
     "w": 72.5,
-    "h": 17.1,
-    "field": "text_17",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_owned_2_barrel_serial": {
     "page": 5,
@@ -949,9 +786,7 @@ export const SAPS271_COORDS = {
     "x": 276.9,
     "y": 277,
     "w": 92.4,
-    "h": 17.1,
-    "field": "text_15",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_owned_2_frame_serial": {
     "page": 5,
@@ -959,9 +794,7 @@ export const SAPS271_COORDS = {
     "x": 373.3,
     "y": 277,
     "w": 89.6,
-    "h": 17.1,
-    "field": "text_18",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_owned_2_licence": {
     "page": 5,
@@ -969,9 +802,7 @@ export const SAPS271_COORDS = {
     "x": 466.9,
     "y": 277,
     "w": 91.4,
-    "h": 17.1,
-    "field": "text_8",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_owned_3_type": {
     "page": 5,
@@ -979,9 +810,7 @@ export const SAPS271_COORDS = {
     "x": 47.2,
     "y": 257.9,
     "w": 72.6,
-    "h": 19.1,
-    "field": "text_65",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_3_calibre": {
     "page": 5,
@@ -989,9 +818,7 @@ export const SAPS271_COORDS = {
     "x": 123.8,
     "y": 257.9,
     "w": 72.6,
-    "h": 19.1,
-    "field": "text_69",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_3_make": {
     "page": 5,
@@ -999,9 +826,7 @@ export const SAPS271_COORDS = {
     "x": 200.4,
     "y": 257.9,
     "w": 72.5,
-    "h": 19.1,
-    "field": "text_62",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_3_barrel_serial": {
     "page": 5,
@@ -1009,9 +834,7 @@ export const SAPS271_COORDS = {
     "x": 276.9,
     "y": 257.9,
     "w": 92.4,
-    "h": 19.1,
-    "field": "text_38",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_3_frame_serial": {
     "page": 5,
@@ -1019,9 +842,7 @@ export const SAPS271_COORDS = {
     "x": 373.3,
     "y": 257.9,
     "w": 89.6,
-    "h": 19.1,
-    "field": "text_52",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_3_licence": {
     "page": 5,
@@ -1029,9 +850,7 @@ export const SAPS271_COORDS = {
     "x": 466.9,
     "y": 257.9,
     "w": 91.4,
-    "h": 19.1,
-    "field": "text_46",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_4_type": {
     "page": 5,
@@ -1039,9 +858,7 @@ export const SAPS271_COORDS = {
     "x": 47.2,
     "y": 240.7,
     "w": 72.6,
-    "h": 17.2,
-    "field": "text_36",
-    "fieldKind": "text"
+    "h": 17.2
   },
   "g_owned_4_calibre": {
     "page": 5,
@@ -1049,9 +866,7 @@ export const SAPS271_COORDS = {
     "x": 123.8,
     "y": 240.7,
     "w": 72.6,
-    "h": 17.2,
-    "field": "text_20",
-    "fieldKind": "text"
+    "h": 17.2
   },
   "g_owned_4_make": {
     "page": 5,
@@ -1059,9 +874,7 @@ export const SAPS271_COORDS = {
     "x": 200.4,
     "y": 240.7,
     "w": 72.5,
-    "h": 17.2,
-    "field": "text_37",
-    "fieldKind": "text"
+    "h": 17.2
   },
   "g_owned_4_barrel_serial": {
     "page": 5,
@@ -1069,9 +882,7 @@ export const SAPS271_COORDS = {
     "x": 276.9,
     "y": 240.7,
     "w": 92.4,
-    "h": 17.2,
-    "field": "text_22",
-    "fieldKind": "text"
+    "h": 17.2
   },
   "g_owned_4_frame_serial": {
     "page": 5,
@@ -1079,9 +890,7 @@ export const SAPS271_COORDS = {
     "x": 373.3,
     "y": 240.7,
     "w": 89.6,
-    "h": 17.2,
-    "field": "text_19",
-    "fieldKind": "text"
+    "h": 17.2
   },
   "g_owned_4_licence": {
     "page": 5,
@@ -1089,9 +898,7 @@ export const SAPS271_COORDS = {
     "x": 466.9,
     "y": 240.7,
     "w": 91.4,
-    "h": 17.2,
-    "field": "text_13",
-    "fieldKind": "text"
+    "h": 17.2
   },
   "g_owned_5_type": {
     "page": 5,
@@ -1099,9 +906,7 @@ export const SAPS271_COORDS = {
     "x": 47.2,
     "y": 221.6,
     "w": 72.6,
-    "h": 19.1,
-    "field": "text_57",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_5_calibre": {
     "page": 5,
@@ -1109,9 +914,7 @@ export const SAPS271_COORDS = {
     "x": 123.8,
     "y": 221.6,
     "w": 72.6,
-    "h": 19.1,
-    "field": "text_42",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_5_make": {
     "page": 5,
@@ -1119,9 +922,7 @@ export const SAPS271_COORDS = {
     "x": 200.4,
     "y": 221.6,
     "w": 72.5,
-    "h": 19.1,
-    "field": "text_58",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_5_barrel_serial": {
     "page": 5,
@@ -1129,9 +930,7 @@ export const SAPS271_COORDS = {
     "x": 276.9,
     "y": 221.6,
     "w": 92.4,
-    "h": 19.1,
-    "field": "text_40",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_5_frame_serial": {
     "page": 5,
@@ -1139,9 +938,7 @@ export const SAPS271_COORDS = {
     "x": 373.3,
     "y": 221.6,
     "w": 89.6,
-    "h": 19.1,
-    "field": "text_50",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_5_licence": {
     "page": 5,
@@ -1149,9 +946,7 @@ export const SAPS271_COORDS = {
     "x": 466.9,
     "y": 221.6,
     "w": 91.4,
-    "h": 19.1,
-    "field": "text_31",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_owned_6_type": {
     "page": 5,
@@ -1159,9 +954,7 @@ export const SAPS271_COORDS = {
     "x": 47.2,
     "y": 204.5,
     "w": 72.6,
-    "h": 17.1,
-    "field": "text_25",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_owned_6_calibre": {
     "page": 5,
@@ -1169,9 +962,7 @@ export const SAPS271_COORDS = {
     "x": 123.8,
     "y": 204.5,
     "w": 72.6,
-    "h": 17.1,
-    "field": "text_10",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_owned_6_make": {
     "page": 5,
@@ -1179,9 +970,7 @@ export const SAPS271_COORDS = {
     "x": 200.4,
     "y": 204.5,
     "w": 72.5,
-    "h": 17.1,
-    "field": "text_27",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_owned_6_barrel_serial": {
     "page": 5,
@@ -1189,9 +978,7 @@ export const SAPS271_COORDS = {
     "x": 276.9,
     "y": 204.5,
     "w": 92.4,
-    "h": 17.1,
-    "field": "text_24",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_owned_6_frame_serial": {
     "page": 5,
@@ -1199,9 +986,7 @@ export const SAPS271_COORDS = {
     "x": 373.3,
     "y": 204.5,
     "w": 89.6,
-    "h": 17.1,
-    "field": "text_16",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_owned_6_licence": {
     "page": 5,
@@ -1209,9 +994,7 @@ export const SAPS271_COORDS = {
     "x": 466.9,
     "y": 204.5,
     "w": 91.4,
-    "h": 17.1,
-    "field": "text_41",
-    "fieldKind": "text"
+    "h": 17.1
   },
   "g_residential_postal_code": {
     "page": 6,
@@ -1235,12 +1018,6 @@ export const SAPS271_COORDS = {
         "x": 551.1,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_91",
-      "text_63",
-      "text_79",
-      "text_99"
     ]
   },
   "g_postal_postal_code": {
@@ -1265,12 +1042,6 @@ export const SAPS271_COORDS = {
         "x": 551.1,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_51",
-      "text_27",
-      "text_25",
-      "text_74"
     ]
   },
   "g_business_postal_code": {
@@ -1295,12 +1066,6 @@ export const SAPS271_COORDS = {
         "x": 550.9,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_113",
-      "text_49",
-      "text_38",
-      "text_88"
     ]
   },
   "g_home_dialling_code": {
@@ -1309,9 +1074,7 @@ export const SAPS271_COORDS = {
     "x": 226.7,
     "y": 209.7,
     "w": 20.7,
-    "h": 19.1,
-    "field": "text_132",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_home_telephone": {
     "page": 6,
@@ -1319,9 +1082,7 @@ export const SAPS271_COORDS = {
     "x": 252.1,
     "y": 209.7,
     "w": 115.5,
-    "h": 19.1,
-    "field": "text_130",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_work_dialling_code": {
     "page": 6,
@@ -1329,9 +1090,7 @@ export const SAPS271_COORDS = {
     "x": 432.6,
     "y": 209.7,
     "w": 20.8,
-    "h": 19.1,
-    "field": "text_146",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_work_telephone": {
     "page": 6,
@@ -1339,9 +1098,7 @@ export const SAPS271_COORDS = {
     "x": 458.1,
     "y": 209.7,
     "w": 100.2,
-    "h": 19.1,
-    "field": "text_140",
-    "fieldKind": "text"
+    "h": 19.1
   },
   "g_spouse_id_type_passport": {
     "page": 7,
@@ -1349,9 +1106,7 @@ export const SAPS271_COORDS = {
     "x": 171,
     "y": 745,
     "w": 18,
-    "h": 18.1,
-    "field": "text_125",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_spouse_passport": {
     "page": 7,
@@ -1435,9 +1190,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 340.4,
     "w": 192.8,
-    "h": 17.4,
-    "field": "text_53",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_negligence_case": {
     "page": 8,
@@ -1445,9 +1198,7 @@ export const SAPS271_COORDS = {
     "x": 428.8,
     "y": 340.4,
     "w": 132.5,
-    "h": 17.4,
-    "field": "text_19",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_negligence_charge": {
     "page": 8,
@@ -1455,9 +1206,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 322,
     "w": 192.9,
-    "h": 18.4,
-    "field": "text_23",
-    "fieldKind": "text"
+    "h": 18.4
   },
   "h_negligence_outcome": {
     "page": 8,
@@ -1465,9 +1214,7 @@ export const SAPS271_COORDS = {
     "x": 428.8,
     "y": 322,
     "w": 132.5,
-    "h": 18.4,
-    "field": "text_20",
-    "fieldKind": "text"
+    "h": 18.4
   },
   "h_unfit_station": {
     "page": 8,
@@ -1475,9 +1222,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 227.5,
     "w": 192.8,
-    "h": 17.4,
-    "field": "text_22",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_unfit_case": {
     "page": 8,
@@ -1485,9 +1230,7 @@ export const SAPS271_COORDS = {
     "x": 428.8,
     "y": 227.5,
     "w": 132.5,
-    "h": 17.4,
-    "field": "text_28",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_unfit_charge": {
     "page": 8,
@@ -1495,9 +1238,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 210.1,
     "w": 418.7,
-    "h": 17.4,
-    "field": "TextFormField 35",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_unfit_date_from": {
     "page": 8,
@@ -1505,9 +1246,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 191.7,
     "w": 192.8,
-    "h": 18.4,
-    "field": "text_16",
-    "fieldKind": "text"
+    "h": 18.4
   },
   "h_unfit_period": {
     "page": 8,
@@ -1515,9 +1254,7 @@ export const SAPS271_COORDS = {
     "x": 428.8,
     "y": 191.7,
     "w": 132.5,
-    "h": 18.4,
-    "field": "text_25",
-    "fieldKind": "text"
+    "h": 18.4
   },
   "h_confiscated_station": {
     "page": 8,
@@ -1525,9 +1262,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 79.7,
     "w": 192.8,
-    "h": 17.4,
-    "field": "text_36",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_confiscated_case": {
     "page": 8,
@@ -1535,9 +1270,7 @@ export const SAPS271_COORDS = {
     "x": 428.8,
     "y": 79.7,
     "w": 132.5,
-    "h": 17.4,
-    "field": "text_41",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_confiscated_circumstances": {
     "page": 8,
@@ -1545,9 +1278,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 63.3,
     "w": 192.8,
-    "h": 16.4,
-    "field": "text_18",
-    "fieldKind": "text"
+    "h": 16.4
   },
   "h_confiscated_outcome": {
     "page": 8,
@@ -1555,9 +1286,7 @@ export const SAPS271_COORDS = {
     "x": 428.8,
     "y": 63.3,
     "w": 132.5,
-    "h": 16.4,
-    "field": "text_27",
-    "fieldKind": "text"
+    "h": 16.4
   },
   "g_association_yes": {
     "page": 7,
@@ -1565,9 +1294,7 @@ export const SAPS271_COORDS = {
     "x": 341,
     "y": 226.6,
     "w": 19.1,
-    "h": 18.1,
-    "field": "TextFormField 32",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_association_no": {
     "page": 7,
@@ -1575,9 +1302,7 @@ export const SAPS271_COORDS = {
     "x": 398.3,
     "y": 226.6,
     "w": 19.1,
-    "h": 18.1,
-    "field": "TextFormField 33",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_association_name": {
     "page": 7,
@@ -1585,9 +1310,7 @@ export const SAPS271_COORDS = {
     "x": 199.9,
     "y": 199.4,
     "w": 361.3,
-    "h": 18.1,
-    "field": "text_131",
-    "fieldKind": "text"
+    "h": 18.1
   },
   "g_association_far": {
     "page": 7,
@@ -1671,27 +1394,6 @@ export const SAPS271_COORDS = {
         "x": 550.8,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_23",
-      "text_8",
-      "text_12",
-      "text_4",
-      "text_5",
-      "text_96",
-      "text_65",
-      "text_53",
-      "text_79",
-      "text_97",
-      "text_111",
-      "text_132",
-      "text_112",
-      "text_123",
-      "text_118",
-      "TextFormField 34",
-      "text_101",
-      "text_91",
-      "text_113"
     ]
   },
   "g_association_number": {
@@ -1700,9 +1402,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 163.1,
     "w": 154.7,
-    "h": 18.2,
-    "field": "text_88",
-    "fieldKind": "text"
+    "h": 18.2
   },
   "g_association_joined": {
     "page": 7,
@@ -1750,16 +1450,6 @@ export const SAPS271_COORDS = {
         "x": 550.8,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_124",
-      "text_121",
-      "text_122",
-      "text_116",
-      "text_129",
-      "text_128",
-      "text_114",
-      "text_120"
     ]
   },
   "g_association_expiry": {
@@ -1808,16 +1498,6 @@ export const SAPS271_COORDS = {
         "x": 550.8,
         "sep": null
       }
-    ],
-    "fields": [
-      "text_99",
-      "text_105",
-      "text_94",
-      "text_100",
-      "text_108",
-      "text_104",
-      "text_92",
-      "text_106"
     ]
   },
   "g_motivation_reference": {
@@ -1826,9 +1506,7 @@ export const SAPS271_COORDS = {
     "x": 49.2,
     "y": 100.9,
     "w": 508.1,
-    "h": 16.8,
-    "field": "text_66",
-    "fieldKind": "text"
+    "h": 16.8
   },
   "h_conviction_yes": {
     "page": 8,
@@ -1836,9 +1514,7 @@ export const SAPS271_COORDS = {
     "x": 131.2,
     "y": 774.8,
     "w": 18.8,
-    "h": 17.4,
-    "field": "checkbox_7",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_conviction_no": {
     "page": 8,
@@ -1846,9 +1522,7 @@ export const SAPS271_COORDS = {
     "x": 227.1,
     "y": 774.8,
     "w": 17.8,
-    "h": 17.4,
-    "field": "checkbox_10",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_pending_yes": {
     "page": 8,
@@ -1856,9 +1530,7 @@ export const SAPS271_COORDS = {
     "x": 131.2,
     "y": 627.1,
     "w": 18.8,
-    "h": 17.4,
-    "field": "checkbox_5",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_pending_no": {
     "page": 8,
@@ -1866,9 +1538,7 @@ export const SAPS271_COORDS = {
     "x": 225.7,
     "y": 627.1,
     "w": 20.6,
-    "h": 17.4,
-    "field": "checkbox_12",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_lost_stolen_yes": {
     "page": 8,
@@ -1876,9 +1546,7 @@ export const SAPS271_COORDS = {
     "x": 131.2,
     "y": 514.2,
     "w": 18.8,
-    "h": 17.4,
-    "field": "checkbox_4",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_lost_stolen_no": {
     "page": 8,
@@ -1886,9 +1554,7 @@ export const SAPS271_COORDS = {
     "x": 225.7,
     "y": 514.2,
     "w": 20.6,
-    "h": 17.4,
-    "field": "checkbox_9",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_negligence_yes": {
     "page": 8,
@@ -1896,9 +1562,7 @@ export const SAPS271_COORDS = {
     "x": 131.2,
     "y": 366.5,
     "w": 18.8,
-    "h": 17.4,
-    "field": "checkbox_2",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_negligence_no": {
     "page": 8,
@@ -1906,9 +1570,7 @@ export const SAPS271_COORDS = {
     "x": 226.7,
     "y": 366.5,
     "w": 17,
-    "h": 17.4,
-    "field": "checkbox_6",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_unfit_yes": {
     "page": 8,
@@ -1916,9 +1578,7 @@ export const SAPS271_COORDS = {
     "x": 131.2,
     "y": 253.6,
     "w": 18.8,
-    "h": 17.4,
-    "field": "checkbox_1",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_unfit_no": {
     "page": 8,
@@ -1926,9 +1586,7 @@ export const SAPS271_COORDS = {
     "x": 226.7,
     "y": 253.6,
     "w": 17,
-    "h": 17.4,
-    "field": "checkbox_3",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_confiscated_yes": {
     "page": 8,
@@ -1936,9 +1594,7 @@ export const SAPS271_COORDS = {
     "x": 131.2,
     "y": 105.8,
     "w": 18.8,
-    "h": 17.4,
-    "field": "checkbox_8",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_confiscated_no": {
     "page": 8,
@@ -1946,9 +1602,7 @@ export const SAPS271_COORDS = {
     "x": 226.7,
     "y": 105.8,
     "w": 17,
-    "h": 17.4,
-    "field": "checkbox_11",
-    "fieldKind": "checkbox"
+    "h": 17.4
   },
   "h_conviction_station": {
     "page": 8,
@@ -1956,9 +1610,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 748.7,
     "w": 193.4,
-    "h": 17.4,
-    "field": "text_35",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_conviction_case": {
     "page": 8,
@@ -1966,9 +1618,7 @@ export const SAPS271_COORDS = {
     "x": 428.8,
     "y": 748.7,
     "w": 132.5,
-    "h": 17.4,
-    "field": "text_47",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_conviction_charge": {
     "page": 8,
@@ -1976,9 +1626,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 731.3,
     "w": 418.7,
-    "h": 17.4,
-    "field": "text_51",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_conviction_outcome": {
     "page": 8,
@@ -1986,9 +1634,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 713.9,
     "w": 418.7,
-    "h": 17.4,
-    "field": "text_44",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_pending_station": {
     "page": 8,
@@ -1996,9 +1642,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 601,
     "w": 192.8,
-    "h": 17.4,
-    "field": "text_26",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_pending_case": {
     "page": 8,
@@ -2006,9 +1650,7 @@ export const SAPS271_COORDS = {
     "x": 428.8,
     "y": 601,
     "w": 132.5,
-    "h": 17.4,
-    "field": "text_39",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_pending_offence": {
     "page": 8,
@@ -2016,9 +1658,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 583.6,
     "w": 418.7,
-    "h": 17.4,
-    "field": "text_38",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_lost_stolen_station": {
     "page": 8,
@@ -2026,9 +1666,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 488.1,
     "w": 192.8,
-    "h": 17.4,
-    "field": "text_50",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_lost_stolen_case": {
     "page": 8,
@@ -2036,9 +1674,7 @@ export const SAPS271_COORDS = {
     "x": 428.8,
     "y": 488.1,
     "w": 132.5,
-    "h": 17.4,
-    "field": "text_46",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_lost_stolen_circumstances": {
     "page": 8,
@@ -2046,9 +1682,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 470.7,
     "w": 418.7,
-    "h": 17.4,
-    "field": "text_45",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "h_lost_stolen_firearm": {
     "page": 8,
@@ -2056,9 +1690,7 @@ export const SAPS271_COORDS = {
     "x": 142.6,
     "y": 453.3,
     "w": 418.7,
-    "h": 17.4,
-    "field": "text_43",
-    "fieldKind": "text"
+    "h": 17.4
   },
   "safe_yes": {
     "page": 9,
@@ -2066,9 +1698,7 @@ export const SAPS271_COORDS = {
     "x": 130.2,
     "y": 742.1,
     "w": 17.2,
-    "h": 18.1,
-    "field": "checkbox_4",
-    "fieldKind": "checkbox"
+    "h": 18.1
   },
   "safe_no": {
     "page": 9,
@@ -2076,9 +1706,7 @@ export const SAPS271_COORDS = {
     "x": 226.5,
     "y": 742.1,
     "w": 19,
-    "h": 18.1,
-    "field": "checkbox_7",
-    "fieldKind": "checkbox"
+    "h": 18.1
   },
   "safe_type_handgun": {
     "page": 9,
@@ -2086,9 +1714,7 @@ export const SAPS271_COORDS = {
     "x": 226.2,
     "y": 705.5,
     "w": 16,
-    "h": 18.1,
-    "field": "checkbox_10",
-    "fieldKind": "checkbox"
+    "h": 18.1
   },
   "safe_type_rifle": {
     "page": 9,
@@ -2096,9 +1722,7 @@ export const SAPS271_COORDS = {
     "x": 339.6,
     "y": 705.5,
     "w": 16,
-    "h": 18.1,
-    "field": "checkbox_9",
-    "fieldKind": "checkbox"
+    "h": 18.1
   },
   "safe_type_strongroom": {
     "page": 9,
@@ -2106,9 +1730,7 @@ export const SAPS271_COORDS = {
     "x": 129.8,
     "y": 687.3,
     "w": 16.3,
-    "h": 18.1,
-    "field": "checkbox_5",
-    "fieldKind": "checkbox"
+    "h": 18.1
   },
   "safe_type_device": {
     "page": 9,
@@ -2116,9 +1738,7 @@ export const SAPS271_COORDS = {
     "x": 129.8,
     "y": 669.3,
     "w": 16.3,
-    "h": 18.1,
-    "field": "checkbox_8",
-    "fieldKind": "checkbox"
+    "h": 18.1
   },
   "safe_mounted_yes": {
     "page": 9,
@@ -2126,9 +1746,7 @@ export const SAPS271_COORDS = {
     "x": 130.2,
     "y": 632.5,
     "w": 17.2,
-    "h": 18.5,
-    "field": "checkbox_3",
-    "fieldKind": "checkbox"
+    "h": 18.5
   },
   "safe_mounted_no": {
     "page": 9,
@@ -2136,9 +1754,7 @@ export const SAPS271_COORDS = {
     "x": 226.5,
     "y": 632.5,
     "w": 19,
-    "h": 18.5,
-    "field": "checkbox_6",
-    "fieldKind": "checkbox"
+    "h": 18.5
   },
   "safe_mounted_wall": {
     "page": 9,
@@ -2146,9 +1762,7 @@ export const SAPS271_COORDS = {
     "x": 129.8,
     "y": 596,
     "w": 16.3,
-    "h": 17.5,
-    "field": "checkbox_1",
-    "fieldKind": "checkbox"
+    "h": 17.5
   },
   "safe_mounted_floor": {
     "page": 9,
@@ -2156,9 +1770,7 @@ export const SAPS271_COORDS = {
     "x": 227.7,
     "y": 596,
     "w": 18.9,
-    "h": 17.5,
-    "field": "checkbox_2",
-    "fieldKind": "checkbox"
+    "h": 17.5
   }
 } as const satisfies Record<string, Saps271Field>;
 
@@ -2178,9 +1790,6 @@ export type Saps271FieldName = keyof typeof SAPS271_COORDS;
  * template simply has no field over these — but the values still land, and this
  * list is what tells anyone why some values are editable and some are not.
  */
-export const SAPS271_DRAWN_NOT_FIELDED: string[] = [
-  "g_citizen_pr",
-  "g_spouse_passport"
-];
+export const SAPS271_DRAWN_NOT_FIELDED: string[] = [];
 
 export const SAPS271_UNRESOLVED: { name: string; label: string; page: number; reason: string }[] = [];
