@@ -322,9 +322,9 @@ model User {
   // Distinct from transactional notifications; null = not opted in.
   marketingConsentAt   DateTime?
 
-  totalSales                Int       @default(0)
-  isBanned                  Boolean   @default(false)
-  bannedAt                  DateTime?
+  totalSales Int       @default(0)
+  isBanned   Boolean   @default(false)
+  bannedAt   DateTime?
 
   // Seller "Complete profile" gate — set when the seller submits the
   // post-first-publish profile modal (name/surname/username/phone/
@@ -339,21 +339,21 @@ model User {
   // rest; SA bank account numbers aren't classed as PII under POPIA
   // the same way an ID number is, and we need the plaintext to run
   // future payouts via Peach.
-  bankName          String?
-  bankAccountHolder String?
-  bankAccountNumber String?
-  bankBranchCode    String?
-  bankAccountType   String? // "cheque" | "savings" | "transmission"
+  bankName           String?
+  bankAccountHolder  String?
+  bankAccountNumber  String?
+  bankBranchCode     String?
+  bankAccountType    String? // "cheque" | "savings" | "transmission"
   // Stamp set when Peach AVS returns "match" on the bank details.
   // We re-run AVS on every save (per operator decision) so this
   // always reflects the most recent confirmation.
-  bankVerifiedAt    DateTime?
+  bankVerifiedAt     DateTime?
   // Last Peach AVS outcome, for audit if a payout fails and we need to
   // trace why: "PASS:<code>" / "MISMATCH:<code>:<flags>" / "FAILED:<code>".
-  bankAvsResult     String?
+  bankAvsResult      String?
   // Pending/last Peach BANV request id — the verification webhook and the
   // admin re-check both match the user on this.
-  bankVerificationId String? @unique
+  bankVerificationId String?   @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -367,7 +367,7 @@ model User {
   // within the window. Three strikes are the operator threshold for
   // a manual review / suspension. Lives separately from auction
   // strikes because the rules + consequences are different.
-  dispatchStrikes Int @default(0)
+  dispatchStrikes     Int       @default(0)
   // Seller reject strikes — penalty-bearing rejections (offers + sales)
   // per the reject-reason policy. At 3 the seller is BANNED FROM LISTING
   // (sellingBannedAt): no new listings, active listings cancelled; buying
@@ -514,6 +514,9 @@ model User {
   askGgConversations AskGgConversation[]
   askGgKbEntries     AskGgKbEntry[]      @relation("KbAuthor")
   askGgUsage         AskGgUsage[]
+
+  // Firearm-licence motivations (Phase 1 — see LICENCE-SERVICES-AND-FEED.md).
+  motivations Motivation[] @relation("UserMotivations")
 
   // Campaign attribution rollup: groupBy(campaignKey) on the admin page.
   @@index([campaignKey])
@@ -786,7 +789,7 @@ model Listing {
 
   // The province of the seller's pickup address; `province` above is derived
   // from it. Nullable only for rows created before this column existed.
-  pickupProvince         Province?
+  pickupProvince Province?
   // PUBLIC, COARSE vicinity — town/city only, derived from pickupCity at write
   // time and normalised. This is the ONLY sub-province location a buyer ever
   // sees, and it is what makes "you knew where it was before you paid" true.
@@ -796,7 +799,7 @@ model Listing {
   // on PUBLIC_LISTING_SELECT's explicit NEVER list and there is a regression
   // test holding it there — this column exists so that stays true while buyers
   // still learn which town they would be driving to.
-  publicLocality         String?   @db.VarChar(80)
+  publicLocality String?   @db.VarChar(80)
 
   isFirearm               Boolean   @default(false)
   // Snapshotted from Category.publicVisible at create time. Denormalised for
@@ -918,7 +921,7 @@ model Listing {
   quantityAvailable Int     @default(1)
   quantityReserved  Int     @default(0)
 
-  autoAcceptThreshold Int? // ZAR cents; Take a Shot only
+  autoAcceptThreshold  Int? // ZAR cents; Take a Shot only
   // Offers at or below this are instantly declined without bothering the
   // seller (the lowball filter — mirror of autoAcceptThreshold). Hidden
   // seller threshold; never exposed publicly or to buyers.
@@ -1095,7 +1098,7 @@ model Listing {
   // auction + binds this listing to it, the slot's
   // `currentListingId` points here. Optional 1:1 (a listing is in
   // ≤1 slot at a time, a slot has ≤1 listing).
-  featuredInSlot FeaturedSlot? @relation("FeaturedSlotListing")
+  featuredInSlot       FeaturedSlot?     @relation("FeaturedSlotListing")
 
   // Daily Deals (DD-1) — 1:1 overlay carrying the deal economics + schedule.
   // Present only when isDealListing = true.
@@ -1171,8 +1174,8 @@ model Deal {
   endedAt       DateTime?
   soldOutAt     DateTime?
 
-  heroRank     Int @default(0) // ordering within the drop grid (higher = more prominent)
-  initialStock Int // snapshot of stock at go-live → sell-through %
+  heroRank       Int @default(0) // ordering within the drop grid (higher = more prominent)
+  initialStock   Int // snapshot of stock at go-live → sell-through %
   perCustomerCap Int @default(10) // fair-share cap (units per buyer per deal)
 
   // Per-deal delivery promise (the JIT supply model makes this honest).
@@ -1229,10 +1232,10 @@ model Supplier {
   zohoSyncError         String?
   zohoSyncLastAttemptAt DateTime?
 
-  active           Boolean   @default(true)
+  active           Boolean  @default(true)
   createdByAdminId String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   deals Deal[]
 }
@@ -1345,25 +1348,25 @@ model Transaction {
   quantity Int @default(1)
 
   // Pricing — all ZAR cents, snapshot at point of sale
-  listingPrice          Int // snapshot of listing.price × quantity
-  commissionZar         Int
-  processingFee         Int // Peach fee (3.5% + R1.50 fixed, ×1.15 VAT)
+  listingPrice             Int // snapshot of listing.price × quantity
+  commissionZar            Int
+  processingFee            Int // Peach fee (3.5% + R1.50 fixed, ×1.15 VAT)
   // Shipping cost the buyer paid, sourced from a live Pudo / TCG rate
   // quote at checkout. Zero for firearm listings (DEALER_TRANSFER and
   // PRIVATE_ARRANGE don't use the courier API). Stored separately from
   // buyerTotal so we can show the breakdown later + remit to the
   // courier without re-computing.
-  shippingCost          Int     @default(0)
+  shippingCost             Int     @default(0)
   // P6.4 — flat GG handling margin per waybill created (R15). Buyer-paid,
   // GG-RETAINED (never remitted to the carrier), stored SEPARATELY from
   // shippingCost so the carrier remittance stays the pure rate. Zero for
   // firearm (DEALER_TRANSFER / PRIVATE_ARRANGE), collection, and consolidated
   // sibling lines — none of those create their own waybill.
-  shippingHandlingCents Int     @default(0)
+  shippingHandlingCents    Int     @default(0)
   // Service level snapshot — "L2LXS - ECO" / "D2DM - ECO" etc. Comes
   // straight from Pudo's response so we can pass it back into the
   // shipment-create call without re-fetching the quote.
-  shippingServiceCode   String?
+  shippingServiceCode      String?
   // Bob Go only — the rest of the chosen rate's identity. Bob Go's
   // POST /shipments needs provider_slug and service_level_code alongside
   // service_code, and BOTH vary per rate inside one quote response (a sandbox
@@ -1373,9 +1376,9 @@ model Transaction {
   // Null on every legacy-carrier row and on non-courier sales.
   shippingProviderSlug     String?
   shippingServiceLevelCode String?
-  passFeeToBuyer        Boolean // snapshot of listing.passFeeToBuyer
-  buyerTotal            Int // what buyer is charged by Peach
-  sellerPayout          Int // what seller receives after deductions
+  passFeeToBuyer           Boolean // snapshot of listing.passFeeToBuyer
+  buyerTotal               Int // what buyer is charged by Peach
+  sellerPayout             Int // what seller receives after deductions
 
   // Fraud-risk signals (Phase 3b). Computed AFTER payment capture
   // (fire-and-forget in markPaid) — log-only, never blocks payment.
@@ -1409,31 +1412,31 @@ model Transaction {
   cancelledReason    String?
 
   // Payment
-  paymentStatus   PaymentStatus @default(HELD)
-  peachCheckoutId String?
+  paymentStatus    PaymentStatus @default(HELD)
+  peachCheckoutId  String?
   // Peach requires an 8-16 char merchantTransactionId; our cuid is 25, so
   // we mint a short unique ref at checkout create and match webhooks by it
   // as a fallback to peachCheckoutId.
-  peachMerchantRef String?      @unique
+  peachMerchantRef String?       @unique
   // Peach Payouts payoutId (client-minted UUIDv4, stored BEFORE the API
   // call so the payout-status webhook can always be matched back).
-  peachPayoutId    String?      @unique
+  peachPayoutId    String?       @unique
   // @unique: a gateway payment id can settle exactly ONE transaction.
   // Defence-in-depth against replaying one Peach success against multiple
   // orders — the second markPaid hits a unique violation. NULLs are
   // exempt (Postgres) so unpaid rows are fine. Replaces the old
   // non-unique @@index([peachPaymentId]).
-  peachPaymentId  String?       @unique
-  peachResultCode String?
-  paidAt          DateTime?
-  releasedAt      DateTime?
+  peachPaymentId   String?       @unique
+  peachResultCode  String?
+  paidAt           DateTime?
+  releasedAt       DateTime?
 
   // Payout settlement. The outbound payout to the seller (RELEASED) or refund
   // to the buyer (REFUNDED) is stamped paidOutAt when settled. A row is "due"
   // while paidOutAt is null (and it isn't on a payout hold). The manual-EFT FNB
   // bulk-payment batch (PayoutBatch) has been removed; a future paygate settles
   // these rows directly via paidOutAt.
-  paidOutAt     DateTime?
+  paidOutAt DateTime?
 
   // M26 (FLOW-F4) — admin payout-HOLD lever. A RELEASED (or otherwise-due) row
   // with payoutHeldAt set is excluded from getPayoutsDue/collectDue and never
@@ -1484,8 +1487,8 @@ model Transaction {
   // (null for TCG door-to-door). shipmentBookingStartedAt is an idempotency
   // claim set BEFORE the (wallet-billed) carrier call so a retry/race can
   // never double-book; shipmentBookedAt marks a confirmed booking.
-  carrierShipmentId        String?
-  carrierDropoffPin        String?
+  carrierShipmentId         String?
+  carrierDropoffPin         String?
   // WHICH API actually booked this shipment: "PUDO", "TCG" or "BOBGO".
   //
   // Not derivable from shippingMethod any more. Bob Go sits behind BOTH enum
@@ -1522,9 +1525,9 @@ model Transaction {
   // is the signal that something is wrong with the listing's measurements
   // rather than with any one collection.
   shipmentRebookCount       Int       @default(0)
-  carrierProvider          String?
-  shipmentBookingStartedAt DateTime?
-  shipmentBookedAt         DateTime?
+  carrierProvider           String?
+  shipmentBookingStartedAt  DateTime?
+  shipmentBookedAt          DateTime?
 
   // P6.2 — per-seller shipping consolidation. When a buyer buys 2+ items from
   // the SAME seller via the SAME courier method to the SAME destination, they
@@ -1629,12 +1632,12 @@ model Transaction {
   // accept/dispatch deadlines are stored so the UI countdown chips
   // can use a single field instead of recomputing paidAt+48h on every
   // render, and the cron can do an indexed scan on the deadline column.
-  acceptedAt         DateTime?
-  acceptDeadlineAt   DateTime? // = paidAt + 48h, set when payment captured
+  acceptedAt           DateTime?
+  acceptDeadlineAt     DateTime? // = paidAt + 48h, set when payment captured
   // Mid-window "24h left to accept" reminder to the seller — stamped by the
   // accept sweep so it fires exactly once per sale.
   acceptReminderSentAt DateTime?
-  dispatchDeadlineAt DateTime? // = acceptedAt + 5d, set when seller accepts
+  dispatchDeadlineAt   DateTime? // = acceptedAt + 5d, set when seller accepts
 
   // Seller rejection of the sale — instead of accepting, seller can
   // reject. Triggers Peach refund + buyer notification. rejectedReason
@@ -2101,20 +2104,20 @@ model ContactDetailRejection {
 }
 
 model Rating {
-  id            String      @id @default(cuid())
-  transactionId String      @unique
-  transaction   Transaction @relation(fields: [transactionId], references: [id])
-  raterId       String
-  rater         User        @relation("RatingsGiven", fields: [raterId], references: [id])
-  ratedId       String
-  rated         User        @relation("RatingsReceived", fields: [ratedId], references: [id])
-  stars         Int // 1–5
-  comment       String?
+  id                String      @id @default(cuid())
+  transactionId     String      @unique
+  transaction       Transaction @relation(fields: [transactionId], references: [id])
+  raterId           String
+  rater             User        @relation("RatingsGiven", fields: [raterId], references: [id])
+  ratedId           String
+  rated             User        @relation("RatingsReceived", fields: [ratedId], references: [id])
+  stars             Int // 1–5
+  comment           String?
   // Seller reply (one public response per review — industry standard).
   sellerResponse    String?
   sellerRespondedAt DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @default(now()) @updatedAt
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @default(now()) @updatedAt
 
   @@index([ratedId])
 }
@@ -2150,7 +2153,7 @@ model Offer {
   // this same row back to PENDING (preserving the audit identity) and
   // bump the count; capped at 5 so a buyer can't pester a seller
   // indefinitely (eBay-style attempt limit).
-  attemptCount Int @default(1)
+  attemptCount  Int         @default(1)
 
   // Snapshot: offer met the listing's auto-accept threshold at submit time.
   // Auto-accept no longer accepts instantly (operator 2026-07-23) — the
@@ -2158,8 +2161,8 @@ model Offer {
   // the OFFER_TOO_LOW rejection penalty.
   metAutoAccept Boolean @default(false)
   // Seller rejection: structured reason (ticklist) + optional note.
-  rejectReason String?
-  rejectNote   String?
+  rejectReason  String?
+  rejectNote    String?
 
   // buyer has 24h to respond to a counter
   expiresAt DateTime
@@ -2433,7 +2436,7 @@ model MarketingCampaign {
 // standard are labelled as such. Static data — refreshed by re-running the
 // seed loader, never written at runtime.
 model CartridgeSpec {
-  cartridgeKey         String  @id // joins ManualLoad.cartridgeKey
+  cartridgeKey         String   @id // joins ManualLoad.cartridgeKey
   displayName          String
   grtName              String // the reference cartridge name matched
   standard             String // 'CIP' | 'SAAMI' | 'WILDCAT' | 'OTHER'
@@ -3163,17 +3166,17 @@ model AskGgKbEntry {
 // User model stays untouched). Live state (auction bid line) and the personal
 // overlay are computed at serve time and are NOT overridable here.
 model AskGgGuideOverride {
-  id          String            @id @default(cuid())
-  key         String            @unique // matches a GUIDES key (home, listing-auction, dashboard, …)
+  id          String           @id @default(cuid())
+  key         String           @unique // matches a GUIDES key (home, listing-auction, dashboard, …)
   title       String
   intro       String?
   points      String[] // the bullet-point playbook
   ctas        Json? // GuideCta[] { label, href?, ask? }
-  status      AskGgGuideStatus  @default(DRAFT)
+  status      AskGgGuideStatus @default(DRAFT)
   updatedBy   String? // admin JWT sub
   publishedAt DateTime?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   @@index([status])
 }
@@ -3565,13 +3568,13 @@ model SupportTicketReply {
 // a still-HELD order, the service also flips that order to DISPUTED to
 // block payout — but the Complaint row is the system of record.
 model Complaint {
-  id              String            @id @default(cuid())
+  id              String           @id @default(cuid())
   // Human case number, e.g. CO000123 (ReferenceNumberService prefix 'CO').
-  referenceNumber String            @unique
+  referenceNumber String           @unique
   userId          String
-  user            User              @relation("UserComplaints", fields: [userId], references: [id], onDelete: Cascade)
+  user            User             @relation("UserComplaints", fields: [userId], references: [id], onDelete: Cascade)
   // BUYER | SELLER — which side of the platform the complainant is on.
-  role            String            @default("BUYER")
+  role            String           @default("BUYER")
   // ITEM_NOT_AS_DESCRIBED | DAMAGED | NOT_ARRIVED | PAYOUT | DELIVERY |
   // ACCOUNT | LISTING | OTHER
   category        String
@@ -3581,18 +3584,18 @@ model Complaint {
   // as the Transaction cuid (there is no human order number); the picker
   // shows the listing reference for readability.
   transactionId   String?
-  transaction     Transaction?      @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  transaction     Transaction?     @relation(fields: [transactionId], references: [id], onDelete: SetNull)
   // OPEN | UNDER_REVIEW | AWAITING_USER | RESOLVED | CLOSED
-  status          String            @default("OPEN")
+  status          String           @default("OPEN")
   // AdminUser.id of the operator who owns the case (the "assigned owner").
   assignedAdminId String?
   // Free-text resolution recorded when the case closes.
   outcome         String?
   // true if lodging this complaint flipped the linked order to DISPUTED.
-  drovePayoutHold Boolean           @default(false)
+  drovePayoutHold Boolean          @default(false)
   photos          ComplaintPhoto[]
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   resolvedAt      DateTime?
 
   @@index([userId, createdAt])
@@ -3683,8 +3686,8 @@ model Order {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  transactions   Transaction[]
-  lineItems      OrderLineItem[]
+  transactions Transaction[]
+  lineItems    OrderLineItem[]
 
   @@index([buyerId, status])
   @@index([status, createdAt])
@@ -3887,7 +3890,6 @@ model Swap {
   @@index([status, cashPayByAt])
 }
 
-
 // ─── Insights / behavioural analytics (first-party, internal) ────────
 // Raw append-only behavioural events. Written fire-and-forget via a
 // buffered ActivityService (never in a request transaction). Rolled up
@@ -3983,4 +3985,218 @@ model InsightsDigest {
   createdAt   DateTime @default(now())
 
   @@index([generatedAt])
+}
+
+// ── Firearm-licence Motivation Writer (Phase 1) ──────────────────────
+// See LICENCE-SERVICES-AND-FEED.md. The applicant's OWN facts, structured,
+// encrypted at rest, rendered into a formal motivation PDF they sign and hand
+// to the DFO.
+//
+// Real enums rather than the String-with-a-comment style used by
+// Complaint.status, because both drive hard code branches: licenceType selects
+// the prompt framework and the FCA sections cited, status gates whether a PDF
+// can be produced at all.
+
+enum MotivationLicenceType {
+  S13_SELF_DEFENCE // s13 — self-defence
+  S15_OCCASIONAL_HUNTER // s15 — occasional hunter / sport shooter
+  S16_DEDICATED_HUNTER // s16 — dedicated hunter
+  S16_DEDICATED_SPORT // s16 — dedicated sport shooter
+  S24_RENEWAL // s24 — renewal of an existing licence
+}
+
+enum MotivationStatus {
+  DRAFT // form open, nothing generated
+  INTERVIEW // Boet is asking targeted follow-ups
+  GENERATING // a generation pass is in flight
+  QUALITY_REVIEW // generated; the second-pass gate is running
+  NEEDS_MORE_INFO // gate failed; thinFields drive new follow-ups
+  COMPLETED // gate passed; the PDF can be produced
+  FAILED // unrecoverable — an admin owns it
+  ABANDONED // user walked away, or an admin voided it
+}
+
+enum MotivationUploadKind {
+  CURRENT_LICENCE
+  PREVIOUS_MOTIVATION
+  COMPETENCY_CERTIFICATE
+  ASSOCIATION_CARD
+  IDENTITY_DOCUMENT
+  OTHER
+}
+
+model Motivation {
+  id              String @id @default(cuid())
+  // MO000123 — allocated from the atomic ReferenceCounter, printed on the PDF
+  // so the applicant can quote it to support. Same posture as
+  // Complaint.referenceNumber.
+  referenceNumber String @unique
+  userId          String
+  user            User   @relation("UserMotivations", fields: [userId], references: [id], onDelete: Cascade)
+
+  licenceType MotivationLicenceType
+
+  // THE THROTTLE KEY — one motivation per type per application.
+  // NOT nullable, and defaulted to "", deliberately: Postgres treats NULLs as
+  // DISTINCT, so a nullable column would let @@unique pass every time and the
+  // throttle would silently never fire. An empty string is a real value, so the
+  // constraint bites on the first duplicate. An admin voiding a motivation
+  // rewrites this to "voided:<id>", which releases the slot without deleting
+  // the row.
+  applicationRef String @default("")
+
+  status MotivationStatus @default(DRAFT)
+
+  // ── POPIA: encrypted at rest (AES-256-GCM, common/blob-crypto.ts) ──
+  // The structured answers as ONE encrypted JSON blob. Deliberately not a Json
+  // column: this is ID number, home address, security circumstances and firearm
+  // serials. The trade-off is accepted because these answers are never queried
+  // or indexed — only read whole, by their owner.
+  answersEncrypted     String? @db.Text
+  // Which version of the field registry the blob was written against, so a
+  // later registry change can migrate old blobs rather than guess.
+  answersSchemaVersion String? @db.VarChar(40)
+
+  // The generated motivation body, encrypted for the same reason. The PDF
+  // itself is NOT stored — it is re-rendered deterministically from this text
+  // on every download, the same posture as ReceiptService.
+  documentTextEncrypted String? @db.Text
+  documentVersion       Int     @default(0)
+  // Versions of the attorney-reviewed PDF skeleton and disclaimer, stamped at
+  // generation so documents produced under a reviewed version can be told
+  // apart from ones produced after a template change.
+  templateVersion       String? @db.VarChar(40)
+  disclaimerVersion     String? @db.VarChar(40)
+
+  // ── Anti-template variation ──
+  // The single biggest product risk is CFR seeing a flood of identically-shaped
+  // documents. The seed is stored so a regeneration is reproducible and an
+  // admin can prove WHY two documents differ; structurePlan is computed by US
+  // in code (section order, heading set, opening/closing strategy, paragraph
+  // targets) and Claude only phrases it. Non-PII, so plain Json.
+  variantSeed          Int
+  structurePlan        Json?
+  // Hashed STRUCTURAL shingles — heading sequence and sentence-opener trigrams
+  // with proper nouns and numbers stripped. Carries no applicant content, so it
+  // stays queryable in the clear for the sameness check.
+  structureFingerprint String[]
+
+  // ── Quality gate — a thin motivation never renders ──
+  qualityScore    Int?
+  // Full verdict, so admin re-reads the reasoning without paying for a second
+  // Claude call.
+  qualityFindings Json?
+  // Field KEYS only, never values — a key like "safe_storage_detail" is
+  // metadata, so this is safe unencrypted and drives the follow-up interview.
+  thinFields      String[]
+  gateCycles      Int      @default(0)
+
+  // ── Spend audit. Decimal, not Float — money and near-money never float. ──
+  modelUsed        String?
+  promptTokens     Int?
+  completionTokens Int?
+  costUsd          Decimal? @db.Decimal(10, 6)
+
+  // ── Commercial / beta bookkeeping ──
+  // Monotonic seat number from the atomic 'MOBETA' ReferenceCounter row.
+  // NULL means this was not a free-beta motivation. A seat above the cap is
+  // burned rather than reissued — that is what makes the cap race-proof.
+  betaSeatNo            Int?      @unique
+  billedCents           Int       @default(0)
+  testimonialConsentAt  DateTime?
+  // The applicant's own declaration that the facts are true and they submit it
+  // as their own motivation. No PDF renders without this.
+  declarationAcceptedAt DateTime?
+
+  // ── Phase 2 seed (the application checker) ──
+  outcomeAskedAt    DateTime?
+  outcomeReportedAt DateTime?
+  outcome           String?
+
+  // ── Lifecycle: one stamp per terminal transition, house convention ──
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  submittedAt      DateTime?
+  generatedAt      DateTime?
+  qualityPassedAt  DateTime?
+  completedAt      DateTime?
+  failedAt         DateTime?
+  failureReason    String?
+  // POPIA retention. Set when the motivation completes; a weekly cron deletes
+  // the row and its stored files past this date.
+  retentionPurgeAt DateTime?
+
+  messages MotivationMessage[]
+  uploads  MotivationUpload[]
+
+  // The throttle. See applicationRef for why it is NOT NULL.
+  @@unique([userId, licenceType, applicationRef])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([retentionPurgeAt])
+}
+
+// Boet's targeted follow-up interview. Modelled on AskGgMessage including its
+// per-message cost columns, but scoped to one motivation and carrying fieldKey
+// so an answer writes back into a typed form field rather than living only as
+// chat. Content is encrypted: the follow-ups are exactly where the
+// security-circumstances narrative lands.
+model MotivationMessage {
+  id               String     @id @default(cuid())
+  motivationId     String
+  motivation       Motivation @relation(fields: [motivationId], references: [id], onDelete: Cascade)
+  role             String // 'assistant' | 'user'
+  contentEncrypted String     @db.Text
+  // Which structured field this question targets (null for plain conversation).
+  // The answer is merged into answersEncrypted under this key — this is what
+  // makes the interview a form-filler rather than a transcript.
+  fieldKey         String?
+  model            String?
+  promptTokens     Int?
+  completionTokens Int?
+  costUsd          Decimal?   @db.Decimal(10, 6)
+  createdAt        DateTime   @default(now())
+
+  @@index([motivationId, createdAt])
+}
+
+// Camera-scanned / uploaded source documents.
+//
+// STORED ON OUR OWN SERVER, ENCRYPTED (operator decision 2026-08-18). There is
+// no Cloudinary URL here and there must never be one: every upload rail in this
+// codebase lands on a PUBLIC secure_url, which is obscurity rather than access
+// control, and these are photographs of ID books and firearm licences. The
+// bytes live at SecureFileStorageService's storageKey, AES-256-GCM at rest,
+// reachable only through an authenticated endpoint that checks ownership.
+model MotivationUpload {
+  id           String               @id @default(cuid())
+  motivationId String
+  motivation   Motivation           @relation(fields: [motivationId], references: [id], onDelete: Cascade)
+  kind         MotivationUploadKind
+
+  // Opaque key into SecureFileStorageService — `<ns>/<yyyy>/<mm>/<id>.enc`.
+  // NEVER a filesystem path and never a URL. Nullable only so a row can outlive
+  // its bytes after a retention purge without breaking the audit trail.
+  storageKey String?
+  mimeType   String
+  byteSize   Int
+  // SHA-256 of the PLAINTEXT bytes — spots the same document uploaded twice and
+  // proves which file an extraction came from.
+  sha256     String
+
+  // What Claude vision read off the document, encrypted: it holds licence
+  // numbers, the holder's name and expiry dates.
+  extractionEncrypted String?
+  extractionOk        Boolean  @default(false)
+  // Field KEYS the extraction proposed — safe in the clear, drives the
+  // "we found 6 fields, confirm them" card without decrypting anything.
+  extractedFields     String[]
+
+  createdAt DateTime  @default(now())
+  // Set when the bytes are deleted (retention purge or user erasure) while the
+  // row is kept. storageKey is nulled at the same time.
+  purgedAt  DateTime?
+
+  @@index([motivationId])
+  @@index([sha256])
 }

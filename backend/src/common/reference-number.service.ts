@@ -28,7 +28,10 @@ export type ReferencePrefix =
   | 'SW'
   | 'SB'
   | 'HP'
-  | 'CO'; // CO — formal complaint case number (Complaint.referenceNumber)
+  | 'CO' // CO — formal complaint case number (Complaint.referenceNumber)
+  | 'MO'; // MO — firearm-licence motivation document number
+  //        (Motivation.referenceNumber). Printed on the PDF the applicant
+  //        hands to the DFO, so it must be short and quotable over the phone.
 
 const LISTING_TYPE_TO_PREFIX: Record<ListingType, ReferencePrefix> = {
   BUY_NOW: 'UM',
