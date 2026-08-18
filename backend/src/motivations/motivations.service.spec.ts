@@ -92,6 +92,10 @@ function build(
       usage: { model: 'claude-sonnet-5', promptTokens: 400, completionTokens: 80 },
       parsed: true,
     })),
+    askFollowUpBatch: jest.fn(async (_a?: any): Promise<any> => ({
+      questions: { hunting_history: 'What do you hunt, and how often?' },
+      usage: { model: 'f', promptTokens: 10, completionTokens: 5 },
+    })),
     askFollowUp: jest.fn(async (_a?: any): Promise<any> => ({
       question: 'Which association are you with?',
       usage: { model: 'haiku', promptTokens: 10, completionTokens: 10 },
@@ -513,7 +517,30 @@ describe('MotivationsService.generate', () => {
     });
     const res = await svc.generate('c1', 'mo-1');
     expect(res.status).toBe(MotivationStatus.NEEDS_MORE_INFO);
-    expect(claude.askFollowUp).toHaveBeenCalledTimes(1);
+
+    // ONE Claude call for the whole batch, not one per field. This used to loop
+    // and send the entire system prompt three times to produce three sentences.
+    expect(claude.askFollowUpBatch).toHaveBeenCalledTimes(1);
+    expect(claude.askFollowUp).not.toHaveBeenCalled();
+
+    // …and the questions still land, one message per gap.
+    const asked = claude.askFollowUpBatch.mock.calls[0][0];
+    expect(asked.gaps).toHaveLength(3);
+
+    // What blocks generation is asked FIRST. Only the two reasons that stop a
+    // document being produced reach a three-question batch on this fixture;
+    // the merely-nice-to-have fields never get a look in.
+    for (const g of asked.gaps) {
+      expect(['missing_required', 'thin']).toContain(g.reason);
+    }
+    // …and they arrive in priority order, not registry order.
+    const ranks = asked.gaps.map((g: any) => g.reason === 'missing_required' ? 0 : 1);
+    expect([...ranks].sort()).toEqual(ranks);
+
+    // The brief carries a label and a word count, never the applicant's prose.
+    const brief = JSON.stringify(asked.gaps);
+    expect(brief).not.toMatch(/Rifle for kudu|Farm manager/);
+    expect(asked.gaps[0]).toHaveProperty('wordsSoFar');
     expect(prisma.motivationMessage.create).toHaveBeenCalled();
   });
 

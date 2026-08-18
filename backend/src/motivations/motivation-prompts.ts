@@ -297,6 +297,73 @@ Grade the draft against the facts. Return only the JSON object.`.trim();
  * registry rather than letting the model wander into whatever it feels like
  * asking a firearm applicant.
  */
+/**
+ * Ask for SEVERAL follow-ups in ONE call.
+ *
+ * The per-field version below carried this whole system prompt once per
+ * question, so a failed gate cost three requests to produce three sentences.
+ * Nothing about the task needed that: the questions are independent, short, and
+ * the model does better work seeing them together — it can vary the phrasing
+ * across the batch instead of opening three questions the same way.
+ *
+ * ⚠️ THE APPLICANT'S ANSWERS ARE NOT SENT. The caller passes a label, a help
+ * line and a word count. This prompt exists to WORD a question; it has no
+ * business seeing someone's security circumstances or criminal history to do
+ * that, and the cheapest way to keep them out of it is to never send them.
+ */
+export function followUpBatchSystemPrompt(): string {
+  return `
+You are Boet, the assistant on All Outdoor, helping someone fill gaps in a
+firearm licence motivation.
+
+You will be given a numbered list of fields that are empty or too short. Ask ONE
+short question about EACH, in the same order.
+
+Warm, direct, South African, no waffle. For each: explain in half a sentence why
+the detail helps, then ask. Two or three sentences each, maximum.
+
+VARY how you open them. Three questions that all begin the same way read like a
+form, and the whole point of asking this way is that it does not.
+
+You are told only a field name, a hint and roughly how much has been written.
+You are NOT shown what the applicant wrote. Do not pretend to have read it, and
+do not refer to what they "said".
+
+Never promise or hint at an outcome. Never suggest what they "should" say — ask
+what is true. Never invent an example so specific they might simply agree with
+it rather than tell you their own circumstances.
+
+Return STRICT JSON and nothing else:
+{"questions":[{"key":"<the field key you were given>","question":"..."}]}`.trim();
+}
+
+/** The compact brief. No prose from the applicant appears here. */
+export function followUpBatchUserPrompt(
+  licenceType: MotivationLicenceType,
+  gaps: {
+    key: string;
+    label: string;
+    help?: string;
+    reason: string;
+    wordsSoFar: number;
+  }[],
+): string {
+  const lines = gaps.map(
+    (g, i) =>
+      `${i + 1}. key=${sanitizePromptValue(g.key, 60)} | ${sanitizePromptValue(g.label, 120)}` +
+      (g.help ? ` | hint: ${sanitizePromptValue(g.help, 200)}` : '') +
+      ` | ${g.wordsSoFar === 0 ? 'nothing written yet' : `about ${g.wordsSoFar} words so far, which is too short`}`,
+  );
+  return [
+    `Licence type: ${LICENCE_TYPE_LABELS[licenceType]}`,
+    '',
+    'Fields to ask about:',
+    ...lines,
+    '',
+    `Return exactly ${gaps.length} question${gaps.length === 1 ? '' : 's'}, one per key, in this order.`,
+  ].join('\n');
+}
+
 export function followUpSystemPrompt(): string {
   return `
 You are Boet, the assistant on All Outdoor, helping someone fill gaps in a

@@ -1,15 +1,24 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
+  FileTypeValidator,
   Get,
+  MaxFileSizeValidator,
   Param,
+  ParseFilePipe,
   Patch,
   Post,
   Res,
   StreamableFile,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { MotivationUploadKind } from '@prisma/client';
 import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { ClerkGuard } from '../auth/clerk.guard';
@@ -18,9 +27,27 @@ import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationsService } from './motivations.service';
 import {
   AcceptDeclarationDto,
+  AnswerFollowUpDto,
   CreateMotivationDto,
   SaveAnswersDto,
 } from './dto/motivation.dto';
+
+/**
+ * Upload limits, in one place.
+ *
+ * The interceptor's ceiling is deliberately a little ABOVE the pipe's. Multer
+ * aborts an oversized request itself with a bare 413 that never reaches Nest;
+ * leaving it slightly higher lets the ParseFilePipe answer first with something
+ * an applicant can actually act on.
+ *
+ * ⚠️ NO HEIC. It was accepted platform-wide and reverted (6b8418b) after
+ * full-resolution iPhone HEICs produced 413s. kyc.controller.ts and two others
+ * still list heic/heif — that revert was incomplete, and copying them here
+ * would bring the regression back.
+ */
+const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+const UPLOAD_INTERCEPTOR_MAX = UPLOAD_MAX_BYTES + 512 * 1024;
+const UPLOAD_MIME = /^(image\/(jpeg|png|webp)|application\/pdf)$/;
 
 /**
  * Firearm-licence motivation writer — the member-facing surface.
@@ -150,6 +177,139 @@ export class MotivationsController {
   @Get(':id/checklist')
   checklist(@CurrentUser() clerkId: string, @Param('id') id: string) {
     return this.motivations.checklist(clerkId, id);
+  }
+
+  // ── the profile, with permission ──────────────────────────────────
+
+  /**
+   * What we WOULD fill from their All Outdoor profile, and where each value
+   * comes from. Read-only: showing the list before asking is the point.
+   */
+  @Get(':id/profile-offer')
+  profileOffer(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.profilePrefillOffer(clerkId, id);
+  }
+
+  /** They agree, and we copy. Consent is stamped on this application. */
+  @Post(':id/use-profile')
+  useProfile(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.useProfile(clerkId, id);
+  }
+
+  // ── uploads ───────────────────────────────────────────────────────
+
+  /**
+   * Add a supporting document.
+   *
+   * Bytes go to our own encrypted store, NOT to Cloudinary, so there is no
+   * public URL to leak. Throttled: each upload writes a file and will later
+   * trigger an extraction, so it costs more than an ordinary request.
+   */
+  @Post(':id/uploads')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: UPLOAD_INTERCEPTOR_MAX },
+    }),
+  )
+  addUpload(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body('kind') kind: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: UPLOAD_MAX_BYTES }),
+          new FileTypeValidator({ fileType: UPLOAD_MIME }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    // Validated HERE, by hand. The global ValidationPipe has no
+    // forbidNonWhitelisted and a bare @Body('kind') is not a DTO, so an
+    // arbitrary string would sail through and surface as a Prisma 500.
+    if (!Object.values(MotivationUploadKind).includes(kind as MotivationUploadKind)) {
+      throw new BadRequestException('Unknown document type.');
+    }
+    return this.motivations.addUpload(
+      clerkId,
+      id,
+      kind as MotivationUploadKind,
+      file,
+    );
+  }
+
+  /** The annexure list — metadata only, never bytes. */
+  @Get(':id/uploads')
+  listUploads(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.listUploads(clerkId, id);
+  }
+
+  /**
+   * Read one document back.
+   *
+   * Same posture as the PDF endpoint: `private, no-store`, because this is
+   * somebody's identity document and it must not sit in a shared proxy or a
+   * browser cache. The service decrypts BEFORE any header is set — a tampered
+   * file fails its auth tag, and headers-then-throw emits a 200 that dies
+   * halfway through the body.
+   */
+  @Get(':id/uploads/:uploadId')
+  async readUpload(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Param('uploadId') uploadId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { bytes, mimeType, filename } = await this.motivations.readUpload(
+      clerkId,
+      id,
+      uploadId,
+    );
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Length': String(bytes.length),
+      'Cache-Control': 'private, no-store',
+    });
+    return new StreamableFile(bytes);
+  }
+
+  @Delete(':id/uploads/:uploadId')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  removeUpload(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Param('uploadId') uploadId: string,
+  ) {
+    return this.motivations.removeUpload(clerkId, id, uploadId);
+  }
+
+  // ── the follow-up interview ───────────────────────────────────────
+
+  /** The conversation so far, decrypted for the person it belongs to. */
+  @Get(':id/messages')
+  listMessages(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.listMessages(clerkId, id);
+  }
+
+  /**
+   * Answer one follow-up.
+   *
+   * Lands in two places on purpose: the conversation, so they can see what they
+   * said, and the encrypted answer blob under the field the question was about,
+   * because that blob is what the document is built from.
+   */
+  @Post(':id/messages/:messageId')
+  answerFollowUp(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: AnswerFollowUpDto,
+  ) {
+    return this.motivations.answerFollowUp(clerkId, id, messageId, dto.answer);
   }
 
   @Post(':id/abandon')

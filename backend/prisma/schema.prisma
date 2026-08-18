@@ -4119,6 +4119,11 @@ model Motivation {
   // burned rather than reissued — that is what makes the cap race-proof.
   betaSeatNo            Int?      @unique
   billedCents           Int       @default(0)
+  /// When the applicant allowed us to fill the SAPS form from their All Outdoor
+  /// profile. Null means they were never asked, or said no — either way we do
+  /// not touch their profile data. Per motivation, not per account: agreeing
+  /// once is not agreeing forever.
+  profileConsentAt      DateTime?
   testimonialConsentAt  DateTime?
   // The applicant's own declaration that the facts are true and they submit it
   // as their own motivation. No PDF renders without this.
@@ -4214,5 +4219,10 @@ model MotivationUpload {
   purgedAt  DateTime?
 
   @@index([motivationId])
-  @@index([sha256])
+  // Scoped to the motivation, not global: the same ID document legitimately
+  // appears in two different people's applications, and in the same person's
+  // second one. A bare index could only ever support a read-then-write dedupe,
+  // which is a race — two uploads of one file both miss the read and both
+  // insert, and the applicant sees the same certificate twice in the annexures.
+  @@unique([motivationId, sha256])
 }

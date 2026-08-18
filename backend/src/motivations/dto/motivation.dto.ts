@@ -1,11 +1,4 @@
-import {
-  IsBoolean,
-  IsEnum,
-  IsObject,
-  IsOptional,
-  IsString,
-  MaxLength,
-} from 'class-validator';
+import { IsBoolean, IsEnum, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { MotivationLicenceType } from '@prisma/client';
 
 // DTO classes are declared in dependency order and one concern per file.
@@ -53,4 +46,18 @@ export class AcceptDeclarationDto {
   @IsOptional()
   @IsBoolean()
   testimonialConsent?: boolean;
+}
+
+/**
+ * One answer to one follow-up question.
+ *
+ * The cap is generous because this is the applicant's own account of their
+ * circumstances and the field registry caps it again per field; the point here
+ * is only to stop an unbounded body reaching the database.
+ */
+export class AnswerFollowUpDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Please write an answer first.' })
+  @MaxLength(4000)
+  answer!: string;
 }

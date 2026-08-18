@@ -1,12 +1,19 @@
 import {
   BadRequestException,
+  GoneException,
+  ServiceUnavailableException,
   ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import * as crypto from 'node:crypto';
-import { MotivationLicenceType, MotivationStatus } from '@prisma/client';
+import {
+  MotivationLicenceType,
+  MotivationStatus,
+  MotivationUploadKind,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
@@ -28,7 +35,11 @@ import {
   SIMILARITY_REGENERATE_THRESHOLD,
 } from './motivation-structure';
 import type { FactPack } from './motivation-prompts';
-import { buildAnnexures, buildChecklist } from './motivation-checklist';
+import {
+  buildAnnexures,
+  buildChecklist,
+  UPLOAD_KIND_LABELS,
+} from './motivation-checklist';
 import {
   FIELD_REGISTRY_VERSION,
   LICENCE_TYPE_LABELS,
@@ -37,7 +48,19 @@ import {
   missingRequired,
   sanitiseAnswers,
 } from './motivation-fields';
+import { decryptSaIdNumber } from '../common/id-crypto';
+import {
+  FOLLOW_UP_BATCH,
+  fallbackQuestion,
+  findGaps,
+  gapBrief,
+} from './motivation-gaps';
 import { readSaId } from './sa-id';
+import {
+  ProfileSource,
+  profileCoverageNote,
+  profileOffer,
+} from './motivation-profile';
 
 // ────────────────────────────────────────────────────────────────────
 // The motivation lifecycle. Generation, the quality gate and the interview
@@ -66,6 +89,21 @@ const DISCLAIMER_TEXT =
   'to the best of their knowledge.';
 
 /** How many same-type documents to compare against for sameness. */
+/**
+ * Upload limits.
+ *
+ * 10 MB matches the tier this codebase already uses for identity documents and
+ * AI-backed uploads (kyc.controller.ts, transactions.controller.ts). It is a
+ * SECOND check behind the interceptor's: multer aborts the request with a bare
+ * 413, which is not something an applicant can act on, so the size is checked
+ * again here where a readable message can be returned.
+ *
+ * Twelve documents is generous — the recommended set for any licence type is
+ * eight — and it exists so a runaway client cannot fill the encrypted store.
+ */
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOADS = 12;
+
 const SIMILARITY_CORPUS = 200;
 
 /**
@@ -416,6 +454,529 @@ export class MotivationsService {
     await this.prisma.motivation.delete({ where: { id: row.id } });
 
     return { erased: true, filesRemoved };
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // FILLING FROM THE PROFILE, WITH PERMISSION
+  // ────────────────────────────────────────────────────────────────
+
+  /** Load the profile fields we are allowed to look at, ID decrypted. */
+  private async profileFor(userId: string): Promise<ProfileSource> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        idNumberEncrypted: true,
+        addrBuilding: true,
+        addrStreet: true,
+        addrAddress2: true,
+        addrSuburb: true,
+        addrCity: true,
+        addrPostalCode: true,
+        addrProvince: true,
+      },
+    });
+
+    // A stored ID that will not decrypt is not an error worth failing on: the
+    // applicant types it instead, which is exactly what they would do if the
+    // profile had never held one. Failing here would block the whole offer over
+    // one field.
+    let idNumber: string | null = null;
+    if (u?.idNumberEncrypted) {
+      try {
+        idNumber = decryptSaIdNumber(u.idNumberEncrypted);
+      } catch {
+        idNumber = null;
+      }
+    }
+
+    return {
+      firstName: u?.firstName ?? null,
+      lastName: u?.lastName ?? null,
+      email: u?.email ?? null,
+      phone: u?.phone ?? null,
+      idNumber,
+      addrBuilding: u?.addrBuilding ?? null,
+      addrStreet: u?.addrStreet ?? null,
+      addrAddress2: u?.addrAddress2 ?? null,
+      addrSuburb: u?.addrSuburb ?? null,
+      addrCity: u?.addrCity ?? null,
+      addrPostalCode: u?.addrPostalCode ?? null,
+      addrProvince: u?.addrProvince ?? null,
+    };
+  }
+
+  /**
+   * What we WOULD copy from the profile, and where each value came from.
+   *
+   * Read-only and safe to call before any decision — showing the applicant the
+   * list is the whole point. Nothing is written until useProfile().
+   */
+  async profilePrefillOffer(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        licenceType: true,
+        answersEncrypted: true,
+        profileConsentAt: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const answers = this.readAnswers(row.answersEncrypted);
+    const offer = profileOffer(
+      row.licenceType,
+      await this.profileFor(user.id),
+      answers,
+    );
+
+    return {
+      alreadyConsented: row.profileConsentAt !== null,
+      fields: Object.entries(offer.values).map(([key, value]) => ({
+        key,
+        label: fieldByKey(row.licenceType, key)?.label ?? key,
+        value,
+        from: offer.from[key],
+      })),
+      missingFromProfile: offer.missingFromProfile,
+      note: profileCoverageNote(offer),
+    };
+  }
+
+  /**
+   * The applicant agrees, and we copy.
+   *
+   * Consent is stamped on THIS motivation, not on the account: agreeing once
+   * is not agreeing forever, and a timestamp on the row is what answers "who
+   * allowed this, and when" later.
+   */
+  async useProfile(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        licenceType: true,
+        status: true,
+        answersEncrypted: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (!EDITABLE.includes(row.status)) {
+      throw new ConflictException('This application can no longer be edited.');
+    }
+
+    const answers = this.readAnswers(row.answersEncrypted);
+    const offer = profileOffer(
+      row.licenceType,
+      await this.profileFor(user.id),
+      answers,
+    );
+
+    // Through sanitiseAnswers like every other write. Profile data is ours, but
+    // it is still user-entered text and it still has to satisfy the registry.
+    const { answers: clean } = sanitiseAnswers(row.licenceType, offer.values);
+    const merged = { ...answers, ...clean };
+
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: {
+        answersEncrypted: encryptJson(merged),
+        answersSchemaVersion: FIELD_REGISTRY_VERSION,
+        profileConsentAt: new Date(),
+      },
+    });
+
+    // Logged rather than recorded as an activity event: ActivityService is not
+    // injected here, and the consent timestamp on the row is the record that
+    // actually matters.
+    this.logger.log(
+      `Motivation ${row.id}: prefilled ${Object.keys(clean).length} field(s) from profile with consent`,
+    );
+
+    return {
+      filled: Object.keys(clean).length,
+      missingRequired: missingRequired(row.licenceType, merged),
+    };
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // UPLOADS — the annexures, and the only writer to the encrypted store
+  // ────────────────────────────────────────────────────────────────
+
+  /**
+   * Accept one supporting document.
+   *
+   * The bytes go to SecureFileStorageService, never to Cloudinary. Every other
+   * upload in this codebase lands on a PUBLIC Cloudinary secure_url, which is
+   * fine for a photograph of a tent and unthinkable for someone's identity
+   * document — the operator's own instruction was to keep these on our own
+   * server, encrypted.
+   *
+   * ORDER MATTERS: bytes first, row second, and if the row fails the bytes are
+   * removed again. The other order would leave a row pointing at a file that
+   * does not exist; this order's failure leaves nothing behind at all.
+   */
+  async addUpload(
+    clerkId: string,
+    id: string,
+    kind: MotivationUploadKind,
+    file: { buffer: Buffer; mimetype: string },
+  ) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, status: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (!EDITABLE.includes(row.status)) {
+      throw new ConflictException(
+        'This application can no longer be edited, so documents cannot be added.',
+      );
+    }
+
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('That file appears to be empty.');
+    }
+    if (file.buffer.length > MAX_UPLOAD_BYTES) {
+      throw new BadRequestException('That file is larger than 10 MB.');
+    }
+
+    const count = await this.prisma.motivationUpload.count({
+      where: { motivationId: row.id },
+    });
+    if (count >= MAX_UPLOADS) {
+      throw new ConflictException(
+        `An application can carry ${MAX_UPLOADS} documents. Remove one before adding another.`,
+      );
+    }
+
+    // Written before the row so a duplicate is detected by the DATABASE rather
+    // than by reading first and writing after — that read-then-write is a race,
+    // and two uploads of one file arriving together would both survive it.
+    let stored: { storageKey: string; sha256: string; byteSize: number };
+    try {
+      stored = await this.files.write('motivations', file.buffer, new Date());
+    } catch (err) {
+      // SecureFileStorageService throws PLAIN Errors — an unconfigured
+      // ID_HASH_SECRET among them. Unwrapped, those become a 500 with a stack
+      // trace instead of something an applicant can act on.
+      this.logger.error(
+        `Motivation ${row.id}: could not store upload: ${(err as Error).message}`,
+      );
+      throw new ServiceUnavailableException(
+        'We could not store that document just now. Please try again.',
+      );
+    }
+
+    try {
+      const created = await this.prisma.motivationUpload.create({
+        data: {
+          motivationId: row.id,
+          kind,
+          storageKey: stored.storageKey,
+          mimeType: file.mimetype,
+          byteSize: stored.byteSize,
+          sha256: stored.sha256,
+        },
+        select: { id: true, kind: true, byteSize: true, createdAt: true },
+      });
+      return created;
+    } catch (err) {
+      // Whatever went wrong, the bytes must not outlive the attempt: a file
+      // with no row pointing at it is undeletable except by hand.
+      await this.files.remove(stored.storageKey).catch(() => undefined);
+
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'You have already added that exact document to this application.',
+        );
+      }
+      throw err;
+    }
+  }
+
+  /** The annexure list. Metadata only — never the bytes. */
+  async listUploads(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        uploads: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            kind: true,
+            mimeType: true,
+            byteSize: true,
+            createdAt: true,
+            purgedAt: true,
+            storageKey: true,
+            extractionOk: true,
+            extractedFields: true,
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const annexures = buildAnnexures(row.uploads.map((u) => u.kind));
+    const letterFor = new Map(annexures.map((a) => [a.kind, a.letter]));
+
+    return row.uploads.map((u) => ({
+      id: u.id,
+      kind: u.kind,
+      label: UPLOAD_KIND_LABELS[u.kind],
+      annexure: letterFor.get(u.kind) ?? null,
+      mimeType: u.mimeType,
+      byteSize: u.byteSize,
+      createdAt: u.createdAt,
+      // The row can outlive its bytes after a retention purge. Say so, rather
+      // than let a download fail with a puzzling error.
+      available: u.storageKey !== null && u.purgedAt === null,
+      extractionOk: u.extractionOk,
+      extractedFields: u.extractedFields,
+    }));
+  }
+
+  /**
+   * Read one document back.
+   *
+   * The buffer is decrypted BEFORE the caller sets any header: a tampered file
+   * fails its authentication tag here, and headers-then-throw would emit a 200
+   * that dies halfway through the body.
+   */
+  async readUpload(clerkId: string, id: string, uploadId: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+
+    // Ownership is a WHERE CLAUSE, so "not yours" and "does not exist" are the
+    // same answer and neither confirms the other exists.
+    const up = await this.prisma.motivationUpload.findFirst({
+      where: { id: uploadId, motivation: { id, userId: user.id } },
+      select: {
+        id: true,
+        kind: true,
+        mimeType: true,
+        storageKey: true,
+        purgedAt: true,
+      },
+    });
+    if (!up) throw new NotFoundException('Document not found');
+    if (!up.storageKey || up.purgedAt) {
+      throw new GoneException(
+        'That document has been deleted under our retention policy.',
+      );
+    }
+
+    let bytes: Buffer;
+    try {
+      bytes = await this.files.read(up.storageKey);
+    } catch (err) {
+      this.logger.error(
+        `Motivation ${id}: could not read upload ${up.id}: ${(err as Error).message}`,
+      );
+      throw new ServiceUnavailableException('We could not open that document.');
+    }
+
+    const ext = up.mimeType === 'application/pdf' ? 'pdf' : 'jpg';
+    return {
+      bytes,
+      mimeType: up.mimeType,
+      filename: `${up.kind.toLowerCase()}-${up.id.slice(-6)}.${ext}`,
+    };
+  }
+
+  /** Remove a document, bytes first. */
+  async removeUpload(clerkId: string, id: string, uploadId: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+
+    const up = await this.prisma.motivationUpload.findFirst({
+      where: { id: uploadId, motivation: { id, userId: user.id } },
+      select: { id: true, storageKey: true, motivation: { select: { status: true } } },
+    });
+    if (!up) throw new NotFoundException('Document not found');
+    if (!EDITABLE.includes(up.motivation.status)) {
+      throw new ConflictException('This application can no longer be edited.');
+    }
+
+    if (up.storageKey) {
+      try {
+        await this.files.remove(up.storageKey);
+      } catch (err) {
+        // Deleting the row anyway would orphan the bytes forever, so this one
+        // does NOT continue past the failure.
+        this.logger.error(
+          `Motivation ${id}: could not remove ${up.storageKey}: ${(err as Error).message}`,
+        );
+        throw new ServiceUnavailableException(
+          'We could not delete that document just now. Please try again.',
+        );
+      }
+    }
+
+    await this.prisma.motivationUpload.delete({ where: { id: up.id } });
+    return { removed: true };
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // THE FOLLOW-UP INTERVIEW
+  // ────────────────────────────────────────────────────────────────
+
+  /**
+   * The conversation so far.
+   *
+   * Content is encrypted at rest, so this is the only place it is decrypted,
+   * and only for the person it belongs to.
+   */
+  async listMessages(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        licenceType: true,
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            role: true,
+            contentEncrypted: true,
+            fieldKey: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    return row.messages.map((m) => ({
+      id: m.id,
+      role: m.role,
+      // A message that will not decrypt is shown as unavailable rather than
+      // throwing: one bad row must not hide the whole conversation.
+      content: tryDecryptText(m.contentEncrypted) ?? '',
+      fieldKey: m.fieldKey,
+      fieldLabel: m.fieldKey
+        ? (fieldByKey(row.licenceType, m.fieldKey)?.label ?? null)
+        : null,
+      createdAt: m.createdAt,
+    }));
+  }
+
+  /**
+   * Answer a follow-up.
+   *
+   * The answer is BOTH a message and an answer: it is appended to the
+   * conversation so the applicant can see what they said, and merged into the
+   * encrypted answer blob under the field the question was about, because that
+   * blob is what the document is built from. Storing it only as chat would let
+   * someone answer every question and still fail the completeness check.
+   */
+  async answerFollowUp(
+    clerkId: string,
+    id: string,
+    messageId: string,
+    answer: string,
+  ) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        licenceType: true,
+        status: true,
+        answersEncrypted: true,
+        messages: {
+          where: { id: messageId, role: 'assistant' },
+          select: { id: true, fieldKey: true },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (!EDITABLE.includes(row.status)) {
+      throw new ConflictException('This application can no longer be edited.');
+    }
+
+    const question = row.messages[0];
+    if (!question) throw new NotFoundException('Question not found');
+
+    const text = (answer ?? '').trim();
+    if (!text) throw new BadRequestException('Please write an answer first.');
+
+    const answers = this.readAnswers(row.answersEncrypted);
+    let merged = answers;
+
+    if (question.fieldKey) {
+      const field = fieldByKey(row.licenceType, question.fieldKey);
+      if (field) {
+        // A follow-up EXTENDS what is already there rather than replacing it.
+        // The gate asked because the answer was thin, and overwriting would
+        // throw away the part they had already given.
+        const existing = (answers[question.fieldKey] ?? '').trim();
+        const combined = existing ? `${existing}\n\n${text}` : text;
+        const { answers: clean } = sanitiseAnswers(row.licenceType, {
+          [question.fieldKey]: combined,
+        });
+        merged = { ...answers, ...clean };
+      }
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.motivationMessage.create({
+        data: {
+          motivationId: row.id,
+          role: 'user',
+          contentEncrypted: encryptText(text),
+          fieldKey: question.fieldKey,
+        },
+      }),
+      this.prisma.motivation.update({
+        where: { id: row.id },
+        data: {
+          answersEncrypted: encryptJson(merged),
+          answersSchemaVersion: FIELD_REGISTRY_VERSION,
+          // Back to a state that can generate. The gate moved it to
+          // NEEDS_MORE_INFO; answering is what moves it back.
+          ...(row.status === MotivationStatus.NEEDS_MORE_INFO
+            ? { status: MotivationStatus.DRAFT }
+            : {}),
+        },
+      }),
+    ]);
+
+    const outstanding = await this.prisma.motivationMessage.count({
+      where: {
+        motivationId: row.id,
+        role: 'assistant',
+        fieldKey: { not: null },
+        NOT: { fieldKey: { in: Object.keys(merged).filter((k) => merged[k]) } },
+      },
+    });
+
+    return {
+      answered: true,
+      outstandingQuestions: outstanding,
+      missingRequired: missingRequired(row.licenceType, merged),
+    };
   }
 
   /**
@@ -847,38 +1408,43 @@ export class MotivationsService {
     licenceType: MotivationLicenceType,
     thinFields: string[],
     answers: Record<string, string>,
+    overlapNeedsJustification = false,
   ): Promise<void> {
-    // Three at a time. A wall of questions after a failed gate reads as
-    // punishment and gets abandoned.
-    for (const key of thinFields.slice(0, 3)) {
-      const field = fieldByKey(licenceType, key);
-      if (!field) continue;
+    // WHAT to ask is worked out in code, for nothing — it is arithmetic over
+    // the field registry. Claude is asked only to WORD the questions, which is
+    // the one part it is genuinely better at.
+    const gaps = findGaps(licenceType, answers, {
+      thinFields,
+      overlapNeedsJustification,
+    }).slice(0, FOLLOW_UP_BATCH);
+    if (!gaps.length) return;
 
-      let question: string | null = null;
-      try {
-        const asked = await this.claude.askFollowUp({
-          licenceType,
-          fieldKey: key,
-          fieldLabel: field.label,
-          fieldHelp: field.help,
-          currentAnswer: answers[key] ?? '',
-        });
-        question = asked.question;
-      } catch {
-        question = null;
-      }
+    // ONE request for the batch. This used to be one per field, which meant a
+    // failed gate sent the whole system prompt three times to produce three
+    // sentences.
+    let phrased: Record<string, string> = {};
+    try {
+      const res = await this.claude.askFollowUpBatch({
+        licenceType,
+        gaps: gapBrief(gaps),
+      });
+      phrased = res.questions;
+    } catch {
+      // Every gap has a free fallback, so a failure here costs wording, not
+      // the interview.
+      phrased = {};
+    }
 
-      const fallback =
-        `Could you tell me a bit more about ${field.label.toLowerCase()}?` +
-        (field.help ? ' ' + field.help : '');
-
+    for (const gap of gaps) {
       await this.prisma.motivationMessage
         .create({
           data: {
             motivationId,
             role: 'assistant',
-            fieldKey: key,
-            contentEncrypted: encryptText(question ?? fallback),
+            fieldKey: gap.key,
+            contentEncrypted: encryptText(
+              phrased[gap.key] ?? fallbackQuestion(gap),
+            ),
           },
         })
         .catch(() => undefined);

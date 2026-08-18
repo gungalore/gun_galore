@@ -8,6 +8,8 @@ import {
   gateUserPrompt,
   generationSystemPrompt,
   generationUserPrompt,
+  followUpBatchSystemPrompt,
+  followUpBatchUserPrompt,
   followUpSystemPrompt,
   followUpUserPrompt,
 } from './motivation-prompts';
@@ -376,6 +378,85 @@ export class MotivationClaudeService {
    * back to the field's own help text, because a plain question beats no
    * question.
    */
+  /**
+   * Ask for a batch of follow-ups in ONE request.
+   *
+   * Replaces a loop that called askFollowUp once per field. Same output, a
+   * third of the requests, and the model can vary its phrasing because it sees
+   * the whole batch.
+   *
+   * Returns a key→question map with only the entries it could parse. A missing
+   * key is not an error: the caller has a free fallback question for every
+   * field, so a partial answer degrades to plain wording rather than to
+   * silence.
+   */
+  async askFollowUpBatch(args: {
+    licenceType: MotivationLicenceType;
+    gaps: {
+      key: string;
+      label: string;
+      help?: string;
+      reason: string;
+      wordsSoFar: number;
+    }[];
+  }): Promise<{ questions: Record<string, string>; usage: ClaudeUsage }> {
+    const empty = {
+      questions: {} as Record<string, string>,
+      usage: { model: MODEL_FOLLOWUP, promptTokens: 0, completionTokens: 0 },
+    };
+    if (!args.gaps.length) return empty;
+
+    const client = this.client;
+    if (!client) return empty;
+
+    let text: string;
+    let usage: ClaudeUsage;
+    try {
+      const res = await client.messages.create({
+        model: MODEL_FOLLOWUP,
+        max_tokens: 900,
+        temperature: 0.7,
+        system: followUpBatchSystemPrompt(),
+        messages: [
+          {
+            role: 'user',
+            content: followUpBatchUserPrompt(args.licenceType, args.gaps),
+          },
+        ],
+      });
+      const block = res.content.find((b) => b.type === 'text');
+      text = block && 'text' in block ? block.text.trim() : '';
+      usage = this.usageOf(res, MODEL_FOLLOWUP);
+    } catch (err) {
+      this.logger.warn(
+        `Follow-up batch failed, falling back to plain questions: ${(err as Error).message}`,
+      );
+      return empty;
+    }
+
+    const questions: Record<string, string> = {};
+    try {
+      const json = text.startsWith('{') ? text : text.slice(text.indexOf('{'));
+      const parsed = JSON.parse(json) as {
+        questions?: { key?: unknown; question?: unknown }[];
+      };
+      const wanted = new Set(args.gaps.map((g) => g.key));
+      for (const q of parsed.questions ?? []) {
+        // Only keys WE asked about. A model that invents a field key would
+        // otherwise have a question stored against a field that does not exist,
+        // which the wizard could never render or clear.
+        if (typeof q?.key !== 'string' || !wanted.has(q.key)) continue;
+        if (typeof q?.question !== 'string') continue;
+        const cleaned = q.question.trim();
+        if (cleaned) questions[q.key] = cleaned.slice(0, 400);
+      }
+    } catch {
+      this.logger.warn('Follow-up batch returned unparseable JSON; using fallbacks');
+    }
+
+    return { questions, usage };
+  }
+
   async askFollowUp(args: {
     licenceType: MotivationLicenceType;
     fieldKey: string;
