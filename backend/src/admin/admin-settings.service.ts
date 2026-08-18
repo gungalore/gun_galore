@@ -51,6 +51,30 @@ const DANGER_REASON_MIN = 15;
 const FLAGS: SettingFlag[] = [
   // ─── Moderation ───────────────────────────────────────────────
   {
+    key: 'ops_alert_phone',
+    label: 'Ops alert phone number',
+    hint: 'Where urgent operations problems are texted — a failed nightly backup, or a backup that has stopped running. Leave EMPTY to send nothing. SA format, e.g. 0821234567.',
+    group: 'Operations',
+    type: 'text',
+    default: '',
+  },
+  {
+    key: 'ops_alert_types',
+    label: 'Ops alert types',
+    hint: 'Comma-separated AdminAlert types worth a text message. Deliberately short: 52 places raise urgent alerts, and texting all of them teaches you to ignore the channel. Widen one type at a time.',
+    group: 'Operations',
+    type: 'text',
+    default: 'BACKUP_FAILED',
+  },
+  {
+    key: 'ops_alert_quiet_hours',
+    label: 'Hold ops alerts overnight',
+    hint: 'Anything raised between 22:00 and 06:00 SAST is held until morning. A backup that failed at 02:10 will be just as broken at 07:00, and a 3am text for something that can wait gets the channel muted. Turn OFF to send immediately.',
+    group: 'Operations',
+    type: 'boolean',
+    default: 'true',
+  },
+  {
     key: 'claude_moderation_enabled',
     label: 'Claude moderation enabled',
     hint: 'Master switch for AI moderation on listing publish + Q&A. Turn off only for debugging — every listing will go straight to PENDING_REVIEW.',

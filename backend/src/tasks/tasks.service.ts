@@ -23,6 +23,7 @@ import {
 import { AdminHealthService } from '../admin/admin-health.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
+import { decideOpsAlert } from './ops-alert-decision';
 import { PushService } from '../push/push.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
@@ -591,6 +592,109 @@ export class TasksService {
   // Powers the /admin/health "Cron status" panel — admin can see at a
   // glance which crons are firing and which are stale. Best-effort:
   // a failed write here doesn't stop the cron from completing.
+  // ────────────────────────────────────────────────────────────────
+  // OPERATIONS ALERTS -> THE OPERATOR'S PHONE
+  // ────────────────────────────────────────────────────────────────
+  //
+  // Fifty-two places in this codebase raise an urgent AdminAlert and NOTHING
+  // has ever watched them. They land in /admin/alerts and wait to be noticed.
+  // For most of them that is fine. For a backup that failed it is not: nobody
+  // opens the admin inbox to check whether last night worked, and the whole
+  // value of a backup is knowing it is there BEFORE you need it.
+  //
+  // TWO THINGS ARE WATCHED, because they are different failures:
+  //
+  //   AN UNRESOLVED URGENT ALERT  — something ran and reported a problem.
+  //   A STALE HEARTBEAT           — something did not run at all. The on-box
+  //                                 script cannot report this about itself: a
+  //                                 cron that was removed, or a box that was
+  //                                 off, has nothing left to speak with.
+  //
+  // ⚠️ IT CANNOT COVER EVERYTHING. If the whole box is down, this is down too.
+  // An external uptime check is the only thing that catches that, and there
+  // isn't one.
+  //
+  // DELIBERATELY NARROW. ops_alert_types defaults to BACKUP_FAILED alone.
+  // Texting all fifty-two would train the operator to ignore the messages,
+  // which is worse than sending none. Widen it one type at a time.
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async opsAlertWatch(): Promise<void> {
+    try {
+      const [phone, types, quietHours] = await Promise.all([
+        this.settings.get(FLAGS.opsAlertPhone),
+        this.settings.get(FLAGS.opsAlertTypes),
+        this.settings.get(FLAGS.opsAlertQuietHours),
+      ]);
+      if (!phone || !types.length) return;
+
+      const [alerts, beat, last] = await Promise.all([
+        this.prisma.adminAlert.findMany({
+          where: { resolved: false, urgent: true, type: { in: types } },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: { type: true, context: true },
+        }),
+        this.prisma.setting.findUnique({
+          where: { key: 'cron:lastrun:box-backup' },
+        }),
+        this.prisma.setting.findUnique({ where: { key: 'ops:alert:last' } }),
+      ]);
+
+      // Every decision is made by the pure module; this method only does IO.
+      const decision = decideOpsAlert({
+        alerts,
+        backupLastRun: beat?.updatedAt ?? null,
+        lastFingerprint: last?.value ?? null,
+        config: { phone, quietHours },
+        now: new Date(),
+      });
+
+      if (decision.clear) {
+        await this.prisma.setting
+          .deleteMany({ where: { key: 'ops:alert:last' } })
+          .catch(() => undefined);
+        return;
+      }
+      if (!decision.send || !decision.message) return;
+
+      const res = await this.sms.sendSms({
+        to: phone,
+        message: decision.message,
+        reference: 'ops-alert',
+      });
+
+      if (!res.success) {
+        // NOT recorded, so the next pass tries again. The alternative is a
+        // failed send that silently counts as delivered.
+        this.logger.error('Ops alert SMS failed to send');
+        return;
+      }
+
+      await this.prisma.setting.upsert({
+        where: { key: 'ops:alert:last' },
+        create: { key: 'ops:alert:last', value: decision.fingerprint! },
+        update: { value: decision.fingerprint! },
+      });
+
+      if (res.stub) {
+        // A STUB IS NOT A SENT MESSAGE. SmsService reports success with
+        // stub:true when SMSPortal is unconfigured — it wrote a log row and
+        // nothing left the building. Recorded anyway so this does not repeat
+        // every half hour, but said plainly: "alerts are wired up" and "alerts
+        // arrive" are different claims.
+        this.logger.error(
+          'Ops alert was STUBBED, not sent — SMSPortal is not configured. The operator was told nothing.',
+        );
+      } else {
+        this.logger.warn('Ops alert texted to the operator');
+      }
+    } catch (err) {
+      this.logger.error(`opsAlertWatch failed: ${(err as Error).message}`);
+    } finally {
+      await this.recordCronRun('ops-alert-watch');
+    }
+  }
+
   private async recordCronRun(key: string): Promise<void> {
     try {
       await this.prisma.setting.upsert({

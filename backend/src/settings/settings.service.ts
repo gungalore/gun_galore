@@ -14,6 +14,48 @@ interface FlagDefinition<T> {
 }
 
 export const FLAGS = {
+  /**
+   * Where urgent operations alerts are texted. Empty = nothing is sent.
+   *
+   * A Setting rather than an env var so it can be changed from /admin without a
+   * deploy — the number to wake at 3am is exactly the sort of thing that
+   * changes on a Friday.
+   */
+  opsAlertPhone: {
+    key: 'ops_alert_phone',
+    default: '',
+    parse: (s) => (s ?? '').trim(),
+  } as FlagDefinition<string>,
+  /**
+   * Which AdminAlert types are worth a text message.
+   *
+   * Comma-separated, and deliberately a SHORT list. Fifty-two places in this
+   * codebase raise an urgent alert; texting all of them would train the
+   * operator to ignore the messages, which is worse than not sending any. Widen
+   * it deliberately, one type at a time.
+   */
+  opsAlertTypes: {
+    key: 'ops_alert_types',
+    default: ['BACKUP_FAILED'],
+    parse: (s) =>
+      (s ?? '')
+        .split(',')
+        .map((x) => x.trim().toUpperCase())
+        .filter(Boolean),
+  } as FlagDefinition<string[]>,
+  /**
+   * Hold alerts raised overnight until morning.
+   *
+   * A backup that failed at 02:10 is not worth waking someone for — it will be
+   * just as broken at 07:00, and a 3am text for something that can wait teaches
+   * people to silence the channel. Anything raised between 22:00 and 06:00 SAST
+   * is sent at the next check after 06:00. Set false for immediate.
+   */
+  opsAlertQuietHours: {
+    key: 'ops_alert_quiet_hours',
+    default: true,
+    parse: (s) => s !== 'false' && s !== '0',
+  } as FlagDefinition<boolean>,
   claudeModerationEnabled: {
     key: 'claude_moderation_enabled',
     default: true,

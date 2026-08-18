@@ -316,6 +316,10 @@ export class AdminHealthService {
       // all, because the cron was removed, the box was off, or the script died
       // before it finished. The "ran and failed" case raises BACKUP_FAILED.
       { key: 'box-backup', label: 'Nightly backup (database + encrypted uploads)', schedule: 'daily 02:10', expectedIntervalSec: 26 * 60 * 60 },
+      // Watches unresolved urgent alerts and the backup heartbeat, and texts
+      // the operator. Monitored itself, because a notifier that has quietly
+      // stopped is indistinguishable from a quiet week.
+      { key: 'ops-alert-watch', label: 'Ops alert watcher (SMS)', schedule: 'every 30 min', expectedIntervalSec: 2 * 60 * 60 },
       { key: 'auction-end', label: 'Auction end sweep', schedule: 'every 1 min', expectedIntervalSec: 60 },
       { key: 'offer-expire', label: 'Offer expiry sweep', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'dispatch-sla', label: 'Dispatch SLA enforcer', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
