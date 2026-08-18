@@ -719,10 +719,10 @@ export class MotivationsService {
 
     const answers = this.readAnswers(row.answersEncrypted);
 
-    // The pack, not just the document. The checklist goes first so the
-    // applicant can see at a glance what is attached and what they still have
-    // to fetch themselves; the annexure index goes last so a reviewer can find
-    // anything the body cross-references.
+    // The annexure index closes the printed document so a reviewer can find
+    // anything the body cross-references. The CHECKLIST is deliberately not in
+    // here — it is a live surface on the platform and in the PWA (see
+    // checklist() below), because the pack stays digital until it is printed.
     const kinds = (row.uploads ?? []).map((u) => u.kind);
 
     return this.pdf.render({
@@ -736,9 +736,36 @@ export class MotivationsService {
       disclaimer: DISCLAIMER_TEXT,
       templateVersion: row.templateVersion ?? TEMPLATE_VERSION,
       generatedAt: row.completedAt ?? new Date(),
-      checklist: buildChecklist(row.licenceType, kinds),
       annexures: buildAnnexures(kinds),
     });
+  }
+
+  /**
+   * The live submission checklist, for the platform and the PWA.
+   *
+   * Deliberately NOT part of the PDF. The applicant works through this on
+   * screen — ticking off what they have gathered — and it stays current right
+   * up to the moment they print. Only the annexure index goes into the paper.
+   */
+  async checklist(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        licenceType: true,
+        status: true,
+        uploads: { select: { kind: true } },
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    return buildChecklist(
+      row.licenceType,
+      (row.uploads ?? []).map((u) => u.kind),
+      row.status === MotivationStatus.COMPLETED,
+    );
   }
 
   /**

@@ -142,6 +142,16 @@ export class MotivationsController {
     return new StreamableFile(Buffer.from(pdf));
   }
 
+  /**
+   * The live submission checklist. Drives the progress list on the platform and
+   * in the PWA — what we have, what is still outstanding, and what the applicant
+   * must take to the station themselves.
+   */
+  @Get(':id/checklist')
+  checklist(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.checklist(clerkId, id);
+  }
+
   @Post(':id/abandon')
   abandon(@CurrentUser() clerkId: string, @Param('id') id: string) {
     return this.motivations.abandon(clerkId, id);

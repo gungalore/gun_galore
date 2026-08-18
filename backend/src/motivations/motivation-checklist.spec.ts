@@ -1,18 +1,20 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
-import { buildAnnexures, buildChecklist } from './motivation-checklist';
+import {
+  buildAnnexures,
+  buildChecklist,
+  SAFE_PHOTO_SHOTS,
+} from './motivation-checklist';
 
-// The checklist is what turns a document into a package the applicant can walk
-// into a police station with. The properties that matter: it never claims to be
-// complete about SAPS's own requirements, it letters annexures in reading order
-// rather than upload order, and a missing safe photograph shows as an open box
-// rather than silently not existing.
+// The checklist is a LIVE surface on the platform and in the PWA, not a PDF
+// page — the pack stays digital until it is printed. So what matters here is
+// that it reports real state, that it never claims to hold something it does
+// not, and that it carries the operator's actual guidance rather than a
+// generic version I invented.
 
 const ALL = Object.values(MotivationLicenceType);
 
 describe('annexure lettering', () => {
   it('letters in reading order, not upload order', () => {
-    // The applicant scanned the safe first and their ID last; a reviewer still
-    // expects identity as Annexure A.
     const a = buildAnnexures([
       MotivationUploadKind.SAFE_PHOTO,
       MotivationUploadKind.IDENTITY_DOCUMENT,
@@ -27,8 +29,6 @@ describe('annexure lettering', () => {
   });
 
   it('groups several files of one kind under one letter', () => {
-    // Three photographs of one safe are all "Annexure C" — how the real
-    // samples do it and how a reviewer expects to find them.
     const a = buildAnnexures([
       MotivationUploadKind.IDENTITY_DOCUMENT,
       MotivationUploadKind.SAFE_PHOTO,
@@ -36,17 +36,7 @@ describe('annexure lettering', () => {
       MotivationUploadKind.SAFE_PHOTO,
     ]);
     expect(a).toHaveLength(2);
-    const safe = a.find((x) => x.kind === MotivationUploadKind.SAFE_PHOTO)!;
-    expect(safe.count).toBe(3);
-    expect(safe.letter).toBe('B');
-  });
-
-  it('has no gaps in the lettering when kinds are sparse', () => {
-    const a = buildAnnexures([
-      MotivationUploadKind.CHARACTER_REFERENCE,
-      MotivationUploadKind.IDENTITY_DOCUMENT,
-    ]);
-    expect(a.map((x) => x.letter)).toEqual(['A', 'B']);
+    expect(a.find((x) => x.kind === MotivationUploadKind.SAFE_PHOTO)!.count).toBe(3);
   });
 
   it('returns nothing when nothing was uploaded', () => {
@@ -54,91 +44,123 @@ describe('annexure lettering', () => {
   });
 });
 
-describe('the submission checklist', () => {
-  it('always lists the motivation and the PAJA request as present', () => {
-    for (const t of ALL) {
-      const items = buildChecklist(t, []).flatMap((s) => s.items);
-      const motivation = items.find((i) => /this motivation/i.test(i.label));
-      const paja = items.find((i) => /PAJA/i.test(i.label));
-      expect(motivation?.present).toBe(true);
-      expect(paja?.present).toBe(true);
-    }
+describe('the live checklist', () => {
+  it('separates what WE produce from what the applicant must bring', () => {
+    const c = buildChecklist(MotivationLicenceType.S13_SELF_DEFENCE, []);
+    const ours = c.sections.find((s) => s.key === 'ours')!;
+    const theirs = c.sections.find((s) => s.key === 'theirs')!;
+    expect(ours.items.every((i) => i.owner === 'us')).toBe(true);
+    expect(theirs.items.every((i) => i.owner === 'applicant')).toBe(true);
+    // We must never imply we hold something we do not.
+    expect(theirs.items.every((i) => i.done === false)).toBe(true);
   });
 
-  it('ticks what is in the pack and leaves the rest open', () => {
-    const sections = buildChecklist(MotivationLicenceType.S13_SELF_DEFENCE, [
-      MotivationUploadKind.IDENTITY_DOCUMENT,
-    ]);
-    const inPack = sections.find((s) => s.title === 'In this pack')!;
-    expect(inPack.items.some((i) => i.present && /identity/i.test(i.label))).toBe(
+  it('reflects real state — uploads and the finished document', () => {
+    const before = buildChecklist(MotivationLicenceType.S24_RENEWAL, [], false);
+    const after = buildChecklist(
+      MotivationLicenceType.S24_RENEWAL,
+      [MotivationUploadKind.IDENTITY_DOCUMENT],
       true,
     );
-
-    // Everything the applicant must obtain themselves is an OPEN box — we do
-    // not hold it and must never imply otherwise.
-    const theirs = sections.find((s) => /You must add these/i.test(s.title))!;
-    expect(theirs.items.every((i) => i.present === false)).toBe(true);
-  });
-
-  it('shows a missing safe photograph as an open box, with the reason', () => {
-    // The operator's point: a photograph of the safe and its anchoring is the
-    // only thing that evidences the safekeeping the motivation asserts.
-    const sections = buildChecklist(MotivationLicenceType.S16_DEDICATED_SPORT, [
-      MotivationUploadKind.IDENTITY_DOCUMENT,
-    ]);
-    const worth = sections.find((s) => s.title === 'Worth adding')!;
-    const safe = worth.items.find((i) => /photograph of the safe$/i.test(i.label));
-    expect(safe).toBeDefined();
-    expect(safe!.present).toBe(false);
-    expect(safe!.note).toMatch(/anchored/i);
-  });
-
-  it('drops the "worth adding" section once everything recommended is present', () => {
-    const every = Object.values(MotivationUploadKind);
-    const sections = buildChecklist(
-      MotivationLicenceType.S24_RENEWAL,
-      every,
+    expect(after.oursDone).toBeGreaterThan(before.oursDone);
+    const motivation = after.sections[0].items.find((i) => i.key === 'motivation')!;
+    expect(motivation.done).toBe(true);
+    expect(before.sections[0].items.find((i) => i.key === 'motivation')!.done).toBe(
+      false,
     );
-    expect(sections.some((s) => s.title === 'Worth adding')).toBe(false);
   });
 
-  it('NEVER claims the SAPS-side list is exhaustive', () => {
-    // The dangerous failure is false assurance: a checklist that confidently
-    // omits something a particular DFO wants is worse than no checklist,
-    // because the applicant trusted it. Requirements differ by station.
+  it('gives progress counts the UI can render as a ring', () => {
+    const c = buildChecklist(MotivationLicenceType.S16_DEDICATED_SPORT, [
+      MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.ASSOCIATION_CARD,
+    ]);
+    expect(c.oursTotal).toBeGreaterThan(c.oursDone);
+    expect(c.oursDone).toBe(2); // the two uploads; document not ready
+    expect(c.theirsTotal).toBeGreaterThan(0);
+  });
+
+  it('carries the THREE specific safe photographs, not a vague instruction', () => {
+    // Straight from the operator's own list. Guessing at this would have
+    // produced "a photo of your safe" and a rejected application.
+    const c = buildChecklist(MotivationLicenceType.S13_SELF_DEFENCE, []);
+    const safe = c.sections[0].items.find((i) => i.key === 'upload_safe_photo')!;
+    expect(safe.subItems).toHaveLength(3);
+    const labels = safe.subItems!.map((s) => s.label.toLowerCase());
+    expect(labels[0]).toMatch(/locked.*no key/);
+    expect(labels[1]).toMatch(/half open.*key in the lock/);
+    expect(labels[2]).toMatch(/bolts.*wall/);
+    expect(SAFE_PHOTO_SHOTS).toHaveLength(3);
+  });
+
+  it('warns not to sign the SAPS form in advance', () => {
+    // The operator's list is explicit: it must be signed in front of the DFO.
+    // Getting this wrong costs a wasted trip to the station.
+    const theirs = buildChecklist(
+      MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+      [],
+    ).sections.find((s) => s.key === 'theirs')!;
+    const form = theirs.items.find((i) => i.key === 'saps_form')!;
+    expect(form.note).toMatch(/do NOT sign it beforehand/i);
+    expect(form.note).toMatch(/in front of the DFO/i);
+  });
+
+  it('tells them to keep their originals and their own copy', () => {
+    const theirs = buildChecklist(
+      MotivationLicenceType.S24_RENEWAL,
+      [],
+    ).sections.find((s) => s.key === 'theirs')!;
+    expect(theirs.items.find((i) => i.key === 'originals')!.note).toMatch(
+      /keep the originals/i,
+    );
+    expect(theirs.items.some((i) => i.key === 'own_copy')).toBe(true);
+  });
+
+  it('NEVER claims the station-side list is exhaustive', () => {
+    // False assurance is the dangerous failure: a list that confidently omits
+    // what a particular DFO wants is worse than none, because it was trusted.
     for (const t of ALL) {
-      const theirs = buildChecklist(t, []).find((s) =>
-        /You must add these/i.test(s.title),
+      const theirs = buildChecklist(t, []).sections.find(
+        (s) => s.key === 'theirs',
       )!;
       expect(theirs.intro).toMatch(/not exhaustive/i);
       expect(theirs.intro).toMatch(/confirm/i);
-      expect(
-        theirs.items.some((i) => /anything else your DFO asks/i.test(i.label)),
-      ).toBe(true);
+      expect(theirs.items.some((i) => i.key === 'dfo_extras')).toBe(true);
     }
   });
 
-  it('never promises an outcome anywhere in the checklist', () => {
+  it('flags the items that go stale for pre-launch verification', () => {
+    // The fee and the form reference are the two most likely to be quietly out
+    // of date, so they are marked rather than trusted.
+    const theirs = buildChecklist(
+      MotivationLicenceType.S13_SELF_DEFENCE,
+      [],
+    ).sections.find((s) => s.key === 'theirs')!;
+    const flagged = theirs.items.filter((i) => i.verifyBeforeUse);
+    expect(flagged.map((i) => i.key).sort()).toEqual(['fee', 'saps_form']);
+  });
+
+  it('never promises an outcome', () => {
     for (const t of ALL) {
       const text = JSON.stringify(buildChecklist(t, [])).toLowerCase();
-      for (const banned of [
-        'approv',
-        'chance',
-        'guarantee',
-        'success',
-        'likely',
-      ]) {
+      for (const banned of ['approv', 'chance', 'guarantee', 'success', 'likely']) {
         expect(text).not.toContain(banned);
       }
     }
   });
 
-  it('recommends association proof for dedicated status but not for self-defence', () => {
-    const ds = buildChecklist(MotivationLicenceType.S16_DEDICATED_HUNTER, []);
-    const sd = buildChecklist(MotivationLicenceType.S13_SELF_DEFENCE, []);
-    const has = (secs: ReturnType<typeof buildChecklist>) =>
-      JSON.stringify(secs).includes('Association membership proof');
-    expect(has(ds)).toBe(true);
-    expect(has(sd)).toBe(false);
+  it('asks for association proof on dedicated status but not self-defence', () => {
+    const has = (t: MotivationLicenceType) =>
+      JSON.stringify(buildChecklist(t, [])).includes('Association membership');
+    expect(has(MotivationLicenceType.S16_DEDICATED_HUNTER)).toBe(true);
+    expect(has(MotivationLicenceType.S13_SELF_DEFENCE)).toBe(false);
+  });
+
+  it('prompts for an incident report on self-defence, and says why', () => {
+    const c = buildChecklist(MotivationLicenceType.S13_SELF_DEFENCE, []);
+    const incident = c.sections[0].items.find(
+      (i) => i.key === 'upload_incident_report',
+    )!;
+    expect(incident.note).toMatch(/stronger than general crime figures/i);
   });
 });

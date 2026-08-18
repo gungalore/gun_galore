@@ -1,7 +1,7 @@
 import * as zlib from 'node:zlib';
 import { MotivationPdfService } from './motivation-pdf.service';
-import { buildAnnexures, buildChecklist } from './motivation-checklist';
-import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
+import { buildAnnexures } from './motivation-checklist';
+import { MotivationUploadKind } from '@prisma/client';
 
 // pdfkit compresses its content streams (FlateDecode), so grepping the raw
 // bytes for text finds nothing — the first draft of this spec failed for
@@ -180,85 +180,32 @@ describe('MotivationPdfService', () => {
   });
 });
 
-describe('the submission checklist page', () => {
+describe('the annexure index', () => {
   const svc = new MotivationPdfService();
 
-  const KINDS = [
-    MotivationUploadKind.IDENTITY_DOCUMENT,
-    MotivationUploadKind.SAFE_PHOTO,
-    MotivationUploadKind.SAFE_PHOTO,
-  ];
-
-  function packInput() {
-    return {
+  it('lists the annexures at the end of the printed document', async () => {
+    // The INDEX belongs in the paper — a reviewer holding it needs to find what
+    // the body cross-references. The CHECKLIST does not: it lives on the
+    // platform and in the PWA, because the pack stays digital until printed.
+    const kinds = [
+      MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.SAFE_PHOTO,
+      MotivationUploadKind.SAFE_PHOTO,
+    ];
+    const { pdf } = await svc.render({
       ...makeInput(),
-      checklist: buildChecklist(MotivationLicenceType.S13_SELF_DEFENCE, KINDS),
-      annexures: buildAnnexures(KINDS),
-    };
-  }
-
-  it('puts the checklist FIRST, before the motivation itself', async () => {
-    const { pdf } = await svc.render(packInput());
-    const { text } = readPdf(pdf);
-    const flatText = flat(text);
-    expect(flatText).toContain('SUBMISSION CHECKLIST');
-    expect(flatText.indexOf('SUBMISSION CHECKLIST')).toBeLessThan(
-      flatText.indexOf('MOTIVATION IN SUPPORT'),
-    );
-  });
-
-  it('draws real tick-boxes — rectangles, not glyphs', async () => {
-    // The standard PDF fonts have no ballot-box character, so the boxes are
-    // DRAWN. That means they are invisible to text extraction and can only be
-    // verified through the vector operators: `re` (rectangle) and `S` (stroke).
-    const withList = await svc.render(packInput());
-    const withoutList = await svc.render(makeInput());
-
-    const rects = (b: Buffer) => {
-      const raw = b.toString('latin1');
-      let n = 0;
-      for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
-        try {
-          const inf = require('node:zlib')
-            .inflateSync(Buffer.from(m[1], 'latin1'))
-            .toString('latin1');
-          n += (inf.match(/\bre\b/g) || []).length;
-        } catch {
-          /* not a content stream */
-        }
-      }
-      return n;
-    };
-
-    // One rectangle per checklist item, and there are many.
-    expect(rects(withList.pdf)).toBeGreaterThan(8);
-    expect(rects(withList.pdf)).toBeGreaterThan(rects(withoutList.pdf));
-  });
-
-  it('lists the annexures it holds, and the ones the applicant must fetch', async () => {
-    const { pdf } = await svc.render(packInput());
-    const t = flat(readPdf(pdf).text);
-    expect(t).toContain('Annexure A');
-    expect(t).toMatch(/identity document/i);
-    // Two safe photographs collapse to one lettered annexure.
-    expect(t).toMatch(/Photograph of the safe \(2 pages\)/i);
-    // And the things we do not hold.
-    expect(t).toMatch(/You must add these yourself/i);
-    expect(t).toMatch(/not exhaustive/i);
-  });
-
-  it('renders an ANNEXURES index at the end', async () => {
-    const { pdf } = await svc.render(packInput());
+      annexures: buildAnnexures(kinds),
+    });
     const t = flat(readPdf(pdf).text);
     expect(t).toContain('ANNEXURES');
-    expect(t.indexOf('ANNEXURES')).toBeGreaterThan(t.indexOf('MOTIVATION IN SUPPORT'));
+    expect(t).toContain('Annexure A');
+    expect(t).toMatch(/Photographs of your safe \(2 items\)/i);
+    // And no checklist page.
+    expect(t).not.toContain('SUBMISSION CHECKLIST');
   });
 
-  it('still renders a bare document when no checklist is supplied', async () => {
-    // A preview render has no pack around it.
+  it('renders a bare document when there are no annexures', async () => {
     const { pdf } = await svc.render(makeInput());
-    const t = flat(readPdf(pdf).text);
-    expect(t).not.toContain('SUBMISSION CHECKLIST');
-    expect(t).toContain('MOTIVATION IN SUPPORT');
+    expect(flat(readPdf(pdf).text)).not.toContain('ANNEXURES');
   });
 });
