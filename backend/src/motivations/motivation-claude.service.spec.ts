@@ -5,6 +5,7 @@ import {
   GROUNDEDNESS_FLOOR,
 } from './motivation-claude.service';
 import {
+  gateSystemPrompt,
   generationSystemPrompt,
   generationUserPrompt,
   gateUserPrompt,
@@ -259,5 +260,29 @@ describe('prompts', () => {
     });
     expect(p).toContain('untrusted data');
     expect(p).toContain('<current>');
+  });
+});
+
+describe('the anti-padding rule', () => {
+  it('forbids generic filler in every licence type', () => {
+    // Operator decision 2026-08-18. Real samples pad with potted histories of
+    // the sport and lists of ranges. It adds pages without adding a fact, and
+    // — the reason that actually matters — it is identical across every
+    // document containing it, which is the shared-origin signal the whole
+    // variation design exists to avoid.
+    for (const t of Object.values(MotivationLicenceType)) {
+      const s = generationSystemPrompt(t);
+      expect(s).toMatch(/DO NOT PAD/);
+      expect(s).toMatch(/histories of sport shooting|potted histories/i);
+      expect(s).toMatch(/identical across every document/i);
+    }
+  });
+
+  it('makes the gate score padding down, not just the writer avoid it', () => {
+    // A prompt instruction the writer may ignore is not a control. The
+    // independent grader has to catch it too.
+    const g = gateSystemPrompt();
+    expect(g).toMatch(/padding/i);
+    expect(g).toMatch(/short document.*HIGHER|scores HIGHER/i);
   });
 });

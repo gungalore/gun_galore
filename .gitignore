@@ -190,7 +190,6 @@ gungalore-design-reference.html
 # Photo source folder for design reference (not part of the app)
 design-photos/
 
-
 # ---------------------------------------------------------------------------
 # Operator's local copy of reloading manuals (Phase D)
 # ---------------------------------------------------------------------------
@@ -207,3 +206,11 @@ postal-entry-preview.pdf
 # Claude Code per-developer config (VS Code debug launchers, etc.)
 # ---------------------------------------------------------------------------
 .claude/
+
+# Operator-supplied sample motivations and any extracted text from them.
+# These are REAL documents containing third parties SA ID numbers, home
+# addresses, firearm serials and licence numbers. They are reference material
+# for structure only and must never enter version control.
+/samples/
+/motivation-samples/
+*.motivation-sample.*

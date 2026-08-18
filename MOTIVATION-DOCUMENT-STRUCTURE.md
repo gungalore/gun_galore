@@ -120,10 +120,25 @@ escalation letters.
 · `safe_specification` (SABS category, mounting) · `employment_confirmation`
 · `character_references` · `residence_security_measures` (s13) · `local_threat_picture` (s13).
 
-### Honest caveat on length
+### Length: no padding — DECIDED (operator, 2026-08-18)
 
-Some of the length in school A is padding — potted histories of sport shooting, lists of
-ranges in South Africa. We should NOT reproduce that. It inflates the page count without
-strengthening the application, and mass-produced padding is exactly the sameness signal the
-variation engine exists to avoid. Aim for the argued sections done well, with real annexure
-support, and let the page count be whatever that honestly comes to.
+Some of the length in school A is padding: potted histories of sport shooting, lists of
+ranges in South Africa, general essays on hunting ethics, manufacturer marketing copy about
+the firearm. **We do not reproduce any of it.**
+
+Three reasons, and the third is the one that decided it:
+
+1. It adds pages without adding a single fact the Registrar can weigh.
+2. It buries the applicant's own circumstances, which are the only thing carrying the
+   application.
+3. It is generic by construction, so it is **identical across every document containing
+   it** — the clearest possible shared-origin signal, and precisely what the variation
+   design exists to prevent. Padding would undo the template library single-handedly.
+
+Enforced in two places, because a prompt instruction the writer may ignore is not a control:
+`ABSOLUTE RULE 7` in the generation system prompt forbids it, and the quality gate scores it
+down under `specificity` — a short document made entirely of the applicant's own
+circumstances must score HIGHER than a long one padded with material that could belong to
+anyone. Both are locked in by tests.
+
+The page count is then whatever the real argument honestly comes to.

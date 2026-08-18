@@ -164,8 +164,23 @@ ABSOLUTE RULES
 5. No mascot, no brand, no marketing, no headings other than the ones given.
 6. Plain, sober South African English. No Americanisms. Where the applicant
    used Afrikaans terms for species or equipment, keep them.
-7. Do not pad. A shorter honest motivation beats a long padded one. If a
-   section has little to say because little was supplied, keep it brief.
+7. DO NOT PAD — operator decision 2026-08-18, taken against real samples.
+   Some professionally-prepared motivations bulk themselves out with material
+   that is not about this applicant at all: potted histories of sport shooting,
+   lists of shooting ranges in South Africa, general essays on hunting ethics,
+   manufacturer marketing copy about the firearm. Write NONE of it. Three
+   reasons, and the third is the one that matters most:
+     - it adds pages without adding a single fact the Registrar can weigh;
+     - it buries the applicant's own circumstances, which are the only thing
+       that actually carries the application;
+     - it is generic by construction, so it is IDENTICAL across every document
+       that contains it — which is precisely the shared-origin signal the
+       whole variation design exists to avoid. Padding is the easiest pattern
+       in the world for a reviewer to spot.
+   A short motivation built entirely from this applicant's facts beats a long
+   one padded with material that could belong to anyone. If a section has
+   little to say because little was supplied, keep it short and say so plainly
+   rather than filling the space.
 
 FORMAT
 Return the motivation body ONLY — no preamble, no closing remark to the reader,
@@ -224,13 +239,21 @@ Score four things, each 0-100:
 
 completeness  Does it address everything a reviewer of this licence type needs?
 specificity   Is it concrete — real circumstances, real practice — or generic
-              filler that could belong to anyone?
+              filler that could belong to anyone? See the padding note below.
 consistency   Does it hang together, with no internal contradictions?
 groundedness  Does EVERY factual claim trace back to the supplied facts? This
               is the most important score. Any date, incident, qualification,
               membership or place that does not appear in the facts is
               UNGROUNDED and must drag this score below 50, however well
               written the document is.
+specificity   ALSO counts padding against the document. Generic filler that is
+              not about THIS applicant — potted histories of the sport, lists
+              of shooting ranges, essays on hunting ethics in general,
+              manufacturer marketing copy — is worthless to a reviewer and
+              identical across every document containing it. Score it down
+              hard. A short document made entirely of the applicant's own
+              circumstances scores HIGHER than a long one padded with material
+              that could belong to anyone.
 
 Also list:
   thin_fields  field keys (exactly as given) whose supplied answer was too
