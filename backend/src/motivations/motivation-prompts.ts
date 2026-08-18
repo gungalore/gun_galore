@@ -1,6 +1,6 @@
 import { MotivationLicenceType } from '@prisma/client';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
-import { fieldsFor, LICENCE_TYPE_LABELS } from './motivation-fields';
+import { factPackFields, LICENCE_TYPE_LABELS } from './motivation-fields';
 import type { StructurePlan } from './motivation-structure';
 
 // ────────────────────────────────────────────────────────────────────
@@ -97,7 +97,10 @@ export interface FactPack {
  * from.
  */
 function renderFacts(pack: FactPack): string {
-  const fields = fieldsFor(pack.licenceType);
+  // factPackFields, not fieldsFor: everything marked formOnly is withheld from
+  // the model. Phone numbers and a spouse's ID have no business in a prompt,
+  // and six "No" answers to the history questions would only be padding fuel.
+  const fields = factPackFields(pack.licenceType);
   const lines: string[] = [];
 
   for (const f of fields) {

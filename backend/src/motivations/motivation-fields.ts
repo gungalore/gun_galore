@@ -23,9 +23,21 @@ import { MotivationLicenceType } from '@prisma/client';
 // FIELD_REGISTRY_VERSION whenever a key is added, removed or re-meant.
 // ────────────────────────────────────────────────────────────────────
 
-export const FIELD_REGISTRY_VERSION = '2026-08-18';
+// Bumped when the SAPS 271 analysis split the firearm into its own boxes and
+// added the personal and history fields. Same day as the previous version, so
+// it carries a suffix rather than a bare date.
+export const FIELD_REGISTRY_VERSION = '2026-08-18.2';
 
-export type MotivationFieldKind = 'short' | 'long' | 'date' | 'choice';
+/** The two answers a `yesno` field accepts. Order is deliberate — a wizard
+ * should not present "Yes" as the first, easiest tap on a history question. */
+export const YES_NO = ['No', 'Yes'] as const;
+
+export type MotivationFieldKind =
+  | 'short'
+  | 'long'
+  | 'date'
+  | 'choice'
+  | 'yesno';
 
 export interface MotivationField {
   key: string;
@@ -51,6 +63,26 @@ export interface MotivationField {
    * untrusted in the prompt instead. Short scalars are sanitised normally.
    */
   maxLength?: number;
+  /**
+   * Only asked when another answer has a particular value — spouse details when
+   * married, the detail of a conviction when one is disclosed. The wizard hides
+   * it, and `missingRequired` does not demand it, until the condition holds.
+   */
+  showIf?: { key: string; equals: string };
+  /**
+   * Collected for the SAPS 271 and NEVER put in front of the writer.
+   *
+   * Two different reasons, both deliberate. Contact numbers, a postal address, a
+   * spouse's ID and a serial number are PII that adds nothing to an argument —
+   * there is no reason for them to reach a model at all. And the six history
+   * questions are marked this way so that a CLEAN record contributes nothing:
+   * six "No" answers in the fact pack is an invitation to pad the document with
+   * "the applicant has no convictions, no pending cases, no lost firearms",
+   * which ABSOLUTE RULE 7 forbids. Where the answer is "Yes" the linked detail
+   * field is NOT form-only, so a disclosure — the thing that actually has to be
+   * addressed head-on — reaches the writer in full.
+   */
+  formOnly?: true;
 }
 
 /** Asked for every licence type. */
@@ -91,6 +123,103 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     required: true,
     maxLength: 120,
   },
+  // ── FOR THE SAPS 271 ────────────────────────────────────────────
+  // Date of birth, age, gender and citizenship are NOT here on purpose: the ID
+  // number already carries all four (see sa-id.ts). Asking twice is not just
+  // redundant, it is a chance for two boxes on the same signed form to
+  // disagree — and the applicant is the one who signs it.
+  {
+    key: 'postal_address',
+    label: 'Postal address, if different',
+    kind: 'long',
+    section: 'About you',
+    help: 'Leave blank if post reaches you at the address above.',
+    sensitive: true,
+    formOnly: true,
+    maxLength: 400,
+  },
+  {
+    key: 'residence_type',
+    label: 'What kind of home is it',
+    kind: 'choice',
+    section: 'About you',
+    choices: [
+      'House',
+      'Townhouse or complex',
+      'Flat or apartment',
+      'Cottage or granny flat',
+      'Smallholding',
+      'Farm',
+      'Other',
+    ],
+    help: 'The form asks, and it also bears on storage.',
+    required: true,
+  },
+  {
+    key: 'home_telephone',
+    label: 'Home telephone',
+    kind: 'short',
+    section: 'About you',
+    sensitive: true,
+    formOnly: true,
+    maxLength: 30,
+  },
+  {
+    key: 'work_telephone',
+    label: 'Work telephone',
+    kind: 'short',
+    section: 'About you',
+    sensitive: true,
+    formOnly: true,
+    maxLength: 30,
+  },
+  {
+    key: 'employer_name',
+    label: 'Employer',
+    kind: 'short',
+    section: 'About you',
+    help: 'Leave blank if you are self-employed or not working.',
+    maxLength: 160,
+  },
+  {
+    key: 'employer_address',
+    label: "Employer's address",
+    kind: 'long',
+    section: 'About you',
+    sensitive: true,
+    maxLength: 400,
+  },
+  {
+    key: 'marital_status',
+    label: 'Marital status',
+    kind: 'choice',
+    section: 'About you',
+    choices: ['Single', 'Married', 'Life partner', 'Divorced', 'Widowed'],
+    required: true,
+    formOnly: true,
+  },
+  {
+    key: 'spouse_name',
+    label: "Spouse or partner's full name",
+    kind: 'short',
+    section: 'About you',
+    showIf: { key: 'marital_status', equals: 'Married' },
+    required: true,
+    sensitive: true,
+    formOnly: true,
+    maxLength: 120,
+  },
+  {
+    key: 'spouse_id_number',
+    label: "Spouse or partner's ID number",
+    kind: 'short',
+    section: 'About you',
+    showIf: { key: 'marital_status', equals: 'Married' },
+    required: true,
+    sensitive: true,
+    formOnly: true,
+    maxLength: 13,
+  },
   {
     key: 'competency_number',
     label: 'Competency certificate number',
@@ -100,14 +229,79 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     sensitive: true,
     maxLength: 60,
   },
+  // THE FIREARM, IN ITS OWN BOXES. This was one free-text line until the SAPS
+  // 271 analysis: the form wants type, action, make, model, calibre and serial
+  // each in a separate box, and free text cannot fill separate boxes. It also
+  // makes the comparison argument sharper — "a .308 bolt-action" is a fact the
+  // writer can reason against, "Tikka T3x .308" is a string.
   {
-    key: 'firearm_description',
-    label: 'The firearm you are applying for',
+    key: 'firearm_type',
+    label: 'Type of firearm',
+    kind: 'choice',
+    section: 'The firearm',
+    choices: ['Handgun', 'Rifle', 'Shotgun', 'Combination firearm'],
+    required: true,
+  },
+  {
+    key: 'firearm_action',
+    label: 'Action',
+    kind: 'choice',
+    section: 'The firearm',
+    // Fully automatic is deliberately absent: it is not licensable to a private
+    // person, so it must not be selectable on a form we help someone sign.
+    choices: [
+      'Self-loading (semi-automatic)',
+      'Bolt action',
+      'Lever action',
+      'Pump action',
+      'Single shot',
+      'Revolver',
+      'Break action',
+    ],
+    required: true,
+  },
+  {
+    key: 'firearm_make',
+    label: 'Make',
     kind: 'short',
     section: 'The firearm',
-    help: 'Make, model and calibre.',
+    help: 'The manufacturer — Glock, CZ, Tikka, Beretta.',
     required: true,
-    maxLength: 160,
+    maxLength: 60,
+  },
+  {
+    key: 'firearm_model',
+    label: 'Model',
+    kind: 'short',
+    section: 'The firearm',
+    required: true,
+    maxLength: 60,
+  },
+  {
+    key: 'firearm_calibre',
+    label: 'Calibre',
+    kind: 'short',
+    section: 'The firearm',
+    required: true,
+    maxLength: 60,
+  },
+  {
+    key: 'firearm_serial',
+    label: 'Serial number',
+    kind: 'short',
+    section: 'The firearm',
+    help: 'If you already know which firearm it is. Leave blank if not — the dealer fills it in.',
+    sensitive: true,
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'barrel_length',
+    label: 'Barrel length',
+    kind: 'short',
+    section: 'The firearm',
+    help: 'Optional. Only where the discipline or the quarry makes it relevant.',
+    maxLength: 40,
   },
   {
     key: 'firearm_fit_reason',
@@ -135,6 +329,143 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'Storage and safety',
     help: 'Leave blank if this is your first.',
     maxLength: 1000,
+  },
+  // ── THE SIX HISTORY QUESTIONS, straight off the SAPS 271 ─────────
+  //
+  // Every one is yes/no with detail if yes, and they are the part of the form
+  // applicants most often get wrong. We ask them because a DISCLOSED and
+  // EXPLAINED conviction is survivable, while an undisclosed one that surfaces
+  // later is fatal — and because it is exactly the kind of thing a motivation
+  // should meet head-on rather than leave for the Registrar to discover.
+  //
+  // The yes/no itself is `formOnly` so a clean record gives the writer nothing
+  // to pad with; the DETAIL is not, so a disclosure reaches it in full.
+  //
+  // None of them defaults to "No". We are not answering a question about
+  // someone's criminal record on their behalf, on a form they sign.
+  {
+    key: 'history_conviction',
+    label: 'Have you ever been convicted of an offence, in South Africa or anywhere else?',
+    kind: 'yesno',
+    section: 'History',
+    help: 'Every conviction, however old and however minor, including anything you paid an admission-of-guilt fine for.',
+    required: true,
+    sensitive: true,
+    formOnly: true,
+  },
+  {
+    key: 'history_conviction_detail',
+    label: 'Tell us what happened',
+    kind: 'long',
+    section: 'History',
+    help: 'Which offence, which court, what year, and what the outcome was.',
+    showIf: { key: 'history_conviction', equals: 'Yes' },
+    required: true,
+    sensitive: true,
+    maxLength: 2000,
+  },
+  {
+    key: 'history_pending_case',
+    label: 'Is there any case pending against you at the moment?',
+    kind: 'yesno',
+    section: 'History',
+    help: 'Including a case where you have been charged but not yet tried.',
+    required: true,
+    sensitive: true,
+    formOnly: true,
+  },
+  {
+    key: 'history_pending_case_detail',
+    label: 'Tell us what happened',
+    kind: 'long',
+    section: 'History',
+    help: 'The charge, the police station and CAS number, and where it stands.',
+    showIf: { key: 'history_pending_case', equals: 'Yes' },
+    required: true,
+    sensitive: true,
+    maxLength: 2000,
+  },
+  {
+    key: 'history_lost_stolen',
+    label: 'Has a firearm of yours ever been lost or stolen?',
+    kind: 'yesno',
+    section: 'History',
+    required: true,
+    sensitive: true,
+    formOnly: true,
+  },
+  {
+    key: 'history_lost_stolen_detail',
+    label: 'Tell us what happened',
+    kind: 'long',
+    section: 'History',
+    help: 'Which firearm, when, where, and the SAPS case number.',
+    showIf: { key: 'history_lost_stolen', equals: 'Yes' },
+    required: true,
+    sensitive: true,
+    maxLength: 2000,
+  },
+  {
+    key: 'history_negligence',
+    label: 'Was a negligence case opened against you over that loss?',
+    kind: 'yesno',
+    section: 'History',
+    required: true,
+    sensitive: true,
+    formOnly: true,
+    showIf: { key: 'history_lost_stolen', equals: 'Yes' },
+  },
+  {
+    key: 'history_negligence_detail',
+    label: 'Tell us what happened',
+    kind: 'long',
+    section: 'History',
+    help: 'The case number and what came of it.',
+    showIf: { key: 'history_negligence', equals: 'Yes' },
+    required: true,
+    sensitive: true,
+    maxLength: 2000,
+  },
+  {
+    key: 'history_declared_unfit',
+    label: 'Have you ever been declared unfit to possess a firearm?',
+    kind: 'yesno',
+    section: 'History',
+    help: 'By a court, or by the Registrar under section 102 or 103 of the Act.',
+    required: true,
+    sensitive: true,
+    formOnly: true,
+  },
+  {
+    key: 'history_declared_unfit_detail',
+    label: 'Tell us what happened',
+    kind: 'long',
+    section: 'History',
+    help: 'When, on what grounds, and whether the declaration has since lapsed or been set aside.',
+    showIf: { key: 'history_declared_unfit', equals: 'Yes' },
+    required: true,
+    sensitive: true,
+    maxLength: 2000,
+  },
+  {
+    key: 'history_confiscated',
+    label: 'Has a firearm ever been confiscated from you?',
+    kind: 'yesno',
+    section: 'History',
+    required: true,
+    sensitive: true,
+    formOnly: true,
+  },
+  {
+    key: 'history_confiscated_detail',
+    label: 'Tell us what happened',
+    kind: 'long',
+    section: 'History',
+    help: 'Which firearm, by whom, when, and whether it was returned.',
+    showIf: { key: 'history_confiscated', equals: 'Yes' },
+    required: true,
+    sensitive: true,
+    maxLength: 2000,
   },
   {
     key: 'prior_refusals',
@@ -353,11 +684,48 @@ export function fieldByKey(
   return fieldsFor(type).find((f) => f.key === key);
 }
 
-/** Keys that must be answered before a document can be generated. */
-export function requiredKeys(type: MotivationLicenceType): string[] {
+/**
+ * Is this field asked at all, given what has been answered so far?
+ *
+ * A conditional field that is not showing is not "unanswered" — it does not
+ * apply. Spouse details on a single applicant and the detail of a conviction on
+ * someone with no convictions must never appear as outstanding work.
+ */
+export function isVisible(
+  field: MotivationField,
+  answers: Record<string, string>,
+): boolean {
+  if (!field.showIf) return true;
+  return (answers[field.showIf.key] ?? '').trim() === field.showIf.equals;
+}
+
+/**
+ * Keys that must be answered before a document can be generated.
+ *
+ * Conditional fields count only when their condition holds, so pass the answers
+ * where you have them. Without them the unconditional set is returned — which
+ * is what the wizard wants for a progress denominator at the very start.
+ */
+export function requiredKeys(
+  type: MotivationLicenceType,
+  answers: Record<string, string> = {},
+): string[] {
   return fieldsFor(type)
-    .filter((f) => f.required)
+    .filter((f) => f.required && isVisible(f, answers))
     .map((f) => f.key);
+}
+
+/**
+ * The fields the WRITER is allowed to see.
+ *
+ * Everything marked `formOnly` is stripped: contact details and a spouse's ID
+ * are PII with no argumentative value, and a clean history is six "No" answers
+ * that would only invite padding. See `formOnly` on MotivationField.
+ */
+export function factPackFields(
+  type: MotivationLicenceType,
+): readonly MotivationField[] {
+  return fieldsFor(type).filter((f) => !f.formOnly);
 }
 
 /**
@@ -394,6 +762,21 @@ export function sanitiseAnswers(
       continue;
     }
     const trimmed = raw.trim();
+
+    // A choice must be one of the offered choices. This is not defensive
+    // tidiness: these values are printed into boxes on a form the applicant
+    // signs, so an arbitrary string arriving from a hand-rolled request would
+    // become a false statement on a firearm licence application.
+    if (field.kind === 'choice' || field.kind === 'yesno') {
+      const allowed = field.choices ?? YES_NO;
+      if (trimmed && !allowed.includes(trimmed)) {
+        rejected.push(key);
+        continue;
+      }
+      answers[key] = trimmed;
+      continue;
+    }
+
     const cap = field.maxLength ?? 2000;
     answers[key] = trimmed.length > cap ? trimmed.slice(0, cap) : trimmed;
   }
@@ -409,5 +792,5 @@ export function missingRequired(
   type: MotivationLicenceType,
   answers: Record<string, string>,
 ): string[] {
-  return requiredKeys(type).filter((k) => !(answers[k] ?? '').trim());
+  return requiredKeys(type, answers).filter((k) => !(answers[k] ?? '').trim());
 }

@@ -25,7 +25,13 @@ const PACK: FactPack = {
     occupation: 'Security consultant',
     threat_circumstances:
       'I travel between farms after dark.\n\nTwo robberies happened on the R64 last year.',
-    firearm_description: 'Glock 19 9mm',
+    firearm_type: 'Handgun',
+    firearm_make: 'Glock',
+    firearm_model: '19',
+    firearm_calibre: '9mm',
+    // formOnly — present in the answers, must NOT reach the model.
+    home_telephone: '011 555 0100',
+    history_conviction: 'No',
   },
   derived: { age: '43' },
 };
@@ -220,6 +226,16 @@ describe('prompts', () => {
     expect(p.indexOf('UNTRUSTED INPUT')).toBeLessThan(
       p.indexOf('<applicant-facts>'),
     );
+  });
+
+  it('never puts a form-only answer in front of the model', () => {
+    // Contact numbers exist only to fill a box on the SAPS 271, and a clean
+    // history is padding fuel. Neither has any business in a prompt.
+    const p = generationUserPrompt(PACK, planFor(PACK.licenceType, 7));
+    expect(p).not.toContain('011 555 0100');
+    expect(p).not.toContain('history_conviction');
+    // The substance still goes through.
+    expect(p).toContain('Glock');
   });
 
   it('sanitises short scalars', () => {

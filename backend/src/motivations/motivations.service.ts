@@ -37,6 +37,7 @@ import {
   missingRequired,
   sanitiseAnswers,
 } from './motivation-fields';
+import { readSaId } from './sa-id';
 
 // ────────────────────────────────────────────────────────────────────
 // The motivation lifecycle. Generation, the quality gate and the interview
@@ -772,33 +773,23 @@ export class MotivationsService {
    * Facts WE compute rather than ask for. Keeping this in code is what stops
    * the model doing arithmetic on someone's licence application.
    */
-  private deriveFacts(answers: Record<string, string>): Record<string, string> {
+  private deriveFacts(
+    answers: Record<string, string>,
+    asAt = new Date(),
+  ): Record<string, string> {
     const derived: Record<string, string> = {};
 
-    const id = (answers.id_number ?? '').trim();
-    if (/^[0-9]{13}$/.test(id)) {
-      const yy = Number(id.slice(0, 2));
-      const mm = Number(id.slice(2, 4));
-      const dd = Number(id.slice(4, 6));
-      const now = new Date();
-      const century =
-        yy > Number(String(now.getUTCFullYear()).slice(2)) ? 1900 : 2000;
-      const dob = new Date(Date.UTC(century + yy, mm - 1, dd));
-      if (!Number.isNaN(dob.getTime())) {
-        let age = now.getUTCFullYear() - dob.getUTCFullYear();
-        const beforeBirthday =
-          now.getUTCMonth() < dob.getUTCMonth() ||
-          (now.getUTCMonth() === dob.getUTCMonth() &&
-            now.getUTCDate() < dob.getUTCDate());
-        if (beforeBirthday) age--;
-        if (age >= 18 && age < 120) derived.applicant_age = String(age);
-      }
-    }
+    // AGE ONLY, deliberately. readSaId also yields date of birth, gender and
+    // citizenship — those are SAPS 271 box-fillers, not argument material, and
+    // there is no reason to put someone's date of birth in a prompt. Age is
+    // here because a motivation may legitimately reason about it.
+    const { age } = readSaId(answers.id_number ?? '', asAt);
+    if (age !== null && age >= 18) derived.applicant_age = String(age);
 
     const since = (answers.dedicated_since ?? '').trim();
     const yearMatch = /^([0-9]{4})/.exec(since);
     if (yearMatch) {
-      const years = new Date().getUTCFullYear() - Number(yearMatch[1]);
+      const years = asAt.getUTCFullYear() - Number(yearMatch[1]);
       if (years >= 0 && years < 80) derived.years_dedicated = String(years);
     }
 
