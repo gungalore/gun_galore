@@ -110,6 +110,27 @@ export class MotivationQuotaService {
   }
 
   /**
+   * Hand a seat back after a failed generation.
+   *
+   * The counter is normally monotonic — that is what makes the cap race-proof
+   * (see claimBetaSeat). This is the ONE sanctioned decrement, and it is
+   * narrow on purpose: it runs only when a generation that claimed a seat then
+   * failed before producing anything. The applicant got no document, so they
+   * must not lose their place in the beta because Anthropic was down.
+   *
+   * It cannot go below zero, and it is best-effort: losing a decrement costs
+   * one seat out of the cap, while a wrong decrement would hand out a free
+   * motivation. If this ever has to be wrong, it should be wrong in the
+   * direction of us paying, not the applicant.
+   */
+  async releaseBetaSeat(): Promise<void> {
+    await this.prisma.referenceCounter.updateMany({
+      where: { prefix: BETA_COUNTER_PREFIX, count: { gt: 0 } },
+      data: { count: { decrement: 1 } },
+    });
+  }
+
+  /**
    * Seats issued so far. Reads the counter, NOT a row count: rows can be
    * deleted (POPIA erasure, admin void) and the counter must not go backwards,
    * or a deletion would silently hand out a free motivation.

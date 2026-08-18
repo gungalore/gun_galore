@@ -179,7 +179,17 @@ export class MotivationClaudeService {
     try {
       const msg = await this.client.messages.create({
         model: MODEL_WRITE,
-        max_tokens: 4000,
+        // 4000 was sized for the 2-4 page document the plan originally assumed.
+        // The operator's real samples run 11-40 pages of compiled submission
+        // (MOTIVATION-DOCUMENT-STRUCTURE.md), so 4000 would truncate mid-
+        // argument — and a motivation that stops halfway is worse than none.
+        //
+        // NOT raised further without measurement: output tokens are the wall
+        // clock, and this route is synchronous under an 85s client timeout,
+        // nginx 90s and Cloudflare ~100s. If beta timings show generations
+        // running close to that, the answer is async generation with polling,
+        // not a bigger number here.
+        max_tokens: 8000,
         system: [
           {
             type: 'text',

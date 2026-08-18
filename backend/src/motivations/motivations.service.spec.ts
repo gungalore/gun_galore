@@ -1,6 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { MotivationLicenceType, MotivationStatus } from '@prisma/client';
-import { MotivationsService } from './motivations.service';
+import { MotivationsService, estimateCostUsd } from './motivations.service';
 import { decryptJson, encryptJson, encryptText } from '../common/blob-crypto';
 import {
   sanitiseAnswers,
@@ -62,6 +62,7 @@ function build(
       canStart: opts.canStart ?? true,
     })),
     claimBetaSeat: jest.fn(async (_cap?: any): Promise<number | null> => 1),
+    releaseBetaSeat: jest.fn(async (): Promise<any> => undefined),
   };
   const refs = { allocate: jest.fn(async () => 'MO000123') };
   const files = { remove: jest.fn(async (_a?: any): Promise<any> => undefined) };
@@ -602,5 +603,93 @@ describe('MotivationsService.renderPdf', () => {
     const args = pdf.render.mock.calls[0][0];
     expect(args.applicantName).toBe('Jan Pietersen');
     expect(args.templateVersion).toBe('tpl-x');
+  });
+});
+
+describe('MotivationsService — beta seat accounting and cost', () => {
+  const READY2 = {
+    id: 'mo-1',
+    licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
+    status: MotivationStatus.DRAFT,
+    answersEncrypted: null as string | null,
+    declarationAcceptedAt: new Date() as Date | null,
+    variantSeed: 99,
+    gateCycles: 0,
+    betaSeatNo: null as number | null,
+    promptTokens: null as number | null,
+    completionTokens: null as number | null,
+  };
+
+  function ready2(over: Partial<typeof READY2> = {}) {
+    const answers: Record<string, string> = {};
+    for (const k of requiredKeys(MotivationLicenceType.S16_DEDICATED_HUNTER)) {
+      answers[k] = 'A sufficient answer for testing purposes.';
+    }
+    return { ...READY2, answersEncrypted: encryptJson(answers), ...over };
+  }
+
+  it('GIVES THE SEAT BACK when generation fails', async () => {
+    // The seat is claimed before the first Claude call so we never spend money
+    // unaccounted for. That means an outage would otherwise consume a free-beta
+    // seat and produce nothing — the applicant loses their place because WE
+    // failed. This test is the whole reason releaseBetaSeat exists.
+    const { svc, prisma, claude, quota } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(ready2());
+    claude.generate.mockRejectedValueOnce(new Error('overloaded'));
+    await expect(svc.generate('c1', 'mo-1')).rejects.toThrow('overloaded');
+    expect(quota.releaseBetaSeat).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT give back a seat it did not claim', async () => {
+    // A retry on a motivation that already held a seat must never decrement
+    // someone else's.
+    const { svc, prisma, claude, quota } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(ready2({ betaSeatNo: 12 }));
+    claude.generate.mockRejectedValueOnce(new Error('overloaded'));
+    await expect(svc.generate('c1', 'mo-1')).rejects.toThrow('overloaded');
+    expect(quota.releaseBetaSeat).not.toHaveBeenCalled();
+  });
+
+  it('does not release the seat on a successful generation', async () => {
+    const { svc, prisma, quota } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(ready2());
+    await svc.generate('c1', 'mo-1');
+    expect(quota.releaseBetaSeat).not.toHaveBeenCalled();
+  });
+
+  it('records a cost — the only per-document spend signal we have', async () => {
+    // Org-level spend alerting does not work on this box (the admin key is a
+    // regular key), so this column is it.
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(ready2());
+    await svc.generate('c1', 'mo-1');
+    const data = prisma.motivation.update.mock.calls.at(-1)![0].data;
+    expect(typeof data.costUsd).toBe('number');
+    expect(data.costUsd).toBeGreaterThan(0);
+  });
+});
+
+describe('estimateCostUsd', () => {
+  it('prices the flagship above the cheap tier', () => {
+    const opus = estimateCostUsd('claude-opus-5', 1_000_000, 1_000_000);
+    const haiku = estimateCostUsd('claude-haiku-4-5-20251001', 1_000_000, 1_000_000);
+    expect(opus).toBeGreaterThan(haiku);
+  });
+
+  it('falls back to the flagship rate for an unknown model', () => {
+    // Over-estimating spend is the safe direction: an unknown model that
+    // silently priced at zero would hide a runaway.
+    expect(estimateCostUsd('some-future-model', 1_000_000, 0)).toBe(
+      estimateCostUsd('claude-opus-5', 1_000_000, 0),
+    );
+  });
+
+  it('rounds to the six decimals the column stores', () => {
+    const v = estimateCostUsd('claude-sonnet-5', 1234, 567);
+    expect(v).toBe(Math.round(v * 1_000_000) / 1_000_000);
+  });
+
+  it('is zero for zero tokens', () => {
+    expect(estimateCostUsd('claude-opus-5', 0, 0)).toBe(0);
   });
 });

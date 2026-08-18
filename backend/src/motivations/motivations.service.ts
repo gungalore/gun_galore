@@ -66,6 +66,45 @@ const DISCLAIMER_TEXT =
 /** How many same-type documents to compare against for sameness. */
 const SIMILARITY_CORPUS = 200;
 
+/**
+ * Rough USD cost per million tokens, by model tier.
+ *
+ * DELIBERATELY APPROXIMATE and deliberately ours. There is no pricing API, and
+ * a stale hardcoded rate that silently under-reports is worse than an obvious
+ * estimate — so this is a planning figure for the admin spend card, not an
+ * invoice. What matters is that it is RECORDED at all: org-level spend
+ * alerting does not work on this box (the admin key is a regular key), so
+ * these columns are the only per-document cost signal we have.
+ *
+ * Unknown models fall back to the flagship rate — over-estimating spend is the
+ * safe direction.
+ */
+const MODEL_RATES_USD_PER_MTOK: Record<string, { in: number; out: number }> = {
+  opus: { in: 15, out: 75 },
+  sonnet: { in: 3, out: 15 },
+  haiku: { in: 0.8, out: 4 },
+};
+
+export function estimateCostUsd(
+  model: string,
+  promptTokens: number,
+  completionTokens: number,
+): number {
+  const tier = /opus/i.test(model)
+    ? 'opus'
+    : /sonnet/i.test(model)
+      ? 'sonnet'
+      : /haiku/i.test(model)
+        ? 'haiku'
+        : 'opus';
+  const rate = MODEL_RATES_USD_PER_MTOK[tier];
+  const usd =
+    (promptTokens / 1_000_000) * rate.in +
+    (completionTokens / 1_000_000) * rate.out;
+  // Six decimals, matching the Decimal(10,6) column.
+  return Math.round(usd * 1_000_000) / 1_000_000;
+}
+
 /** Statuses where the applicant may still edit their answers. */
 const EDITABLE: MotivationStatus[] = [
   MotivationStatus.DRAFT,
@@ -461,6 +500,10 @@ export class MotivationsService {
       );
     }
 
+    // Whether THIS call took a seat. If generation then fails, the seat has to
+    // go back — see the catch block.
+    let claimedSeatHere = false;
+
     try {
       // A seat is claimed once per motivation, not once per attempt: a gate
       // retry is our cost to carry, not another seat off the applicant.
@@ -468,6 +511,7 @@ export class MotivationsService {
       if (seat === null) {
         const cap = await this.settings.get(FLAGS.motivationBetaFreeCap);
         seat = await this.quota.claimBetaSeat(cap);
+        claimedSeatHere = seat !== null;
         if (seat === null) {
           await this.prisma.motivation.update({
             where: { id: row.id },
@@ -531,6 +575,7 @@ export class MotivationsService {
         modelUsed: attempt.usage.model,
         promptTokens: (row.promptTokens ?? 0) + tokensIn,
         completionTokens: (row.completionTokens ?? 0) + tokensOut,
+        costUsd: estimateCostUsd(attempt.usage.model, tokensIn, tokensOut),
         betaSeatNo: seat,
         generatedAt: new Date(),
       };
@@ -618,6 +663,18 @@ export class MotivationsService {
           data: { status: MotivationStatus.NEEDS_MORE_INFO },
         })
         .catch(() => undefined);
+
+      // AND GIVE THE SEAT BACK. The seat is claimed before the first Claude
+      // call so we never spend money we have not accounted for — but that
+      // means an Anthropic outage would otherwise consume a free-beta seat
+      // and produce nothing. The applicant did not get a document; they must
+      // not lose their place in the beta for our failure.
+      //
+      // Only if THIS call took it: a retry on a motivation that already held
+      // a seat must not decrement someone else's.
+      if (claimedSeatHere) {
+        await this.quota.releaseBetaSeat().catch(() => undefined);
+      }
       throw err;
     }
   }
