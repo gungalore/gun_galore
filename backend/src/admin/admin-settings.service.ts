@@ -195,6 +195,62 @@ const FLAGS: SettingFlag[] = [
     type: 'number',
     default: '1000000',
   },
+
+  // ─── Motivations ──────────────────────────────────────────────
+  // Mirrors of settings.service.ts FLAGS. Both registries or neither: a key
+  // registered only there is invisible here and PATCH rejects it as unknown.
+  {
+    key: 'motivation_writer_enabled',
+    label: 'Licence motivation writer enabled',
+    hint: 'Master switch for the firearm-licence motivation writer. OFF = the whole module is invisible and no AI spend is possible. Turn ON only once the prompt frameworks, disclaimer and PDF template have been through the attorney, and ID_HASH_SECRET is confirmed set on the server — without that secret every generation throws at runtime.',
+    group: 'Motivations',
+    type: 'boolean',
+    default: 'false',
+    // Ships a legal-adjacent document to the public and spends real Anthropic
+    // money on every generation. Exactly what the typed-key gate and the
+    // longer audit reason exist for.
+    danger: true,
+  },
+  {
+    key: 'motivation_beta_free_cap',
+    label: 'Free beta motivations',
+    hint: 'How many motivations are generated free before the beta closes and the price applies. Seats are allocated atomically, so a seat taken above the cap is burned rather than reissued. Capped at 5000 in code — this number is the main guard against runaway AI spend.',
+    group: 'Motivations',
+    type: 'number',
+    default: '100',
+  },
+  {
+    key: 'motivation_price_cents',
+    label: 'Motivation price (cents)',
+    hint: 'What one motivation costs once the free beta is exhausted. 19900 = R199. Inert until card payments are live — until then everything past the cap is simply refused rather than charged.',
+    group: 'Motivations',
+    type: 'number',
+    default: '19900',
+  },
+  {
+    key: 'motivation_buyer_price_cents',
+    label: 'Motivation price for firearm buyers (cents)',
+    hint: 'Discounted price for someone who bought the firearm on All Outdoor. 9900 = R99. NOT YET WIRED — there is no voucher or store-credit system in the platform, so nothing reads this. It is here so the price lives in one place when that is built.',
+    group: 'Motivations',
+    type: 'number',
+    default: '9900',
+  },
+  {
+    key: 'motivation_max_gate_cycles',
+    label: 'Max quality-gate retries',
+    hint: 'How many times a motivation that fails the quality gate may go back to the applicant for more detail before it is marked FAILED for an admin. Each cycle costs a full generation, so this is a spend ceiling as much as a UX one.',
+    group: 'Motivations',
+    type: 'number',
+    default: '2',
+  },
+  {
+    key: 'motivation_retention_days',
+    label: 'Motivation retention (days)',
+    hint: 'How long a completed motivation and its scanned ID/licence documents are kept before the weekly purge deletes them (POPIA). 730 = two years, enough to cover an application, an appeal and a renewal. Lowering this deletes older records at the next run — it does not warn first.',
+    group: 'Motivations',
+    type: 'number',
+    default: '730',
+  },
 ];
 
 @Injectable()

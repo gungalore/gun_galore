@@ -264,6 +264,85 @@ export const FLAGS = {
     default: false,
     parse: (s) => s === 'true' || s === '1',
   } as FlagDefinition<boolean>,
+
+  // ─── Firearm-licence motivation writer (Phase 1) ───────────────
+  // See LICENCE-SERVICES-AND-FEED.md. Every key here is ALSO registered in
+  // admin-settings.service.ts — a flag present only in this file is invisible
+  // in /admin/settings AND rejected by PATCH with "Unknown setting key", which
+  // is the state 12 of the existing 26 flags are already in. Do not add one
+  // here without adding it there.
+
+  // Master switch. Default false so the module deploys inert: every service
+  // method asserts this first, so with it off the endpoints 404 and no
+  // Anthropic spend is possible.
+  motivationWriterEnabled: {
+    key: 'motivation_writer_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+
+  // How many motivations are generated free before the beta closes. Clamped
+  // hard: this number is the ONLY thing standing between a fat-fingered entry
+  // and uncapped AI spend, since org-level spend alerting is not functional on
+  // prod (ANTHROPIC_ADMIN_API_KEY is a regular key there).
+  motivationBetaFreeCap: {
+    key: 'motivation_beta_free_cap',
+    default: 100,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      if (!Number.isFinite(n) || n < 0) return 100;
+      return Math.min(5000, n);
+    },
+  } as FlagDefinition<number>,
+
+  // R199. Inert until the paygate is live — subscriptions/checkout still 503.
+  motivationPriceCents: {
+    key: 'motivation_price_cents',
+    default: 19900,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n > 0 ? n : 19900;
+    },
+  } as FlagDefinition<number>,
+
+  // R99 for buyers who bought the firearm here. PARKED: there is no voucher or
+  // store-credit system anywhere in this codebase (the schema says so
+  // explicitly), so nothing reads this yet. It lives here so the price is
+  // recorded in one place when that scope is built.
+  motivationBuyerPriceCents: {
+    key: 'motivation_buyer_price_cents',
+    default: 9900,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) && n > 0 ? n : 9900;
+    },
+  } as FlagDefinition<number>,
+
+  // How many times a failed quality gate may send the applicant back for more
+  // detail before the motivation is marked FAILED for an admin to look at.
+  // Each cycle costs a full generation, so this is a spend ceiling too.
+  motivationMaxGateCycles: {
+    key: 'motivation_max_gate_cycles',
+    default: 2,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      if (!Number.isFinite(n) || n < 0) return 2;
+      return Math.min(5, n);
+    },
+  } as FlagDefinition<number>,
+
+  // How long a completed motivation and its scanned documents are kept before
+  // the retention cron deletes them (POPIA). Two years by default: long enough
+  // to cover an application, an appeal and a renewal conversation.
+  motivationRetentionDays: {
+    key: 'motivation_retention_days',
+    default: 730,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      if (!Number.isFinite(n) || n < 30) return 730;
+      return Math.min(3650, n);
+    },
+  } as FlagDefinition<number>,
 } as const;
 
 @Injectable()
