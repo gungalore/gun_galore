@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsObject,
   IsOptional,
@@ -41,4 +42,15 @@ export class SaveAnswersDto {
    */
   @IsObject()
   answers!: Record<string, unknown>;
+}
+
+export class AcceptDeclarationDto {
+  /**
+   * Separate, opt-in, and NOT required to generate. Permission to quote them
+   * in a testimonial is a different decision from confirming their own facts
+   * are true, and bundling the two would make the consent worthless.
+   */
+  @IsOptional()
+  @IsBoolean()
+  testimonialConsent?: boolean;
 }

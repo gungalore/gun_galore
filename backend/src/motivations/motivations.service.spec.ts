@@ -1,7 +1,7 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { MotivationLicenceType, MotivationStatus } from '@prisma/client';
 import { MotivationsService } from './motivations.service';
-import { decryptJson } from '../common/blob-crypto';
+import { decryptJson, encryptJson, encryptText } from '../common/blob-crypto';
 import {
   sanitiseAnswers,
   missingRequired,
@@ -23,7 +23,13 @@ afterAll(() => {
   else process.env.ID_HASH_SECRET = ORIGINAL_SECRET;
 });
 
-function build(opts: { enabled?: boolean; canStart?: boolean } = {}) {
+function build(
+  opts: {
+    enabled?: boolean;
+    canStart?: boolean;
+    settings?: Record<string, unknown>;
+  } = {},
+) {
   const prisma = {
     user: { findUnique: jest.fn(async (_a?: any): Promise<any> => ({ id: 'user-1' })) },
     motivation: {
@@ -38,6 +44,10 @@ function build(opts: { enabled?: boolean; canStart?: boolean } = {}) {
       updateMany: jest.fn(async (_a?: any): Promise<any> => ({ count: 1 })),
       delete: jest.fn(async (_a?: any): Promise<any> => ({})),
     },
+    motivationMessage: {
+      create: jest.fn(async (_a?: any): Promise<any> => ({})),
+    },
+    adminAlert: { create: jest.fn(async (_a?: any): Promise<any> => ({})) },
   };
   const quota = {
     assertEnabled: jest.fn(async () => {
@@ -51,17 +61,60 @@ function build(opts: { enabled?: boolean; canStart?: boolean } = {}) {
       priceCents: 19900,
       canStart: opts.canStart ?? true,
     })),
+    claimBetaSeat: jest.fn(async (_cap?: any): Promise<number | null> => 1),
   };
   const refs = { allocate: jest.fn(async () => 'MO000123') };
   const files = { remove: jest.fn(async (_a?: any): Promise<any> => undefined) };
+
+  const claude = {
+    // A COMPLIANT model: it writes the headings it was told to, in order.
+    // The first draft of this mock used generic headings and the pipeline
+    // correctly regenerated (structureOk=false) — proving followsPlan() works,
+    // but making the default path cost two generations.
+    generate: jest.fn(async (_p?: any, plan?: any): Promise<any> => ({
+      text: (plan?.sections ?? [])
+        .map((sec: any) => sec.heading + '\n\nA paragraph of body text here.')
+        .join('\n\n'),
+      usage: { model: 'claude-opus-5', promptTokens: 900, completionTokens: 700 },
+    })),
+    grade: jest.fn(async (_p?: any, _t?: any): Promise<any> => ({
+      verdict: {
+        completeness: 90,
+        specificity: 88,
+        consistency: 90,
+        groundedness: 92,
+        overall: 90,
+        thinFields: [],
+        issues: [],
+        passed: true,
+      },
+      usage: { model: 'claude-sonnet-5', promptTokens: 400, completionTokens: 80 },
+      parsed: true,
+    })),
+    askFollowUp: jest.fn(async (_a?: any): Promise<any> => ({
+      question: 'Which association are you with?',
+      usage: { model: 'haiku', promptTokens: 10, completionTokens: 10 },
+    })),
+  };
+  const pdf = { render: jest.fn(async (_a?: any): Promise<any> => ({ pdf: Buffer.from('%PDF-'), filename: 'x.pdf' })) };
+  const settings = {
+    get: jest.fn(async (flag: { key: string; default: unknown }) =>
+      opts.settings && flag.key in opts.settings
+        ? (opts.settings as any)[flag.key]
+        : flag.default,
+    ),
+  };
 
   const svc = new MotivationsService(
     prisma as never,
     quota as never,
     refs as never,
     files as never,
+    claude as never,
+    pdf as never,
+    settings as never,
   );
-  return { svc, prisma, quota, refs, files };
+  return { svc, prisma, quota, refs, files, claude, pdf, settings };
 }
 
 describe('MotivationsService', () => {
@@ -351,5 +404,203 @@ describe('motivation field registry', () => {
         'threat_circumstances',
       ]),
     );
+  });
+});
+
+describe('MotivationsService.generate', () => {
+  const READY = {
+    id: 'mo-1',
+    licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
+    status: MotivationStatus.DRAFT,
+    answersEncrypted: null as string | null,
+    declarationAcceptedAt: new Date() as Date | null,
+    variantSeed: 4242,
+    gateCycles: 0,
+    betaSeatNo: null as number | null,
+    promptTokens: null as number | null,
+    completionTokens: null as number | null,
+  };
+
+  /** A row whose encrypted answers satisfy every required field. */
+  function readyRow(over: Partial<typeof READY> = {}) {
+    const answers: Record<string, string> = {};
+    for (const k of requiredKeys(MotivationLicenceType.S16_DEDICATED_HUNTER)) {
+      answers[k] = 'A sufficient answer for testing purposes.';
+    }
+    return { ...READY, answersEncrypted: encryptJson(answers), ...over };
+  }
+
+  it('refuses without the declaration — they are signing this', async () => {
+    const { svc, prisma, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(
+      readyRow({ declarationAcceptedAt: null }),
+    );
+    await expect(svc.generate('c1', 'mo-1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(claude.generate).not.toHaveBeenCalled();
+  });
+
+  it('refuses while required answers are missing, and says which', async () => {
+    const { svc, prisma, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce({
+      ...READY,
+      answersEncrypted: encryptJson({ occupation: 'Farmer' }),
+    });
+    await expect(svc.generate('c1', 'mo-1')).rejects.toMatchObject({
+      response: { code: 'motivation-incomplete' },
+    });
+    expect(claude.generate).not.toHaveBeenCalled();
+  });
+
+  it('CAS: a second concurrent click does not spend money twice', async () => {
+    const { svc, prisma, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    prisma.motivation.updateMany.mockResolvedValueOnce({ count: 0 }); // lost the race
+    await expect(svc.generate('c1', 'mo-1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(claude.generate).not.toHaveBeenCalled();
+  });
+
+  it('claims a beta seat BEFORE calling Claude', async () => {
+    const order: string[] = [];
+    const { svc, prisma, quota, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    quota.claimBetaSeat = jest.fn(async () => {
+      order.push('seat');
+      return 7;
+    });
+    claude.generate.mockImplementation(async () => {
+      order.push('claude');
+      return {
+        text: 'Introduction:\n\nBody text that is long enough.',
+        usage: { model: 'claude-opus-5', promptTokens: 1, completionTokens: 1 },
+      };
+    });
+    await svc.generate('c1', 'mo-1');
+    expect(order[0]).toBe('seat');
+    expect(order).toContain('claude');
+  });
+
+  it('stores the document encrypted and completes when the gate passes', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    const res = await svc.generate('c1', 'mo-1');
+    expect(res.status).toBe(MotivationStatus.COMPLETED);
+
+    const data = prisma.motivation.update.mock.calls.at(-1)![0].data;
+    expect(data.status).toBe(MotivationStatus.COMPLETED);
+    expect(data.documentTextEncrypted).not.toContain('Introduction');
+    expect(data.templateVersion).toBeTruthy();
+    expect(data.retentionPurgeAt).toBeInstanceOf(Date);
+    // Token spend is accumulated across every pass, not just the last one.
+    expect(data.promptTokens).toBe(900 + 400);
+  });
+
+  it('sends it back for more detail when the gate fails, and asks questions', async () => {
+    const { svc, prisma, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    claude.grade.mockResolvedValueOnce({
+      verdict: {
+        completeness: 40, specificity: 30, consistency: 60, groundedness: 80,
+        overall: 52, thinFields: ['hunting_history'], issues: ['Too general'],
+        passed: false,
+      },
+      usage: { model: 'g', promptTokens: 1, completionTokens: 1 },
+      parsed: true,
+    });
+    const res = await svc.generate('c1', 'mo-1');
+    expect(res.status).toBe(MotivationStatus.NEEDS_MORE_INFO);
+    expect(claude.askFollowUp).toHaveBeenCalledTimes(1);
+    expect(prisma.motivationMessage.create).toHaveBeenCalled();
+  });
+
+  it('gives up to an admin once the retry ceiling is hit', async () => {
+    const { svc, prisma, claude } = build({ settings: { motivation_max_gate_cycles: 1 } });
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow({ gateCycles: 1 }));
+    claude.grade.mockResolvedValueOnce({
+      verdict: {
+        completeness: 10, specificity: 10, consistency: 10, groundedness: 10,
+        overall: 10, thinFields: [], issues: ['Still thin'], passed: false,
+      },
+      usage: { model: 'g', promptTokens: 1, completionTokens: 1 },
+      parsed: true,
+    });
+    const res = await svc.generate('c1', 'mo-1');
+    expect(res.status).toBe(MotivationStatus.FAILED);
+    expect(prisma.adminAlert.create).toHaveBeenCalled();
+  });
+
+  it('regenerates with a fresh seed when the model ignored the plan', async () => {
+    const { svc, prisma, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    // First attempt has no planned headings at all.
+    claude.generate
+      .mockResolvedValueOnce({
+        text: 'Just some prose with no headings whatsoever, going on at length.',
+        usage: { model: 'm', promptTokens: 10, completionTokens: 10 },
+      })
+      .mockResolvedValueOnce({
+        text: 'Introduction:\n\nProper document this time around.',
+        usage: { model: 'm', promptTokens: 10, completionTokens: 10 },
+      });
+    await svc.generate('c1', 'mo-1');
+    expect(claude.generate).toHaveBeenCalledTimes(2);
+    // The second call used a DIFFERENT plan than the first.
+    const firstPlan = claude.generate.mock.calls[0][1];
+    const secondPlan = claude.generate.mock.calls[1][1];
+    expect(secondPlan.seed).not.toBe(firstPlan.seed);
+  });
+
+  it('releases the row when generation throws — never stranded in GENERATING', async () => {
+    // Without this a failed generation leaves the motivation uneditable AND
+    // un-regenerable, which is the worst possible end state.
+    const { svc, prisma, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    claude.generate.mockRejectedValueOnce(new Error('overloaded'));
+    await expect(svc.generate('c1', 'mo-1')).rejects.toThrow('overloaded');
+    const release = prisma.motivation.updateMany.mock.calls.at(-1)![0];
+    expect(release.where.status).toBe(MotivationStatus.GENERATING);
+    expect(release.data.status).toBe(MotivationStatus.NEEDS_MORE_INFO);
+  });
+
+  it('does not claim a second seat on a retry', async () => {
+    const { svc, prisma, quota } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow({ betaSeatNo: 12 }));
+    quota.claimBetaSeat = jest.fn();
+    await svc.generate('c1', 'mo-1');
+    expect(quota.claimBetaSeat).not.toHaveBeenCalled();
+  });
+});
+
+describe('MotivationsService.renderPdf', () => {
+  it('refuses until the document is complete', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce({
+      referenceNumber: 'MO1', licenceType: MotivationLicenceType.S24_RENEWAL,
+      status: MotivationStatus.DRAFT, documentTextEncrypted: null,
+      templateVersion: null, answersEncrypted: null, completedAt: null,
+    });
+    await expect(svc.renderPdf('c1', 'mo-1')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('renders with the applicant REAL name, not a username', async () => {
+    const { svc, prisma, pdf } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce({
+      referenceNumber: 'MO000123',
+      licenceType: MotivationLicenceType.S24_RENEWAL,
+      status: MotivationStatus.COMPLETED,
+      documentTextEncrypted: encryptText('Introduction:\n\nBody.'),
+      templateVersion: 'tpl-x',
+      answersEncrypted: encryptJson({ full_name: 'Jan Pietersen' }),
+      completedAt: new Date('2026-08-18T00:00:00Z'),
+    });
+    await svc.renderPdf('c1', 'mo-1');
+    const args = pdf.render.mock.calls[0][0];
+    expect(args.applicantName).toBe('Jan Pietersen');
+    expect(args.templateVersion).toBe('tpl-x');
   });
 });

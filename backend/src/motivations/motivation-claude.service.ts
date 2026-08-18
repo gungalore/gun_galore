@@ -36,10 +36,38 @@ import type { StructurePlan } from './motivation-structure';
 const GENERATE_TIMEOUT_MS = 85_000;
 const GRADE_TIMEOUT_MS = 60_000;
 
-const MODEL_WRITE =
-  process.env.ANTHROPIC_MODEL_MOTIVATION ?? 'claude-sonnet-4-6';
+// MODEL CHOICE — operator: "whatever produces the best possible document."
+//
+// Cost is genuinely not the constraint. At R199 a motivation, flagship tokens
+// are low single-digit percent of revenue, and the whole free beta costs less
+// than one document from a fly-by-night writer. The cost columns on the row
+// will report the real figure per document rather than anyone's estimate.
+//
+// WRITER — Opus, the strongest reasoning tier. The hard part of this job is
+// not prose flourish, it is obeying a constraint while writing persuasively:
+// "make the best possible case AND never add a fact the applicant did not
+// give you." That is instruction-following under pressure, which is exactly
+// where the flagship earns its keep.
+//
+// GATE — DELIBERATELY A DIFFERENT MODEL, and this is the important one. A
+// model grading its own output shares its own blind spots: if the writer
+// invents a detail that feels plausible, the same model is the one most likely
+// to wave it through on review. Groundedness is the score that vetoes
+// everything, so the checker must fail differently from the writer. Sonnet 5
+// at temperature 0 is an independent judge, not a rubber stamp.
+//
+// FOLLOW-UPS — Haiku. One short question in Boet's voice; the flagship would
+// be paying Rolls-Royce prices to ask "which association are you with?".
+//
+// All three are env-overridable. To A/B a writer model over the beta, set
+// ANTHROPIC_MODEL_MOTIVATION and restart — the gate scores and the sameness
+// detector then answer the question with measurements instead of opinions.
+const MODEL_WRITE = process.env.ANTHROPIC_MODEL_MOTIVATION ?? 'claude-opus-5';
 const MODEL_GATE =
-  process.env.ANTHROPIC_MODEL_MOTIVATION_GATE ?? 'claude-sonnet-4-6';
+  process.env.ANTHROPIC_MODEL_MOTIVATION_GATE ?? 'claude-sonnet-5';
+const MODEL_FOLLOWUP =
+  process.env.ANTHROPIC_MODEL_MOTIVATION_FOLLOWUP ??
+  'claude-haiku-4-5-20251001';
 
 /** Below this the document goes back for more detail. */
 export const QUALITY_FLOOR = 65;
@@ -346,7 +374,7 @@ export class MotivationClaudeService {
     currentAnswer: string;
   }): Promise<{ question: string | null; usage: ClaudeUsage }> {
     const usage: ClaudeUsage = {
-      model: MODEL_GATE,
+      model: MODEL_FOLLOWUP,
       promptTokens: 0,
       completionTokens: 0,
     };
@@ -355,7 +383,7 @@ export class MotivationClaudeService {
     try {
       const msg = await this.client.messages.create(
         {
-          model: MODEL_GATE,
+          model: MODEL_FOLLOWUP,
           max_tokens: 300,
           system: followUpSystemPrompt(),
           messages: [{ role: 'user', content: followUpUserPrompt(args) }],
@@ -366,7 +394,7 @@ export class MotivationClaudeService {
       const q = ((block as { text?: string } | undefined)?.text ?? '').trim();
       return {
         question: q || null,
-        usage: this.usageOf(msg, MODEL_GATE),
+        usage: this.usageOf(msg, MODEL_FOLLOWUP),
       };
     } catch (err) {
       this.logger.warn(
