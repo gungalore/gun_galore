@@ -25,18 +25,18 @@ afterAll(() => {
 
 function build(opts: { enabled?: boolean; canStart?: boolean } = {}) {
   const prisma = {
-    user: { findUnique: jest.fn(async () => ({ id: 'user-1' })) },
+    user: { findUnique: jest.fn(async (_a?: any): Promise<any> => ({ id: 'user-1' })) },
     motivation: {
-      findMany: jest.fn(async () => []),
-      findFirst: jest.fn(async () => null),
+      findMany: jest.fn(async (_a?: any): Promise<any> => []),
+      findFirst: jest.fn(async (_a?: any): Promise<any> => null),
       create: jest.fn(async ({ data }: any) => ({
         id: 'mo-1',
         referenceNumber: data.referenceNumber,
         status: data.status,
       })),
-      update: jest.fn(async () => ({})),
-      updateMany: jest.fn(async () => ({ count: 1 })),
-      delete: jest.fn(async () => ({})),
+      update: jest.fn(async (_a?: any): Promise<any> => ({})),
+      updateMany: jest.fn(async (_a?: any): Promise<any> => ({ count: 1 })),
+      delete: jest.fn(async (_a?: any): Promise<any> => ({})),
     },
   };
   const quota = {
@@ -53,7 +53,7 @@ function build(opts: { enabled?: boolean; canStart?: boolean } = {}) {
     })),
   };
   const refs = { allocate: jest.fn(async () => 'MO000123') };
-  const files = { remove: jest.fn(async () => undefined) };
+  const files = { remove: jest.fn(async (_a?: any): Promise<any> => undefined) };
 
   const svc = new MotivationsService(
     prisma as never,
