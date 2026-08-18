@@ -3,6 +3,7 @@ import { MotivationsController } from './motivations.controller';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationsService } from './motivations.service';
 import { MotivationPdfService } from './motivation-pdf.service';
+import { MotivationClaudeService } from './motivation-claude.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 
 /**
@@ -33,6 +34,7 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
     MotivationsService,
     MotivationQuotaService,
     MotivationPdfService,
+    MotivationClaudeService,
     SecureFileStorageService,
   ],
   exports: [MotivationsService, MotivationQuotaService],
