@@ -195,19 +195,32 @@ This cuts across two things already built, and both needed changing:
 2. ⬜ **Confirm the SAPS 271 revision** is current before anyone prints one. The
    checklist already marks the form reference `verifyBeforeUse`.
 3. ⬜ **Verify the fee** on the checklist, same reason.
-4. ⬜ **Pin `SECURE_UPLOAD_DIR`** explicitly on the box. It defaults to
-   `<homedir>/secure-uploads`; under pm2 that resolves to whatever the service
-   account's HOME is, and changing the account later makes existing files
-   invisible — `read()` just ENOENTs, which is not an error anyone would notice.
-5. ⬜ **Check `ID_HASH_SECRET` is set on the live box.** main.ts now warns loudly
-   at boot. Without it every upload 500s AND KYC quietly writes ID hashes under a
-   fallback salt that stop matching once it IS set.
-6. ⬜ **Exercise the wizard against a real Clerk session** — it could not be run
-   locally, because production keys are domain-locked and localhost bounces every
-   authenticated route.
-7. ⬜ **Back up the encrypted file tree.** A pg_dump is no longer a complete
-   backup: restoring the database without `SECURE_UPLOAD_DIR` leaves upload rows
-   whose bytes are gone.
+4. ✅ **`SECURE_UPLOAD_DIR` pinned** (2026-08-19) to
+   `/var/lib/alloutdoor/secure-uploads` — outside the app directory, so deploys
+   cannot touch it, and decoupled from HOME, which was the actual risk: under pm2
+   HOME is whatever the service account has, and changing it would make existing
+   files invisible rather than throw (`read()` just ENOENTs). Created `0700`.
+   ⚠️ The running process does NOT have it yet and does not need it — the
+   motivations code is not deployed to that box. **The next deploy picks it up.**
+5. ✅ **`ID_HASH_SECRET` confirmed present** on the live box (2026-08-19, 64
+   chars; value never printed). main.ts now warns loudly at boot if it ever goes
+   missing — which matters because the two consumers fail in OPPOSITE directions:
+   the crypto modules throw, while KYC falls back to a hardcoded salt and writes
+   ID hashes that stop matching the moment the real secret is set.
+6. ⬜ **Exercise the wizard against a real Clerk session** — still outstanding,
+   and not something that can be done from here: production keys are
+   domain-locked, so localhost bounces every authenticated route. It needs a
+   deploy and a real login.
+7. ✅ **Backups exist** (2026-08-19) — `infra/backup/`, nightly 02:10 SAST,
+   database AND the encrypted file tree, each dump verified with
+   `pg_restore --list`.
+   ⚠️ **There was no backup of ANYTHING before this.** Not the uploads, not the
+   database — no crontab, no timer, one manual dump from 12 August left
+   world-readable.
+   ⚠️ Same disk as the originals: covers a bad migration, not a lost machine.
+   ⚠️ Nothing alerts on failure yet.
+   ⚠️ The upload archive is useless without `ID_HASH_SECRET`, and rotating that
+   secret destroys every stored file in every backup, permanently.
 
 ## Phase 2 — Application Checker
 
