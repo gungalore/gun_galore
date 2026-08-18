@@ -18,13 +18,18 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { MotivationUploadKind } from '@prisma/client';
+import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationsService } from './motivations.service';
+import {
+  FIELD_REGISTRY_VERSION,
+  LICENCE_TYPE_LABELS,
+  fieldsFor,
+} from './motivation-fields';
 import {
   AcceptDeclarationDto,
   AnswerFollowUpDto,
@@ -78,6 +83,38 @@ export class MotivationsController {
   @Get('status')
   status() {
     return this.quota.status();
+  }
+
+  /**
+   * The question set for one licence type.
+   *
+   * Served rather than duplicated. The registry is 170 fields with conditional
+   * visibility, per-field caps and choice lists; a second copy in the frontend
+   * would drift on the first change, and the two halves disagreeing about what
+   * is required is the kind of bug nobody notices until an application will not
+   * generate.
+   *
+   * DEFINITIONS ONLY — keys, labels, help text, choices. No answers, no PII.
+   *
+   * ⚠️ Declared BEFORE @Get(':id'), because Nest matches in declaration order
+   * and ':id' would otherwise swallow "fields".
+   */
+  @Get('fields/:licenceType')
+  fields(@Param('licenceType') licenceType: string) {
+    if (
+      !Object.values(MotivationLicenceType).includes(
+        licenceType as MotivationLicenceType,
+      )
+    ) {
+      throw new BadRequestException('Unknown licence type.');
+    }
+    const type = licenceType as MotivationLicenceType;
+    return {
+      licenceType: type,
+      label: LICENCE_TYPE_LABELS[type],
+      version: FIELD_REGISTRY_VERSION,
+      fields: fieldsFor(type),
+    };
   }
 
   @Get()
