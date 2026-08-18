@@ -28,6 +28,7 @@ import {
   SIMILARITY_REGENERATE_THRESHOLD,
 } from './motivation-structure';
 import type { FactPack } from './motivation-prompts';
+import { buildAnnexures, buildChecklist } from './motivation-checklist';
 import {
   FIELD_REGISTRY_VERSION,
   LICENCE_TYPE_LABELS,
@@ -698,6 +699,7 @@ export class MotivationsService {
         templateVersion: true,
         answersEncrypted: true,
         completedAt: true,
+        uploads: { select: { kind: true } },
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
@@ -716,6 +718,13 @@ export class MotivationsService {
     }
 
     const answers = this.readAnswers(row.answersEncrypted);
+
+    // The pack, not just the document. The checklist goes first so the
+    // applicant can see at a glance what is attached and what they still have
+    // to fetch themselves; the annexure index goes last so a reviewer can find
+    // anything the body cross-references.
+    const kinds = (row.uploads ?? []).map((u) => u.kind);
+
     return this.pdf.render({
       referenceNumber: row.referenceNumber,
       // The applicant's REAL name — the documented exception to the site-wide
@@ -727,6 +736,8 @@ export class MotivationsService {
       disclaimer: DISCLAIMER_TEXT,
       templateVersion: row.templateVersion ?? TEMPLATE_VERSION,
       generatedAt: row.completedAt ?? new Date(),
+      checklist: buildChecklist(row.licenceType, kinds),
+      annexures: buildAnnexures(kinds),
     });
   }
 

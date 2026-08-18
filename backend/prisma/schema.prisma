@@ -4016,12 +4016,28 @@ enum MotivationStatus {
   ABANDONED // user walked away, or an admin voided it
 }
 
+// The evidence bundle. Each upload becomes a lettered ANNEXURE in the finished
+// pack and is cross-referenced from the body of the motivation — which is what
+// turns an assertion into evidence.
+//
+// SAFE_PHOTO / SAFE_INSTALLATION are operator additions (2026-08-18): a
+// motivation asserts where the firearm will be kept, and a photograph of the
+// safe and of how it is anchored is the only thing that shows it. Safe storage
+// is one of the few grounds a DFO inspects in person, so evidence of it is
+// disproportionately valuable.
 enum MotivationUploadKind {
-  CURRENT_LICENCE
-  PREVIOUS_MOTIVATION
-  COMPETENCY_CERTIFICATE
-  ASSOCIATION_CARD
   IDENTITY_DOCUMENT
+  COMPETENCY_CERTIFICATE
+  PROFICIENCY_CERTIFICATE
+  CURRENT_LICENCE
+  ASSOCIATION_CARD
+  ADDRESS_CONFIRMATION
+  EMPLOYMENT_CONFIRMATION
+  SAFE_PHOTO
+  SAFE_INSTALLATION
+  CHARACTER_REFERENCE
+  INCIDENT_REPORT
+  PREVIOUS_MOTIVATION
   OTHER
 }
 

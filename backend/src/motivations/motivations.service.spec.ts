@@ -582,6 +582,7 @@ describe('MotivationsService.renderPdf', () => {
       referenceNumber: 'MO1', licenceType: MotivationLicenceType.S24_RENEWAL,
       status: MotivationStatus.DRAFT, documentTextEncrypted: null,
       templateVersion: null, answersEncrypted: null, completedAt: null,
+      uploads: [],
     });
     await expect(svc.renderPdf('c1', 'mo-1')).rejects.toBeInstanceOf(
       ConflictException,
@@ -598,6 +599,7 @@ describe('MotivationsService.renderPdf', () => {
       templateVersion: 'tpl-x',
       answersEncrypted: encryptJson({ full_name: 'Jan Pietersen' }),
       completedAt: new Date('2026-08-18T00:00:00Z'),
+      uploads: [{ kind: 'IDENTITY_DOCUMENT' }],
     });
     await svc.renderPdf('c1', 'mo-1');
     const args = pdf.render.mock.calls[0][0];

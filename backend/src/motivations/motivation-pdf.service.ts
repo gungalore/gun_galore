@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import type { AnnexureEntry, ChecklistSection } from './motivation-checklist';
 
 // ────────────────────────────────────────────────────────────────────
 // The formal motivation document. This is the thing the applicant signs and
@@ -80,6 +81,13 @@ export interface MotivationPdfInput {
   /** Generation timestamp. Passed in, never read from the clock here, so the
    *  same input always renders the same bytes (testable, reproducible). */
   generatedAt: Date;
+  /**
+   * The submission checklist. Rendered as the FIRST page, with real tick-boxes.
+   * Omitted only for a preview render.
+   */
+  checklist?: ChecklistSection[];
+  /** Lettered annexure index, rendered as the last page. */
+  annexures?: AnnexureEntry[];
 }
 
 /** A short line ending in a colon reads as a section heading. */
@@ -87,6 +95,9 @@ function isHeading(line: string): boolean {
   const t = line.trim();
   return t.length > 0 && t.length <= 80 && t.endsWith(':');
 }
+
+/** Box size for the checklist ticks, in points. */
+const BOX = 11;
 
 @Injectable()
 export class MotivationPdfService {
@@ -129,6 +140,16 @@ export class MotivationPdfService {
     });
 
     const contentWidth = PAGE_WIDTH - MARGIN * 2;
+
+    // ── Submission checklist ──────────────────────────────────────────
+    // FIRST page, deliberately. The applicant is walking into a police station
+    // with a stack of paper; the most useful thing we can put in their hand is
+    // a list of what should be in it. A refusal for a missing certified copy
+    // costs weeks and is entirely avoidable.
+    if (input.checklist?.length) {
+      this.renderChecklist(doc, input, contentWidth);
+      doc.addPage();
+    }
 
     // ── Header ────────────────────────────────────────────────────────
     doc
@@ -246,6 +267,46 @@ export class MotivationPdfService {
       .fillColor(GREY)
       .text(input.disclaimer, { width: contentWidth, lineGap: 1.5 });
 
+    // ── Annexure index ────────────────────────────────────────────────
+    if (input.annexures?.length) {
+      doc.addPage();
+      doc
+        .font(FONT_BOLD)
+        .fontSize(13)
+        .fillColor(BLACK)
+        .text('ANNEXURES', { width: contentWidth });
+      doc.moveDown(0.4);
+      doc
+        .font(FONT)
+        .fontSize(9.5)
+        .fillColor(GREY)
+        .text(
+          'The documents listed below are attached in this order and are referred to in the motivation.',
+          { width: contentWidth },
+        );
+      doc.moveDown(0.8);
+
+      for (const a of input.annexures) {
+        const y = doc.y;
+        doc
+          .font(FONT_BOLD)
+          .fontSize(BODY_SIZE)
+          .fillColor(BLACK)
+          .text(`Annexure ${a.letter}`, MARGIN, y, { width: 90 });
+        doc
+          .font(FONT)
+          .fontSize(BODY_SIZE)
+          .fillColor(BLACK)
+          .text(
+            a.count > 1 ? `${a.label} (${a.count} items)` : a.label,
+            MARGIN + 95,
+            y,
+            { width: contentWidth - 95 },
+          );
+        doc.moveDown(0.45);
+      }
+    }
+
     // ── Footers on every page ─────────────────────────────────────────
     // bufferPages lets us number pages only once the total is known.
     const range = doc.bufferedPageRange();
@@ -267,5 +328,103 @@ export class MotivationPdfService {
     doc.end();
     const pdf = await done;
     return { pdf, filename: `motivation-${input.referenceNumber}.pdf` };
+  }
+
+  /**
+   * The checklist page. Boxes are DRAWN rectangles, not glyphs — the standard
+   * PDF fonts have no ballot-box character, and a drawn box is both heavier on
+   * the page and reliably printable. A ticked box carries a drawn check; an
+   * empty one is left for the applicant to tick by hand once they have the
+   * item, which is the whole point of giving them the list.
+   */
+  private renderChecklist(
+    doc: PDFKit.PDFDocument,
+    input: MotivationPdfInput,
+    contentWidth: number,
+  ): void {
+    doc
+      .font(FONT_BOLD)
+      .fontSize(15)
+      .fillColor(BLACK)
+      .text('SUBMISSION CHECKLIST', { width: contentWidth, align: 'center' });
+    doc
+      .font(FONT)
+      .fontSize(10)
+      .fillColor(GREY)
+      .text(
+        `${input.licenceTypeLabel} · ${input.referenceNumber}`,
+        { width: contentWidth, align: 'center' },
+      );
+    doc.moveDown(1);
+
+    for (const section of input.checklist ?? []) {
+      if (doc.y > PAGE_HEIGHT - MARGIN - 120) doc.addPage();
+
+      doc
+        .font(FONT_BOLD)
+        .fontSize(BODY_SIZE + 0.5)
+        .fillColor(BLACK)
+        .text(section.title.toUpperCase(), { width: contentWidth });
+
+      if (section.intro) {
+        doc
+          .font(FONT_ITALIC)
+          .fontSize(9)
+          .fillColor(GREY)
+          .text(section.intro, { width: contentWidth, lineGap: 1 });
+      }
+      doc.moveDown(0.45);
+
+      for (const item of section.items) {
+        if (doc.y > PAGE_HEIGHT - MARGIN - 40) doc.addPage();
+
+        const top = doc.y;
+        const boxY = top + 1.5;
+
+        // The box.
+        doc
+          .lineWidth(1.1)
+          .strokeColor(BLACK)
+          .rect(MARGIN, boxY, BOX, BOX)
+          .stroke();
+
+        if (item.present) {
+          // A tick, drawn — no glyph dependency.
+          doc
+            .lineWidth(1.4)
+            .strokeColor(BLACK)
+            .moveTo(MARGIN + 2.2, boxY + BOX * 0.55)
+            .lineTo(MARGIN + BOX * 0.42, boxY + BOX - 2.4)
+            .lineTo(MARGIN + BOX - 1.8, boxY + 2.2)
+            .stroke();
+        }
+
+        const textX = MARGIN + BOX + 9;
+        const textW = contentWidth - BOX - 9;
+
+        const label = item.annexure
+          ? `Annexure ${item.annexure} — ${item.label}`
+          : item.label;
+
+        doc
+          .font(FONT)
+          .fontSize(BODY_SIZE)
+          .fillColor(BLACK)
+          .text(label, textX, top, { width: textW });
+
+        if (item.note) {
+          doc
+            .font(FONT_ITALIC)
+            .fontSize(8.5)
+            .fillColor(GREY)
+            .text(item.note, textX, doc.y, { width: textW, lineGap: 1 });
+        }
+
+        doc.moveDown(0.5);
+        doc.x = MARGIN;
+      }
+
+      doc.moveDown(0.7);
+    }
   }
 }
