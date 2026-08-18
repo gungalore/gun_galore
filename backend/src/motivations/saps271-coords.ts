@@ -11,7 +11,7 @@
 // Coordinates are PDF user space: origin BOTTOM-LEFT, points, A4 596x842.
 // `y` is the bottom of the row, so a caller adds its own baseline padding.
 //
-// 82 of 84 fields resolved.
+// 84 of 84 fields resolved.
 // The rest are listed in UNRESOLVED below and are left BLANK on the form: a box
 // the applicant completes by hand is a nuisance, a guessed coordinate is a
 // wrong answer on a signed firearm licence application.
@@ -38,6 +38,12 @@ export interface Saps271TextBox extends Saps271Bound {
 
 export interface Saps271Tick extends Saps271Bound {
   kind: 'tick';
+  /**
+   * The target is the option's OWN cell, not an empty one beside it — gender is
+   * the case. Safe to SET as a field (the box was drawn over the word on
+   * purpose); NEVER safe to draw, which would stamp an X over printed text.
+   */
+  overLabel?: true;
   page: number;
   /** Centre of the tick cell. */
   x: number;
@@ -642,6 +648,28 @@ export const SAPS271_COORDS = {
     "w": 399.4,
     "h": 17.2,
     "field": "text_101",
+    "fieldKind": "text"
+  },
+  "g_gender_male": {
+    "page": 6,
+    "kind": "tick",
+    "x": 503.3,
+    "y": 400.5,
+    "w": 38.4,
+    "h": 17.1,
+    "overLabel": true,
+    "field": "TextFormField 22",
+    "fieldKind": "text"
+  },
+  "g_gender_female": {
+    "page": 6,
+    "kind": "tick",
+    "x": 541.5,
+    "y": 400.5,
+    "w": 38,
+    "h": 17.1,
+    "overLabel": true,
+    "field": "TextFormField 23",
     "fieldKind": "text"
   },
   "g_marital_single": {
@@ -1329,17 +1357,4 @@ export const SAPS271_DRAWN_NOT_FIELDED: string[] = [
   "g_association_far"
 ];
 
-export const SAPS271_UNRESOLVED: { name: string; label: string; page: number; reason: string }[] = [
-  {
-    "name": "g_gender_male",
-    "label": "Male",
-    "page": 6,
-    "reason": "cell after \"Male\" p6 already prints \"Female\""
-  },
-  {
-    "name": "g_gender_female",
-    "label": "Female",
-    "page": 6,
-    "reason": "\"Female\" p6 is the last cell in its row"
-  }
-];
+export const SAPS271_UNRESOLVED: { name: string; label: string; page: number; reason: string }[] = [];

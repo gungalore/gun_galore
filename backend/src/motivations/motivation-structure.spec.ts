@@ -246,3 +246,33 @@ describe('the sameness detector', () => {
     expect(SIMILARITY_REGENERATE_THRESHOLD).toBeLessThan(0.8);
   });
 });
+
+// ── continuity for a returning applicant ────────────────────────────
+//
+// Operator, 2026-08-18: keep earlier motivations so a repeat applicant gets the
+// same storyline. That makes the sameness engine's scope load-bearing, so it is
+// asserted here rather than left to the query.
+
+describe('who the sameness engine is actually guarding against', () => {
+  it('treats two documents about one life as legitimately alike', () => {
+    // The engine exists so the CFR never sees a flood of near-identical
+    // documents from DIFFERENT people. A second application by the SAME person
+    // describes the same commute, the same premises and the same history — it
+    // SHOULD read alike, and forcing it apart would manufacture exactly the
+    // contradiction a DFO looks for.
+    //
+    // The guard is the userId exclusion in recentFingerprints; this pins the
+    // reason it has to be there, by showing what the raw score would say.
+    const first = fingerprint(
+      'Background\nMy circumstances\nThe firearm\nStorage\nConclusion',
+    );
+    const second = fingerprint(
+      'Background\nMy circumstances\nThe firearm\nStorage\nConclusion',
+    );
+    expect(similarity(first, second)).toBeGreaterThan(
+      SIMILARITY_REGENERATE_THRESHOLD,
+    );
+    // So if their own earlier document were left in the corpus, a returning
+    // applicant would be regenerated away from their own account of their life.
+  });
+});

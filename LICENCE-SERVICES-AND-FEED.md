@@ -114,9 +114,60 @@ The operator supplies real motivations as reference material. Handling rules:
   not each document. Same posture as the raffle rules.
 
 ### Commercial wiring
-- R199 standalone; R99 voucher auto-attached to a firearm order (time-boxed, order-linked).
-- Payments are OFF until Peach — the R199 price goes live with the paygate; before that the
-  capped free beta runs. No manual EFT (retired).
+
+**The price table** (operator, 2026-08-18). Two levers, and they stack:
+
+| | firearm bought elsewhere | firearm bought on site |
+|---|---|---|
+| no subscription | **R199** | **R99** |
+| AO Pro | **R99** | **FREE** |
+
+Built as `backend/src/motivations/motivation-pricing.ts` — pure, no Nest, no clock, 11 tests.
+
+The shape is the commercial argument, not a discount scheme: R100 off is a reason to buy the
+firearm HERE rather than privately, and a free motivation is a reason to hold the
+subscription. Every cell undercuts the R450–R1,000 the fly-by-night writers charge, so we
+never compete on price alone. A test asserts every cell stays under R450.
+
+⚠️ **FREE is a real outcome, not a R0 charge.** The caller skips the payment step entirely —
+a 0.00 authorisation would be rejected by Peach and would show a member a failed payment for
+something they are entitled to.
+
+⚠️ `firearmBoughtOnSite` must be established from a REAL ORDER, never from anything the
+applicant types. It is worth R100–R199, so it is exactly the claim someone would make.
+
+- Payments are OFF until Peach — the table goes live with the paygate; before that the
+  capped free beta runs. No manual EFT (retired). The price a member is quoted during the
+  beta comes from this module, so it is the price they will actually pay.
+
+### Continuity for a returning applicant (operator, 2026-08-18)
+
+*"Keep the motivation so when they apply for another one we have context of their previous
+applications and keep the same story line."*
+
+This cuts across two things already built, and both needed changing:
+
+1. **The sameness engine was fighting it.** `recentFingerprints` compared a new document
+   against every completed motivation of that type — including the applicant's OWN earlier
+   ones — and regenerated when they were too alike. But that engine exists for exactly one
+   reason: so the CFR never sees a flood of near-identical documents from DIFFERENT people.
+   Two motivations by the same person describe one life; they SHOULD share circumstances, and
+   forcing them apart manufactures the precise contradiction a DFO looks for. **Fixed**: the
+   corpus now excludes the applicant themselves.
+
+2. **Retention would delete the very thing we now keep.** `retentionPurgeAt` is written on the
+   COMPLETED branch and nothing reads it yet, so nothing is lost today — but the purge cron
+   must not simply delete a member's history. The split to build:
+
+   - **The motivation TEXT is the storyline.** Keep it while the account exists. That is what
+     a second application is written from.
+   - **The uploaded IDENTITY SCANS are the risk.** ID copies, licences and competency
+     certificates carry no storyline and every bit of the exposure, so they purge on the
+     original schedule.
+
+   ⚠️ POPIA needs the stated purpose to match. "Retained so a later application is consistent
+   with your earlier one" is a legitimate purpose and must be what the privacy copy says.
+   ⚠️ Erasure on request still deletes everything, immediately.
 - Marketing: in-app (firearm listing pages, checkout, account), consent-based SMS/WhatsApp
   to the existing base, word of mouth. **No public pages** (operator decision — the public
   site stays firearm-clean).

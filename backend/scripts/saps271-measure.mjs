@@ -183,14 +183,26 @@ function tickCell(pageNo, optionText, occurrence = 0) {
   if (c.error) return c;
   const idx = c.cells.findIndex((cell) => cell.text.includes(optionText.trim()));
   if (idx < 0) return { error: `"${optionText}" p${pageNo} is not inside a ruled cell` };
-  const next = c.cells[idx + 1];
-  if (!next) return { error: `"${optionText}" p${pageNo} is the last cell in its row` };
-  if (next.text) return { error: `cell after "${optionText}" p${pageNo} already prints "${next.text}"` };
-  return {
+
+  const centreOf = (cell, overLabel) => ({
     page: pageNo, kind: 'tick',
-    x: r1((next.a + next.b) / 2), y: r1((c.bottom + c.top) / 2),
-    w: r1(next.b - next.a), h: r1(c.top - c.bottom),
-  };
+    x: r1((cell.a + cell.b) / 2), y: r1((c.bottom + c.top) / 2),
+    w: r1(cell.b - cell.a), h: r1(c.top - c.bottom),
+    ...(overLabel ? { overLabel: true } : {}),
+  });
+
+  // Preferred: the empty cell immediately after the option label. That is how
+  // most of this form is laid out — "Single [ ] Married [ ] …".
+  const next = c.cells[idx + 1];
+  if (next && !next.text) return centreOf(next, false);
+
+  // FALLBACK: the option's OWN cell. Gender is printed "Male | Female" in
+  // adjacent cells with no gap, so on paper there is nowhere to put an X — but
+  // the fillable template has a box drawn over each word, and marking it is
+  // exactly what the form intends. Flagged `overLabel` so the fill service
+  // knows this position is only safe when a real field covers it: setting a
+  // field paints inside its own box, drawing would put an X over printed text.
+  return centreOf(c.cells[idx], true);
 }
 
 /** The LAST cell of a row — the "X" column on the section-D table. */
@@ -536,6 +548,12 @@ export interface Saps271TextBox extends Saps271Bound {
 
 export interface Saps271Tick extends Saps271Bound {
   kind: 'tick';
+  /**
+   * The target is the option's OWN cell, not an empty one beside it — gender is
+   * the case. Safe to SET as a field (the box was drawn over the word on
+   * purpose); NEVER safe to draw, which would stamp an X over printed text.
+   */
+  overLabel?: true;
   page: number;
   /** Centre of the tick cell. */
   x: number;

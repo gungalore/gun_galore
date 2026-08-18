@@ -467,6 +467,9 @@ export class MotivationsService {
         variantSeed: true,
         gateCycles: true,
         betaSeatNo: true,
+        // Needed so the sameness corpus can exclude this applicant's own
+        // earlier documents — see recentFingerprints.
+        userId: true,
         promptTokens: true,
         completionTokens: true,
       },
@@ -543,7 +546,11 @@ export class MotivationsService {
       let tokensIn = attempt.usage.promptTokens;
       let tokensOut = attempt.usage.completionTokens;
 
-      const previous = await this.recentFingerprints(row.licenceType, row.id);
+      const previous = await this.recentFingerprints(
+        row.licenceType,
+        row.id,
+        row.userId,
+      );
       let structureOk = followsPlan(attempt.text, plan).ok;
       let sameness = maxSimilarity(fingerprint(attempt.text), previous);
 
@@ -800,11 +807,27 @@ export class MotivationsService {
   private async recentFingerprints(
     licenceType: MotivationLicenceType,
     excludeId: string,
+    excludeUserId: string,
   ): Promise<string[][]> {
     const rows = await this.prisma.motivation.findMany({
       where: {
         licenceType,
         id: { not: excludeId },
+        // THE APPLICANT'S OWN EARLIER DOCUMENTS ARE NOT COMPETITION.
+        //
+        // The sameness engine exists for one reason: so the CFR never sees a
+        // flood of near-identical documents from DIFFERENT people. Two
+        // motivations by the SAME person are a different case entirely — they
+        // describe one life, so they SHOULD share circumstances, and forcing
+        // them apart is actively harmful. A second application whose account of
+        // the same commute, the same premises and the same history reads
+        // differently from the first is the exact contradiction a DFO looks
+        // for, and we would have manufactured it ourselves.
+        //
+        // Operator, 2026-08-18: keep the earlier motivations so a repeat
+        // applicant gets the same storyline. This is the half of that which
+        // stops us fighting it.
+        userId: { not: excludeUserId },
         status: MotivationStatus.COMPLETED,
       },
       orderBy: { createdAt: 'desc' },
