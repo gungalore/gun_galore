@@ -11,7 +11,7 @@
 // Coordinates are PDF user space: origin BOTTOM-LEFT, points, A4 596x842.
 // `y` is the bottom of the row, so a caller adds its own baseline padding.
 //
-// 84 of 84 fields resolved.
+// 144 of 144 fields resolved.
 // The rest are listed in UNRESOLVED below and are left BLANK on the form: a box
 // the applicant completes by hand is a nuisance, a guessed coordinate is a
 // wrong answer on a signed firearm licence application.
@@ -166,7 +166,9 @@ export const SAPS271_COORDS = {
     "x": 155,
     "y": 266.6,
     "w": 211.7,
-    "h": 19.1
+    "h": 19.1,
+    "field": "text_30",
+    "fieldKind": "text"
   },
   "e_make": {
     "page": 2,
@@ -174,7 +176,9 @@ export const SAPS271_COORDS = {
     "x": 155,
     "y": 248.5,
     "w": 406.4,
-    "h": 18.1
+    "h": 18.1,
+    "field": "text_23",
+    "fieldKind": "text"
   },
   "e_model": {
     "page": 2,
@@ -829,6 +833,732 @@ export const SAPS271_COORDS = {
     "field": "text_117",
     "fieldKind": "text"
   },
+  "d_holder_main": {
+    "page": 2,
+    "kind": "tick",
+    "x": 188.4,
+    "y": 780.3,
+    "w": 19.1,
+    "h": 16.7,
+    "field": "checkbox_5",
+    "fieldKind": "checkbox"
+  },
+  "d_holder_additional": {
+    "page": 2,
+    "kind": "tick",
+    "x": 355.4,
+    "y": 780.3,
+    "w": 18,
+    "h": 16.7,
+    "field": "checkbox_3",
+    "fieldKind": "checkbox"
+  },
+  "g_owned_1_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 294.1,
+    "w": 72.6,
+    "h": 17.7,
+    "field": "text_23",
+    "fieldKind": "text"
+  },
+  "g_owned_1_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 123.8,
+    "y": 294.1,
+    "w": 72.6,
+    "h": 17.7,
+    "field": "text_32",
+    "fieldKind": "text"
+  },
+  "g_owned_1_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 200.4,
+    "y": 294.1,
+    "w": 72.5,
+    "h": 17.7,
+    "field": "text_30",
+    "fieldKind": "text"
+  },
+  "g_owned_1_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 294.1,
+    "w": 92.4,
+    "h": 17.7,
+    "field": "text_14",
+    "fieldKind": "text"
+  },
+  "g_owned_1_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 373.3,
+    "y": 294.1,
+    "w": 89.6,
+    "h": 17.7,
+    "field": "text_53",
+    "fieldKind": "text"
+  },
+  "g_owned_1_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 466.9,
+    "y": 294.1,
+    "w": 91.4,
+    "h": 17.7,
+    "field": "text_29",
+    "fieldKind": "text"
+  },
+  "g_owned_2_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 277,
+    "w": 72.6,
+    "h": 17.1,
+    "field": "text_60",
+    "fieldKind": "text"
+  },
+  "g_owned_2_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 123.8,
+    "y": 277,
+    "w": 72.6,
+    "h": 17.1,
+    "field": "text_51",
+    "fieldKind": "text"
+  },
+  "g_owned_2_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 200.4,
+    "y": 277,
+    "w": 72.5,
+    "h": 17.1,
+    "field": "text_17",
+    "fieldKind": "text"
+  },
+  "g_owned_2_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 277,
+    "w": 92.4,
+    "h": 17.1,
+    "field": "text_15",
+    "fieldKind": "text"
+  },
+  "g_owned_2_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 373.3,
+    "y": 277,
+    "w": 89.6,
+    "h": 17.1,
+    "field": "text_18",
+    "fieldKind": "text"
+  },
+  "g_owned_2_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 466.9,
+    "y": 277,
+    "w": 91.4,
+    "h": 17.1,
+    "field": "text_8",
+    "fieldKind": "text"
+  },
+  "g_owned_3_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 257.9,
+    "w": 72.6,
+    "h": 19.1,
+    "field": "text_65",
+    "fieldKind": "text"
+  },
+  "g_owned_3_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 123.8,
+    "y": 257.9,
+    "w": 72.6,
+    "h": 19.1,
+    "field": "text_69",
+    "fieldKind": "text"
+  },
+  "g_owned_3_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 200.4,
+    "y": 257.9,
+    "w": 72.5,
+    "h": 19.1,
+    "field": "text_62",
+    "fieldKind": "text"
+  },
+  "g_owned_3_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 257.9,
+    "w": 92.4,
+    "h": 19.1,
+    "field": "text_38",
+    "fieldKind": "text"
+  },
+  "g_owned_3_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 373.3,
+    "y": 257.9,
+    "w": 89.6,
+    "h": 19.1,
+    "field": "text_52",
+    "fieldKind": "text"
+  },
+  "g_owned_3_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 466.9,
+    "y": 257.9,
+    "w": 91.4,
+    "h": 19.1,
+    "field": "text_46",
+    "fieldKind": "text"
+  },
+  "g_owned_4_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 240.7,
+    "w": 72.6,
+    "h": 17.2,
+    "field": "text_36",
+    "fieldKind": "text"
+  },
+  "g_owned_4_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 123.8,
+    "y": 240.7,
+    "w": 72.6,
+    "h": 17.2,
+    "field": "text_20",
+    "fieldKind": "text"
+  },
+  "g_owned_4_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 200.4,
+    "y": 240.7,
+    "w": 72.5,
+    "h": 17.2,
+    "field": "text_37",
+    "fieldKind": "text"
+  },
+  "g_owned_4_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 240.7,
+    "w": 92.4,
+    "h": 17.2,
+    "field": "text_22",
+    "fieldKind": "text"
+  },
+  "g_owned_4_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 373.3,
+    "y": 240.7,
+    "w": 89.6,
+    "h": 17.2,
+    "field": "text_19",
+    "fieldKind": "text"
+  },
+  "g_owned_4_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 466.9,
+    "y": 240.7,
+    "w": 91.4,
+    "h": 17.2,
+    "field": "text_13",
+    "fieldKind": "text"
+  },
+  "g_owned_5_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 221.6,
+    "w": 72.6,
+    "h": 19.1,
+    "field": "text_57",
+    "fieldKind": "text"
+  },
+  "g_owned_5_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 123.8,
+    "y": 221.6,
+    "w": 72.6,
+    "h": 19.1,
+    "field": "text_42",
+    "fieldKind": "text"
+  },
+  "g_owned_5_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 200.4,
+    "y": 221.6,
+    "w": 72.5,
+    "h": 19.1,
+    "field": "text_58",
+    "fieldKind": "text"
+  },
+  "g_owned_5_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 221.6,
+    "w": 92.4,
+    "h": 19.1,
+    "field": "text_40",
+    "fieldKind": "text"
+  },
+  "g_owned_5_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 373.3,
+    "y": 221.6,
+    "w": 89.6,
+    "h": 19.1,
+    "field": "text_50",
+    "fieldKind": "text"
+  },
+  "g_owned_5_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 466.9,
+    "y": 221.6,
+    "w": 91.4,
+    "h": 19.1,
+    "field": "text_31",
+    "fieldKind": "text"
+  },
+  "g_owned_6_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 204.5,
+    "w": 72.6,
+    "h": 17.1,
+    "field": "text_25",
+    "fieldKind": "text"
+  },
+  "g_owned_6_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 123.8,
+    "y": 204.5,
+    "w": 72.6,
+    "h": 17.1,
+    "field": "text_10",
+    "fieldKind": "text"
+  },
+  "g_owned_6_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 200.4,
+    "y": 204.5,
+    "w": 72.5,
+    "h": 17.1,
+    "field": "text_27",
+    "fieldKind": "text"
+  },
+  "g_owned_6_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 204.5,
+    "w": 92.4,
+    "h": 17.1,
+    "field": "text_24",
+    "fieldKind": "text"
+  },
+  "g_owned_6_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 373.3,
+    "y": 204.5,
+    "w": 89.6,
+    "h": 17.1,
+    "field": "text_16",
+    "fieldKind": "text"
+  },
+  "g_owned_6_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 466.9,
+    "y": 204.5,
+    "w": 91.4,
+    "h": 17.1,
+    "field": "text_41",
+    "fieldKind": "text"
+  },
+  "g_residential_postal_code": {
+    "page": 6,
+    "kind": "chars",
+    "y": 354.7,
+    "h": 18.1,
+    "cells": [
+      {
+        "x": 493.7,
+        "sep": null
+      },
+      {
+        "x": 512.9,
+        "sep": null
+      },
+      {
+        "x": 532.1,
+        "sep": null
+      },
+      {
+        "x": 551.1,
+        "sep": null
+      }
+    ],
+    "fields": [
+      "text_91",
+      "text_63",
+      "text_79",
+      "text_99"
+    ]
+  },
+  "g_postal_postal_code": {
+    "page": 6,
+    "kind": "chars",
+    "y": 318.4,
+    "h": 18.1,
+    "cells": [
+      {
+        "x": 493.7,
+        "sep": null
+      },
+      {
+        "x": 512.9,
+        "sep": null
+      },
+      {
+        "x": 532.1,
+        "sep": null
+      },
+      {
+        "x": 551.1,
+        "sep": null
+      }
+    ],
+    "fields": [
+      "text_51",
+      "text_27",
+      "text_25",
+      "text_74"
+    ]
+  },
+  "g_business_postal_code": {
+    "page": 6,
+    "kind": "chars",
+    "y": 228.8,
+    "h": 17.1,
+    "cells": [
+      {
+        "x": 493.7,
+        "sep": null
+      },
+      {
+        "x": 512.7,
+        "sep": null
+      },
+      {
+        "x": 531.8,
+        "sep": null
+      },
+      {
+        "x": 550.9,
+        "sep": null
+      }
+    ],
+    "fields": [
+      "text_113",
+      "text_49",
+      "text_38",
+      "text_88"
+    ]
+  },
+  "g_home_dialling_code": {
+    "page": 6,
+    "kind": "text",
+    "x": 226.7,
+    "y": 209.7,
+    "w": 20.7,
+    "h": 19.1,
+    "field": "text_132",
+    "fieldKind": "text"
+  },
+  "g_home_telephone": {
+    "page": 6,
+    "kind": "text",
+    "x": 252.1,
+    "y": 209.7,
+    "w": 115.5,
+    "h": 19.1,
+    "field": "text_130",
+    "fieldKind": "text"
+  },
+  "g_work_dialling_code": {
+    "page": 6,
+    "kind": "text",
+    "x": 432.6,
+    "y": 209.7,
+    "w": 20.8,
+    "h": 19.1,
+    "field": "text_146",
+    "fieldKind": "text"
+  },
+  "g_work_telephone": {
+    "page": 6,
+    "kind": "text",
+    "x": 458.1,
+    "y": 209.7,
+    "w": 100.2,
+    "h": 19.1,
+    "field": "text_140",
+    "fieldKind": "text"
+  },
+  "g_spouse_id_type_passport": {
+    "page": 7,
+    "kind": "tick",
+    "x": 171,
+    "y": 745,
+    "w": 18,
+    "h": 18.1,
+    "field": "text_125",
+    "fieldKind": "text"
+  },
+  "g_spouse_passport": {
+    "page": 7,
+    "kind": "chars",
+    "y": 699.7,
+    "h": 18.1,
+    "cells": [
+      {
+        "x": 203.8,
+        "sep": null
+      },
+      {
+        "x": 261.8,
+        "sep": null
+      },
+      {
+        "x": 281.1,
+        "sep": null
+      },
+      {
+        "x": 300.5,
+        "sep": null
+      },
+      {
+        "x": 319.8,
+        "sep": null
+      },
+      {
+        "x": 339,
+        "sep": null
+      },
+      {
+        "x": 358.4,
+        "sep": null
+      },
+      {
+        "x": 377.7,
+        "sep": null
+      },
+      {
+        "x": 397,
+        "sep": null
+      },
+      {
+        "x": 416.4,
+        "sep": null
+      },
+      {
+        "x": 435.7,
+        "sep": null
+      },
+      {
+        "x": 455,
+        "sep": null
+      },
+      {
+        "x": 474.3,
+        "sep": null
+      },
+      {
+        "x": 493.7,
+        "sep": null
+      },
+      {
+        "x": 513,
+        "sep": null
+      },
+      {
+        "x": 532.3,
+        "sep": null
+      },
+      {
+        "x": 551.2,
+        "sep": null
+      }
+    ]
+  },
+  "h_negligence_station": {
+    "page": 8,
+    "kind": "text",
+    "x": 142.6,
+    "y": 340.4,
+    "w": 192.8,
+    "h": 17.4,
+    "field": "text_53",
+    "fieldKind": "text"
+  },
+  "h_negligence_case": {
+    "page": 8,
+    "kind": "text",
+    "x": 428.8,
+    "y": 340.4,
+    "w": 132.5,
+    "h": 17.4,
+    "field": "text_19",
+    "fieldKind": "text"
+  },
+  "h_negligence_charge": {
+    "page": 8,
+    "kind": "text",
+    "x": 142.6,
+    "y": 322,
+    "w": 192.9,
+    "h": 18.4,
+    "field": "text_23",
+    "fieldKind": "text"
+  },
+  "h_negligence_outcome": {
+    "page": 8,
+    "kind": "text",
+    "x": 428.8,
+    "y": 322,
+    "w": 132.5,
+    "h": 18.4,
+    "field": "text_20",
+    "fieldKind": "text"
+  },
+  "h_unfit_station": {
+    "page": 8,
+    "kind": "text",
+    "x": 142.6,
+    "y": 227.5,
+    "w": 192.8,
+    "h": 17.4,
+    "field": "text_22",
+    "fieldKind": "text"
+  },
+  "h_unfit_case": {
+    "page": 8,
+    "kind": "text",
+    "x": 428.8,
+    "y": 227.5,
+    "w": 132.5,
+    "h": 17.4,
+    "field": "text_28",
+    "fieldKind": "text"
+  },
+  "h_unfit_charge": {
+    "page": 8,
+    "kind": "text",
+    "x": 142.6,
+    "y": 210.1,
+    "w": 418.7,
+    "h": 17.4,
+    "field": "TextFormField 35",
+    "fieldKind": "text"
+  },
+  "h_unfit_date_from": {
+    "page": 8,
+    "kind": "text",
+    "x": 142.6,
+    "y": 191.7,
+    "w": 192.8,
+    "h": 18.4,
+    "field": "text_16",
+    "fieldKind": "text"
+  },
+  "h_unfit_period": {
+    "page": 8,
+    "kind": "text",
+    "x": 428.8,
+    "y": 191.7,
+    "w": 132.5,
+    "h": 18.4,
+    "field": "text_25",
+    "fieldKind": "text"
+  },
+  "h_confiscated_station": {
+    "page": 8,
+    "kind": "text",
+    "x": 142.6,
+    "y": 79.7,
+    "w": 192.8,
+    "h": 17.4,
+    "field": "text_36",
+    "fieldKind": "text"
+  },
+  "h_confiscated_case": {
+    "page": 8,
+    "kind": "text",
+    "x": 428.8,
+    "y": 79.7,
+    "w": 132.5,
+    "h": 17.4,
+    "field": "text_41",
+    "fieldKind": "text"
+  },
+  "h_confiscated_circumstances": {
+    "page": 8,
+    "kind": "text",
+    "x": 142.6,
+    "y": 63.3,
+    "w": 192.8,
+    "h": 16.4,
+    "field": "text_18",
+    "fieldKind": "text"
+  },
+  "h_confiscated_outcome": {
+    "page": 8,
+    "kind": "text",
+    "x": 428.8,
+    "y": 63.3,
+    "w": 132.5,
+    "h": 16.4,
+    "field": "text_27",
+    "fieldKind": "text"
+  },
   "g_association_yes": {
     "page": 7,
     "kind": "tick",
@@ -855,15 +1585,114 @@ export const SAPS271_COORDS = {
     "x": 199.9,
     "y": 199.4,
     "w": 361.3,
-    "h": 18.1
+    "h": 18.1,
+    "field": "text_131",
+    "fieldKind": "text"
   },
   "g_association_far": {
     "page": 7,
-    "kind": "text",
-    "x": 199.9,
+    "kind": "chars",
     "y": 181.3,
-    "w": 361.2,
-    "h": 18.1
+    "h": 18.1,
+    "cells": [
+      {
+        "x": 206.7,
+        "sep": null
+      },
+      {
+        "x": 225.3,
+        "sep": null
+      },
+      {
+        "x": 245.1,
+        "sep": null
+      },
+      {
+        "x": 265,
+        "sep": null
+      },
+      {
+        "x": 284.1,
+        "sep": null
+      },
+      {
+        "x": 302.6,
+        "sep": null
+      },
+      {
+        "x": 321.6,
+        "sep": null
+      },
+      {
+        "x": 341,
+        "sep": null
+      },
+      {
+        "x": 360.1,
+        "sep": null
+      },
+      {
+        "x": 379.2,
+        "sep": null
+      },
+      {
+        "x": 398.3,
+        "sep": null
+      },
+      {
+        "x": 417.3,
+        "sep": null
+      },
+      {
+        "x": 436.4,
+        "sep": null
+      },
+      {
+        "x": 455.5,
+        "sep": null
+      },
+      {
+        "x": 474.6,
+        "sep": null
+      },
+      {
+        "x": 493.7,
+        "sep": null
+      },
+      {
+        "x": 512.7,
+        "sep": null
+      },
+      {
+        "x": 531.8,
+        "sep": null
+      },
+      {
+        "x": 550.8,
+        "sep": null
+      }
+    ],
+    "fields": [
+      "text_23",
+      "text_8",
+      "text_12",
+      "text_4",
+      "text_5",
+      "text_96",
+      "text_65",
+      "text_53",
+      "text_79",
+      "text_97",
+      "text_111",
+      "text_132",
+      "text_112",
+      "text_123",
+      "text_118",
+      "TextFormField 34",
+      "text_101",
+      "text_91",
+      "text_113"
+    ]
   },
   "g_association_number": {
     "page": 7,
@@ -1350,11 +2179,8 @@ export type Saps271FieldName = keyof typeof SAPS271_COORDS;
  * list is what tells anyone why some values are editable and some are not.
  */
 export const SAPS271_DRAWN_NOT_FIELDED: string[] = [
-  "e_calibre",
-  "e_make",
   "g_citizen_pr",
-  "g_association_name",
-  "g_association_far"
+  "g_spouse_passport"
 ];
 
 export const SAPS271_UNRESOLVED: { name: string; label: string; page: number; reason: string }[] = [];

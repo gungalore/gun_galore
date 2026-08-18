@@ -220,6 +220,83 @@ function rowEndTick(pageNo, rowLabel, occurrence = 0) {
 }
 
 /**
+ * A telephone cell, which the form prints as "( ) " inside ONE box.
+ *
+ * The brackets are printed text sitting in the middle of a single ruled cell,
+ * not cell dividers, so there are two writing areas and no rule between them:
+ * the dialling code goes BETWEEN the brackets and the number AFTER them.
+ * Anchoring on a bracket the way the other resolvers anchor on a label finds a
+ * two-point gap, because the next cell edge is the far side of the whole box.
+ */
+function phonePart(pageNo, labelText, part, occurrence = 0) {
+  const c = ctx(pageNo, labelText, occurrence);
+  if (c.error) return c;
+  const idx = c.cells.findIndex((cell) => cell.text.includes(labelText.trim()));
+  if (idx < 0) return { error: `"${labelText}" p${pageNo} is not inside a ruled cell` };
+  const cell = c.cells[idx + 1];
+  if (!cell) return { error: `nothing after "${labelText}" p${pageNo}` };
+
+  const inside = c.items.filter((i) => i.x >= cell.a - 1 && i.x < cell.b);
+  const open = inside.find((i) => i.s === '(');
+  const close = inside.find((i) => i.s === ')');
+  if (!open || !close) {
+    return { error: `no ( ) inside the cell after "${labelText}" p${pageNo}` };
+  }
+
+  const x = part === 'code' ? open.x + open.w + 1 : close.x + close.w + 1;
+  const right = part === 'code' ? close.x - 1 : cell.b - 2;
+  const w = right - x;
+  if (w < 8) return { error: `${part} box after "${labelText}" p${pageNo} is ${r1(w)}pt` };
+  return {
+    page: pageNo, kind: 'text',
+    x: r1(x), y: r1(c.bottom), w: r1(w), h: r1(c.top - c.bottom),
+  };
+}
+
+/**
+ * A cell in a ruled TABLE, addressed by row and column.
+ *
+ * Item 2.1 on page 5 — "details of firearms in your possession" — is fourteen
+ * identical rows under one header. There is no label beside any of them, so
+ * every other resolver here is useless: they all work by naming the text the
+ * form prints next to a box.
+ *
+ * So this walks the grid instead. The header row is found by its own label,
+ * the row bands below it are taken in order, and the columns are the cells
+ * those bands are divided into.
+ */
+function tableCell(pageNo, headerLabel, rowIndex, colIndex) {
+  const c = ctx(pageNo, headerLabel);
+  if (c.error) return c;
+  const ys = uniq(c.pg.horiz.map((h) => h.y));
+
+  // Rows run DOWN the page from the header band, so descending y. The FIRST
+  // row's top edge is the header band's own bottom — leaving it out shifted
+  // every row up by one and wrote each firearm into the line below it.
+  const bands = [c.bottom, ...ys.filter((y) => y < c.bottom - 1).sort((a, b) => b - a)];
+  const top = bands[rowIndex];
+  const bottom = bands[rowIndex + 1];
+  if (top === undefined || bottom === undefined) {
+    return { error: `"${headerLabel}" p${pageNo} has no row ${rowIndex}` };
+  }
+
+  const verts = uniq(
+    c.pg.vert.filter((v) => v.y < top - 0.5 && v.y + v.h > bottom + 0.5).map((v) => v.x),
+  );
+  const a = verts[colIndex];
+  const b = verts[colIndex + 1];
+  if (a === undefined || b === undefined) {
+    return {
+      error: `"${headerLabel}" p${pageNo} row ${rowIndex} has no column ${colIndex} (${verts.length - 1} columns)`,
+    };
+  }
+  return {
+    page: pageNo, kind: 'text',
+    x: r1(a + 2), y: r1(bottom), w: r1(b - a - 4), h: r1(top - bottom),
+  };
+}
+
+/**
  * A wide box that sits BELOW its heading rather than beside it.
  *
  * Item 61, "Motivation of purpose for which the firearm is required", is a
@@ -338,12 +415,99 @@ const SPEC = {
   g_spouse_id_number: ['chars', 7, 'Identity number of spouse'],
   g_spouse_name: ['text', 7, 'Name and surname'],
 
+
+  // ── Section D.1 — which kind of holder ────────────────────────────
+  d_holder_main: ['tick', 2, 'Main firearm licence holder'],
+  d_holder_additional: ['tick', 2, 'Additional firearm licence holder'],
+
+  // ── Item 2.1, page 5 — firearms already licensed to the applicant ─
+  //
+  // Fourteen ruled rows under one header, no label on any of them. Six are
+  // mapped: more than almost anyone holds, and an applicant with more can
+  // write the rest in by hand rather than have us guess at a row limit.
+  //
+  // This table is also what the OVERLAP CHECK reads. Free text could never
+  // answer "does the applicant already hold something in this class", which is
+  // the question that gets a second rifle refused.
+  g_owned_1_type: ['table', 5, 'Type', 0, 0],
+  g_owned_1_calibre: ['table', 5, 'Type', 0, 1],
+  g_owned_1_make: ['table', 5, 'Type', 0, 2],
+  g_owned_1_barrel_serial: ['table', 5, 'Type', 0, 3],
+  g_owned_1_frame_serial: ['table', 5, 'Type', 0, 4],
+  g_owned_1_licence: ['table', 5, 'Type', 0, 5],
+  g_owned_2_type: ['table', 5, 'Type', 1, 0],
+  g_owned_2_calibre: ['table', 5, 'Type', 1, 1],
+  g_owned_2_make: ['table', 5, 'Type', 1, 2],
+  g_owned_2_barrel_serial: ['table', 5, 'Type', 1, 3],
+  g_owned_2_frame_serial: ['table', 5, 'Type', 1, 4],
+  g_owned_2_licence: ['table', 5, 'Type', 1, 5],
+  g_owned_3_type: ['table', 5, 'Type', 2, 0],
+  g_owned_3_calibre: ['table', 5, 'Type', 2, 1],
+  g_owned_3_make: ['table', 5, 'Type', 2, 2],
+  g_owned_3_barrel_serial: ['table', 5, 'Type', 2, 3],
+  g_owned_3_frame_serial: ['table', 5, 'Type', 2, 4],
+  g_owned_3_licence: ['table', 5, 'Type', 2, 5],
+  g_owned_4_type: ['table', 5, 'Type', 3, 0],
+  g_owned_4_calibre: ['table', 5, 'Type', 3, 1],
+  g_owned_4_make: ['table', 5, 'Type', 3, 2],
+  g_owned_4_barrel_serial: ['table', 5, 'Type', 3, 3],
+  g_owned_4_frame_serial: ['table', 5, 'Type', 3, 4],
+  g_owned_4_licence: ['table', 5, 'Type', 3, 5],
+  g_owned_5_type: ['table', 5, 'Type', 4, 0],
+  g_owned_5_calibre: ['table', 5, 'Type', 4, 1],
+  g_owned_5_make: ['table', 5, 'Type', 4, 2],
+  g_owned_5_barrel_serial: ['table', 5, 'Type', 4, 3],
+  g_owned_5_frame_serial: ['table', 5, 'Type', 4, 4],
+  g_owned_5_licence: ['table', 5, 'Type', 4, 5],
+  g_owned_6_type: ['table', 5, 'Type', 5, 0],
+  g_owned_6_calibre: ['table', 5, 'Type', 5, 1],
+  g_owned_6_make: ['table', 5, 'Type', 5, 2],
+  g_owned_6_barrel_serial: ['table', 5, 'Type', 5, 3],
+  g_owned_6_frame_serial: ['table', 5, 'Type', 5, 4],
+  g_owned_6_licence: ['table', 5, 'Type', 5, 5],
+
+  // ── page 6 — postal codes, which the address fields do not carry ──
+  // Four cells each, one digit per cell.
+  g_residential_postal_code: ['chars', 6, 'Postal Code', 0],
+  g_postal_postal_code: ['chars', 6, 'Postal Code', 1],
+  g_business_postal_code: ['chars', 6, 'Postal Code', 2],
+
+  // ── page 6 — telephone numbers ────────────────────────────────────
+  // The form prints "Home ( ) " — the area code goes between the brackets
+  // and the number after them, so the brackets themselves are the anchors.
+  g_home_dialling_code: ['phone', 6, 'Home', 'code'],
+  g_home_telephone: ['phone', 6, 'Home', 'number'],
+  g_work_dialling_code: ['phone', 6, 'Work', 'code'],
+  g_work_telephone: ['phone', 6, 'Work', 'number'],
+
+  // ── page 7 — spouse identification ────────────────────────────────
+  g_spouse_id_type_passport: ['tick', 7, 'Passport'],
+  g_spouse_passport: ['chars', 7, 'Passport number of spouse'],
+
+  // ── items 65-67 — the detail behind the remaining three questions ─
+  // Occurrences run down page 8 in the order the questions appear.
+  h_negligence_station: ['text', 8, 'Police station', 6],
+  h_negligence_case: ['text', 8, 'CAS/Case number', 6],
+  h_negligence_charge: ['text', 8, 'Charge', 2],
+  h_negligence_outcome: ['text', 8, 'Outcome', 2],
+
+  h_unfit_station: ['text', 8, 'Police station', 8],
+  h_unfit_case: ['text', 8, 'CAS/Case number', 8],
+  h_unfit_charge: ['text', 8, 'Charge', 4],
+  h_unfit_date_from: ['text', 8, 'Date from', 0],
+  h_unfit_period: ['text', 8, 'Period', 0],
+
+  h_confiscated_station: ['text', 8, 'Police station', 10],
+  h_confiscated_case: ['text', 8, 'CAS/Case number', 10],
+  h_confiscated_circumstances: ['text', 8, 'Circumstances', 2],
+  h_confiscated_outcome: ['text', 8, 'Outcome', 4],
+
   // Items 55-60 — accredited association. Central to a section 16 application:
   // dedicated status is the whole basis of it.
   g_association_yes: ['tick', 7, 'YES'],
   g_association_no: ['tick', 7, 'NO'],
   g_association_name: ['text', 7, 'State name of accredited association'],
-  g_association_far: ['text', 7, 'FAR number of accredited association'],
+  g_association_far: ['chars', 7, 'FAR number of accredited association'],
   g_association_number: ['text', 7, 'Membership number'],
   g_association_joined: ['chars', 7, 'Date joined'],
   g_association_expiry: ['chars', 7, 'Expiry date'],
@@ -414,22 +578,38 @@ const SPEC = {
 async function loadWidgets(file) {
   const { PDFDocument } = require('pdf-lib');
   const pdf = await PDFDocument.load(fs.readFileSync(file), { ignoreEncryption: true });
-  const idx = new Map(pdf.getPages().map((pg, i) => [pg.ref.toString(), i + 1]));
-  const widgets = [];
+
+  const byDict = new Map();
   for (const f of pdf.getForm().getFields()) {
     const kind =
       f.constructor.name === 'PDFCheckBox' ? 'checkbox'
       : f.constructor.name === 'PDFSignature' ? 'signature'
       : 'text';
     for (const w of f.acroField.getWidgets()) {
-      const r = w.getRectangle();
+      byDict.set(w.dict, { name: f.getName(), kind, w });
+    }
+  }
+
+  // WALK EACH PAGE'S /Annots, rather than reading a widget's /P back-pointer.
+  // /P is OPTIONAL in the PDF spec and this template omits it on fourteen
+  // widgets — including the one over the accredited-association name. Reading
+  // it put those on "page 0", so they matched nothing and their boxes were
+  // silently reported as unfielded. The page's own annotation list is
+  // authoritative and always present.
+  const widgets = [];
+  pdf.getPages().forEach((pg, i) => {
+    const annots = pg.node.Annots();
+    if (!annots) return;
+    for (let k = 0; k < annots.size(); k++) {
+      const hit = byDict.get(annots.lookup(k));
+      if (!hit) continue;
+      const r = hit.w.getRectangle();
       widgets.push({
-        name: f.getName(), kind,
-        page: idx.get(String(w.dict.get(w.dict.context.obj('P')))) ?? 0,
+        name: hit.name, kind: hit.kind, page: i + 1,
         x: r.x, y: r.y, w: r.width, h: r.height,
       });
     }
-  }
+  });
   return widgets;
 }
 
@@ -485,12 +665,15 @@ const RESOLVERS = {
   chars: charCells,
   rowEnd: rowEndTick,
   block: blockBelow,
+  table: tableCell,
+  phone: phonePart,
 };
 
 const resolved = {};
 const failed = [];
-for (const [name, [kind, page, label, occ]] of Object.entries(SPEC)) {
-  const r = RESOLVERS[kind](page, label, occ ?? 0);
+for (const [name, [kind, page, label, occ, ...more]] of Object.entries(SPEC)) {
+  const rest = occ === undefined ? [] : [occ, ...more];
+  const r = RESOLVERS[kind](page, label, ...(rest.length ? rest : [occ ?? 0]));
   if (r.error) failed.push({ name, kind, page, label, error: r.error });
   else resolved[name] = r;
 }
