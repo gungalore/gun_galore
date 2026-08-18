@@ -1,0 +1,187 @@
+# Licence Services + Community Feed — Build Plan
+
+*Planned 2026-08-18 with the operator (16 tickbox decisions). Status: PLANNED, not started.*
+*Competitive context: Safari Outdoor app teardown 2026-08-18 (25 operator photos, v4.5.8+420) —
+see `memory/project_competitor_safari_outdoor.md`. Their marketplace is dead (16 ads) but their
+feed is alive and their licence utility is the sticky asset. This plan out-builds it.*
+
+---
+
+## Locked decisions
+
+| # | Decision | Choice |
+|---|---|---|
+| 1 | Build order | **Writer → Checker → Feed + Awards** |
+| 2 | Writer production | **Fully automated, instant PDF** (no human review) |
+| 3 | Price | **R199** per motivation |
+| 4 | Placement | **Behind the All Outdoor login only** — no public pages, no separate domain |
+| 5 | Licence types at launch | **All four**: self-defence (s13), hunting (s15+s16), sport shooting (s16), renewals (s24) |
+| 6 | Firearm-buyer perk | **Half price (R99)** with a firearm purchase on the platform |
+| 7 | Pre-payments launch | **Free beta, capped (~first 100)**, testimonial permission asked |
+| 8 | Input method | **Form + Boet follow-ups**, PLUS camera-scan uploads of previous motivations, current licences, competency certs (operator addition) |
+| 8b | Sensitive file storage | **ON OUR OWN SERVER, encrypted at rest** (operator, 2026-08-18) — see below |
+| 8c | Sample motivations | Operator supplies real motivations as reference. **Structure/register only — never verbatim** (see below) |
+| 9 | Writer branding | **Boet runs the interview; the PDF is formal** — no mascot anywhere near the document |
+| 10 | Second module | **Checker** |
+| 11 | Checker depth | **Milestones + crowd stats + auto-drafted follow-up/escalation letters** |
+| 12 | Feed visibility | **Split**: outdoor content public, hunting/regulated content members-only |
+| 13 | Post structure | **Structured types from day one** (General/Hunting/Target/Fishing/Question/Review) |
+| 14 | Moderation | **Claude pre-screen on every post + comment, fail-closed** + user reports |
+| 15 | Awards | **Badges + levels + leaderboard — cosmetic only**, no monetary value |
+| 16 | Rank flavour | **Bilingual SA outdoor ranks** (Groentjie → … → Legende; final ladder at build time) |
+
+---
+
+## Phase 1 — Motivation Writer (ships first)
+
+**The market:** fly-by-night writers charge R450–R1,000 per motivation. We produce a
+better-structured document for R199 (R99 with a firearm purchase, free for the first ~100
+beta users). Safari Outdoor's app has a "Motivation Application" menu item — this out-builds it.
+
+### Flow
+1. **Pick the motivation type** — s13 self-defence / s15 occasional hunter / s16 dedicated
+   hunter / s16 dedicated sport shooter / s24 renewal.
+2. **Structured form** — occupation, purpose, the specific firearm (make/model/calibre and
+   why it fits the stated purpose), safe storage arrangements, association memberships,
+   experience history, current licences, prior applications/refusals.
+3. **Camera-scan uploads** — existing licences, previous motivations, competency certificate,
+   association cards. REUSE: the KYC camera flow (`kyc/verify`) and the Claude-vision licence
+   reader (SAP 534 work) already exist; extraction PREFILLS the form so the user confirms
+   instead of typing.
+4. **Boet follow-ups** — targeted questions only where answers are thin (conversational,
+   Boet-voiced). ~15 minutes total.
+5. **Generation** — Claude, one prompt framework per licence type, citing the FCA sections
+   that matter for that type, built strictly from the applicant's OWN facts.
+   **Anti-template engineering is mandatory** (operator chose no human review): enforced
+   structural variation between documents + a per-user throttle (one motivation per type per
+   application) so CFR never sees a flood of identical documents.
+6. **Automated quality gate** — a second Claude pass scores completeness, specificity and
+   internal consistency. Fail → more follow-up questions. A thin motivation never renders.
+7. **Formal PDF** — sober template, applicant's name, no mascot, no All Outdoor branding
+   beyond a discreet footer. Stored encrypted in the account, re-downloadable.
+
+### Sensitive file storage — on our own server (operator decision 2026-08-18)
+
+ID documents, firearm licences, competency certificates and previous motivations
+are stored **on the alloutdoor box, encrypted at rest**, NOT on Cloudinary.
+
+This replaces the earlier "scan-and-forget" design. The infra audit found that every
+existing upload in the codebase lands on a **public** Cloudinary `secure_url` — there is no
+private mode, no signed URL, no S3/R2 anywhere, and `ALLOUTDOOR-REPLATFORM.md` already
+concedes "the URL is unguessable, which is obscurity, not access control." Scan-and-forget
+was the workaround for that; keeping the files properly is the better answer, so the
+workaround is gone.
+
+BUILT: `backend/src/common/secure-file-storage.service.ts` (+ `encryptBuffer`/`decryptBuffer`
+in `blob-crypto.ts`). AES-256-GCM on disk, `0600`, sharded `<namespace>/<yyyy>/<mm>/<id>.enc`,
+path-traversal gate on every read (the key round-trips through the DB and a request, so it is
+treated as untrusted coming back in). Location: `SECURE_UPLOAD_DIR`, default
+`<home>/secure-uploads` — deliberately OUTSIDE `/home/alloutdoor/app` so deploys never touch
+it. Box has 81 GB free. There is **no public URL at all**; bytes are only reachable through an
+authenticated endpoint that checks ownership first, and deletion is real deletion.
+
+⚠️ **Backups are now two things.** Everything worth keeping used to be in Postgres, so a
+pg_dump was a complete backup. These files are not in the database — a restore without the
+file tree leaves upload rows whose bytes are gone. Any backup routine must cover both.
+⚠️ Rotating `ID_HASH_SECRET` makes every stored file unreadable. Nothing can recover them.
+
+### Sample motivations from the operator
+
+The operator supplies real motivations as reference material. Handling rules:
+
+- **Never committed to this repo** and never stored with live user data — they contain third
+  parties' ID numbers, addresses and security circumstances.
+- Used to derive **structure, section ordering, register and the shape of a strong argument**.
+  Short paraphrased fragments may inform the prompt frameworks.
+- **Never reproduced verbatim** in a generated document. Two independent reasons: pasting real
+  prose into the generator recreates the exact template-sameness risk the variation engine
+  exists to prevent, and motivations bought from a paid writer carry a provenance question.
+- Where a sample came from a third-party service, treat it as competitor reference, not source
+  material.
+
+### Rules that are not negotiable
+- **Never promise outcomes.** No "improves your chances / guaranteed approval" anywhere in
+  copy. We sell structure and completeness, not odds. (CPA / advertising exposure.)
+- **Disclaimer on every document**: not legal advice; the applicant confirms the facts are
+  true and signs it as their own motivation.
+- **POPIA**: motivation data is deeply personal (ID, address, security concerns, firearm
+  details). Encrypt at rest (same pattern as the SAP 534 encrypted SA ID), stated purpose,
+  retention policy, deletion on request. Prompt-sanitiser rules apply (existing).
+- **Beta cap** is a DB setting with a counter, testimonial permission is an explicit
+  checkbox, and beta users get asked for their CFR outcome later — which seeds Phase 2's
+  crowd data.
+- **Attorney reviews the TEMPLATES once** (prompt frameworks + disclaimer + PDF skeleton),
+  not each document. Same posture as the raffle rules.
+
+### Commercial wiring
+- R199 standalone; R99 voucher auto-attached to a firearm order (time-boxed, order-linked).
+- Payments are OFF until Peach — the R199 price goes live with the paygate; before that the
+  capped free beta runs. No manual EFT (retired).
+- Marketing: in-app (firearm listing pages, checkout, account), consent-based SMS/WhatsApp
+  to the existing base, word of mouth. **No public pages** (operator decision — the public
+  site stays firearm-clean).
+
+## Phase 2 — Application Checker
+
+**Fact that shapes it:** SAPS/CFR has no API. Nobody can query application status
+programmatically — the honest build is self-tracked milestones plus crowd data, which is
+also a unique-data moat nobody in SA publishes.
+
+- **Milestones** (user-updated, with nudges): submitted at DFO → SAP 523 reference captured
+  → CFR acknowledged → in circulation → outcome (approved / refused → appeal window).
+- **Crowd stats**: anonymised aggregates by licence type + province — "your s16 is at day 62;
+  the median approval in Gauteng reached circulation at day 90". Only shown where the sample
+  is big enough to be anonymous (n ≥ threshold).
+- **Letters** (the differentiator): when an application stalls past the crowd norm, Boet
+  drafts the follow-up — status enquiry to the DFO/CFR, PAJA unreasonable-delay escalation,
+  refusal → appeal-notice reminder with deadline tracking. Formal PDFs the user sends
+  themselves; we never send on their behalf. Attorney reviews these templates too.
+- **Loop with Phase 1**: writer users are prompted to track the application the motivation
+  went into; outcomes captured here are the quality feedback the automated writer needs.
+
+## Phase 3 — Feed + Awards
+
+- **Structured post types**: General / Hunting / Target / Fishing / Question / Review, with
+  optional gear fields (rifle+calibre, rod+bait, scope…) mirroring the proven Safari
+  blueprint — but ours link to marketplace listings and brand pages.
+- **Visibility split, enforced server-side** like `publicVisible`: Hunting/Target and
+  anything regulated-tagged is members-only, full stop. Fishing/camping/general outdoor
+  posts can be public (per-post toggle), giving the SEO + WhatsApp-unfurl growth loop that
+  Safari's screenshot-blocked, app-locked feed cannot have.
+- **Moderation**: Claude pre-screen on EVERY post and comment before publish, fail-closed —
+  same pattern as listing moderation. Blocks: ammunition sales talk, contact-detail
+  exchange, doxxing, threats. Graphic trophy photos: behind the wall only (the split does
+  this automatically), tap-to-reveal blur as polish.
+- **Awards**: points for posting, commenting, and likes RECEIVED (never likes given —
+  anti-farming), quality-weighted, daily caps. Levels with bilingual ranks, profile badges,
+  monthly leaderboard (usernames only — house rule). Cosmetic only.
+  ⚖️ **Awards must NEVER grant prize-draw entries** — activity-for-entries walks straight
+  into promotional-competition rules and poisons the draw's subscription-benefit framing.
+- **Cold start**: beta writer users are the seed audience; Boet posts a weekly digest;
+  operator posts. Feed ships LAST for exactly this reason.
+
+## Shared infrastructure (all reused, all existing)
+Clerk auth + the members wall · KYC camera capture + Claude vision extraction · fail-closed
+moderation service pattern · notifications (push/SMS/email) · activity/insights tracking ·
+admin kit (new modules: motivation queue viewer, checker stats, feed mod queue, awards
+config) · feature flags per module, default OFF, dark-deployable · encrypted document
+storage (SAP 534 pattern).
+
+## Sequencing + dependencies
+1. Phase 1 build → **capped free beta live** (no payments needed).
+2. Peach go-live → R199/R99 switches on (same flag discipline as everything else).
+3. Phase 2 build during beta (letters templates to attorney alongside Phase 1 templates).
+4. Phase 3 after the writer+checker have filled the user base.
+5. Later phases (parked): multi-association activity submission (the anti-FOSA neutrality
+   wedge), concierge checker tier, PRO integration (free motivation/year?), sensitive-image
+   blur, rank-ladder naming session.
+
+## Risks worth remembering
+- **Template-sameness at CFR** is the existential product risk of full automation — the
+  variation engineering + quality gate + throttle exist because of it. If beta feedback
+  shows CFR pushback, the fallback is spot-check human review, already designed around.
+- **The public feed is the only public surface in this plan** — everything else is behind
+  the wall. Any leak of regulated content to the public side is a Meta-strategy breach;
+  server-side enforcement, never client-side.
+- **The R99 buyer discount** needs the voucher to survive refunds/cancellations sanely —
+  voucher voids if the firearm order is refunded.

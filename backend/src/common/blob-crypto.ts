@@ -106,6 +106,36 @@ export function decryptText(encoded: string): string {
 }
 
 /**
+ * Encrypt raw BYTES — scanned licences, ID documents, previous motivations.
+ *
+ * Same envelope as encryptText but binary in, binary out: there is no base64
+ * round-trip, because these are megabyte-scale files written straight to disk
+ * and base64 would inflate them by a third for no benefit.
+ */
+export function encryptBuffer(plain: Buffer): Buffer {
+  if (!Buffer.isBuffer(plain) || plain.length === 0) {
+    throw new Error('Nothing to encrypt — refusing to store an empty file');
+  }
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv(ALGORITHM, getKey(), iv);
+  const ct = Buffer.concat([cipher.update(plain), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), ct]);
+}
+
+/** Decrypt bytes written by encryptBuffer. Throws on tamper or truncation. */
+export function decryptBuffer(encoded: Buffer): Buffer {
+  if (!Buffer.isBuffer(encoded) || encoded.length < IV_LENGTH + TAG_LENGTH + 1) {
+    throw new Error('Ciphertext is too short to be valid');
+  }
+  const iv = encoded.subarray(0, IV_LENGTH);
+  const tag = encoded.subarray(IV_LENGTH, IV_LENGTH + TAG_LENGTH);
+  const ct = encoded.subarray(IV_LENGTH + TAG_LENGTH);
+  const decipher = crypto.createDecipheriv(ALGORITHM, getKey(), iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ct), decipher.final()]);
+}
+
+/**
  * Encrypt a JSON-serialisable value. Convenience over encryptText so callers
  * don't each re-invent the stringify/parse pair (and so the parse failure mode
  * lives in exactly one place).
