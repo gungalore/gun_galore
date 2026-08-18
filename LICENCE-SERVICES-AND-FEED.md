@@ -172,6 +172,43 @@ This cuts across two things already built, and both needed changing:
   to the existing base, word of mouth. **No public pages** (operator decision — the public
   site stays firearm-clean).
 
+### Phase 1 — BUILT (2026-08-18/19)
+
+| Piece | Where |
+|---|---|
+| Field registry, 170 fields, conditional visibility | `motivation-fields.ts` |
+| Prompts, structure plan, sameness engine | `motivation-prompts.ts`, `motivation-structure.ts` |
+| Visual variation — 13 fonts × 10 palettes × 4 leadings × 6 formats | `motivation-style.ts` |
+| Overlap check (".308 and .270 are both medium game") | `motivation-overlap.ts` |
+| Price table R199 / R99 / FREE | `motivation-pricing.ts` |
+| Gap detection (free) + ONE batched Claude call | `motivation-gaps.ts` |
+| Profile prefill with per-motivation consent | `motivation-profile.ts` |
+| Uploads → encrypted store, follow-up interview | `motivations.service.ts` |
+| Retention purge + account-deletion purge | `motivation-retention.service.ts` |
+| SAPS 271: measured map, mapping, fill service | `saps271-*.ts`, `scripts/saps271-*.mjs` |
+| Wizard | `frontend/app/motivations/` |
+
+**Still to do before the flag goes on:**
+
+1. ⬜ **Attorney reviews the templates** — prompt frameworks, disclaimer, PDF
+   skeleton, and the declaration copy in the wizard. Gating item, agreed up front.
+2. ⬜ **Confirm the SAPS 271 revision** is current before anyone prints one. The
+   checklist already marks the form reference `verifyBeforeUse`.
+3. ⬜ **Verify the fee** on the checklist, same reason.
+4. ⬜ **Pin `SECURE_UPLOAD_DIR`** explicitly on the box. It defaults to
+   `<homedir>/secure-uploads`; under pm2 that resolves to whatever the service
+   account's HOME is, and changing the account later makes existing files
+   invisible — `read()` just ENOENTs, which is not an error anyone would notice.
+5. ⬜ **Check `ID_HASH_SECRET` is set on the live box.** main.ts now warns loudly
+   at boot. Without it every upload 500s AND KYC quietly writes ID hashes under a
+   fallback salt that stop matching once it IS set.
+6. ⬜ **Exercise the wizard against a real Clerk session** — it could not be run
+   locally, because production keys are domain-locked and localhost bounces every
+   authenticated route.
+7. ⬜ **Back up the encrypted file tree.** A pg_dump is no longer a complete
+   backup: restoring the database without `SECURE_UPLOAD_DIR` leaves upload rows
+   whose bytes are gone.
+
 ## Phase 2 — Application Checker
 
 **Fact that shapes it:** SAPS/CFR has no API. Nobody can query application status
