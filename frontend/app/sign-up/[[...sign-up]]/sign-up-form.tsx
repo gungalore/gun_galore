@@ -640,7 +640,7 @@ export default function SignUpForm() {
                 type={showPassword ? 'text' : 'password'}
                 required
                 aria-required
-                minLength={8}
+                minLength={15}
                 value={form.password}
                 onChange={(e) => set('password', e.target.value)}
                 style={{ ...inputStyle, paddingRight: 56 }}

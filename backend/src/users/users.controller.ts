@@ -18,6 +18,7 @@ import {
 import type { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { Throttle } from '@nestjs/throttler';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { ClerkOrTokenGuard } from '../auth/clerk-or-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -379,7 +380,11 @@ export class UsersController {
   // Sends a 4-digit code to the new number. Returns { sent: true } on
   // success. stub:true in dev means the SMS was logged rather than
   // actually sent (no SMSPortal config) — the code is in SmsLog.
+  // ⚠️ THROTTLED. Each call sends a REAL SMS at our cost, and the global
+  // bucket is 60/min keyed on IP — enough for one client to burn sixty
+  // messages a minute. Matches the KYC module's limit next door.
   @Post('me/phone/request-otp')
+  @Throttle({ default: { limit: 3, ttl: 600_000 } })
   @UseGuards(ClerkGuard)
   async requestPhoneOtp(
     @CurrentUser() clerkId: string,
@@ -394,7 +399,11 @@ export class UsersController {
   // ─────────────────── Phone change: verify OTP ──────────────────────
   // Body: { code: "1234" }
   // On success: { verified: true } and the phone is now marked verified.
+  // ⚠️ THROTTLED, and the service counts wrong guesses on top. Belt and
+  // braces on purpose: the throttle is IP-keyed and an attacker rotates IPs,
+  // so the per-code attempt cap is the one that actually holds.
   @Post('me/phone/verify')
+  @Throttle({ default: { limit: 10, ttl: 600_000 } })
   @UseGuards(ClerkGuard)
   async verifyPhoneOtp(
     @CurrentUser() clerkId: string,

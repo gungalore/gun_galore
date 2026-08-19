@@ -448,6 +448,27 @@ export class LicenceCentreService {
 
     const plan = renewalPlan(src);
 
+    // IDEMPOTENT PER LICENCE. Tapping again — after a browser Back, or on a
+    // later visit, since the card never changes state — used to hit the
+    // one-per-type constraint and tell them to delete the renewal they were
+    // trying to get back to. Hand them the existing one instead.
+    const existing = await this.prisma.motivation.findFirst({
+      where: {
+        userId: user.id,
+        licenceType: 'S24_RENEWAL',
+        applicationRef: plan.applicationRef,
+      },
+      select: { id: true, referenceNumber: true },
+    });
+    if (existing) {
+      return {
+        motivationId: existing.id,
+        referenceNumber: existing.referenceNumber,
+        seeded: 0,
+        resumed: true,
+      };
+    }
+
     // ⚠️ THE MOTIVATION IS CREATED BY THE WRITER, not written here. It owns the
     // MO reference number, the beta seat check, the profile prefill and the
     // variant seed — a second creation path would drift from all four.
@@ -493,6 +514,7 @@ export class LicenceCentreService {
       motivationId: motivation.id,
       referenceNumber: motivation.referenceNumber,
       seeded: Object.keys(plan.seed).length,
+      resumed: false,
     };
   }
 

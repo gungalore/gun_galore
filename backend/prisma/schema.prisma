@@ -218,6 +218,12 @@ model User {
   phoneVerified     Boolean    @default(false)
   phoneOtpHash      String?
   phoneOtpExpiresAt DateTime?
+  /// Wrong guesses against the CURRENT code. A 4-digit code is 10,000
+  /// possibilities and the window is ten minutes, so without a cap the only
+  /// thing standing between an attacker and somebody's phone number is the
+  /// global 60/min IP bucket — which rotating IPs walk straight through.
+  /// Five misses burns the code; they must request a new one.
+  phoneOtpAttempts  Int        @default(0)
   firstName         String?
   lastName          String?
   avatarUrl         String?

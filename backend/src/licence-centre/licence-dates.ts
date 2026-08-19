@@ -73,6 +73,13 @@ export function parseIsoDate(s: string | null | undefined): Date | null {
     : null;
 }
 
+/** Midnight UTC on the same day. Used so a day count agrees with a date. */
+export function startOfUtcDay(d: Date): Date {
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+  );
+}
+
 /** `yyyy-mm-dd` for a Date, in UTC — never the box's local day. */
 export function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);

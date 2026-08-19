@@ -25,10 +25,7 @@ export interface RenewalSource {
   details: Record<string, string>;
 }
 
-export type RenewalRefusal =
-  | 'not-a-licence'
-  | 'no-confirmed-date'
-  | 'no-licence-number';
+export type RenewalRefusal = 'not-a-licence' | 'no-confirmed-date';
 
 export interface RenewalPlan {
   /** Answers to seed the new motivation with. */
@@ -58,7 +55,15 @@ export function renewalRefusal(src: RenewalSource): RenewalRefusal | null {
   // licence runs out, and an unconfirmed date is one nobody has checked.
   if (!src.expiresOn || !src.confirmedAt) return 'no-confirmed-date';
 
-  if (!licenceNumber(src.details)) return 'no-licence-number';
+  // ⚠️ NOT REFUSED FOR A MISSING LICENCE NUMBER, deliberately.
+  //
+  // It used to be, and it was a dead end with no exit: the extraction prompt
+  // omits any value it cannot read with certainty, so a glare on the card
+  // loses the number while the expiry reads fine — and nothing anywhere in
+  // the product could then add it. The wizard asks for
+  // existing_licence_number as a required, editable field anyway, so the
+  // honest behaviour is to open the renewal and let them type the one value
+  // we could not read.
 
   return null;
 }
@@ -69,8 +74,6 @@ export const REFUSAL_COPY: Record<RenewalRefusal, string> = {
     'A renewal pack is for a firearm licence. Competency and dedicated status are renewed separately, through your association or the police station.',
   'no-confirmed-date':
     'Confirm the expiry date on this document first — the renewal is built around it.',
-  'no-licence-number':
-    'We could not read the licence number off this document. Add it and we can carry it into the renewal.',
 };
 
 /**
@@ -94,13 +97,26 @@ export function renewalPlan(src: RenewalSource): RenewalPlan {
   put('existing_licence_number', number);
   if (src.expiresOn) put('licence_expiry', toIsoDate(src.expiresOn));
 
+  // THE FIREARM ITSELF, on the keys the WIZARD renders.
+  //
+  // ⚠️ These are not the same keys as the existing_firearm_1_* block below.
+  // That block feeds the SAPS 271 table and the overlap engine; the step the
+  // applicant actually sees — "The firearm" — reads firearm_make,
+  // firearm_calibre and friends, and every one of them is required. Seeding
+  // only the 271 keys meant the card promised "already carrying the
+  // firearm's details" and then presented five blank required boxes.
+  put('firearm_make', d.make);
+  put('firearm_calibre', d.calibre);
+  put('firearm_type', normaliseFirearmType(d.firearm_type));
+  put('firearm_serial', d.frame_serial);
+
   // The renewal form asks about the firearm itself, and the licence names it.
   // These are the same keys the overlap engine reads, so a renewal that also
   // mentions other owned firearms lines up with the rest of the registry.
   put('existing_firearm_1_licence_no', number);
   put('existing_firearm_1_make', d.make);
   put('existing_firearm_1_calibre', d.calibre);
-  put('existing_firearm_1_type', d.firearm_type);
+  put('existing_firearm_1_type', normaliseFirearmType(d.firearm_type));
   put('existing_firearm_1_frame_serial', d.frame_serial);
   put('existing_firearm_1_barrel_serial', d.barrel_serial);
 
@@ -121,4 +137,29 @@ export function renewalPlan(src: RenewalSource): RenewalPlan {
 
 function licenceNumber(d: Record<string, string>): string {
   return (d.licence_number ?? d.reference_number ?? '').trim();
+}
+
+/**
+ * Map what is printed on the card onto what the registry accepts.
+ *
+ * The extraction prompt orders verbatim transcription, so a licence yields
+ * "RIFLE", "Self-loading rifle" or "PISTOL" — none of which match the
+ * registry's four choices. sanitiseAnswers would drop the key silently, so
+ * the seed looked applied and was not. Returns '' when it cannot map
+ * confidently: a seed should be right or absent, never a guess.
+ */
+export function normaliseFirearmType(raw: string | undefined): string {
+  const v = (raw ?? '').trim().toLowerCase();
+  if (!v) return '';
+  if (v.includes('shotgun')) return 'Shotgun';
+  if (v.includes('combination')) return 'Combination';
+  if (v.includes('rifle') || v.includes('carbine')) return 'Rifle';
+  if (
+    v.includes('pistol') ||
+    v.includes('revolver') ||
+    v.includes('handgun')
+  ) {
+    return 'Handgun';
+  }
+  return '';
 }

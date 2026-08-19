@@ -17,7 +17,6 @@ import {
   SAPS271_FILL,
   SAPS271_OPT_KEY,
   groupBySection,
-  partitionByDocument,
   motivationsApi,
   visibleFields,
 } from '@/lib/motivations-api';
@@ -205,12 +204,31 @@ export default function MotivationWizardPage() {
     return n;
   }, [answers]);
   const [ownedRowsShown, setOwnedRowsShown] = useState(1);
-  // The review card is READ-ONLY until asked otherwise. Rendering thirteen
-  // filled inputs is the wall of boxes this whole change exists to remove.
-  const [editingRead, setEditingRead] = useState(false);
+
+  /**
+   * Fields that ALREADY had a value when this application loaded — read off a
+   * document or carried from the All Outdoor profile.
+   *
+   * ⚠️ CAPTURED ONCE, AND THAT IS THE WHOLE POINT. Deciding this from the
+   * live answers meant a field locked itself the moment it held a character,
+   * so typing into an empty box made the box disappear mid-word. Only what we
+   * supplied is ever locked; anything typed in this session stays a normal
+   * input, always.
+   */
+  const prefilled = useRef<Set<string> | null>(null);
+  if (prefilled.current === null && fields.length && detail) {
+    prefilled.current = new Set(
+      fields
+        .filter((f) => f.docSourced && (answers[f.key] ?? '').trim())
+        .map((f) => f.key),
+    );
+  }
+  // Unlocked by the pen. Once open it STAYS open — re-locking a field someone
+  // is editing is the same interruption in a different costume.
+  const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
   const ownedRows = Math.max(1, ownedRowsFilled, ownedRowsShown);
 
-  const { sections, read: readFromDocuments } = useMemo(() => {
+  const { sections } = useMemo(() => {
     // Hide the rows beyond the ones in play. They stay in the registry — the
     // form has them and the server still accepts them — they are simply not
     // put in front of someone who does not need them.
@@ -224,11 +242,8 @@ export default function MotivationWizardPage() {
       const m = /^existing_firearm_(\d+)_/.exec(f.key);
       return !m || Number(m[1]) <= ownedRows;
     });
-    // Anything a document already answered leaves the question flow and
-    // becomes a line in the review card below.
-    const split = partitionByDocument(visible, answers);
-    return { sections: groupBySection(split.questions), read: split.fromDocuments };
-  }, [shown, ownedRows, detail?.overlap?.needsJustification, answers]);
+    return { sections: groupBySection(visible) };
+  }, [shown, ownedRows, detail?.overlap?.needsJustification]);
   const outstanding = detail?.missingRequired ?? [];
   // A question stays open until the applicant has REPLIED to it — a user
   // message with the same fieldKey later in the thread. The old check hid any
@@ -549,54 +564,6 @@ export default function MotivationWizardPage() {
         </StepAccordion>
       )}
 
-      {/* What the documents already answered. NOT a question section — it is
-          a receipt, so the applicant can see we read it and correct us if we
-          read it wrong. POPIA requires correctability; this is where it
-          lives. */}
-      {readFromDocuments.length > 0 && (
-        <div className="mt-4 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
-          <div className="flex items-baseline justify-between gap-3">
-            <p className="text-sm font-medium">From your documents</p>
-            <button
-              type="button"
-              className="text-xs text-[var(--text-secondary)] underline"
-              onClick={() => setEditingRead((v) => !v)}
-            >
-              {editingRead ? 'Done' : 'Something looks wrong'}
-            </button>
-          </div>
-          <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
-            We read these off what you uploaded, so we are not asking you to
-            type them again. The document as printed always governs — if
-            anything here does not match it, change it.
-          </p>
-          {editingRead ? (
-            <div className="mt-3 space-y-4">
-              {readFromDocuments.map((f) => (
-                <FieldInput
-                  key={f.key}
-                  field={f}
-                  value={answers[f.key] ?? ''}
-                  missing={outstanding.includes(f.key)}
-                  onChange={(v) => setAnswer(f.key, v)}
-                />
-              ))}
-            </div>
-          ) : (
-            <dl className="mt-3 divide-y divide-[var(--border-divider)]">
-              {readFromDocuments.map((f) => (
-                <div key={f.key} className="flex gap-3 py-2 text-sm">
-                  <dt className="w-1/2 shrink-0 text-[var(--text-secondary)]">
-                    {f.label}
-                  </dt>
-                  <dd className="flex-1 break-words">{answers[f.key]}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </div>
-      )}
-
       {/* 2 — the questions, straight from the registry */}
       {sections.map((sec, i) => {
         const n = i + 2;
@@ -644,6 +611,13 @@ export default function MotivationWizardPage() {
                   field={f}
                   value={answers[f.key] ?? ''}
                   missing={outstanding.includes(f.key)}
+                  locked={
+                    (prefilled.current?.has(f.key) ?? false) &&
+                    !unlocked.has(f.key)
+                  }
+                  onUnlock={() =>
+                    setUnlocked((u) => new Set(u).add(f.key))
+                  }
                   onChange={(v) => setAnswer(f.key, v)}
                 />
               ))}
@@ -823,11 +797,16 @@ function FieldInput({
   field,
   value,
   missing,
+  locked = false,
+  onUnlock,
   onChange,
 }: {
   field: MotivationField;
   value: string;
   missing: boolean;
+  /** We filled this in. Shown, greyed, with a pen — never taken away. */
+  locked?: boolean;
+  onUnlock?: () => void;
   onChange: (v: string) => void;
 }) {
   // EXPLICIT background and colour on every control.
@@ -856,6 +835,40 @@ function FieldInput({
         <p className="mt-0.5 text-xs text-[var(--text-tertiary-on-card)]">{field.help}</p>
       )}
 
+      {/* WHAT WE FILLED IN FOR THEM.
+          In place, in its own section, so nothing reflows — the value is
+          visible and the pen opens it. POPIA needs it correctable; the
+          operator needs it to stop moving while they type. */}
+      {locked ? (
+        <div className="mt-1 flex items-center gap-2">
+          <div className="flex-1 rounded border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-secondary)]">
+            {value}
+          </div>
+          <button
+            type="button"
+            onClick={onUnlock}
+            aria-label={`Edit ${field.label}`}
+            title="Edit"
+            className="rounded border border-[var(--border)] px-2 py-2 text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+            </svg>
+          </button>
+        </div>
+      ) : (
+        <>
       {field.kind === 'long' && (
         <textarea
           id={field.key}
@@ -934,6 +947,8 @@ function FieldInput({
             );
           })}
         </div>
+      )}
+        </>
       )}
     </div>
   );
@@ -1038,6 +1053,10 @@ function UploadPanel({
           }}
         />
       </div>
+      <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]">
+        JPG, PNG, WebP or PDF, up to 10 MB. On an iPhone, choose the photo from
+        your library rather than a file — iOS converts it for you.
+      </p>
       {err && <p className="mt-2 text-sm text-[var(--red)]">{err}</p>}
 
       <ul className="mt-3 divide-y divide-[var(--border-divider)] rounded border border-[var(--border)]">

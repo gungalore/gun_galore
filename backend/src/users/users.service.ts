@@ -98,6 +98,9 @@ function hashOtp(code: string): string {
   return createHash('sha256').update(code).digest('hex');
 }
 
+/** Wrong guesses allowed against one phone OTP before it is burned. */
+const MAX_OTP_ATTEMPTS = 5;
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -1111,6 +1114,9 @@ export class UsersService {
         phoneVerified: false,
         phoneOtpHash: otpHash,
         phoneOtpExpiresAt: expiresAt,
+        // A fresh code starts on a clean slate, or five bad guesses against
+        // the last one would burn the new one on its first miss.
+        phoneOtpAttempts: 0,
       },
     });
 
@@ -1144,7 +1150,23 @@ export class UsersService {
       );
     }
     if (hashOtp(code.trim()) !== user.phoneOtpHash) {
-      throw new BadRequestException('That code doesn\'t match — try again.');
+      // COUNT THE MISS, and burn the code once there have been too many.
+      // Without this a 4-digit code can simply be walked: ten thousand
+      // possibilities, a ten-minute window, and an IP-keyed throttle an
+      // attacker sidesteps by changing IP.
+      const attempts = (user.phoneOtpAttempts ?? 0) + 1;
+      const spent = attempts >= MAX_OTP_ATTEMPTS;
+      await this.prisma.user.update({
+        where: { clerkId },
+        data: spent
+          ? { phoneOtpHash: null, phoneOtpExpiresAt: null, phoneOtpAttempts: 0 }
+          : { phoneOtpAttempts: attempts },
+      });
+      throw new BadRequestException(
+        spent
+          ? 'Too many incorrect codes. Request a new one.'
+          : "That code doesn't match — try again.",
+      );
     }
     await this.prisma.user.update({
       where: { clerkId },
@@ -1152,6 +1174,7 @@ export class UsersService {
         phoneVerified: true,
         phoneOtpHash: null,
         phoneOtpExpiresAt: null,
+        phoneOtpAttempts: 0,
       },
     });
     return { verified: true };

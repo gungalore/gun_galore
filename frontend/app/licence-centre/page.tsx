@@ -32,6 +32,9 @@ import {
 // scheduled against it.
 // ────────────────────────────────────────────────────────────────────
 
+/** Mirrors UPLOAD_MIME in licence-centre.controller.ts. NO HEIC. */
+const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+
 const KINDS: CredentialKind[] = [
   'FIREARM_LICENCE',
   'COMPETENCY_CERTIFICATE',
@@ -210,6 +213,14 @@ function AddPanel({
         A photograph of the card or a PDF both work. Give it a name you will
         recognise — not the serial number.
       </p>
+      {/* SAID BEFORE THE PICKER, NOT AFTER THE REJECTION. An iPhone photo is
+          often HEIC, which we do not accept — the format caused oversized
+          uploads — and a full-resolution photo can exceed the limit. Both
+          were previously an opaque "that upload did not work". */}
+      <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
+        JPG, PNG, WebP or PDF, up to 10 MB. On an iPhone, choose the photo
+        from your library rather than a file — iOS converts it for you.
+      </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <select
@@ -243,6 +254,23 @@ function AddPanel({
           onChange={async (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
+            // Checked HERE as well as on the server, so the answer is
+            // immediate and NAMES the problem. The server's rejection is a
+            // generic 400 by the time it reaches the browser.
+            if (!ACCEPTED.includes(file.type)) {
+              setErr(
+                `We cannot read ${file.type || 'that file type'}. Use a JPG, PNG, WebP or PDF — on an iPhone, pick the photo from your library rather than from Files.`,
+              );
+              e.target.value = '';
+              return;
+            }
+            if (file.size > 10 * 1024 * 1024) {
+              setErr(
+                `That file is ${(file.size / 1024 / 1024).toFixed(1)} MB and the limit is 10 MB. A photo taken at a lower resolution will be well under it.`,
+              );
+              e.target.value = '';
+              return;
+            }
             setBusy(true);
             setErr(null);
             try {
@@ -259,6 +287,12 @@ function AddPanel({
                   ? ex.message
                   : 'That upload did not work.',
               );
+              // The row may have been committed and the response lost — the
+              // vision read runs after the insert and can outlast the proxy's
+              // patience. Refresh, or the document is invisible AND a retry
+              // is refused as a duplicate, which contradicts the error we
+              // just showed.
+              await onAdded().catch(() => undefined);
             } finally {
               setBusy(false);
               // Re-picking the same file must re-fire onChange.
@@ -284,11 +318,14 @@ function ConfirmPanel({
   id,
   proposed,
   onDone,
+  cancelLabel = 'I will do this later',
 }: {
   token: () => Promise<string | null>;
   id: string;
   proposed: CredentialProposal;
   onDone: () => Promise<void>;
+  /** "I will do this later" is right after an upload and wrong as a cancel. */
+  cancelLabel?: string;
 }) {
   const [expiresOn, setExpiresOn] = useState(proposed.expiresOn ?? '');
   const [issuedOn, setIssuedOn] = useState(proposed.issuedOn ?? '');
@@ -381,7 +418,7 @@ function ConfirmPanel({
           className="rounded border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
           onClick={() => void onDone()}
         >
-          I will do this later
+          {cancelLabel}
         </button>
       </div>
       <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]">
@@ -408,6 +445,21 @@ function CredentialCard({
   const tone = STATE_TONE[row.state];
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  // ⚠️ THE DATE HAS TO BE REACHABLE FROM HERE.
+  //
+  // The confirm panel used to live only in AddPanel's local state, set once
+  // in the seconds after an upload. Close it — or reload, or navigate away,
+  // or tap its own "I will do this later" — and the date could never be
+  // confirmed again. An unconfirmed date is invisible to the reminder sweep,
+  // so the document silently got no reminders at all, while the banner, the
+  // page footer and the reminder email all told the member to correct it
+  // "in your Licence Centre". The endpoint accepted a late confirm the whole
+  // time; only the way in was missing.
+  const [editing, setEditing] = useState(false);
+  // The renewal's own failure, shown AT the button. onError renders at the
+  // bottom of the page, which on a phone is well below the fold — the button
+  // appeared to do nothing at all.
+  const [renewErr, setRenewErr] = useState<string | null>(null);
 
   return (
     <li
@@ -439,16 +491,25 @@ function CredentialCard({
       {/* THE LOOP. Offered only where it makes sense: a firearm licence whose
           date has been confirmed and which is close enough to matter. On
           anything else the button would be a dead end the backend refuses. */}
-      {row.kind === 'FIREARM_LICENCE' &&
-        row.confirmed &&
-        (row.state === 'expiring' || row.state === 'expired') && (
+      {/* Offered for ANY confirmed firearm licence, not only one already
+          inside the reminder window. SA licences run five or ten years, so
+          gating on "expiring" meant that for a real licence uploaded today
+          the module's headline feature — and where the R199 sits — was simply
+          not on screen, with nothing saying why. The urgency belongs in the
+          words, not in whether the button exists. */}
+      {row.kind === 'FIREARM_LICENCE' && row.confirmed && (
           <div className="mt-3 rounded border border-[var(--border)] bg-[var(--bg-card)] p-3">
             <p className="text-sm font-medium">
               {row.state === 'expired'
                 ? 'This one has expired'
-                : 'Time to start the renewal'}
+                : row.state === 'expiring'
+                  ? 'Time to start the renewal'
+                  : 'Renewing this one later?'}
             </p>
             <p className="mt-1 text-xs text-[var(--text-secondary)]">
+              {row.state === 'valid'
+                ? 'We will remind you closer to the time. You can start it now if you would rather — '
+                : ''}
               We will open a section 24 renewal already carrying the licence
               number, the expiry and the firearm&rsquo;s details from this
               document. You write the part only you can — what you have
@@ -460,12 +521,12 @@ function CredentialCard({
               className="mt-2 rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
               onClick={async () => {
                 setBusy(true);
-                onError(null);
+                setRenewErr(null);
                 try {
                   const started = await licenceCentreApi.renew(token, row.id);
                   router.push(`/motivations/${started.motivationId}`);
                 } catch (ex) {
-                  onError(
+                  setRenewErr(
                     ex instanceof LicenceApiError
                       ? ex.message
                       : 'We could not start that renewal just now.',
@@ -476,10 +537,46 @@ function CredentialCard({
             >
               {busy ? 'Starting…' : 'Start the renewal'}
             </button>
+            {renewErr && (
+              <p className="mt-2 text-sm text-[var(--red)]">{renewErr}</p>
+            )}
           </div>
         )}
 
+      {editing && (
+        <div className="mt-3">
+          <ConfirmPanel
+            token={token}
+            id={row.id}
+            proposed={{
+              expiresOn: row.expiresOn,
+              issuedOn: row.issuedOn,
+              details: row.details,
+              lowConfidence: [],
+            }}
+            cancelLabel="Cancel"
+            onDone={async () => {
+              setEditing(false);
+              await onChanged();
+            }}
+          />
+        </div>
+      )}
+
       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+        {!editing && (
+          <button
+            type="button"
+            className={
+              row.confirmed
+                ? 'underline'
+                : 'rounded bg-[var(--red)] px-3 py-1.5 text-white hover:bg-[var(--red-hover)]'
+            }
+            onClick={() => setEditing(true)}
+          >
+            {row.confirmed ? 'Change the date' : 'Check the date'}
+          </button>
+        )}
         {row.available && (
           <button
             type="button"

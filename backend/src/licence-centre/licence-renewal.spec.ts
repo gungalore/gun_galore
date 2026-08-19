@@ -45,13 +45,31 @@ describe('when a renewal cannot start', () => {
     );
   });
 
-  it('refuses when the licence number could not be read', () => {
-    expect(renewalRefusal({ ...base, details: { make: 'Musgrave' } })).toBe(
-      'no-licence-number',
-    );
+  it('does NOT refuse just because the licence number is unreadable', () => {
+    // It used to, and it was a dead end with no exit: the extraction prompt
+    // omits anything it cannot read with certainty, so a glare on the card
+    // loses the number while the expiry reads fine — and nothing in the
+    // product could then add it. The wizard asks for the number as a
+    // required editable field anyway, so the honest move is to open the
+    // renewal and let them type the one value we could not read.
+    expect(renewalRefusal({ ...base, details: { make: 'Musgrave' } })).toBeNull();
     expect(
       renewalRefusal({ ...base, details: { licence_number: '   ' } }),
-    ).toBe('no-licence-number');
+    ).toBeNull();
+  });
+
+  it('still opens a usable renewal when the number is missing', () => {
+    const { seed, applicationRef } = renewalPlan({
+      ...base,
+      details: { make: 'Musgrave', calibre: '.308 Winchester' },
+    });
+    expect(seed.existing_licence_number).toBeUndefined();
+    expect(seed.firearm_make).toBe('Musgrave');
+    expect(seed.licence_expiry).toBe('2027-03-15');
+    // No number means no per-licence reference, so a second renewal would
+    // collide on the one-per-type constraint. Accepted: the alternative was
+    // no renewal at all.
+    expect(applicationRef).toBe('');
   });
 
   it('allows a real one', () => {
@@ -75,6 +93,34 @@ describe('what the renewal opens with', () => {
     const { seed } = renewalPlan(base);
     expect(seed.existing_licence_number).toBe('ZA1234567');
     expect(seed.licence_expiry).toBe('2027-03-15');
+  });
+
+  it('seeds the fields the WIZARD renders, not only the SAPS 271 slots', () => {
+    // The card promises "already carrying the firearm's details". The step the
+    // applicant actually sees reads firearm_make / firearm_calibre / etc, and
+    // every one is required — seeding only existing_firearm_1_* left five
+    // blank required boxes under that promise.
+    const { seed } = renewalPlan(base);
+    expect(seed.firearm_make).toBe('Musgrave');
+    expect(seed.firearm_calibre).toBe('.308 Winchester');
+    expect(seed.firearm_type).toBe('Rifle');
+    expect(seed.firearm_serial).toBe('MG55512');
+  });
+
+  it('normalises what is printed on the card onto the registry choices', () => {
+    // Transcription is verbatim by design, so a card says "RIFLE" or
+    // "Self-loading rifle". sanitiseAnswers drops an unrecognised choice
+    // silently, so the seed looked applied and was not.
+    const t = (raw: string) =>
+      renewalPlan({ ...base, details: { ...base.details, firearm_type: raw } })
+        .seed.firearm_type;
+    expect(t('RIFLE')).toBe('Rifle');
+    expect(t('Self-loading rifle')).toBe('Rifle');
+    expect(t('PISTOL')).toBe('Handgun');
+    expect(t('Revolver')).toBe('Handgun');
+    expect(t('SHOTGUN')).toBe('Shotgun');
+    // Unmappable is OMITTED, never guessed — the wizard asks instead.
+    expect(t('Musket')).toBeUndefined();
   });
 
   it('carries the firearm itself, on the keys the rest of the registry uses', () => {

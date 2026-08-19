@@ -3,7 +3,12 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
-import { REMINDER_STAGES, ReminderStage, daysUntil } from './licence-dates';
+import {
+  REMINDER_STAGES,
+  ReminderStage,
+  daysUntil,
+  startOfUtcDay,
+} from './licence-dates';
 
 // ────────────────────────────────────────────────────────────────────
 // LC1 — THE REMINDER SWEEP.
@@ -62,7 +67,18 @@ export class LicenceCentreRemindersService {
       const smsOn = await this.settings.get(FLAGS.licenceCentreSmsEnabled);
 
       let sent = 0;
-      for (const stage of REMINDER_STAGES) {
+      // ⚠️ TIGHTEST FIRST, AND THE ORDER IS LOAD-BEARING.
+      //
+      // tighterUnfired() guards each stage against the stages TIGHTER than
+      // it. Run widest-first and that guard never bites: T-180 stamps itself,
+      // then T-120 — whose guard does not look at remind180SentAt — matches
+      // the same row and fires too, and so on. A licence twenty days out
+      // collected all five messages on one night.
+      //
+      // Tightest-first, D-0 or T-30 claims the row and every wider stage is
+      // then correctly blocked by its own guard. Copy the array; it is a
+      // shared readonly constant.
+      for (const stage of [...REMINDER_STAGES].reverse()) {
         try {
           sent += await this.runStage(stage, smsOn);
         } catch (err) {
@@ -163,7 +179,11 @@ export class LicenceCentreRemindersService {
           credentialId: c.id,
           title: c.title,
           expiresOn: c.expiresOn,
-          daysLeft: Math.max(0, daysUntil(c.expiresOn, now)),
+          // Counted on CALENDAR boundaries, not from the raw instant.
+          // daysUntil(expiry, now) at 03:20 on a licence exactly 30 days out
+          // floors 29.94 to 29, so the message read "expires on 2026-09-18 —
+          // 29 days away", contradicting its own date.
+          daysLeft: Math.max(0, daysUntil(c.expiresOn, startOfUtcDay(now))),
           stage: stage.stage,
           smsEnabled: smsOn && isPro,
           emailEnabled: isPro,

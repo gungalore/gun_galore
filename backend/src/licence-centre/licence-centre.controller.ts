@@ -73,9 +73,18 @@ export class LicenceCentreController {
     @Body('title') title: string,
     @UploadedFile(
       new ParseFilePipe({
+        // ⚠️ errorMessage on BOTH, or the member is shown the validator's
+        // own text — a JavaScript regular expression under a red heading.
         validators: [
-          new MaxFileSizeValidator({ maxSize: UPLOAD_MAX_BYTES }),
-          new FileTypeValidator({ fileType: UPLOAD_MIME }),
+          new MaxFileSizeValidator({
+            maxSize: UPLOAD_MAX_BYTES,
+            errorMessage: 'That file is larger than 10 MB. A photo taken at a lower resolution will be well under it.',
+          }),
+          new FileTypeValidator({
+            fileType: UPLOAD_MIME,
+            errorMessage:
+              'We can read a JPG, PNG, WebP or PDF. On an iPhone, choose the photo from your library rather than from Files.',
+          }),
         ],
       }),
     )
