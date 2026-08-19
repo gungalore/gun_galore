@@ -96,91 +96,112 @@ order. Do not skip steps. Report the result of each step before
 moving to the next. If any step fails, STOP immediately, report
 exactly what failed, and wait for the user's instruction.
 
-**Deploy branch (LOCKED).** Production tracks
-`feat/hunt-ballistics-range-estimator`, **NOT `main`**. Do NOT
-`git checkout main`, do NOT merge into main, do NOT push to main.
-Push the current feature branch and `git pull --ff-only` it on
-prod. (`main` is intentionally stale until a future re-baseline.)
+> ⚠️ **CORRECTED 2026-08-19.** This section previously named the branch
+> `feat/hunt-ballistics-range-estimator`, the host `ssh gungalore`, the path
+> `/home/gungalore/app` and the services `gungalore-*`. **Every one of those
+> was the RETIRED box.** Following it would have deployed to a machine dozens
+> of commits behind, applying a REPLACED migration baseline over a live
+> database. It is corrected below.
+
+**THERE ARE TWO BOXES. Only one of them is production.**
+
+| | |
+|---|---|
+| ✅ **`ssh alloutdoor`** | **LIVE** — alloutdoor.co.za. Deploy here. |
+| ❌ `ssh gungalore` | RETIRED pre-replatform box, dozens of commits behind. Deploying here applies a replaced migration baseline over a live DB. |
+
+**Check every single time**, before touching anything:
+
+```bash
+ssh alloutdoor "cd /home/alloutdoor/app && git rev-parse --abbrev-ref HEAD && git log -1 --oneline"
+```
+
+The branch must read `feat/takealot-ux-parity` and the commit must be an
+ancestor of what you are about to push. If either looks unfamiliar, STOP.
+
+**Deploy branch (LOCKED): `feat/takealot-ux-parity`.** NOT `main`.
+`git push origin main` succeeds and ships **nothing** — production does not
+track it. Push and pull the branch **by name**.
 
 **NOTE ON pm2 COMMANDS**
-Always use `pm2 reload [service] --update-env` for deployments.
-This is a zero-downtime rolling restart — the old process keeps
-serving traffic until the new one is ready. Only use `pm2 restart`
-if a process is completely frozen, a reload has hung past 60
-seconds, or you are explicitly told to do a hard restart to clear
-corrupted state. Never use `pm2 restart` in an automated deploy.
+Use `pm2 reload [service] --update-env` — a zero-downtime rolling restart; the
+old process keeps serving until the new one is ready. Only `pm2 restart` if a
+process is frozen, a reload has hung past 60 seconds, or you are told to.
+Never `pm2 restart` in an automated deploy.
+
+**⚠️ NEVER GATE A RESTART ON A SHARED `/tmp` MARKER.** A stale marker from an
+earlier deploy makes the restart fire mid-build and serves 500s. Wait on the
+BUILD PROCESS itself (`pgrep`) plus a unique per-deploy log, and curl TWICE
+afterwards.
 
 **STEP 1 — VERIFY CODE IS CLEAN**
 `cd backend && npx tsc --noEmit`
 `cd ../frontend && npx tsc --noEmit`
-Both must report zero errors. If errors exist, stop, fix them,
-restart from Step 1.
+Both must report zero errors.
+
+⚠️ Do NOT pipe tsc into `tail` or `head` and read `$?` — that reads the PIPE's
+exit code, not tsc's, and reports a clean build over a broken one. Use
+`npx tsc --noEmit >/dev/null 2>&1 && echo CLEAN`.
 
 **STEP 2 — PRODUCTION BUILD CHECK**
-`cd frontend && npm run build`
-Must complete with all pages building. If it fails, stop, fix it,
-restart from Step 1.
+`cd frontend && npm run build`. Run it DETACHED and poll a log — an attached
+prod build can outlive a tool timeout and leave you unsure whether it finished.
 
 **STEP 3 — COMMIT TO GIT**
-`cd` to project root, `git add .`, `git status` (show what is being
-committed), `git commit -m "[clear, specific message describing the
-session's changes]"`.
+`git add .`, `git status` (show what is being committed), `git commit`.
 
 **STEP 4 — PUSH TO GITHUB**
-`git push origin feat/hunt-ballistics-range-estimator`.
-Confirm the push succeeded. Do NOT touch main.
+`git push origin feat/takealot-ux-parity`. Do NOT touch main.
 
 **STEP 5 — DEPLOY TO SERVER**
-SSH alias: `ssh gungalore` (server IP `<ORIGIN_IP — see password manager>`, user
-`gungalore`, Vultr VPS). Project lives at `/home/gungalore/app`,
-pm2 services are named `gungalore-backend` and `gungalore-frontend`.
 
-If prod has uncommitted local changes (legacy from the earlier
-SCP-staged workflow), stash them first so `git pull` doesn't
-abort. They're already in the deployed branch from the dev
-commits — safe to discard via stash.
+`ssh alloutdoor`, user `alloutdoor`, project at `/home/alloutdoor/app`, pm2
+services `alloutdoor-backend` and `alloutdoor-frontend`.
 
 **SCHEMA-DRIFT TRAP (DO NOT FORGET).** Three services (Ask GG KB,
-reloading-manual FTS, listings FTS) add `tsvector GENERATED` columns
-+ GIN indexes at boot via raw DDL. These columns are NOT in
-`schema.prisma`. Running `npx prisma db push --accept-data-loss`
-will drop them and the next boot won't recreate the indexes
-cleanly. **For routine deploys, do NOT run db push.** Only run
-`npx prisma generate` (regenerates the client from the existing
-schema, no DB writes). When schema.prisma genuinely changes, write
-a real migration and use `npx prisma migrate deploy`. See
-`[BC-SCHEMA-DRIFT]` in LAUNCH-CHECKLIST.md.
+reloading-manual FTS, listings FTS) add `tsvector GENERATED` columns + GIN
+indexes at boot via raw DDL. These columns are NOT in `schema.prisma`. Running
+`npx prisma db push --accept-data-loss` drops them and the next boot does not
+recreate the indexes cleanly. **For routine deploys, never run db push.** Run
+`npx prisma generate` only. When schema.prisma genuinely changes, write a real
+migration and run `npx prisma migrate deploy`. See `[BC-SCHEMA-DRIFT]` in
+LAUNCH-CHECKLIST.md.
 
 ```
-cd /home/gungalore/app
+cd /home/alloutdoor/app
 git stash --include-untracked            # parks any legacy local edits
-git pull --ff-only origin feat/hunt-ballistics-range-estimator
+git pull --ff-only origin feat/takealot-ux-parity
+git log -1 --oneline                     # MUST match what you pushed
+
 cd backend
 npm install                              # in case package.json shifted
-npx prisma generate                      # regenerate client only — NEVER db push (tsvector trap)
+npx prisma migrate deploy                # ONLY when a migration was added
+npx prisma generate                      # regenerate client — NEVER db push (tsvector trap)
 npm run build
-pm2 reload gungalore-backend --update-env
+pm2 reload alloutdoor-backend --update-env
 sleep 5
 curl -f http://localhost:3001/api/health && echo "BACKEND OK"
+
 cd ../frontend
 npm install
 npm run build
-pm2 reload gungalore-frontend --update-env
+pm2 reload alloutdoor-frontend --update-env
 sleep 5
 curl -fs http://localhost:3000 > /dev/null && echo "FRONTEND OK"
 pm2 list
 ```
 
-**Critical gotcha** (cost us a half-deploy on 2026-05-26): `nest
-build` will report TypeScript errors against stale Prisma types
-and `pm2 reload` will silently reload the OLD compiled dist/. So
-ALWAYS run `npx prisma generate` BEFORE `npm run build` whenever
-the schema has changed, and watch the build output for TS errors
-— if you see any, the backend did NOT actually update.
+**Critical gotcha** (cost half a deploy on 2026-05-26): `nest build` reports
+TypeScript errors against STALE Prisma types, and `pm2 reload` then silently
+reloads the OLD compiled `dist/`. So always run `npx prisma generate` BEFORE
+`npm run build` whenever the schema changed, and watch the build output — any
+TS error means the backend did NOT update.
 
-If a health check fails after a reload: do NOT attempt `pm2 restart`
-automatically; stop the deploy immediately and report. The old
-version keeps serving on a failed reload, so there is no emergency.
+⚠️ Do NOT mask the build's exit code with `| tail`. Capture it explicitly.
+
+If a health check fails after a reload: do NOT `pm2 restart` automatically.
+Stop and report. The old version keeps serving on a failed reload, so there is
+no emergency.
 
 **STEP 6 — VERIFY HEALTH**
 Confirm `curl localhost:3001/api/health` and `localhost:3000` both
@@ -266,14 +287,23 @@ unfinished modules dark in production (see Feature Flags).
 
 ## Server Layout (Vultr)
 
-- App lives at `/home/gungalore/app` on the Vultr VPS
-  (`<ORIGIN_IP — see password manager>`). SSH via the `gungalore` alias only —
-  `ssh gungalore` works, `ssh gungalore@<ORIGIN_IP — see password manager>` bypasses
-  the operator's local key config and prompts for a password they
-  don't have.
+⚠️ **TWO BOXES, and only one is production.** Corrected 2026-08-19 — this
+section described the retired one as if it were live.
+
+- ✅ **PRODUCTION: `ssh alloutdoor`.** App at `/home/alloutdoor/app`, pm2
+  services `alloutdoor-backend` / `alloutdoor-frontend`, branch
+  `feat/takealot-ux-parity`. Serves **alloutdoor.co.za**.
+- ❌ **RETIRED: `ssh gungalore`** — the pre-replatform box, dozens of commits
+  behind. Deploying to it applies a REPLACED migration baseline over a live
+  database. It still answers SSH, which is exactly what makes it dangerous.
+- Always use the alias form (`ssh alloutdoor "..."`). `ssh user@<IP>` bypasses
+  the operator's local key config and prompts for a password they don't have.
+- Encrypted identity documents live at `/var/lib/alloutdoor/secure-uploads`
+  (`SECURE_UPLOAD_DIR`, mode 0700) — OUTSIDE the app dir, so deploys never
+  touch it. It is NOT in a pg_dump; see `infra/backup/`.
 - The marketing landing page at `/var/www/html` is separate —
   **never touch it**.
-- Production: `gungalore.co.za` / `api.gungalore.co.za`.
+- Both boxes are Vultr. Never Hetzner. No global IPv6.
 - Ballistic Calculator is its own app on the same VPS — code lives
   at `~/ballistics-app/` (own Postgres DB, own pm2 services, own
   Nginx block at `ballistics.gungalore.co.za`). The marketplace
