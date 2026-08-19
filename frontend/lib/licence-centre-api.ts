@@ -49,6 +49,18 @@ export interface CredentialRow {
   createdAt: string;
 }
 
+/** What came back from adding one document. */
+export interface AddedCredential {
+  id: string;
+  kind: CredentialKind;
+  title: string;
+  /** WE named this one, not the member — so the confirm step asks. */
+  autoFiled?: boolean;
+  /** Only meaningful when autoFiled: whether we were sure. */
+  confident?: boolean;
+  proposed: CredentialProposal;
+}
+
 export interface CredentialProposal {
   expiresOn: string | null;
   issuedOn: string | null;
@@ -107,26 +119,39 @@ export const licenceCentreApi = {
 
   list: (t: TokenGetter) => request<CredentialRow[]>(t, '', {}, []),
 
+  /**
+   * Add one document.
+   *
+   * `kind` may be EMPTY, which means "sort it for me": the server names the
+   * document from its contents and the confirm step shows the member what it
+   * made of it. That is how a whole folder goes in at once.
+   */
   create: (t: TokenGetter, kind: string, title: string, file: File) => {
     const form = new FormData();
     form.append('kind', kind);
     form.append('title', title);
     form.append('file', file);
-    return request<{ id: string; proposed: CredentialProposal }>(t, '', {
-      method: 'POST',
-      body: form,
-    });
+    return request<AddedCredential>(t, '', { method: 'POST', body: form });
   },
 
+  /**
+   * Confirm what we made of a document: its date, and — when we did the
+   * naming — its type and title too.
+   *
+   * ⚠️ The type is not cosmetic. A licence filed as something else is never
+   * offered a renewal, and reminder copy is written per type.
+   */
   confirm: (
     t: TokenGetter,
     id: string,
     expiresOn: string,
     issuedOn?: string,
+    kind?: string,
+    title?: string,
   ) =>
     request<{ confirmed: boolean; expiresOn: string }>(t, `/${id}/confirm`, {
       method: 'POST',
-      body: JSON.stringify({ expiresOn, issuedOn }),
+      body: JSON.stringify({ expiresOn, issuedOn, kind, title }),
     }),
 
   mute: (t: TokenGetter, id: string, muted: boolean) =>

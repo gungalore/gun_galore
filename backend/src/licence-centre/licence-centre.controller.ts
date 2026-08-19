@@ -60,7 +60,9 @@ export class LicenceCentreController {
   }
 
   @Post()
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  // A folder of documents goes up back to back; 20 was a ceiling a member
+  // could hit halfway through adding their own paperwork.
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -90,13 +92,18 @@ export class LicenceCentreController {
     )
     file: Express.Multer.File,
   ) {
+    // NO KIND MEANS "SORT IT FOR ME" — the batch path, where a member adds a
+    // whole folder at once and names nothing up front.
+    const wanted = (kind ?? '').trim();
+    if (!wanted) return this.svc.create(clerkId, null, title, file);
+
     // Validated HERE, by hand. The global ValidationPipe has no
     // forbidNonWhitelisted and a bare @Body('kind') is not a DTO, so an
     // arbitrary string would sail through and surface as a Prisma 500.
-    if (!Object.values(CredentialKind).includes(kind as CredentialKind)) {
+    if (!Object.values(CredentialKind).includes(wanted as CredentialKind)) {
       throw new BadRequestException('Unknown document type.');
     }
-    return this.svc.create(clerkId, kind as CredentialKind, title, file);
+    return this.svc.create(clerkId, wanted as CredentialKind, title, file);
   }
 
   @Post(':id/confirm')
@@ -105,8 +112,23 @@ export class LicenceCentreController {
     @Param('id') id: string,
     @Body('expiresOn') expiresOn: string,
     @Body('issuedOn') issuedOn?: string,
+    @Body('kind') kind?: string,
+    @Body('title') title?: string,
   ) {
-    return this.svc.confirmExpiry(clerkId, id, expiresOn, issuedOn);
+    // The kind is optional, but if one is sent it must be real — it decides
+    // whether this document is ever offered a renewal.
+    const wanted = (kind ?? '').trim();
+    if (wanted && !Object.values(CredentialKind).includes(wanted as CredentialKind)) {
+      throw new BadRequestException('Unknown document type.');
+    }
+    return this.svc.confirmExpiry(
+      clerkId,
+      id,
+      expiresOn,
+      issuedOn,
+      wanted ? (wanted as CredentialKind) : undefined,
+      title,
+    );
   }
 
   @Patch(':id/mute')

@@ -123,7 +123,12 @@ export class LicenceCentreService {
 
   async create(
     clerkId: string,
-    kind: CredentialKind,
+    /**
+     * NULL MEANS "SORT IT FOR ME" — the batch path. A member emptying a folder
+     * into the vault cannot label files that do not exist yet, and the confirm
+     * step they already walk through is where they check what we made of each.
+     */
+    kind: CredentialKind | null,
     title: string,
     file: { buffer: Buffer; mimetype: string },
   ) {
@@ -145,6 +150,23 @@ export class LicenceCentreService {
       throw new ConflictException(
         `You can keep ${cap} documents here. Remove one before adding another.`,
       );
+    }
+
+    // NAME IT, if they did not. Before the row, because kind is a column on
+    // it. Fail-soft: an unsortable document becomes OTHER, which the confirm
+    // step shows them anyway.
+    let resolved: CredentialKind = kind ?? 'OTHER';
+    let autoFiled = false;
+    let confident = false;
+    if (!kind) {
+      const guess = await this.extract
+        .classify({ bytes: file.buffer, mimeType: file.mimetype })
+        .catch(() => null);
+      autoFiled = true;
+      if (guess) {
+        resolved = guess.kind;
+        confident = guess.confident;
+      }
     }
 
     // BYTES FIRST, ROW SECOND. The database's unique constraint is what spots
@@ -170,8 +192,8 @@ export class LicenceCentreService {
       created = await this.prisma.credential.create({
         data: {
           userId: user.id,
-          kind,
-          title: clean || DEFAULT_TITLE[kind],
+          kind: resolved,
+          title: clean || DEFAULT_TITLE[resolved],
           storageKey: stored.storageKey,
           mimeType: file.mimetype,
           byteSize: stored.byteSize,
@@ -198,7 +220,7 @@ export class LicenceCentreService {
     // compensating delete, so a vision outage costs a convenience rather than
     // the upload itself.
     const reading = await this.extract
-      .read({ kind, bytes: file.buffer, mimeType: file.mimetype })
+      .read({ kind: resolved, bytes: file.buffer, mimeType: file.mimetype })
       .catch(() => null);
 
     if (reading) {
@@ -231,6 +253,11 @@ export class LicenceCentreService {
 
     return {
       id: created.id,
+      kind: resolved,
+      title: clean || DEFAULT_TITLE[resolved],
+      // Tells the confirm step which documents WE named, so it can ask.
+      autoFiled,
+      confident,
       proposed: {
         expiresOn: reading?.expiresOn ?? null,
         issuedOn: reading?.issuedOn ?? null,
@@ -254,6 +281,14 @@ export class LicenceCentreService {
     id: string,
     expiresOn: string,
     issuedOn?: string,
+    /**
+     * The confirm screen is where a member checks EVERYTHING we made of a
+     * document, not only its date — the kind decides whether a renewal is
+     * offered at all, and the title is what they will recognise it by in a
+     * reminder. Both optional: an untouched field is left alone.
+     */
+    kind?: CredentialKind,
+    title?: string,
   ) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
@@ -284,6 +319,10 @@ export class LicenceCentreService {
         expiresOn: expiry,
         issuedOn: parseIsoDate(issuedOn ?? null),
         confirmedAt: new Date(),
+        ...(kind ? { kind } : {}),
+        ...((title ?? '').trim()
+          ? { title: (title ?? '').trim().slice(0, MAX_TITLE) }
+          : {}),
         ...(dateChanged
           ? {
               remind180SentAt: null,

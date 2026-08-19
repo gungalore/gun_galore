@@ -26,6 +26,16 @@ const MODEL =
   process.env.ANTHROPIC_MODEL_JUDGE ??
   'claude-sonnet-4-6';
 
+/**
+ * "Which document is this?" runs on the CHEAP model.
+ *
+ * Naming a document is a far easier job than reading one, and it happens once
+ * per file in a pack. A member emptying a folder of eight documents into the
+ * vault should not pay eight Sonnet calls to have them sorted.
+ */
+const MODEL_CLASSIFY =
+  process.env.ANTHROPIC_MODEL_SIMPLE ?? 'claude-haiku-4-5';
+
 export interface CredentialReading {
   /** ISO yyyy-mm-dd, already validated. */
   expiresOn: string | null;
@@ -75,6 +85,57 @@ export class LicenceCentreExtractService {
     this.client = apiKey
       ? new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 })
       : null;
+  }
+
+  /**
+   * NAME THE DOCUMENT.
+   *
+   * ⚠️ THE KIND IS NOT COSMETIC HERE. The renewal one-tap is offered only on a
+   * FIREARM_LICENCE, and reminder copy is written per kind — a licence filed
+   * as "something else" quietly loses its renewal path. So this proposes, the
+   * member confirms on the same screen where they confirm the expiry date, and
+   * an uncertain answer becomes OTHER rather than a confident wrong one.
+   */
+  async classify(args: {
+    bytes: Buffer;
+    mimeType: string;
+  }): Promise<{ kind: CredentialKind; confident: boolean } | null> {
+    if (!this.client) return null;
+
+    let text = '';
+    try {
+      const res = await this.client.messages.create({
+        model: MODEL_CLASSIFY,
+        max_tokens: 200,
+        system: CLASSIFY_SYSTEM,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              blockFor(args.bytes, args.mimeType),
+              { type: 'text', text: CLASSIFY_USER },
+            ],
+          },
+        ],
+      });
+      const first = res.content.find((b) => b.type === 'text');
+      text = first && 'text' in first ? first.text.trim() : '';
+    } catch (err) {
+      this.logger.warn(`Credential classify failed: ${(err as Error).message}`);
+      return null;
+    }
+
+    try {
+      const m = text.match(/\{[\s\S]*\}/);
+      if (!m) return null;
+      const parsed = JSON.parse(m[0]) as { kind?: string; confidence?: string };
+      const kind = (parsed.kind ?? '').trim() as CredentialKind;
+      const known = Object.values(CredentialKind) as string[];
+      if (!known.includes(kind)) return null;
+      return { kind, confident: (parsed.confidence ?? '') === 'high' };
+    } catch {
+      return null;
+    }
   }
 
   async read(args: {
@@ -239,3 +300,57 @@ function userPrompt(kind: CredentialKind): string {
     'omit it and the member will be asked to type it.',
   ].join('\n');
 }
+
+/** One base64 content block, image or PDF. Shared by read and classify. */
+function blockFor(bytes: Buffer, mimeType: string) {
+  if (mimeType === 'application/pdf') {
+    return {
+      type: 'document' as const,
+      source: {
+        type: 'base64' as const,
+        media_type: 'application/pdf' as const,
+        data: bytes.toString('base64'),
+      },
+    };
+  }
+  return {
+    type: 'image' as const,
+    source: {
+      type: 'base64' as const,
+      media_type: (mimeType === 'image/png'
+        ? 'image/png'
+        : mimeType === 'image/webp'
+          ? 'image/webp'
+          : 'image/jpeg') as 'image/png' | 'image/webp' | 'image/jpeg',
+      data: bytes.toString('base64'),
+    },
+  };
+}
+
+const CLASSIFY_SYSTEM = `
+You sort a photographed or scanned South African document into exactly one
+category. You are sorting, not reading: you do not need to transcribe anything.
+
+Answer with the category you can actually see evidence for. "OTHER" is a real
+answer and a useful one - a document filed as "something else" is visibly
+unsorted, and the member is asked to confirm it either way.
+
+Return STRICT JSON and nothing else:
+{"kind":"<one category>","confidence":"high"|"low"}
+`.trim();
+
+const CLASSIFY_USER = [
+  'Which of these is this document? Answer with the exact string.',
+  '',
+  'FIREARM_LICENCE - a South African firearm licence card or certificate,',
+  '  naming a firearm and usually a section of the Firearms Control Act',
+  'COMPETENCY_CERTIFICATE - a SAPS competency certificate',
+  'DEDICATED_STATUS - a dedicated hunter or dedicated sport shooter status',
+  '  certificate, issued by a hunting or sport-shooting association',
+  'PROFICIENCY - a firearm proficiency or unit-standard training certificate',
+  'OTHER - anything else, or you cannot tell',
+  '',
+  'A competency certificate permits a person to POSSESS firearms; a licence is',
+  'for ONE specific firearm and names it. If it names a make, calibre or serial',
+  'number it is a licence.',
+].join('\n');

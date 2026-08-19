@@ -4,6 +4,7 @@ import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  AddedCredential,
   CredentialKind,
   CredentialProposal,
   CredentialRow,
@@ -182,27 +183,51 @@ function AddPanel({
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<{
-    id: string;
-    proposed: CredentialProposal;
+  /**
+   * The documents still to be checked, in order.
+   *
+   * A QUEUE, not one record: a member with a folder of eight uploads them all
+   * and then walks the confirm step once per document. The confirm step is not
+   * batched away — an unconfirmed date is invisible to the reminder sweep,
+   * which is the entire point of the Centre.
+   */
+  const [queue, setQueue] = useState<AddedCredential[]>([]);
+  const [progress, setProgress] = useState<{
+    done: number;
+    total: number;
   } | null>(null);
 
   const control =
     'rounded border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-sm text-[var(--text-primary)] ' +
     '[&>option]:bg-[var(--bg-card)] [&>option]:text-[var(--text-primary)] focus:border-[var(--border-hover)] focus:outline-none';
 
-  if (confirming) {
+  if (queue.length) {
+    const [current, ...rest] = queue;
     return (
-      <ConfirmPanel
-        token={token}
-        id={confirming.id}
-        proposed={confirming.proposed}
-        onDone={async () => {
-          setConfirming(null);
-          setTitle('');
-          await onAdded();
-        }}
-      />
+      <div>
+        {queue.length > 1 && (
+          <p className="mt-6 text-sm text-[var(--text-secondary)]">
+            {queue.length} documents left to check.
+          </p>
+        )}
+        <ConfirmPanel
+          token={token}
+          id={current.id}
+          proposed={current.proposed}
+          /* The type controls appear only where WE did the naming. Where the
+             member picked the type themselves there is nothing to check. */
+          kinds={current.autoFiled ? KINDS : undefined}
+          currentKind={current.kind}
+          uncertain={current.autoFiled === true && current.confident !== true}
+          defaultTitle={current.title}
+          onDone={async () => {
+            setQueue(rest);
+            if (!rest.length) setTitle('');
+            await onAdded();
+          }}
+        />
+        {err && <p className="mt-2 text-sm text-[var(--red)]">{err}</p>}
+      </div>
     );
   }
 
@@ -218,8 +243,10 @@ function AddPanel({
           uploads — and a full-resolution photo can exceed the limit. Both
           were previously an opaque "that upload did not work". */}
       <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
-        JPG, PNG, WebP or PDF, up to 10 MB. On an iPhone, choose the photo
-        from your library rather than a file — iOS converts it for you.
+        JPG, PNG, WebP or PDF, up to 10 MB each. Have them together? Pick
+        them all at once — we will work out what each one is and ask you to
+        check. On an iPhone, choose the photos from your library rather than a
+        file — iOS converts them for you.
       </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -250,60 +277,101 @@ function AddPanel({
           type="file"
           className="text-sm"
           accept="image/jpeg,image/png,image/webp,application/pdf"
+          // A FOLDER GOES IN AT ONCE. Picking one file at a time and naming
+          // each is the slowest possible way to hand over paperwork the member
+          // already has together.
+          multiple
           disabled={busy}
           onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
+            const picked = Array.from(e.target.files ?? []);
+            // Re-picking the same files must re-fire onChange, and everything
+            // below is async — clear the input before anything can await.
+            e.target.value = '';
+            if (!picked.length) return;
+
             // Checked HERE as well as on the server, so the answer is
-            // immediate and NAMES the problem. The server's rejection is a
-            // generic 400 by the time it reaches the browser.
-            if (!ACCEPTED.includes(file.type)) {
+            // immediate and NAMES the file. The server's rejection is a
+            // generic 400 by the time it reaches the browser — and one
+            // unusable file must not cost the whole pack a round trip.
+            const failed: string[] = [];
+            const files = picked.filter((f) => {
+              if (!ACCEPTED.includes(f.type)) {
+                failed.push(
+                  `${f.name}: we cannot read ${f.type || 'that file type'}`,
+                );
+                return false;
+              }
+              if (f.size > 10 * 1024 * 1024) {
+                failed.push(
+                  `${f.name}: ${(f.size / 1024 / 1024).toFixed(1)} MB, over the 10 MB limit`,
+                );
+                return false;
+              }
+              return true;
+            });
+
+            if (!files.length) {
               setErr(
-                `We cannot read ${file.type || 'that file type'}. Use a JPG, PNG, WebP or PDF — on an iPhone, pick the photo from your library rather than from Files.`,
+                `${failed.join(' · ')}. Use a JPG, PNG, WebP or PDF — on an iPhone, pick the photos from your library rather than from Files.`,
               );
-              e.target.value = '';
               return;
             }
-            if (file.size > 10 * 1024 * 1024) {
-              setErr(
-                `That file is ${(file.size / 1024 / 1024).toFixed(1)} MB and the limit is 10 MB. A photo taken at a lower resolution will be well under it.`,
-              );
-              e.target.value = '';
-              return;
-            }
+
             setBusy(true);
             setErr(null);
-            try {
-              const created = await licenceCentreApi.create(
-                token,
-                kind,
-                title,
-                file,
-              );
-              setConfirming({ id: created.id, proposed: created.proposed });
-            } catch (ex) {
-              setErr(
-                ex instanceof LicenceApiError
-                  ? ex.message
-                  : 'That upload did not work.',
-              );
-              // The row may have been committed and the response lost — the
-              // vision read runs after the insert and can outlast the proxy's
-              // patience. Refresh, or the document is invisible AND a retry
-              // is refused as a duplicate, which contradicts the error we
-              // just showed.
-              await onAdded().catch(() => undefined);
-            } finally {
-              setBusy(false);
-              // Re-picking the same file must re-fire onChange.
-              e.target.value = '';
+            setProgress({ done: 0, total: files.length });
+
+            // ONE AT A TIME. Each upload writes an encrypted file and makes a
+            // vision call; firing eight at once would race the per-minute
+            // limit and give no usable progress.
+            const added: AddedCredential[] = [];
+            for (const [i, file] of files.entries()) {
+              try {
+                // ONE file keeps the type the member picked. SEVERAL is a
+                // folder, so each is named from its contents and checked in
+                // the queue.
+                added.push(
+                  await licenceCentreApi.create(
+                    token,
+                    files.length === 1 ? kind : '',
+                    files.length === 1 ? title : '',
+                    file,
+                  ),
+                );
+              } catch (ex) {
+                // One bad file must not abandon the rest of the pack.
+                failed.push(
+                  `${file.name}: ${
+                    ex instanceof LicenceApiError
+                      ? ex.message
+                      : 'did not upload'
+                  }`,
+                );
+              }
+              setProgress({ done: i + 1, total: files.length });
             }
+
+            setBusy(false);
+            setProgress(null);
+            setErr(failed.length ? failed.join(' · ') : null);
+            setQueue(added);
+            // Always, not only on failure: a row may have been committed and
+            // its response lost — the vision read runs after the insert and
+            // can outlast the proxy's patience. Without this the document is
+            // invisible AND a retry is refused as a duplicate, which
+            // contradicts the error we just showed.
+            await onAdded().catch(() => undefined);
           }}
         />
       </div>
       {busy && (
-        <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]">
-          Reading the document…
+        <p
+          className="mt-2 text-xs text-[var(--text-tertiary-on-card)]"
+          aria-live="polite"
+        >
+          {progress && progress.total > 1
+            ? `Reading document ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…`
+            : 'Reading the document…'}
         </p>
       )}
       {err && <p className="mt-2 text-sm text-[var(--red)]">{err}</p>}
@@ -319,6 +387,10 @@ function ConfirmPanel({
   proposed,
   onDone,
   cancelLabel = 'I will do this later',
+  kinds,
+  currentKind,
+  uncertain,
+  defaultTitle,
 }: {
   token: () => Promise<string | null>;
   id: string;
@@ -326,9 +398,22 @@ function ConfirmPanel({
   onDone: () => Promise<void>;
   /** "I will do this later" is right after an upload and wrong as a cancel. */
   cancelLabel?: string;
+  /**
+   * Passing these turns on the type and title controls. Offered where WE named
+   * the document — a batch upload — and on the card, which is the only way back
+   * for somebody who tapped "I will do this later" on a mis-filed one.
+   */
+  kinds?: CredentialKind[];
+  currentKind?: CredentialKind;
+  /** We guessed, and were not sure. A marker, not a blocker. */
+  uncertain?: boolean;
+  defaultTitle?: string;
 }) {
   const [expiresOn, setExpiresOn] = useState(proposed.expiresOn ?? '');
   const [issuedOn, setIssuedOn] = useState(proposed.issuedOn ?? '');
+  const [kind, setKind] = useState<CredentialKind | ''>(currentKind ?? '');
+  const [title, setTitle] = useState(defaultTitle ?? '');
+  const showKind = Boolean(kinds && currentKind);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -337,12 +422,55 @@ function ConfirmPanel({
 
   return (
     <section className="mt-6 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-4">
-      <p className="text-sm font-medium">Check the expiry date</p>
+      <p className="text-sm font-medium">
+        {showKind ? 'Check this document' : 'Check the expiry date'}
+      </p>
       <p className="mt-1 text-xs text-[var(--text-secondary)]">
         {proposed.expiresOn
           ? 'We read this off your document. Check it against the document itself — a photograph can be misread, and every reminder is worked out from this date.'
           : 'We could not read a date off that one. Type it as it is printed on the document.'}
       </p>
+
+      {/* WHAT WE MADE OF IT. The type is not cosmetic: a licence filed as
+          something else is never offered a renewal, and reminder copy is
+          written per type. */}
+      {showKind && kinds && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="text-[var(--text-secondary)]">
+              What this is
+              {uncertain && (
+                <span className="ml-1 text-xs text-[var(--warning)]">
+                  (check this)
+                </span>
+              )}
+            </span>
+            <select
+              className={control}
+              value={kind}
+              onChange={(e) => setKind(e.target.value as CredentialKind)}
+            >
+              {kinds.map((k) => (
+                <option key={k} value={k}>
+                  {KIND_LABELS[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="text-[var(--text-secondary)]">
+              What you call it
+            </span>
+            <input
+              className={control}
+              value={title}
+              maxLength={120}
+              placeholder="“my .308”"
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </label>
+        </div>
+      )}
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="block text-sm">
@@ -399,6 +527,8 @@ function ConfirmPanel({
                 id,
                 expiresOn,
                 issuedOn || undefined,
+                showKind ? kind || undefined : undefined,
+                showKind ? title || undefined : undefined,
               );
               await onDone();
             } catch (ex) {
@@ -555,6 +685,12 @@ function CredentialCard({
               lowConfidence: [],
             }}
             cancelLabel="Cancel"
+            /* THE WAY BACK. Somebody who tapped "I will do this later" on a
+               batch-sorted document has no other route to correcting the type
+               we chose for it. */
+            kinds={KINDS}
+            currentKind={row.kind}
+            defaultTitle={row.title}
             onDone={async () => {
               setEditing(false);
               await onChanged();
