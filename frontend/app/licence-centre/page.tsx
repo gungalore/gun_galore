@@ -3,6 +3,7 @@
 import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
 import FilePickerButton from '@/components/file-picker-button';
+import ScanButton from '@/components/scan/scan-button';
 import { todayYmd, toIso } from '@/lib/date-picker-model';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -362,18 +363,29 @@ function AddPanel({
       </div>
 
       <div className="mt-3">
-        <FilePickerButton
-          accept="image/jpeg,image/png,image/webp,application/pdf"
-          // A FOLDER GOES IN AT ONCE. Picking one file at a time and naming
-          // each is the slowest possible way to hand over paperwork the member
-          // already has together.
-          multiple
-          disabled={busy}
-          variant="primary"
+        {/* The camera and the picker are peers, not a primary and a fallback.
+            A licence card photographed straight is what the reader wants; a
+            PDF the association emailed is equally valid and needs no camera
+            at all. */}
+        <ScanButton
+          shape="card"
+          title="Photograph the document"
           onFiles={uploadFiles}
-        >
-          Choose documents
-        </FilePickerButton>
+          disabled={busy}
+          fallback={
+            <FilePickerButton
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              // A FOLDER GOES IN AT ONCE. Picking one file at a time and
+              // naming each is the slowest possible way to hand over
+              // paperwork the member already has together.
+              multiple
+              disabled={busy}
+              onFiles={uploadFiles}
+            >
+              Choose files
+            </FilePickerButton>
+          }
+        />
       </div>
       {busy && (
         <p

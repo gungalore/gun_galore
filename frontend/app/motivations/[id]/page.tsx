@@ -3,6 +3,7 @@
 import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
 import FilePickerButton from '@/components/file-picker-button';
+import ScanButton from '@/components/scan/scan-button';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
@@ -1481,18 +1482,27 @@ function UploadPanel({
             </option>
           ))}
         </select>
-        <FilePickerButton
-          accept="image/jpeg,image/png,image/webp,application/pdf"
-          // A PACK GOES UP IN ONE GO. Picking one file at a time and choosing
-          // a type for each is the slowest possible way to hand over documents
-          // somebody already has sitting in a folder.
-          multiple
-          disabled={busy}
-          variant="primary"
+        <ScanButton
+          shape="page"
+          title="Photograph a document"
           onFiles={uploadFiles}
-        >
-          Upload all my documents at once
-        </FilePickerButton>
+          disabled={busy}
+          label="Photograph documents"
+          fallback={
+            <FilePickerButton
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              // A PACK GOES UP IN ONE GO. Picking one file at a time and
+              // choosing a type for each is the slowest possible way to hand
+              // over documents somebody already has sitting in a folder.
+              multiple
+              disabled={busy}
+              variant="primary"
+              onFiles={uploadFiles}
+            >
+              Upload all my documents at once
+            </FilePickerButton>
+          }
+        />
       </div>
       <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]">
         JPG, PNG, WebP or PDF, up to 10 MB each. Pick several at once if you

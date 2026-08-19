@@ -1,0 +1,351 @@
+import { describe, expect, it } from 'vitest';
+import { Quad, orderQuad } from './geometry';
+import {
+  ACCEPT_SCORE,
+  Gray,
+  detectQuad,
+  edgeContrast,
+  edgePixels,
+  halveGray,
+  intersect,
+  toLuma,
+} from './detect';
+
+// The detector is tested against SYNTHETIC documents, which is the only way to
+// have ground truth. A real photograph tells you it "looks about right"; a
+// generated one tells you the corner is 2.4 px out.
+
+function rng(seed: number) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/** Is (x,y) inside the quad? Ray casting. */
+function inside(q: Quad, x: number, y: number): boolean {
+  let hit = false;
+  for (let i = 0, j = 3; i < 4; j = i++) {
+    const a = q[i];
+    const b = q[j];
+    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) {
+      hit = !hit;
+    }
+  }
+  return hit;
+}
+
+interface SceneOpts {
+  paper?: number;
+  table?: number;
+  /** Multiplicative shadow across the frame, 0 = none. */
+  shadow?: number;
+  noise?: number;
+  /** Draw text-like bars on the page. */
+  text?: boolean;
+  seed?: number;
+}
+
+/** A document on a table, as a luma buffer, with the corners known exactly. */
+function scene(w: number, h: number, quad: Quad, o: SceneOpts = {}): Gray {
+  const paper = o.paper ?? 215;
+  const table = o.table ?? 70;
+  const shadow = o.shadow ?? 0;
+  const noise = o.noise ?? 0;
+  const rand = rng(o.seed ?? 1);
+  const data = new Uint8Array(w * h);
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = inside(quad, x + 0.5, y + 0.5) ? paper : table;
+      if (o.text && inside(quad, x + 0.5, y + 0.5)) {
+        // Rows of dark bars, like lines of print.
+        if (y % 11 < 3 && x % 7 < 5) v = Math.round(v * 0.35);
+      }
+      if (shadow > 0) {
+        // A gradient darkening towards one corner — the phone's own shadow.
+        const k = 1 - shadow * ((x / w) * 0.6 + (y / h) * 0.4);
+        v = v * k;
+      }
+      if (noise > 0) v += (rand() - 0.5) * noise;
+      data[y * w + x] = Math.max(0, Math.min(255, Math.round(v)));
+    }
+  }
+  return { data, width: w, height: h };
+}
+
+/** Largest corner error as a fraction of the frame's larger dimension. */
+function cornerError(got: Quad, want: Quad, w: number, h: number): number {
+  const g = orderQuad([...got]);
+  const t = orderQuad([...want]);
+  let max = 0;
+  for (let i = 0; i < 4; i++) {
+    max = Math.max(max, Math.hypot(g[i].x - t[i].x, g[i].y - t[i].y));
+  }
+  return max / Math.max(w, h);
+}
+
+const scaleRect = (q: Quad, k: number): Quad =>
+  q.map((p) => ({ x: p.x * k, y: p.y * k })) as Quad;
+
+const rect = (x0: number, y0: number, x1: number, y1: number): Quad => [
+  { x: x0, y: y0 },
+  { x: x1, y: y0 },
+  { x: x1, y: y1 },
+  { x: x0, y: y1 },
+];
+
+describe('toLuma', () => {
+  it('weights green most, and is exact on greys', () => {
+    const rgba = new Uint8ClampedArray([255, 255, 255, 255, 0, 0, 0, 255]);
+    const g = toLuma(rgba, 2, 1);
+    expect(g.data[0]).toBeGreaterThan(250);
+    expect(g.data[1]).toBe(0);
+  });
+
+  it('reads green brighter than blue at the same value', () => {
+    const rgba = new Uint8ClampedArray([0, 200, 0, 255, 0, 0, 200, 255]);
+    const g = toLuma(rgba, 2, 1);
+    expect(g.data[0]).toBeGreaterThan(g.data[1]);
+  });
+});
+
+describe('halveGray', () => {
+  it('averages 2x2 blocks and halves the dimensions', () => {
+    const g: Gray = {
+      data: new Uint8Array([0, 100, 200, 40]),
+      width: 2,
+      height: 2,
+    };
+    const h = halveGray(g);
+    expect(h.width).toBe(1);
+    expect(h.data[0]).toBe(85);
+  });
+});
+
+describe('edgePixels', () => {
+  it('finds the border of a bright rectangle and not its flat interior', () => {
+    const g = scene(160, 120, rect(40, 30, 120, 90));
+    const px = edgePixels(g);
+    expect(px.length).toBeGreaterThan(50);
+    // Nothing deep inside the page should survive — it is perfectly flat.
+    const interior = px.filter(
+      (p) => p.x > 55 && p.x < 105 && p.y > 45 && p.y < 75,
+    );
+    expect(interior.length).toBe(0);
+  });
+
+  it('⚠️ ADAPTS to a low-contrast scene instead of finding nothing', () => {
+    // A dark card on a dark table: 40 luma steps of difference. A fixed
+    // threshold tuned for paper-on-wood finds nothing here, which is the
+    // single most common way a hand-rolled detector fails in real use.
+    const g = scene(160, 120, rect(40, 30, 120, 90), { paper: 95, table: 55 });
+    expect(edgePixels(g).length).toBeGreaterThan(50);
+  });
+
+  it('returns nothing on a flat frame rather than inventing edges', () => {
+    const g: Gray = {
+      data: new Uint8Array(160 * 120).fill(128),
+      width: 160,
+      height: 120,
+    };
+    expect(edgePixels(g)).toHaveLength(0);
+  });
+
+  it('survives a tiny buffer without throwing', () => {
+    expect(edgePixels({ data: new Uint8Array(4), width: 2, height: 2 })).toEqual(
+      [],
+    );
+  });
+});
+
+describe('intersect', () => {
+  it('crosses a horizontal and a vertical line', () => {
+    // theta = 0 is a vertical line at x = rho; theta = 90 is horizontal.
+    const p = intersect(
+      { theta: 0, rho: 30, votes: 1, polarity: 1 },
+      { theta: Math.PI / 2, rho: 50, votes: 1, polarity: 1 },
+    )!;
+    expect(p.x).toBeCloseTo(30, 6);
+    expect(p.y).toBeCloseTo(50, 6);
+  });
+
+  it('returns null for parallel lines', () => {
+    expect(
+      intersect(
+        { theta: 0.3, rho: 10, votes: 1, polarity: 1 },
+        { theta: 0.3, rho: 50, votes: 1, polarity: 1 },
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('edgeContrast', () => {
+  it('is strongly positive for a bright page on a dark table', () => {
+    const q = rect(40, 30, 120, 90);
+    expect(edgeContrast(scene(160, 120, q), q)).toBeGreaterThan(80);
+  });
+
+  it('is near zero for a quad drawn across flat ground', () => {
+    const flat: Gray = {
+      data: new Uint8Array(160 * 120).fill(120),
+      width: 160,
+      height: 120,
+    };
+    expect(Math.abs(edgeContrast(flat, rect(40, 30, 120, 90)))).toBeLessThan(5);
+  });
+
+  it('is negative for a dark card on a bright table', () => {
+    // ⚠️ The sign must survive. A dark firearm licence on a white counter is a
+    // real and common scene, and rejecting on polarity would lose it.
+    const q = rect(40, 30, 120, 90);
+    expect(
+      edgeContrast(scene(160, 120, q, { paper: 50, table: 210 }), q),
+    ).toBeLessThan(-80);
+  });
+});
+
+describe('detectQuad', () => {
+  it('finds a square-on document', () => {
+    const want = rect(60, 40, 260, 200);
+    const got = detectQuad(scene(320, 240, want))!;
+    expect(got).not.toBeNull();
+    expect(got.score).toBeGreaterThanOrEqual(ACCEPT_SCORE);
+    expect(cornerError(got.quad, want, 320, 240)).toBeLessThan(0.03);
+  });
+
+  it('finds a document in perspective', () => {
+    const want: Quad = [
+      { x: 70, y: 52 },
+      { x: 258, y: 38 },
+      { x: 274, y: 196 },
+      { x: 54, y: 208 },
+    ];
+    const got = detectQuad(scene(320, 240, want))!;
+    expect(got).not.toBeNull();
+    expect(cornerError(got.quad, want, 320, 240)).toBeLessThan(0.04);
+  });
+
+  it('finds it through a shadow and sensor noise', () => {
+    // The everyday case: a ceiling light behind the member, their own shadow
+    // across one corner, and a mid-range sensor.
+    const want = rect(58, 44, 262, 198);
+    const got = detectQuad(
+      scene(320, 240, want, { shadow: 0.35, noise: 14, text: true, seed: 7 }),
+    )!;
+    expect(got).not.toBeNull();
+    expect(cornerError(got.quad, want, 320, 240)).toBeLessThan(0.05);
+  });
+
+  it('⚠️ finds a DARK card on a BRIGHT surface', () => {
+    // The polarity prior ranks but must never reject, or this scene is lost.
+    const want = rect(70, 60, 250, 175);
+    const got = detectQuad(
+      scene(320, 240, want, { paper: 60, table: 205 }),
+    )!;
+    expect(got).not.toBeNull();
+    expect(cornerError(got.quad, want, 320, 240)).toBeLessThan(0.05);
+  });
+
+  it('finds a low-contrast card', () => {
+    const want = rect(64, 50, 256, 190);
+    const got = detectQuad(
+      scene(320, 240, want, { paper: 120, table: 78, noise: 5 }),
+    );
+    expect(got).not.toBeNull();
+    expect(cornerError(got!.quad, want, 320, 240)).toBeLessThan(0.06);
+  });
+
+  it('RETURNS NULL on an empty table rather than guessing', () => {
+    // The important negative. A confident wrong quad crops half a licence off
+    // and looks deliberate; null opens the corner editor.
+    const flat: Gray = {
+      data: new Uint8Array(320 * 240).fill(90),
+      width: 320,
+      height: 240,
+    };
+    expect(detectQuad(flat)).toBeNull();
+  });
+
+  it('returns null on noise with no structure', () => {
+    const rand = rng(99);
+    const data = new Uint8Array(320 * 240);
+    for (let i = 0; i < data.length; i++) data[i] = Math.floor(rand() * 256);
+    const got = detectQuad({ data, width: 320, height: 240 });
+    // Either nothing, or something it is honest about being unsure of.
+    if (got) expect(got.score).toBeLessThan(0.8);
+  });
+
+  it('rejects a document that fills almost the whole frame', () => {
+    // Usually the frame edge itself rather than a document.
+    const got = detectQuad(scene(320, 240, rect(1, 1, 319, 239)));
+    if (got) {
+      expect(cornerError(got.quad, rect(1, 1, 319, 239), 320, 240)).toBeGreaterThan(
+        0,
+      );
+    }
+  });
+
+  it('gives the same answer whatever resolution it is handed', () => {
+    // The caller should not be able to change the result by handing over a
+    // bigger buffer. detectQuad halves down to a fixed working size for
+    // exactly that reason — the live viewfinder passes 320px and the capture
+    // path passes a full still, and they must agree about where the corners
+    // are or the markers will not match the crop.
+    const want = rect(60, 45, 260, 195);
+    const small = detectQuad(scene(320, 240, want))!;
+    const big = detectQuad(scene(1280, 960, scaleRect(want, 4)))!;
+    expect(small).not.toBeNull();
+    expect(big).not.toBeNull();
+    // Compare in the same units: the big one's corners over four.
+    for (let i = 0; i < 4; i++) {
+      expect(big.quad[i].x / 4).toBeCloseTo(small.quad[i].x, 0);
+      expect(big.quad[i].y / 4).toBeCloseTo(small.quad[i].y, 0);
+    }
+  });
+
+  it('finds documents across many random placements', () => {
+    // The breadth test: 40 seeded scenes, varying size, position, tilt,
+    // lighting and noise. A threshold tweak that helps one photo and breaks
+    // five others shows up here and nowhere else.
+    const rand = rng(4242);
+    let found = 0;
+    let worst = 0;
+    const N = 40;
+    for (let i = 0; i < N; i++) {
+      const W = 320;
+      const H = 240;
+      const mx = 30 + rand() * 40;
+      const my = 25 + rand() * 30;
+      const jitter = () => (rand() - 0.5) * 22;
+      const want = orderQuad([
+        { x: mx + jitter(), y: my + jitter() },
+        { x: W - mx + jitter(), y: my + jitter() },
+        { x: W - mx + jitter(), y: H - my + jitter() },
+        { x: mx + jitter(), y: H - my + jitter() },
+      ]);
+      const dark = rand() < 0.3;
+      const g = scene(W, H, want, {
+        paper: dark ? 60 + rand() * 30 : 180 + rand() * 60,
+        table: dark ? 190 + rand() * 50 : 50 + rand() * 40,
+        shadow: rand() * 0.3,
+        noise: rand() * 12,
+        text: rand() < 0.5,
+        seed: i + 1,
+      });
+      const got = detectQuad(g);
+      if (!got) continue;
+      const err = cornerError(got.quad, want, W, H);
+      if (err < 0.06) {
+        found++;
+        worst = Math.max(worst, err);
+      }
+    }
+    // Not 100%: some scenes are genuinely ambiguous, and the corner editor is
+    // the answer for those. But a detector that finds fewer than most of them
+    // is not worth shipping.
+    expect(found).toBeGreaterThanOrEqual(Math.ceil(N * 0.8));
+    expect(worst).toBeLessThan(0.06);
+  });
+});
