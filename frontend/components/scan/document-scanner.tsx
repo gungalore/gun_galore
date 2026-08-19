@@ -87,7 +87,7 @@ export interface DocumentScannerProps {
  * only thing left is for the phone to stop moving, which is what the ring
  * around the shutter is filling up to show.
  */
-type Blocker = 'off' | 'searching' | 'aim' | 'settling' | 'light' | 'steady';
+type Blocker = 'off' | 'searching' | 'aim' | 'light' | 'steady';
 
 type Phase =
   /**
@@ -322,9 +322,16 @@ export default function DocumentScanner({
     // retake AND the member's trust in it; one that waits a beat too long
     // costs a beat.
     const HOLD_MS = 1100;
-    const STEADY_FRAC = 0.02;
+    /**
+     * Mean frame-to-frame luma change below which the phone counts as still,
+     * on a 0-255 scale. A hand at rest measures 1-3; deliberate movement is
+     * 8 and up; the gap between them is wide.
+     */
+    const MOTION_STILL = 4;
     let steadySince = 0;
-    let steadyQuad: Quad | null = null;
+    /** Every 8th luma of the previous frame, for the motion measure. */
+    let prevSample: Uint8Array | null = null;
+    let motion = 255;
 
     const detectOnce = () => {
       if (!alive) return;
@@ -349,6 +356,31 @@ export default function DocumentScanner({
         if (gray) {
           let blown = 0;
           let sum = 0;
+          // ── motion, measured on the IMAGE ─────────────────────────
+          //
+          // ⚠️ NOT ON THE DETECTED QUAD, and this is the fix for "only the
+          // A4 ever auto-captures". Stillness used to be quad drift between
+          // consecutive detections — so on a textured carpet, where the
+          // detector flip-flops between candidates, the drift spiked every
+          // few frames and the 1.1-second clock restarted forever. The
+          // member was perfectly still; the DETECTOR was fidgeting; and the
+          // member is the one the clock is supposed to be about. Comparing
+          // the sampled pixels of consecutive frames measures the hand and
+          // only the hand.
+          const n8 = Math.ceil(gray.data.length / 8);
+          if (!prevSample || prevSample.length !== n8) {
+            prevSample = new Uint8Array(n8);
+            motion = 255; // first frame: unknown, treat as moving
+          } else {
+            let diff = 0;
+            for (let i = 0, j = 0; i < gray.data.length; i += 8, j++) {
+              diff += Math.abs(gray.data[i] - prevSample[j]);
+            }
+            motion = diff / n8;
+          }
+          for (let i = 0, j = 0; i < gray.data.length; i += 8, j++) {
+            prevSample[j] = gray.data[i];
+          }
           // Every eighth pixel is plenty for a percentage, and keeps this off
           // the detection budget.
           for (let i = 0; i < gray.data.length; i += 8) {
@@ -491,35 +523,27 @@ export default function DocumentScanner({
           ? 'searching'
           : !aimedRef.current
             ? 'aim'
-            : lockRef.current < 3
-              ? 'settling'
-              : !exposureAllowsAutoCapture(glareRef.current, lumaRef.current)
-                ? 'light'
-                : 'steady';
+            : !exposureAllowsAutoCapture(glareRef.current, lumaRef.current)
+              ? 'light'
+              : 'steady';
       if (why !== blockerShownRef.current) {
         blockerShownRef.current = why;
         setBlocker(why);
       }
 
+      // ⚠️ THREE GATES, EACH ABOUT THE MEMBER, NONE ABOUT THE DETECTOR.
+      //
+      // Something is in the box (aimed — hysteresis absorbs the detector's
+      // fidgeting), the light is workable, and the HAND is still. The lock
+      // count and quad drift are gone from this decision: both measured the
+      // detector's stability, and on a patterned carpet the detector
+      // flip-flops between candidates indefinitely while the member stands
+      // rock still doing everything right. Only the A4 page — big enough to
+      // drown the carpet out — could ever pass, which is exactly the split
+      // the operator reported. The lock still decides when markers draw;
+      // it has no say over the shutter any more.
       if (
         autoRef.current &&
-        q &&
-        lockRef.current >= 3 &&
-        // ⚠️ THE AIM BOX REPLACED THE CONFIDENCE SCORE HERE, it does not
-        // stack on top of it.
-        //
-        // `confident` is an inference — score, ink density, interior angles —
-        // invented to guess whether a locked quad was really a document, back
-        // when nothing else could say. The aim box is not a guess: the member
-        // put the document inside the corners and it stayed there for three
-        // frames. Requiring both meant a licence card on a patterned carpet
-        // could sit locked, green and steady while ink density quietly held
-        // the shutter shut, and the member had no way to find out why.
-        //
-        // The remaining gates are the ones with visible causes: corners that
-        // agree, corners in the box, a frame that is not blown out, and a
-        // phone that has stopped moving. If any of those is missing the
-        // member can see which.
         aimedRef.current &&
         // ⚠️ THE SAME CALL THE ALERT MAKES. Two copies of these thresholds
         // would eventually disagree, and a scanner that shows a warning and
@@ -527,13 +551,11 @@ export default function DocumentScanner({
         // broken in a way nobody can describe well enough to report.
         exposureAllowsAutoCapture(glareRef.current, lumaRef.current)
       ) {
-        const drift = steadyQuad ? quadDrift(steadyQuad, q) : Infinity;
-        if (drift <= video.videoWidth * STEADY_FRAC) {
+        if (motion <= MOTION_STILL) {
           if (!steadySince) steadySince = now;
         } else {
-          steadySince = now;
+          steadySince = 0;
         }
-        steadyQuad = q;
         const held = steadySince ? now - steadySince : 0;
         setHoldPct(Math.min(1, held / HOLD_MS));
         if (held >= HOLD_MS && !capturingRef.current) {
@@ -545,7 +567,6 @@ export default function DocumentScanner({
         }
       } else {
         steadySince = 0;
-        steadyQuad = null;
         if (holdRef.current !== 0) setHoldPct(0);
       }
 
@@ -852,11 +873,9 @@ export default function DocumentScanner({
                 ? 'Looking for the edges…'
                 : blocker === 'aim'
                   ? `Put the ${SHAPES[shape].label.toLowerCase()} inside the red corners.`
-                  : blocker === 'settling'
-                    ? 'Nearly — keep it there.'
-                    : blocker === 'light'
-                      ? 'Fix the lighting above and it will take itself.'
-                      : 'Got it — hold still.'}
+                  : blocker === 'light'
+                    ? 'Fix the lighting above and it will take itself.'
+                    : 'Got it — hold still.'}
           </p>
         )}
           </>

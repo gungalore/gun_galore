@@ -146,9 +146,19 @@ export async function grabVisible(
  * A handheld shot that is 30px adrift passes both comfortably, which is the
  * point: this rejects "you found the carpet", not "your corners are a few
  * pixels out".
+ *
+ * ⚠️ TIGHTENED AFTER THE FIRST NIGHT IN THE FIELD, from measurements off the
+ * operator's own review screenshots. At cover 0.5 / spill 0.35 two bad
+ * detections got through: a strip covering 53% of the ID-book box (the crop
+ * lost the right half of the book), and the licence card plus a carpet strip.
+ * The member had lined both up dead centre — so when they have done their
+ * half, a detection has to essentially COINCIDE with the box to outrank it,
+ * because losing to the box costs a few millimetres of margin while beating
+ * it wrongly costs half the document. A 30px handheld slip still measures
+ * cover 0.93 / spill 0.07 and passes with room.
  */
-const AIM_MIN_COVER = 0.5;
-const AIM_MAX_SPILL = 0.35;
+const AIM_MIN_COVER = 0.8;
+const AIM_MAX_SPILL = 0.12;
 
 export function detectionAgreesWithAim(detected: Quad, box: Rect): boolean {
   const b = quadBounds(detected);

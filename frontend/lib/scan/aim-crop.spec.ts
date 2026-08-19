@@ -56,6 +56,35 @@ describe('trusting the aim box over a detection', () => {
     expect(believesDetection(everything, box)).toBe(false);
   });
 
+  it('⚠️ REJECTS THE HALF-WIDTH STRIP THAT ATE THE ID BOOK', () => {
+    // Measured off the operator's review screenshot of 2026-08-19 23:28: the
+    // saved crop was 0.378 wide-for-tall against a box of 0.704 — a strip
+    // covering barely half the box's width, running below it into carpet.
+    // Cover was 0.53, and the old 0.5 floor waved it through; the right half
+    // of the ID book was simply gone from the scan.
+    const bookBox = aimBox('id-book', FRAME);
+    const strip: Quad = [
+      { x: bookBox.x, y: bookBox.y },
+      { x: bookBox.x + bookBox.width * 0.53, y: bookBox.y },
+      { x: bookBox.x + bookBox.width * 0.53, y: bookBox.y + bookBox.height * 1.3 },
+      { x: bookBox.x, y: bookBox.y + bookBox.height * 1.3 },
+    ];
+    expect(believesDetection(strip, bookBox)).toBe(false);
+  });
+
+  it('⚠️ REJECTS THE CARD-PLUS-CARPET-STRIP', () => {
+    // The same night's licence scan: the whole card, plus a fifth of carpet
+    // bolted onto one side. Cover 1.0 — it contains the box — so only spill
+    // can catch it, and at 0.35 it did not.
+    const wide: Quad = [
+      { x: box.x - box.width * 0.2, y: box.y },
+      { x: box.x + box.width, y: box.y },
+      { x: box.x + box.width, y: box.y + box.height },
+      { x: box.x - box.width * 0.2, y: box.y + box.height },
+    ];
+    expect(believesDetection(wide, box)).toBe(false);
+  });
+
   it('rejects a fragment inside the card, like one printed table', () => {
     const table: Quad = [
       { x: box.x + 40, y: box.y + 70 },
