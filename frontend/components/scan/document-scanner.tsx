@@ -90,6 +90,16 @@ export default function DocumentScanner({
    */
   const [auto, setAuto] = useState(true);
   const [holdPct, setHoldPct] = useState(0);
+  /**
+   * Blown-out fraction of the live frame.
+   *
+   * ⚠️ THE ONE THING NO ALGORITHM FIXES. A specular highlight on a laminated
+   * licence card is saturated — there is no detail under it to recover, and
+   * the edges inside it are gone too, which is exactly why detection stops
+   * finding the card under a torch. What we CAN do is see it and say so,
+   * because tilting the phone fixes it completely and instantly.
+   */
+  const [glare, setGlare] = useState(0);
 
   // The live quad, and whether it has been steady long enough to trust.
   const quadRef = useRef<Quad | null>(null);
@@ -103,6 +113,8 @@ export default function DocumentScanner({
   const capturingRef = useRef(false);
   /** Does the latest detection look like a document, not just like a shape? */
   const confidentRef = useRef(false);
+  const glareRef = useRef(0);
+  const glareShownRef = useRef(0);
   const captureRef = useRef<(() => Promise<void>) | null>(null);
 
   autoRef.current = auto;
@@ -144,9 +156,23 @@ export default function DocumentScanner({
         const track = stream.getVideoTracks()[0];
         // Torch is Chrome-on-Android only. Never render a dead button.
         const caps = track.getCapabilities?.() as
-          | (MediaTrackCapabilities & { torch?: boolean })
+          | (MediaTrackCapabilities & { torch?: boolean; focusMode?: string[] })
           | undefined;
         setHasTorch(caps?.torch === true);
+
+        // ⚠️ ASK FOR CONTINUOUS FOCUS. A video track often defaults to a fixed
+        // or slow focus, and a licence card held 150mm away sits near the
+        // lens's near limit — which is where a soft frame comes from. This is
+        // an advanced constraint and most devices quietly ignore it, so it is
+        // attempted and its failure is not an error. It costs nothing on the
+        // phones that do honour it, and those are the ones that were soft.
+        if (caps?.focusMode?.includes('continuous')) {
+          await track
+            .applyConstraints({
+              advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+            })
+            .catch(() => undefined);
+        }
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => undefined);
@@ -223,6 +249,20 @@ export default function DocumentScanner({
       const t0 = performance.now();
       try {
         const gray = frameToGray(video, scratch);
+        if (gray) {
+          let blown = 0;
+          // Every eighth pixel is plenty for a percentage, and keeps this off
+          // the detection budget.
+          for (let i = 0; i < gray.data.length; i += 8) {
+            if (gray.data[i] > 250) blown++;
+          }
+          const frac = blown / (gray.data.length / 8);
+          glareRef.current = frac;
+          if (Math.abs(frac - glareShownRef.current) > 0.01) {
+            glareShownRef.current = frac;
+            setGlare(frac);
+          }
+        }
         const found = gray
           ? detectQuad(gray, { expectAspect: expectAspectFor(shape) })
           : null;
@@ -284,7 +324,10 @@ export default function DocumentScanner({
         autoRef.current &&
         q &&
         lockRef.current >= 3 &&
-        confidentRef.current
+        confidentRef.current &&
+        // A blown highlight cannot be recovered, so shooting through one
+        // automatically just produces an unreadable scan with nobody to blame.
+        glareRef.current <= 0.02
       ) {
         const drift = steadyQuad ? quadDrift(steadyQuad, q) : Infinity;
         if (drift <= video.videoWidth * STEADY_FRAC) {
@@ -414,13 +457,29 @@ export default function DocumentScanner({
     [say],
   );
 
+  /**
+   * Hand the pages over and close.
+   *
+   * ⚠️ CLOSE FIRST, UPLOAD AFTER. This used to await onDone() before closing —
+   * and onDone writes an encrypted file and makes two vision calls, which on a
+   * phone is five to twenty seconds. The scanner sat there with its buttons
+   * still showing and nothing moving, so "Use it" looked broken. It was not
+   * broken; it was silent, which is worse.
+   *
+   * The scanner's job ends the moment the file exists. Both surfaces that
+   * embed it already show upload progress of their own, so closing
+   * immediately puts the member in front of that progress instead of in front
+   * of a frozen camera.
+   */
   const finish = useCallback(
-    async (extra: File[]) => {
+    (extra: File[]) => {
       if (closedRef.current) return;
       closedRef.current = true;
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      await onDone(extra);
       onClose();
+      // Deliberately not awaited: the parent owns this now, including its
+      // errors, which it is far better placed to show than a closing modal.
+      void onDone(extra);
     },
     [onDone, onClose],
   );
@@ -504,9 +563,13 @@ export default function DocumentScanner({
               pointerEvents: 'none',
             }}
           >
-            {auto
-              ? 'Fill the frame with the document and hold still — it takes the photo itself.'
-              : 'Fill the frame with the document.'}
+            {glare > 0.02
+              ? torchOn
+                ? 'The light is bouncing off the card. Turn the light off, or tilt the phone a little.'
+                : 'There is a glare on it — tilt the phone a little, or move out from under the light.'
+              : auto
+                ? 'Fill the frame with the document and hold still — it takes the photo itself.'
+                : 'Fill the frame with the document.'}
           </p>
         )}
           </>
@@ -548,11 +611,7 @@ export default function DocumentScanner({
               setPhase('live');
               say('Ready for another go.');
             }}
-            onUse={async () => {
-              const all = [...pages, shot.file];
-              setPages(all);
-              await finish(all);
-            }}
+            onUse={() => finish([...pages, shot.file])}
             onAddAnother={() => {
               setPages((p) => [...p, shot.file]);
               setShot(null);
@@ -589,7 +648,7 @@ export default function DocumentScanner({
           auto={auto}
           onAuto={() => setAuto((a2) => !a2)}
           holdPct={holdPct}
-          onDone={pages.length ? () => void finish(pages) : undefined}
+          onDone={pages.length ? () => finish(pages) : undefined}
           pages={pages.length}
         />
       )}

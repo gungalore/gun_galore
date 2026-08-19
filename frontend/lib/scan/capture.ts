@@ -2,7 +2,7 @@
 
 import { DETECT_WIDTH, Gray, detectQuad, inkiness, toLuma } from './detect';
 import { EnhanceReport, enhance, inspect } from './enhance';
-import { Quad, frameQuad, outputSize } from './geometry';
+import { Quad, frameQuad, outputSize, scaleQuad } from './geometry';
 import { Raster, rectify } from './warp';
 
 // ────────────────────────────────────────────────────────────────────
@@ -225,8 +225,18 @@ export async function processCapture(
     }
   }
 
-  const { w, h, snapped } = outputSize(quad, OUTPUT_MAX_EDGE);
-  const flat = rectify(raster, quad, w, h);
+  // ⚠️ A HAIR OF MARGIN, so the crop can never eat the document.
+  //
+  // Detection lands on the centre of the border ridge, which for a card with a
+  // printed edge is a pixel or two INSIDE the paper — and the operator's own
+  // scan came back with the top of "Licence To Possess a Firearm" shaved off.
+  // A sliver of desk around the edge costs a vision model nothing; a missing
+  // line of text costs it the field. Skipped for a manual quad: if somebody
+  // has dragged the corners themselves, those are the corners they meant.
+  const cropQuad = opts.manualQuad ? quad : scaleQuad(quad, 1.02);
+
+  const { w, h, snapped } = outputSize(cropQuad, OUTPUT_MAX_EDGE);
+  const flat = rectify(raster, cropQuad, w, h);
   if (!flat) throw new Error('We could not straighten that one.');
 
   const better = enhance(flat);
