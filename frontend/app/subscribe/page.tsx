@@ -14,6 +14,7 @@ import { useAuth } from '@clerk/nextjs';
 import { PageReveal } from '@/components/page-reveal';
 import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PRO_NAME } from '@/lib/brand';
+import { PRO_PERKS } from '@/lib/pro-perks';
 import { formatPrice } from '@/lib/utils';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -30,19 +31,23 @@ interface Mine {
 }
 
 // Single paid tier since 2026-07-19: FREE demos every feature, PRO
-// unlocks it all. The prize-draw line deliberately says only "amazing
-// prizes" — the actual prize of the running cycle is shown on /raffle.
-const TIER_PERKS: Record<'PRO', string[]> = {
-  PRO: [
-    'Automatic entry into the free PRO prize draw — amazing prizes, every cycle',
-    'Ask Boet: 60 messages / hour',
-    'Unlimited photo identification (10/query)',
-    'Ballistic calculator + full Load Lab load data',
-    'Unlimited open swap proposals + 25% off swap service fees',
-    `${PRO_NAME} username badge`,
-    '50% off featured-listing bids',
-  ],
-};
+// unlocks it all.
+//
+// The perk list now comes from lib/pro-perks.ts — the SHARED source, so this
+// page and /raffle cannot drift. This page is behind the login, so it uses the
+// full-detail PRO_PERKS (which names Load Lab, calibres and ballistics);
+// public surfaces must use PRO_PERKS_PUBLIC instead. See that file for why.
+//
+// Three perks that used to be listed here were REMOVED because a paying member
+// does not actually receive them today — "25% off swap service fees" and "50%
+// off featured-listing bids" are both unreachable behind assertPaymentsLive()
+// (and the featured one was mis-described), and "Ballistic calculator" names a
+// screen that was retired on 2026-07-13. Full reasoning lives in pro-perks.ts.
+//
+// The prize-draw entry line moved into prose below rather than sitting in the
+// bullet list — on a list of things your money buys, "entry into the draw"
+// reads as pay-to-enter.
+const TIER_PERKS: Record<'PRO', string[]> = { PRO: PRO_PERKS };
 
 // What FREE gets — an honest demo of everything PRO unlocks.
 const FREE_DEMOS: string[] = [

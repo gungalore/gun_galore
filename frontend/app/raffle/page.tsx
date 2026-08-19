@@ -8,8 +8,10 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useAuth } from '@clerk/nextjs';
 import { BrowseRailShell } from '@/components/browse-rail-shell';
 import { PRO_NAME } from '@/lib/brand';
+import { PRO_PERKS_PUBLIC, PRO_LAUNCHING_SOON } from '@/lib/pro-perks';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -57,6 +59,7 @@ function Countdown({ to }: { to: string }) {
 }
 
 export default function RafflePage() {
+  const { isSignedIn } = useAuth();
   const [state, setState] = useState<RaffleState | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -74,10 +77,23 @@ export default function RafflePage() {
       <h1 className="text-xl font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
         The {PRO_NAME} prize draw
       </h1>
+      {/* ⚖️ TWO CORRECTIONS HERE, BOTH LOAD-BEARING — read before editing.
+          1. "Every PRO member" was factually wrong and contradicted our own
+             rules page: raffle.service.ts requires an ACTIVE PAID subscription
+             row, so complimentary/admin-granted PRO accounts are NOT entrants
+             (rules/page.tsx says exactly that). "Paid-up" makes the page agree
+             with the eligibility code and with the rules.
+          2. "The bigger the PRO club grows, the bigger the prizes get" was
+             DELETED. It states in public marketing that prize size is a
+             function of subscriber numbers — which is the subscription-funded
+             framing the operator's own standing rule bans, just without using
+             the word "pool". It sat directly above the membership block below,
+             which makes it the single riskiest sentence on the page. The
+             replacement says who actually buys the prize. */}
       <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-        Every {PRO_NAME} member is entered automatically — free, no tickets, no
-        entry steps. Amazing prizes, drawn on the date shown. The bigger the
-        PRO club grows, the bigger the prizes get.
+        Every paid-up {PRO_NAME} member is entered automatically — free, no
+        tickets, no entry steps. Each prize is bought by All Outdoor and shown
+        here in full before the draw date.
       </p>
 
       {failed && (
@@ -169,6 +185,96 @@ export default function RafflePage() {
             here. PRO members are entered automatically the moment it goes live.
           </p>
         </div>
+      )}
+
+      {/* WHAT THE SUBSCRIPTION ACTUALLY BUYS.
+          Gated on `state` alone, NOT on `state.current`. The prize card needs
+          `current` and the "next prize being lined up" card needs
+          `!current && !recentWinner`, so during the 48-hour winner-banner
+          window with no next prize NEITHER renders — gating this the same way
+          would reproduce that hole.
+
+          ⚖️ THIS BLOCK IS THE LEGAL MITIGATION, NOT THE RISK. The defence for
+          running the draw is the CPA s36 "ordinary price" argument: the
+          subscription is sold for its own benefits and the draw rides along
+          free. A page showing a price and a prize and nothing else is evidence
+          against that. A page showing six substantive things the money buys is
+          evidence for it. Do not remove this to "clean up" the page.
+
+          Deliberately: no rand price (it would sit in the same eyeful as the
+          prize value, and the real price lives in a DB setting), no
+          prize-draw bullet (that is the pay-to-enter framing), and a GHOST
+          button so the prize card keeps the only red CTA. */}
+      {state && (
+        <section
+          className="rounded-[10px] p-5 mb-6"
+          style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+        >
+          <p
+            className="text-[11px] uppercase font-semibold mb-1"
+            style={{ letterSpacing: 0.6, color: 'var(--red)' }}
+          >
+            What {PRO_NAME} includes
+          </p>
+          <h3
+            className="text-base font-semibold mb-3"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            Your {PRO_NAME} membership
+          </h3>
+          <ul
+            className="m-0 p-0 mb-4"
+            style={{ listStyle: 'none', fontSize: 13, lineHeight: 1.7 }}
+          >
+            {PRO_PERKS_PUBLIC.map((perk) => (
+              <li
+                key={perk}
+                className="flex items-start gap-2"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                <span aria-hidden style={{ color: 'var(--red)', flexShrink: 0 }}>
+                  ✓
+                </span>
+                {perk}
+              </li>
+            ))}
+          </ul>
+          {/* /subscribe is NOT in isPublicRoute, so a signed-out visitor on
+              this public page would be bounced to /sign-in with no explanation.
+              Send them there deliberately, with a return trip. */}
+          <Link
+            href={isSignedIn ? '/subscribe' : '/sign-in?redirect_url=/subscribe'}
+            className="inline-block text-sm px-4 py-2.5 rounded-[6px]"
+            style={{
+              background: 'transparent',
+              color: 'var(--text-secondary)',
+              // Bordered, never borderless — a borderless ghost here reads as
+              // disabled text (recorded regression, founding-seller-section).
+              border: '0.5px solid var(--border)',
+              fontWeight: 500,
+            }}
+          >
+            See everything {PRO_NAME} includes
+          </Link>
+          <p className="text-xs mt-3 mb-0" style={{ color: 'var(--text-tertiary)' }}>
+            {PRO_LAUNCHING_SOON}
+          </p>
+          {/* Sits WITH the block, not 200px below it in tertiary grey. Wording
+              is derived near-verbatim from the Terms and the rules page, both of
+              which carry legal weight — do not paraphrase it further. */}
+          <p className="text-xs mt-3 mb-0" style={{ color: 'var(--text-tertiary)' }}>
+            <strong style={{ color: 'var(--text-secondary)' }}>
+              {PRO_NAME} is a subscription to the features above.
+            </strong>{' '}
+            Entry into the prize draw is an automatic, free benefit of an active
+            subscription at its ordinary price — no part of the subscription fee
+            is a payment for entry, and nothing further is required to enter or
+            to win. 18+.{' '}
+            <Link href="/raffle/rules" style={{ color: 'var(--red)' }}>
+              Competition rules
+            </Link>
+          </p>
+        </section>
       )}
 
       {state?.enabled && (state.pastWinners?.length ?? 0) > 0 && (
