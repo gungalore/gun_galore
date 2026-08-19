@@ -282,7 +282,7 @@ describe('when something cannot be filled', () => {
 
   it('never writes Automatic, which is not licensable to a private person', () => {
     for (const action of [
-      'Self-loading (semi-automatic)',
+      'Semi-automatic (self-loading)',
       'Bolt action',
       'Revolver',
       'Pump action',
@@ -292,7 +292,7 @@ describe('when something cannot be filled', () => {
       );
       expect(marked).toHaveLength(1);
       expect(marked[0]).toBe(
-        action === 'Self-loading (semi-automatic)'
+        action === 'Semi-automatic (self-loading)'
           ? 'e_action_semi_auto'
           : 'e_action_manual',
       );

@@ -278,6 +278,23 @@ export class MotivationsController {
     );
   }
 
+  /**
+   * Write the suggestions the applicant confirmed.
+   *
+   * A separate call from the upload, deliberately: reading a document proposes
+   * values, the applicant accepts them, and only then are they written. A
+   * misread digit that became an answer silently would be a false statement on
+   * a form they sign.
+   */
+  @Post(':id/uploads/apply')
+  applyExtraction(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body() dto: SaveAnswersDto,
+  ) {
+    return this.motivations.applyExtraction(clerkId, id, dto.answers ?? {});
+  }
+
   /** The annexure list — metadata only, never bytes. */
   @Get(':id/uploads')
   listUploads(@CurrentUser() clerkId: string, @Param('id') id: string) {

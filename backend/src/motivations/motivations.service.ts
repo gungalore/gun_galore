@@ -50,6 +50,10 @@ import {
 } from './motivation-fields';
 import { decryptSaIdNumber } from '../common/id-crypto';
 import {
+  ExtractedField,
+  MotivationExtractService,
+} from './motivation-extract.service';
+import {
   FOLLOW_UP_BATCH,
   fallbackQuestion,
   findGaps,
@@ -164,6 +168,7 @@ export class MotivationsService {
     private readonly claude: MotivationClaudeService,
     private readonly pdf: MotivationPdfService,
     private readonly settings: SettingsService,
+    private readonly extract: MotivationExtractService,
   ) {}
 
   /**
@@ -645,7 +650,7 @@ export class MotivationsService {
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
-      select: { id: true, status: true },
+      select: { id: true, status: true, licenceType: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
     if (!EDITABLE.includes(row.status)) {
@@ -700,7 +705,48 @@ export class MotivationsService {
         },
         select: { id: true, kind: true, byteSize: true, createdAt: true },
       });
-      return created;
+
+      // READ IT, if there is anything on it worth reading.
+      //
+      // FAIL-SOFT: the bytes are already stored and the row already exists, so
+      // an unreadable photograph or a model outage costs the applicant a
+      // convenience, not their upload. extractionOk stays false and they type
+      // the values themselves — which is what they would have done anyway.
+      //
+      // The suggestions are NOT written into their answers here. They are
+      // returned for confirmation: a misread digit in an ID number would
+      // otherwise become a false statement on a form they sign.
+      let suggestions: ExtractedField[] = [];
+      if (MotivationExtractService.canExtract(kind)) {
+        try {
+          suggestions = await this.extract.extract({
+            kind,
+            licenceType: row.licenceType,
+            bytes: file.buffer,
+            mimeType: file.mimetype,
+          });
+          await this.prisma.motivationUpload.update({
+            where: { id: created.id },
+            data: {
+              extractionOk: suggestions.length > 0,
+              // KEYS only in the clear — the registry is not PII, the values
+              // are. The values themselves are encrypted.
+              extractedFields: suggestions.map((f) => f.key),
+              extractionEncrypted: suggestions.length
+                ? encryptJson(
+                    Object.fromEntries(suggestions.map((f) => [f.key, f.value])),
+                  )
+                : null,
+            },
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Motivation ${row.id}: extraction failed for upload ${created.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+
+      return { ...created, suggestions };
     } catch (err) {
       // Whatever went wrong, the bytes must not outlive the attempt: a file
       // with no row pointing at it is undeletable except by hand.
@@ -716,6 +762,59 @@ export class MotivationsService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Write suggestions the applicant has CONFIRMED.
+   *
+   * Separate from the upload on purpose. Extraction proposes; the applicant
+   * decides. Anything they have already answered themselves is left alone —
+   * the same rule profile prefill follows, and for the same reason: a form that
+   * quietly contradicts what someone typed is the worst outcome here.
+   */
+  async applyExtraction(
+    clerkId: string,
+    id: string,
+    accepted: Record<string, unknown>,
+  ) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        licenceType: true,
+        status: true,
+        answersEncrypted: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (!EDITABLE.includes(row.status)) {
+      throw new ConflictException('This application can no longer be edited.');
+    }
+
+    const answers = this.readAnswers(row.answersEncrypted);
+    const fresh: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(accepted ?? {})) {
+      if ((answers[k] ?? '').trim()) continue; // never overwrite
+      fresh[k] = v;
+    }
+
+    const { answers: clean } = sanitiseAnswers(row.licenceType, fresh);
+    const merged = { ...answers, ...clean };
+
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: {
+        answersEncrypted: encryptJson(merged),
+        answersSchemaVersion: FIELD_REGISTRY_VERSION,
+      },
+    });
+
+    return {
+      filled: Object.keys(clean).length,
+      missingRequired: missingRequired(row.licenceType, merged),
+    };
   }
 
   /** The annexure list. Metadata only — never the bytes. */

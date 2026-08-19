@@ -56,7 +56,7 @@ describe('field registry integrity', () => {
     expect(action.choices!.join(' ').toLowerCase()).not.toMatch(
       /fully automatic|^automatic/,
     );
-    expect(action.choices).toContain('Self-loading (semi-automatic)');
+    expect(action.choices).toContain('Semi-automatic (self-loading)');
   });
 
   it('does not ask for anything the ID number already carries', () => {

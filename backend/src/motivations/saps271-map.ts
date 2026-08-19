@@ -222,10 +222,10 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
 
   const action = a('firearm_action');
   if (action) {
-    // Self-loading is the only thing the form calls semi-automatic. Everything
+    // The form calls this "Semi-automatic". Everything
     // else we offer is manually operated — and Automatic is never ticked.
     tick(
-      action === 'Self-loading (semi-automatic)'
+      action === 'Semi-automatic (self-loading)'
         ? 'e_action_semi_auto'
         : 'e_action_manual',
     );

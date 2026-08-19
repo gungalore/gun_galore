@@ -10,6 +10,7 @@ import {
   MotivationDetail,
   MotivationField,
   ProfileOffer,
+  Suggestion,
   UploadRow,
   groupBySection,
   motivationsApi,
@@ -76,6 +77,8 @@ export default function MotivationWizardPage() {
   const [furthest, setFurthest] = useState(1);
   const [generating, setGenerating] = useState(false);
   const [testimonialConsent, setTestimonialConsent] = useState(false);
+  // Values read off uploaded documents, waiting to be confirmed. NOT answers.
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
 
   // A stable getter, so the effects below do not re-run every render just
   // because Clerk handed back a new function identity.
@@ -163,20 +166,71 @@ export default function MotivationWizardPage() {
   };
 
   const shown = useMemo(() => visibleFields(fields, answers), [fields, answers]);
-  const sections = useMemo(() => groupBySection(shown), [shown]);
+
+  /**
+   * How many firearms-you-already-own rows to show.
+   *
+   * The SAPS 271 has room for fourteen and the registry carries six, but
+   * rendering six empty rows of six columns is thirty-six boxes in front of
+   * someone who probably owns one firearm — which reads as a demand rather than
+   * a form. Operator, 2026-08-19: start with one, and add another on request.
+   *
+   * A row counts as started once its calibre is filled, since that is the
+   * column the overlap check actually needs.
+   */
+  const ownedRowsFilled = useMemo(() => {
+    let n = 0;
+    for (let i = 1; i <= 6; i++) {
+      if ((answers[`existing_firearm_${i}_calibre`] ?? '').trim()) n = i;
+    }
+    return n;
+  }, [answers]);
+  const [ownedRowsShown, setOwnedRowsShown] = useState(1);
+  const ownedRows = Math.max(1, ownedRowsFilled, ownedRowsShown);
+
+  const sections = useMemo(() => {
+    // Hide the rows beyond the ones in play. They stay in the registry — the
+    // form has them and the server still accepts them — they are simply not
+    // put in front of someone who does not need them.
+    const visible = shown.filter((f) => {
+      const m = /^existing_firearm_(\d+)_/.exec(f.key);
+      return !m || Number(m[1]) <= ownedRows;
+    });
+    return groupBySection(visible);
+  }, [shown, ownedRows]);
   const outstanding = detail?.missingRequired ?? [];
   const openQuestions = messages.filter(
     (m) => m.role === 'assistant' && !(answers[m.fieldKey ?? ''] ?? '').trim(),
   );
 
-  const stepStatus = (n: number, complete: boolean): StepStatus => {
-    if (complete) return 'complete';
+  /**
+   * Status for one step.
+   *
+   * `answered` matters as much as `missing`. A section whose fields are ALL
+   * OPTIONAL has nothing missing the moment it appears, and the first version
+   * turned it green immediately — telling someone a section was done before
+   * they had typed a word in it. Green now means "there is something in here
+   * and nothing outstanding".
+   */
+  const stepStatus = (
+    n: number,
+    missing: number,
+    answered: number,
+  ): StepStatus => {
+    if (answered > 0 && missing === 0) return 'complete';
     if (n === expanded) return 'active';
     return n <= furthest ? 'idle' : 'locked';
   };
 
+  /**
+   * Toggle, not just open.
+   *
+   * Clicking the header of the step you are ON now COLLAPSES it. Previously
+   * every click expanded, so the open step could never be shrunk and a long
+   * section left no way to see the rest of the form. Operator, 2026-08-19.
+   */
   const go = (n: number) => {
-    setExpanded(n);
+    setExpanded((cur) => (cur === n ? 0 : n));
     setFurthest((f) => Math.max(f, n));
   };
 
@@ -207,13 +261,105 @@ export default function MotivationWizardPage() {
         </p>
       </header>
 
+      {/* Documents FIRST.
+        *
+        * Operator, 2026-08-19: take the documents up front, because there is a
+        * lot we can read off them. An ID carries the name and ID number (and
+        * therefore date of birth, age, gender and citizenship); a competency
+        * certificate its number and dates; a licence the make, calibre and
+        * serial of a firearm they already own — which is exactly what the
+        * overlap check needs. Re-typing all that off a card in your hand is the
+        * part of a form people abandon. */}
+      <section className="mb-6 rounded border p-4">
+        <h2 className="font-medium">Start with your documents</h2>
+        <p className="mt-1 text-sm text-neutral-600">
+          Photograph or upload what you already have and we will read what we
+          can off them, so you type less. You confirm everything before it goes
+          on the form. They are stored encrypted on our own server, are never
+          public, and each becomes a lettered annexure.
+        </p>
+        <UploadPanel
+          uploads={uploads}
+          onAdd={async (kind, file) => {
+            const row = await motivationsApi.addUpload(token, id, kind, file);
+            setUploads((u) => [...u, row]);
+            if (row.suggestions?.length) {
+              // Only offer values for fields that are still empty — anything
+              // already answered stays exactly as they typed it.
+              setSuggestions((cur) => [
+                ...cur,
+                ...row.suggestions!.filter(
+                  (sg) =>
+                    !(answers[sg.key] ?? '').trim() &&
+                    !cur.some((c) => c.key === sg.key),
+                ),
+              ]);
+            }
+          }}
+          onRemove={async (uploadId) => {
+            await motivationsApi.removeUpload(token, id, uploadId);
+            setUploads((u) => u.filter((x) => x.id !== uploadId));
+          }}
+        />
+
+        {suggestions.length > 0 && (
+          <div className="mt-4 rounded border border-emerald-300 bg-emerald-50 p-3">
+            <h3 className="text-sm font-medium">
+              We read {suggestions.length}{' '}
+              {suggestions.length === 1 ? 'thing' : 'things'} off that
+            </h3>
+            <p className="mt-1 text-xs text-neutral-700">
+              Check each one against the document before you accept it — you are
+              the one who signs this.
+            </p>
+            <ul className="mt-2 space-y-2">
+              {suggestions.map((sg) => (
+                <li key={sg.key} className="text-sm">
+                  <span className="text-neutral-600">{sg.label}: </span>
+                  <span className="font-medium">{sg.value}</span>
+                  <span className="block text-xs text-neutral-500">
+                    from {sg.from}
+                    {sg.note ? ` — ${sg.note}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white"
+                onClick={async () => {
+                  const accept = Object.fromEntries(
+                    suggestions.map((sg) => [sg.key, sg.value]),
+                  );
+                  await motivationsApi.applyExtraction(token, id, accept);
+                  const d = await motivationsApi.get(token, id);
+                  setDetail(d);
+                  setAnswers((a) => ({ ...d.answers, ...a, ...accept }));
+                  setSuggestions([]);
+                }}
+              >
+                These are right — use them
+              </button>
+              <button
+                type="button"
+                className="rounded border px-3 py-1.5 text-sm"
+                onClick={() => setSuggestions([])}
+              >
+                No, I will type them
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* 1 — the profile offer */}
       {offer && offer.fields.length > 0 && !offer.alreadyConsented && (
         <StepAccordion
           number={1}
           title="Use what we already have?"
           description={offer.note}
-          status={stepStatus(1, offer.alreadyConsented)}
+          status={stepStatus(1, 0, offer.alreadyConsented ? 1 : 0)}
           expanded={expanded === 1}
           onToggle={() => go(1)}
           hideContinue
@@ -272,16 +418,24 @@ export default function MotivationWizardPage() {
         const missingHere = sec.fields.filter((f) =>
           outstanding.includes(f.key),
         ).length;
+        const answeredHere = sec.fields.filter((f) =>
+          (answers[f.key] ?? '').trim(),
+        ).length;
+        const isOwned = sec.section === 'Firearms you already own';
         return (
           <StepAccordion
             key={sec.section}
             number={n}
             title={sec.section}
-            status={stepStatus(n, missingHere === 0)}
+            status={stepStatus(n, missingHere, answeredHere)}
             expanded={expanded === n}
             onToggle={() => go(n)}
             summary={
-              missingHere > 0 ? `${missingHere} still to answer` : 'Done'
+              missingHere > 0
+                ? `${missingHere} still to answer`
+                : answeredHere > 0
+                  ? 'Done'
+                  : 'Nothing yet'
             }
             onContinue={() => go(n + 1)}
           >
@@ -295,6 +449,23 @@ export default function MotivationWizardPage() {
                   onChange={(v) => setAnswer(f.key, v)}
                 />
               ))}
+
+              {isOwned && ownedRows < 6 && (
+                <label className="flex items-center gap-2 pt-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    onChange={() => setOwnedRowsShown(ownedRows + 1)}
+                  />
+                  <span>I own another firearm as well</span>
+                </label>
+              )}
+              {isOwned && ownedRows >= 6 && (
+                <p className="pt-2 text-xs text-neutral-500">
+                  That is as many as we can print on the form. If you own more,
+                  write the rest in by hand.
+                </p>
+              )}
             </div>
           </StepAccordion>
         );
@@ -324,26 +495,6 @@ export default function MotivationWizardPage() {
           </ul>
         </section>
       )}
-
-      {/* 4 — documents */}
-      <section className="mt-6 rounded border p-4">
-        <h2 className="font-medium">Supporting documents</h2>
-        <p className="mt-1 text-sm text-neutral-600">
-          These are stored encrypted on our own server and are never public.
-          Each one becomes a lettered annexure.
-        </p>
-        <UploadPanel
-          uploads={uploads}
-          onAdd={async (kind, file) => {
-            const row = await motivationsApi.addUpload(token, id, kind, file);
-            setUploads((u) => [...u, row]);
-          }}
-          onRemove={async (uploadId) => {
-            await motivationsApi.removeUpload(token, id, uploadId);
-            setUploads((u) => u.filter((x) => x.id !== uploadId));
-          }}
-        />
-      </section>
 
       {/* 5 — declaration and generate */}
       <section className="mt-6 rounded border p-4">

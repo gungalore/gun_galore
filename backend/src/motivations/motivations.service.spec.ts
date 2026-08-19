@@ -118,6 +118,9 @@ function build(
     claude as never,
     pdf as never,
     settings as never,
+      // Extraction proposes values off an uploaded document; nothing in
+      // these tests uploads one, so a stub is enough.
+      { extract: jest.fn(async () => []) } as never,
   );
   return { svc, prisma, quota, refs, files, claude, pdf, settings };
 }

@@ -298,8 +298,11 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     //
     // Fully automatic is deliberately absent: it is not licensable to a private
     // person, so it must not be selectable on a form we help someone sign.
+    // "Semi-automatic" LEADS the label, because that is the word the SAPS 271
+    // itself uses and the word people look for. Operator, 2026-08-19: could not
+    // find it, because it was buried behind "Self-loading".
     choices: [
-      'Self-loading (semi-automatic)',
+      'Semi-automatic (self-loading)',
       'Bolt action',
       'Lever action',
       'Pump action',

@@ -123,6 +123,17 @@ export interface ProfileOffer {
   note: string;
 }
 
+/** A value read off an uploaded document, awaiting confirmation. */
+export interface Suggestion {
+  key: string;
+  value: string;
+  label: string;
+  from: string;
+  /** False when our own checks disagree with what was read. */
+  trusted: boolean;
+  note?: string;
+}
+
 export interface UploadRow {
   id: string;
   kind: string;
@@ -188,11 +199,27 @@ export const motivationsApi = {
     const form = new FormData();
     form.append('kind', kind);
     form.append('file', file);
-    return request<UploadRow>(t, `/${id}/uploads`, {
-      method: 'POST',
-      body: form,
-    });
+    // The response carries SUGGESTIONS read off the document. They are not
+    // answers yet — the applicant confirms them first.
+    return request<UploadRow & { suggestions?: Suggestion[] }>(
+      t,
+      `/${id}/uploads`,
+      { method: 'POST', body: form },
+    );
   },
+
+  /** Write the suggestions the applicant accepted. */
+  applyExtraction: (
+    t: TokenGetter,
+    id: string,
+    answers: Record<string, string>,
+  ) =>
+    request<{ filled: number; missingRequired: string[] }>(
+      t,
+      `/${id}/uploads/apply`,
+      { method: 'POST', body: JSON.stringify({ answers }) },
+      { filled: 0, missingRequired: [] },
+    ),
 
   removeUpload: (t: TokenGetter, id: string, uploadId: string) =>
     request<{ removed: boolean }>(
