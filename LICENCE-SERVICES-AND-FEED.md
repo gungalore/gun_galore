@@ -172,7 +172,19 @@ This cuts across two things already built, and both needed changing:
   to the existing base, word of mouth. **No public pages** (operator decision — the public
   site stays firearm-clean).
 
-### Phase 1 — BUILT (2026-08-18/19)
+### Phase 1 — DEPLOYED INERT (2026-08-19)
+
+**On the live box** at `5d5882c`, three migrations applied, both services
+reloaded, health checked twice. `motivation_writer_enabled` is unset and
+therefore **FALSE**, so every endpoint 404s and no Anthropic spend is possible.
+`Motivation` and `MotivationUpload` are empty.
+
+Verified after the reload: no `ID_HASH_SECRET` boot warning (the secret is
+there), `SECURE_UPLOAD_DIR` resolves to `/var/lib/alloutdoor/secure-uploads`,
+`/motivations` 307s signed-out, zero new errors, and the homepage still carries
+no firearm or motivation wording.
+
+### What shipped
 
 | Piece | Where |
 |---|---|
