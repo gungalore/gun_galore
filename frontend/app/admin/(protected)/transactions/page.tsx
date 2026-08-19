@@ -7,6 +7,8 @@ import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import TransactionActions from './transaction-actions';
 import { formatPrice } from '@/lib/utils';
+import DateField from '@/components/date-field';
+import { toIso, todayYmd } from '@/lib/date-picker-model';
 
 interface Tx {
   id: string;
@@ -136,23 +138,32 @@ export default function AdminTransactionsPage() {
       >
         <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
           From
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="block mt-1 px-2 py-1 rounded text-sm"
-            style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
-          />
+          <div className="block mt-1">
+            <DateField
+              label="From date"
+              value={from}
+              onChange={setFrom}
+              className="px-2 py-1 rounded text-sm"
+              style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
+              max={toIso(todayYmd())}
+              allowClear
+            />
+          </div>
         </label>
         <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
           To
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="block mt-1 px-2 py-1 rounded text-sm"
-            style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
-          />
+          <div className="block mt-1">
+            <DateField
+              label="To date"
+              value={to}
+              onChange={setTo}
+              className="px-2 py-1 rounded text-sm"
+              style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-primary)' }}
+              min={from || undefined}
+              max={toIso(todayYmd())}
+              allowClear
+            />
+          </div>
         </label>
         <button
           type="button"

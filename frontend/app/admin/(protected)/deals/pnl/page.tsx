@@ -15,6 +15,8 @@ import Link from 'next/link';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminPageHeader } from '@/components/admin/page-header';
 import { AdminCsvButton, type CsvColumn } from '@/components/admin/csv-export';
+import DateField from '@/components/date-field';
+import { toIso, todayYmd } from '@/lib/date-picker-model';
 
 interface PnlDeal {
   id: string;
@@ -180,13 +182,16 @@ export default function DealsPnlPage() {
   const t = report?.totals;
   const deals = report?.deals ?? [];
 
+  // 12px type and 4px padding is below the touch floor the rest of the app
+  // holds itself to, and it is the operator — who has reported not being able
+  // to read low-contrast UI — who works these screens.
   const dateInput = {
     background: 'var(--bg-inset)',
     border: '0.5px solid var(--border)',
     color: 'var(--text-primary)',
     borderRadius: 6,
-    padding: '4px 8px',
-    fontSize: 12,
+    padding: '6px 8px',
+    fontSize: 14,
   } as const;
 
   return (
@@ -204,9 +209,13 @@ export default function DealsPnlPage() {
       {/* Date range filter */}
       <div className="flex items-center gap-2 flex-wrap mb-5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
         <span>Go-live between</span>
-        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={dateInput} aria-label="From date" />
+        <div style={{ width: 190 }}>
+          <DateField label="From date" value={from} onChange={setFrom} style={dateInput} max={toIso(todayYmd())} allowClear />
+        </div>
         <span>and</span>
-        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={dateInput} aria-label="To date" />
+        <div style={{ width: 190 }}>
+          <DateField label="To date" value={to} onChange={setTo} style={dateInput} min={from || undefined} max={toIso(todayYmd())} allowClear />
+        </div>
         {(from || to) && (
           <button type="button" onClick={() => { setFrom(''); setTo(''); }} style={{ color: 'var(--red)' }}>
             Clear

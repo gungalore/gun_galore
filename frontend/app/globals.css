@@ -821,3 +821,61 @@ html[data-standalone='true']::view-transition-new(root) {
   .ggw-headline { background-position:0% 0 !important; }
   .ggw-embers { display:none; }
 }
+
+/* ── The three-step date picker ───────────────────────────────────────
+   Bottom sheet on a phone, centred panel from `sm` up. One panel, two
+   alignments — this app has no positioning library, and a hand-rolled
+   anchored popover inside a scrolling admin table is a flip-and-clip bug
+   waiting to happen. */
+.gg-datesheet {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 88vh;
+  overflow-y: auto;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  animation: gg-datesheet-up 180ms ease-out;
+}
+
+@media (min-width: 640px) {
+  .gg-datesheet {
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    top: 50%;
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    transform: translate(-50%, -50%);
+    border-radius: var(--r-lg);
+    animation: gg-datesheet-in 140ms ease-out;
+  }
+}
+
+@keyframes gg-datesheet-up {
+  from { transform: translateY(14px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes gg-datesheet-in {
+  from { transform: translate(-50%, -48%); opacity: 0; }
+  to   { transform: translate(-50%, -50%); opacity: 1; }
+}
+
+/* ⚠️ THE ONLY FOCUS INDICATOR THAT SURVIVES THIS STYLESHEET.
+   The app's FOCUS_RING constant (components/filter-bar.tsx:126) is
+   `focus-visible:outline-none focus-visible:ring-2 …`, and Tailwind compiles
+   `ring-*` to box-shadow — which the `* { box-shadow: none !important }` rule
+   above nulls. So that constant strips the browser's outline and paints
+   nothing in its place. `outline` is not box-shadow and cannot be killed by
+   that rule, which is why the picker uses it. --text-primary rather than the
+   brand red because a red ring on a red selected cell is no ring at all. */
+.gg-datecell:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* !important because the animation is set in the class above and a member
+     who has asked for no motion must not get the slide regardless. */
+  .gg-datesheet { animation: none !important; }
+}

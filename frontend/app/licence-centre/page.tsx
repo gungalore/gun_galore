@@ -1,6 +1,8 @@
 'use client';
 
 import { useAuth } from '@clerk/nextjs';
+import DateField from '@/components/date-field';
+import { todayYmd, toIso } from '@/lib/date-picker-model';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -473,26 +475,42 @@ function ConfirmPanel({
       )}
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <label className="block text-sm">
+        <div className="block text-sm">
           <span className="text-[var(--text-secondary)]">Expires on</span>
-          <input
-            type="date"
-            className={control}
-            value={expiresOn}
-            onChange={(e) => setExpiresOn(e.target.value)}
-          />
-        </label>
-        <label className="block text-sm">
+          <div>
+            {/* NO max={today}. An already-expired licence is a document
+                members legitimately load — the Centre's job is to tell them
+                so, not to refuse the date. */}
+            <DateField
+              label="Expires on"
+              value={expiresOn}
+              onChange={setExpiresOn}
+              className={control}
+              focusYear={todayYmd().y + 3}
+              required
+            />
+          </div>
+        </div>
+        <div className="block text-sm">
           <span className="text-[var(--text-secondary)]">
             Issued on (optional)
           </span>
-          <input
-            type="date"
-            className={control}
-            value={issuedOn}
-            onChange={(e) => setIssuedOn(e.target.value)}
-          />
-        </label>
+          <div>
+            {/* No Clear button here on purpose: confirmExpiry writes
+                issuedOn: parseIsoDate(issuedOn ?? null) unconditionally, so a
+                cleared field silently wipes a date we read off the document.
+                Until that is guarded server-side, do not make the wipe a
+                one-tap action. */}
+            <DateField
+              label="Issued on"
+              value={issuedOn}
+              onChange={setIssuedOn}
+              className={control}
+              focusYear={todayYmd().y - 2}
+              max={toIso(todayYmd())}
+            />
+          </div>
+        </div>
       </div>
 
       {Object.keys(proposed.details).length > 0 && (

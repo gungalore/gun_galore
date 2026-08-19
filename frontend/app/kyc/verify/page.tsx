@@ -10,6 +10,8 @@ import Link from 'next/link';
 import { QRCodeSVG } from 'qrcode.react';
 import { HelpTip } from '@/components/help-tip';
 import { processImage } from '@/lib/process-image';
+import DateField from '@/components/date-field';
+import { shiftYears, toIso, todayYmd } from '@/lib/date-picker-model';
 
 // TWO FLOWS live on this page, branched by GET /kyc/status → `flow`:
 //
@@ -165,11 +167,12 @@ function VerifyKycPageInner() {
 
   // DOB input ceiling: sellers must be 18+. This is the only DOB
   // validation on the client — see the flow note at the top of the file.
-  const dobMax = (() => {
-    const d = new Date();
-    d.setFullYear(d.getFullYear() - 18);
-    return d.toISOString().slice(0, 10);
-  })();
+  //
+  // ⚠️ WAS toISOString().slice(0, 10), WHICH IS A DAY EARLY IN SOUTH AFRICA.
+  // That converts a LOCAL instant to UTC, so between midnight and 02:00 SAST
+  // it returned yesterday — and somebody who turned 18 today was told they
+  // had not. toIso() emits the local calendar date directly.
+  const dobMax = toIso(shiftYears(todayYmd(), -18));
 
   // Action-token auth: when the seller arrives via the SMS one-tap link
   // (/a/<token> → /kyc/verify?t=<token>) there's no Clerk session, so we
@@ -885,13 +888,19 @@ function VerifyKycPageInner() {
             </div>
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Date of birth *</label>
-              <input
-                type="date"
+              {/* reach="far" puts a decade strip above the years: a
+                  fifty-year-old should not tap the arrow four times to reach
+                  the decade they were born in. */}
+              <DateField
+                label="Date of birth"
                 value={dob}
-                max={dobMax}
+                onChange={setDob}
+                style={inputStyle}
                 min="1900-01-01"
-                onChange={(e) => setDob(e.target.value)}
-                style={{ ...inputStyle, colorScheme: 'dark' }}
+                max={dobMax}
+                focusYear={todayYmd().y - 40}
+                reach="far"
+                required
               />
             </div>
             {error && <ErrorBanner>{error}</ErrorBanner>}

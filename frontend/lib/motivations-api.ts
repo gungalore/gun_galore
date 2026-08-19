@@ -93,6 +93,17 @@ export interface MotivationField {
   showIf?: { key: string; equals: string };
   formOnly?: true;
   /**
+   * `date` fields only — where the three-step picker opens.
+   *
+   * A competency issued two years ago, a dedicated status held for ten and a
+   * section 24 renewal lodged this year are not reconcilable by heuristic, and
+   * guessing wrong costs a member several taps on the very first screen. So
+   * each date field says for itself.
+   */
+  focusOffsetYears?: number;
+  /** 'far' adds a decade strip, for a field that reaches back decades. */
+  reach?: 'near' | 'far';
+  /**
    * A document can answer this. Mirrors docSourced in motivation-fields.ts,
    * and holds the MotivationUploadKind that carries the value.
    *

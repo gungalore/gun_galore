@@ -38,6 +38,8 @@ import {
 } from '@/components/profile-completion-modal';
 import { HelpTip } from '@/components/help-tip';
 import { ListingDescription } from '@/components/listing-description';
+import DateField from '@/components/date-field';
+import { parseIso, toIso, todayYmd } from '@/lib/date-picker-model';
 
 // Mirrors MAX_VISION_PHOTOS in the backend's moderation service — sending a
 // sixth photo just wastes the upload, the server drops it.
@@ -4261,33 +4263,36 @@ export default function NewListingPage() {
                       required
                       hint="The scheduled date, or the first day of a multi-day package."
                     >
-                      <input
-                        type="date"
+                      {/* min was missing here: the backend already throws
+                          on a past start date, so the picker had no business
+                          offering one. */}
+                      <DateField
+                        label="Event date"
                         value={exp.eventStartDate}
-                        onChange={(e) =>
-                          setExp((s) => ({
-                            ...s,
-                            eventStartDate: e.target.value,
-                          }))
+                        onChange={(v) =>
+                          setExp((s) => ({ ...s, eventStartDate: v }))
                         }
                         style={inputStyle}
+                        min={toIso(todayYmd())}
+                        required
                       />
                     </Field>
                     <Field
                       label="End date (optional)"
                       hint="Leave blank for a single-day package. Set it for a multi-day window."
                     >
-                      <input
-                        type="date"
+                      <DateField
+                        label="End date"
                         value={exp.eventEndDate}
-                        min={exp.eventStartDate || undefined}
-                        onChange={(e) =>
-                          setExp((s) => ({
-                            ...s,
-                            eventEndDate: e.target.value,
-                          }))
+                        onChange={(v) =>
+                          setExp((s) => ({ ...s, eventEndDate: v }))
                         }
                         style={inputStyle}
+                        min={exp.eventStartDate || toIso(todayYmd())}
+                        focusYear={
+                          parseIso(exp.eventStartDate)?.y ?? todayYmd().y
+                        }
+                        allowClear
                       />
                     </Field>
                   </div>

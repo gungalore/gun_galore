@@ -1,6 +1,8 @@
 'use client';
 
 import { useAuth } from '@clerk/nextjs';
+import DateField from '@/components/date-field';
+import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StepAccordion, StepStatus } from '@/components/step-accordion';
@@ -851,7 +853,12 @@ function FieldInput({
       {locked ? (
         <div className="mt-1 flex items-center gap-2">
           <div className="flex-1 rounded border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-secondary)]">
-            {value}
+            {/* A date reads as a date even while locked. Pure formatting —
+                an unparseable legacy value falls through to its raw text
+                rather than being hidden behind a pretty one. */}
+            {field.kind === 'date' && parseIso(value)
+              ? formatLong(parseIso(value)!)
+              : value}
           </div>
           <button
             type="button"
@@ -889,10 +896,29 @@ function FieldInput({
         />
       )}
 
-      {(field.kind === 'short' || field.kind === 'date') && (
+      {/* DATES GET THE THREE-STEP PICKER. Split out of the short/date
+          union because a date is no longer an <input> — and because this is
+          the one field kind the backend never validates, so a control that
+          can only ever emit a whole, real date is the only thing between the
+          wizard and a half-typed answer being autosaved and then locked
+          behind the edit pen on the next load. */}
+      {field.kind === 'date' && (
+        <DateField
+          id={field.key}
+          label={field.label}
+          value={value}
+          onChange={onChange}
+          className={base}
+          invalid={missing}
+          focusYear={todayYmd().y + (field.focusOffsetYears ?? 0)}
+          reach={field.reach ?? 'near'}
+        />
+      )}
+
+      {field.kind === 'short' && (
         <input
           id={field.key}
-          type={field.kind === 'date' ? 'date' : 'text'}
+          type="text"
           className={base}
           maxLength={field.maxLength}
           inputMode={/(^|_)id_number$/.test(field.key) ? 'numeric' : undefined}

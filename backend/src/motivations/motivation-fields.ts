@@ -105,6 +105,23 @@ export interface MotivationField {
    */
   formOnly?: true;
   /**
+   * `date` fields only — where the three-step picker opens its decade page,
+   * in years from today.
+   *
+   * NOT INFERRED. A competency issued two years ago, a dedicated status held
+   * for ten and a section 24 renewal lodged this year are three different
+   * places on the calendar, and a heuristic that gets one wrong costs an
+   * applicant several taps on the very first screen they see. Each field says
+   * for itself.
+   */
+  focusOffsetYears?: number;
+  /**
+   * 'far' puts a decade strip above the years, for a field that genuinely
+   * reaches back — somebody dedicated since the nineties should not tap an
+   * arrow three times to get there.
+   */
+  reach?: 'near' | 'far';
+  /**
    * A DOCUMENT ANSWERS THIS, so stop asking it as a question.
    *
    * Operator, 2026-08-19: "remove all the fields that we can get the
@@ -338,6 +355,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'date',
     section: 'About you',
     formOnly: true,
+    focusOffsetYears: -2,
   },
   {
     key: 'competency_expiry',
@@ -346,6 +364,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'date',
     section: 'About you',
     formOnly: true,
+    focusOffsetYears: 2,
   },
   // THE FIREARM, IN ITS OWN BOXES. This was one free-text line until the SAPS
   // 271 analysis: the form wants type, action, make, model, calibre and serial
@@ -1456,6 +1475,10 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       kind: 'date',
       section: 'Dedicated status',
       required: true,
+      // A long-standing SAHGCA or NARFO member may have been dedicated since
+      // the nineties, so this one gets the decade strip.
+      focusOffsetYears: -10,
+      reach: 'far',
     },
     {
       key: 'hunting_history',
@@ -1502,6 +1525,10 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       kind: 'date',
       section: 'Dedicated status',
       required: true,
+      // A long-standing SAHGCA or NARFO member may have been dedicated since
+      // the nineties, so this one gets the decade strip.
+      focusOffsetYears: -10,
+      reach: 'far',
     },
     {
       key: 'discipline',
@@ -1546,6 +1573,10 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       kind: 'date',
       section: 'The existing licence',
       required: true,
+      // A section 24 renewal is by definition lodged within about a year of
+      // the expiry it renews, so the current decade page is where it belongs
+      // and a decade strip would be noise.
+      focusOffsetYears: 0,
     },
     {
       key: 'continued_use',

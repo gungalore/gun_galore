@@ -33,6 +33,8 @@ import {
   type ManualAddressValue,
 } from '@/components/manual-address-fields';
 import { getCollectionMode } from '@/lib/delivery-estimate';
+import DateField from '@/components/date-field';
+import { parseIso, todayYmd } from '@/lib/date-picker-model';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -1016,13 +1018,15 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
               Your booking
             </p>
             <Field label="Event date">
-              <input
-                type="date"
+              <DateField
+                label="Event date"
                 value={eventDate}
+                onChange={setEventDate}
+                style={inputStyle}
                 min={eventMin}
                 max={eventMax}
-                onChange={(e) => setEventDate(e.target.value)}
-                style={inputStyle}
+                focusYear={parseIso(eventMin)?.y ?? todayYmd().y}
+                required
               />
               {eventMin && (
                 <p

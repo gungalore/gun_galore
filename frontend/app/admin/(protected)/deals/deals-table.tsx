@@ -9,6 +9,8 @@
 import { useState, FormEvent, useRef } from 'react';
 import { adminFetch } from '@/lib/admin-auth';
 import { AdminStatusChip } from '@/components/admin/status-chip';
+import DateField from '@/components/date-field';
+import { toIso, todayYmd } from '@/lib/date-picker-model';
 
 // ── Types (mirror the DealsService.shape() payload) ────────────────────
 export interface DealImage {
@@ -846,7 +848,7 @@ function DealFormModal({
             />
           </Field>
           <Field label="Drop date (opt)" info="Optional: pre-schedule the day this deal drops — it goes live automatically at the site-wide drop hour (set in Settings). Leave blank to schedule or go live manually from the table.">
-            <input type="date" value={form.dropDate} onChange={(e) => set('dropDate', e.target.value)} style={inputStyle} />
+            <DateField label="Drop date" value={form.dropDate} onChange={(v) => set('dropDate', v)} style={inputStyle} min={toIso(todayYmd())} allowClear />
           </Field>
         </div>
         <SectionLabel>Supplier &amp; fulfilment</SectionLabel>
