@@ -4,6 +4,7 @@ import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
 import FilePickerButton from '@/components/file-picker-button';
 import ScanButton from '@/components/scan/scan-button';
+import { shapeForKind } from '@/lib/scan/shapes';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
@@ -1483,7 +1484,9 @@ function UploadPanel({
           ))}
         </select>
         <ScanButton
-          shape="page"
+          // Follows the picker above; A4 while nothing is chosen, because a
+          // motivation pack is mostly paper.
+          shape={kind ? shapeForKind(kind) : 'a4'}
           title="Photograph a document"
           onFiles={uploadFiles}
           disabled={busy}

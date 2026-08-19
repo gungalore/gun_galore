@@ -1422,6 +1422,45 @@ Feature Flags `VAT_REGISTERED`).
 
 ---
 
+## Document Scanner (`frontend/lib/scan`, `frontend/components/scan`)
+
+Camera capture for the Licence Centre and the Motivation Centre. Pure
+modules (no DOM) so the hard parts are testable in node: `detect` finds
+the quad, `warp` rectifies, `enhance` cleans, `aim` sizes the box,
+`magnifier` places the loupe, `exposure` decides what to warn about.
+
+- **The member picks the shape first** — Card / A4 / Green ID book /
+  Something else — and only then does the camera open. `shapes.ts` holds
+  the real millimetres, MEASURED against a 150 mm ruler in the operator's
+  own photographs, not taken from a spec. Card is ID-1 (85.6 × 54); the
+  green ID book page is passport format (88 × 125).
+- **The aim box is sized to what a phone can do.** Across 18 real photos
+  the document covered 20–58% of frame area and never more — near focus
+  stops you getting closer. A box drawn bigger than that is one nobody
+  can fill.
+- ⚠️ **Detection passing ≠ detection correct.** On the operator's
+  IMG_4947 the detector chose the patterned fabric and the ruler over the
+  licence card and scored it 0.68 against a floor of 0.55. The card is
+  never even a candidate: seeds land elsewhere and `growQuad` walks
+  outward to the outermost ridge, which is the mat. This is not a scoring
+  bug to re-weight — see the skipped regression in `detect.spec.ts`,
+  which records what was tried (aim-weighted re-ranking; capping the
+  growth walk) and why both were reverted.
+- **So the aim box gates auto-capture** rather than fixing detection, and
+  the corner editor is the safety net. A wrong crop the member can see
+  and fix beats a clever one they cannot.
+- **Glare / too bright / too dark hold on screen until resolved** — they
+  are the only failures no processing recovers. `exposure.ts` is the
+  single source for both the warning and the auto-capture gate, so the
+  scanner can never warn and then fire anyway.
+- `scripts/scan-diag.cjs` and `scripts/aim-check.cjs` run the REAL
+  compiled detector over a folder of photographs. ⚠️ Those photographs
+  carry a name, an ID number and serials — they live in `scan-fixtures/`,
+  which is gitignored, and must never be committed. Regressions get
+  rebuilt as synthetic scenes.
+
+---
+
 ## Feature Flags
 
 All feature flags default to `false` and flip to `true` only when a

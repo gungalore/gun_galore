@@ -329,10 +329,34 @@ describe('the mat underneath — nested rectangles', () => {
   // The test stays, skipped, so the day someone fixes it there is already a
   // definition of done.
   it.skip('marks the printed CARD, not the mousepad it lies on', () => {
-    // The real-photo failure family: a mousepad is itself a perfect
-    // "document" by border physics — convex, strong edge, quiet desk beyond —
-    // with the card as its "print". Ink density is what separates them, and
-    // this pins it.
+    // ⚠️ STILL SKIPPED, AND NOW WE KNOW WHY — which is worth more than the
+    // five rounds of tuning that preceded it.
+    //
+    // A mousepad is a PERFECT document by border physics: convex, a strong
+    // clean edge, quiet desk beyond, with the card reading as its print.
+    // Every attempt to separate them on ink density, area ramp or border
+    // strength fixed this scene and broke two others.
+    //
+    // Instrumenting the candidate list settled it. The card is never a
+    // CANDIDATE at all: every one of the 962 seeds lands in a small patch of
+    // the upper frame, and the mat is reached by growQuad walking those seeds
+    // OUTWARD — which is correct behaviour, because a seed is normally a
+    // fragment inside the document and the document's edge is further out.
+    // The mat is not a scoring mistake to be re-weighted. It is the right
+    // answer to the question the detector is asking.
+    //
+    // Two things follow. A re-ranking nudge — including one weighted by the
+    // aim box — cannot fix this, because it can only reorder candidates that
+    // exist. And capping the growth walk at the aim box DOES change the
+    // answer, but lands on the cap rather than on the card's edge, which is
+    // an artificial rectangle wearing the right size. That was tried, was
+    // not convincingly better, and was reverted rather than shipped
+    // half-tuned into the one part of this that works on all eighteen of the
+    // operator's real photographs.
+    //
+    // What ships instead: the aim box gates AUTO-CAPTURE (components/scan)
+    // and the member drags the corners when it is wrong. A wrong crop the
+    // member can see and fix beats a clever one they cannot.
     const W = 375;
     const H = 500;
     const g: Gray = { data: new Uint8Array(W * H), width: W, height: H };
@@ -349,7 +373,6 @@ describe('the mat underneath — nested rectangles', () => {
           const u = (x - card.x0) / (card.x1 - card.x0);
           const t = (y - card.y0) / (card.y1 - card.y0);
           v = 232;
-          // Dense print: rows of text and a bordered table.
           if (u > 0.06 && u < 0.94 && t > 0.1 && t < 0.55) {
             if (Math.floor(t * 20) % 2 === 0 && Math.floor(u * 28) % 3 !== 0)
               v = 65;
@@ -359,10 +382,9 @@ describe('the mat underneath — nested rectangles', () => {
             v = edge ? 50 : Math.floor(u * 22) % 4 === 0 ? 232 : 105;
           }
         } else if (inMat) {
-          // The mat: smooth light washes, no print.
           v = 196 + 12 * Math.sin(x / 53) * Math.sin(y / 71) + (r() - 0.5) * 8;
         } else {
-          v = 88 + (r() - 0.5) * 10; // the desk
+          v = 88 + (r() - 0.5) * 10;
         }
         g.data[y * W + x] = Math.max(0, Math.min(255, Math.round(v)));
       }

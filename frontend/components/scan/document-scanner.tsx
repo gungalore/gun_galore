@@ -13,6 +13,20 @@ import {
 } from '@/lib/scan/capture';
 import { detectQuad } from '@/lib/scan/detect';
 import { Pt, Quad, quadDrift, smoothQuad } from '@/lib/scan/geometry';
+import CornerEditor from './corner-editor';
+import {
+  DocShape,
+  SHAPES,
+  SHAPE_ORDER,
+  expectAspect as expectAspectFor,
+  holdHint,
+} from '@/lib/scan/shapes';
+import AimFrame from './aim-frame';
+import { aimAgreement, aimBox } from '@/lib/scan/aim';
+import {
+  exposureAllowsAutoCapture,
+  exposureProblem,
+} from '@/lib/scan/exposure';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SCANNER.
@@ -41,26 +55,42 @@ import { Pt, Quad, quadDrift, smoothQuad } from '@/lib/scan/geometry';
 
 const Z = 130;
 
-/** The guide's shape, as the aspect the detector should lean towards. */
-function expectAspectFor(shape: 'card' | 'page'): number {
-  return shape === 'card' ? 85.6 / 53.98 : Math.SQRT2;
-}
-
 /** Detection interval, in ms, at each health level. */
 const RATES = [100, 200] as const;
 
 export interface DocumentScannerProps {
-  /** 'card' for an ID-1 licence, 'page' for A4. Only changes the guide. */
-  shape?: 'card' | 'page';
+  /**
+   * What the member is most likely holding. Sets the starting guide frame and
+   * the detector's aspect hint — and only those. It is a suggestion the
+   * member can change on screen, never a filter: a competency certificate
+   * comes both as an A4 sheet and as a card, and refusing the one we did not
+   * expect would be refusing a real document.
+   */
+  shape?: DocShape;
   title: string;
   onDone: (files: File[]) => void | Promise<void>;
   onClose: () => void;
 }
 
-type Phase = 'starting' | 'live' | 'working' | 'review' | 'denied' | 'nocamera';
+type Phase =
+  /**
+   * ⚠️ THE CAMERA DOES NOT OPEN UNTIL THE MEMBER HAS SAID WHAT THEY ARE
+   * HOLDING. Choosing afterwards meant choosing while a live camera was
+   * already asking to be pointed at something, and the aim box could not be
+   * drawn at the right shape until they had. It also means the permission
+   * prompt arrives after they have committed to scanning something, which is
+   * the moment they are most likely to grant it.
+   */
+  | 'choose'
+  | 'starting'
+  | 'live'
+  | 'working'
+  | 'review'
+  | 'denied'
+  | 'nocamera';
 
 export default function DocumentScanner({
-  shape = 'page',
+  shape: initialShape = 'any',
   title,
   onDone,
   onClose,
@@ -69,7 +99,19 @@ export default function DocumentScanner({
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const [phase, setPhase] = useState<Phase>('starting');
+  const [phase, setPhase] = useState<Phase>('choose');
+  const [shape, setShape] = useState<DocShape>(initialShape);
+  /**
+   * Is the member scanning more than one page or side?
+   *
+   * Declared up front rather than discovered at the end. A licence card has a
+   * back, a competency certificate runs to two pages, and an ID book has the
+   * address page — and somebody who has said so gets taken straight back to
+   * the camera after each shot instead of having to find "Add another" every
+   * time. Somebody who has not said so is never asked about pages they do not
+   * have.
+   */
+  const [multi, setMulti] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
@@ -100,6 +142,15 @@ export default function DocumentScanner({
    * because tilting the phone fixes it completely and instantly.
    */
   const [glare, setGlare] = useState(0);
+  /**
+   * Mean brightness of the live frame, 0-255.
+   *
+   * Too dark and the sensor is guessing at the edges; too bright and it has
+   * clipped them away. Both are fixed by moving, and neither is fixed by any
+   * amount of processing afterwards — which is why they are worth interrupting
+   * for, and why the interruption STAYS UP until the number comes back.
+   */
+  const [luma, setLuma] = useState(128);
 
   // The live quad, and whether it has been steady long enough to trust.
   const quadRef = useRef<Quad | null>(null);
@@ -115,6 +166,22 @@ export default function DocumentScanner({
   const confidentRef = useRef(false);
   const glareRef = useRef(0);
   const glareShownRef = useRef(0);
+  const lumaRef = useRef(128);
+  const lumaShownRef = useRef(128);
+  /**
+   * Does what the detector found sit where the member was asked to put it?
+   *
+   * Turns the aim box green, and gates auto-capture. ⚠️ IT IS ALSO WHAT
+   * STOPS THE SCANNER SHOOTING THE DESK. On the operator's own IMG_4947 the
+   * detector picked out the fabric and the ruler — a bigger, cleaner
+   * rectangle than the licence card lying in the corner of the frame — and
+   * scored it 0.68, comfortably above the acceptance floor. Nothing in the
+   * image says which rectangle is the document. The member does, by putting
+   * it in the box.
+   */
+  const aimedRef = useRef(false);
+  const aimShownRef = useRef(false);
+  const [aimed, setAimed] = useState(false);
   const captureRef = useRef<(() => Promise<void>) | null>(null);
 
   autoRef.current = auto;
@@ -126,7 +193,14 @@ export default function DocumentScanner({
   }, []);
 
   // ── the camera ────────────────────────────────────────────────────
+  //
+  // ⚠️ GATED ON `started`, NOT ON `phase`. Keying the effect on the phase
+  // would tear the stream down and rebuild it on every trip through review,
+  // and rebuilding a stream costs a second of black screen and a fresh
+  // autofocus hunt. This runs once, when the member leaves the chooser.
+  const [started, setStarted] = useState(false);
   useEffect(() => {
+    if (!started) return;
     let cancelled = false;
     (async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -178,7 +252,7 @@ export default function DocumentScanner({
           await videoRef.current.play().catch(() => undefined);
         }
         setPhase('live');
-        say('Camera ready. Line the document up inside the frame.');
+        say('Camera ready. Line the document up inside the red corners.');
       } catch (e) {
         const name = (e as DOMException)?.name;
         setPhase(name === 'NotAllowedError' ? 'denied' : 'nocamera');
@@ -189,7 +263,7 @@ export default function DocumentScanner({
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  }, [say]);
+  }, [say, started]);
 
   // ⚠️ iOS SAFARI TEARS THE STREAM DOWN when the tab goes to the background,
   // and hands back a black viewfinder with a working shutter that captures
@@ -251,12 +325,23 @@ export default function DocumentScanner({
         const gray = frameToGray(video, scratch);
         if (gray) {
           let blown = 0;
+          let sum = 0;
           // Every eighth pixel is plenty for a percentage, and keeps this off
           // the detection budget.
           for (let i = 0; i < gray.data.length; i += 8) {
             if (gray.data[i] > 250) blown++;
+            sum += gray.data[i];
           }
-          const frac = blown / (gray.data.length / 8);
+          const n = gray.data.length / 8;
+          const mean = sum / n;
+          lumaRef.current = mean;
+          // A couple of levels of drift is not news. Re-rendering on every
+          // frame would be.
+          if (Math.abs(mean - lumaShownRef.current) > 3) {
+            lumaShownRef.current = mean;
+            setLuma(mean);
+          }
+          const frac = blown / n;
           glareRef.current = frac;
           if (Math.abs(frac - glareShownRef.current) > 0.01) {
             glareShownRef.current = frac;
@@ -293,6 +378,36 @@ export default function DocumentScanner({
             lockRef.current = 1;
           }
           confidentRef.current = found.confident;
+
+          // ── does it sit in the box we asked for? ──────────────────
+          //
+          // The aim box is in CSS pixels over the video element; the quad is
+          // in visible-frame pixels. One scale relates them, because
+          // visibleRect already stripped the object-fit: cover crop.
+          const el = video.getBoundingClientRect();
+          const vw = vis ? vis.sw : video.videoWidth;
+          const vh = vis ? vis.sh : video.videoHeight;
+          const box = aimBox(shape, { width: el.width, height: el.height });
+          const xs = scaled.map((pt) => (pt.x / vw) * el.width);
+          const ys = scaled.map((pt) => (pt.y / vh) * el.height);
+          const bounds = {
+            x: Math.min(...xs),
+            y: Math.min(...ys),
+            width: Math.max(...xs) - Math.min(...xs),
+            height: Math.max(...ys) - Math.min(...ys),
+          };
+          // ⚠️ A LOOSE THRESHOLD ON PURPOSE. This is here to reject the desk,
+          // not to make anybody line a card up to the millimetre. Half the
+          // union is a document roughly where it was asked to be; the fabric
+          // -and-ruler rectangle that beat the card in IMG_4947 scores about
+          // a tenth of that, and a card sitting off in one corner of the
+          // frame scores nothing at all.
+          const ok = aimAgreement(bounds, box) >= 0.35;
+          aimedRef.current = ok;
+          if (ok !== aimShownRef.current) {
+            aimShownRef.current = ok;
+            setAimed(ok);
+          }
         } else {
           // ⚠️ NEVER BLINK OFF. A single frame where a hand shadowed an edge
           // must not flash the markers away — it reads as a fault. Decay
@@ -301,6 +416,11 @@ export default function DocumentScanner({
           if (lockRef.current === 0) {
             quadRef.current = null;
             confidentRef.current = false;
+            aimedRef.current = false;
+            if (aimShownRef.current) {
+              aimShownRef.current = false;
+              setAimed(false);
+            }
           }
         }
       } catch {
@@ -325,9 +445,15 @@ export default function DocumentScanner({
         q &&
         lockRef.current >= 3 &&
         confidentRef.current &&
-        // A blown highlight cannot be recovered, so shooting through one
-        // automatically just produces an unreadable scan with nobody to blame.
-        glareRef.current <= 0.02
+        // ⚠️ AND IN THE BOX. Confidence says "this is a document-shaped
+        // thing"; it cannot say "this is YOUR document". Only the member
+        // knows that, and putting it inside the corners is how they say so.
+        aimedRef.current &&
+        // ⚠️ THE SAME CALL THE ALERT MAKES. Two copies of these thresholds
+        // would eventually disagree, and a scanner that shows a warning and
+        // then fires anyway — or shows nothing and refuses to fire — reads as
+        // broken in a way nobody can describe well enough to report.
+        exposureAllowsAutoCapture(glareRef.current, lumaRef.current)
       ) {
         const drift = steadyQuad ? quadDrift(steadyQuad, q) : Infinity;
         if (drift <= video.videoWidth * STEADY_FRAC) {
@@ -458,6 +584,25 @@ export default function DocumentScanner({
   );
 
   /**
+   * Back to the chooser.
+   *
+   * ⚠️ IT DOES NOT THROW AWAY WHAT IS ALREADY SCANNED. Somebody who has
+   * photographed the front of a licence card and wants to change to "A4 page"
+   * for the certificate behind it is not asking to lose the front. The camera
+   * does stop — a live stream behind a chooser is a hot lens and a flat
+   * battery for no reason.
+   */
+  const backToChooser = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setStarted(false);
+    setShot(null);
+    setEditing(false);
+    setErr(null);
+    setPhase('choose');
+  }, []);
+
+  /**
    * Hand the pages over and close.
    *
    * ⚠️ CLOSE FIRST, UPLOAD AFTER. This used to await onDone() before closing —
@@ -517,9 +662,34 @@ export default function DocumentScanner({
         flexDirection: 'column',
       }}
     >
-      <Header title={title} onClose={onClose} pages={pages.length} />
+      <Header
+        title={title}
+        onClose={onClose}
+        // ⚠️ ALWAYS A WAY BACK. Every phase except the chooser itself can
+        // return to it, including the two dead ends — a member who lands on
+        // "no camera" with two pages already scanned must not be stuck
+        // choosing between abandoning them and closing the whole thing.
+        onBack={phase === 'choose' ? undefined : backToChooser}
+        pages={pages.length}
+      />
 
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+        {phase === 'choose' && (
+          <Chooser
+            shape={shape}
+            onShape={setShape}
+            multi={multi}
+            onMulti={setMulti}
+            pages={pages.length}
+            onStart={() => {
+              setPhase('starting');
+              setStarted(true);
+            }}
+            onCancel={onClose}
+            onUsePages={pages.length ? () => finish(pages) : undefined}
+          />
+        )}
+
         {(phase === 'starting' || phase === 'live' || phase === 'working') && (
           <>
             <video
@@ -547,7 +717,8 @@ export default function DocumentScanner({
                 pointerEvents: 'none',
               }}
             />
-            <GuideFrame shape={shape} />
+            <AimFrame shape={shape} locked={aimed} />
+            <ExposureAlert glare={glare} luma={luma} torchOn={torchOn} />
         {phase === 'live' && (
           <p
             style={{
@@ -563,13 +734,16 @@ export default function DocumentScanner({
               pointerEvents: 'none',
             }}
           >
-            {glare > 0.02
-              ? torchOn
-                ? 'The light is bouncing off the card. Turn the light off, or tilt the phone a little.'
-                : 'There is a glare on it — tilt the phone a little, or move out from under the light.'
-              : auto
-                ? 'Fill the frame with the document and hold still — it takes the photo itself.'
-                : 'Fill the frame with the document.'}
+            {/* ⚠️ THE HINT FOLLOWS THE CORNERS. Telling somebody to "fill
+                the frame" while a box on screen says otherwise is two
+                instructions that disagree, and they will follow the picture.
+                Once the corners go green the only thing left to say is hold
+                still — anything else invites them to keep adjusting. */}
+            {aimed
+              ? auto
+                ? 'Got it — hold still.'
+                : 'Got it — take the photo.'
+              : `Put the ${SHAPES[shape].label.toLowerCase()} inside the red corners.`}
           </p>
         )}
           </>
@@ -593,9 +767,27 @@ export default function DocumentScanner({
                 ? 'Your browser is holding the camera back for this site. You can allow it in the address bar, or close this and choose a file instead — either works.'
                 : 'Close this and choose a file instead. Everything after that is the same.'}
             </p>
-            <button type="button" style={secondaryBtn} onClick={onClose}>
-              Choose a file instead
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" style={secondaryBtn} onClick={backToChooser}>
+                Back
+              </button>
+              <button type="button" style={secondaryBtn} onClick={onClose}>
+                Choose a file instead
+              </button>
+              {/* ⚠️ A DEAD END MUST NOT EAT WHAT IS ALREADY SCANNED. The
+                  camera can fail on page three — permission revoked from the
+                  notification shade, another app grabbing the lens — and the
+                  two good pages behind it are still worth keeping. */}
+              {pages.length > 0 && (
+                <button
+                  type="button"
+                  style={{ ...secondaryBtn, background: 'var(--red)', border: 'none' }}
+                  onClick={() => finish(pages)}
+                >
+                  Use the {pages.length} I have
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -604,6 +796,7 @@ export default function DocumentScanner({
             shot={shot}
             editing={editing}
             onEdit={() => setEditing(true)}
+            onCancelEdit={() => setEditing(false)}
             onQuad={reprocess}
             onRetake={() => {
               setShot(null);
@@ -612,6 +805,7 @@ export default function DocumentScanner({
               say('Ready for another go.');
             }}
             onUse={() => finish([...pages, shot.file])}
+            multi={multi}
             onAddAnother={() => {
               setPages((p) => [...p, shot.file]);
               setShot(null);
@@ -766,13 +960,201 @@ const secondaryBtn: React.CSSProperties = {
   fontSize: 15,
 };
 
+/**
+ * WHAT ARE YOU PHOTOGRAPHING?
+ *
+ * The first screen, before the camera opens. It buys three things:
+ *
+ *   1. An aim box of the right shape and size, which is what the detector
+ *      uses to tell the document from the desk it is lying on.
+ *   2. The multi-page answer, asked once instead of after every shot.
+ *   3. The camera permission prompt arriving AFTER the member has committed
+ *      to scanning something, which is when they are most likely to say yes.
+ *
+ * ⚠️ EVERY OPTION SHOWS ITS REAL SIZE. The millimetres are not decoration —
+ * they are how somebody holding a temporary authorisation works out that it
+ * is the A4 option and not the card one, without us having to list every
+ * document SAPS has ever issued.
+ */
+function Chooser({
+  shape,
+  onShape,
+  multi,
+  onMulti,
+  pages,
+  onStart,
+  onCancel,
+  onUsePages,
+}: {
+  shape: DocShape;
+  onShape: (s: DocShape) => void;
+  multi: boolean;
+  onMulti: (v: boolean) => void;
+  pages: number;
+  onStart: () => void;
+  onCancel: () => void;
+  /** Present only once something has been scanned. */
+  onUsePages?: () => void;
+}) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        overflowY: 'auto',
+        padding: '4px 16px max(16px, env(safe-area-inset-bottom))',
+      }}
+    >
+      <h2 style={{ margin: '4px 0 4px', fontSize: 18 }}>
+        What are you photographing?
+      </h2>
+      <p style={{ margin: '0 0 14px', fontSize: 13, opacity: 0.75 }}>
+        We will draw a frame the right shape to line it up in.
+      </p>
+
+      <div role="radiogroup" aria-label="What are you photographing?">
+        {SHAPE_ORDER.map((k) => {
+          const spec = SHAPES[k];
+          const on = shape === k;
+          return (
+            <button
+              key={k}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => onShape(k)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+                width: '100%',
+                minHeight: 64,
+                marginBottom: 8,
+                padding: '10px 12px',
+                textAlign: 'left',
+                borderRadius: 10,
+                color: '#fff',
+                border: on
+                  ? '2px solid var(--red)'
+                  : '1px solid rgba(255,255,255,0.25)',
+                background: on ? 'rgba(224,49,49,0.14)' : 'transparent',
+              }}
+            >
+              <ShapeGlyph shape={k} />
+              <span style={{ flex: 1 }}>
+                <span style={{ display: 'block', fontSize: 15, fontWeight: 600 }}>
+                  {spec.label}
+                </span>
+                <span style={{ display: 'block', fontSize: 12, opacity: 0.75 }}>
+                  {spec.examples}
+                </span>
+                {spec.longMm !== null && spec.shortMm !== null && (
+                  <span style={{ display: 'block', fontSize: 11, opacity: 0.55 }}>
+                    {spec.shortMm} &times; {spec.longMm} mm &middot;{' '}
+                    {holdHint(k)}
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          minHeight: 44,
+          marginTop: 6,
+          fontSize: 14,
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={multi}
+          onChange={(e) => onMulti(e.target.checked)}
+          style={{ width: 20, height: 20 }}
+        />
+        {SHAPES[shape].multiLabel}
+      </label>
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+        <button type="button" onClick={onCancel} style={secondaryBtn}>
+          Cancel
+        </button>
+        {/* Coming back to change the shape mid-job must not strand the pages
+            already taken. */}
+        {onUsePages && (
+          <button type="button" onClick={onUsePages} style={secondaryBtn}>
+            Use the {pages} I have
+          </button>
+        )}
+        <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          onClick={onStart}
+          style={{ ...secondaryBtn, background: 'var(--red)', border: 'none' }}
+        >
+          {pages > 0 ? 'Scan another' : 'Open the camera'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A little outline at the option's real proportions. */
+function ShapeGlyph({ shape }: { shape: DocShape }) {
+  const spec = SHAPES[shape];
+  const box = 38;
+  let w = box;
+  let h = box * 0.78;
+  if (spec.longMm !== null && spec.shortMm !== null) {
+    const a = spec.portrait ? spec.shortMm / spec.longMm : spec.longMm / spec.shortMm;
+    if (a >= 1) {
+      w = box;
+      h = box / a;
+    } else {
+      h = box;
+      w = box * a;
+    }
+  }
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: box,
+        height: box,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: '0 0 auto',
+      }}
+    >
+      <span
+        style={{
+          width: w,
+          height: h,
+          borderRadius: 3,
+          border:
+            spec.longMm === null
+              ? '1.5px dashed rgba(255,255,255,0.6)'
+              : '1.5px solid rgba(255,255,255,0.8)',
+        }}
+      />
+    </span>
+  );
+}
+
 function Header({
   title,
   onClose,
+  onBack,
   pages,
 }: {
   title: string;
   onClose: () => void;
+  onBack?: () => void;
   pages: number;
 }) {
   return (
@@ -784,6 +1166,24 @@ function Header({
         padding: 'max(10px, env(safe-area-inset-top)) 12px 10px',
       }}
     >
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to choosing what you are photographing"
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 8,
+            border: '1px solid rgba(255,255,255,0.3)',
+            background: 'transparent',
+            color: '#fff',
+            fontSize: 18,
+          }}
+        >
+          &#8592;
+        </button>
+      )}
       <p style={{ flex: 1, margin: 0, fontSize: 15, fontWeight: 600 }}>
         {title}
         {pages > 0 && (
@@ -812,29 +1212,57 @@ function Header({
   );
 }
 
-/** A static frame to line the document up inside, in the site's gold. */
-function GuideFrame({ shape }: { shape: 'card' | 'page' }) {
-  const ratio = shape === 'card' ? 85.6 / 53.98 : 1 / Math.SQRT2;
+/**
+ * THE ALERT THAT DOES NOT GO AWAY.
+ *
+ * ⚠️ IT STAYS UP UNTIL THE PROBLEM IS GONE. Not a toast, not a three-second
+ * flash: the operator was explicit, and he is right. A member who has just
+ * been told about glare is a member who is about to move the phone — and a
+ * message that has already faded by then leaves them moving it without
+ * knowing whether it helped. This one clears itself the moment the frame is
+ * good, which is also the only honest signal that it worked.
+ */
+function ExposureAlert({
+  glare,
+  luma,
+  torchOn,
+}: {
+  glare: number;
+  luma: number;
+  torchOn: boolean;
+}) {
+  const problem = exposureProblem(glare, luma, torchOn);
+  if (!problem) return null;
   return (
     <div
-      aria-hidden="true"
+      // Assertive, because it is about the thing the member is doing RIGHT NOW
+      // and a polite announcement would arrive after the photo.
+      role="alert"
+      aria-live="assertive"
       style={{
         position: 'absolute',
-        inset: 0,
+        top: 'max(12px, env(safe-area-inset-top))',
+        left: 12,
+        right: 12,
+        padding: '10px 12px',
+        borderRadius: 10,
+        background: 'rgba(180,32,32,0.94)',
+        color: '#fff',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        gap: 10,
+        alignItems: 'flex-start',
         pointerEvents: 'none',
       }}
     >
-      <div
-        style={{
-          width: '84%',
-          aspectRatio: String(ratio),
-          border: '1px dashed rgba(232,181,58,0.55)',
-          borderRadius: 6,
-        }}
-      />
+      <span aria-hidden="true" style={{ fontSize: 18, lineHeight: '20px' }}>
+        &#9888;
+      </span>
+      <span>
+        <strong style={{ display: 'block', fontSize: 15 }}>
+          {problem.head}
+        </strong>
+        <span style={{ fontSize: 13, opacity: 0.95 }}>{problem.body}</span>
+      </span>
     </div>
   );
 }
@@ -984,20 +1412,44 @@ function Review({
   shot,
   editing,
   onEdit,
+  onCancelEdit,
   onQuad,
   onRetake,
   onUse,
   onAddAnother,
+  multi,
 }: {
   shot: ScanResult;
   editing: boolean;
   onEdit: () => void;
+  onCancelEdit: () => void;
   onQuad: (q: Quad) => void;
   onRetake: () => void;
   onUse: () => void;
   onAddAnother: () => void;
+  /** Did the member say up front that there is more than one page? */
+  multi: boolean;
 }) {
   const notes = verdicts(shot);
+
+  // ⚠️ THE EDITOR TAKES THE WHOLE SCREEN, and shows the ORIGINAL photograph.
+  // It used to be a strip under a 240px-tall thumbnail of the RECTIFIED
+  // output — so the one image on screen was the consequence of the corners
+  // being wrong, and the document's real edges were nowhere to be seen.
+  if (editing) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, background: '#000' }}>
+        <CornerEditor
+          src={shot.sourcePreview}
+          size={shot.sourceSize}
+          quad={shot.quad}
+          onCancel={onCancelEdit}
+          onApply={onQuad}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -1044,15 +1496,7 @@ function Review({
         </ul>
       )}
 
-      {editing ? (
-        <CornerEditor
-          preview={shot.preview}
-          quad={shot.quad}
-          onCancel={onRetake}
-          onApply={onQuad}
-        />
-      ) : (
-        <div
+      <div
           style={{
             display: 'flex',
             flexWrap: 'wrap',
@@ -1067,155 +1511,48 @@ function Review({
             Fix the corners
           </button>
           <div style={{ flex: 1 }} />
-          <button type="button" onClick={onAddAnother} style={secondaryBtn}>
-            Add another
-          </button>
-          <button
-            type="button"
-            onClick={onUse}
-            style={{
-              ...secondaryBtn,
-              background: 'var(--red)',
-              border: 'none',
-            }}
-          >
-            Use it
-          </button>
+          {/* ⚠️ THE PRIMARY ACTION FOLLOWS WHAT THEY ALREADY TOLD US.
+              Somebody who said "front and back" is going to press "Next page"
+              — putting "Use it" under their thumb instead means one tap ends
+              the job with half the document. Somebody scanning one page never
+              sees "Next page" at all. */}
+          {multi ? (
+            <>
+              <button type="button" onClick={onUse} style={secondaryBtn}>
+                That is all
+              </button>
+              <button
+                type="button"
+                onClick={onAddAnother}
+                style={{
+                  ...secondaryBtn,
+                  background: 'var(--red)',
+                  border: 'none',
+                }}
+              >
+                Next page
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={onAddAnother} style={secondaryBtn}>
+                Add another
+              </button>
+              <button
+                type="button"
+                onClick={onUse}
+                style={{
+                  ...secondaryBtn,
+                  background: 'var(--red)',
+                  border: 'none',
+                }}
+              >
+                Use it
+              </button>
+            </>
+          )}
         </div>
-      )}
     </div>
   );
 }
 
-/**
- * Drag the corners.
- *
- * The primary correction path, not a fallback: detection on a real desk gets
- * it wrong often enough that "drag it" has to be a first-class action rather
- * than something buried. Keyboard-operable too, because the same code path
- * then serves switch access.
- */
-function CornerEditor({
-  preview,
-  quad,
-  onCancel,
-  onApply,
-}: {
-  preview: string;
-  quad: Quad;
-  onCancel: () => void;
-  onApply: (q: Quad) => void;
-}) {
-  const boxRef = useRef<HTMLDivElement>(null);
-  const [pts, setPts] = useState<Quad>(quad);
-  const [size, setSize] = useState({ w: 1, h: 1 });
-  const [active, setActive] = useState(0);
-
-  // The preview is a scaled copy of the source, so the corners have to be
-  // shown in the preview's own coordinates and handed back in the source's.
-  const scale = size.w > 1 ? size.w / Math.max(1, extent(quad).w) : 1;
-
-  useEffect(() => {
-    const el = boxRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      const r = el.getBoundingClientRect();
-      setSize({ w: r.width, h: r.height });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const move = (i: number, dx: number, dy: number) => {
-    setPts((cur) => {
-      const next = [...cur] as Quad;
-      next[i] = { x: next[i].x + dx, y: next[i].y + dy };
-      return next;
-    });
-  };
-
-  return (
-    <div style={{ padding: '8px 16px max(16px, env(safe-area-inset-bottom))' }}>
-      <div
-        ref={boxRef}
-        style={{ position: 'relative', width: '100%', maxHeight: 240 }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={preview}
-          alt=""
-          style={{ width: '100%', display: 'block', opacity: 0.75 }}
-        />
-      </div>
-      <p style={{ margin: '10px 0 6px', fontSize: 13, opacity: 0.85 }}>
-        Nudge whichever corner is in the wrong place, then apply.
-      </p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {(['Top left', 'Top right', 'Bottom right', 'Bottom left'] as const).map(
-          (label, i) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => setActive(i)}
-              aria-pressed={active === i}
-              style={{
-                ...secondaryBtn,
-                marginTop: 0,
-                fontSize: 13,
-                padding: '0 10px',
-                background: active === i ? 'rgba(77,163,255,0.28)' : 'transparent',
-              }}
-            >
-              {label}
-            </button>
-          ),
-        )}
-      </div>
-      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-        {(
-          [
-            ['←', -12, 0],
-            ['→', 12, 0],
-            ['↑', 0, -12],
-            ['↓', 0, 12],
-          ] as const
-        ).map(([g, dx, dy]) => (
-          <button
-            key={g}
-            type="button"
-            aria-label={`Move ${['top left', 'top right', 'bottom right', 'bottom left'][active]} ${g === '←' ? 'left' : g === '→' ? 'right' : g === '↑' ? 'up' : 'down'}`}
-            onClick={() => move(active, dx / scale, dy / scale)}
-            style={{ ...secondaryBtn, marginTop: 0, width: 52, padding: 0 }}
-          >
-            {g}
-          </button>
-        ))}
-        <div style={{ flex: 1 }} />
-        <button type="button" onClick={onCancel} style={{ ...secondaryBtn, marginTop: 0 }}>
-          Start over
-        </button>
-        <button
-          type="button"
-          onClick={() => onApply(pts)}
-          style={{
-            ...secondaryBtn,
-            marginTop: 0,
-            background: 'var(--red)',
-            border: 'none',
-          }}
-        >
-          Apply
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function extent(q: Quad) {
-  const xs = q.map((p) => p.x);
-  const ys = q.map((p) => p.y);
-  return {
-    w: Math.max(...xs) - Math.min(...xs),
-    h: Math.max(...ys) - Math.min(...ys),
-  };
-}

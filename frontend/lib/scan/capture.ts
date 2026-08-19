@@ -182,6 +182,16 @@ export interface ScanResult {
   /** Long edge of the frame this came from, in pixels. */
   sourceEdge: number;
   /**
+   * The UNCROPPED capture, as a data URL, and its size.
+   *
+   * ⚠️ THE CORNER EDITOR NEEDS THE WHOLE PICTURE. It used to be handed the
+   * rectified output — which is the crop, so a corner in the wrong place was
+   * invisible in the only image the member could see. `quad` is in these
+   * coordinates.
+   */
+  sourcePreview: string;
+  sourceSize: { width: number; height: number };
+  /**
    * Fraction of the crop carrying print.
    *
    * ⚠️ LOW MEANS WE MAY HAVE CROPPED THE WRONG THING. A document lying on a
@@ -255,6 +265,8 @@ export async function processCapture(
     snapped,
     ink,
     sourceEdge: Math.max(raster.width, raster.height),
+    sourcePreview: await previewUrl(raster, 1200),
+    sourceSize: { width: raster.width, height: raster.height },
   };
 }
 

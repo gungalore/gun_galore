@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
+import { DocShape } from '@/lib/scan/shapes';
 
 // ────────────────────────────────────────────────────────────────────
 // THE WAY IN TO THE SCANNER.
@@ -25,8 +26,11 @@ const DocumentScanner = dynamic(() => import('./document-scanner'), {
 });
 
 export interface ScanButtonProps {
-  /** 'card' for an ID-1 licence, 'page' for A4. Changes only the guide shape. */
-  shape?: 'card' | 'page';
+  /**
+   * What the member is most likely holding — usually `shapeForKind(kind)`.
+   * Sets the starting guide only; they can change it on screen.
+   */
+  shape?: DocShape;
   /** Names the scanner to a screen reader. */
   title: string;
   onFiles: (files: File[]) => void | Promise<void>;
@@ -37,7 +41,7 @@ export interface ScanButtonProps {
 }
 
 export default function ScanButton({
-  shape = 'page',
+  shape = 'any',
   title,
   onFiles,
   fallback,

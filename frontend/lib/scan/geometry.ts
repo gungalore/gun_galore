@@ -315,6 +315,41 @@ export function scaleQuad(q: Quad, factor: number): Quad {
 }
 
 /** Largest corner movement between two quads, in pixels. */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** The axis-aligned bounding box of a quad. */
+export function quadBounds(q: Quad): Rect {
+  const xs = q.map((p) => p.x);
+  const ys = q.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+}
+
+/**
+ * Intersection over union of two rectangles, 0 to 1.
+ *
+ * ⚠️ BOTH DIRECTIONS MATTER, which is why it is IoU and not containment. A
+ * rectangle that swallows the whole frame CONTAINS the aim box perfectly —
+ * and on the operator's IMG_4947 that rectangle (the fabric and the ruler)
+ * is exactly what the detector picked instead of the licence card. Scoring
+ * containment would have called it a perfect match; IoU calls it 0.09.
+ */
+export function rectIoU(a: Rect, b: Rect): number {
+  const ix = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
+  const iy = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+  const inter = ix * iy;
+  const aa = a.width * a.height;
+  const ba = b.width * b.height;
+  if (aa <= 0 || ba <= 0) return 0;
+  return inter / (aa + ba - inter);
+}
+
 export function quadDrift(a: Quad, b: Quad): number {
   let max = 0;
   for (let i = 0; i < 4; i++) max = Math.max(max, dist(a[i], b[i]));

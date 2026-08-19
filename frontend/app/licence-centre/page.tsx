@@ -4,6 +4,7 @@ import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
 import FilePickerButton from '@/components/file-picker-button';
 import ScanButton from '@/components/scan/scan-button';
+import { shapeForKind } from '@/lib/scan/shapes';
 import { todayYmd, toIso } from '@/lib/date-picker-model';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -368,7 +369,9 @@ function AddPanel({
             PDF the association emailed is equally valid and needs no camera
             at all. */}
         <ScanButton
-          shape="card"
+          // Follows the picker above: choose "competency certificate" and the
+          // guide is a card, choose "proof of address" and it is an A4 sheet.
+          shape={shapeForKind(kind)}
           title="Photograph the document"
           onFiles={uploadFiles}
           disabled={busy}
