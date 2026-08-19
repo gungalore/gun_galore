@@ -171,6 +171,8 @@ export interface PickableKind {
   kind: string;
   label: string;
   tier: 'required' | 'strengthens' | 'extra';
+  /** Already attached. `tier === 'required' && !have` is "still outstanding". */
+  have: boolean;
 }
 
 export interface DocumentStatus {

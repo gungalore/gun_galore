@@ -938,7 +938,11 @@ export class MotivationsService {
       // hard-coded in the frontend: the two lists had already drifted apart,
       // the client's omitting two kinds and describing the safe in the
       // singular while this side described three.
-      kinds: pickableKinds(row.licenceType, answers),
+      kinds: pickableKinds(
+        row.licenceType,
+        answers,
+        row.uploads.map((u) => u.kind),
+      ),
     };
   }
 

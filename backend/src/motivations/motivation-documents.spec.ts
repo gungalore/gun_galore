@@ -227,12 +227,47 @@ describe('the upload picker', () => {
     }
   });
 
-  it('never offers a retired kind, so no new row can carry one', () => {
+  it('never offers the retired kind, so no new row can carry one', () => {
     for (const t of Object.values(MotivationLicenceType)) {
-      const kinds = pickableKinds(t).map((p) => p.kind);
-      expect(kinds).not.toContain(K.SAFE_PHOTO);
-      expect(kinds).not.toContain(K.SAFE_INSTALLATION);
+      expect(pickableKinds(t).map((p) => p.kind)).not.toContain(K.SAFE_PHOTO);
     }
+  });
+
+  it('still offers the anchoring shot, which none of the three covers', () => {
+    // All three of the operator's shots are of the DOOR. How the safe is
+    // fixed to the wall is the one thing about storage a DFO inspects in
+    // person, so it stays on offer even though it is not required — and the
+    // checklist still recommends it, which would be a row nobody could tick
+    // if the picker had dropped it.
+    for (const t of Object.values(MotivationLicenceType)) {
+      expect(pickableKinds(t).map((p) => p.kind)).toContain(K.SAFE_INSTALLATION);
+    }
+  });
+
+  it('stops calling a document needed once it is attached', () => {
+    // The tag means STILL OUTSTANDING. Computed against an empty upload list
+    // it would never clear, and the applicant would photograph all three shots
+    // and watch the menu go on asking for them.
+    const before = pickableKinds(S13, {}, []);
+    expect(before.find((p) => p.kind === K.SAFE_PHOTO_AJAR)).toMatchObject({
+      tier: 'required',
+      have: false,
+    });
+
+    const after = pickableKinds(S13, {}, [K.SAFE_PHOTO_AJAR]);
+    expect(after.find((p) => p.kind === K.SAFE_PHOTO_AJAR)).toMatchObject({
+      tier: 'required',
+      have: true,
+    });
+    // …and only that one. The other two shots are untouched.
+    expect(after.find((p) => p.kind === K.SAFE_PHOTO_CLOSED)!.have).toBe(false);
+    expect(after.find((p) => p.kind === K.SAFE_PHOTO_BOLTS)!.have).toBe(false);
+  });
+
+  it('reports have for the optional kinds too, not only the required ones', () => {
+    const picks = pickableKinds(S13, {}, [K.SAFE_INSTALLATION]);
+    expect(picks.find((p) => p.kind === K.SAFE_INSTALLATION)!.have).toBe(true);
+    expect(picks.find((p) => p.kind === K.OTHER)!.have).toBe(false);
   });
 
   it('still offers the ones nobody is required to bring', () => {

@@ -113,7 +113,7 @@ export default function MotivationWizardPage() {
         const up = await motivationsApi.uploads(token, id);
         setUploads(up.files);
         setDocuments(up.documents);
-        setUploadKinds(up.kinds);
+        setUploadKinds(up.kinds ?? []);
         setMessages(await motivationsApi.messages(token, id));
         try {
           setOffer(await motivationsApi.profileOffer(token, id));
@@ -403,7 +403,7 @@ export default function MotivationWizardPage() {
               .uploads(token, id)
               .then((up) => {
                 setDocuments(up.documents);
-                setUploadKinds(up.kinds);
+                setUploadKinds(up.kinds ?? []);
               })
               .catch(() => undefined);
             if (row.suggestions?.length) {
@@ -426,7 +426,7 @@ export default function MotivationWizardPage() {
               .uploads(token, id)
               .then((up) => {
                 setDocuments(up.documents);
-                setUploadKinds(up.kinds);
+                setUploadKinds(up.kinds ?? []);
               })
               .catch(() => undefined);
           }}
@@ -951,7 +951,10 @@ function UploadPanel({
           {kinds.map((k) => (
             <option key={k.kind} value={k.kind}>
               {k.label}
-              {k.tier === 'required' ? ' — needed' : ''}
+              {/* "needed" means STILL OUTSTANDING, not "is on the required
+                  list" — a tag that stays put after the photograph is attached
+                  is a tag nobody reads. */}
+              {k.tier === 'required' && !k.have ? ' — needed' : ''}
             </option>
           ))}
         </select>

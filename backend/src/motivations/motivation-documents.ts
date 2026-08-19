@@ -248,8 +248,16 @@ export function documentLabel(kind: MotivationUploadKind): string {
  * Kinds RETIRED from the picker: they exist only so rows written before
  * 2026-08-19 keep a label and an annexure letter. Postgres cannot drop an enum
  * value, so "retired" has to mean "never offered" rather than "gone".
+ *
+ * ONLY SAFE_PHOTO. SAFE_INSTALLATION was in this list for an afternoon and it
+ * was wrong twice over: the checklist still recommended it, which would have
+ * shown a row nobody could ever tick, and the three shots the operator asked
+ * for are all of the safe's DOOR — none of them shows the safe anchored to the
+ * wall, which is the thing a DFO inspects in person. It is not one of the
+ * three and it is not required, but it is worth attaching, so it stays on
+ * offer.
  */
-const RETIRED: MotivationUploadKind[] = ['SAFE_PHOTO', 'SAFE_INSTALLATION'];
+export const RETIRED: MotivationUploadKind[] = ['SAFE_PHOTO'];
 
 /**
  * What the upload picker should offer, in the order it should offer it.
@@ -266,8 +274,18 @@ const RETIRED: MotivationUploadKind[] = ['SAFE_PHOTO', 'SAFE_INSTALLATION'];
 export function pickableKinds(
   licenceType: MotivationLicenceType,
   answers: Record<string, string> = {},
-): { kind: MotivationUploadKind; label: string; tier: DocumentTier }[] {
-  const status = documentStatus(licenceType, [], answers);
+  uploaded: MotivationUploadKind[] = [],
+): {
+  kind: MotivationUploadKind;
+  label: string;
+  tier: DocumentTier;
+  have: boolean;
+}[] {
+  // WHAT IS ALREADY ATTACHED HAS TO BE PASSED IN. The picker labels its
+  // required entries "needed", and computing that against an empty list would
+  // have meant the tag never cleared: the applicant photographs all three
+  // shots and the menu goes on calling every one of them needed.
+  const status = documentStatus(licenceType, uploaded, answers);
   const ranked = new Map<MotivationUploadKind, DocumentTier>(
     status.needs.map((n) => [n.kind, n.tier]),
   );
@@ -276,16 +294,20 @@ export function pickableKinds(
     (k) => !ranked.has(k) && !RETIRED.includes(k),
   );
 
+  const have = new Set(uploaded);
+
   return [
     ...status.needs.map((n) => ({
       kind: n.kind,
       label: n.label,
       tier: n.tier,
+      have: n.have,
     })),
     ...rest.map((kind) => ({
       kind,
       label: LABELS[kind],
       tier: 'extra' as DocumentTier,
+      have: have.has(kind),
     })),
   ];
 }

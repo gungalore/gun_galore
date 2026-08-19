@@ -25,6 +25,7 @@ import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationsService } from './motivations.service';
+import { RETIRED } from './motivation-documents';
 import {
   FIELD_REGISTRY_VERSION,
   LICENCE_TYPE_LABELS,
@@ -292,6 +293,21 @@ export class MotivationsController {
     // arbitrary string would sail through and surface as a Prisma 500.
     if (!Object.values(MotivationUploadKind).includes(kind as MotivationUploadKind)) {
       throw new BadRequestException('Unknown document type.');
+    }
+    // A RETIRED kind is a valid enum value that nothing may write any more.
+    // Postgres cannot drop an enum value, so the ban has to live here — and it
+    // has to live here rather than only in the picker, or "no new row can
+    // carry it" is an intention rather than a fact.
+    //
+    // The realistic sender is a PWA running a bundle from before the safe
+    // photograph was split into three, whose menu still offers the old single
+    // "Photograph of your safe". Accepting it would file the photograph as
+    // extra evidence and go on showing all three shots as missing, which reads
+    // as the upload having failed silently.
+    if (RETIRED.includes(kind as MotivationUploadKind)) {
+      throw new BadRequestException(
+        'That document type has been replaced by three separate safe photographs. Please refresh the page and choose from the updated list.',
+      );
     }
     return this.motivations.addUpload(
       clerkId,
