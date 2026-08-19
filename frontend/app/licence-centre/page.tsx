@@ -2,6 +2,7 @@
 
 import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
+import FilePickerButton from '@/components/file-picker-button';
 import { todayYmd, toIso } from '@/lib/date-picker-model';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -203,6 +204,90 @@ function AddPanel({
     'rounded border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-sm text-[var(--text-primary)] ' +
     '[&>option]:bg-[var(--bg-card)] [&>option]:text-[var(--text-primary)] focus:border-[var(--border-hover)] focus:outline-none';
 
+  /**
+   * THE UPLOAD PATH, lifted out of the file input.
+   *
+   * It is a named function rather than an inline handler so that anything
+   * able to produce a File feeds one code path — today the themed picker,
+   * and next the camera.
+   */
+  async function uploadFiles(picked: File[]) {
+    if (!picked.length) return;
+
+    // Checked HERE as well as on the server, so the answer is
+    // immediate and NAMES the file. The server's rejection is a
+    // generic 400 by the time it reaches the browser — and one
+    // unusable file must not cost the whole pack a round trip.
+    const failed: string[] = [];
+    const files = picked.filter((f) => {
+      if (!ACCEPTED.includes(f.type)) {
+        failed.push(
+          `${f.name}: we cannot read ${f.type || 'that file type'}`,
+        );
+        return false;
+      }
+      if (f.size > 10 * 1024 * 1024) {
+        failed.push(
+          `${f.name}: ${(f.size / 1024 / 1024).toFixed(1)} MB, over the 10 MB limit`,
+        );
+        return false;
+      }
+      return true;
+    });
+
+    if (!files.length) {
+      setErr(
+        `${failed.join(' · ')}. Use a JPG, PNG, WebP or PDF — on an iPhone, pick the photos from your library rather than from Files.`,
+      );
+      return;
+    }
+
+    setBusy(true);
+    setErr(null);
+    setProgress({ done: 0, total: files.length });
+
+    // ONE AT A TIME. Each upload writes an encrypted file and makes a
+    // vision call; firing eight at once would race the per-minute
+    // limit and give no usable progress.
+    const added: AddedCredential[] = [];
+    for (const [i, file] of files.entries()) {
+      try {
+        // ONE file keeps the type the member picked. SEVERAL is a
+        // folder, so each is named from its contents and checked in
+        // the queue.
+        added.push(
+          await licenceCentreApi.create(
+            token,
+            files.length === 1 ? kind : '',
+            files.length === 1 ? title : '',
+            file,
+          ),
+        );
+      } catch (ex) {
+        // One bad file must not abandon the rest of the pack.
+        failed.push(
+          `${file.name}: ${
+            ex instanceof LicenceApiError
+              ? ex.message
+              : 'did not upload'
+          }`,
+        );
+      }
+      setProgress({ done: i + 1, total: files.length });
+    }
+
+    setBusy(false);
+    setProgress(null);
+    setErr(failed.length ? failed.join(' · ') : null);
+    setQueue(added);
+    // Always, not only on failure: a row may have been committed and
+    // its response lost — the vision read runs after the insert and
+    // can outlast the proxy's patience. Without this the document is
+    // invisible AND a retry is refused as a duplicate, which
+    // contradicts the error we just showed.
+    await onAdded().catch(() => undefined);
+  }
+
   if (queue.length) {
     const [current, ...rest] = queue;
     return (
@@ -275,96 +360,18 @@ function AddPanel({
       </div>
 
       <div className="mt-3">
-        <input
-          type="file"
-          className="text-sm"
+        <FilePickerButton
           accept="image/jpeg,image/png,image/webp,application/pdf"
           // A FOLDER GOES IN AT ONCE. Picking one file at a time and naming
           // each is the slowest possible way to hand over paperwork the member
           // already has together.
           multiple
           disabled={busy}
-          onChange={async (e) => {
-            const picked = Array.from(e.target.files ?? []);
-            // Re-picking the same files must re-fire onChange, and everything
-            // below is async — clear the input before anything can await.
-            e.target.value = '';
-            if (!picked.length) return;
-
-            // Checked HERE as well as on the server, so the answer is
-            // immediate and NAMES the file. The server's rejection is a
-            // generic 400 by the time it reaches the browser — and one
-            // unusable file must not cost the whole pack a round trip.
-            const failed: string[] = [];
-            const files = picked.filter((f) => {
-              if (!ACCEPTED.includes(f.type)) {
-                failed.push(
-                  `${f.name}: we cannot read ${f.type || 'that file type'}`,
-                );
-                return false;
-              }
-              if (f.size > 10 * 1024 * 1024) {
-                failed.push(
-                  `${f.name}: ${(f.size / 1024 / 1024).toFixed(1)} MB, over the 10 MB limit`,
-                );
-                return false;
-              }
-              return true;
-            });
-
-            if (!files.length) {
-              setErr(
-                `${failed.join(' · ')}. Use a JPG, PNG, WebP or PDF — on an iPhone, pick the photos from your library rather than from Files.`,
-              );
-              return;
-            }
-
-            setBusy(true);
-            setErr(null);
-            setProgress({ done: 0, total: files.length });
-
-            // ONE AT A TIME. Each upload writes an encrypted file and makes a
-            // vision call; firing eight at once would race the per-minute
-            // limit and give no usable progress.
-            const added: AddedCredential[] = [];
-            for (const [i, file] of files.entries()) {
-              try {
-                // ONE file keeps the type the member picked. SEVERAL is a
-                // folder, so each is named from its contents and checked in
-                // the queue.
-                added.push(
-                  await licenceCentreApi.create(
-                    token,
-                    files.length === 1 ? kind : '',
-                    files.length === 1 ? title : '',
-                    file,
-                  ),
-                );
-              } catch (ex) {
-                // One bad file must not abandon the rest of the pack.
-                failed.push(
-                  `${file.name}: ${
-                    ex instanceof LicenceApiError
-                      ? ex.message
-                      : 'did not upload'
-                  }`,
-                );
-              }
-              setProgress({ done: i + 1, total: files.length });
-            }
-
-            setBusy(false);
-            setProgress(null);
-            setErr(failed.length ? failed.join(' · ') : null);
-            setQueue(added);
-            // Always, not only on failure: a row may have been committed and
-            // its response lost — the vision read runs after the insert and
-            // can outlast the proxy's patience. Without this the document is
-            // invisible AND a retry is refused as a duplicate, which
-            // contradicts the error we just showed.
-            await onAdded().catch(() => undefined);
-          }}
-        />
+          variant="primary"
+          onFiles={uploadFiles}
+        >
+          Choose documents
+        </FilePickerButton>
       </div>
       {busy && (
         <p

@@ -104,6 +104,20 @@ export interface MotivationField {
   /** 'far' adds a decade strip, for a field that reaches back decades. */
   reach?: 'near' | 'far';
   /**
+   * A grouped option list, served rather than written into the registry —
+   * fifty-nine shooting disciplines with their governing bodies.
+   */
+  optionGroups?: {
+    group: string;
+    options: { value: string; label: string; hint?: string }[];
+  }[];
+  /** Choosing an option seeds THIS field with text belonging to that option. */
+  prefills?: string;
+  /** option value -> the text seeded into `prefills`. */
+  prefillText?: Record<string, string>;
+  /** "Something else" is offered, revealing `${key}_other`. */
+  allowOther?: boolean;
+  /**
    * A document can answer this. Mirrors docSourced in motivation-fields.ts,
    * and holds the MotivationUploadKind that carries the value.
    *

@@ -69,6 +69,30 @@ export interface MotivationField {
   /** Shown under the input. Plain, no legalese. */
   help?: string;
   choices?: readonly string[];
+  /**
+   * The options come from a data module rather than from `choices`.
+   *
+   * A list of fifty-nine shooting disciplines, each with a paragraph of
+   * equipment rules, does not belong inline in a field registry. The registry
+   * names the source; motivation-field-options.ts attaches the list on the way
+   * out to the wizard.
+   */
+  optionSource?: 'shooting-disciplines';
+  /** Narrows optionSource. 'hunting' drops the pure sport-shooting entries. */
+  optionScope?: 'hunting' | 'all';
+  /**
+   * Choosing an option SEEDS this other field with text belonging to that
+   * option.
+   *
+   * ⚠️ SEEDS, NEVER OVERWRITES. The target is a long-form box the applicant
+   * signs their name under; a prefill that clobbered what they had written
+   * would be the never-move-a-field rule with the stakes raised.
+   */
+  prefills?: string;
+  /**
+   * Offer "Something else", which reveals `${key}_other` for free text.
+   */
+  allowOther?: true;
   /** Required to generate at all. Optional fields still improve the document. */
   required?: true;
   /**
@@ -1490,6 +1514,38 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       maxLength: 3000,
     },
     {
+      // OPTIONAL here, unlike the sport shooter's. A dedicated hunter's
+      // motivation stands on the hunting record; a shooting discipline is
+      // supporting evidence where they shoot one, and a new required field
+      // would block applications that were complete yesterday.
+      key: 'discipline',
+      label: 'A shooting discipline you compete in',
+      kind: 'choice',
+      section: 'Experience',
+      optionSource: 'shooting-disciplines',
+      optionScope: 'hunting',
+      allowOther: true,
+      prefills: 'discipline_requirement',
+      help: 'Optional. Only if you shoot a formal discipline as well as hunting \u2014 several of these are run specifically for hunters.',
+      maxLength: 160,
+    },
+    {
+      key: 'discipline_other',
+      label: 'Name the discipline',
+      kind: 'short',
+      section: 'Experience',
+      showIf: { key: 'discipline', equals: 'other' },
+      maxLength: 160,
+    },
+    {
+      key: 'discipline_requirement',
+      label: 'What the discipline requires of the firearm',
+      kind: 'long',
+      section: 'Experience',
+      help: 'Filled in from the body\u2019s published rules when you pick a discipline. Check it and make it yours.',
+      maxLength: 2000,
+    },
+    {
       key: 'activity_record',
       label: 'Association activities in the last 24 months',
       kind: 'long',
@@ -1531,11 +1587,28 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       reach: 'far',
     },
     {
+      // WAS a free-text box reading "Practical, precision, clay, service
+      // rifle, and so on." — which asked the applicant to summarise, from
+      // memory, the one thing a section 16 motivation turns on. The list is
+      // now the real one, and picking from it seeds the equipment rules.
       key: 'discipline',
       label: 'The discipline you shoot',
+      kind: 'choice',
+      section: 'Experience',
+      optionSource: 'shooting-disciplines',
+      allowOther: true,
+      prefills: 'discipline_requirement',
+      help: 'Pick the one this firearm is for. If you shoot several, pick the one this application is about — the others belong in your competition record.',
+      required: true,
+      maxLength: 160,
+    },
+    {
+      key: 'discipline_other',
+      label: 'Name the discipline',
       kind: 'short',
       section: 'Experience',
-      help: 'Practical, precision, clay, service rifle, and so on.',
+      showIf: { key: 'discipline', equals: 'other' },
+      help: 'What it is called, and which club or body runs it.',
       required: true,
       maxLength: 160,
     },
@@ -1553,7 +1626,10 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'What the discipline requires of the firearm',
       kind: 'long',
       section: 'Experience',
-      help: 'Where the rules constrain calibre, barrel, sights or capacity.',
+      help: 'Picking a discipline above fills this in from that body\u2019s published rules. Check it against the current handbook and make it yours \u2014 rules change, and this goes out over your signature.',
+      // ⚠️ Deliberately NOT required. It is prefilled, and a required field
+      // that fills itself in teaches people to skim the one paragraph on the
+      // page they most need to read.
       maxLength: 2000,
     },
   ],

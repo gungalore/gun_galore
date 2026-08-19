@@ -22,8 +22,8 @@ import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 //
 // ⚠️ REQUIRED HERE MEANS "SAPS REQUIRES IT", NOT "WE REFUSE TO PROCEED". We
 // never block someone from producing their own motivation on the strength of a
-// missing UPLOAD — someone whose certified copies are at the police station
-// being certified should still be drafting. We say plainly what is missing and
+// missing UPLOAD — someone whose copies are at the police station being
+// certified should still be drafting. We say plainly what is missing and
 // let them decide.
 //
 // ⚠️ COMPETENCY IS THE ONE EXCEPTION, and it is not enforced here. Operator,
@@ -138,11 +138,11 @@ const LABELS: Record<MotivationUploadKind, string> = {
 
 const WHY: Partial<Record<MotivationUploadKind, string>> = {
   IDENTITY_DOCUMENT:
-    'SAPS wants a certified copy, not older than three months. We also read your name and ID number off it so you do not have to type them.',
+    'A photograph or scan of the page with your photo on it is fine here — what you upload to us does not need certifying. We read your name and ID number off it so you do not have to type them. (The copy you hand the DFO is the one that must be certified.)',
   COMPETENCY_CERTIFICATE:
     'Without competency for this type of firearm, SAPS cannot process the application at all.',
   ADDRESS_CONFIRMATION:
-    'Certified, not older than three months. We read the address off it.',
+    'A photograph or scan is fine — no certification needed for our copy. Use something recent: the DFO will want proof of address from the last three months. We read the address off it.',
   ASSOCIATION_CARD:
     'Dedicated status is the basis of a section 16 application, so this is part of the case rather than an extra.',
   CURRENT_LICENCE:

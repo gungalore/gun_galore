@@ -31,6 +31,7 @@ import {
   LICENCE_TYPE_LABELS,
   fieldsFor,
 } from './motivation-fields';
+import { expandFields } from './motivation-field-options';
 import {
   AcceptDeclarationDto,
   AnswerFollowUpDto,
@@ -114,7 +115,9 @@ export class MotivationsController {
       licenceType: type,
       label: LICENCE_TYPE_LABELS[type],
       version: FIELD_REGISTRY_VERSION,
-      fields: fieldsFor(type),
+      // expandFields attaches the discipline list and its prefill text. The
+      // registry stays a registry; the data stays data.
+      fields: expandFields(fieldsFor(type)),
     };
   }
 

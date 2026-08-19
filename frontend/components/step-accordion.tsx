@@ -11,6 +11,11 @@ import { animateOpen, animateClose, popIn } from '@/lib/anim';
 //   locked   — previous step is incomplete. Bar is dim; clicking does nothing.
 //   active   — current step. Bar is red; expanded; the Continue button at
 //              the bottom advances to the next step.
+//   partial  — STARTED BUT NOT FINISHED. Bar is amber. Added because a
+//              collapsed step that is dim reads identically whether it is
+//              untouched or three-quarters done, and somebody assembling a
+//              licence application over several sittings needs to see at a
+//              glance which section they were in the middle of.
 //   complete — every required field in this step is filled. Bar is green;
 //              collapsed; clicking re-opens for edits.
 //   idle     — OPTIONAL and empty (edit surfaces like /profile/edit):
@@ -22,7 +27,12 @@ import { animateOpen, animateClose, popIn } from '@/lib/anim';
 // the janky max-height trick). The status badge pops in when the step
 // flips to "complete".
 
-export type StepStatus = 'locked' | 'active' | 'complete' | 'idle';
+export type StepStatus =
+  | 'locked'
+  | 'active'
+  | 'complete'
+  | 'partial'
+  | 'idle';
 
 interface Props {
   number: number;
@@ -99,7 +109,9 @@ export function StepAccordion({
       ? '#22c55e'
       : status === 'active'
         ? 'var(--red)'
-        : 'var(--text-tertiary)';
+        : status === 'partial'
+          ? 'var(--warning)'
+          : 'var(--text-tertiary)';
 
   // Locked steps can't be opened
   const clickable = status !== 'locked';
@@ -114,7 +126,9 @@ export function StepAccordion({
             ? 'var(--red)'
             : status === 'complete'
               ? 'rgba(34,197,94,0.4)'
-              : 'var(--border)'
+              : status === 'partial'
+                ? 'rgba(212,154,58,0.45)'
+                : 'var(--border)'
         }`,
         opacity: status === 'locked' ? 0.55 : 1,
         transition: 'border-color 600ms ease, opacity 600ms ease',
@@ -146,23 +160,32 @@ export function StepAccordion({
                 ? 'rgba(34,197,94,0.15)'
                 : status === 'active'
                   ? 'var(--red)'
-                  : 'var(--bg-inset)',
+                  : status === 'partial'
+                    ? 'rgba(212,154,58,0.14)'
+                    : 'var(--bg-inset)',
             color:
               status === 'complete'
                 ? '#22c55e'
                 : status === 'active'
                   ? '#fff'
-                  : 'var(--text-tertiary)',
+                  : status === 'partial'
+                    ? 'var(--warning)'
+                    : 'var(--text-tertiary)',
             border:
               status === 'complete'
                 ? '0.5px solid rgba(34,197,94,0.4)'
                 : status === 'active'
                   ? '0.5px solid var(--red)'
-                  : '0.5px solid var(--border)',
+                  : status === 'partial'
+                    ? '0.5px solid rgba(212,154,58,0.45)'
+                    : '0.5px solid var(--border)',
             transition: 'background-color 500ms ease, color 500ms ease, border-color 500ms ease',
           }}
         >
-          {status === 'complete' ? '✓' : number}
+          {/* NOT COLOUR ALONE. Amber against green is exactly the pair a
+              red-green colour-blind reader cannot separate, so the glyph
+              carries the state too. */}
+          {status === 'complete' ? '✓' : status === 'partial' ? '•' : number}
         </span>
 
         {/* Title block */}

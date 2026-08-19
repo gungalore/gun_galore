@@ -2,6 +2,7 @@
 
 import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
+import FilePickerButton from '@/components/file-picker-button';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -186,6 +187,50 @@ export default function MotivationWizardPage() {
     setAnswers((a) => ({ ...a, [key]: value }));
   };
 
+  /**
+   * A dropdown that fills in another box.
+   *
+   * ⚠️ IT SEEDS, IT NEVER CLOBBERS. The target is the paragraph the applicant
+   * signs their name under. So: fill it when it is empty, and replace it only
+   * when it still holds — character for character — the text WE put there for
+   * the previously chosen option. The moment they edit a word of it, it is
+   * theirs and a later change of discipline leaves it alone and offers a
+   * button instead.
+   */
+  const seeded = useRef<Record<string, string>>({});
+  const [prefillOffer, setPrefillOffer] = useState<{
+    key: string;
+    label: string;
+    text: string;
+  } | null>(null);
+
+  // A plain function, not useCallback: setAnswer is re-created every render
+  // anyway, and this needs to read the CURRENT answers to decide whether the
+  // target box is still ours to fill.
+  const pickOption = (field: MotivationField, value: string) => {
+    setAnswer(field.key, value);
+    const target = field.prefills;
+    if (!target) return;
+    const text = (field.prefillText?.[value] ?? '').trim();
+    if (!text) return;
+
+    const current = (answers[target] ?? '').trim();
+    const ours = (seeded.current[target] ?? '').trim();
+    const label =
+      field.optionGroups
+        ?.flatMap((g) => g.options)
+        .find((o) => o.value === value)?.label ?? value;
+
+    if (current === '' || current === ours) {
+      seeded.current[target] = text;
+      setAnswer(target, text);
+      return;
+    }
+    // They have written their own. Offer, do not take.
+    setPrefillOffer({ key: target, label, text });
+  };
+
+
   const shown = useMemo(() => visibleFields(fields, answers), [fields, answers]);
 
   /**
@@ -281,6 +326,10 @@ export default function MotivationWizardPage() {
   ): StepStatus => {
     if (answered > 0 && missing === 0) return 'complete';
     if (n === expanded) return 'active';
+    // STARTED, NOT FINISHED. Operator, 2026-08-19: a section with something in
+    // it and something outstanding should read amber, not the same dim grey as
+    // one nobody has opened.
+    if (answered > 0) return 'partial';
     // NOTHING IS EVER LOCKED.
     //
     // It used to lock any step past `furthest`, which froze the whole form on
@@ -617,6 +666,38 @@ export default function MotivationWizardPage() {
                 </div>
               )}
               {sec.fields.map((f) => (
+                <div key={`${f.key}-w`}>
+                {/* WE ASK BEFORE REPLACING. The applicant has written their
+                    own words in this box, so a new discipline choice offers
+                    its rules rather than overwriting them. */}
+                {prefillOffer?.key === f.key && (
+                  <div className="mb-2 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm">
+                    <p>
+                      You have written your own answer here. Replace it with the
+                      published rules for {prefillOffer.label}?
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)]"
+                        onClick={() => {
+                          seeded.current[prefillOffer.key] = prefillOffer.text;
+                          setAnswer(prefillOffer.key, prefillOffer.text);
+                          setPrefillOffer(null);
+                        }}
+                      >
+                        Replace it
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-card-hover)]"
+                        onClick={() => setPrefillOffer(null)}
+                      >
+                        Keep what I wrote
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <FieldInput
                   key={f.key}
                   field={f}
@@ -630,7 +711,9 @@ export default function MotivationWizardPage() {
                     setUnlocked((u) => new Set(u).add(f.key))
                   }
                   onChange={(v) => setAnswer(f.key, v)}
+                  onPick={pickOption}
                 />
+                </div>
               ))}
 
               {isOwned && ownedRows < 6 && (
@@ -810,6 +893,7 @@ function FieldInput({
   missing,
   locked = false,
   onUnlock,
+  onPick,
   onChange,
 }: {
   field: MotivationField;
@@ -818,6 +902,8 @@ function FieldInput({
   /** We filled this in. Shown, greyed, with a pen — never taken away. */
   locked?: boolean;
   onUnlock?: () => void;
+  /** Choice fields that seed another field route through here instead. */
+  onPick?: (field: MotivationField, value: string) => void;
   onChange: (v: string) => void;
 }) {
   // EXPLICIT background and colour on every control.
@@ -936,18 +1022,49 @@ function FieldInput({
         />
       )}
 
-      {(field.kind === 'choice' || field.kind === 'yesno') && (
+      {(field.kind === 'choice' || field.kind === 'yesno') &&
+        !field.optionGroups && (
+          <select
+            id={field.key}
+            className={base}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            <option value="">Choose…</option>
+            {(field.choices ?? ['No', 'Yes']).map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        )}
+
+      {/* A SERVED LIST — the shooting disciplines, grouped by family.
+          A stored value we do not recognise is shown as its own option
+          rather than silently reset: before this was a dropdown it was a
+          text box, and somebody's typed answer is still their answer. */}
+      {field.optionGroups && (
         <select
           id={field.key}
           className={base}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onPick?.(field, e.target.value) ?? onChange(e.target.value)}
         >
           <option value="">Choose…</option>
-          {(field.choices ?? ['No', 'Yes']).map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
+          {value.trim() !== '' &&
+            !field.optionGroups.some((g) =>
+              g.options.some((o) => o.value === value),
+            ) && (
+              <option value={value}>{value} (what you typed before)</option>
+            )}
+          {field.optionGroups.map((g) => (
+            <optgroup key={g.group} label={g.group}>
+              {g.options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       )}
@@ -1036,6 +1153,58 @@ function UploadPanel({
   // Empty string until the list arrives, and the file input stays disabled
   // until then — posting an empty kind would 400 with nothing useful to show.
   const [kind, setKind] = useState('');
+  /**
+   * THE UPLOAD PATH, lifted out of the file input.
+   *
+   * Named rather than inline so every source of a File — the themed
+   * picker, the per-requirement rows, and next the camera — feeds one
+   * code path with one set of checks.
+   */
+  async function uploadFiles(files: File[]) {
+    if (!files.length) return;
+    setBusy(true);
+    setErr(null);
+    setFiled([]);
+    setProgress({ done: 0, total: files.length });
+
+    // ONE AT A TIME, deliberately. Each upload writes an encrypted
+    // file and makes a vision call; firing eight at once would race the
+    // per-minute limit and give no usable progress.
+    const named: typeof filed = [];
+    const failed: string[] = [];
+    for (const [i, file] of files.entries()) {
+      try {
+        // ONE file keeps the type they picked. SEVERAL are a pack, so
+        // each is named from its contents — nobody labels eight files
+        // in a dropdown before uploading them.
+        const added = await onAdd(files.length === 1 ? kind : '', file);
+        if (added?.autoFiled) {
+          named.push({
+            id: added.id,
+            name: file.name,
+            kind: added.kind,
+            confident: added.confident === true,
+          });
+        }
+      } catch (ex) {
+        // One bad file must not abandon the rest of the pack.
+        failed.push(
+          `${file.name}: ${
+            ex instanceof MotivationApiError
+              ? ex.message
+              : 'did not upload'
+          }`,
+        );
+      }
+      setProgress({ done: i + 1, total: files.length });
+    }
+
+    setFiled(named);
+    setErr(failed.length ? failed.join(' · ') : null);
+    setBusy(false);
+    setProgress(null);
+  }
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   /** Per-file state while a pack is going up: "3 of 8 — competency…". */
@@ -1074,62 +1243,18 @@ function UploadPanel({
             </option>
           ))}
         </select>
-        <input
-          type="file"
-          className="text-sm"
+        <FilePickerButton
           accept="image/jpeg,image/png,image/webp,application/pdf"
           // A PACK GOES UP IN ONE GO. Picking one file at a time and choosing
           // a type for each is the slowest possible way to hand over documents
           // somebody already has sitting in a folder.
           multiple
           disabled={busy}
-          onChange={async (e) => {
-            const files = Array.from(e.target.files ?? []);
-            if (!files.length) return;
-            setBusy(true);
-            setErr(null);
-            setFiled([]);
-            setProgress({ done: 0, total: files.length });
-
-            // ONE AT A TIME, deliberately. Each upload writes an encrypted
-            // file and makes a vision call; firing eight at once would race the
-            // per-minute limit and give no usable progress.
-            const named: typeof filed = [];
-            const failed: string[] = [];
-            for (const [i, file] of files.entries()) {
-              try {
-                // ONE file keeps the type they picked. SEVERAL are a pack, so
-                // each is named from its contents — nobody labels eight files
-                // in a dropdown before uploading them.
-                const added = await onAdd(files.length === 1 ? kind : '', file);
-                if (added?.autoFiled) {
-                  named.push({
-                    id: added.id,
-                    name: file.name,
-                    kind: added.kind,
-                    confident: added.confident === true,
-                  });
-                }
-              } catch (ex) {
-                // One bad file must not abandon the rest of the pack.
-                failed.push(
-                  `${file.name}: ${
-                    ex instanceof MotivationApiError
-                      ? ex.message
-                      : 'did not upload'
-                  }`,
-                );
-              }
-              setProgress({ done: i + 1, total: files.length });
-            }
-
-            setFiled(named);
-            setErr(failed.length ? failed.join(' · ') : null);
-            setBusy(false);
-            setProgress(null);
-            e.target.value = '';
-          }}
-        />
+          variant="primary"
+          onFiles={uploadFiles}
+        >
+          Upload all my documents at once
+        </FilePickerButton>
       </div>
       <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]">
         JPG, PNG, WebP or PDF, up to 10 MB each. Pick several at once if you

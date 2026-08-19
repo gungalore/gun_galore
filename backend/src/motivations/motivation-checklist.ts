@@ -233,12 +233,18 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
   },
   {
     key: 'id_copies',
-    label: 'Two CERTIFIED copies of your ID, not older than 3 months',
-    note: 'Any police station or attorney certifies them free. DFOs reject uncertified or stale copies.',
+    // ⚠️ THE ONE CERTIFICATION THE REGULATIONS ACTUALLY IMPOSE on an
+    // individual applicant: regulation 13(4)(b) requires a certified copy of
+    // the identity document. Everything else on this list is certified at the
+    // counter against the original, or not at all — which is why this entry
+    // says "certified" and the others no longer do.
+    label: 'A certified copy of your ID (the page with your photograph)',
+    note: 'This is the one copy the regulations require to be certified. Any police station or Commissioner of Oaths does it free. Bring the original as well — most DFOs certify the rest of your copies against the originals at the counter.',
   },
   {
     key: 'proof_of_residence',
-    label: 'Certified proof of residence, not older than 3 months',
+    label: 'Proof of your residential address, not older than 3 months',
+    note: 'A municipal bill, bank statement or lease. The three-month rule is about how RECENT it is, not about certification — bring the original and the DFO will copy or certify it there. Practice varies by station, so ask yours what they want.',
   },
   {
     key: 'character_references',

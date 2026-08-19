@@ -10,6 +10,7 @@ import {
   SAPS271_OPT_KEY,
   YES_NO,
 } from './motivation-fields';
+import { expandFields } from './motivation-field-options';
 
 // The registry is the contract between the wizard, the SAPS 271, the prompt and
 // the quality gate. Everything here guards a way that contract can be broken
@@ -34,7 +35,47 @@ describe('field registry integrity', () => {
   it('gives every choice field its choices', () => {
     for (const t of ALL) {
       for (const f of fieldsFor(t)) {
-        if (f.kind === 'choice') expect(f.choices?.length).toBeGreaterThan(1);
+        if (f.kind !== 'choice') continue;
+        // A choice field carries its options EITHER inline, or by naming a
+        // data module that supplies them. What it may never do is offer a
+        // dropdown with nothing in it.
+        if (f.optionSource) {
+          expect(expandFields([f])[0].optionGroups?.length).toBeGreaterThan(0);
+          continue;
+        }
+        expect(f.choices?.length).toBeGreaterThan(1);
+      }
+    }
+  });
+
+  it('gives every served option list real options, and an "other" escape where promised', () => {
+    for (const t of ALL) {
+      for (const f of expandFields(fieldsFor(t))) {
+        if (!f.optionGroups) continue;
+        const values = f.optionGroups.flatMap((g) => g.options.map((o) => o.value));
+        expect(values.length).toBeGreaterThan(5);
+        // Values are STORED ANSWERS. A duplicate would make one of them
+        // unreachable in a <select> and silently change what was saved.
+        expect(new Set(values).size).toBe(values.length);
+        for (const v of values) expect(v.trim()).not.toBe('');
+        if (f.allowOther) expect(values).toContain('other');
+        // Anything that seeds another field must have text for every option
+        // it offers, or picking one quietly does nothing.
+        if (f.prefills) {
+          for (const v of values) {
+            if (v === 'other') continue;
+            expect((f.prefillText?.[v] ?? '').length).toBeGreaterThan(40);
+          }
+        }
+      }
+    }
+  });
+
+  it('points every prefills at a field that exists in the same type', () => {
+    for (const t of ALL) {
+      const keys = new Set(fieldsFor(t).map((f) => f.key));
+      for (const f of fieldsFor(t)) {
+        if (f.prefills) expect(keys.has(f.prefills)).toBe(true);
       }
     }
   });
@@ -49,7 +90,13 @@ describe('field registry integrity', () => {
         if (!f.showIf) continue;
         const parent = byKey.get(f.showIf.key);
         expect(parent).toBeDefined();
-        const allowed = parent!.choices ?? YES_NO;
+        // A parent whose options are served rather than inline is checked
+        // against the SERVED list — which is where 'other' comes from.
+        const allowed = parent!.optionSource
+          ? expandFields([parent!])[0].optionGroups!.flatMap((g) =>
+              g.options.map((o) => o.value),
+            )
+          : (parent!.choices ?? YES_NO);
         expect(allowed).toContain(f.showIf.equals);
       }
     }
