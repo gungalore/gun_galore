@@ -30,6 +30,46 @@ function ctx2d(w: number, h: number): CanvasRenderingContext2D {
 }
 
 /**
+ * THE PART OF THE VIDEO THE MEMBER CAN ACTUALLY SEE.
+ *
+ * ⚠️ THE BUG THIS FUNCTION EXISTS TO KILL. The preview is `object-fit: cover`
+ * in a portrait box, so a landscape camera track is cropped hard at the sides
+ * before it reaches the screen. Both the detector and the shutter used the
+ * WHOLE track — so the member framed a card in a portrait window while we
+ * hunted rectangles in a wider scene they had never seen, and captured that
+ * scene too. On a real desk it found a tall slice of mousepad and cropped to
+ * it, which is exactly what the operator's screenshot showed.
+ *
+ * Everything downstream now works in THIS rectangle. What you frame is what
+ * gets detected, marked, captured and read.
+ */
+export interface VisibleRect {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+}
+
+export function visibleRect(video: HTMLVideoElement): VisibleRect | null {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return null;
+  const cw = video.clientWidth || vw;
+  const ch = video.clientHeight || vh;
+  // object-fit: cover — the larger scale wins and the overflow is trimmed
+  // evenly on both sides.
+  const scale = Math.max(cw / vw, ch / vh);
+  const sw = Math.min(vw, cw / scale);
+  const sh = Math.min(vh, ch / scale);
+  return {
+    sx: (vw - sw) / 2,
+    sy: (vh - sh) / 2,
+    sw,
+    sh,
+  };
+}
+
+/**
  * One video frame as a small luma buffer, for the live detector.
  *
  * ⚠️ THE READBACK IS THE EXPENSIVE PART, not the detection. getImageData is
@@ -40,21 +80,42 @@ export function frameToGray(
   video: HTMLVideoElement,
   scratch: CanvasRenderingContext2D,
 ): Gray | null {
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  if (!vw || !vh) return null;
+  const vis = visibleRect(video);
+  if (!vis) return null;
   const w = scratch.canvas.width;
   const h = scratch.canvas.height;
-  scratch.drawImage(video, 0, 0, w, h);
+  scratch.drawImage(video, vis.sx, vis.sy, vis.sw, vis.sh, 0, 0, w, h);
   const img = scratch.getImageData(0, 0, w, h);
   return toLuma(img.data, w, h);
 }
 
-/** A scratch context sized for detection, given the video's aspect. */
+/** A scratch context sized for detection, matching the VISIBLE aspect. */
 export function makeScratch(vw: number, vh: number): CanvasRenderingContext2D {
   const w = DETECT_WIDTH;
   const h = Math.max(1, Math.round((vh / Math.max(1, vw)) * w));
   return ctx2d(w, h);
+}
+
+/**
+ * The visible region as a full-resolution JPEG — the shutter.
+ *
+ * Not the whole track: see visibleRect. Quality 0.95 because this is the
+ * image a vision model has to read small print off, and the file is thrown
+ * away as soon as it has been rectified.
+ */
+export async function grabVisible(
+  video: HTMLVideoElement,
+): Promise<{ blob: Blob; width: number; height: number } | null> {
+  const vis = visibleRect(video);
+  if (!vis) return null;
+  const w = Math.round(vis.sw);
+  const h = Math.round(vis.sh);
+  const g = ctx2d(w, h);
+  g.drawImage(video, vis.sx, vis.sy, vis.sw, vis.sh, 0, 0, w, h);
+  const blob = await new Promise<Blob | null>((res) =>
+    g.canvas.toBlob(res, 'image/jpeg', 0.95),
+  );
+  return blob ? { blob, width: w, height: h } : null;
 }
 
 /** Decode a blob or file into raw pixels, capped so a 108MP phone cannot OOM us. */
@@ -118,6 +179,8 @@ export interface ScanResult {
   source: 'detected' | 'frame' | 'manual';
   report: EnhanceReport;
   snapped: string | null;
+  /** Long edge of the frame this came from, in pixels. */
+  sourceEdge: number;
   /**
    * Fraction of the crop carrying print.
    *
@@ -181,6 +244,7 @@ export async function processCapture(
     report,
     snapped,
     ink,
+    sourceEdge: Math.max(raster.width, raster.height),
   };
 }
 
@@ -225,6 +289,15 @@ export function verdicts(r: ScanResult): string[] {
   if (r.source === 'frame') {
     out.push(
       'We could not find the edges, so we used the frame. Check the corners and drag them if they are wrong.',
+    );
+  } else if (r.sourceEdge < 1400) {
+    // ⚠️ THE CAMERA STREAM IS NOT THE STILL CAMERA. A browser gives us video
+    // frames, and on many phones that is 1080p or less against a 48-megapixel
+    // stills sensor. It is enough for a licence card filling the frame; it is
+    // not enough for a card photographed from across a desk. Saying so is
+    // better than handing over something unreadable.
+    out.push(
+      'The camera gave us a small image, so fine print may not read. Filling more of the frame with the document, or choosing a file taken with your normal camera app, will be sharper.',
     );
   } else if (r.ink < 0.06) {
     // Almost no print in what we cropped — most often the mat or folder the

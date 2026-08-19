@@ -34,6 +34,21 @@ export interface Detection {
   score: number;
   /** How much brighter the inside is than the outside, in luma steps. */
   contrast: number;
+  /** Fraction of the interior carrying print. See inkiness. */
+  ink: number;
+  /** Fraction of the frame the quad covers. */
+  areaFraction: number;
+  /**
+   * Would we shoot this without being asked?
+   *
+   * ⚠️ STRICTER THAN "ACCEPTED". Accepting means the corner editor gets a
+   * sensible starting rectangle. Firing the shutter by itself means committing
+   * — so it additionally wants print inside the quad, a believable size, and
+   * a shape that could be a document seen at an angle. Auto-capture on a
+   * doubtful detection is worse than no auto-capture at all: the member gets
+   * a confident photograph of their desk.
+   */
+  confident: boolean;
 }
 
 /** Below this we do not claim to have found anything. */
@@ -441,9 +456,18 @@ export function edgeContrast(g: Gray, q: Quad): number {
 /**
  * Area: rises to full marks by about a third of the frame and stays there,
  * with a mild rolloff right at the top where "the document" is usually the
- * frame edge itself. The first version peaked at HALF the frame and punished
- * everything smaller — which scored a licence card at hand distance as
- * "probably not the document" even when its corners were found exactly.
+ * frame edge itself.
+ *
+ * ⚠️ THE KNEE IS DISCRIMINATION, NOT A THRESHOLD. It was briefly moved down
+ * to a tenth on the reasoning that a portrait phone cannot frame a landscape
+ * ID-1 card at more than about a fifth of the frame — which is true, and
+ * measured off the operator's own screenshots at 156mm. But the score is only
+ * ever compared BETWEEN candidates in the same image, and flattening the
+ * curve stopped it separating a document from the fragments and noise inside
+ * it. The absolute score was never what blocked a real card: every one of the
+ * eighteen calibration photographs cleared the floor comfortably. What
+ * blocked them was looking at a different frame from the one the member was
+ * aiming — see visibleRect in capture.ts.
  */
 function areaScoreOf(frac: number): number {
   return frac <= 0.35
@@ -820,6 +844,11 @@ function dist2(a: Pt, b: Pt): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+/** Area fraction of a quad against a buffer. */
+function frac0(q: Quad, g: Gray): number {
+  return Math.abs(quadArea(q)) / (g.width * g.height);
+}
+
 /** Are two quads the same rectangle, near enough? */
 function quadNear(a: Quad, b: Quad, tol: number): boolean {
   for (let i = 0; i < 4; i++) {
@@ -935,7 +964,14 @@ export function detectQuad(
             hLines[a].votes + hLines[b].votes + vLines[c].votes + vLines[d].votes;
           const s = scoreQuad(small, quad, votes, maxVotes * 2);
           if (!s) continue;
-          const det = { quad, score: s.score, contrast: s.contrast };
+          const det: Detection = {
+            quad,
+            score: s.score,
+            contrast: s.contrast,
+            ink: 0,
+            areaFraction: frac0(quad, small),
+            confident: false,
+          };
           candidates.push(det);
           if (!best || s.score > best.score) best = det;
         }
@@ -1028,10 +1064,36 @@ export function detectQuad(
         quad: g2.quad,
         score: seed.score,
         contrast: edgeContrast(small, g2.quad),
+        ink,
+        areaFraction: frac,
+        confident: false,
       };
     }
   }
   if (bestGrown && bestRank >= 15) best = bestGrown;
+
+  // Is this good enough to shoot unasked? Measured on the FINAL quad.
+  {
+    const frac = Math.abs(quadArea(best.quad)) / (small.width * small.height);
+    const ink = inkiness(small, best.quad);
+    const w1 =
+      (dist2(best.quad[0], best.quad[1]) + dist2(best.quad[3], best.quad[2])) / 2;
+    const h1 =
+      (dist2(best.quad[0], best.quad[3]) + dist2(best.quad[1], best.quad[2])) / 2;
+    const asp = Math.max(w1, h1) / Math.max(1, Math.min(w1, h1));
+    best = {
+      ...best,
+      ink,
+      areaFraction: frac,
+      confident:
+        best.score >= 0.62 &&
+        ink >= 0.05 &&
+        frac >= 0.06 &&
+        frac <= 0.92 &&
+        asp <= 3 &&
+        minInteriorAngle(best.quad) >= 62,
+    };
+  }
 
   // Back to the coordinates we were handed.
   const k = g.width / small.width;

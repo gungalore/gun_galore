@@ -5,9 +5,11 @@ import { createPortal } from 'react-dom';
 import {
   ScanResult,
   frameToGray,
+  grabVisible,
   makeScratch,
   processCapture,
   verdicts,
+  visibleRect,
 } from '@/lib/scan/capture';
 import { detectQuad } from '@/lib/scan/detect';
 import { Pt, Quad, quadDrift, smoothQuad } from '@/lib/scan/geometry';
@@ -99,6 +101,8 @@ export default function DocumentScanner({
   const autoRef = useRef(true);
   const holdRef = useRef(0);
   const capturingRef = useRef(false);
+  /** Does the latest detection look like a document, not just like a shape? */
+  const confidentRef = useRef(false);
   const captureRef = useRef<(() => Promise<void>) | null>(null);
 
   autoRef.current = auto;
@@ -121,8 +125,14 @@ export default function DocumentScanner({
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: 'environment' },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            // ⚠️ ASK FOR EVERYTHING THE PHONE WILL GIVE. A browser cannot
+            // reach the stills sensor — getUserMedia hands out video frames —
+            // so the only lever on legibility is the track resolution, and
+            // modern iPhones and Androids will serve 4K here if asked. `ideal`
+            // rather than `min`: a phone that cannot manage it must still get
+            // a working scanner rather than a rejected constraint.
+            width: { ideal: 3840 },
+            height: { ideal: 2160 },
           },
           audio: false,
         });
@@ -183,7 +193,12 @@ export default function DocumentScanner({
     // How long the quad must sit still before the shutter fires, and how far
     // a corner may drift while it does. 700ms is long enough not to fire while
     // somebody is still framing, short enough not to feel broken.
-    const HOLD_MS = 700;
+    // ⚠️ 1100ms, NOT 700. The operator's verdict on the first version was
+    // "super sensitive", and they were right: at 700ms it fired while the
+    // phone was still being positioned. A shutter that goes off early costs a
+    // retake AND the member's trust in it; one that waits a beat too long
+    // costs a beat.
+    const HOLD_MS = 1100;
     const STEADY_FRAC = 0.02;
     let steadySince = 0;
     let steadyQuad: Quad | null = null;
@@ -195,7 +210,16 @@ export default function DocumentScanner({
         timer = window.setTimeout(detectOnce, RATES[rate]);
         return;
       }
-      if (!scratch) scratch = makeScratch(video.videoWidth, video.videoHeight);
+      if (!scratch) {
+        // Sized to what is VISIBLE, not to the track — otherwise the detector
+        // works in one aspect and the markers are drawn in another.
+        const vis = visibleRect(video);
+        if (!vis) {
+          timer = window.setTimeout(detectOnce, RATES[rate]);
+          return;
+        }
+        scratch = makeScratch(vis.sw, vis.sh);
+      }
       const t0 = performance.now();
       try {
         const gray = frameToGray(video, scratch);
@@ -203,7 +227,10 @@ export default function DocumentScanner({
           ? detectQuad(gray, { expectAspect: expectAspectFor(shape) })
           : null;
         if (found) {
-          const k = video.videoWidth / scratch.canvas.width;
+          // Into visible-frame pixels. The overlay and the shutter share that
+          // coordinate space now, so a marker cannot disagree with the crop.
+          const vis = visibleRect(video);
+          const k = (vis ? vis.sw : video.videoWidth) / scratch.canvas.width;
           const scaled = found.quad.map((p) => ({
             x: p.x * k,
             y: p.y * k,
@@ -225,12 +252,16 @@ export default function DocumentScanner({
             quadRef.current = scaled;
             lockRef.current = 1;
           }
+          confidentRef.current = found.confident;
         } else {
           // ⚠️ NEVER BLINK OFF. A single frame where a hand shadowed an edge
           // must not flash the markers away — it reads as a fault. Decay
           // instead, and only give up after several misses.
           lockRef.current = Math.max(0, lockRef.current - 1);
-          if (lockRef.current === 0) quadRef.current = null;
+          if (lockRef.current === 0) {
+            quadRef.current = null;
+            confidentRef.current = false;
+          }
         }
       } catch {
         quadRef.current = null;
@@ -245,7 +276,16 @@ export default function DocumentScanner({
       // slowly across a desk registers as still to a motion sensor.
       const now = performance.now();
       const q = quadRef.current;
-      if (autoRef.current && q && lockRef.current >= 3) {
+      // ⚠️ CONFIDENT, not merely locked. The lock says the corners have
+      // stopped moving; it says nothing about whether they are the DOCUMENT's
+      // corners. Firing on a locked-but-doubtful detection is how a member
+      // ends up with a confident, automatic photograph of their mousepad.
+      if (
+        autoRef.current &&
+        q &&
+        lockRef.current >= 3 &&
+        confidentRef.current
+      ) {
         const drift = steadyQuad ? quadDrift(steadyQuad, q) : Infinity;
         if (drift <= video.videoWidth * STEADY_FRAC) {
           if (!steadySince) steadySince = now;
@@ -298,15 +338,14 @@ export default function DocumentScanner({
           // unconfirmed candidate stays invisible — honest "still looking"
           // beats markers that flicker somewhere wrong for one frame.
           if (q && lockRef.current >= 2) {
-            // The video is object-fit: cover, so map through the same crop.
-            const sx = cv.width / video.videoWidth;
-            const sy = cv.height / video.videoHeight;
-            const s = Math.max(sx, sy);
-            const ox = (cv.width - video.videoWidth * s) / 2;
-            const oy = (cv.height - video.videoHeight * s) / 2;
+            // The quad is already in VISIBLE-frame pixels, and the canvas
+            // covers exactly that region — so this is one uniform scale, not
+            // a cover transform. That is the whole point of visibleRect.
+            const vis = visibleRect(video);
+            const k = vis ? cv.width / vis.sw : 1;
             drawCorners(
               g,
-              q.map((p) => ({ x: p.x * s + ox, y: p.y * s + oy })) as Quad,
+              q.map((p) => ({ x: p.x * k, y: p.y * k })) as Quad,
               lockRef.current >= 3,
             );
           }
@@ -333,14 +372,9 @@ export default function DocumentScanner({
     setPhase('working');
     say('Photo taken. Straightening it up.');
     try {
-      const c = document.createElement('canvas');
-      c.width = video.videoWidth;
-      c.height = video.videoHeight;
-      c.getContext('2d')?.drawImage(video, 0, 0);
-      const blob = await new Promise<Blob | null>((res) =>
-        c.toBlob(res, 'image/jpeg', 0.95),
-      );
-      if (!blob) throw new Error('We could not take that photo.');
+      const grabbed = await grabVisible(video);
+      if (!grabbed) throw new Error('We could not take that photo.');
+      const blob = grabbed.blob;
       rawBlobRef.current = blob;
       const res = await processCapture(blob, {
         expectAspect: expectAspectFor(shape),
@@ -471,8 +505,8 @@ export default function DocumentScanner({
             }}
           >
             {auto
-              ? 'Line it up and hold still — it takes the photo itself.'
-              : 'Line it up inside the frame.'}
+              ? 'Fill the frame with the document and hold still — it takes the photo itself.'
+              : 'Fill the frame with the document.'}
           </p>
         )}
           </>
