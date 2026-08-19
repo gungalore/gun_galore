@@ -155,6 +155,18 @@ prod build can outlive a tool timeout and leave you unsure whether it finished.
 
 **STEP 5 — DEPLOY TO SERVER**
 
+> **Use the script.** `bash infra/deploy/deploy.sh` does every step below,
+> refuses to reload a build that has not cleanly finished, refuses the wrong
+> box, and curls twice. The manual sequence is kept for reference and for the
+> day something needs doing by hand.
+>
+> ⚠️ **Do NOT hand-roll a "wait for the build" loop.** One was written with
+> `grep -c ... || echo 0`, which emits `"0
+0"` when there is no match — so it
+> broke on its first iteration and reloaded pm2 onto a half-written `.next`.
+> That took the site down on 2026-08-19. `infra/deploy/wait-for-build.sh` does
+> it properly and has tests.
+
 `ssh alloutdoor`, user `alloutdoor`, project at `/home/alloutdoor/app`, pm2
 services `alloutdoor-backend` and `alloutdoor-frontend`.
 
