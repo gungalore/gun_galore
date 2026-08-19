@@ -517,6 +517,7 @@ model User {
 
   // Firearm-licence motivations (Phase 1 — see LICENCE-SERVICES-AND-FEED.md).
   motivations Motivation[] @relation("UserMotivations")
+  credentials Credential[] @relation("UserCredentials")
 
   // Campaign attribution rollup: groupBy(campaignKey) on the admin page.
   @@index([campaignKey])
@@ -4248,4 +4249,103 @@ model MotivationUpload {
   // which is a race — two uploads of one file both miss the read and both
   // insert, and the applicant sees the same certificate twice in the annexures.
   @@unique([motivationId, sha256])
+}
+
+
+// ────────────────────────────────────────────────────────────────────
+// THE LICENCE & COMPETENCY CENTRE.
+//
+// Operator, 2026-08-19: "a licence and competency centre on its own, where
+// people can keep and upload their licences and competencies, so it can be
+// kept book of and tracked for expiry."
+//
+// A member's own documents, encrypted on our disk, with the expiry date
+// tracked so a renewal is never missed for want of a reminder. Renewals recur
+// by statute, which is what makes this the recurring-income engine: the
+// reminder lands, one tap opens a pre-filled S24 renewal motivation.
+//
+// ⚠️ THE SAFETY RAIL IS `confirmedAt`. Extraction PROPOSES an expiry date; the
+// member confirms it; only a confirmed date is ever visible to the reminder
+// cron. A misread date driving reminders is how somebody misses a real
+// deadline because of us — worse than no reminder at all, and not something a
+// disclaimer unwinds.
+//
+// ⚠️ WHAT IS IN THE CLEAR AND WHY. Only the DATES and the member's own title
+// for the document. A date identifies nobody; the cron has to query on it, and
+// encrypting it would mean decrypting the whole table nightly. Every
+// identifying value — licence number, holder name, make, calibre, serials —
+// lives inside detailsEncrypted.
+//
+// ⚠️ VAULT BYTES ARE DUPLICATED FROM THE WRITER, NEVER SHARED. A motivation
+// upload purges on the writer's own clock; a vault document lives as long as
+// the account. One row must never be able to delete the other's bytes.
+// ────────────────────────────────────────────────────────────────────
+
+enum CredentialKind {
+  FIREARM_LICENCE
+  COMPETENCY_CERTIFICATE
+  DEDICATED_STATUS
+  PROFICIENCY
+  // Association membership, a letter of good standing, anything else the
+  // member wants kept with the rest. Never chased, always accepted.
+  OTHER
+}
+
+model Credential {
+  id     String         @id @default(cuid())
+  userId String
+  user   User           @relation("UserCredentials", fields: [userId], references: [id], onDelete: Cascade)
+  kind   CredentialKind
+
+  /// The member's own name for it — "My .308". In the clear so the list can
+  /// be rendered and the reminder addressed; the UI warns against serials.
+  title            String
+  /// Licence number, holder, make, calibre, serials, issuer. AES-256-GCM via
+  /// blob-crypto, same key and HKDF domain as the motivation uploads.
+  detailsEncrypted String?
+
+  /// IN THE CLEAR — the reminder cron queries on it. See the header.
+  issuedOn  DateTime?
+  expiresOn DateTime?
+  /// THE SAFETY RAIL. Null until the member has looked at the expiry date and
+  /// said it is right. The reminder sweep will not see a row without it.
+  confirmedAt DateTime?
+
+  /// Opaque key into SecureFileStorageService, namespace `credentials`.
+  /// Nullable so a row can outlive its bytes after an erasure.
+  storageKey String?
+  mimeType   String
+  byteSize   Int
+  /// SHA-256 of the PLAINTEXT bytes. Scoped to the member, not global — two
+  /// people may legitimately hold copies of the same document.
+  sha256     String
+
+  extractionEncrypted String?
+  extractionOk        Boolean  @default(false)
+  /// Field KEYS in the clear; the values are in extractionEncrypted.
+  extractedFields     String[]
+
+  /// One nullable stamp per reminder stage, CAS-claimed before sending.
+  /// ⚠️ NOT a String[] of stage names: Postgres cannot express "array does
+  /// not contain X" atomically in an updateMany where-clause, so an array
+  /// cannot be claimed and two overlapping sweeps would both send.
+  remind180SentAt DateTime?
+  remind120SentAt DateTime?
+  remind100SentAt DateTime?
+  remind30SentAt  DateTime?
+  remindD0SentAt  DateTime?
+  /// The member asked us to stop reminding about this one. Their call.
+  remindersMuted  Boolean   @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  /// Set when the bytes have been removed. The row survives so a future sweep
+  /// never goes looking for a file that is already gone.
+  purgedAt  DateTime?
+
+  @@unique([userId, sha256])
+  @@index([userId])
+  @@index([expiresOn])
+  // The reminder sweep's exact predicate.
+  @@index([confirmedAt, remindersMuted, expiresOn])
 }

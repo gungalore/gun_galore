@@ -41,10 +41,20 @@ import { encryptBuffer, decryptBuffer } from './blob-crypto';
 // stored file unreadable. Nothing here can recover them.
 // ────────────────────────────────────────────────────────────────────
 
-/** Sub-trees, so one caller can never read another's files by key alone. */
-export type SecureFileNamespace = 'motivations';
+/**
+ * Sub-trees, so one caller can never read another's files by key alone.
+ *
+ * ⚠️ BOTH of these must change together. resolve() re-checks the ARRAY, so
+ * adding a name to the union alone still throws "Invalid storage key".
+ * ⚠️ KEY_PATTERN's first segment is [a-z]+ — lowercase letters only. A
+ * namespace with a hyphen, underscore or digit can never be read back.
+ */
+export type SecureFileNamespace = 'motivations' | 'credentials';
 
-const NAMESPACES: readonly SecureFileNamespace[] = ['motivations'];
+const NAMESPACES: readonly SecureFileNamespace[] = [
+  'motivations',
+  'credentials',
+];
 
 /** A stored file's key is `<namespace>/<yyyy>/<mm>/<id>.enc`, nothing else. */
 const KEY_PATTERN = /^[a-z]+\/\d{4}\/\d{2}\/[a-z0-9]{8,40}\.enc$/;

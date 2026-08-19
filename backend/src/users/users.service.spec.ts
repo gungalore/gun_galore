@@ -48,6 +48,7 @@ describe('UsersService — address book & notification prefs', () => {
       {} as never,
       { isBanvEnabled: () => false } as never,
       { resolveByEntity: jest.fn() } as never,
+      { purgeForUser: jest.fn() } as never,
       // Account deletion removes a member's encrypted licence documents before
       // the cascade takes the rows that point at them.
       { purgeForUser: jest.fn(async () => ({ filesRemoved: 0, filesFailed: 0, motivations: 0 })) } as never,
@@ -142,15 +143,41 @@ describe('UsersService.deleteByClerkId', () => {
       order.push('motivations.purge');
       return { filesRemoved: 2, filesFailed: 0, motivations: 1 };
     });
+    const licenceCentre = { purgeForUser: jest.fn() };
+    licenceCentre.purgeForUser.mockImplementation(async () => {
+      order.push('licence.purge');
+      return { credentials: 1, filesRemoved: 1, filesFailed: 0 };
+    });
     const svc = new UsersService(
       prisma as never,
       {} as never,
       { isBanvEnabled: () => false } as never,
       { resolveByEntity: jest.fn() } as never,
       retention as never,
+      licenceCentre as never,
     );
-    return { svc, prisma, retention, order };
+    return { svc, prisma, retention, licenceCentre, order };
   }
+
+  it('erases the Licence Centre even when the hard delete falls back to a scrub', async () => {
+    // THE BRANCH THAT MATTERS. When a financial foreign key blocks the delete,
+    // the User row SURVIVES and is scrubbed instead — so no cascade ever runs,
+    // and a vault document would outlive the erasure request that was supposed
+    // to remove it. purgeForUser deletes the rows explicitly for this reason.
+    const { svc, licenceCentre } = build({ hardDeleteFails: true });
+    await svc.deleteByClerkId('clerk_1');
+    expect(licenceCentre.purgeForUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('still deletes the account when the licence purge throws', async () => {
+    // The caller is a Clerk webhook: an exception makes Clerk retry forever
+    // and the account is never deleted at all.
+    const { svc, licenceCentre, prisma, order } = build();
+    licenceCentre.purgeForUser.mockRejectedValueOnce(new Error('disk gone'));
+    await expect(svc.deleteByClerkId('clerk_1')).resolves.not.toThrow();
+    expect(prisma.user.deleteMany).toHaveBeenCalled();
+    expect(order).toContain('user.delete');
+  });
 
   it('removes the licence documents BEFORE the row that points at them', async () => {
     // A cascade cannot reach the filesystem, so the other order strands the
@@ -158,7 +185,11 @@ describe('UsersService.deleteByClerkId', () => {
     const { svc, retention, order } = build();
     await svc.deleteByClerkId('clerk_1');
     expect(retention.purgeForUser).toHaveBeenCalledWith('u-1');
-    expect(order).toEqual(['motivations.purge', 'user.delete']);
+    expect(order).toEqual([
+      'motivations.purge',
+      'licence.purge',
+      'user.delete',
+    ]);
   });
 
   it('still purges them when the hard delete is blocked and it falls back to scrubbing', async () => {
@@ -168,7 +199,12 @@ describe('UsersService.deleteByClerkId', () => {
     const { svc, retention, order } = build({ hardDeleteFails: true });
     await svc.deleteByClerkId('clerk_1');
     expect(retention.purgeForUser).toHaveBeenCalledTimes(1);
-    expect(order).toEqual(['motivations.purge', 'user.delete', 'user.scrub']);
+    expect(order).toEqual([
+      'motivations.purge',
+      'licence.purge',
+      'user.delete',
+      'user.scrub',
+    ]);
   });
 
   it('does not throw out of the webhook when the purge fails', async () => {

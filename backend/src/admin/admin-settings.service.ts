@@ -275,6 +275,44 @@ const FLAGS: SettingFlag[] = [
     type: 'number',
     default: '730',
   },
+
+  // ─── Licence Centre ─────────────────────────────────────────────
+  // Mirrors of settings.service.ts FLAGS. Both registries, or neither.
+  {
+    key: 'licence_centre_enabled',
+    label: 'Licence & Competency Centre enabled',
+    hint: "Master switch for the member document vault. OFF = the whole module 404s and nothing can be uploaded. Turn ON only once ID_HASH_SECRET is confirmed set on the server — without it every upload throws at runtime, and nothing recovers a file written in that state.",
+    group: 'Licence Centre',
+    type: 'boolean',
+    default: 'false',
+    danger: true,
+  },
+  {
+    key: 'licence_centre_reminders_enabled',
+    label: 'Licence expiry reminders enabled',
+    hint: "Master switch for the nightly expiry sweep. OFF = documents are stored and dates are shown, but nothing is ever sent. Only dates a member has CONFIRMED are ever reminded on, whatever this is set to.",
+    group: 'Licence Centre',
+    type: 'boolean',
+    default: 'false',
+    danger: true,
+  },
+  {
+    key: 'licence_centre_sms_enabled',
+    label: 'Licence reminders by SMS',
+    hint: "Adds SMS to the reminder channels for AO Pro members. Spends real SMSPortal credits on every stage of every confirmed document — the largest recurring cost in this module. The in-app reminder is free and always on.",
+    group: 'Licence Centre',
+    type: 'boolean',
+    default: 'false',
+    danger: true,
+  },
+  {
+    key: 'licence_centre_max_credentials',
+    label: 'Max documents per member',
+    hint: "How many documents one member may keep. Each is an encrypted file on our own disk plus one Claude vision read at upload. Capped at 500 in code.",
+    group: 'Licence Centre',
+    type: 'number',
+    default: '25',
+  },
 ];
 
 @Injectable()

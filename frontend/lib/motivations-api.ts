@@ -92,6 +92,16 @@ export interface MotivationField {
   maxLength?: number;
   showIf?: { key: string; equals: string };
   formOnly?: true;
+  /**
+   * A document answers this. Mirrors docSourced in motivation-fields.ts, and
+   * holds the MotivationUploadKind that carries the value.
+   *
+   * Once it HAS a value it stops being a question and becomes a line in the
+   * "from your documents" review card — still editable, just not asked again.
+   * Empty, it is an ordinary question, so a failed extraction is never a dead
+   * end.
+   */
+  docSourced?: string;
 }
 
 export interface FieldSet {
@@ -381,6 +391,29 @@ export function visibleFields(
 }
 
 /** Section order, as the registry lists them — not alphabetical. */
+/**
+ * Split what is visible into what still has to be ASKED and what we already
+ * READ off a document.
+ *
+ * Operator, 2026-08-19: "remove all the fields that we can get the information
+ * off the uploaded documents." The honest version of that is fewer questions
+ * because we already hold the answer — never fewer because we stopped asking.
+ * So the test is the ANSWER, not the upload: a docSourced field with a value
+ * moves to the review card; without one it stays a question.
+ */
+export function partitionByDocument(
+  fields: MotivationField[],
+  answers: Record<string, string>,
+): { questions: MotivationField[]; fromDocuments: MotivationField[] } {
+  const questions: MotivationField[] = [];
+  const fromDocuments: MotivationField[] = [];
+  for (const f of fields) {
+    if (f.docSourced && (answers[f.key] ?? '').trim()) fromDocuments.push(f);
+    else questions.push(f);
+  }
+  return { questions, fromDocuments };
+}
+
 export function groupBySection(
   fields: MotivationField[],
 ): { section: string; fields: MotivationField[] }[] {

@@ -13,6 +13,7 @@ import { encryptSaIdNumber, hashSaIdNumber, decryptSaIdNumber } from '../common/
 import { PeachService } from '../payments/peach.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { MotivationRetentionService } from '../motivations/motivation-retention.service';
+import { LicenceCentreRetentionService } from '../licence-centre/licence-centre-retention.service';
 
 // Address-book create/update payload (Phase 2).
 export interface AddressInput {
@@ -121,6 +122,10 @@ export class UsersService {
     // the retention service is exported, and only so account deletion can
     // remove a member's licence documents before their rows disappear.
     private readonly motivationRetention: MotivationRetentionService,
+    // Same reasoning, and the same one exported service: the member's Licence
+    // Centre documents are encrypted files on our own disk, and a Prisma
+    // cascade cannot reach the filesystem.
+    private readonly licenceCentreRetention: LicenceCentreRetentionService,
   ) {}
 
   // ── Peach bank-account verification (AVS) ─────────────────────────
@@ -634,6 +639,27 @@ export class UsersService {
       } catch (err) {
         this.logger.error(
           `Erasure for clerk user ${clerkId}: motivation purge threw, continuing with account deletion: ${(err as Error).message}`,
+        );
+      }
+
+      // ⚠️ THE ROWS ARE DELETED EXPLICITLY, not left to the cascade. The
+      // fallback branch below KEEPS the User row and scrubs its PII when a
+      // financial foreign key blocks the delete — under that branch no cascade
+      // ever happens, and the member's licence documents would survive an
+      // erasure request entirely.
+      try {
+        const lc = await this.licenceCentreRetention.purgeForUser(target.id);
+        if (lc.credentials > 0) {
+          this.logger.log(
+            `Erasure for clerk user ${clerkId}: removed ${lc.credentials} Licence Centre document(s), ${lc.filesRemoved} file(s)` +
+              (lc.filesFailed > 0
+                ? `; ${lc.filesFailed} file(s) FAILED to delete and need removing by hand`
+                : ''),
+          );
+        }
+      } catch (err) {
+        this.logger.error(
+          `Erasure for clerk user ${clerkId}: licence-centre purge threw, continuing with account deletion: ${(err as Error).message}`,
         );
       }
     }

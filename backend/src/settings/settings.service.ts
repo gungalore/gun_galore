@@ -385,6 +385,45 @@ export const FLAGS = {
       return Math.min(3650, n);
     },
   } as FlagDefinition<number>,
+
+  // ─── Licence & Competency Centre ─────────────────────────────────
+  // ⚠️ EVERY KEY HERE IS ALSO IN admin-settings.service.ts. A flag in only
+  // this file is invisible in /admin/settings and PATCH rejects it as an
+  // unknown key; a flag in only that file is one the operator can change with
+  // nothing reading it. A spec fails both ways.
+  //
+  // All OFF by default, so the module ships inert and the operator decides
+  // when it opens.
+  licenceCentreEnabled: {
+    key: 'licence_centre_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+
+  licenceCentreRemindersEnabled: {
+    key: 'licence_centre_reminders_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+
+  licenceCentreSmsEnabled: {
+    key: 'licence_centre_sms_enabled',
+    default: false,
+    parse: (s) => s === 'true' || s === '1',
+  } as FlagDefinition<boolean>,
+
+  // A ceiling on stored documents per member: each is an encrypted file on our
+  // own disk plus one vision call at upload, so this is a spend and storage
+  // guard as much as a UX one.
+  licenceCentreMaxCredentials: {
+    key: 'licence_centre_max_credentials',
+    default: 25,
+    parse: (s) => {
+      const n = parseInt(s, 10);
+      if (!Number.isFinite(n) || n < 1) return 25;
+      return Math.min(500, n);
+    },
+  } as FlagDefinition<number>,
 } as const;
 
 @Injectable()

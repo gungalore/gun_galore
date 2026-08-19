@@ -42,6 +42,7 @@ import { ReportsModule } from './reports/reports.module';
 import { SupportModule } from './support/support.module';
 import { ComplaintsModule } from './complaints/complaints.module';
 import { MotivationsModule } from './motivations/motivations.module';
+import { LicenceCentreModule } from './licence-centre/licence-centre.module';
 import { ActivityModule } from './activity/activity.module';
 import { PushModule } from './push/push.module';
 import { AskGgModule } from './ask-gg/ask-gg.module';
@@ -114,6 +115,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     SupportModule,
     ComplaintsModule,
     MotivationsModule,
+    LicenceCentreModule,
     ActivityModule,
   ],
   controllers: [AppController],

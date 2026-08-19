@@ -104,6 +104,26 @@ export interface MotivationField {
    * addressed head-on — reaches the writer in full.
    */
   formOnly?: true;
+  /**
+   * A DOCUMENT ANSWERS THIS, so stop asking it as a question.
+   *
+   * Operator, 2026-08-19: "remove all the fields that we can get the
+   * information off the uploaded documents." The value names the upload kind
+   * that carries it, which is also what the wizard shows when it explains
+   * where a value came from.
+   *
+   * The rule is deliberately about the ANSWER, not the upload: a docSourced
+   * field with a value moves into the "from your documents" review card, where
+   * it stays visible and editable; a docSourced field with NO value is asked as
+   * an ordinary question. So a failed extraction, an unreadable photograph or a
+   * document nobody has is never a dead end — it is just typing, exactly as
+   * before.
+   *
+   * ⚠️ This changes PRESENTATION ONLY. `required`, `requiredKeys` and
+   * `missingRequired` are untouched: a required docSourced field with no value
+   * still blocks generation, and still gets asked.
+   */
+  docSourced?: string;
 }
 
 /** Asked for every licence type. */
@@ -124,6 +144,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'full_name',
+    docSourced: 'IDENTITY_DOCUMENT',
     label: 'Full name, as it appears on your ID',
     kind: 'short',
     section: 'About you',
@@ -133,6 +154,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'id_number',
+    docSourced: 'IDENTITY_DOCUMENT',
     label: 'SA ID number',
     kind: 'short',
     section: 'About you',
@@ -142,6 +164,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'residential_address',
+    docSourced: 'ADDRESS_CONFIRMATION',
     label: 'Residential address',
     kind: 'long',
     section: 'About you',
@@ -217,6 +240,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'employer_name',
+    docSourced: 'EMPLOYMENT_CONFIRMATION',
     label: 'Employer',
     kind: 'short',
     section: 'About you',
@@ -225,6 +249,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'employer_address',
+    docSourced: 'EMPLOYMENT_CONFIRMATION',
     label: "Employer's address",
     kind: 'long',
     section: 'About you',
@@ -271,16 +296,31 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     maxLength: 13,
   },
   {
+    // A COMPETENCY CAN NEVER BE PENDING.
+    //
+    // Operator, 2026-08-19: "when applying for a licence a competency can't be
+    // pending. The user already has to have the certificate." This field used
+    // to say "leave blank if the application is still pending", which was my
+    // invention and described an application SAPS will not accept.
+    //
+    // REQUIRED is how possession is enforced, and it is enforced HERE rather
+    // than on the upload, because the number exists nowhere except on the
+    // certificate itself. Someone holding the certificate reads it off in
+    // seconds — or uploads it and confirms what we read. Someone who does not
+    // hold one cannot invent it.
     key: 'competency_number',
+    docSourced: 'COMPETENCY_CERTIFICATE',
     label: 'Competency certificate number',
     kind: 'short',
     section: 'About you',
-    help: 'From your competency certificate. Leave blank if the application is still pending.',
+    help: 'As printed on your competency certificate. You need the certificate in hand — SAPS will not take a licence application while competency is still being applied for.',
+    required: true,
     sensitive: true,
     maxLength: 60,
   },
   {
     key: 'competency_for',
+    docSourced: 'COMPETENCY_CERTIFICATE',
     label: 'What your competency covers',
     kind: 'multi',
     section: 'About you',
@@ -293,6 +333,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'competency_issued',
+    docSourced: 'COMPETENCY_CERTIFICATE',
     label: 'Competency issued on',
     kind: 'date',
     section: 'About you',
@@ -300,6 +341,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'competency_expiry',
+    docSourced: 'COMPETENCY_CERTIFICATE',
     label: 'Competency expires on',
     kind: 'date',
     section: 'About you',
@@ -854,6 +896,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   // a limit and silently drop the seventh.
   {
     key: 'existing_firearm_1_type',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Type',
     kind: 'choice',
     section: 'Firearms you already own',
@@ -863,6 +906,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_1_calibre',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Calibre',
     kind: 'short',
     section: 'Firearms you already own',
@@ -873,6 +917,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_1_make',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Make',
     kind: 'short',
     section: 'Firearms you already own',
@@ -882,6 +927,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_1_barrel_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Barrel serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -891,6 +937,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_1_frame_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Frame / receiver serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -900,6 +947,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_1_licence_no',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Licence or permit no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -909,6 +957,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_2_type',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Type',
     kind: 'choice',
     section: 'Firearms you already own',
@@ -918,6 +967,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_2_calibre',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Calibre',
     kind: 'short',
     section: 'Firearms you already own',
@@ -927,6 +977,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_2_make',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Make',
     kind: 'short',
     section: 'Firearms you already own',
@@ -936,6 +987,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_2_barrel_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Barrel serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -945,6 +997,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_2_frame_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Frame / receiver serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -954,6 +1007,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_2_licence_no',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Licence or permit no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -963,6 +1017,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_3_type',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Type',
     kind: 'choice',
     section: 'Firearms you already own',
@@ -972,6 +1027,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_3_calibre',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Calibre',
     kind: 'short',
     section: 'Firearms you already own',
@@ -981,6 +1037,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_3_make',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Make',
     kind: 'short',
     section: 'Firearms you already own',
@@ -990,6 +1047,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_3_barrel_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Barrel serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -999,6 +1057,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_3_frame_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Frame / receiver serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1008,6 +1067,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_3_licence_no',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Licence or permit no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1017,6 +1077,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_4_type',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Type',
     kind: 'choice',
     section: 'Firearms you already own',
@@ -1026,6 +1087,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_4_calibre',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Calibre',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1035,6 +1097,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_4_make',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Make',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1044,6 +1107,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_4_barrel_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Barrel serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1053,6 +1117,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_4_frame_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Frame / receiver serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1062,6 +1127,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_4_licence_no',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Licence or permit no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1071,6 +1137,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_5_type',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Type',
     kind: 'choice',
     section: 'Firearms you already own',
@@ -1080,6 +1147,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_5_calibre',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Calibre',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1089,6 +1157,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_5_make',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Make',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1098,6 +1167,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_5_barrel_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Barrel serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1107,6 +1177,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_5_frame_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Frame / receiver serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1116,6 +1187,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_5_licence_no',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Licence or permit no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1125,6 +1197,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_6_type',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Type',
     kind: 'choice',
     section: 'Firearms you already own',
@@ -1134,6 +1207,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_6_calibre',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Calibre',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1143,6 +1217,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_6_make',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Make',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1152,6 +1227,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_6_barrel_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Barrel serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1161,6 +1237,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_6_frame_serial',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Frame / receiver serial no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1170,6 +1247,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'existing_firearm_6_licence_no',
+    docSourced: 'CURRENT_LICENCE',
     label: 'Licence or permit no',
     kind: 'short',
     section: 'Firearms you already own',
@@ -1192,6 +1270,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   // ── the rest of what the SAPS 271 asks and we did not collect ─────
   {
     key: 'residential_postal_code',
+    docSourced: 'ADDRESS_CONFIRMATION',
     label: 'Postal code',
     kind: 'short',
     section: 'About you',
@@ -1353,6 +1432,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
   S16_DEDICATED_HUNTER: [
     {
       key: 'association_name',
+    docSourced: 'ASSOCIATION_CARD',
       label: 'Your hunting association',
       kind: 'short',
       section: 'Dedicated status',
@@ -1361,6 +1441,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
     {
       key: 'association_number',
+    docSourced: 'ASSOCIATION_CARD',
       label: 'Membership number',
       kind: 'short',
       section: 'Dedicated status',
@@ -1370,6 +1451,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
     {
       key: 'dedicated_since',
+    docSourced: 'ASSOCIATION_CARD',
       label: 'Dedicated status held since',
       kind: 'date',
       section: 'Dedicated status',
@@ -1396,6 +1478,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
   S16_DEDICATED_SPORT: [
     {
       key: 'association_name',
+    docSourced: 'ASSOCIATION_CARD',
       label: 'Your sport-shooting association',
       kind: 'short',
       section: 'Dedicated status',
@@ -1404,6 +1487,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
     {
       key: 'association_number',
+    docSourced: 'ASSOCIATION_CARD',
       label: 'Membership number',
       kind: 'short',
       section: 'Dedicated status',
@@ -1413,6 +1497,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
     {
       key: 'dedicated_since',
+    docSourced: 'ASSOCIATION_CARD',
       label: 'Dedicated status held since',
       kind: 'date',
       section: 'Dedicated status',

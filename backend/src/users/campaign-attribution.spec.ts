@@ -33,6 +33,7 @@ describe('UsersService — campaign attribution (first-touch)', () => {
       { isBanvEnabled: () => false } as never,
       { resolveByEntity: jest.fn() } as never,
       { purgeForUser: jest.fn() } as never,
+      { purgeForUser: jest.fn() } as never,
     );
     return { service, prisma };
   }

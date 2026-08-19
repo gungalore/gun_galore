@@ -310,6 +310,13 @@ export class AdminHealthService {
       // motivations past their retention date. A retention job that stops
       // running is a POPIA problem, not a missing nicety, so it is watched.
       { key: 'motivation-retention', label: 'Motivation document retention purge', schedule: 'daily 02:40', expectedIntervalSec: 26 * 60 * 60 },
+      // Nightly at 03:20. Fires the licence expiry reminders. Reminders that
+      // quietly stop are indistinguishable from a quiet month, which is
+      // exactly why this is watched.
+      { key: 'licence-centre-reminders', label: 'Licence Centre expiry reminders', schedule: 'daily 03:20', expectedIntervalSec: 26 * 60 * 60 },
+      // Nightly at 03:35. Sweeps up vault files that lost their row. A
+      // retention job that stops running is a POPIA problem, not a bug.
+      { key: 'licence-centre-retention', label: 'Licence Centre file retention', schedule: 'daily 03:35', expectedIntervalSec: 26 * 60 * 60 },
       // NOT an app cron — infra/backup/backup.sh writes this heartbeat from the
       // box's own crontab at 02:10, and ONLY on success. So this row goes red
       // for the case an AdminAlert cannot cover: a backup that never ran at

@@ -49,6 +49,11 @@ export function moduleForNotification(
     return '/my/listings';
   }
 
+  // The member's OWN document vault. Distinct from firearm_licence_expiring
+  // above, which is about a LISTING's licence and belongs on /my/listings —
+  // the prefix cannot collide with that exact match.
+  if (type.startsWith('licence_centre_')) return '/licence-centre';
+
   // A rating lands on the sale (seller) or the order (buyer).
   if (type === 'rating_received') {
     return category === 'SELLER' ? '/my/sales' : '/my/orders';

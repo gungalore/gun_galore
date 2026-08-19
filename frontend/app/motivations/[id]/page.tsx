@@ -17,6 +17,7 @@ import {
   SAPS271_FILL,
   SAPS271_OPT_KEY,
   groupBySection,
+  partitionByDocument,
   motivationsApi,
   visibleFields,
 } from '@/lib/motivations-api';
@@ -204,9 +205,12 @@ export default function MotivationWizardPage() {
     return n;
   }, [answers]);
   const [ownedRowsShown, setOwnedRowsShown] = useState(1);
+  // The review card is READ-ONLY until asked otherwise. Rendering thirteen
+  // filled inputs is the wall of boxes this whole change exists to remove.
+  const [editingRead, setEditingRead] = useState(false);
   const ownedRows = Math.max(1, ownedRowsFilled, ownedRowsShown);
 
-  const sections = useMemo(() => {
+  const { sections, read: readFromDocuments } = useMemo(() => {
     // Hide the rows beyond the ones in play. They stay in the registry — the
     // form has them and the server still accepts them — they are simply not
     // put in front of someone who does not need them.
@@ -220,8 +224,11 @@ export default function MotivationWizardPage() {
       const m = /^existing_firearm_(\d+)_/.exec(f.key);
       return !m || Number(m[1]) <= ownedRows;
     });
-    return groupBySection(visible);
-  }, [shown, ownedRows, detail?.overlap?.needsJustification]);
+    // Anything a document already answered leaves the question flow and
+    // becomes a line in the review card below.
+    const split = partitionByDocument(visible, answers);
+    return { sections: groupBySection(split.questions), read: split.fromDocuments };
+  }, [shown, ownedRows, detail?.overlap?.needsJustification, answers]);
   const outstanding = detail?.missingRequired ?? [];
   // A question stays open until the applicant has REPLIED to it — a user
   // message with the same fieldKey later in the thread. The old check hid any
@@ -540,6 +547,54 @@ export default function MotivationWizardPage() {
             </div>
           </div>
         </StepAccordion>
+      )}
+
+      {/* What the documents already answered. NOT a question section — it is
+          a receipt, so the applicant can see we read it and correct us if we
+          read it wrong. POPIA requires correctability; this is where it
+          lives. */}
+      {readFromDocuments.length > 0 && (
+        <div className="mt-4 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-sm font-medium">From your documents</p>
+            <button
+              type="button"
+              className="text-xs text-[var(--text-secondary)] underline"
+              onClick={() => setEditingRead((v) => !v)}
+            >
+              {editingRead ? 'Done' : 'Something looks wrong'}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
+            We read these off what you uploaded, so we are not asking you to
+            type them again. The document as printed always governs — if
+            anything here does not match it, change it.
+          </p>
+          {editingRead ? (
+            <div className="mt-3 space-y-4">
+              {readFromDocuments.map((f) => (
+                <FieldInput
+                  key={f.key}
+                  field={f}
+                  value={answers[f.key] ?? ''}
+                  missing={outstanding.includes(f.key)}
+                  onChange={(v) => setAnswer(f.key, v)}
+                />
+              ))}
+            </div>
+          ) : (
+            <dl className="mt-3 divide-y divide-[var(--border-divider)]">
+              {readFromDocuments.map((f) => (
+                <div key={f.key} className="flex gap-3 py-2 text-sm">
+                  <dt className="w-1/2 shrink-0 text-[var(--text-secondary)]">
+                    {f.label}
+                  </dt>
+                  <dd className="flex-1 break-words">{answers[f.key]}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
       )}
 
       {/* 2 — the questions, straight from the registry */}

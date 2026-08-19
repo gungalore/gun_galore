@@ -36,6 +36,20 @@ function Svg({ children }: { children: ReactNode }) {
 }
 
 // ── Icons (24×24, currentColor stroke — inherit row colour) ──────────
+const ShieldDocIcon: IconC = () => (
+  <Svg>
+    <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" />
+    <path d="M9 11h6M9 14h4" />
+  </Svg>
+);
+
+const DocIcon: IconC = () => (
+  <Svg>
+    <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z" />
+    <path d="M14 3v5h5M9 13h6M9 17h4" />
+  </Svg>
+);
+
 const OrdersIcon: IconC = () => (
   <Svg>
     <path d="M12 3l8 4.2v9.6L12 21l-8-4.2V7.2L12 3z" />
@@ -191,6 +205,16 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     title: 'Shipping',
     items: [
       { href: '/shipping', label: 'Shipping', Icon: TruckIcon },
+    ],
+  },
+  {
+    // Neither buying nor selling: the member's own compliance paperwork.
+    // The motivation writer lived only at a direct URL until now — it belongs
+    // beside the vault that feeds it.
+    title: 'Licences',
+    items: [
+      { href: '/licence-centre', label: 'Licence Centre', Icon: ShieldDocIcon },
+      { href: '/motivations', label: 'Licence motivations', Icon: DocIcon },
     ],
   },
   {

@@ -21,9 +21,16 @@ import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 //                 annexure like the rest.
 //
 // ⚠️ REQUIRED HERE MEANS "SAPS REQUIRES IT", NOT "WE REFUSE TO PROCEED". We
-// never block someone from producing their own motivation — a person who has
-// applied for competency but not received the certificate yet is exactly who
-// should be drafting one. We say plainly what is missing and let them decide.
+// never block someone from producing their own motivation on the strength of a
+// missing UPLOAD — someone whose certified copies are at the police station
+// being certified should still be drafting. We say plainly what is missing and
+// let them decide.
+//
+// ⚠️ COMPETENCY IS THE ONE EXCEPTION, and it is not enforced here. Operator,
+// 2026-08-19: a competency cannot be pending; the certificate must already be
+// in hand. That is enforced as a REQUIRED ANSWER (the certificate number, in
+// motivation-fields.ts), because the number exists nowhere but on the
+// certificate. This module still only reports the upload as missing.
 //
 // ⚠️ The list is drawn from the official SAPS 271 checklist. Items marked
 // verifyBeforeUse in the checklist module carry the same caveat here: station

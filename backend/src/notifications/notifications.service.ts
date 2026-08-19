@@ -25,7 +25,10 @@ export type NotificationLinkedType =
   | 'bank'
   // Complaint status/outcome rows — linkedId is the CO-case number (the
   // reference the user actually sees), not the cuid.
-  | 'complaint';
+  | 'complaint'
+  // Licence Centre documents — linkedId is the Credential id. Resolved when
+  // the member confirms a renewed date or mutes reminders on that document.
+  | 'credential';
 
 interface PersistOpts {
   userId: string;
@@ -4936,6 +4939,89 @@ export class NotificationsService {
   // SMS hiccups must never block the rest of the order flow. Skips
   // entirely when `to` is missing (user without a phone) so we don't
   // burn SMSPortal credits on no-ops.
+  /**
+   * A document in the member's Licence Centre is coming up for renewal.
+   *
+   * ⚖️ WE REMIND; WE NEVER ENSURE. No "we'll make sure you never miss a
+   * renewal" — that is an outcome promise, and the responsibility to renew is
+   * the member's in law. Every channel says the document as printed governs.
+   *
+   * ⚠️ THE SMS NEVER SAYS "FIREARM". An SMS preview lands on a lock screen in
+   * front of whoever is standing nearby; "a document in your Licence Centre"
+   * carries the same urgency and tells a stranger nothing about what is in
+   * somebody's house.
+   *
+   * PRICING MODEL C: the in-app notification is free for everyone — it is
+   * where the upgrade lands, at the moment the deadline is actually felt. SMS
+   * and email are AO Pro.
+   */
+  async credentialExpiring(d: {
+    userId: string;
+    phone: string | null;
+    name: string;
+    email: string;
+    credentialId: string;
+    title: string;
+    expiresOn: Date;
+    daysLeft: number;
+    stage: 'T180' | 'T120' | 'T100' | 'T30' | 'D0';
+    smsEnabled: boolean;
+    emailEnabled: boolean;
+  }) {
+    const url = `${this.appUrl}/licence-centre`;
+    const on = d.expiresOn.toISOString().slice(0, 10);
+    const gone = d.stage === 'D0';
+    // The last two stages and the expiry itself are the ones worth a push and
+    // a badge that does not clear itself.
+    const actionable = d.stage === 'T100' || d.stage === 'T30' || gone;
+
+    const headline = gone
+      ? 'A document in your Licence Centre has expired'
+      : 'A document in your Licence Centre is expiring';
+
+    await this.persist({
+      userId: d.userId,
+      category: 'ACCOUNT',
+      type: gone ? 'licence_centre_expired' : `licence_centre_expiry_${d.stage.replace(/^T/, '')}`,
+      title: headline,
+      body: gone
+        ? `${d.title} expired on ${on}. The document as printed always governs.`
+        : `${d.title} expires on ${on} — ${d.daysLeft} days away. Start the renewal well before then.`,
+      url: '/licence-centre',
+      iconKey: 'kyc',
+      // linkedType + linkedId give the push a stable tag, so a later stage
+      // REPLACES the earlier notification instead of stacking on it.
+      linkedType: 'credential',
+      linkedId: d.credentialId,
+      dismissible: !actionable,
+    });
+
+    if (d.smsEnabled) {
+      await this.sendSms(
+        d.phone,
+        gone
+          ? `All Outdoor: a document in your Licence Centre has expired. Check it: ${url}`
+          : `All Outdoor: a document in your Licence Centre expires in ${d.daysLeft} days. Check it: ${url}`,
+        `lc-expiry-${d.credentialId}-${d.stage}`,
+      );
+    }
+
+    if (d.emailEnabled) {
+      // ⚠️ b() escapes. d.title is member-typed and body is raw HTML.
+      const html = this.email({
+        status: {
+          tone: gone ? 'error' : 'pending',
+          label: gone ? 'Expired' : 'Renewal due',
+        },
+        headline,
+        body: `Hi ${b(d.name)}, ${b(d.title)} ${gone ? 'expired on' : 'expires on'} ${b(on)}. We remind you; we cannot renew it for you, and the document as printed always governs. If this date is wrong, correct it in your Licence Centre.`,
+        cta: { label: 'Open Licence Centre', url },
+        preheader: `${d.title}: ${gone ? 'expired' : 'expiring soon'}`,
+      });
+      await this.send(d.email, headline, html);
+    }
+  }
+
   private async sendSms(
     to: string | null | undefined,
     message: string,

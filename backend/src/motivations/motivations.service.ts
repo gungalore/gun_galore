@@ -700,7 +700,7 @@ export class MotivationsService {
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
-      select: { id: true, status: true, licenceType: true },
+      select: { id: true, status: true, licenceType: true, answersEncrypted: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
     if (!EDITABLE.includes(row.status)) {
@@ -774,6 +774,10 @@ export class MotivationsService {
             licenceType: row.licenceType,
             bytes: file.buffer,
             mimeType: file.mimetype,
+            // Decides which "firearms you already own" row a licence fills.
+            // Without it every licence lands on row 1 and the second upload
+            // overwrites the first.
+            answers: this.readAnswers(row.answersEncrypted),
           });
           await this.prisma.motivationUpload.update({
             where: { id: created.id },

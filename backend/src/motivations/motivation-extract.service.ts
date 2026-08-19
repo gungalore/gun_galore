@@ -65,14 +65,51 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
     'association_number',
     'dedicated_since',
   ],
+  EMPLOYMENT_CONFIRMATION: ['employer_name', 'employer_address'],
+  // Written against ROW 1 and remapped to whichever row is free — see
+  // nextOwnedSlot(). The barrel serial is on the licence where the firearm has
+  // a separately-licensed barrel, and it was simply never asked for.
   CURRENT_LICENCE: [
     'existing_firearm_1_type',
     'existing_firearm_1_calibre',
     'existing_firearm_1_make',
+    'existing_firearm_1_barrel_serial',
     'existing_firearm_1_frame_serial',
     'existing_firearm_1_licence_no',
   ],
 };
+
+/** How many firearm rows the registry carries. Mirrors motivation-fields.ts. */
+const OWNED_ROWS = 6;
+
+/**
+ * Which "firearms you already own" row a newly-uploaded licence should fill.
+ *
+ * ⚠️ THIS IS WHY A SECOND LICENCE USED TO VANISH. Every CURRENT_LICENCE
+ * extraction wrote to row 1, so uploading a second licence either overwrote the
+ * first or was discarded as an already-answered suggestion. Someone with three
+ * licensed firearms — exactly the applicant whose overlap needs explaining —
+ * ended up with one row and a motivation that argued the wrong case.
+ *
+ * A row counts as taken once its CALIBRE is filled, matching the wizard's own
+ * definition of a started row and the overlap engine's only required column.
+ *
+ * Returns null when all six are full: the registry has no seventh row, and
+ * silently overwriting row 6 would be worse than proposing nothing.
+ */
+export function nextOwnedSlot(answers: Record<string, string>): number | null {
+  for (let i = 1; i <= OWNED_ROWS; i++) {
+    if (!(answers[`existing_firearm_${i}_calibre`] ?? '').trim()) return i;
+  }
+  return null;
+}
+
+/** Rewrite row-1 keys onto the row actually being filled. */
+export function remapOwnedSlot(keys: string[], slot: number): string[] {
+  return keys.map((k) =>
+    k.replace(/^existing_firearm_1_/, `existing_firearm_${slot}_`),
+  );
+}
 
 export interface ExtractedField {
   key: string;
@@ -114,9 +151,18 @@ export class MotivationExtractService {
     licenceType: MotivationLicenceType;
     bytes: Buffer;
     mimeType: string;
+    /** What is already answered — decides which owned-firearm row to fill. */
+    answers?: Record<string, string>;
   }): Promise<ExtractedField[]> {
-    const wanted = EXTRACTABLE[args.kind] ?? [];
+    let wanted = EXTRACTABLE[args.kind] ?? [];
     if (!wanted.length || !this.client) return [];
+
+    // A licence describes ONE firearm, and the applicant may upload several.
+    if (args.kind === 'CURRENT_LICENCE') {
+      const slot = nextOwnedSlot(args.answers ?? {});
+      if (slot === null) return [];
+      wanted = remapOwnedSlot(wanted, slot);
+    }
 
     const registry = fieldsFor(args.licenceType);
     const asked = registry.filter((f) => wanted.includes(f.key));

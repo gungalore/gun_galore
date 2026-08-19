@@ -8,6 +8,7 @@ import { SellerToolsService } from './seller-tools.service';
 import { WebhooksController } from './webhooks.controller';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { MotivationsModule } from '../motivations/motivations.module';
+import { LicenceCentreModule } from '../licence-centre/licence-centre.module';
 
 // Global because the ClerkGuard depends on UsersService — and the guard is
 // instantiated per-controller-module by Nest. Making this global means any
@@ -22,7 +23,7 @@ import { MotivationsModule } from '../motivations/motivations.module';
   // user.deleted handler has to remove a member's encrypted licence
   // documents itself, because the cascade that removes their rows cannot
   // reach the filesystem. No cycle — nothing in motivations/ imports users.
-  imports: [CloudinaryModule, MotivationsModule],
+  imports: [CloudinaryModule, MotivationsModule, LicenceCentreModule],
   // Public controller listed BEFORE the auth-guarded one so its routes
   // are matched first (Nest resolves by registration order).
   controllers: [
