@@ -306,7 +306,7 @@ export default function MotivationWizardPage() {
   if (error || !detail) {
     return (
       <main className="mx-auto max-w-3xl p-6">
-        <p className="text-red-700">{error}</p>
+        <p className="text-[var(--red)]">{error}</p>
       </main>
     );
   }
@@ -315,11 +315,11 @@ export default function MotivationWizardPage() {
     <main className="mx-auto max-w-3xl px-4 py-6">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">Your firearm licence motivation</h1>
-        <p className="mt-1 text-sm text-neutral-600">
+        <p className="mt-1 text-sm text-[var(--text-secondary)]">
           Reference {detail.referenceNumber}. Everything stays here until you
           print it — nothing is sent to SAPS by us.
         </p>
-        <p className="mt-2 text-xs text-neutral-500" aria-live="polite">
+        <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]" aria-live="polite">
           {saving === 'saving' && 'Saving…'}
           {saving === 'saved' && 'Saved'}
           {saving === 'error' &&
@@ -336,53 +336,53 @@ export default function MotivationWizardPage() {
         * serial of a firearm they already own — which is exactly what the
         * overlap check needs. Re-typing all that off a card in your hand is the
         * part of a form people abandon. */}
-      <section className="mb-6 rounded border p-4">
+      <section className="mb-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
         <h2 className="font-medium">Start with your documents</h2>
-        <p className="mt-1 text-sm text-neutral-600">
+        <p className="mt-1 text-sm text-[var(--text-secondary)]">
           Photograph or upload what you already have and we will read what we
           can off them, so you type less. You confirm everything before it goes
           on the form. They are stored encrypted on our own server, are never
           public, and each becomes a lettered annexure.
         </p>
         {documents && documents.needs.length > 0 && (
-          <div className="mt-3 rounded border">
-            <div className="flex items-center justify-between gap-3 border-b bg-neutral-50 px-3 py-2">
+          <div className="mt-3 rounded border border-[var(--border)]">
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--border-divider)] bg-[var(--bg-inset)] px-3 py-2">
               <span className="text-sm font-medium">
                 {documents.missingRequired.length === 0
                   ? 'You have everything SAPS asks for'
                   : `${documents.requiredHave} of ${documents.requiredTotal} required documents`}
               </span>
               {documents.extras.length > 0 && (
-                <span className="text-xs text-neutral-500">
+                <span className="text-xs text-[var(--text-tertiary-on-card)]">
                   + {documents.extras.length} extra attached
                 </span>
               )}
             </div>
-            <ul className="divide-y">
+            <ul className="divide-y divide-[var(--border-divider)]">
               {documents.needs.map((n) => (
                 <li key={n.kind} className="flex gap-3 p-3 text-sm">
                   <span aria-hidden className="pt-0.5">
                     {n.have ? '✓' : n.tier === 'required' ? '•' : '○'}
                   </span>
                   <span className="flex-1">
-                    <span className={n.have ? 'text-neutral-500 line-through' : ''}>
+                    <span className={n.have ? 'text-[var(--text-tertiary-on-card)] line-through' : ''}>
                       {n.label}
                     </span>
                     {/* "Required" means SAPS requires it — never that we
                         refuse to proceed. Someone whose competency is still
                         being processed should be drafting a motivation now. */}
                     {!n.have && n.tier === 'required' && (
-                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs">
+                      <span className="ml-2 rounded bg-[var(--gold-wash)] px-1.5 py-0.5 text-xs">
                         SAPS needs this
                       </span>
                     )}
                     {!n.have && n.tier === 'strengthens' && (
-                      <span className="ml-2 text-xs text-neutral-500">
+                      <span className="ml-2 text-xs text-[var(--text-tertiary-on-card)]">
                         optional — but it helps
                       </span>
                     )}
                     {!n.have && n.why && (
-                      <span className="mt-0.5 block text-xs text-neutral-500">
+                      <span className="mt-0.5 block text-xs text-[var(--text-tertiary-on-card)]">
                         {n.why}
                       </span>
                     )}
@@ -390,7 +390,7 @@ export default function MotivationWizardPage() {
                 </li>
               ))}
             </ul>
-            <p className="border-t px-3 py-2 text-xs text-neutral-500">
+            <p className="border-t border-[var(--border-divider)] px-3 py-2 text-xs text-[var(--text-tertiary-on-card)]">
               Anything else you want to attach as supporting evidence is
               welcome — choose &ldquo;Something else&rdquo; below. We will
               letter it as an annexure like the rest.
@@ -433,21 +433,21 @@ export default function MotivationWizardPage() {
         />
 
         {suggestions.length > 0 && (
-          <div className="mt-4 rounded border border-emerald-300 bg-emerald-50 p-3">
+          <div className="mt-4 rounded border border-[rgba(47,158,107,0.38)] bg-[rgba(47,158,107,0.10)] p-3">
             <h3 className="text-sm font-medium">
               We read {suggestions.length}{' '}
               {suggestions.length === 1 ? 'thing' : 'things'} off that
             </h3>
-            <p className="mt-1 text-xs text-neutral-700">
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">
               Check each one against the document before you accept it — you are
               the one who signs this.
             </p>
             <ul className="mt-2 space-y-2">
               {suggestions.map((sg) => (
                 <li key={sg.key} className="text-sm">
-                  <span className="text-neutral-600">{sg.label}: </span>
+                  <span className="text-[var(--text-secondary)]">{sg.label}: </span>
                   <span className="font-medium">{sg.value}</span>
-                  <span className="block text-xs text-neutral-500">
+                  <span className="block text-xs text-[var(--text-tertiary-on-card)]">
                     from {sg.from}
                     {sg.note ? ` — ${sg.note}` : ''}
                   </span>
@@ -457,7 +457,7 @@ export default function MotivationWizardPage() {
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
-                className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white"
+                className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)]"
                 onClick={async () => {
                   const accept = Object.fromEntries(
                     suggestions.map((sg) => [sg.key, sg.value]),
@@ -473,7 +473,7 @@ export default function MotivationWizardPage() {
               </button>
               <button
                 type="button"
-                className="rounded border px-3 py-1.5 text-sm"
+                className="rounded border border-[var(--border)] px-3 py-1.5 text-sm"
                 onClick={() => setSuggestions([])}
               >
                 No, I will type them
@@ -495,18 +495,18 @@ export default function MotivationWizardPage() {
           hideContinue
         >
           <div className="space-y-3">
-            <p className="text-sm text-neutral-700">
+            <p className="text-sm text-[var(--text-secondary)]">
               We can fill these in from your All Outdoor profile. Nothing is
               copied until you say so, and anything you have already typed is
               left alone.
             </p>
-            <ul className="divide-y rounded border">
+            <ul className="divide-y divide-[var(--border-divider)] rounded border border-[var(--border)]">
               {offer.fields.map((f) => (
                 <li key={f.key} className="flex justify-between gap-4 p-3 text-sm">
-                  <span className="text-neutral-600">{f.label}</span>
+                  <span className="text-[var(--text-secondary)]">{f.label}</span>
                   <span className="text-right">
                     <span className="font-medium">{f.value}</span>
-                    <span className="block text-xs text-neutral-500">
+                    <span className="block text-xs text-[var(--text-tertiary-on-card)]">
                       from {f.from}
                     </span>
                   </span>
@@ -516,7 +516,7 @@ export default function MotivationWizardPage() {
             <div className="flex gap-2">
               <button
                 type="button"
-                className="rounded bg-neutral-900 px-4 py-2 text-sm text-white"
+                className="rounded bg-[var(--red)] px-4 py-2 text-sm text-white hover:bg-[var(--red-hover)]"
                 onClick={async () => {
                   const res = await motivationsApi.useProfile(token, id);
                   const d = await motivationsApi.get(token, id);
@@ -532,7 +532,7 @@ export default function MotivationWizardPage() {
               </button>
               <button
                 type="button"
-                className="rounded border px-4 py-2 text-sm"
+                className="rounded border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
                 onClick={() => go(2)}
               >
                 No, I will type them
@@ -571,14 +571,14 @@ export default function MotivationWizardPage() {
           >
             <div className="space-y-4">
               {isOwned && detail.overlap?.needsJustification && (
-                <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">
+                <div className="rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm">
                   {/* Shown while they are still filling the form. Someone who
                       has just typed their existing firearms is in the best
                       position to explain why they need both — and asked here it
                       reads as help, where asked after a rejection it reads as a
                       hurdle. */}
                   <p className="font-medium">Worth explaining</p>
-                  <p className="mt-1 text-neutral-700">
+                  <p className="mt-1 text-[var(--text-secondary)]">
                     {detail.overlap.prompt}
                   </p>
                 </div>
@@ -604,7 +604,7 @@ export default function MotivationWizardPage() {
                 </label>
               )}
               {isOwned && ownedRows >= 6 && (
-                <p className="pt-2 text-xs text-neutral-500">
+                <p className="pt-2 text-xs text-[var(--text-tertiary-on-card)]">
                   That is as many as we can print on the form. If you own more,
                   write the rest in by hand.
                 </p>
@@ -616,9 +616,9 @@ export default function MotivationWizardPage() {
 
       {/* 3 — Boet's follow-ups */}
       {openQuestions.length > 0 && (
-        <section className="mt-6 rounded border border-amber-300 bg-amber-50 p-4">
+        <section className="mt-6 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-4">
           <h2 className="font-medium">A few things Boet wants to ask</h2>
-          <p className="mt-1 text-sm text-neutral-700">
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">
             These are the answers that were too thin to build a strong document
             from.
           </p>
@@ -640,10 +640,10 @@ export default function MotivationWizardPage() {
       )}
 
       {/* 5 — declaration and generate */}
-      <section className="mt-6 rounded border p-4">
+      <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
         <h2 className="font-medium">Before we prepare it</h2>
         {outstanding.length > 0 ? (
-          <p className="mt-2 text-sm text-neutral-700">
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">
             {outstanding.length} answer{outstanding.length === 1 ? '' : 's'}{' '}
             still to give. The sections above show which.
           </p>
@@ -659,7 +659,7 @@ export default function MotivationWizardPage() {
                 You may ask me later how my application went. (Optional.)
               </span>
             </label>
-            <p className="mt-3 text-sm text-neutral-700">
+            <p className="mt-3 text-sm text-[var(--text-secondary)]">
               By continuing you confirm that everything you have told us is
               true, and that you submit the motivation as your own. It is not
               legal advice.
@@ -667,7 +667,7 @@ export default function MotivationWizardPage() {
             <button
               type="button"
               disabled={generating}
-              className="mt-3 rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+              className="mt-3 rounded bg-[var(--red)] px-4 py-2 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
               onClick={async () => {
                 setGenerating(true);
                 setError(null);
@@ -701,7 +701,7 @@ export default function MotivationWizardPage() {
         {detail.status === 'COMPLETED' && (
           <div className="mt-4 flex flex-wrap gap-2">
             <a
-              className="rounded border px-4 py-2 text-sm"
+              className="rounded border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
               href={motivationsApi.pdfUrl(id)}
               target="_blank"
               rel="noreferrer"
@@ -710,7 +710,7 @@ export default function MotivationWizardPage() {
             </a>
             {(answers[SAPS271_OPT_KEY] ?? '') === SAPS271_FILL && (
               <a
-                className="rounded border px-4 py-2 text-sm"
+                className="rounded border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
                 href={motivationsApi.saps271Url(id)}
                 target="_blank"
                 rel="noreferrer"
@@ -720,17 +720,17 @@ export default function MotivationWizardPage() {
             )}
           </div>
         )}
-        {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+        {error && <p className="mt-3 text-sm text-[var(--red)]">{error}</p>}
       </section>
 
       {/* Deleting was possible on the API from the start and had no way in
           from the wizard. It is a real erasure — the encrypted documents go
           with it — so it asks first and says what it is about to do. */}
-      <section className="mt-8 border-t pt-4">
+      <section className="mt-8 border-t border-[var(--border-divider)] pt-4">
         <button
           type="button"
           disabled={deleting}
-          className="text-sm text-red-700 underline disabled:opacity-50"
+          className="text-sm text-[var(--red)] underline disabled:opacity-50"
           onClick={async () => {
             const ok = window.confirm(
               `Delete this application (${detail.referenceNumber})?\n\nThis removes your answers, your uploaded documents and the finished motivation. It cannot be undone.`,
@@ -755,7 +755,7 @@ export default function MotivationWizardPage() {
         >
           {deleting ? 'Deleting…' : 'Delete this application'}
         </button>
-        <p className="mt-1 text-xs text-neutral-500">
+        <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
           Removes everything, including the documents you uploaded.
         </p>
       </section>
@@ -775,9 +775,21 @@ function FieldInput({
   missing: boolean;
   onChange: (v: string) => void;
 }) {
+  // EXPLICIT background and colour on every control.
+  //
+  // The site is dark (--bg #0f0f0f) and <body> sets near-white text, but a
+  // <select> or <input> with no background of its own gets the BROWSER's
+  // default light chrome — so the inherited white text landed on white and was
+  // invisible. Operator, 2026-08-19: "I can't read the dropdown menus".
+  //
+  // `[&>option]` covers the popup list too: on Windows the option list is
+  // painted by the OS and does not inherit the select's colours.
   const base =
     'mt-1 w-full rounded border px-3 py-2 text-sm ' +
-    (missing ? 'border-amber-400' : 'border-neutral-300');
+    'bg-[var(--bg-inset)] text-[var(--text-primary)] ' +
+    '[&>option]:bg-[var(--bg-card)] [&>option]:text-[var(--text-primary)] ' +
+    'focus:border-[var(--border-hover)] focus:outline-none ' +
+    (missing ? 'border-[var(--warning)]' : 'border-[var(--border)]');
 
   return (
     <div>
@@ -786,7 +798,7 @@ function FieldInput({
         {field.required && <span aria-hidden> *</span>}
       </label>
       {field.help && (
-        <p className="mt-0.5 text-xs text-neutral-500">{field.help}</p>
+        <p className="mt-0.5 text-xs text-[var(--text-tertiary-on-card)]">{field.help}</p>
       )}
 
       {field.kind === 'long' && (
@@ -878,7 +890,7 @@ function FollowUpAnswer({ onSubmit }: { onSubmit: (t: string) => Promise<void> }
   return (
     <div className="mt-2">
       <textarea
-        className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
+        className="w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-sm text-[var(--text-primary)]"
         rows={3}
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -886,7 +898,7 @@ function FollowUpAnswer({ onSubmit }: { onSubmit: (t: string) => Promise<void> }
       <button
         type="button"
         disabled={busy || !text.trim()}
-        className="mt-1 rounded border px-3 py-1.5 text-sm disabled:opacity-50"
+        className="mt-1 rounded border border-[var(--border)] px-3 py-1.5 text-sm disabled:opacity-50"
         onClick={async () => {
           setBusy(true);
           try {
@@ -920,7 +932,7 @@ function UploadPanel({
     <div className="mt-3">
       <div className="flex flex-wrap items-center gap-2">
         <select
-          className="rounded border border-neutral-300 px-3 py-2 text-sm"
+          className="rounded border border-[var(--border)] px-3 py-2 text-sm"
           value={kind}
           onChange={(e) => setKind(e.target.value)}
           aria-label="Document type"
@@ -956,23 +968,23 @@ function UploadPanel({
           }}
         />
       </div>
-      {err && <p className="mt-2 text-sm text-red-700">{err}</p>}
+      {err && <p className="mt-2 text-sm text-[var(--red)]">{err}</p>}
 
-      <ul className="mt-3 divide-y rounded border">
+      <ul className="mt-3 divide-y divide-[var(--border-divider)] rounded border border-[var(--border)]">
         {uploads.length === 0 && (
-          <li className="p-3 text-sm text-neutral-500">Nothing added yet.</li>
+          <li className="p-3 text-sm text-[var(--text-tertiary-on-card)]">Nothing added yet.</li>
         )}
         {uploads.map((u) => (
           <li key={u.id} className="flex items-center justify-between gap-3 p-3 text-sm">
             <span>
               {u.annexure && (
-                <span className="mr-2 rounded bg-neutral-100 px-1.5 py-0.5 text-xs">
+                <span className="mr-2 rounded bg-[var(--bg-inset)] px-1.5 py-0.5 text-xs">
                   Annexure {u.annexure}
                 </span>
               )}
               {u.label}
               {!u.available && (
-                <span className="ml-2 text-xs text-neutral-500">
+                <span className="ml-2 text-xs text-[var(--text-tertiary-on-card)]">
                   (deleted under our retention policy)
                 </span>
               )}

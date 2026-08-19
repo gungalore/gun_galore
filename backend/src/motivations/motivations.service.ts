@@ -872,6 +872,7 @@ export class MotivationsService {
       select: {
         id: true,
         licenceType: true,
+        answersEncrypted: true,
         uploads: {
           orderBy: { createdAt: 'asc' },
           select: {
@@ -916,6 +917,9 @@ export class MotivationsService {
       documents: documentStatus(
         row.licenceType,
         row.uploads.map((u) => u.kind),
+        // Their answers decide one of the requirements: a licence is needed
+        // for every firearm they have told us they already own.
+        this.readAnswers(row.answersEncrypted),
       ),
     };
   }

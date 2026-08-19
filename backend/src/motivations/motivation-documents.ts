@@ -56,11 +56,13 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
+    'SAFE_PHOTO',
   ],
   S15_OCCASIONAL_HUNTER: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
+    'SAFE_PHOTO',
   ],
   // Dedicated status IS the basis of a section 16 application, so proof of
   // membership stops being a nicety and becomes part of the case.
@@ -68,12 +70,14 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
+    'SAFE_PHOTO',
     'ASSOCIATION_CARD',
   ],
   S16_DEDICATED_SPORT: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
+    'SAFE_PHOTO',
     'ASSOCIATION_CARD',
   ],
   // A renewal is a different form (SAPS 518a) and a different pack; the one
@@ -82,31 +86,17 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'CURRENT_LICENCE',
     'ADDRESS_CONFIRMATION',
+    'SAFE_PHOTO',
   ],
 };
 
 /** Not demanded, but this is what makes a motivation land. */
 const STRENGTHENS: Record<MotivationLicenceType, MotivationUploadKind[]> = {
-  S13_SELF_DEFENCE: ['SAFE_PHOTO', 'SAFE_INSTALLATION', 'INCIDENT_REPORT'],
-  S15_OCCASIONAL_HUNTER: [
-    'SAFE_PHOTO',
-    'SAFE_INSTALLATION',
-    'PROFICIENCY_CERTIFICATE',
-    'CURRENT_LICENCE',
-  ],
-  S16_DEDICATED_HUNTER: [
-    'SAFE_PHOTO',
-    'SAFE_INSTALLATION',
-    'PROFICIENCY_CERTIFICATE',
-    'CURRENT_LICENCE',
-  ],
-  S16_DEDICATED_SPORT: [
-    'SAFE_PHOTO',
-    'SAFE_INSTALLATION',
-    'PROFICIENCY_CERTIFICATE',
-    'CURRENT_LICENCE',
-  ],
-  S24_RENEWAL: ['SAFE_PHOTO', 'SAFE_INSTALLATION'],
+  S13_SELF_DEFENCE: ['INCIDENT_REPORT', 'CHARACTER_REFERENCE'],
+  S15_OCCASIONAL_HUNTER: ['PROFICIENCY_CERTIFICATE', 'CHARACTER_REFERENCE'],
+  S16_DEDICATED_HUNTER: ['PROFICIENCY_CERTIFICATE', 'CHARACTER_REFERENCE'],
+  S16_DEDICATED_SPORT: ['PROFICIENCY_CERTIFICATE', 'CHARACTER_REFERENCE'],
+  S24_RENEWAL: ['PROFICIENCY_CERTIFICATE'],
 };
 
 const LABELS: Record<MotivationUploadKind, string> = {
@@ -117,7 +107,7 @@ const LABELS: Record<MotivationUploadKind, string> = {
   ASSOCIATION_CARD: 'Proof of your association membership',
   ADDRESS_CONFIRMATION: 'Proof of your address',
   EMPLOYMENT_CONFIRMATION: 'Confirmation of employment',
-  SAFE_PHOTO: 'Photographs of your safe',
+  SAFE_PHOTO: 'Three photographs of your safe',
   SAFE_INSTALLATION: 'The safe bolted to the wall or floor',
   CHARACTER_REFERENCE: 'A character reference',
   INCIDENT_REPORT: 'An incident report or SAPS case number',
@@ -135,9 +125,9 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
   ASSOCIATION_CARD:
     'Dedicated status is the basis of a section 16 application, so this is part of the case rather than an extra.',
   CURRENT_LICENCE:
-    'We read the make, calibre and serial off it — which is also what tells us whether this application overlaps something you already own.',
+    'A licence for every firearm you already own. We read the make, calibre and serial off it — which is also what tells us whether this application overlaps something you already hold.',
   SAFE_PHOTO:
-    'Three shots: locked with no key in it, half open with the key in the lock, and the bolts fixing it to the wall. A DFO looks for all three.',
+    'THREE photographs: locked with no key in it, half open with the key in the lock, and inside showing the bolts fixing it to the wall. A DFO looks for all three — one photograph of a safe is not enough.',
   SAFE_INSTALLATION: 'Shows the safe is actually anchored, not just present.',
   INCIDENT_REPORT:
     'Something that actually happened to you carries far more weight than general crime figures.',
@@ -166,10 +156,27 @@ export interface DocumentStatus {
 export function documentStatus(
   licenceType: MotivationLicenceType,
   uploaded: MotivationUploadKind[],
+  answers: Record<string, string> = {},
 ): DocumentStatus {
   const have = new Set(uploaded);
-  const required = REQUIRED[licenceType] ?? [];
-  const strengthens = STRENGTHENS[licenceType] ?? [];
+  const required = [...(REQUIRED[licenceType] ?? [])];
+  const strengthens = [...(STRENGTHENS[licenceType] ?? [])];
+
+  // THE LICENCES FOR FIREARMS THEY ALREADY OWN.
+  //
+  // Operator, 2026-08-19: "all current licences — not optional. (If
+  // applicable, might be a first time application.)" So it is required
+  // CONDITIONALLY, and the condition is something we already know: if they
+  // have told us they own a firearm, its licence has to be in the pack.
+  //
+  // A first-time applicant owns nothing and is never asked for one. Asking
+  // everybody would be the same false demand as never asking anybody.
+  const ownsFirearms = Object.keys(answers).some(
+    (k) => /^existing_firearm_\d+_calibre$/.test(k) && (answers[k] ?? '').trim(),
+  );
+  if (ownsFirearms && !required.includes('CURRENT_LICENCE')) {
+    required.push('CURRENT_LICENCE');
+  }
 
   const needs: DocumentNeed[] = [
     ...required.map((kind) => ({

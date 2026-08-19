@@ -93,7 +93,7 @@ export default function MotivationsPage() {
     return (
       <main className="mx-auto max-w-2xl px-4 py-10">
         <h1 className="text-2xl font-semibold">Licence motivations</h1>
-        <p className="mt-3 text-neutral-700">
+        <p className="mt-3 text-[var(--text-secondary)]">
           We are still putting this together. It will appear here when it opens.
         </p>
       </main>
@@ -103,7 +103,7 @@ export default function MotivationsPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="text-2xl font-semibold">Firearm licence motivation</h1>
-      <p className="mt-2 text-neutral-700">
+      <p className="mt-2 text-[var(--text-secondary)]">
         We ask you about your circumstances, then prepare a formal motivation
         you sign and hand in with your application — along with a checklist of
         everything to take to the police station.
@@ -111,25 +111,25 @@ export default function MotivationsPage() {
 
       {rows && rows.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--text-tertiary-on-card)]">
             Your applications
           </h2>
-          <ul className="mt-2 divide-y rounded border">
+          <ul className="mt-2 divide-y divide-[var(--border-divider)] rounded border border-[var(--border)]">
             {rows.map((r) => (
               <li key={r.id}>
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between gap-4 p-3 text-left text-sm hover:bg-neutral-50"
+                  className="flex w-full items-center justify-between gap-4 p-3 text-left text-sm hover:bg-[var(--bg-card-hover)]"
                   onClick={() => router.push(`/motivations/${r.id}`)}
                 >
                   <span>
                     <span className="font-medium">{r.referenceNumber}</span>
-                    <span className="block text-xs text-neutral-500">
+                    <span className="block text-xs text-[var(--text-tertiary-on-card)]">
                       {LICENCE_TYPES.find((t) => t.value === r.licenceType)
                         ?.label ?? r.licenceType}
                     </span>
                   </span>
-                  <span className="text-xs text-neutral-600">
+                  <span className="text-xs text-[var(--text-secondary)]">
                     {STATUS_COPY[r.status] ?? r.status}
                   </span>
                 </button>
@@ -140,7 +140,7 @@ export default function MotivationsPage() {
       )}
 
       <section className="mt-8">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--text-tertiary-on-card)]">
           Start a new one
         </h2>
         <ul className="mt-2 space-y-2">
@@ -149,7 +149,7 @@ export default function MotivationsPage() {
               <button
                 type="button"
                 disabled={starting}
-                className="w-full rounded border p-3 text-left hover:bg-neutral-50 disabled:opacity-50"
+                className="w-full rounded border border-[var(--border)] bg-[var(--bg-card)] p-3 text-left hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
                 onClick={async () => {
                   setStarting(true);
                   setError(null);
@@ -166,19 +166,19 @@ export default function MotivationsPage() {
                   }
                 }}
               >
-                <span className="text-xs uppercase tracking-wide text-neutral-500">
+                <span className="text-xs uppercase tracking-wide text-[var(--text-tertiary-on-card)]">
                   {t.section}
                 </span>
                 <span className="block font-medium">{t.label}</span>
-                <span className="block text-sm text-neutral-600">{t.blurb}</span>
+                <span className="block text-sm text-[var(--text-secondary)]">{t.blurb}</span>
               </button>
             </li>
           ))}
         </ul>
-        {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+        {error && <p className="mt-3 text-sm text-[var(--red)]">{error}</p>}
       </section>
 
-      <p className="mt-8 text-xs text-neutral-500">
+      <p className="mt-8 text-xs text-[var(--text-tertiary-on-card)]">
         We prepare the document; the decision is the Registrar&apos;s. Nothing
         here is legal advice, and you sign and submit the motivation as your own.
       </p>
