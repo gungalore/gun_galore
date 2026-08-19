@@ -40,6 +40,20 @@ export interface EnhanceReport {
   meanLuma: number;
 }
 
+/** Where bare paper lands. Just off true white, so nothing clips. */
+const WHITE = 245;
+/**
+ * The most any pixel may be brightened.
+ *
+ * ⚠️ THIS NUMBER IS A TREATY between two enemies. A shadowed page at 45% of
+ * its lit brightness needs 2.4x to reach white — any real hand shadow under a
+ * ceiling light sits above that. An ID photograph must NOT reach white: at a
+ * cap of 3 the synthetic photo block came out at 177 luma, light enough to
+ * start reading as background. 2.5 satisfies the deepest plausible shadow and
+ * keeps the photograph a photograph.
+ */
+const GAIN_CAP = 2.5;
+
 const DEFAULTS: Required<EnhanceOptions> = {
   flatten: true,
   localContrast: true,
@@ -154,6 +168,77 @@ function grow(
     }
   }
   return out;
+}
+
+/** Separable max filter — each pixel becomes the brightest within `radius`. */
+export function dilate(
+  src: Float32Array,
+  w: number,
+  h: number,
+  radius: number,
+): Float32Array {
+  const r = Math.max(1, Math.round(radius));
+  const a = new Float32Array(src.length);
+  const b = new Float32Array(src.length);
+  // horizontal
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      let m = 0;
+      for (let k = -r; k <= r; k++) {
+        const xx = Math.min(w - 1, Math.max(0, x + k));
+        if (src[row + xx] > m) m = src[row + xx];
+      }
+      a[row + x] = m;
+    }
+  }
+  // vertical
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let m = 0;
+      for (let k = -r; k <= r; k++) {
+        const yy = Math.min(h - 1, Math.max(0, y + k));
+        if (a[yy * w + x] > m) m = a[yy * w + x];
+      }
+      b[y * w + x] = m;
+    }
+  }
+  return b;
+}
+
+/**
+ * THE PAPER, WHEREVER IT IS — the local brightness the page itself would have,
+ * shadows and all, with the ink removed.
+ *
+ * A max filter wide enough to jump every glyph replaces each pixel with the
+ * nearest patch of bare paper; a small blur then smooths the blocks the max
+ * leaves behind. ⚠️ THIS IS WHAT A BLUR ALONE COULD NOT DO: a blurred field
+ * mixes the ink into its estimate and glides straight across a hard shadow
+ * boundary, so dividing by it left the operator's hand-shadow sitting on the
+ * page and the paper a resolute grey. The max filter's estimate is bare paper
+ * on BOTH sides of a shadow edge, tracking the shadow exactly — so dividing
+ * up to white removes the shadow and lands every part of the page on the same
+ * background, which is precisely the "uniform background" that was asked for.
+ *
+ * Computed at 512px on the long edge: fine enough that a photograph or a
+ * security emblem is still its own dark region rather than averaged away,
+ * coarse enough to cost milliseconds.
+ */
+export function paperField(
+  luma: Float32Array,
+  w: number,
+  h: number,
+): Float32Array {
+  const long = Math.max(w, h);
+  const scale = Math.min(1, 512 / long);
+  const tw = Math.max(8, Math.round(w * scale));
+  const th = Math.max(8, Math.round(h * scale));
+  const small = shrink(luma, w, h, tw, th);
+  // Radius 6 at 512 clears a text stroke and a table rule with margin; a
+  // photograph is fifty times wider and stays a dark region of its own.
+  const maxed = dilate(small, tw, th, 6);
+  const smooth = boxBlur(maxed, tw, th, 3, 2);
+  return grow(smooth, tw, th, w, h);
 }
 
 /**
@@ -325,19 +410,30 @@ export function enhance(r: Raster, opts: EnhanceOptions = {}): Raster {
   const luma = lumaPlane(r);
   const out = new Uint8ClampedArray(r.data.length);
 
-  // (a) Divide out the lighting. Illumination is MULTIPLICATIVE — reflectance
-  // times illuminant — so this divides rather than subtracting. Subtracting is
-  // the common mistake and it crushes the dark end.
+  // (a) Divide the paper up to white. Illumination is MULTIPLICATIVE —
+  // reflectance times illuminant — so this divides rather than subtracting.
+  //
+  // ⚠️ UP TO WHITE, NOT TO THE MEAN. The first version normalised to the
+  // field's own mean, which removed the gradient and then carefully preserved
+  // the overall murk: a dim photograph came out as a uniformly dim scan, and
+  // the operator's side-by-side against the plain camera app made the point
+  // better than any argument. Paper is white; the estimate under `paperField`
+  // IS the paper; dividing by it and scaling to WHITE sends every patch of
+  // bare page — lit, shaded, or under his hand's shadow — to the same bright
+  // background, while ink keeps its ratio against the paper around it.
+  //
+  // The gain cap is what stops the genuinely dark parts — a photograph, hair,
+  // a black emblem — from being dragged up to white along with everything
+  // else: where the true background is far darker than paper, the cap wins
+  // and the region keeps its identity.
   let corrected = luma;
   if (o.flatten) {
-    const field = illuminationField(luma, w, h);
-    let fieldMean = 0;
-    for (let i = 0; i < field.length; i++) fieldMean += field[i];
-    fieldMean /= field.length || 1;
+    const field = paperField(luma, w, h);
     corrected = new Float32Array(luma.length);
     for (let i = 0; i < luma.length; i++) {
-      const b = field[i];
-      corrected[i] = b > 1 ? Math.min(255, (luma[i] / b) * fieldMean) : luma[i];
+      const b = Math.max(20, field[i]);
+      const gain = Math.min(GAIN_CAP, WHITE / b);
+      corrected[i] = Math.min(255, luma[i] * gain);
     }
   }
 
@@ -346,7 +442,13 @@ export function enhance(r: Raster, opts: EnhanceOptions = {}): Raster {
   if (o.localContrast) {
     const TILES = 8;
     const BINS = 64;
-    const luts = claheLut(corrected, w, h, TILES, BINS);
+    // ⚠️ CLIP 2, DOWN FROM 3, since the paper started reaching true white.
+    // CLAHE was tuned against the old grey-mean output, where it had murk to
+    // dig detail out of; run at the same strength on a properly whitened page
+    // it turned the ID photograph crunchy and rang halos around print — the
+    // real flat.jpg outputs made it obvious. With the lighting gone its only
+    // remaining job is a gentle lift of faint stamps and security print.
+    const luts = claheLut(corrected, w, h, TILES, BINS, 2);
     lifted = new Float32Array(corrected.length);
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {

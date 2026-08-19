@@ -199,6 +199,98 @@ describe('enhance', () => {
     expect(localSwing(after, 215, 250)).toBeGreaterThan(40);
   });
 
+  it('⚠️ SENDS THE PAPER TO WHITE, NOT TO THE AVERAGE', () => {
+    // The operator's side-by-side against the plain camera app: our scan came
+    // out uniformly GREY, because flattening normalised to the field's own
+    // mean — it removed the gradient and preserved the murk. A scan's paper
+    // is white. That is half of what makes it read as a scan.
+    const before = page(256, 192, { paper: 150, ink: 40 });
+    const after = enhance(before);
+    let paperSum = 0;
+    let n = 0;
+    for (let y = 5; y < 187; y++) {
+      for (let x = 5; x < 251; x++) {
+        const isInk = y % 12 < 4 && x % 9 < 6;
+        if (!isInk) {
+          paperSum += lumaAt(after, x, y);
+          n++;
+        }
+      }
+    }
+    expect(paperSum / n).toBeGreaterThan(215);
+  });
+
+  it('⚠️ REMOVES A HARD-EDGED SHADOW, not only a soft gradient', () => {
+    // The hand shadow in the operator's SAPS-form scan had a sharp edge, and
+    // a blurred illumination field glides straight across an edge like that —
+    // the estimate barely dips, so the division barely lifts, and the shadow
+    // stays on the page. The paper field follows it exactly because paper in
+    // shadow is still the local maximum.
+    const w = 256;
+    const h = 192;
+    const before = page(w, h, { paper: 230, ink: 50 });
+    // A hard 45% shadow over the right half, applied to everything.
+    for (let y = 0; y < h; y++) {
+      for (let x = 128; x < w; x++) {
+        const i = (y * w + x) * 4;
+        before.data[i] = before.data[i] * 0.55;
+        before.data[i + 1] = before.data[i + 1] * 0.55;
+        before.data[i + 2] = before.data[i + 2] * 0.55;
+      }
+    }
+    const after = enhance(before);
+    const paperMean = (r: typeof after, x0: number, x1: number) => {
+      let sum = 0;
+      let n = 0;
+      for (let y = 5; y < h - 5; y++) {
+        for (let x = x0; x < x1; x++) {
+          const isInk = y % 12 < 4 && x % 9 < 6;
+          if (!isInk) {
+            sum += lumaAt(r, x, y);
+            n++;
+          }
+        }
+      }
+      return sum / n;
+    };
+    // Away from the boundary band, lit and shadowed paper must land on the
+    // SAME white — that is the uniform background the operator asked for.
+    const lit = paperMean(after, 20, 100);
+    const shaded = paperMean(after, 160, 240);
+    expect(Math.abs(lit - shaded)).toBeLessThan(14);
+    expect(shaded).toBeGreaterThan(205);
+  });
+
+  it('⚠️ DOES NOT DRAG A PHOTOGRAPH UP TO WHITE with the paper', () => {
+    // An ID photo is a large genuinely-dark region. The gain cap is what
+    // keeps it one: paper whitens because its background estimate IS paper;
+    // the photo's estimate is the photo, and the cap stops the division
+    // inventing brightness that was never there.
+    const w = 256;
+    const h = 192;
+    const before = page(w, h, { paper: 225 });
+    // A 70px-wide dark photograph block.
+    for (let y = 60; y < 150; y++) {
+      for (let x = 90; x < 160; x++) {
+        const i = (y * w + x) * 4;
+        before.data[i] = 55;
+        before.data[i + 1] = 50;
+        before.data[i + 2] = 48;
+      }
+    }
+    const after = enhance(before);
+    let sum = 0;
+    let n = 0;
+    for (let y = 80; y < 130; y++) {
+      for (let x = 110; x < 140; x++) {
+        sum += lumaAt(after, x, y);
+        n++;
+      }
+    }
+    // Well below paper. (CLAHE lifts it some; identity it is not.)
+    expect(sum / n).toBeLessThan(160);
+  });
+
   it('keeps colour, because the classifier reads it', () => {
     // A warm-toned card. If enhancement worked on greyscale and wrote back
     // grey, the classifier loses the strongest cue it has for telling one kind

@@ -138,17 +138,18 @@ export default function DocumentScanner({
   const [editing, setEditing] = useState(false);
   const [said, setSaid] = useState('');
   /**
-   * Auto-capture: shoot by itself once the corners are locked AND the phone
-   * has stopped moving. On by default, because the operator asked for it and
-   * because the moment somebody stops moving IS the sharpest frame they are
-   * going to give us — a finger reaching for a shutter is what blurs it.
+   * Auto-capture: shoot by itself once the corners are locked and the phone
+   * has stopped moving.
    *
-   * ⚠️ IT MUST BE POSSIBLE TO TURN OFF. Auto-capture fires while a member is
-   * still positioning, and on a document whose edges it is reading wrongly it
-   * will keep firing. The switch stays on screen, and one manual capture
-   * turns it off for the session.
+   * ⚠️ OFF BY DEFAULT — the operator's verdict, after three rounds of tuning
+   * it, in his own words. On the surfaces people actually photograph
+   * documents against, the automatic path spent more trust than it saved
+   * time: every misfire cost a retake AND a member's confidence that the
+   * next one would behave. The flow it gates is now the exception; the flow
+   * is manual shutter, then the corner editor. The toggle stays for whoever
+   * wants it back.
    */
-  const [auto, setAuto] = useState(true);
+  const [auto, setAuto] = useState(false);
   const [holdPct, setHoldPct] = useState(0);
   /**
    * Blown-out fraction of the live frame.
@@ -674,13 +675,13 @@ export default function DocumentScanner({
       });
       setShot(res);
       setPhase('review');
-      say(
-        res.source === 'detected'
-          ? 'Ready to check. We found the edges.'
-          : res.source === 'aim'
-            ? 'Ready to check. We used the corners you lined it up with.'
-            : 'Ready to check. We could not find the edges, so we used the frame.',
-      );
+      // ⚠️ STRAIGHT INTO THE CORNER EDITOR, not the enhanced preview. The
+      // operator's chosen flow: shoot manually, then fix the corners. The
+      // editor opens with our best guess already drawn — a good guess is two
+      // taps (Apply) from done, a bad one is caught BEFORE the member sees a
+      // mangled crop and loses faith in the whole thing.
+      setEditing(true);
+      say('Check the corners, then apply.');
     } catch (e) {
       setErr((e as Error).message || 'That did not work. Try again.');
       setPhase('live');
