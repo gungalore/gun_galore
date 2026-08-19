@@ -4,6 +4,7 @@ import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
 import FilePickerButton from '@/components/file-picker-button';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
+import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -180,6 +181,52 @@ export default function MotivationWizardPage() {
   // Set when an edit could change the overlap verdict, so the next save
   // re-reads it instead of leaving a stale question on screen.
   const overlapDirty = useRef(false);
+  /**
+   * ONE UPLOAD, one code path.
+   *
+   * Called by the bulk picker, by the per-requirement rows beside each item on
+   * the needs list, and by the "add a firearm licence" button. Lifted out of
+   * the panel's props so those three cannot drift.
+   */
+  const addOneUpload = async (kind: string, file: File) => {
+    const row = await motivationsApi.addUpload(token, id, kind, file);
+    setUploads((u) => [...u, row]);
+    // Re-read what is still needed: this upload may have satisfied a
+    // requirement, and the list must stop asking for it.
+    motivationsApi
+      .uploads(token, id)
+      .then((up) => {
+        setDocuments(up.documents);
+        setUploadKinds(up.kinds ?? []);
+      })
+      .catch(() => undefined);
+    if (row.suggestions?.length) {
+      // Only offer values for fields that are still empty — anything already
+      // answered stays exactly as they typed it.
+      setSuggestions((cur) => [
+        ...cur,
+        ...row.suggestions!.filter(
+          (sg) =>
+            !(answers[sg.key] ?? '').trim() &&
+            !cur.some((c) => c.key === sg.key),
+        ),
+      ]);
+    }
+    return row;
+  };
+
+  const removeOneUpload = async (uploadId: string) => {
+    await motivationsApi.removeUpload(token, id, uploadId);
+    setUploads((u) => u.filter((x) => x.id !== uploadId));
+    motivationsApi
+      .uploads(token, id)
+      .then((up) => {
+        setDocuments(up.documents);
+        setUploadKinds(up.kinds ?? []);
+      })
+      .catch(() => undefined);
+  };
+
   const setAnswer = (key: string, value: string) => {
     dirty.current = true;
     if (key === 'firearm_calibre' || /^existing_firearm_\d+_calibre$/.test(key)) {
@@ -278,6 +325,10 @@ export default function MotivationWizardPage() {
   // The "add a firearm licence" uploader in the owned-firearms section.
   const [licenceBusy, setLicenceBusy] = useState(false);
   const [licenceErr, setLicenceErr] = useState<string | null>(null);
+  // Which requirement row is mid-upload. One at a time: the rows are small and
+  // a spinner on the wrong one is worse than no spinner.
+  const [busyKind, setBusyKind] = useState<string | null>(null);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
   const ownedRows = Math.max(1, ownedRowsFilled, ownedRowsShown);
 
   const { sections } = useMemo(() => {
@@ -432,7 +483,17 @@ export default function MotivationWizardPage() {
             <ul className="divide-y divide-[var(--border-divider)]">
               {documents.needs.map((n) => (
                 <li key={n.kind} className="flex gap-3 p-3 text-sm">
-                  <span aria-hidden className="pt-0.5">
+                  <span
+                    aria-hidden
+                    className="pt-0.5"
+                    style={{
+                      color: n.have
+                        ? 'var(--success)'
+                        : n.tier === 'required'
+                          ? 'var(--warning)'
+                          : 'var(--text-tertiary-on-card)',
+                    }}
+                  >
                     {n.have ? '✓' : n.tier === 'required' ? '•' : '○'}
                   </span>
                   <span className="flex-1">
@@ -457,10 +518,56 @@ export default function MotivationWizardPage() {
                         {n.why}
                       </span>
                     )}
+
+                    {/* ONE UPLOAD PER REQUIREMENT, and the confirmation right
+                        beside it. Operator, 2026-08-19. A single bulk picker
+                        made the member hold the mapping in their head — which
+                        of the eight files answered which line — and the only
+                        way to check was to count. Now the line either shows
+                        what is attached to it, or offers the button that
+                        attaches one. */}
+                    <span className="mt-1.5 block">
+                      {n.have ? (
+                        <AttachedTo
+                          kind={n.kind}
+                          uploads={uploads}
+                          onRemove={removeOneUpload}
+                        />
+                      ) : (
+                        <FilePickerButton
+                          accept="image/jpeg,image/png,image/webp,application/pdf"
+                          disabled={busyKind === n.kind}
+                          onFiles={async (files) => {
+                            const file = files[0];
+                            if (!file) return;
+                            setBusyKind(n.kind);
+                            setUploadErr(null);
+                            try {
+                              await addOneUpload(n.kind, file);
+                            } catch (ex) {
+                              setUploadErr(
+                                ex instanceof MotivationApiError
+                                  ? ex.message
+                                  : 'That upload did not work.',
+                              );
+                            } finally {
+                              setBusyKind(null);
+                            }
+                          }}
+                        >
+                          {busyKind === n.kind ? 'Reading…' : 'Add this one'}
+                        </FilePickerButton>
+                      )}
+                    </span>
                   </span>
                 </li>
               ))}
             </ul>
+            {uploadErr && (
+              <p className="border-t border-[var(--border-divider)] px-3 py-2 text-sm text-[var(--red)]">
+                {uploadErr}
+              </p>
+            )}
             <p className="border-t border-[var(--border-divider)] px-3 py-2 text-xs text-[var(--text-tertiary-on-card)]">
               Anything else you want to attach as supporting evidence is
               welcome — choose &ldquo;Something else&rdquo; below. We will
@@ -479,43 +586,8 @@ export default function MotivationWizardPage() {
             setDocuments(up.documents);
             setUploadKinds(up.kinds ?? []);
           }}
-          onAdd={async (kind, file) => {
-            const row = await motivationsApi.addUpload(token, id, kind, file);
-            setUploads((u) => [...u, row]);
-            // Re-read what is still needed: this upload may have satisfied a
-            // requirement, and the list must stop asking for it.
-            motivationsApi
-              .uploads(token, id)
-              .then((up) => {
-                setDocuments(up.documents);
-                setUploadKinds(up.kinds ?? []);
-              })
-              .catch(() => undefined);
-            if (row.suggestions?.length) {
-              // Only offer values for fields that are still empty — anything
-              // already answered stays exactly as they typed it.
-              setSuggestions((cur) => [
-                ...cur,
-                ...row.suggestions!.filter(
-                  (sg) =>
-                    !(answers[sg.key] ?? '').trim() &&
-                    !cur.some((c) => c.key === sg.key),
-                ),
-              ]);
-            }
-            return row;
-          }}
-          onRemove={async (uploadId) => {
-            await motivationsApi.removeUpload(token, id, uploadId);
-            setUploads((u) => u.filter((x) => x.id !== uploadId));
-            motivationsApi
-              .uploads(token, id)
-              .then((up) => {
-                setDocuments(up.documents);
-                setUploadKinds(up.kinds ?? []);
-              })
-              .catch(() => undefined);
-          }}
+          onAdd={addOneUpload}
+          onRemove={removeOneUpload}
         />
 
         {suggestions.length > 0 && (
@@ -950,6 +1022,11 @@ export default function MotivationWizardPage() {
       {/* Deleting was possible on the API from the start and had no way in
           from the wizard. It is a real erasure — the encrypted documents go
           with it — so it asks first and says what it is about to do. */}
+      {/* THE PACK, not just the motivation. The list already existed on the
+          server and nothing rendered it, while /motivations promised "a
+          checklist of everything to take to the police station". */}
+      <MotivationChecklistPanel token={token} motivationId={id} />
+
       <section className="mt-8 border-t border-[var(--border-divider)] pt-4">
         <button
           type="button"
@@ -1235,6 +1312,66 @@ function FollowUpAnswer({ onSubmit }: { onSubmit: (t: string) => Promise<void> }
         {busy ? 'Saving…' : 'Answer'}
       </button>
     </div>
+  );
+}
+
+/**
+ * What is attached to one requirement.
+ *
+ * The point of the line is confirmation: the member should be able to look at
+ * a requirement and see, without counting files, that something answers it and
+ * which annexure it became.
+ */
+function AttachedTo({
+  kind,
+  uploads,
+  onRemove,
+}: {
+  kind: string;
+  uploads: UploadRow[];
+  onRemove: (id: string) => Promise<void>;
+}) {
+  const mine = uploads.filter((u) => u.kind === kind);
+  if (!mine.length) {
+    // The status said this requirement is met but no row carries the kind —
+    // which happens for a moment after an upload, before the list re-reads.
+    return (
+      <span className="text-xs" style={{ color: 'var(--success)' }}>
+        Attached
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      {mine.map((u) => (
+        <span
+          key={u.id}
+          className="inline-flex items-center gap-2 rounded border px-2 py-1 text-xs"
+          style={{
+            borderColor: 'rgba(47,158,107,0.38)',
+            background: 'rgba(47,158,107,0.10)',
+            color: 'var(--text-primary)',
+          }}
+        >
+          <span aria-hidden style={{ color: 'var(--success)' }}>
+            ✓
+          </span>
+          <span>
+            Attached
+            {u.annexure ? ` \u00b7 Annexure ${u.annexure}` : ''}
+            {u.available ? '' : ' \u00b7 no longer stored'}
+          </span>
+          <button
+            type="button"
+            className="underline"
+            aria-label={`Remove ${u.label}`}
+            onClick={() => void onRemove(u.id)}
+          >
+            Remove
+          </button>
+        </span>
+      ))}
+    </span>
   );
 }
 

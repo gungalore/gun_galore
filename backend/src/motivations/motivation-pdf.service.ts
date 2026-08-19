@@ -91,6 +91,15 @@ export interface MotivationPdfInput {
    * motivation-checklist.ts.
    */
   annexures?: AnnexureEntry[];
+  /**
+   * What the applicant physically carries to the DFO.
+   *
+   * ⚠️ THE TICK BOXES STAY DIGITAL — that decision holds (operator,
+   * 2026-08-18). This is the other half of it: once the pack IS printed, the
+   * paper needs to say what goes with it, because the person walking into the
+   * station is holding paper and not a phone.
+   */
+  takeWithYou?: { label: string; note?: string }[];
 }
 
 /** A short line ending in a colon reads as a section heading. */
@@ -256,6 +265,58 @@ export class MotivationPdfService {
       .fontSize(8.5)
       .fillColor(GREY)
       .text(input.disclaimer, { width: contentWidth, lineGap: 1.5 });
+
+    // ── What to take to the station ───────────────────────────────────
+    //
+    // Last page but one, before the annexures, because it is the page the
+    // applicant reads on the morning they go.
+    if (input.takeWithYou?.length) {
+      doc.addPage();
+      doc
+        .font(FONT_BOLD)
+        .fontSize(13)
+        .fillColor(BLACK)
+        .text('TAKE THESE WITH YOU', { width: contentWidth });
+      doc.moveDown(0.4);
+      doc
+        .font(FONT)
+        .fontSize(9.5)
+        .fillColor(GREY)
+        .text(
+          'This motivation and its annexures are only part of the application. ' +
+            'A Designated Firearms Officer does not have to accept an incomplete ' +
+            'application and will not issue the acknowledgement of receipt until it ' +
+            'is complete, so it is worth checking every line before you travel. ' +
+            'Requirements differ between stations and this list is not exhaustive — ' +
+            'confirm it with your own DFO.',
+          { width: contentWidth, lineGap: 1.5 },
+        );
+      doc.moveDown(0.8);
+
+      for (const item of input.takeWithYou) {
+        // An empty box to tick with a pen. The applicant is standing at a
+        // kitchen table with a pile of paper, not looking at a screen.
+        const y = doc.y;
+        doc
+          .rect(MARGIN + 1, y + 1.5, 8, 8)
+          .lineWidth(0.7)
+          .strokeColor(GREY)
+          .stroke();
+        doc
+          .font(FONT)
+          .fontSize(BODY_SIZE)
+          .fillColor(BLACK)
+          .text(item.label, MARGIN + 16, y, { width: contentWidth - 16 });
+        if (item.note) {
+          doc
+            .font(FONT_ITALIC)
+            .fontSize(8.5)
+            .fillColor(GREY)
+            .text(item.note, MARGIN + 16, doc.y, { width: contentWidth - 16 });
+        }
+        doc.moveDown(0.45);
+      }
+    }
 
     // ── Annexure index ────────────────────────────────────────────────
     if (input.annexures?.length) {

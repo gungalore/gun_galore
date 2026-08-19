@@ -1702,9 +1702,16 @@ export class MotivationsService {
     const answers = this.readAnswers(row.answersEncrypted);
 
     // The annexure index closes the printed document so a reviewer can find
-    // anything the body cross-references. The CHECKLIST is deliberately not in
-    // here — it is a live surface on the platform and in the PWA (see
-    // checklist() below), because the pack stays digital until it is printed.
+    // anything the body cross-references.
+    //
+    // THE TICK BOXES stay a live surface on the platform and in the PWA (see
+    // checklist() below) — that is the operator's decision and it holds, the
+    // pack stays digital until it is printed. But once it IS printed, the
+    // paper has to say what goes with it: the applicant walking into the
+    // station is holding a pile of documents, not a phone. So the "take these
+    // with you" half of the checklist is rendered onto the last page, with
+    // boxes to tick with a pen, and the "your pack" half is not — that half is
+    // what they are already holding.
     const kinds = (row.uploads ?? []).map((u) => u.kind);
 
     return this.pdf.render({
@@ -1719,6 +1726,11 @@ export class MotivationsService {
       templateVersion: row.templateVersion ?? TEMPLATE_VERSION,
       generatedAt: row.completedAt ?? new Date(),
       annexures: buildAnnexures(kinds),
+      // The "take these to the police station" half of the checklist, and only
+      // that half — the other half is the pack they are already holding.
+      takeWithYou: buildChecklist(row.licenceType, kinds)
+        .sections.find((sec) => sec.key === 'theirs')
+        ?.items.map((i) => ({ label: i.label, note: i.note })),
     });
   }
 

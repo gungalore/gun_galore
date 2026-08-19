@@ -273,11 +273,16 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
   {
     key: 'passport_photos',
     label: 'Two passport photographs',
+    // The SAPS 271 says PLAIN, not white — a detail that costs a second trip
+    // to the photographer if you take the wrong ones.
+    note: 'Colour, against a plain background. The form says "plain", not white.',
   },
   {
     key: 'fee',
     label: 'The application fee, per firearm',
-    note: 'Confirm the current amount and how the station accepts payment.',
+    // The AMOUNT changes and is marked for checking; the SEQUENCE does not,
+    // and knowing it stops a wasted queue.
+    note: 'Per firearm, not per application. The DFO gives you a remittance advice, you pay at the station\u2019s own finance office, and the receipt goes back to the DFO to be attached. Confirm the current amount and what the station accepts \u2014 not every one takes cards.',
     verifyBeforeUse: true,
   },
   {
@@ -289,6 +294,13 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
     key: 'own_copy',
     label: 'A copy of the whole application, for yourself',
     note: 'You will want it if anything has to be followed up later.',
+  },
+  {
+    key: 'acknowledgement',
+    // Not a document they bring — the one they must not leave without.
+    label: 'Before you leave: the acknowledgement of receipt',
+    note: 'The DFO issues this once the application is accepted. It is your proof of the date you lodged, and your reference for any follow-up. Do not leave the station without it.',
+    verifyBeforeUse: true,
   },
   {
     key: 'dfo_extras',
@@ -372,8 +384,13 @@ export function buildChecklist(
       {
         key: 'theirs',
         title: 'Take these to the police station',
+        // ⚠️ WHY THIS LIST EXISTS, in one sentence the applicant can act on.
+        // Regulation 13(10): the DFO does not have to accept an incomplete
+        // application, and the acknowledgement is withheld until the pack IS
+        // complete. A pack checked before you travel is the difference between
+        // walking out with a receipt and walking out with nothing.
         intro:
-          'We do not hold these — you bring them yourself. Confirm the full list with your own DFO before you go: requirements differ between stations and this list is not exhaustive.',
+          'We do not hold these — you bring them yourself. A DFO does not have to accept an incomplete application, and will not issue the acknowledgement until it is complete, so it is worth checking every line before you travel. Requirements differ between stations and this list is not exhaustive: confirm it with your own DFO.',
         items: theirs,
       },
     ],

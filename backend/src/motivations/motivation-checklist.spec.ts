@@ -185,7 +185,13 @@ describe('the live checklist', () => {
     // saps_541 joined the list with the SAPS-checklist audit: whether a
     // station wants the 541 undertaking or its own safe inspection differs,
     // so it must be confirmed rather than asserted.
+    //
+    // acknowledgement joined it with the regulation research: the applicant
+    // must not leave without proof of the date they lodged, but the form
+    // number and exactly what the counter hands over are the kind of detail
+    // that changes — so it is flagged rather than stated.
     expect(flagged.map((i) => i.key).sort()).toEqual([
+      'acknowledgement',
       'fee',
       'saps_541',
       'saps_form',
