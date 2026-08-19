@@ -282,15 +282,21 @@ export async function processCapture(
     name?: string;
     expectAspect?: number;
     /**
-     * Where the member was asked to put the document, in THIS image's pixels.
+     * Where the member was asked to put the document, as FRACTIONS of the
+     * image — x, y, width and height all 0 to 1.
      *
-     * ⚠️ IT OVERRULES A DISAGREEING DETECTION. The operator lined a licence
-     * card up inside the corners, pressed the shutter, and got back a tall
-     * strip containing the card and a foot of blue blanket — because the
-     * detector found a tall rectangle on the carpet and processCapture
-     * trusted it without asking. Nothing in the image says which rectangle is
-     * the licence. The member does, by putting it in the box, and pressing
-     * the shutter while it is there is them saying so out loud.
+     * ⚠️ NORMALISED, NOT PIXELS, and that is the whole point. The first
+     * version took pixels of the captured frame, and `decode` below quietly
+     * shrinks anything over 3000px on its long edge — so on a 4K phone the
+     * box was applied to a raster a third smaller than the one it was
+     * measured against. It came out over-scaled and shifted down and right:
+     * the operator's card lost its top edge and gained a hand's width of
+     * carpet underneath. Fractions cannot drift, whatever anything downstream
+     * decides to rescale.
+     *
+     * ⚠️ IT OVERRULES A DISAGREEING DETECTION. Nothing in the image says
+     * which rectangle is the licence. The member does, by putting it in the
+     * box, and pressing the shutter while it is there is them saying so.
      */
     aimBox?: Rect;
   } = {},
@@ -299,6 +305,17 @@ export async function processCapture(
 
   let quad = opts.manualQuad ?? null;
   let from: ScanResult['source'] = opts.manualQuad ? 'manual' : 'frame';
+
+  // Fractions into this raster's own pixels, once, here — so everything below
+  // is talking about the same image.
+  const aim = opts.aimBox
+    ? {
+        x: opts.aimBox.x * raster.width,
+        y: opts.aimBox.y * raster.height,
+        width: opts.aimBox.width * raster.width,
+        height: opts.aimBox.height * raster.height,
+      }
+    : null;
 
   if (!quad) {
     // Detect on a small copy, then scale the corners back up.
@@ -313,21 +330,20 @@ export async function processCapture(
       // to do with the aim box is a detection of the desk, and cropping to it
       // throws the document away. The threshold is loose — this rejects "you
       // found the carpet", not "your corners are a few pixels out".
-      const agree =
-        !opts.aimBox || detectionAgreesWithAim(scaled, opts.aimBox);
+      const agree = !aim || detectionAgreesWithAim(scaled, aim);
       if (agree) {
         quad = scaled;
         from = 'detected';
       } else {
-        quad = rectToQuad(opts.aimBox!);
+        quad = rectToQuad(aim!);
         from = 'aim';
       }
-    } else if (opts.aimBox) {
+    } else if (aim) {
       // ⚠️ THE BOX BEATS THE WHOLE FRAME. Falling back to a 5%-inset frame
       // quad means cropping to everything the camera could see, which on a
       // desk is a photograph of the desk. If they lined it up and we simply
       // could not find an edge, the box is still the best answer we have.
-      quad = rectToQuad(opts.aimBox);
+      quad = rectToQuad(aim);
       from = 'aim';
     } else {
       quad = frameQuad(raster.width, raster.height, 0.05);

@@ -80,6 +80,15 @@ export interface DocumentScannerProps {
   onClose: () => void;
 }
 
+/**
+ * Why automatic capture has not fired yet.
+ *
+ * 'steady' is not a fault — it means everything else is satisfied and the
+ * only thing left is for the phone to stop moving, which is what the ring
+ * around the shutter is filling up to show.
+ */
+type Blocker = 'off' | 'searching' | 'aim' | 'settling' | 'light' | 'steady';
+
 type Phase =
   /**
    * ⚠️ THE CAMERA DOES NOT OPEN UNTIL THE MEMBER HAS SAID WHAT THEY ARE
@@ -193,6 +202,9 @@ export default function DocumentScanner({
   /** Consecutive frames the quad has been outside the box. */
   const aimMissRef = useRef(3);
   const [aimed, setAimed] = useState(false);
+  /** Which auto-capture condition is currently unmet. */
+  const blockerShownRef = useRef<Blocker>('searching');
+  const [blocker, setBlocker] = useState<Blocker>('searching');
   const captureRef = useRef<(() => Promise<void>) | null>(null);
 
   autoRef.current = auto;
@@ -466,10 +478,29 @@ export default function DocumentScanner({
       // slowly across a desk registers as still to a motion sensor.
       const now = performance.now();
       const q = quadRef.current;
-      // ⚠️ CONFIDENT, not merely locked. The lock says the corners have
-      // stopped moving; it says nothing about whether they are the DOCUMENT's
-      // corners. Firing on a locked-but-doubtful detection is how a member
-      // ends up with a confident, automatic photograph of their mousepad.
+
+      // ⚠️ SAY WHICH GATE IS SHUT. Auto-capture is four conditions and a
+      // timer, and when it does not fire the member sees a camera doing
+      // nothing — which is indistinguishable from a camera that is broken.
+      // Two rounds of "auto capture still not working" were spent guessing at
+      // this from the outside; the scanner knows the answer every frame and
+      // was simply not saying it.
+      const why: Blocker = !autoRef.current
+        ? 'off'
+        : !q
+          ? 'searching'
+          : !aimedRef.current
+            ? 'aim'
+            : lockRef.current < 3
+              ? 'settling'
+              : !exposureAllowsAutoCapture(glareRef.current, lumaRef.current)
+                ? 'light'
+                : 'steady';
+      if (why !== blockerShownRef.current) {
+        blockerShownRef.current = why;
+        setBlocker(why);
+      }
+
       if (
         autoRef.current &&
         q &&
@@ -598,17 +629,27 @@ export default function DocumentScanner({
       // Mapped from CSS pixels into the captured image's own pixels — the
       // capture is the VISIBLE region at full resolution, which is the same
       // region the box was drawn over, so it is one uniform scale.
+      // ⚠️ AS FRACTIONS, NOT PIXELS. The capture is the visible region, and
+      // the aim box was drawn over exactly that region, so the two share a
+      // coordinate space up to one scale factor — and expressing the box as a
+      // fraction of the element means nothing downstream has to know what
+      // that factor is. It used to be sent in captured pixels, and
+      // processCapture's own decode shrinks anything over 3000px, so on a 4K
+      // phone the crop came out over-scaled and low: the card lost its top
+      // edge and gained a hand's width of carpet.
       const el = video.getBoundingClientRect();
-      const k = el.width > 0 ? grabbed.width / el.width : 1;
       const box = aimBox(shape, { width: el.width, height: el.height });
       const res = await processCapture(blob, {
         expectAspect: expectAspectFor(shape),
-        aimBox: {
-          x: box.x * k,
-          y: box.y * k,
-          width: box.width * k,
-          height: box.height * k,
-        },
+        aimBox:
+          el.width > 0 && el.height > 0
+            ? {
+                x: box.x / el.width,
+                y: box.y / el.height,
+                width: box.width / el.width,
+                height: box.height / el.height,
+              }
+            : undefined,
       });
       setShot(res);
       setPhase('review');
@@ -803,11 +844,19 @@ export default function DocumentScanner({
                 instructions that disagree, and they will follow the picture.
                 Once the corners go green the only thing left to say is hold
                 still — anything else invites them to keep adjusting. */}
-            {aimed
-              ? auto
-                ? 'Got it — hold still.'
-                : 'Got it — take the photo.'
-              : `Put the ${SHAPES[shape].label.toLowerCase()} inside the red corners.`}
+            {!auto
+              ? aimed
+                ? 'Got it — take the photo.'
+                : `Put the ${SHAPES[shape].label.toLowerCase()} inside the red corners.`
+              : blocker === 'searching'
+                ? 'Looking for the edges…'
+                : blocker === 'aim'
+                  ? `Put the ${SHAPES[shape].label.toLowerCase()} inside the red corners.`
+                  : blocker === 'settling'
+                    ? 'Nearly — keep it there.'
+                    : blocker === 'light'
+                      ? 'Fix the lighting above and it will take itself.'
+                      : 'Got it — hold still.'}
           </p>
         )}
           </>
