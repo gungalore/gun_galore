@@ -401,7 +401,7 @@ document as printed always governs; the confirm screen and every reminder say so
 - Backup note: vault blobs join the nightly Box tree — worthless without
   `ID_HASH_SECRET`, same warning as everything else under that key.
 
-### Pricing — OPEN, operator decides
+### Pricing — DECIDED: model C, freemium (operator, 2026-08-19)
 
 | Model | Free tier | Paid | Trade-off |
 |---|---|---|---|
@@ -409,10 +409,14 @@ document as printed always governs; the confirm screen and every reminder say so
 | **B. Standalone sub** | view 1 credential | Centre sub ~R29/mo or ~R249/yr; PRO includes it | own revenue line; second billing surface to build and explain |
 | **C. Freemium (recommended)** | store + see expiry dates, unlimited | reminder AUTOMATION (SMS/push/email), family vault, renewal-pack discount = PRO | maximises documents-in (the moat and the prefill), sells PRO at the exact moment the member feels the deadline |
 
-Recommendation is **C**: storage free, automation paid. The renewal-pack table already
-monetises the deadline itself, so free storage costs us almost nothing and feeds
-everything. B stays available later as an annual "Centre pass" for people who will never
-trade.
+**Chosen: C.** Storage free, automation paid — store + see expiry dates free for
+everyone; reminder automation (SMS/push/email), family vault and a renewal-pack discount
+are AO Pro. The renewal-pack table already monetises the deadline itself, so free
+storage costs us almost nothing and feeds everything. B stays available later as an
+annual "Centre pass" for people who will never trade.
+
+**Build status: PLAN ONLY (operator, 2026-08-19).** Nothing starts — M-A/M-B included —
+until the operator says so.
 
 ### Build phases (each dark behind `licence_centre_enabled`, OFF = INERT)
 
