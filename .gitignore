@@ -214,3 +214,9 @@ postal-entry-preview.pdf
 /samples/
 /motivation-samples/
 *.motivation-sample.*
+
+# Real photographs used to calibrate the document scanner. A licence card
+# carries a name, an ID number and serials — these must NEVER be committed.
+# Regressions derived from them are rebuilt as SYNTHETIC scenes in lib/scan.
+scan-fixtures/
+frontend/.scan-diag-cache/

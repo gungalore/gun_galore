@@ -206,6 +206,112 @@ describe('edgeContrast', () => {
   });
 });
 
+/**
+ * THE OPERATOR'S DESK, reproduced.
+ *
+ * The first real phone test missed the licence card, and the photograph shows
+ * why: a WHITE card on a LIGHT marbled surface, filling ~15% of a portrait
+ * frame at a natural hand distance, with the card's own internal black table
+ * borders far stronger than its outer edge. Nothing in the original synthetic
+ * scenes had all three at once. This generator does — bright card, brighter
+ * speckled background, dark internal tables and text — so the failure lives in
+ * a test instead of only on a desk in South Africa.
+ */
+function cardScene(
+  w: number,
+  h: number,
+  card: { x0: number; y0: number; x1: number; y1: number },
+  seed = 3,
+): Gray {
+  const rand = rng(seed);
+  const data = new Uint8Array(w * h);
+  const cw = card.x1 - card.x0;
+  const ch = card.y1 - card.y0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v: number;
+      const inCard =
+        x >= card.x0 && x < card.x1 && y >= card.y0 && y < card.y1;
+      if (inCard) {
+        const u = (x - card.x0) / cw;
+        const t = (y - card.y0) / ch;
+        v = 231 + (rand() - 0.5) * 6;
+        // The portrait photo block, top right.
+        if (u > 0.72 && u < 0.95 && t > 0.06 && t < 0.42) v = 150;
+        // Header text rows.
+        if (u > 0.05 && u < 0.6 && t > 0.08 && t < 0.46) {
+          if (Math.floor(t * 18) % 2 === 0 && Math.floor(u * 30) % 3 !== 0)
+            v = 70;
+        }
+        // Two black-bordered tables — the strongest edges in the frame, and
+        // they are NOT the edges we want.
+        for (const [t0, t1] of [
+          [0.52, 0.72],
+          [0.76, 0.97],
+        ]) {
+          if (u > 0.03 && u < 0.97 && t > t0 && t < t1) {
+            const edge =
+              u < 0.05 || u > 0.95 || t < t0 + 0.02 || t > t1 - 0.02;
+            if (edge) v = 45;
+            else if (Math.floor(t * 40) % 2 === 0 && Math.floor(u * 25) % 4 !== 0)
+              v = 100;
+          }
+        }
+      } else {
+        // The marbled mousepad: light, blotchy, speckled.
+        v =
+          182 +
+          16 * Math.sin(x / 47) * Math.sin(y / 61) +
+          (rand() - 0.5) * 16;
+        if (rand() < 0.01) v += 35;
+      }
+      data[y * w + x] = Math.max(0, Math.min(255, Math.round(v)));
+    }
+  }
+  return { data, width: w, height: h };
+}
+
+describe('the operator’s desk — white card, light surface, hand distance', () => {
+  it('⚠️ finds the card at ~15% of the frame', () => {
+    // 158mm from an iPhone frames an ID-1 card at about this fraction. The
+    // first shipped floor was 0.15 — the card sat exactly on it and lost.
+    const W = 375;
+    const H = 500;
+    const card = { x0: 82, y0: 181, x1: 292, y1: 319 };
+    const got = detectQuad(cardScene(W, H, card))!;
+    expect(got).not.toBeNull();
+    const want = rect(card.x0, card.y0, card.x1, card.y1);
+    expect(cornerError(got.quad, want, W, H)).toBeLessThan(0.05);
+  });
+
+  it('still finds it a hand-span further away (~8%)', () => {
+    const W = 375;
+    const H = 500;
+    const card = { x0: 112, y0: 200, x1: 262, y1: 300 };
+    const got = detectQuad(cardScene(W, H, card, 11))!;
+    expect(got).not.toBeNull();
+    const want = rect(card.x0, card.y0, card.x1, card.y1);
+    expect(cornerError(got.quad, want, W, H)).toBeLessThan(0.05);
+  });
+
+  it('marks the CARD, not one of its own internal tables', () => {
+    // The tables are the strongest lines in the frame. A detector that
+    // prefers votes over interior-vs-exterior contrast crops half the card
+    // off — confidently.
+    const W = 375;
+    const H = 500;
+    const card = { x0: 82, y0: 181, x1: 292, y1: 319 };
+    const got = detectQuad(cardScene(W, H, card, 5))!;
+    expect(got).not.toBeNull();
+    const gotArea = Math.abs(
+      (got.quad[1].x - got.quad[0].x) * (got.quad[3].y - got.quad[0].y),
+    );
+    const cardArea = (card.x1 - card.x0) * (card.y1 - card.y0);
+    // An internal table is well under half the card.
+    expect(gotArea).toBeGreaterThan(cardArea * 0.7);
+  });
+});
+
 describe('detectQuad', () => {
   it('finds a square-on document', () => {
     const want = rect(60, 40, 260, 200);

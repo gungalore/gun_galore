@@ -10,7 +10,7 @@ import {
   verdicts,
 } from '@/lib/scan/capture';
 import { detectQuad } from '@/lib/scan/detect';
-import { Pt, Quad, smoothQuad } from '@/lib/scan/geometry';
+import { Pt, Quad, quadDrift, smoothQuad } from '@/lib/scan/geometry';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SCANNER.
@@ -171,8 +171,23 @@ export default function DocumentScanner({
             x: p.x * k,
             y: p.y * k,
           })) as Quad;
-          quadRef.current = smoothQuad(quadRef.current, scaled, 0.35);
-          lockRef.current = Math.min(3, lockRef.current + 1);
+          // ⚠️ CONSISTENCY BEFORE CONFIDENCE. The first version counted ANY
+          // detection towards the lock — so when successive frames found two
+          // DIFFERENT rectangles (the card, then the table edge, then the
+          // card again), the lock still climbed and the EMA dragged the
+          // markers back and forth between them. That was the jitter the
+          // operator saw. Now only a detection that AGREES with the current
+          // quad — within 8% of the frame — counts; a different rectangle
+          // starts over, snapped rather than glided to, because gliding
+          // across the frame between two candidates IS the jitter.
+          const prev = quadRef.current;
+          if (prev && quadDrift(prev, scaled) <= video.videoWidth * 0.08) {
+            quadRef.current = smoothQuad(prev, scaled, 0.35);
+            lockRef.current = Math.min(3, lockRef.current + 1);
+          } else {
+            quadRef.current = scaled;
+            lockRef.current = 1;
+          }
         } else {
           // ⚠️ NEVER BLINK OFF. A single frame where a hand shadowed an edge
           // must not flash the markers away — it reads as a fault. Decay
@@ -209,7 +224,10 @@ export default function DocumentScanner({
         if (g) {
           g.clearRect(0, 0, cv.width, cv.height);
           const q = quadRef.current;
-          if (q && lockRef.current > 0) {
+          // Drawn only once TWO consecutive detections have agreed. A single
+          // unconfirmed candidate stays invisible — honest "still looking"
+          // beats markers that flicker somewhere wrong for one frame.
+          if (q && lockRef.current >= 2) {
             // The video is object-fit: cover, so map through the same crop.
             const sx = cv.width / video.videoWidth;
             const sy = cv.height / video.videoHeight;
