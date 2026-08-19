@@ -13,6 +13,7 @@ import {
   PickableKind,
   ProfileOffer,
   Suggestion,
+  AddedUpload,
   UploadRow,
   SAPS271_FILL,
   SAPS271_OPT_KEY,
@@ -416,6 +417,13 @@ export default function MotivationWizardPage() {
         <UploadPanel
           uploads={uploads}
           kinds={uploadKinds}
+          onRefile={async (uploadId, nextKind) => {
+            await motivationsApi.refileUpload(token, id, uploadId, nextKind);
+            const up = await motivationsApi.uploads(token, id);
+            setUploads(up.files);
+            setDocuments(up.documents);
+            setUploadKinds(up.kinds ?? []);
+          }}
           onAdd={async (kind, file) => {
             const row = await motivationsApi.addUpload(token, id, kind, file);
             setUploads((u) => [...u, row]);
@@ -440,6 +448,7 @@ export default function MotivationWizardPage() {
                 ),
               ]);
             }
+            return row;
           }}
           onRemove={async (uploadId) => {
             await motivationsApi.removeUpload(token, id, uploadId);
@@ -989,11 +998,13 @@ function UploadPanel({
   uploads,
   kinds,
   onAdd,
+  onRefile,
   onRemove,
 }: {
   uploads: UploadRow[];
   kinds: PickableKind[];
-  onAdd: (kind: string, file: File) => Promise<void>;
+  onAdd: (kind: string, file: File) => Promise<AddedUpload | undefined>;
+  onRefile: (uploadId: string, kind: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 }) {
   // Empty string until the list arrives, and the file input stays disabled
@@ -1001,6 +1012,14 @@ function UploadPanel({
   const [kind, setKind] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** Per-file state while a pack is going up: "3 of 8 — competency…". */
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
+  /** What the server named each auto-filed document, pending confirmation. */
+  const [filed, setFiled] = useState<
+    { id: string; name: string; kind: string; confident: boolean }[]
+  >([]);
 
   // Follow the server's first choice, which is the first thing still needed.
   // Only while nothing has been picked: re-selecting under the applicant after
@@ -1017,6 +1036,7 @@ function UploadPanel({
           value={kind}
           onChange={(e) => setKind(e.target.value)}
           aria-label="Document type"
+          title="Used when you add one file. A pack is sorted automatically."
         >
           {kinds.map((k) => (
             <option key={k.kind} value={k.kind}>
@@ -1032,31 +1052,123 @@ function UploadPanel({
           type="file"
           className="text-sm"
           accept="image/jpeg,image/png,image/webp,application/pdf"
-          disabled={busy || !kind}
+          // A PACK GOES UP IN ONE GO. Picking one file at a time and choosing
+          // a type for each is the slowest possible way to hand over documents
+          // somebody already has sitting in a folder.
+          multiple
+          disabled={busy}
           onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
+            const files = Array.from(e.target.files ?? []);
+            if (!files.length) return;
             setBusy(true);
             setErr(null);
-            try {
-              await onAdd(kind, file);
-            } catch (ex) {
-              setErr(
-                ex instanceof MotivationApiError
-                  ? ex.message
-                  : 'That upload did not work.',
-              );
-            } finally {
-              setBusy(false);
-              e.target.value = '';
+            setFiled([]);
+            setProgress({ done: 0, total: files.length });
+
+            // ONE AT A TIME, deliberately. Each upload writes an encrypted
+            // file and makes a vision call; firing eight at once would race the
+            // per-minute limit and give no usable progress.
+            const named: typeof filed = [];
+            const failed: string[] = [];
+            for (const [i, file] of files.entries()) {
+              try {
+                // ONE file keeps the type they picked. SEVERAL are a pack, so
+                // each is named from its contents — nobody labels eight files
+                // in a dropdown before uploading them.
+                const added = await onAdd(files.length === 1 ? kind : '', file);
+                if (added?.autoFiled) {
+                  named.push({
+                    id: added.id,
+                    name: file.name,
+                    kind: added.kind,
+                    confident: added.confident === true,
+                  });
+                }
+              } catch (ex) {
+                // One bad file must not abandon the rest of the pack.
+                failed.push(
+                  `${file.name}: ${
+                    ex instanceof MotivationApiError
+                      ? ex.message
+                      : 'did not upload'
+                  }`,
+                );
+              }
+              setProgress({ done: i + 1, total: files.length });
             }
+
+            setFiled(named);
+            setErr(failed.length ? failed.join(' · ') : null);
+            setBusy(false);
+            setProgress(null);
+            e.target.value = '';
           }}
         />
       </div>
       <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]">
-        JPG, PNG, WebP or PDF, up to 10 MB. On an iPhone, choose the photo from
-        your library rather than a file — iOS converts it for you.
+        JPG, PNG, WebP or PDF, up to 10 MB each. Pick several at once if you
+        have a pack ready — we will work out what each one is. On an iPhone,
+        choose the photos from your library rather than from Files.
       </p>
+
+      {progress && (
+        <p className="mt-2 text-sm" aria-live="polite">
+          Uploading {progress.done + 1} of {progress.total}…
+        </p>
+      )}
+
+      {/* WHAT WE FILED EACH DOCUMENT AS.
+          Shown because the required-documents list counts the TYPE, not the
+          contents — so a document filed wrongly would tick a requirement the
+          pack does not actually meet. Correcting it is one dropdown. */}
+      {filed.length > 0 && (
+        <div className="mt-3 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3">
+          <p className="text-sm font-medium">
+            Here is what we made of them — change any that are wrong
+          </p>
+          <ul className="mt-2 space-y-2">
+            {filed.map((f) => (
+              <li key={f.id} className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="min-w-0 flex-1 truncate" title={f.name}>
+                  {f.name}
+                  {!f.confident && (
+                    <span className="ml-2 text-xs text-[var(--warning)]">
+                      not sure
+                    </span>
+                  )}
+                </span>
+                <select
+                  className="rounded border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1 text-sm text-[var(--text-primary)] [&>option]:bg-[var(--bg-card)] [&>option]:text-[var(--text-primary)]"
+                  value={f.kind}
+                  aria-label={`Document type for ${f.name}`}
+                  onChange={async (e) => {
+                    const next = e.target.value;
+                    setFiled((cur) =>
+                      cur.map((x) =>
+                        x.id === f.id ? { ...x, kind: next, confident: true } : x,
+                      ),
+                    );
+                    await onRefile(f.id, next);
+                  }}
+                >
+                  {kinds.map((k) => (
+                    <option key={k.kind} value={k.kind}>
+                      {k.label}
+                    </option>
+                  ))}
+                </select>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            className="mt-2 text-xs underline"
+            onClick={() => setFiled([])}
+          >
+            These are right
+          </button>
+        </div>
+      )}
       {err && <p className="mt-2 text-sm text-[var(--red)]">{err}</p>}
 
       <ul className="mt-3 divide-y divide-[var(--border-divider)] rounded border border-[var(--border)]">

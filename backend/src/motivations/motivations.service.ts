@@ -748,6 +748,23 @@ export class MotivationsService {
       );
     }
 
+    // NAME IT, if they did not. Before the row, because the kind is a column
+    // on it — and fail-soft: an unsortable document becomes OTHER, which reads
+    // as unsorted rather than as a satisfied requirement.
+    let resolved: MotivationUploadKind = kind ?? 'OTHER';
+    let autoFiled = false;
+    let confident = false;
+    if (!kind) {
+      const guess = await this.extract
+        .classify({ bytes: file.buffer, mimeType: file.mimetype })
+        .catch(() => null);
+      autoFiled = true;
+      if (guess) {
+        resolved = guess.kind;
+        confident = guess.confident;
+      }
+    }
+
     // Written before the row so a duplicate is detected by the DATABASE rather
     // than by reading first and writing after — that read-then-write is a race,
     // and two uploads of one file arriving together would both survive it.
@@ -770,7 +787,7 @@ export class MotivationsService {
       const created = await this.prisma.motivationUpload.create({
         data: {
           motivationId: row.id,
-          kind,
+          kind: resolved,
           storageKey: stored.storageKey,
           mimeType: file.mimetype,
           byteSize: stored.byteSize,
@@ -790,10 +807,10 @@ export class MotivationsService {
       // returned for confirmation: a misread digit in an ID number would
       // otherwise become a false statement on a form they sign.
       let suggestions: ExtractedField[] = [];
-      if (!opts.skipExtraction && MotivationExtractService.canExtract(kind)) {
+      if (!opts.skipExtraction && MotivationExtractService.canExtract(resolved)) {
         try {
           suggestions = await this.extract.extract({
-            kind,
+            kind: resolved,
             licenceType: row.licenceType,
             bytes: file.buffer,
             mimeType: file.mimetype,
@@ -823,7 +840,9 @@ export class MotivationsService {
         }
       }
 
-      return { ...created, suggestions };
+      // The wizard shows what each document was filed as, and `autoFiled` is
+      // what tells it which rows to put a correction control on.
+      return { ...created, suggestions, autoFiled, confident };
     } catch (err) {
       // Whatever went wrong, the bytes must not outlive the attempt: a file
       // with no row pointing at it is undeletable except by hand.

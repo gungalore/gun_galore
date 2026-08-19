@@ -49,6 +49,16 @@ const MODEL =
   process.env.ANTHROPIC_MODEL_JUDGE ??
   'claude-sonnet-4-6';
 
+/**
+ * "Which document is this?" runs on the CHEAP model.
+ *
+ * Naming a document is a far easier job than reading one, and it happens once
+ * per file in a pack — a member uploading eight documents should not pay eight
+ * Sonnet calls to have them sorted into piles.
+ */
+const MODEL_CLASSIFY =
+  process.env.ANTHROPIC_MODEL_SIMPLE ?? 'claude-haiku-4-5';
+
 /** What each document kind can plausibly yield. Nothing else is accepted. */
 const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
   IDENTITY_DOCUMENT: ['full_name', 'id_number'],
@@ -234,6 +244,64 @@ export class MotivationExtractService {
     return this.parse(text, asked, args.kind);
   }
 
+  /**
+   * NAME THE DOCUMENT.
+   *
+   * Exists because the required-documents checklist ticks on the KIND the
+   * member picked from a dropdown, not on what is in the file — so a
+   * mislabelled upload shows the requirement satisfied while the pack is
+   * actually missing it. That is not hypothetical: the operator's own proof of
+   * address went in as an identity document because the picker defaults to its
+   * first option.
+   *
+   * ⚠️ IT PROPOSES; IT NEVER OVERRULES. A kind the member chose explicitly is
+   * kept whatever this returns. Only an upload with no kind — one file of a
+   * batch — is filed on this, and the wizard shows what each was filed as with
+   * a way to change it.
+   *
+   * Returns null when it cannot tell, and null means OTHER: a document filed
+   * as "something else" is visibly unsorted, where a confident wrong guess
+   * looks like a satisfied requirement.
+   */
+  async classify(args: {
+    bytes: Buffer;
+    mimeType: string;
+  }): Promise<{ kind: MotivationUploadKind; confident: boolean } | null> {
+    if (!this.client) return null;
+
+    const block = contentBlock(args.bytes, args.mimeType);
+
+    let text = '';
+    try {
+      const res = await this.client.messages.create({
+        model: MODEL_CLASSIFY,
+        max_tokens: 200,
+        system: CLASSIFY_SYSTEM,
+        messages: [
+          { role: 'user', content: [block, { type: 'text', text: CLASSIFY_USER }] },
+        ],
+      });
+      const first = res.content.find((b) => b.type === 'text');
+      text = first && 'text' in first ? first.text.trim() : '';
+    } catch (err) {
+      // Fail soft, like every other model call here: an unsorted document is
+      // a small inconvenience, a failed upload is not.
+      this.logger.warn(`Classification failed: ${(err as Error).message}`);
+      return null;
+    }
+
+    try {
+      const m = text.match(/\{[\s\S]*\}/);
+      if (!m) return null;
+      const parsed = JSON.parse(m[0]) as { kind?: string; confidence?: string };
+      const kind = (parsed.kind ?? '').trim() as MotivationUploadKind;
+      if (!CLASSIFIABLE.includes(kind)) return null;
+      return { kind, confident: (parsed.confidence ?? '') === 'high' };
+    } catch {
+      return null;
+    }
+  }
+
   private systemPrompt(): string {
     return `
 You read a photographed or scanned South African document and transcribe
@@ -349,3 +417,87 @@ const UPLOAD_LABEL: Partial<Record<MotivationUploadKind, string>> = {
   ASSOCIATION_CARD: 'your association card',
   CURRENT_LICENCE: 'your existing licence',
 };
+
+/** The kinds a photograph can actually be sorted into. */
+const CLASSIFIABLE: MotivationUploadKind[] = [
+  'IDENTITY_DOCUMENT',
+  'COMPETENCY_CERTIFICATE',
+  'PROFICIENCY_CERTIFICATE',
+  'CURRENT_LICENCE',
+  'ASSOCIATION_CARD',
+  'ADDRESS_CONFIRMATION',
+  'EMPLOYMENT_CONFIRMATION',
+  'SAFE_PHOTO_CLOSED',
+  'SAFE_PHOTO_AJAR',
+  'SAFE_PHOTO_BOLTS',
+  'SAFE_INSTALLATION',
+  'CHARACTER_REFERENCE',
+  'INCIDENT_REPORT',
+  'PREVIOUS_MOTIVATION',
+  'OTHER',
+];
+
+/** One base64 content block, image or PDF. Shared by read and classify. */
+function contentBlock(bytes: Buffer, mimeType: string) {
+  if (mimeType === 'application/pdf') {
+    return {
+      type: 'document' as const,
+      source: {
+        type: 'base64' as const,
+        media_type: 'application/pdf' as const,
+        data: bytes.toString('base64'),
+      },
+    };
+  }
+  return {
+    type: 'image' as const,
+    source: {
+      type: 'base64' as const,
+      media_type: (mimeType === 'image/png'
+        ? 'image/png'
+        : mimeType === 'image/webp'
+          ? 'image/webp'
+          : 'image/jpeg') as 'image/png' | 'image/webp' | 'image/jpeg',
+      data: bytes.toString('base64'),
+    },
+  };
+}
+
+const CLASSIFY_SYSTEM = `
+You sort a photographed or scanned South African document into exactly one
+category. You are sorting, not reading: you do not need to transcribe anything.
+
+Answer with the category you can actually see evidence for. "OTHER" is a real
+answer and a useful one — a document filed as "something else" is visibly
+unsorted, where a confident wrong answer looks like a satisfied requirement on
+a firearm licence application.
+
+Return STRICT JSON and nothing else:
+{"kind":"<one category>","confidence":"high"|"low"}
+`.trim();
+
+const CLASSIFY_USER = [
+  'Which of these is this document? Answer with the exact string.',
+  '',
+  'IDENTITY_DOCUMENT - a South African ID book, ID card, or passport',
+  'COMPETENCY_CERTIFICATE - a SAPS competency certificate',
+  'PROFICIENCY_CERTIFICATE - a proficiency or firearm training certificate',
+  'CURRENT_LICENCE - a firearm licence card or certificate',
+  'ASSOCIATION_CARD - hunting or sport-shooting association membership',
+  'ADDRESS_CONFIRMATION - proof of address: a municipal bill, bank statement,',
+  '  lease or affidavit showing a residential address',
+  'EMPLOYMENT_CONFIRMATION - a letter confirming employment',
+  'SAFE_PHOTO_CLOSED - a photograph of a gun safe, CLOSED',
+  'SAFE_PHOTO_AJAR - a photograph of a gun safe, part open with a key in the door',
+  'SAFE_PHOTO_BOLTS - a photograph of a gun safe, open with the locking bolts visible',
+  'SAFE_INSTALLATION - a photograph showing a safe bolted to a wall or floor',
+  'CHARACTER_REFERENCE - a personal reference letter about someone',
+  'INCIDENT_REPORT - a SAPS case document or armed-response incident report',
+  'PREVIOUS_MOTIVATION - a previously written firearm licence motivation',
+  'OTHER - anything else, or you cannot tell',
+  '',
+  'For the three safe photographs, look at the door: shut is CLOSED, part open',
+  'with a key in the lock is AJAR, and wide open showing the bolts that stick',
+  'out of the door edge is BOLTS. If it shows the safe fixed to a wall or',
+  'floor rather than the door, that is SAFE_INSTALLATION.',
+].join('\n');

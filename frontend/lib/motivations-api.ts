@@ -155,6 +155,13 @@ export interface Suggestion {
   note?: string;
 }
 
+export interface AddedUpload extends UploadRow {
+  suggestions?: Suggestion[];
+  /** We chose the type, not the member — so offer a correction. */
+  autoFiled?: boolean;
+  confident?: boolean;
+}
+
 export interface UploadRow {
   id: string;
   kind: string;
@@ -268,13 +275,20 @@ export const motivationsApi = {
       },
     ),
 
+  /**
+   * Add one document.
+   *
+   * `kind` may be EMPTY, which means "sort it for me" — the server names the
+   * document from its contents. That is how a whole pack goes up at once: the
+   * member cannot label files that do not exist yet.
+   */
   addUpload: async (t: TokenGetter, id: string, kind: string, file: File) => {
     const form = new FormData();
     form.append('kind', kind);
     form.append('file', file);
     // The response carries SUGGESTIONS read off the document. They are not
     // answers yet — the applicant confirms them first.
-    return request<UploadRow & { suggestions?: Suggestion[] }>(
+    return request<AddedUpload>(
       t,
       `/${id}/uploads`,
       { method: 'POST', body: form },
@@ -292,6 +306,15 @@ export const motivationsApi = {
       `/${id}/uploads/apply`,
       { method: 'POST', body: JSON.stringify({ answers }) },
       { filled: 0, missingRequired: [] },
+    ),
+
+  /** Refile a document under a different type. */
+  refileUpload: (t: TokenGetter, id: string, uploadId: string, kind: string) =>
+    request<{ kind: string }>(
+      t,
+      `/${id}/uploads/${uploadId}`,
+      { method: 'PATCH', body: JSON.stringify({ kind }) },
+      { kind },
     ),
 
   removeUpload: (t: TokenGetter, id: string, uploadId: string) =>
