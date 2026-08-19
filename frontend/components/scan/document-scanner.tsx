@@ -39,6 +39,11 @@ import { Pt, Quad, quadDrift, smoothQuad } from '@/lib/scan/geometry';
 
 const Z = 130;
 
+/** The guide's shape, as the aspect the detector should lean towards. */
+function expectAspectFor(shape: 'card' | 'page'): number {
+  return shape === 'card' ? 85.6 / 53.98 : Math.SQRT2;
+}
+
 /** Detection interval, in ms, at each health level. */
 const RATES = [100, 200] as const;
 
@@ -70,12 +75,34 @@ export default function DocumentScanner({
   const [pages, setPages] = useState<File[]>([]);
   const [editing, setEditing] = useState(false);
   const [said, setSaid] = useState('');
+  /**
+   * Auto-capture: shoot by itself once the corners are locked AND the phone
+   * has stopped moving. On by default, because the operator asked for it and
+   * because the moment somebody stops moving IS the sharpest frame they are
+   * going to give us — a finger reaching for a shutter is what blurs it.
+   *
+   * ⚠️ IT MUST BE POSSIBLE TO TURN OFF. Auto-capture fires while a member is
+   * still positioning, and on a document whose edges it is reading wrongly it
+   * will keep firing. The switch stays on screen, and one manual capture
+   * turns it off for the session.
+   */
+  const [auto, setAuto] = useState(true);
+  const [holdPct, setHoldPct] = useState(0);
 
   // The live quad, and whether it has been steady long enough to trust.
   const quadRef = useRef<Quad | null>(null);
   const lockRef = useRef(0);
   const rawBlobRef = useRef<Blob | null>(null);
   const closedRef = useRef(false);
+  // Read by the detect loop, which must not re-subscribe when these change —
+  // tearing the loop down mid-hold would reset the stillness timer forever.
+  const autoRef = useRef(true);
+  const holdRef = useRef(0);
+  const capturingRef = useRef(false);
+  const captureRef = useRef<(() => Promise<void>) | null>(null);
+
+  autoRef.current = auto;
+  holdRef.current = holdPct;
 
   const say = useCallback((m: string) => {
     setSaid('');
@@ -153,6 +180,14 @@ export default function DocumentScanner({
     let rolling = 0;
     let alive = true;
 
+    // How long the quad must sit still before the shutter fires, and how far
+    // a corner may drift while it does. 700ms is long enough not to fire while
+    // somebody is still framing, short enough not to feel broken.
+    const HOLD_MS = 700;
+    const STEADY_FRAC = 0.02;
+    let steadySince = 0;
+    let steadyQuad: Quad | null = null;
+
     const detectOnce = () => {
       if (!alive) return;
       const video = videoRef.current;
@@ -164,7 +199,9 @@ export default function DocumentScanner({
       const t0 = performance.now();
       try {
         const gray = frameToGray(video, scratch);
-        const found = gray ? detectQuad(gray) : null;
+        const found = gray
+          ? detectQuad(gray, { expectAspect: expectAspectFor(shape) })
+          : null;
         if (found) {
           const k = video.videoWidth / scratch.canvas.width;
           const scaled = found.quad.map((p) => ({
@@ -198,7 +235,40 @@ export default function DocumentScanner({
       } catch {
         quadRef.current = null;
       }
-      const ms = performance.now() - t0;
+      // ── the stillness gate ──────────────────────────────────────────
+      //
+      // Locked corners are not enough: the detector locks while the phone is
+      // still drifting, and a capture taken mid-drift is the blurry one the
+      // member then has to retake. So the quad must ALSO have stopped moving
+      // — measured on the quad itself rather than on the accelerometer,
+      // because it is the image that has to be sharp, and a phone panning
+      // slowly across a desk registers as still to a motion sensor.
+      const now = performance.now();
+      const q = quadRef.current;
+      if (autoRef.current && q && lockRef.current >= 3) {
+        const drift = steadyQuad ? quadDrift(steadyQuad, q) : Infinity;
+        if (drift <= video.videoWidth * STEADY_FRAC) {
+          if (!steadySince) steadySince = now;
+        } else {
+          steadySince = now;
+        }
+        steadyQuad = q;
+        const held = steadySince ? now - steadySince : 0;
+        setHoldPct(Math.min(1, held / HOLD_MS));
+        if (held >= HOLD_MS && !capturingRef.current) {
+          capturingRef.current = true;
+          alive = false;
+          setHoldPct(0);
+          void captureRef.current?.();
+          return;
+        }
+      } else {
+        steadySince = 0;
+        steadyQuad = null;
+        if (holdRef.current !== 0) setHoldPct(0);
+      }
+
+      const ms = now - t0;
       rolling = rolling * 0.8 + ms * 0.2;
       // A phone that cannot keep up slows down, then stops trying. The
       // capture-time detection still runs either way.
@@ -252,12 +322,14 @@ export default function DocumentScanner({
       window.clearTimeout(timer);
       cancelAnimationFrame(raf);
     };
-  }, [phase]);
+  }, [phase, shape]);
 
   // ── the shutter ───────────────────────────────────────────────────
   const capture = useCallback(async () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
+    capturingRef.current = true;
+    setHoldPct(0);
     setPhase('working');
     say('Photo taken. Straightening it up.');
     try {
@@ -270,7 +342,9 @@ export default function DocumentScanner({
       );
       if (!blob) throw new Error('We could not take that photo.');
       rawBlobRef.current = blob;
-      const res = await processCapture(blob);
+      const res = await processCapture(blob, {
+        expectAspect: expectAspectFor(shape),
+      });
       setShot(res);
       setPhase('review');
       say(
@@ -281,8 +355,12 @@ export default function DocumentScanner({
     } catch (e) {
       setErr((e as Error).message || 'That did not work. Try again.');
       setPhase('live');
+    } finally {
+      capturingRef.current = false;
     }
-  }, [say]);
+  }, [say, shape]);
+
+  captureRef.current = capture;
 
   /** Re-run with corners the member dragged. Detection is deliberately skipped. */
   const reprocess = useCallback(
@@ -377,6 +455,26 @@ export default function DocumentScanner({
               }}
             />
             <GuideFrame shape={shape} />
+        {phase === 'live' && (
+          <p
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 12,
+              margin: 0,
+              textAlign: 'center',
+              fontSize: 13,
+              color: '#fff',
+              textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+              pointerEvents: 'none',
+            }}
+          >
+            {auto
+              ? 'Line it up and hold still — it takes the photo itself.'
+              : 'Line it up inside the frame.'}
+          </p>
+        )}
           </>
         )}
 
@@ -449,7 +547,14 @@ export default function DocumentScanner({
               setHasTorch(false);
             }
           }}
-          onShutter={capture}
+          onShutter={() => {
+            // Reaching for the shutter says the automatic one is not helping.
+            setAuto(false);
+            void capture();
+          }}
+          auto={auto}
+          onAuto={() => setAuto((a2) => !a2)}
+          holdPct={holdPct}
           onDone={pages.length ? () => void finish(pages) : undefined}
           pages={pages.length}
         />
@@ -648,6 +753,9 @@ function Controls({
   onShutter,
   onDone,
   pages,
+  auto,
+  onAuto,
+  holdPct,
 }: {
   hasTorch: boolean;
   torchOn: boolean;
@@ -655,6 +763,9 @@ function Controls({
   onShutter: () => void;
   onDone?: () => void;
   pages: number;
+  auto: boolean;
+  onAuto: () => void;
+  holdPct: number;
 }) {
   return (
     <div
@@ -691,20 +802,67 @@ function Controls({
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={onShutter}
-        aria-label="Take the photo"
-        style={{
-          width: 72,
-          height: 72,
-          borderRadius: '50%',
-          border: '4px solid #fff',
-          background: 'rgba(255,255,255,0.18)',
-        }}
-      />
+      <div style={{ position: 'relative', width: 72, height: 72 }}>
+        {/* The hold ring: fills as the phone holds still, so an automatic
+            capture is never a surprise — the member can see it coming and
+            move if they did not mean it. */}
+        {auto && holdPct > 0 && (
+          <svg
+            width="72"
+            height="72"
+            viewBox="0 0 72 72"
+            aria-hidden="true"
+            style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}
+          >
+            <circle
+              cx="36"
+              cy="36"
+              r="33"
+              fill="none"
+              stroke={MARK}
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeDasharray={`${holdPct * 207} 207`}
+            />
+          </svg>
+        )}
+        <button
+          type="button"
+          onClick={onShutter}
+          aria-label="Take the photo"
+          style={{
+            width: 72,
+            height: 72,
+            borderRadius: '50%',
+            border: '4px solid #fff',
+            background: 'rgba(255,255,255,0.18)',
+          }}
+        />
+      </div>
 
       <div style={{ width: 88, textAlign: 'right' }}>
+        <button
+          type="button"
+          onClick={onAuto}
+          aria-pressed={auto}
+          aria-label={
+            auto
+              ? 'Automatic capture is on. Turn it off.'
+              : 'Automatic capture is off. Turn it on.'
+          }
+          style={{
+            minHeight: 44,
+            padding: '0 10px',
+            borderRadius: 8,
+            border: '1px solid rgba(255,255,255,0.3)',
+            background: auto ? 'rgba(77,163,255,0.25)' : 'transparent',
+            color: '#fff',
+            fontSize: 13,
+            marginBottom: onDone ? 8 : 0,
+          }}
+        >
+          {auto ? 'Auto on' : 'Auto off'}
+        </button>
         {onDone && (
           <button
             type="button"

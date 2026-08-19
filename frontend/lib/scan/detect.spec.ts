@@ -312,6 +312,68 @@ describe('the operator’s desk — white card, light surface, hand distance', (
   });
 });
 
+describe('the mat underneath — nested rectangles', () => {
+  // ⚠️ KNOWN LIMITATION, WRITTEN DOWN RATHER THAN HIDDEN.
+  //
+  // A document lying on a mat gives that mat a stronger border against the
+  // desk than the document has against the mat — so the mat's own edges win
+  // the line shortlist outright and the document's never reach quad assembly.
+  // Growing from those seeds cannot help: every seed IS the mat.
+  //
+  // Two fixes were tried and both made other scenes worse: bounding the
+  // growth walk inside the winner, and re-running detection restricted to its
+  // interior. The honest position is that this needs the line stage to carry
+  // BOTH nested rectangles — a real change, not a threshold — and until then
+  // the corner editor is the answer for a document on a mat.
+  //
+  // The test stays, skipped, so the day someone fixes it there is already a
+  // definition of done.
+  it.skip('marks the printed CARD, not the mousepad it lies on', () => {
+    // The real-photo failure family: a mousepad is itself a perfect
+    // "document" by border physics — convex, strong edge, quiet desk beyond —
+    // with the card as its "print". Ink density is what separates them, and
+    // this pins it.
+    const W = 375;
+    const H = 500;
+    const g: Gray = { data: new Uint8Array(W * H), width: W, height: H };
+    const mat = { x0: 40, y0: 90, x1: 335, y1: 430 };
+    const card = { x0: 110, y0: 200, x1: 265, y1: 305 };
+    const r = rng(21);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        let v: number;
+        const inMat = x >= mat.x0 && x < mat.x1 && y >= mat.y0 && y < mat.y1;
+        const inCard =
+          x >= card.x0 && x < card.x1 && y >= card.y0 && y < card.y1;
+        if (inCard) {
+          const u = (x - card.x0) / (card.x1 - card.x0);
+          const t = (y - card.y0) / (card.y1 - card.y0);
+          v = 232;
+          // Dense print: rows of text and a bordered table.
+          if (u > 0.06 && u < 0.94 && t > 0.1 && t < 0.55) {
+            if (Math.floor(t * 20) % 2 === 0 && Math.floor(u * 28) % 3 !== 0)
+              v = 65;
+          }
+          if (u > 0.06 && u < 0.94 && t > 0.62 && t < 0.92) {
+            const edge = u < 0.09 || u > 0.91 || t < 0.65 || t > 0.89;
+            v = edge ? 50 : Math.floor(u * 22) % 4 === 0 ? 232 : 105;
+          }
+        } else if (inMat) {
+          // The mat: smooth light washes, no print.
+          v = 196 + 12 * Math.sin(x / 53) * Math.sin(y / 71) + (r() - 0.5) * 8;
+        } else {
+          v = 88 + (r() - 0.5) * 10; // the desk
+        }
+        g.data[y * W + x] = Math.max(0, Math.min(255, Math.round(v)));
+      }
+    }
+    const got = detectQuad(g)!;
+    expect(got).not.toBeNull();
+    const want = rect(card.x0, card.y0, card.x1, card.y1);
+    expect(cornerError(got.quad, want, W, H)).toBeLessThan(0.05);
+  });
+});
+
 describe('detectQuad', () => {
   it('finds a square-on document', () => {
     const want = rect(60, 40, 260, 200);

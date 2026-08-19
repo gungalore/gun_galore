@@ -727,6 +727,47 @@ export function growQuad(
 }
 
 /**
+ * How much INK the quad's interior holds: the fraction of interior sample
+ * points sitting on a strong small-scale gradient.
+ *
+ * ⚠️ THIS IS WHAT SEPARATES A DOCUMENT FROM THE THING IT LIES ON. The real
+ * photographs produced a failure the border physics cannot see: a mousepad
+ * under the card is itself a perfect "document" — convex, strong border,
+ * quiet desk beyond. What it does not have is print. Text is dense
+ * small-scale structure everywhere; a decorative mat is smooth washes.
+ */
+export function inkiness(g: Gray, q: Quad): number {
+  const N = 14;
+  let hits = 0;
+  let n = 0;
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < N; j++) {
+      // Inset 15% so border ridges and edge shadows do not count as ink.
+      const u = 0.15 + (0.7 * i) / (N - 1);
+      const v = 0.15 + (0.7 * j) / (N - 1);
+      const top = {
+        x: q[0].x + (q[1].x - q[0].x) * u,
+        y: q[0].y + (q[1].y - q[0].y) * u,
+      };
+      const bottom = {
+        x: q[3].x + (q[2].x - q[3].x) * u,
+        y: q[3].y + (q[2].y - q[3].y) * u,
+      };
+      const x = Math.round(top.x + (bottom.x - top.x) * v);
+      const y = Math.round(top.y + (bottom.y - top.y) * v);
+      if (x < 1 || y < 1 || x >= g.width - 1 || y >= g.height - 1) continue;
+      const c = y * g.width + x;
+      const m =
+        Math.abs(g.data[c + 1] - g.data[c - 1]) +
+        Math.abs(g.data[c + g.width] - g.data[c - g.width]);
+      if (m >= 26) hits++;
+      n++;
+    }
+  }
+  return n ? hits / n : 0;
+}
+
+/**
  * Mean gradient magnitude along a quad's four sides — the WHOLE side.
  *
  * ⚠️ FULL LENGTH, unlike the walk's sampler, which deliberately skips the
@@ -775,6 +816,10 @@ function borderMag(g: Gray, q: Quad): number {
   return n ? sum / n : 0;
 }
 
+function dist2(a: Pt, b: Pt): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
 /** Are two quads the same rectangle, near enough? */
 function quadNear(a: Quad, b: Quad, tol: number): boolean {
   for (let i = 0; i < 4; i++) {
@@ -801,6 +846,11 @@ export function detectQuad(
      * is 0.55" is a tuning instruction; "null" is a shrug.
      */
     acceptScore?: number;
+    /**
+     * What the caller expects to be photographing, as long/short edge ratio.
+     * The scanner's guide knows: an ID-1 card is 1.586, a page is sqrt(2).
+     */
+    expectAspect?: number;
     /** Calibration tap: sees the working size, every line, every candidate. */
     debug?: (info: {
       width: number;
@@ -942,7 +992,36 @@ export function detectQuad(
     // card against grey desk — so any floor under the size factor lets a
     // loud fragment out-rank the document it sits inside. Size is the one
     // thing a fragment cannot fake, and it multiplies from zero.
-    const rank = bm * areaScoreOf(frac) * (1 + 0.2 * g2.boundaries);
+    //
+    // INK nudges towards the thing with print on it. The ramp starts at 10%,
+    // above what a stray edge can fake: a wrong quad straddling a border
+    // collects hits along that one line, and a single line through a 14x14
+    // grid is at most ~7% of samples. Below the ramp is NEUTRAL rather than
+    // punished, so a plain unprinted page loses nothing.
+    const ink = inkiness(small, g2.quad);
+    const inkFactor = 0.8 + 0.5 * Math.min(1, Math.max(0, (ink - 0.1) / 0.15));
+    // The caller often KNOWS what it is looking for — the scanner's guide is
+    // set to a card or a page — so a rectified aspect near that expectation
+    // is worth a nudge. Only a nudge: members photograph things the guide did
+    // not anticipate, and a hard filter would refuse them.
+    let aspectFactor = 1;
+    if (opts.expectAspect) {
+      const w1 =
+        (dist2(g2.quad[0], g2.quad[1]) + dist2(g2.quad[3], g2.quad[2])) / 2;
+      const h1 =
+        (dist2(g2.quad[0], g2.quad[3]) + dist2(g2.quad[1], g2.quad[2])) / 2;
+      const asp = Math.max(w1, h1) / Math.max(1, Math.min(w1, h1));
+      aspectFactor =
+        Math.abs(asp - opts.expectAspect) / opts.expectAspect <= 0.18
+          ? 1.15
+          : 0.85;
+    }
+    const rank =
+      bm *
+      areaScoreOf(frac) *
+      (1 + 0.2 * g2.boundaries) *
+      inkFactor *
+      aspectFactor;
     if (rank > bestRank) {
       bestRank = rank;
       bestGrown = {

@@ -1,6 +1,6 @@
 'use client';
 
-import { DETECT_WIDTH, Gray, detectQuad, toLuma } from './detect';
+import { DETECT_WIDTH, Gray, detectQuad, inkiness, toLuma } from './detect';
 import { EnhanceReport, enhance, inspect } from './enhance';
 import { Quad, frameQuad, outputSize } from './geometry';
 import { Raster, rectify } from './warp';
@@ -118,6 +118,16 @@ export interface ScanResult {
   source: 'detected' | 'frame' | 'manual';
   report: EnhanceReport;
   snapped: string | null;
+  /**
+   * Fraction of the crop carrying print.
+   *
+   * ⚠️ LOW MEANS WE MAY HAVE CROPPED THE WRONG THING. A document lying on a
+   * mat or a folder gives that surface a stronger border than the document
+   * has, and the detector can take the mat instead. We cannot reliably tell
+   * the two apart yet — but we CAN notice that what we cropped has almost no
+   * print on it, and say so.
+   */
+  ink: number;
 }
 
 /**
@@ -129,7 +139,7 @@ export interface ScanResult {
  */
 export async function processCapture(
   source: Blob,
-  opts: { manualQuad?: Quad; name?: string } = {},
+  opts: { manualQuad?: Quad; name?: string; expectAspect?: number } = {},
 ): Promise<ScanResult> {
   const raster = await decode(source);
 
@@ -139,7 +149,7 @@ export async function processCapture(
   if (!quad) {
     // Detect on a small copy, then scale the corners back up.
     const small = shrinkForDetect(raster);
-    const found = detectQuad(small.gray);
+    const found = detectQuad(small.gray, { expectAspect: opts.expectAspect });
     if (found) {
       quad = found.quad.map((p) => ({
         x: p.x / small.scale,
@@ -158,6 +168,10 @@ export async function processCapture(
 
   const better = enhance(flat);
   const report = inspect(better);
+  const ink = inkiness(
+    toLuma(better.data, better.width, better.height),
+    frameQuad(better.width, better.height, 0),
+  );
 
   return {
     file: await toFile(better, opts.name ?? `scan-${Date.now()}.jpg`),
@@ -166,6 +180,7 @@ export async function processCapture(
     source: from,
     report,
     snapped,
+    ink,
   };
 }
 
@@ -210,6 +225,12 @@ export function verdicts(r: ScanResult): string[] {
   if (r.source === 'frame') {
     out.push(
       'We could not find the edges, so we used the frame. Check the corners and drag them if they are wrong.',
+    );
+  } else if (r.ink < 0.06) {
+    // Almost no print in what we cropped — most often the mat or folder the
+    // document was lying on, whose edge is stronger than the document's own.
+    out.push(
+      'There is very little writing in this crop, so we may have caught the mat or folder underneath instead of the document. Worth a look before you use it.',
     );
   }
   return out;
