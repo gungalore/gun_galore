@@ -248,6 +248,189 @@ no firearm or motivation wording.
    ⚠️ The upload archive is useless without `ID_HASH_SECRET`, and rotating that
    secret destroys every stored file in every backup, permanently.
 
+## Phase 1 follow-ons — operator corrections (2026-08-19)
+
+### M-A. Competency cannot be pending
+
+Operator: *"when applying for a licence a competency can't be pending. User already has
+to have the certificate."* The wizard currently carries the opposite assumption in two
+places: `motivation-fields.ts` says *"Leave blank if the application is still pending"*
+on the competency number, and `motivation-documents.ts` names the person still waiting
+for competency as exactly who should be drafting. Both were my guesses; both are wrong.
+
+- `competency_number` and `competency_expiry` become **required for every licence type**
+  (renewals included — a renewal also rides on a valid competency).
+- Every "still pending / applied for" phrase is removed from help text, prompts and the
+  posture comments.
+- The numbers come off the uploaded certificate via the existing extraction, so for an
+  applicant who uploads the certificate this adds **zero typing** — they confirm what we
+  read. Someone who cannot produce the certificate now cannot reach Generate, because the
+  required-answers gate (`missingRequired`) already blocks on empty required fields.
+- The document panel already lists the certificate as required. The upload row itself
+  stays advisory (module posture: we say what SAPS needs, we do not hold work hostage) —
+  the required-NUMBER gate is what enforces possession, since the number only exists on
+  the certificate in hand.
+
+### M-B. The form collapses onto the documents
+
+Operator: *"Remove all the fields that we can get the information off the uploaded
+documents."* The registry holds 113 fields; extraction already proposes values for the
+identity, address, competency, association and existing-licence blocks — but the fields
+still render as questions, pre-filled at best. That inverts.
+
+**Mechanism** — a `docSourced` flag on the registry entry:
+
+- A `docSourced` field is **hidden from the question flow** whenever a confirmed
+  extraction covers it. It appears instead in the "what we read from your documents"
+  card — editable there, because extraction misreads and POPIA requires correctability.
+- If the covering document is missing or the extraction failed, the field **resurfaces
+  as a question**. Nobody gets stuck; the fallback is just typing.
+- The gap engine and `requiredKeys` see answers exactly as before — the PDF pipeline,
+  271 filler and overlap engine change not at all. This is a presentation change with
+  one registry flag, not a data-model change.
+
+**What collapses** (typed today → read tomorrow): `full_name`, `id_number`,
+`residential_address` + postal code, all four competency fields, association
+name/number/since, and all six `existing_firearm_N_*` blocks. **Extractor work needed**:
+CURRENT_LICENCE extraction currently maps only slot 1 — it must fill the next FREE
+`existing_firearm_N` slot per licence uploaded, and read `barrel_serial` where printed.
+EMPLOYMENT_CONFIRMATION gains `employer_name` / `employer_address` extraction
+(best-effort suggestions, field stays visible).
+
+**What stays typed, deliberately**: everything no document shows — occupation, residence
+type, the NEW firearm's details (unless bought on site — see the pricing tie-in, where
+the order supplies make/model/calibre/serial), `firearm_fit_reason`, storage detail,
+history (extraction NEVER reads history — existing rule, unchanged), spouse/marital
+(271-only, no source document).
+
+**Net effect**: a first-time s13 applicant types roughly a dozen narrative answers; the
+identity-shaped remainder is photographed, read and confirmed. That is the honest
+version of "minimal effort" — fewer questions because we already hold the answer, never
+fewer because we stopped asking.
+
+---
+
+## Licence & Competency Centre — the vault pillar (planned 2026-08-19)
+
+Operator: *"We need to create like a licence and competency centre on its own. Where
+people can keep and upload their licences and competencies. So it can be kept book of
+and tracked for expiry. This way we can have recurring income."*
+
+One sentence: **a private, encrypted vault where a member keeps every firearm licence,
+competency certificate and dedicated-status letter, with expiry tracked and renewal
+handled by the motivation writer.** It slots between the writer and the checker: the
+writer fills it (every motivation upload can be kept), it fills the writer (a renewal
+pre-attaches everything), and the checker will later read it.
+
+### Why this is the recurring-income engine
+
+Licences expire on a statutory clock — renewal demand RECURS by law, forever. The Centre
+owns the moment that demand surfaces:
+
+1. **Renewal packs** (exists already): the T-180 reminder lands with one tap → an
+   `S24_RENEWAL` motivation, pre-filled from the vault, priced by the existing table
+   (R199 / R99 / free-with-PRO). No new billing surface needed for revenue on day one.
+2. **Subscription pull**: reminder automation + the family vault are natural AO Pro
+   benefits — a reason to HOLD the R99/mo that has nothing to do with trading.
+3. **The data moat**: a member whose licences live here renews here, and Phase 2's
+   checker and Phase 3's feed get their coldest data warm.
+
+### Data model (mirrors MotivationUpload, deliberately)
+
+```
+enum CredentialKind { FIREARM_LICENCE | COMPETENCY_CERTIFICATE | DEDICATED_STATUS
+                      | PROFICIENCY | OTHER }
+
+model Credential {
+  id, userId, kind
+  title            String    // user's own name for it: "My .308" — guidance says no serials
+  detailsEncrypted String?   // number, holder, make/calibre/serials, issuer — AES-GCM,
+                             // same blob-crypto keys as motivation uploads
+  issuedOn  DateTime?        // IN THE CLEAR — the reminder cron queries it
+  expiresOn DateTime?        // IN THE CLEAR — dates alone identify nothing; every
+                             // identifying value lives in detailsEncrypted
+  confirmedAt DateTime?      // ⚠️ THE SAFETY RAIL — see below
+  storageKey, mimeType, byteSize, sha256   // SecureFileStorage, existing crypto
+  extractionEncrypted, extractionOk, extractedFields   // same pattern as uploads
+  reminderStagesSent String[]  // idempotency: 'T180','T120','T100','T30','D0'
+  remindersMuted Boolean @default(false)
+  @@unique([userId, sha256])  @@index([expiresOn])  @@index([userId])
+}
+```
+
+### The one rule that matters most
+
+**Reminders fire ONLY on a date the member has confirmed** (`confirmedAt`). Extraction
+proposes the expiry; the member sees it large and confirms or corrects it. A misread
+expiry that silently drives reminders is how someone misses a real renewal deadline
+because of us — worse than no reminder, and the sort of harm no disclaimer unwinds. The
+document as printed always governs; the confirm screen and every reminder say so.
+
+### Reminder engine
+
+- Nightly cron (03:00 SAST, admin-health monitored like the other 26): scan confirmed
+  `expiresOn`, fire stages **T-180 → T-120 → T-100 → T-30 → D0**, stamp
+  `reminderStagesSent`. T-100 exists because of the statutory renew-by window
+  (⚠️ verifyBeforeUse: s24 says at least 90 days before expiry — attorney confirms the
+  copy; until then the wording is "well before expiry", no number).
+- Channels: in-app notification + account-menu badge (module-counts rail exists), PWA
+  push, email — and SMS per the pricing decision below.
+- **SMS wording is neutral, always**: "A document in your Licence Centre expires in 90
+  days." Never the word firearm in an SMS preview on a lock screen.
+- ⚖️ Copy discipline: we REMIND, we never ENSURE. "We'll make sure you never miss a
+  renewal" is an outcome promise — banned, same as the writer.
+
+### Wiring into what exists
+
+- **Writer → Centre**: after a motivation completes, one tap keeps its licence /
+  competency uploads in the vault (bytes DUPLICATED, not shared — the two rows have
+  different retention lives, and the writer's purge must never eat the vault's copy).
+- **Centre → Writer**: the wizard's documents step offers "attach from your Licence
+  Centre" — no re-photographing. M-A's competency requirement is satisfied in one tap by
+  the vault's certificate; M-B's collapsed fields read off it.
+- **Renewal loop**: reminder → prefilled S24_RENEWAL → priced by the existing table →
+  outcome lands back in the vault as the NEW licence. The circle is the product.
+
+### Privacy + lifecycle (attorney gate, with the template review)
+
+- POPIA purpose stated at upload: kept to track expiry and prefill applications, nothing
+  else. Admin surfaces see counts and health, never blobs or decrypted details.
+- Vault retention is USER-controlled — it lives while the account lives (unlike
+  motivation uploads, which purge on the writer's own clock). Account deletion extends
+  `purgeForUser`: vault rows and blobs go with it.
+- Backup note: vault blobs join the nightly Box tree — worthless without
+  `ID_HASH_SECRET`, same warning as everything else under that key.
+
+### Pricing — OPEN, operator decides
+
+| Model | Free tier | Paid | Trade-off |
+|---|---|---|---|
+| **A. PRO-only** | nothing | Centre entirely inside AO Pro R99/mo | cleanest story; smallest funnel — non-Pro members store nothing, data moat starves |
+| **B. Standalone sub** | view 1 credential | Centre sub ~R29/mo or ~R249/yr; PRO includes it | own revenue line; second billing surface to build and explain |
+| **C. Freemium (recommended)** | store + see expiry dates, unlimited | reminder AUTOMATION (SMS/push/email), family vault, renewal-pack discount = PRO | maximises documents-in (the moat and the prefill), sells PRO at the exact moment the member feels the deadline |
+
+Recommendation is **C**: storage free, automation paid. The renewal-pack table already
+monetises the deadline itself, so free storage costs us almost nothing and feeds
+everything. B stays available later as an annual "Centre pass" for people who will never
+trade.
+
+### Build phases (each dark behind `licence_centre_enabled`, OFF = INERT)
+
+- **LC0 — vault**: schema + migration, CRUD, upload → extract → CONFIRM flow, expiry
+  badges, account-menu module. Reuses SecureFileStorage, extraction service, admin kit.
+- **LC1 — reminder engine**: cron + stages + in-app/push/email, admin health row,
+  neutral-SMS rail behind `licence_centre_reminders_enabled`.
+- **LC2 — writer integration**: attach-from-vault, keep-to-vault, renewal one-tap with
+  the pricing table. (M-A/M-B land first and make this mostly wiring.)
+- **LC3 — monetisation + polish**: pricing model per the decision above, family vault
+  (spouse's documents, PRO), dealer/association document kinds.
+
+### Sequencing amendment
+
+M-A and M-B are small and ship first (they correct live behaviour). Then LC0–LC2. The
+checker (old Phase 2) moves AFTER the Centre and gets richer for it — checker milestones
+attach to the renewal applications the Centre generates. Feed still ships last.
+
 ## Phase 2 — Application Checker
 
 **Fact that shapes it:** SAPS/CFR has no API. Nobody can query application status
@@ -295,10 +478,14 @@ config) · feature flags per module, default OFF, dark-deployable · encrypted d
 storage (SAP 534 pattern).
 
 ## Sequencing + dependencies
-1. Phase 1 build → **capped free beta live** (no payments needed).
-2. Peach go-live → R199/R99 switches on (same flag discipline as everything else).
-3. Phase 2 build during beta (letters templates to attorney alongside Phase 1 templates).
-4. Phase 3 after the writer+checker have filled the user base.
+1. Phase 1 build → **capped free beta live** (no payments needed). ✅ 2026-08-19
+2. M-A + M-B (operator corrections above), then Licence Centre LC0–LC2 — the vault
+   becomes the second pillar, ahead of the checker.
+3. Peach go-live → R199/R99 switches on (same flag discipline as everything else); LC3
+   monetisation rides the same moment.
+4. Checker build after the Centre (milestones attach to the renewals it generates;
+   letters templates to attorney alongside the writer templates).
+5. Feed after the writer+centre+checker have filled the user base.
 5. Later phases (parked): multi-association activity submission (the anti-FOSA neutrality
    wedge), concierge checker tier, PRO integration (free motivation/year?), sensitive-image
    blur, rank-ladder naming session.
