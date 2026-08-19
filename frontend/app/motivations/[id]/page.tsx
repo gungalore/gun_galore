@@ -150,6 +150,18 @@ export default function MotivationWizardPage() {
       try {
         const res = await motivationsApi.saveAnswers(token, id, answers);
         setDetail((d) => (d ? { ...d, missingRequired: res.missingRequired } : d));
+        // The overlap check is computed server-side from the calibres, so a
+        // change to any of them can turn the question on or off. Re-read it
+        // rather than leave a stale answer on screen.
+        if (overlapDirty.current) {
+          overlapDirty.current = false;
+          try {
+            const fresh = await motivationsApi.get(token, id);
+            setDetail((d) => (d ? { ...d, overlap: fresh.overlap } : fresh));
+          } catch {
+            /* the question is a courtesy; never break the save over it */
+          }
+        }
         // Cleared only once the server has it. Clearing on send would lose the
         // draft precisely when the request failed.
         localStorage.removeItem(DRAFT_KEY(id));
@@ -162,8 +174,14 @@ export default function MotivationWizardPage() {
     return () => clearTimeout(t);
   }, [answers, detail, id, token]);
 
+  // Set when an edit could change the overlap verdict, so the next save
+  // re-reads it instead of leaving a stale question on screen.
+  const overlapDirty = useRef(false);
   const setAnswer = (key: string, value: string) => {
     dirty.current = true;
+    if (key === 'firearm_calibre' || /^existing_firearm_\d+_calibre$/.test(key)) {
+      overlapDirty.current = true;
+    }
     setAnswers((a) => ({ ...a, [key]: value }));
   };
 
@@ -195,11 +213,17 @@ export default function MotivationWizardPage() {
     // form has them and the server still accepts them — they are simply not
     // put in front of someone who does not need them.
     const visible = shown.filter((f) => {
+      // The "why do you need both" question only exists when there IS an
+      // overlap. Asked unconditionally it is a puzzling demand; asked at the
+      // right moment it is the single most useful question on the form.
+      if (f.key === 'overlap_justification') {
+        return detail?.overlap?.needsJustification === true;
+      }
       const m = /^existing_firearm_(\d+)_/.exec(f.key);
       return !m || Number(m[1]) <= ownedRows;
     });
     return groupBySection(visible);
-  }, [shown, ownedRows]);
+  }, [shown, ownedRows, detail?.overlap?.needsJustification]);
   const outstanding = detail?.missingRequired ?? [];
   // A question stays open until the applicant has REPLIED to it — a user
   // message with the same fieldKey later in the thread. The old check hid any
@@ -455,6 +479,19 @@ export default function MotivationWizardPage() {
             onContinue={() => go(n + 1)}
           >
             <div className="space-y-4">
+              {isOwned && detail.overlap?.needsJustification && (
+                <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">
+                  {/* Shown while they are still filling the form. Someone who
+                      has just typed their existing firearms is in the best
+                      position to explain why they need both — and asked here it
+                      reads as help, where asked after a rejection it reads as a
+                      hurdle. */}
+                  <p className="font-medium">Worth explaining</p>
+                  <p className="mt-1 text-neutral-700">
+                    {detail.overlap.prompt}
+                  </p>
+                </div>
+              )}
               {sec.fields.map((f) => (
                 <FieldInput
                   key={f.key}

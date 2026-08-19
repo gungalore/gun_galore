@@ -114,6 +114,13 @@ export interface MotivationDetail extends MotivationSummary {
   missingRequired: string[];
   declarationAcceptedAt: string | null;
   qualityScore: number | null;
+  /**
+   * Whether the applicant already holds a firearm in the same class as the one
+   * applied for — the ".308 and .270 are both medium game" question the
+   * Registrar asks whether or not we do. Computed server-side from the
+   * firearms-owned rows.
+   */
+  overlap?: { needsJustification: boolean; prompt: string | null };
 }
 
 export interface ProfileOffer {

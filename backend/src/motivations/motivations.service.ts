@@ -63,6 +63,7 @@ import {
 } from './motivation-gaps';
 import { readSaId } from './sa-id';
 import { Saps271Service } from './saps271.service';
+import { overlapFromAnswers } from './motivation-overlap';
 import {
   ProfileSource,
   profileCoverageNote,
@@ -330,6 +331,17 @@ export class MotivationsService {
       fields: fieldsFor(row.licenceType),
       answers,
       missingRequired: missingRequired(row.licenceType, answers),
+      // Surfaced while they are still filling the form, not after a failed
+      // gate. Someone who has just typed their existing firearms is in the
+      // best position to explain why they need both — and being asked at that
+      // moment reads as help, where being asked after a rejection reads as a
+      // hurdle.
+      overlap: (() => {
+        const o = overlapFromAnswers(row.licenceType, answers);
+        return o.needsJustification
+          ? { needsJustification: true, prompt: o.prompt }
+          : { needsJustification: false, prompt: null };
+      })(),
       thinFields: row.thinFields,
       qualityScore: row.qualityScore,
       gateCycles: row.gateCycles,
@@ -1204,10 +1216,22 @@ export class MotivationsService {
         }
       }
 
+      // DOES THIS APPLICANT ALREADY HOLD SOMETHING THAT DOES THIS JOB?
+      //
+      // The question that gets a second medium-game rifle refused, and one the
+      // Registrar asks whether or not we do. Computed once here and used in
+      // both directions: the note tells the writer to meet the objection head
+      // on, and needsJustification promotes the "why both" question in the
+      // follow-up ranking if the gate sends this back.
+      const overlap = overlapFromAnswers(row.licenceType, answers);
+
       const pack: FactPack = {
         licenceType: row.licenceType,
         answers,
         derived: this.deriveFacts(answers),
+        // Only when there is genuinely an overlap. Passing a note otherwise
+        // would have the document argue against a problem it does not have.
+        overlapNote: overlap.writerNote ?? undefined,
       };
 
       // Draft, verify the plan landed, and check it does not look like
@@ -1339,6 +1363,7 @@ export class MotivationsService {
         row.licenceType,
         graded.verdict.thinFields,
         answers,
+        overlap.needsJustification,
       );
       return {
         status: MotivationStatus.NEEDS_MORE_INFO,

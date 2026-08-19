@@ -193,3 +193,80 @@ describe('how it speaks', () => {
     expect(r.prompt).toContain('your .308 Tikka T3x');
   });
 });
+
+// ── reading it out of the applicant's own answers ───────────────────
+//
+// This is the half that was missing until 2026-08-19: checkOverlap and its
+// tests were live, and NOTHING CALLED THEM. The engine sat there being correct
+// while every applicant's document went out without it.
+
+import { MotivationLicenceType } from '@prisma/client';
+import { overlapFromAnswers } from './motivation-overlap';
+
+const S15 = MotivationLicenceType.S15_OCCASIONAL_HUNTER;
+const S16 = MotivationLicenceType.S16_DEDICATED_HUNTER;
+
+describe('overlapFromAnswers', () => {
+  it("finds the operator's example straight out of the wizard's fields", () => {
+    const r = overlapFromAnswers(S15, {
+      firearm_calibre: '.270 Winchester',
+      existing_firearm_1_calibre: '.308 Win',
+      existing_firearm_1_make: 'Tikka',
+      existing_firearm_1_type: 'Rifle',
+    });
+    expect(r.needsJustification).toBe(true);
+    expect(r.prompt).toContain('.308 Win Tikka rifle');
+    expect(r.writerNote).toMatch(/medium plains game/);
+  });
+
+  it('reads every owned row, not just the first', () => {
+    const r = overlapFromAnswers(S15, {
+      firearm_calibre: '12 gauge',
+      existing_firearm_1_calibre: '.22 LR',
+      existing_firearm_4_calibre: '20 gauge',
+    });
+    expect(r.needsJustification).toBe(true);
+  });
+
+  it('is quiet when nothing is owned yet', () => {
+    const r = overlapFromAnswers(S15, { firearm_calibre: '.308 Win' });
+    expect(r.needsJustification).toBe(false);
+    expect(r.writerNote).toBeNull();
+  });
+
+  it('derives dedicated status from the LICENCE TYPE, not from a claim', () => {
+    // A section 16 application IS the dedicated path. Reading it off an answer
+    // would let the applicant soften the question by typing something.
+    const answers = {
+      firearm_calibre: '.270 Win',
+      existing_firearm_1_calibre: '.308 Win',
+    };
+    expect(overlapFromAnswers(S16, answers).writerNote).toMatch(
+      /holds dedicated status/,
+    );
+    expect(overlapFromAnswers(S15, answers).writerNote).toMatch(
+      /does NOT hold dedicated status/,
+    );
+  });
+
+  it('describes the firearm the way the applicant would recognise it', () => {
+    // "your .308 Tikka rifle" is answerable; "a medium game rifle" is not.
+    const r = overlapFromAnswers(S15, {
+      firearm_calibre: '.30-06 Springfield',
+      existing_firearm_1_calibre: '.308 Winchester',
+      existing_firearm_1_make: 'CZ',
+      existing_firearm_1_type: 'Rifle',
+    });
+    expect(r.prompt).toContain('.308 Winchester CZ rifle');
+  });
+
+  it('ignores a row with a make but no calibre', () => {
+    // Half-typed rows are normal in a wizard and must not be read as owning
+    // something unclassifiable.
+    const r = overlapFromAnswers(S15, {
+      firearm_calibre: '.308 Win',
+      existing_firearm_1_make: 'Tikka',
+    });
+    expect(r.verdict.kind).toBe('clear');
+  });
+});

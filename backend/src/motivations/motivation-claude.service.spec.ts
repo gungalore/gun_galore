@@ -302,3 +302,54 @@ describe('the anti-padding rule', () => {
     expect(g).toMatch(/short document.*HIGHER|scores HIGHER/i);
   });
 });
+
+// ── the overlap direction reaches the writer ────────────────────────
+//
+// The engine existed with 16 passing tests and NOTHING CALLED IT. So the test
+// that matters is not "does it detect an overlap" — it is "does the detection
+// arrive in the prompt", and does it arrive as an INSTRUCTION rather than as
+// another piece of untrusted applicant text.
+
+describe('the overlap direction in the generation prompt', () => {
+  const withNote = (overlapNote?: string): FactPack => ({
+    ...PACK,
+    overlapNote,
+  });
+
+  it('carries the note into the prompt', () => {
+    const p = generationUserPrompt(
+      withNote('The applicant already holds .308 Win, in the same class.'),
+      planFor(PACK.licenceType, 7),
+    );
+    expect(p).toContain('SOMETHING THIS DOCUMENT MUST ADDRESS');
+    expect(p).toContain('.308 Win');
+  });
+
+  it('places it OUTSIDE <applicant-facts>', () => {
+    // It is our direction, not their words. Burying an instruction inside a
+    // block the model is told to treat as untrusted data is how it gets
+    // ignored — which would leave the engine wired and still silent.
+    const p = generationUserPrompt(
+      withNote('already holds .308 Win'),
+      planFor(PACK.licenceType, 7),
+    );
+    expect(p.indexOf('SOMETHING THIS DOCUMENT MUST ADDRESS')).toBeLessThan(
+      p.indexOf('<applicant-facts>'),
+    );
+  });
+
+  it('tells the model not to invent a difference between the firearms', () => {
+    const p = generationUserPrompt(
+      withNote('already holds .308 Win'),
+      planFor(PACK.licenceType, 7),
+    );
+    expect(p).toMatch(/Do NOT invent a difference/i);
+  });
+
+  it('says NOTHING when there is no overlap', () => {
+    // A document that argues against a problem it does not have is worse than
+    // one that stays quiet.
+    const p = generationUserPrompt(withNote(undefined), planFor(PACK.licenceType, 7));
+    expect(p).not.toContain('SOMETHING THIS DOCUMENT MUST ADDRESS');
+  });
+});

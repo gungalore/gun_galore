@@ -1,3 +1,4 @@
+import { MotivationLicenceType } from '@prisma/client';
 // ────────────────────────────────────────────────────────────────────
 // "YOU ALREADY HAVE ONE OF THOSE."
 //
@@ -314,4 +315,46 @@ export function checkOverlap(
         ? ' The applicant holds dedicated status, so a genuine second firearm for a different discipline or a match backup is ordinary; still state the reason.'
         : ' The applicant does NOT hold dedicated status, so this needs a concrete, practical reason grounded in the hunting or shooting they actually do.'),
   };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// READING THE CHECK OUT OF THE APPLICANT'S OWN ANSWERS.
+//
+// checkOverlap takes a calibre and a list of held firearms; the wizard stores
+// them as registry fields. This is the one place that translation happens, so
+// the service, the interview and the prompt all ask the same question of the
+// same data — and so it can be tested without a database anywhere near it.
+//
+// ⚠️ DEDICATED STATUS IS DERIVED FROM THE LICENCE TYPE, not from a claim in an
+// answer. A section 16 application IS the dedicated path; anything else is not,
+// whatever an applicant may have typed elsewhere.
+// ────────────────────────────────────────────────────────────────────
+
+/** How many existing-firearm rows the registry carries. */
+const OWNED_ROWS = 6;
+
+export function overlapFromAnswers(
+  licenceType: MotivationLicenceType,
+  answers: Record<string, string>,
+): OverlapCheck {
+  const held: HeldFirearm[] = [];
+  for (let n = 1; n <= OWNED_ROWS; n++) {
+    const calibre = (answers[`existing_firearm_${n}_calibre`] ?? '').trim();
+    if (!calibre) continue;
+    // "your .308 Tikka" is answerable; "a medium game rifle" is not.
+    const make = (answers[`existing_firearm_${n}_make`] ?? '').trim();
+    const type = (answers[`existing_firearm_${n}_type`] ?? '').trim();
+    const described = [calibre, make, type.toLowerCase()]
+      .filter(Boolean)
+      .join(' ');
+    held.push({ calibre, describedAs: described || calibre });
+  }
+
+  const dedicatedStatus =
+    licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||
+    licenceType === MotivationLicenceType.S16_DEDICATED_SPORT;
+
+  return checkOverlap((answers.firearm_calibre ?? '').trim(), held, {
+    dedicatedStatus,
+  });
 }

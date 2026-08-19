@@ -86,6 +86,16 @@ export interface FactPack {
   answers: Record<string, string>;
   /** Facts WE computed, never asked for — age, years held, and so on. */
   derived: Record<string, string>;
+  /**
+   * OUR instruction about an overlap the Registrar will notice — that the
+   * applicant already holds a firearm in the same class as the one applied
+   * for. See motivation-overlap.ts.
+   *
+   * Deliberately NOT an answer and NOT inside <applicant-facts>: it is a
+   * direction from us, and burying a direction inside a block the model is
+   * told to treat as untrusted data is how an instruction gets ignored.
+   */
+  overlapNote?: string;
 }
 
 /**
@@ -194,6 +204,27 @@ Separate paragraphs with a blank line.
 }
 
 /** The per-applicant half — never cached, changes every time. */
+/**
+ * The overlap direction, rendered as an instruction block.
+ *
+ * Placed with the writing instructions rather than the facts. It tells the
+ * model to MEET an objection the Registrar will raise on its own — "you
+ * already hold something that does this" — using only the reason the applicant
+ * gave, and never to invent a distinction between two firearms.
+ */
+function renderOverlap(note: string | undefined): string {
+  if (!note) return '';
+  return [
+    '',
+    'SOMETHING THIS DOCUMENT MUST ADDRESS:',
+    note,
+    'Deal with it plainly and early. Do NOT invent a difference between the',
+    'firearms — if the applicant has not given a reason, say what they did give',
+    'and leave it there. Never suggest the overlap is unimportant.',
+    '',
+  ].join('\n');
+}
+
 export function generationUserPrompt(
   pack: FactPack,
   plan: StructurePlan,
@@ -215,6 +246,7 @@ ${OPENING_GUIDE[plan.opening]}
 ${CLOSING_GUIDE[plan.closing]}
 ${CADENCE_GUIDE[plan.cadence]}
 
+${renderOverlap(pack.overlapNote)}
 ${UNTRUSTED_NOTICE}
 
 <applicant-facts>
