@@ -207,6 +207,29 @@ export class MotivationsController {
   }
 
   /**
+   * The pre-filled SAPS 271. Only exists for applicants who opted in — the
+   * dealer usually completes this form, so by default we never produce it.
+   *
+   * Same posture as the motivation PDF: rebuilt on demand, nothing stored,
+   * `private, no-store` because it carries an ID number and a home address.
+   */
+  @Get(':id/saps271')
+  async saps271(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { pdf, filename } = await this.motivations.renderSaps271(clerkId, id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${filename}"`,
+      'Content-Length': String(pdf.length),
+      'Cache-Control': 'private, no-store',
+    });
+    return new StreamableFile(pdf);
+  }
+
+  /**
    * The live submission checklist. Drives the progress list on the platform and
    * in the PWA — what we have, what is still outstanding, and what the applicant
    * must take to the station themselves.

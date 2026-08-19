@@ -47,6 +47,8 @@ import {
   fieldsFor,
   missingRequired,
   sanitiseAnswers,
+  SAPS271_FILL,
+  SAPS271_OPT_KEY,
 } from './motivation-fields';
 import { decryptSaIdNumber } from '../common/id-crypto';
 import {
@@ -60,6 +62,7 @@ import {
   gapBrief,
 } from './motivation-gaps';
 import { readSaId } from './sa-id';
+import { Saps271Service } from './saps271.service';
 import {
   ProfileSource,
   profileCoverageNote,
@@ -169,6 +172,7 @@ export class MotivationsService {
     private readonly pdf: MotivationPdfService,
     private readonly settings: SettingsService,
     private readonly extract: MotivationExtractService,
+    private readonly saps271: Saps271Service,
   ) {}
 
   /**
@@ -1425,6 +1429,64 @@ export class MotivationsService {
       generatedAt: row.completedAt ?? new Date(),
       annexures: buildAnnexures(kinds),
     });
+  }
+
+  /**
+   * The pre-filled SAPS 271 — ONLY for applicants who asked for it.
+   *
+   * The 271 is an opt-in addition, not the product (operator, 2026-08-19):
+   * most dealers complete the form with the buyer, so the default path never
+   * asks the form-tier questions and never produces this document. Requesting
+   * it without opting in is answered with a plain explanation, not a 404 —
+   * the motivation exists; the form was declined.
+   *
+   * Available from the moment they opt in, not only after generation: the
+   * whole point is that the form and the motivation are separate deliverables,
+   * and leftBlank tells them exactly which boxes still need a pen.
+   */
+  async renderSaps271(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        referenceNumber: true,
+        licenceType: true,
+        answersEncrypted: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const answers = this.readAnswers(row.answersEncrypted);
+    if ((answers[SAPS271_OPT_KEY] ?? '') !== SAPS271_FILL) {
+      throw new ConflictException(
+        'You chose to let your dealer complete the SAPS 271. If you would like us to fill it in instead, change that choice in your application first.',
+      );
+    }
+
+    const account = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { email: true },
+    });
+
+    try {
+      const { pdf, leftBlank } = await this.saps271.build({
+        licenceType: row.licenceType,
+        answers,
+        email: account?.email ?? undefined,
+        motivationReference: row.referenceNumber,
+      });
+      return {
+        pdf,
+        filename: `saps271-${row.referenceNumber}.pdf`,
+        leftBlank,
+      };
+    } catch (err) {
+      // buildSaps271 throws a plain Error for a section 24 renewal — the 271
+      // is the wrong form for it. Said plainly rather than surfaced as a 500.
+      throw new ConflictException((err as Error).message);
+    }
   }
 
   /**

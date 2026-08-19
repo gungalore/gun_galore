@@ -12,6 +12,8 @@ import {
   ProfileOffer,
   Suggestion,
   UploadRow,
+  SAPS271_FILL,
+  SAPS271_OPT_KEY,
   groupBySection,
   motivationsApi,
   visibleFields,
@@ -199,8 +201,21 @@ export default function MotivationWizardPage() {
     return groupBySection(visible);
   }, [shown, ownedRows]);
   const outstanding = detail?.missingRequired ?? [];
-  const openQuestions = messages.filter(
-    (m) => m.role === 'assistant' && !(answers[m.fieldKey ?? ''] ?? '').trim(),
+  // A question stays open until the applicant has REPLIED to it — a user
+  // message with the same fieldKey later in the thread. The old check hid any
+  // question whose field had text, but the gate asks about THIN fields, which
+  // by definition have text: a failed gate stranded the applicant on
+  // NEEDS_MORE_INFO with no visible questions at all.
+  const openQuestions = useMemo(
+    () =>
+      messages.filter(
+        (m, i) =>
+          m.role === 'assistant' &&
+          !messages
+            .slice(i + 1)
+            .some((u) => u.role === 'user' && u.fieldKey === m.fieldKey),
+      ),
+    [messages],
   );
 
   /**
@@ -556,7 +571,7 @@ export default function MotivationWizardPage() {
         )}
 
         {detail.status === 'COMPLETED' && (
-          <p className="mt-4">
+          <div className="mt-4 flex flex-wrap gap-2">
             <a
               className="rounded border px-4 py-2 text-sm"
               href={motivationsApi.pdfUrl(id)}
@@ -565,7 +580,17 @@ export default function MotivationWizardPage() {
             >
               Open your motivation
             </a>
-          </p>
+            {(answers[SAPS271_OPT_KEY] ?? '') === SAPS271_FILL && (
+              <a
+                className="rounded border px-4 py-2 text-sm"
+                href={motivationsApi.saps271Url(id)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open your pre-filled SAPS 271
+              </a>
+            )}
+          </div>
         )}
         {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
       </section>
@@ -616,8 +641,18 @@ function FieldInput({
           type={field.kind === 'date' ? 'date' : 'text'}
           className={base}
           maxLength={field.maxLength}
+          inputMode={/(^|_)id_number$/.test(field.key) ? 'numeric' : undefined}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) =>
+            onChange(
+              // An SA ID is digits only, and people type it with spaces. The
+              // maxLength cap counts characters, so the spaces used to stop
+              // the last digits from ever being typed.
+              /(^|_)id_number$/.test(field.key)
+                ? e.target.value.replace(/\D/g, '')
+                : e.target.value,
+            )
+          }
         />
       )}
 

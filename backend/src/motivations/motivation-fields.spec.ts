@@ -6,6 +6,8 @@ import {
   missingRequired,
   requiredKeys,
   sanitiseAnswers,
+  SAPS271_FILL,
+  SAPS271_OPT_KEY,
   YES_NO,
 } from './motivation-fields';
 
@@ -16,6 +18,10 @@ import {
 
 const ALL = Object.values(MotivationLicenceType);
 const T = MotivationLicenceType.S13_SELF_DEFENCE;
+
+// The SAPS 271 is opt-in (operator, 2026-08-19). Tests about form-tier fields
+// must opt in first, exactly as an applicant would.
+const WITH_FORM = { [SAPS271_OPT_KEY]: SAPS271_FILL };
 
 describe('field registry integrity', () => {
   it('has no duplicate keys within a licence type', () => {
@@ -125,10 +131,16 @@ describe('the six history questions', () => {
       expect(f.required).toBe(true);
     }
     // All but the negligence question, which is chained to the loss question
-    // and so does not apply until something has been lost.
+    // and so does not apply until something has been lost. The history
+    // questions are form-tier, so the applicant must have opted into the 271.
     const asked = HISTORY.filter((h) => h !== 'history_negligence');
-    expect(missingRequired(T, {})).toEqual(expect.arrayContaining(asked));
-    expect(missingRequired(T, {})).not.toContain('history_negligence');
+    expect(missingRequired(T, WITH_FORM)).toEqual(expect.arrayContaining(asked));
+    expect(missingRequired(T, WITH_FORM)).not.toContain('history_negligence');
+
+    // …and on the dealer path NONE of them are asked at all.
+    expect(missingRequired(T, {})).not.toEqual(
+      expect.arrayContaining(['history_conviction']),
+    );
   });
 
   it('asks for detail only once something is disclosed', () => {
@@ -141,12 +153,12 @@ describe('the six history questions', () => {
   });
 
   it('only asks about a negligence case if something was lost', () => {
-    expect(missingRequired(T, { history_lost_stolen: 'No' })).not.toContain(
-      'history_negligence',
-    );
-    expect(missingRequired(T, { history_lost_stolen: 'Yes' })).toContain(
-      'history_negligence',
-    );
+    expect(
+      missingRequired(T, { ...WITH_FORM, history_lost_stolen: 'No' }),
+    ).not.toContain('history_negligence');
+    expect(
+      missingRequired(T, { ...WITH_FORM, history_lost_stolen: 'Yes' }),
+    ).toContain('history_negligence');
   });
 });
 
@@ -235,8 +247,11 @@ describe('isVisible', () => {
 
   it('matches on the exact value, not merely on being answered', () => {
     const spouse = fieldsFor(T).find((x) => x.key === 'spouse_name')!;
-    expect(isVisible(spouse, { marital_status: 'Single' })).toBe(false);
-    expect(isVisible(spouse, { marital_status: 'Married' })).toBe(true);
+    // Form-tier, so the opt-in comes first; then the marital condition.
+    expect(isVisible(spouse, { ...WITH_FORM, marital_status: 'Single' })).toBe(false);
+    expect(isVisible(spouse, { ...WITH_FORM, marital_status: 'Married' })).toBe(true);
+    // Married but NOT opted in: still hidden — the field only exists for the form.
+    expect(isVisible(spouse, { marital_status: 'Married' })).toBe(false);
     expect(isVisible(spouse, {})).toBe(false);
   });
 });
@@ -250,9 +265,98 @@ describe('requiredKeys', () => {
   });
 
   it('grows as conditions come true', () => {
-    const single = requiredKeys(T, { marital_status: 'Single' });
-    const married = requiredKeys(T, { marital_status: 'Married' });
+    const single = requiredKeys(T, { ...WITH_FORM, marital_status: 'Single' });
+    const married = requiredKeys(T, { ...WITH_FORM, marital_status: 'Married' });
+    // Married adds the spouse's name and the ID-TYPE question. The SA ID
+    // number itself only becomes required once the type says SA ID — a spouse
+    // with a passport must not be asked for an ID that does not exist.
     expect(married.length).toBe(single.length + 2);
-    expect(married).toEqual(expect.arrayContaining(['spouse_name', 'spouse_id_number']));
+    expect(married).toEqual(expect.arrayContaining(['spouse_name', 'spouse_id_type']));
+    expect(married).not.toContain('spouse_id_number');
+
+    const saId = requiredKeys(T, {
+      ...WITH_FORM,
+      marital_status: 'Married',
+      spouse_id_type: 'SA ID',
+    });
+    expect(saId).toContain('spouse_id_number');
+    const passport = requiredKeys(T, {
+      ...WITH_FORM,
+      marital_status: 'Married',
+      spouse_id_type: 'Passport',
+    });
+    expect(passport).not.toContain('spouse_id_number');
+  });
+});
+
+
+// ── the SAPS 271 opt-in (operator, 2026-08-19) ──────────────────────
+//
+// "The 271 form is an addition. The motivation is the big cookie. The user
+// must have the option not to have the 271 filled in — most of the time the
+// dealer will fill in the form for them already."
+
+describe('the SAPS 271 opt-in', () => {
+  it('asks the question first, and requires a deliberate answer', () => {
+    const first = fieldsFor(T)[0];
+    expect(first.key).toBe(SAPS271_OPT_KEY);
+    expect(first.required).toBe(true);
+    expect(first.choices).toContain(SAPS271_FILL);
+  });
+
+  it('hides EVERY form-only field on the dealer path', () => {
+    // This is the effort collapse: say the dealer does the form and phones,
+    // postal codes, marital status, the spouse, the firearms table and the six
+    // history questions simply never appear.
+    const hidden = fieldsFor(T).filter(
+      (f) => f.formOnly && f.key !== SAPS271_OPT_KEY && isVisible(f, {}),
+    );
+    expect(hidden).toEqual([]);
+  });
+
+  it('keeps the motivation path down to the answers the document needs', () => {
+    const required = requiredKeys(T, {});
+    // The opt-in itself plus the document tier — nothing form-only.
+    expect(required.length).toBeLessThanOrEqual(16);
+    for (const k of required) {
+      const f = fieldsFor(T).find((x) => x.key === k)!;
+      if (k !== SAPS271_OPT_KEY) expect(f.formOnly).toBeUndefined();
+    }
+  });
+
+  it('restores the full set when the applicant opts in', () => {
+    const dealer = requiredKeys(T, {});
+    const filled = requiredKeys(T, WITH_FORM);
+    expect(filled.length).toBeGreaterThan(dealer.length + 5);
+    expect(filled).toEqual(expect.arrayContaining(['marital_status', 'safe_present']));
+  });
+
+  it('never deletes form answers when someone switches to the dealer path', () => {
+    // Hidden is not erased: switching back restores everything they typed.
+    const { answers } = sanitiseAnswers(T, { home_telephone: '0111234567' });
+    expect(answers.home_telephone).toBe('0111234567');
+  });
+});
+
+describe('ID numbers typed like a human types them', () => {
+  it('survives spaces, which used to truncate the last digits off', () => {
+    // "8001 0150 0908 7" hit the 13-character cap four digits early, failed
+    // the Luhn check, and silently lost DOB, age, gender and citizenship.
+    const { answers } = sanitiseAnswers(T, { id_number: '8001 0150 0908 7' });
+    expect(answers.id_number).toBe('8001015009087');
+  });
+
+  it('strips dashes and stray characters too', () => {
+    const { answers } = sanitiseAnswers(T, {
+      spouse_id_number: '820302-0082-088',
+    });
+    expect(answers.spouse_id_number).toBe('8203020082088');
+  });
+
+  it('leaves the passport field alone — passports are alphanumeric', () => {
+    const { answers } = sanitiseAnswers(T, {
+      spouse_passport_number: 'A1234 567',
+    });
+    expect(answers.spouse_passport_number).toBe('A1234 567');
   });
 });

@@ -26,7 +26,27 @@ import { MotivationLicenceType } from '@prisma/client';
 // Bumped when the SAPS 271 analysis split the firearm into its own boxes and
 // added the personal and history fields. Same day as the previous version, so
 // it carries a suffix rather than a bare date.
-export const FIELD_REGISTRY_VERSION = '2026-08-18.3';
+export const FIELD_REGISTRY_VERSION = '2026-08-19';
+
+// ── THE SAPS 271 IS AN OPT-IN EXTRA, NOT THE PRODUCT ────────────────
+//
+// Operator, 2026-08-19: "the 271 form is an addition. The motivation is the
+// big cookie we need to have perfect. The user must have the option not to
+// have the 271 filled in — most of the time the dealer will fill in the form
+// for them already."
+//
+// So one early question decides it, and EVERY formOnly field hangs off the
+// answer. Say the dealer is doing the form and roughly half the registry
+// simply never appears: phones, postal codes, marital status, the spouse, the
+// firearms-owned table, the six history questions. The motivation path
+// collapses to the ~15 answers the document actually needs.
+//
+// The values survive a change of heart: switching to the dealer path hides
+// the fields but never deletes what was typed, and switching back restores
+// them filled.
+export const SAPS271_OPT_KEY = 'fill_saps271';
+export const SAPS271_FILL = 'Fill it in for me';
+export const SAPS271_DEALER = 'My dealer will fill it in';
 
 /** The two answers a `yesno` field accepts. Order is deliberate — a wizard
  * should not present "Yes" as the first, easiest tap on a history question. */
@@ -88,6 +108,20 @@ export interface MotivationField {
 
 /** Asked for every licence type. */
 const COMMON_FIELDS: readonly MotivationField[] = [
+  {
+    // First on purpose: the answer decides whether half the registry exists.
+    // Required, because it is one tap and an accidental default is worse than
+    // a deliberate choice in either direction. formOnly so the writer never
+    // sees it — "the applicant chose to have the form filled" is padding fuel.
+    key: SAPS271_OPT_KEY,
+    label: 'Should we fill in your SAPS 271 application form as well?',
+    kind: 'choice',
+    section: 'The SAPS 271 form',
+    choices: [SAPS271_DEALER, SAPS271_FILL],
+    help: 'Most dealers complete the SAPS 271 with you when you buy the firearm. If yours will, choose that and we prepare only the motivation pack — far fewer questions. You can change your mind at any time.',
+    required: true,
+    formOnly: true,
+  },
   {
     key: 'full_name',
     label: 'Full name, as it appears on your ID',
@@ -227,7 +261,10 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: "Spouse or partner's ID number",
     kind: 'short',
     section: 'About you',
-    showIf: { key: 'marital_status', equals: 'Married' },
+    // Chained to the ID-type question, NOT to being married: a married
+    // applicant whose spouse holds a passport was previously required to
+    // produce an SA ID number that does not exist, which blocked generation.
+    showIf: { key: 'spouse_id_type', equals: 'SA ID' },
     required: true,
     sensitive: true,
     formOnly: true,
@@ -1228,6 +1265,10 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'About you',
     choices: ['SA ID', 'Passport'],
     showIf: { key: 'marital_status', equals: 'Married' },
+    // Required, because the ID-number and passport-number fields both hang off
+    // this answer. Optional here would let a married applicant skip it and the
+    // form would silently carry no spouse identification at all.
+    required: true,
     formOnly: true,
   },
   {
@@ -1468,6 +1509,17 @@ export function isVisible(
   field: MotivationField,
   answers: Record<string, string>,
 ): boolean {
+  // Every formOnly field exists ONLY for the SAPS 271, so none of them are
+  // asked unless the applicant chose to have the form filled. The opt-in
+  // question itself is exempt or it would hide itself. Unanswered means the
+  // dealer path — the fields stay hidden until a deliberate yes.
+  if (
+    field.formOnly &&
+    field.key !== SAPS271_OPT_KEY &&
+    (answers[SAPS271_OPT_KEY] ?? '').trim() !== SAPS271_FILL
+  ) {
+    return false;
+  }
   if (!field.showIf) return true;
   return (answers[field.showIf.key] ?? '').trim() === field.showIf.equals;
 }
@@ -1534,7 +1586,16 @@ export function sanitiseAnswers(
       rejected.push(key);
       continue;
     }
-    const trimmed = raw.trim();
+    let trimmed = raw.trim();
+
+    // SA ID numbers are digits only, and people type them with spaces —
+    // "8001 0150 0908 7". The 13-character cap used to count those spaces and
+    // silently cut the last digits off, which broke the Luhn check and lost
+    // date of birth, age, gender and citizenship off the form. Normalised
+    // HERE, before the cap, so however it arrives it is stored as 13 digits.
+    if (/(^|_)id_number$/.test(key)) {
+      trimmed = trimmed.replace(/\D/g, '');
+    }
 
     // A choice must be one of the offered choices. This is not defensive
     // tidiness: these values are printed into boxes on a form the applicant

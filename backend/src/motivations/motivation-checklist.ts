@@ -216,12 +216,39 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
   {
     key: 'saps_form',
     label: 'The SAPS application form for this licence',
-    note: 'Get it from your DFO. Do NOT sign it beforehand — it must be signed in front of the DFO.',
+    // Most dealers complete the 271 with the buyer, which is why filling it is
+    // an opt-in extra rather than part of the pack.
+    note: 'Your dealer will usually complete this with you — otherwise get it from your DFO, or ask us to pre-fill it in your application. Do NOT sign it beforehand — it must be signed in front of the DFO.',
     verifyBeforeUse: true,
   },
   {
     key: 'id_copies',
-    label: 'Two copies of your ID',
+    label: 'Two CERTIFIED copies of your ID, not older than 3 months',
+    note: 'Any police station or attorney certifies them free. DFOs reject uncertified or stale copies.',
+  },
+  {
+    key: 'proof_of_residence',
+    label: 'Certified proof of residence, not older than 3 months',
+  },
+  {
+    key: 'character_references',
+    label: 'Two character references',
+    note: 'People who have known you for two years or more. Most DFOs prefer non-family: a colleague, neighbour, or community leader.',
+  },
+  {
+    key: 'saps_541',
+    label: 'SAPS 541 safe-storage undertaking, or a DFO safe inspection',
+    note: 'Ask your DFO which they use — stations differ.',
+    verifyBeforeUse: true,
+  },
+  {
+    key: 'safe_invoice',
+    label: 'The invoice or receipt for your safe',
+  },
+  {
+    key: 'tax_invoice',
+    label: "The dealer's tax invoice for the firearm",
+    note: 'Proof of purchase. If you bought it on All Outdoor, your invoice is in your orders.',
   },
   {
     key: 'competency_copy',

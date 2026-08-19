@@ -281,6 +281,9 @@ export const motivationsApi = {
 
   /** The finished document. Blob, not JSON — it is a PDF. */
   pdfUrl: (id: string) => `${API_URL}/motivations/${id}/pdf`,
+
+  /** The pre-filled SAPS 271 — only answers for applicants who opted in. */
+  saps271Url: (id: string) => `${API_URL}/motivations/${id}/saps271`,
 };
 
 /**
@@ -290,14 +293,23 @@ export const motivationsApi = {
  * being asked, or the wizard shows a question the server will not accept —
  * or hides one it insists on.
  */
+/** The SAPS 271 opt-in. Mirrors SAPS271_OPT_KEY / SAPS271_FILL on the server. */
+export const SAPS271_OPT_KEY = 'fill_saps271';
+export const SAPS271_FILL = 'Fill it in for me';
+
 export function visibleFields(
   fields: MotivationField[],
   answers: Record<string, string>,
 ): MotivationField[] {
-  return fields.filter(
-    (f) =>
-      !f.showIf || (answers[f.showIf.key] ?? '').trim() === f.showIf.equals,
-  );
+  // Mirrors isVisible() on the backend, including the 271 gate: form-only
+  // fields exist only for the SAPS 271, so on the dealer path they are not
+  // shown at all. Both halves must agree or the wizard asks questions the
+  // server does not require — or hides ones it insists on.
+  const wantsForm = (answers[SAPS271_OPT_KEY] ?? '').trim() === SAPS271_FILL;
+  return fields.filter((f) => {
+    if (f.formOnly && f.key !== SAPS271_OPT_KEY && !wantsForm) return false;
+    return !f.showIf || (answers[f.showIf.key] ?? '').trim() === f.showIf.equals;
+  });
 }
 
 /** Section order, as the registry lists them — not alphabetical. */

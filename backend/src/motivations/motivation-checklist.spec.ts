@@ -137,7 +137,14 @@ describe('the live checklist', () => {
       [],
     ).sections.find((s) => s.key === 'theirs')!;
     const flagged = theirs.items.filter((i) => i.verifyBeforeUse);
-    expect(flagged.map((i) => i.key).sort()).toEqual(['fee', 'saps_form']);
+    // saps_541 joined the list with the SAPS-checklist audit: whether a
+    // station wants the 541 undertaking or its own safe inspection differs,
+    // so it must be confirmed rather than asserted.
+    expect(flagged.map((i) => i.key).sort()).toEqual([
+      'fee',
+      'saps_541',
+      'saps_form',
+    ]);
   });
 
   it('never promises an outcome', () => {

@@ -121,6 +121,8 @@ function build(
       // Extraction proposes values off an uploaded document; nothing in
       // these tests uploads one, so a stub is enough.
       { extract: jest.fn(async () => []) } as never,
+      // The 271 renderer — nothing in these tests opts into the form.
+      { build: jest.fn(async () => ({ pdf: Buffer.from('%PDF-'), leftBlank: [] })) } as never,
   );
   return { svc, prisma, quota, refs, files, claude, pdf, settings };
 }
