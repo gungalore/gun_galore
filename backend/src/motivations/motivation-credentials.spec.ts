@@ -2,7 +2,7 @@ import {
   CredentialSource,
   credentialOffer,
   toIsoDay,
-} from './motivation-credentials';
+  credentialChoices,} from './motivation-credentials';
 import { normaliseFirearmType } from './saps-vocabulary';
 
 // What the vault fills into a licence application. Getting a serial into the
@@ -260,5 +260,90 @@ describe('toIsoDay', () => {
     expect(toIsoDay(new Date('2026-08-19T00:00:00Z'))).toBe('2026-08-19');
     expect(toIsoDay(new Date('2026-08-19T23:59:59Z'))).toBe('2026-08-19');
     expect(toIsoDay(new Date('2026-01-05T00:00:00Z'))).toBe('2026-01-05');
+  });
+});
+
+describe('credentialChoices', () => {
+  const cert = (
+    id: string,
+    title: string,
+    details: Record<string, string>,
+    kind = 'COMPETENCY_CERTIFICATE',
+  ) => ({ id, kind, title, expiresOn: null, details, confirmed: true });
+
+  it('⚠️ OFFERS EVERY COMPETENCY, because the offer only ever picks one', () => {
+    // The case that made this necessary: a renewed certificate and the
+    // expired original, or a handgun competency and a rifle one. credentialOffer
+    // fills the first and stops, which is right for one document and wrong
+    // for two — then the only correct behaviour is to ask.
+    const { competency } = credentialChoices([
+      cert('a', 'Competency 2019', { competency_number: 'C-111' }),
+      cert('b', 'Competency 2024', { competency_number: 'C-222' }),
+    ]);
+    expect(competency.map((c) => c.values.competency_number)).toEqual([
+      'C-111',
+      'C-222',
+    ]);
+  });
+
+  it('reads the fallback key when the primary one is absent', () => {
+    const { competency } = credentialChoices([
+      cert('a', 'Competency', { certificate_number: 'C-333' }),
+    ]);
+    expect(competency[0].values.competency_number).toBe('C-333');
+  });
+
+  it('⚠️ DROPS A CERTIFICATE WITH NO NUMBER ON IT', () => {
+    // An entry that does nothing when picked is worse than no entry: it reads
+    // as "we have this on file" and then silently fills nothing.
+    const { competency } = credentialChoices([
+      cert('a', 'Blurred photo', { holder_name: 'G Fourie' }),
+    ]);
+    expect(competency).toHaveLength(0);
+  });
+
+  it('⚠️ KEEPS THE ASSOCIATION NAME AND NUMBER TOGETHER', () => {
+    // Offering them as independent picks lets somebody with two associations
+    // end up with one body's name against the other's number — a false
+    // statement on a section 16 application.
+    const { dedicated } = credentialChoices([
+      cert('a', 'SAGA card', { association: 'SAGA', status_number: 'S-1' }, 'DEDICATED_STATUS'),
+      cert('b', 'NATSHOOT card', { association: 'NATSHOOT', membership_number: 'N-2' }, 'DEDICATED_HUNTER'),
+    ]);
+    expect(dedicated).toHaveLength(2);
+    expect(dedicated[0].values).toEqual({
+      association_name: 'SAGA',
+      association_number: 'S-1',
+    });
+    expect(dedicated[1].values).toEqual({
+      association_name: 'NATSHOOT',
+      association_number: 'N-2',
+    });
+  });
+
+  it('⚠️ NEVER OFFERS A PROFESSIONAL HUNTER REGISTRATION as dedicated status', () => {
+    // Same reason it is excluded from the offer: a PH registration is a
+    // provincial nature-conservation qualification to hunt for a client, not
+    // section 16 dedicated status, and filing it as association membership
+    // puts a wrong claim in somebody's application.
+    const { dedicated } = credentialChoices([
+      cert('a', 'PH registration', { association: 'DEDAT', status_number: 'PH-9' }, 'PROFESSIONAL_HUNTER'),
+    ]);
+    expect(dedicated).toHaveLength(0);
+  });
+
+  it('takes a card with only one half of the pair', () => {
+    const { dedicated } = credentialChoices([
+      cert('a', 'Card', { association: 'SAGA' }, 'DEDICATED_STATUS'),
+    ]);
+    expect(dedicated[0].values).toEqual({ association_name: 'SAGA' });
+  });
+
+  it('ignores unrelated kinds and an empty vault', () => {
+    expect(credentialChoices([])).toEqual({ competency: [], dedicated: [] });
+    const only = credentialChoices([
+      cert('a', 'Rifle licence', { licence_no: 'L-1' }, 'FIREARM_LICENCE'),
+    ]);
+    expect(only).toEqual({ competency: [], dedicated: [] });
   });
 });

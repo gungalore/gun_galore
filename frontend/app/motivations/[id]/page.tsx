@@ -4,6 +4,7 @@ import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
 import FilePickerButton from '@/components/file-picker-button';
 import ScanButton from '@/components/scan/scan-button';
+import CredentialPicker from '@/components/credential-picker';
 import { shapeForKind } from '@/lib/scan/shapes';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
@@ -17,6 +18,7 @@ import {
   MotivationDetail,
   MotivationField,
   DocumentStatus,
+  LicenceCentreOffer,
   PickableKind,
   ProfileOffer,
   Suggestion,
@@ -223,6 +225,91 @@ export default function MotivationWizardPage() {
    * The phone uploads straight to the API over a handoff token, so nothing in
    * this tab hears about it — the list has to be asked rather than patched.
    */
+  /**
+   * Open one uploaded document in a new tab.
+   *
+   * ⚠️ THE TAB IS OPENED FIRST, SYNCHRONOUSLY, and filled once the bytes
+   * arrive. Safari's popup blocker judges window.open by whether it happened
+   * inside the click's own call stack — opening it after an await is a
+   * blocked popup and, to the member, a View button that does nothing.
+   */
+  const viewUpload = useCallback(
+    async (uploadId: string) => {
+      const tab = window.open('', '_blank', 'noopener');
+      try {
+        const url = await motivationsApi.uploadBlobUrl(token, id, uploadId);
+        if (tab) {
+          tab.location.href = url;
+        } else {
+          // Blocked anyway (or opened from a context that forbids it) — the
+          // member still gets their document.
+          window.location.href = url;
+        }
+        // Long enough for the tab to have loaded it; the blob is pinned until
+        // then and leaked for the life of the tab if we never let go.
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch (e) {
+        tab?.close();
+        setUploadErr(
+          e instanceof MotivationApiError
+            ? e.message
+            : 'We could not open that document.',
+        );
+      }
+    },
+    [token, id],
+  );
+
+  /**
+   * What the vault could fill, per group, for the pickers under the fields.
+   *
+   * Loaded once beside the wizard rather than per field: the same endpoint
+   * feeds the offer panel, and asking for it twice on one step would be two
+   * decryptions of the same rows to draw two controls.
+   */
+  const [offerChoices, setOfferChoices] = useState<
+    LicenceCentreOffer['choices'] | null
+  >(null);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const o = await motivationsApi.licenceCentreOffer(token, id);
+        if (alive) setOfferChoices(o.choices);
+      } catch {
+        // A vault we cannot read must not stop anybody typing the answer by
+        // hand. The pickers simply do not appear.
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [token, id]);
+
+  /**
+   * Write a picked document's values into the answers.
+   *
+   * ⚠️ THESE OVERWRITE, unlike the offer panel's "fill everything" — and
+   * deliberately. Picking a document from a dropdown IS the member saying
+   * "use this one instead", and refusing to replace what is in the box would
+   * make the control appear to do nothing at exactly the moment it matters:
+   * when they are correcting a wrong pick.
+   */
+  const applyPicked = useCallback(
+    async (vals: Record<string, string>) => {
+      for (const [k, v] of Object.entries(vals)) {
+        setAnswer(k, v);
+        // The field may have been filled from the profile and locked; a
+        // deliberate pick has to be able to move it.
+        setUnlocked((u) => new Set(u).add(k));
+      }
+    },
+    // setAnswer is re-created every render by design (see its own note), so
+    // it is deliberately not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const refreshUploads = useCallback(async () => {
     const up = await motivationsApi.uploads(token, id);
     setUploads(up.files);
@@ -547,6 +634,7 @@ export default function MotivationWizardPage() {
                           kind={n.kind}
                           uploads={uploads}
                           onRemove={removeOneUpload}
+                          onView={viewUpload}
                         />
                       ) : (
                         /* ⚠️ EVERY WAY IN, ON EVERY LINE. The bulk panel at
@@ -606,7 +694,7 @@ export default function MotivationWizardPage() {
                                 }
                               }}
                             >
-                              {busyKind === n.kind ? 'Reading…' : 'Add this one'}
+                              {busyKind === n.kind ? 'Reading…' : 'Upload'}
                             </FilePickerButton>
                           }
                         />
@@ -643,6 +731,7 @@ export default function MotivationWizardPage() {
           }}
           onAdd={addOneUpload}
           onRemove={removeOneUpload}
+          onView={viewUpload}
         />
 
         {suggestions.length > 0 && (
@@ -787,14 +876,25 @@ export default function MotivationWizardPage() {
                   vault can actually answer: the competency number lives in
                   "About you", and the firearms already licensed to them live
                   in their own section. Anywhere else it would be noise. */}
-              {(isOwned || sec.section === 'About you') && (
+              {(isOwned ||
+                sec.section === 'About you' ||
+                // ⚠️ THE DEDICATED-STATUS HALF NEVER RENDERED. The panel was
+                // mounted on "About you" and handed the key prefix
+                // `association_` — but those fields live in their own
+                // "Dedicated status" section and always have, so the offer
+                // computed the values, shipped them to the browser, and
+                // filtered every one of them out against a section that could
+                // not contain them. Silent since the day it was written.
+                sec.section === 'Dedicated status') && (
                 <LicenceCentreOfferPanel
                   token={token}
                   motivationId={id}
                   keyPrefixes={
                     isOwned
                       ? ['existing_firearm_']
-                      : ['competency_number', 'association_']
+                      : sec.section === 'Dedicated status'
+                        ? ['association_']
+                        : ['competency_number']
                   }
                   onApplied={(filled, missing) => {
                     // The applicant's own edits win over what arrives, the
@@ -882,6 +982,27 @@ export default function MotivationWizardPage() {
                   onChange={(v) => setAnswer(f.key, v)}
                   onPick={pickOption}
                 />
+                {/* ⚠️ THE PICKER SITS UNDER THE FIELD IT FILLS, not up in the
+                    offer panel. The panel is a single "fill everything"
+                    button; this is the answer to "I have two of those, which
+                    one?" — and the only place that question makes sense is
+                    beside the box it is about. */}
+                {f.key === 'competency_number' && offerChoices && (
+                  <CredentialPicker
+                    choices={offerChoices.competency}
+                    label="Or take it off a competency certificate in your Licence Centre"
+                    emptyHint="Photographed your competency certificate?"
+                    onPick={(vals) => applyPicked(vals)}
+                  />
+                )}
+                {f.key === 'association_number' && offerChoices && (
+                  <CredentialPicker
+                    choices={offerChoices.dedicated}
+                    label="Or take it off a dedicated-status card in your Licence Centre"
+                    emptyHint="Photographed your association card?"
+                    onPick={(vals) => applyPicked(vals)}
+                  />
+                )}
                 </div>
               ))}
 
@@ -1381,10 +1502,12 @@ function AttachedTo({
   kind,
   uploads,
   onRemove,
+  onView,
 }: {
   kind: string;
   uploads: UploadRow[];
   onRemove: (id: string) => Promise<void>;
+  onView: (id: string) => Promise<void>;
 }) {
   const mine = uploads.filter((u) => u.kind === kind);
   if (!mine.length) {
@@ -1416,6 +1539,23 @@ function AttachedTo({
             {u.annexure ? ` \u00b7 Annexure ${u.annexure}` : ''}
             {u.available ? '' : ' \u00b7 no longer stored'}
           </span>
+          {/* ⚠️ "ATTACHED" IS NOT PROOF. Every one of these went up as a
+              photograph the member never saw again — and the whole point of
+              the checklist is that a DFO will see it. Being able to open it
+              is how somebody catches the shot of their thumb before SAPS
+              does. Only offered while the file is still stored: after the
+              retention purge the row remains as a record and the bytes are
+              gone. */}
+          {u.available && (
+            <button
+              type="button"
+              className="underline"
+              aria-label={`View ${u.label}`}
+              onClick={() => void onView(u.id)}
+            >
+              View
+            </button>
+          )}
           <button
             type="button"
             className="underline"
@@ -1437,6 +1577,7 @@ function UploadPanel({
   onAdd,
   onRefile,
   onRemove,
+  onView,
   onHandoffArrived,
 }: {
   uploads: UploadRow[];
@@ -1445,6 +1586,8 @@ function UploadPanel({
   onAdd: (kind: string, file: File) => Promise<AddedUpload | undefined>;
   onRefile: (uploadId: string, kind: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
+  /** Open one document, so "attached" can be checked rather than believed. */
+  onView: (id: string) => Promise<void>;
   /** Re-read the pack after a phone sent something straight to the server. */
   onHandoffArrived: () => Promise<void>;
 }) {
@@ -1659,13 +1802,26 @@ function UploadPanel({
                 </span>
               )}
             </span>
-            <button
-              type="button"
-              className="text-xs underline"
-              onClick={() => onRemove(u.id)}
-            >
-              Remove
-            </button>
+            <span className="flex shrink-0 items-center gap-3">
+              {u.available && (
+                <button
+                  type="button"
+                  className="text-xs underline"
+                  aria-label={`View ${u.label}`}
+                  onClick={() => void onView(u.id)}
+                >
+                  View
+                </button>
+              )}
+              <button
+                type="button"
+                className="text-xs underline"
+                aria-label={`Remove ${u.label}`}
+                onClick={() => onRemove(u.id)}
+              >
+                Remove
+              </button>
+            </span>
           </li>
         ))}
       </ul>

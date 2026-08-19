@@ -163,6 +163,15 @@ export interface MotivationDetail extends MotivationSummary {
 }
 
 /** What the member's own Licence Centre could fill in here. */
+/** One vault document offered as a source for a group of fields. */
+export interface CredentialChoice {
+  credentialId: string;
+  title: string;
+  expiresOn: string | null;
+  /** Field key → the value this document would put there. */
+  values: Record<string, string>;
+}
+
 export interface LicenceCentreOffer {
   /** Nothing in the vault at all. */
   empty: boolean;
@@ -184,6 +193,15 @@ export interface LicenceCentreOffer {
     satisfies: string;
     expiresOn: string | null;
   }[];
+  /**
+   * What the member can CHOOSE from, per group — as opposed to `items`, which
+   * is what we would fill if they pressed the one button. Somebody holding
+   * two competency certificates has to be asked which.
+   */
+  choices: {
+    competency: CredentialChoice[];
+    dedicated: CredentialChoice[];
+  };
 }
 
 export interface ProfileOffer {
@@ -303,7 +321,13 @@ export const motivationsApi = {
       t,
       `/${id}/licence-centre-offer`,
       {},
-      { empty: true, items: [], skipped: [], documents: [] },
+      {
+        empty: true,
+        items: [],
+        skipped: [],
+        documents: [],
+        choices: { competency: [], dedicated: [] },
+      },
     ),
 
   /** They agree, and we copy. Never overwrites an answer they typed. */
@@ -393,6 +417,32 @@ export const motivationsApi = {
       { method: 'DELETE' },
       { removed: true },
     ),
+
+  /**
+   * The bytes of one uploaded document, as an object URL.
+   *
+   * ⚠️ THE ENDPOINT NEEDS AN AUTHORIZATION HEADER, so `<img src>` and
+   * `<a href>` cannot reach it — the file is decrypted per request out of the
+   * encrypted store and there is deliberately no public URL for it. Fetch the
+   * bytes and hand back a blob URL. Mirrors licenceCentreApi.fileBlobUrl.
+   *
+   * ⚠️ THE CALLER OWNS THE URL and must revokeObjectURL it, or the blob stays
+   * pinned in memory for the life of the tab.
+   */
+  uploadBlobUrl: async (
+    t: TokenGetter,
+    id: string,
+    uploadId: string,
+  ): Promise<string> => {
+    const token = await t();
+    const r = await fetch(`${API_URL}/motivations/${id}/uploads/${uploadId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!r.ok) {
+      throw new MotivationApiError('We could not open that document.', r.status);
+    }
+    return URL.createObjectURL(await r.blob());
+  },
 
   /** POPIA erasure — deletes the application AND its encrypted documents. */
   erase: (t: TokenGetter, id: string) =>

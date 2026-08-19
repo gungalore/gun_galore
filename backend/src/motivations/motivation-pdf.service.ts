@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import {
+  GAP,
+  captionFor,
+  planAnnexurePages,
+} from './motivation-annexure-layout';
 import type { AnnexureEntry } from './motivation-checklist';
 
 // ────────────────────────────────────────────────────────────────────
@@ -92,6 +97,21 @@ export interface MotivationPdfInput {
    */
   annexures?: AnnexureEntry[];
   /**
+   * The scanned copies themselves, reprinted after the index.
+   *
+   * ⚠️ THIS IS WHAT THE APPLICANT WALKS INTO THE DFO'S OFFICE WITH. They take
+   * the motivation, these copies, and the originals, and everything is
+   * certified in one sitting — which only works if the copies are IN the
+   * pack, at a size a commissioner of oaths will stamp.
+   *
+   * Bytes are JPEG or PNG only (pdfkit embeds nothing else). Anything else
+   * the member uploaded is named on the index page as needing its own copy,
+   * rather than silently missing from the print.
+   */
+  annexureImages?: AnnexureImagePage[];
+  /** Uploads that could not be reprinted, named so the gap is visible. */
+  annexuresNotPrinted?: { letter: string; label: string; why: string }[];
+  /**
    * What the applicant physically carries to the DFO.
    *
    * ⚠️ THE TICK BOXES STAY DIGITAL — that decision holds (operator,
@@ -106,6 +126,17 @@ export interface MotivationPdfInput {
 function isHeading(line: string): boolean {
   const t = line.trim();
   return t.length > 0 && t.length <= 80 && t.endsWith(':');
+}
+
+/** One scanned copy, ready to draw. */
+export interface AnnexureImagePage {
+  letter: string;
+  label: string;
+  index: number;
+  total: number;
+  bytes: Buffer;
+  width: number;
+  height: number;
 }
 
 @Injectable()
@@ -356,13 +387,133 @@ export class MotivationPdfService {
           );
         doc.moveDown(0.45);
       }
+
+      // ⚠️ NAME WHAT IS NOT IN THE PACK. A member who uploaded a PDF of their
+      // proficiency certificate must not discover at the DFO's counter that
+      // the pack is one document short — the gap goes on the index, where
+      // they will read it while assembling the folder.
+      if (input.annexuresNotPrinted?.length) {
+        doc.moveDown(0.6);
+        doc
+          .font(FONT_ITALIC)
+          .fontSize(9.5)
+          .fillColor(GREY)
+          .text('Bring your own copy of these — we could not reprint them:', {
+            width: contentWidth,
+          });
+        for (const n of input.annexuresNotPrinted) {
+          doc
+            .font(FONT)
+            .fontSize(9.5)
+            .fillColor(GREY)
+            .text(`Annexure ${n.letter} — ${n.label} (${n.why})`, {
+              width: contentWidth,
+              indent: 12,
+            });
+        }
+      }
+    }
+
+    // ── The copies themselves ─────────────────────────────────────────
+    //
+    // Laid out by a pure planner so the packing rules are testable as
+    // arithmetic: full content width each, as many per page as genuinely fit,
+    // never scaled down to squeeze one more in. See
+    // motivation-annexure-layout.ts.
+    if (input.annexureImages?.length) {
+      const pages = planAnnexurePages(
+        input.annexureImages.map((a2) => ({
+          letter: a2.letter,
+          label: a2.label,
+          index: a2.index,
+          total: a2.total,
+          width: a2.width,
+          height: a2.height,
+        })),
+        {
+          x: MARGIN,
+          y: MARGIN,
+          width: contentWidth,
+          height: PAGE_HEIGHT - MARGIN * 2,
+        },
+      );
+      let n = 0;
+      for (const page of pages) {
+        doc.addPage();
+        for (const place of page) {
+          const src = input.annexureImages[n++];
+          doc
+            .font(FONT_BOLD)
+            .fontSize(9.5)
+            .fillColor(BLACK)
+            .text(captionFor(place), MARGIN, place.captionY, {
+              width: contentWidth,
+              lineBreak: false,
+            });
+          try {
+            doc.image(src.bytes, place.x, place.y, {
+              width: place.w,
+              height: place.h,
+            });
+          } catch {
+            // ⚠️ A FILE pdfkit REJECTS MUST NOT KILL THE WHOLE PDF. The
+            // header parse said JPEG, so this is a truncated or malformed
+            // one — the member gets the rest of their pack and a line saying
+            // which copy to bring, instead of a download that 500s.
+            doc
+              .font(FONT_ITALIC)
+              .fontSize(9.5)
+              .fillColor(GREY)
+              .text(
+                'This copy could not be printed — bring your own.',
+                MARGIN,
+                place.y,
+                { width: contentWidth },
+              );
+          }
+          // A hairline BETWEEN two copies on one page, so they read as two
+          // documents rather than one long one.
+          //
+          // ⚠️ ONLY BETWEEN THEM, never after the last. A full-page image
+          // ends 6pt above the bottom margin, so a rule drawn under it lands
+          // outside the printable area — and pdfkit answers an out-of-bounds
+          // draw by starting a new page. That produced a silent blank page
+          // after every full-page annexure: ten pages for five pages of
+          // content, and nothing in the code that looked like it added one.
+          const isLast = place === page[page.length - 1];
+          if (!isLast) {
+            const ruleY = place.y + place.h + GAP / 2;
+            doc
+              .moveTo(MARGIN, ruleY)
+              .lineTo(PAGE_WIDTH - MARGIN, ruleY)
+              .lineWidth(0.5)
+              .strokeColor(RULE)
+              .stroke();
+          }
+        }
+      }
     }
 
     // ── Footers on every page ─────────────────────────────────────────
     // bufferPages lets us number pages only once the total is known.
+    //
+    // ⚠️ THE BOTTOM MARGIN IS DROPPED TO ZERO FIRST, and this is not cosmetic.
+    // The footer sits 26pt BELOW the bottom margin on purpose — that is what
+    // makes it a footer — and pdfkit answers text placed outside the printable
+    // box by starting a fresh page for it. So every footer was silently
+    // appending a blank page and then writing itself onto that instead: a
+    // two-page motivation came out as four pages, half of them empty, and the
+    // numbering read "page 1 of 2" on what was actually sheet three.
+    //
+    // It has been doing that since the file was written. It survived because
+    // nothing here counts pages and a trailing blank page reads as a quirk of
+    // the printer rather than a bug — it only surfaced when annexure images
+    // doubled a five-page pack into ten.
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) {
       doc.switchToPage(range.start + i);
+      const keep = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
       const footerY = PAGE_HEIGHT - MARGIN + 26;
       doc
         .font(FONT)
@@ -374,6 +525,7 @@ export class MotivationPdfService {
           footerY,
           { width: contentWidth, align: 'center', lineBreak: false },
         );
+      doc.page.margins.bottom = keep;
     }
 
     doc.end();

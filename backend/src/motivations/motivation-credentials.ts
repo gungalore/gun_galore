@@ -234,6 +234,86 @@ const DEDICATED_KINDS = new Set(['DEDICATED_STATUS', 'DEDICATED_HUNTER']);
  * and deliberately narrow: only where the two really are the same piece of
  * paper.
  */
+/**
+ * One vault document offered as a pickable source for a group of fields.
+ *
+ * ⚠️ THE VALUES TRAVEL TOGETHER. A dedicated-status card carries the
+ * association's name AND the membership number, and they are only true as a
+ * pair — offering them as two independent picks invites a member with two
+ * associations to end up with one body's name against the other's number,
+ * which is a false statement on a section 16 application.
+ */
+export interface CredentialChoice {
+  credentialId: string;
+  title: string;
+  expiresOn: string | null;
+  /** Field key → the value this document would put there. */
+  values: Record<string, string>;
+}
+
+export interface CredentialChoices {
+  competency: CredentialChoice[];
+  dedicated: CredentialChoice[];
+}
+
+/**
+ * Every vault document the applicant could CHOOSE from, per field group.
+ *
+ * Distinct from `credentialOffer`, which decides for them: the offer fills
+ * the first document that can answer a slot and stops. That is right when
+ * somebody holds one competency certificate, and wrong the moment they hold
+ * two — a renewed one and the expired original, or a handgun competency and a
+ * rifle one. Then the only correct answer is to ask.
+ *
+ * ⚠️ IT LISTS DOCUMENTS THAT ARE ALREADY ANSWERED FOR TOO. Unlike the offer
+ * this takes no `answered` map, because its whole job is to let somebody
+ * CHANGE a value — filtering out the currently-chosen document would remove
+ * the one entry that shows them what they picked last time.
+ */
+export function credentialChoices(
+  credentials: CredentialSource[],
+): CredentialChoices {
+  const competency: CredentialChoice[] = [];
+  const dedicated: CredentialChoice[] = [];
+
+  for (const c of credentials) {
+    if (COMPETENCY_KINDS.has(c.kind)) {
+      const number = first(c.details, 'competency_number', 'certificate_number');
+      // A certificate we could not read a number off is not a choice — it is
+      // an entry that does nothing when picked.
+      if (!number) continue;
+      competency.push({
+        credentialId: c.id,
+        title: c.title,
+        expiresOn: c.expiresOn,
+        values: { competency_number: number },
+      });
+      continue;
+    }
+    if (DEDICATED_KINDS.has(c.kind)) {
+      const name = first(c.details, 'association', 'issuer');
+      const number = first(
+        c.details,
+        'status_number',
+        'membership_number',
+        'reference_number',
+      );
+      if (!name && !number) continue;
+      const values: Record<string, string> = {};
+      if (name) values.association_name = name;
+      if (number) values.association_number = number;
+      dedicated.push({
+        credentialId: c.id,
+        title: c.title,
+        expiresOn: c.expiresOn,
+        values,
+      });
+    }
+  }
+
+  return { competency, dedicated };
+}
+
 export const CREDENTIAL_TO_UPLOAD: Record<string, string> = {
   FIREARM_LICENCE: 'CURRENT_LICENCE',
   COMPETENCY_CERTIFICATE: 'COMPETENCY_CERTIFICATE',

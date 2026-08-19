@@ -25,7 +25,14 @@ import {
 } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationClaudeService } from './motivation-claude.service';
-import { MotivationPdfService } from './motivation-pdf.service';
+import {
+  AnnexureImagePage,
+  MotivationPdfService,
+} from './motivation-pdf.service';
+import {
+  imageSize,
+  isEmbeddable,
+} from './motivation-annexure-layout';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import {
   planFor,
@@ -72,6 +79,7 @@ import {
 } from './motivation-profile';
 import {
   CREDENTIAL_TO_UPLOAD,
+  credentialChoices,
   CredentialSource,
   credentialOffer,
   toIsoDay,
@@ -677,6 +685,12 @@ export class MotivationsService {
       empty: offer.empty,
       items: offer.items,
       skipped: offer.skipped,
+      /**
+       * Everything they could pick from, per group — as opposed to `items`,
+       * which is what we would fill if they said "just do it". Somebody
+       * holding two competency certificates has to be asked which.
+       */
+      choices: credentialChoices(credentials),
       /** Vault documents that also satisfy a required upload on this pack. */
       documents: credentials
         .filter((c) => CREDENTIAL_TO_UPLOAD[c.kind])
@@ -1667,6 +1681,84 @@ export class MotivationsService {
    * on every download, so erasure has no assets to chase and a lost file is
    * impossible.
    */
+  /**
+   * Decrypt every upload that can be reprinted into the pack, in annexure
+   * order, and name the ones that cannot.
+   *
+   * ⚠️ ONE MEMBER'S OWN DOCUMENTS, ALREADY OWNERSHIP-CHECKED. The rows are
+   * handed in from the motivation's own `findFirst`, which is scoped by
+   * userId — this must never be called with rows fetched any other way.
+   *
+   * ⚠️ IT NEVER THROWS. A pack is worth printing without one copy in it; it
+   * is not worth failing to print at all. Every failure — purged, unreadable
+   * on disk, a format pdfkit cannot take, a header we cannot measure — comes
+   * back as a named line on the index telling the applicant to bring that one
+   * themselves.
+   */
+  private async annexureImages(
+    uploads: {
+      id: string;
+      kind: MotivationUploadKind;
+      storageKey: string | null;
+      mimeType: string | null;
+      purgedAt: Date | null;
+    }[],
+  ): Promise<{
+    images: AnnexureImagePage[];
+    notPrinted: { letter: string; label: string; why: string }[];
+  }> {
+    const letters = buildAnnexures(uploads.map((u) => u.kind));
+    const letterFor = new Map(letters.map((a) => [a.kind, a.letter]));
+    const labelFor = new Map(letters.map((a) => [a.kind, a.label]));
+    // How many copies share each letter, so a caption can say "1 of 2".
+    const totals = new Map<string, number>();
+    for (const u of uploads) {
+      totals.set(u.kind, (totals.get(u.kind) ?? 0) + 1);
+    }
+    const seen = new Map<string, number>();
+
+    const images: AnnexureImagePage[] = [];
+    const notPrinted: { letter: string; label: string; why: string }[] = [];
+
+    for (const u of uploads) {
+      const letter = letterFor.get(u.kind) ?? '?';
+      const label = labelFor.get(u.kind) ?? u.kind;
+      const index = (seen.get(u.kind) ?? 0) + 1;
+      seen.set(u.kind, index);
+      const total = totals.get(u.kind) ?? 1;
+
+      if (!u.storageKey || u.purgedAt) {
+        notPrinted.push({ letter, label, why: 'no longer stored' });
+        continue;
+      }
+      if (!isEmbeddable(u.mimeType ?? '')) {
+        notPrinted.push({
+          letter,
+          label,
+          why: u.mimeType === 'application/pdf' ? 'a PDF' : 'not a JPG or PNG',
+        });
+        continue;
+      }
+      let bytes: Buffer;
+      try {
+        bytes = await this.files.read(u.storageKey);
+      } catch {
+        notPrinted.push({ letter, label, why: 'we could not read it back' });
+        continue;
+      }
+      const size = imageSize(bytes);
+      if (!size) {
+        // Measuring is not optional: the alternative is guessing an aspect
+        // ratio and printing somebody's licence stretched.
+        notPrinted.push({ letter, label, why: 'we could not measure it' });
+        continue;
+      }
+      images.push({ letter, label, index, total, bytes, ...size });
+    }
+
+    return { images, notPrinted };
+  }
+
   async renderPdf(clerkId: string, id: string) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
@@ -1681,7 +1773,19 @@ export class MotivationsService {
         templateVersion: true,
         answersEncrypted: true,
         completedAt: true,
-        uploads: { select: { kind: true } },
+        // ⚠️ ORDERED BY CREATION, and the bytes come with it now. The copies
+        // are reprinted into the pack, so a stable order matters: "1 of 2"
+        // and "2 of 2" have to mean the same two pages every download.
+        uploads: {
+          select: {
+            id: true,
+            kind: true,
+            storageKey: true,
+            mimeType: true,
+            purgedAt: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
@@ -1713,6 +1817,7 @@ export class MotivationsService {
     // boxes to tick with a pen, and the "your pack" half is not — that half is
     // what they are already holding.
     const kinds = (row.uploads ?? []).map((u) => u.kind);
+    const printable = await this.annexureImages(row.uploads ?? []);
 
     return this.pdf.render({
       referenceNumber: row.referenceNumber,
@@ -1726,6 +1831,8 @@ export class MotivationsService {
       templateVersion: row.templateVersion ?? TEMPLATE_VERSION,
       generatedAt: row.completedAt ?? new Date(),
       annexures: buildAnnexures(kinds),
+      annexureImages: printable.images,
+      annexuresNotPrinted: printable.notPrinted,
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
       takeWithYou: buildChecklist(row.licenceType, kinds)

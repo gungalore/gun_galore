@@ -121,9 +121,7 @@ export default function ScanButton({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {/* ⚠️ THE PHONE IS THE PRIMARY OFFER ON A DESKTOP, and the webcam is
-          demoted rather than removed — USB document cameras are real, and so
-          is a member whose phone is flat. */}
+      {/* On a desktop the phone is the ONLY camera offered. */}
       {handoff && handheld === false && (
         <button
           type="button"
@@ -141,7 +139,14 @@ export default function ScanButton({
         </button>
       )}
 
-      {usable && handheld !== null && (
+      {/* ⚠️ HANDHELD ONLY. The webcam used to be offered here, demoted, on
+          the theory that USB document cameras exist and phones go flat. The
+          operator has ruled: a laptop webcam focuses at half a metre and
+          cannot resolve a licence serial, so every scan it produces is one
+          that has to be taken again. An option that never yields a usable
+          document is not a fallback, it is a trap — and the file picker
+          beside it is the honest one. */}
+      {usable && handheld === true && (
         <button
           type="button"
           disabled={disabled}
@@ -154,7 +159,7 @@ export default function ScanButton({
           }}
         >
           <CameraIcon />
-          {handheld === false ? "Use this computer's camera" : label}
+          {label}
         </button>
       )}
 
