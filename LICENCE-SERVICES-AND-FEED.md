@@ -418,6 +418,49 @@ annual "Centre pass" for people who will never trade.
 **Build status: PLAN ONLY (operator, 2026-08-19).** Nothing starts — M-A/M-B included —
 until the operator says so.
 
+### Field research — the SAHGCA member portal (walked 2026-08-19, operator's own login)
+
+The incumbent adjacent product. What it is: a **compliance ledger** — structured records
+(firearms, competency, dedicated statuses, activities) typed in by hand, from which the
+association GENERATES paper (membership certificate, status certificates, s15/s16
+Letters of Good Standing, activity-log PDFs). It stores no documents at all: there is
+nowhere to upload the actual licence card, competency certificate or ID. Their engine:
+activity quota per status (Dedicated Hunter 2/yr, Dedicated Sport Shooter 3/yr, year
+runs 1 Nov–31 Oct, compliance re-evaluated DAILY, states carry reason strings like
+"Insufficient activities on record for 2026") → status feeds endorsements and the s16
+letter. Their chokepoint: **the documents SAPS needs are gated on being paid up** — a
+member in arrears cannot generate a Letter of Good Standing, and reminders only run for
+active members. That is the recurring-income mechanism, working, in production.
+
+**The proof our approach is right, on their own screens**: the operator's register holds
+five firearms and exactly ONE licence-expiry date (expired 2022), and zero competency
+records — because "Licence expires" is an OPTIONAL hand-typed field on the add form.
+Their T-120/T-100 SMS reminder service cannot fire on data nobody typed. Extraction-first
+(photograph → read → confirm) is the whole difference between a reminder service that
+works and one that provably sits empty.
+
+**Adopted into the LC build from this walk:**
+
+| # | Takeaway | Where it lands |
+|---|---|---|
+| R1 | Reminder cadence per KIND: their licence+competency SMS at ~T-120/T-100 validates ours; PH licences remind at ~T-90 (annual cycle). | Stage table becomes per-CredentialKind, not global |
+| R2 | Their liability register is exactly right: "courtesy reminders… the responsibility to renew remains that of the member." | Reminder + confirm-screen copy (attorney pass) |
+| R3 | "Reminder service only available to active members" | Maps cleanly onto model C: automation = PRO |
+| R4 | Barrels / frames / receivers are separately licensed components (18-entry type taxonomy on their add form). | `Credential.detailsEncrypted` carries a firearm-type subtype; FIREARM_LICENCE covers component licences |
+| R5 | Serial "required only if the firearm is referred to in an endorsement". | Our rule: full details demanded only when a credential is ATTACHED to a motivation |
+| R6 | Firearm referenced in a pending endorsement → record locked to Head Office. | Ours: credential attached to an in-flight motivation → edits require detach first |
+| R7 | Expiry-date-range search + export/print of the register. | LC0 list gets an expiry filter + CSV export (POPIA portability, cheap goodwill) |
+| R8 | Compliance states with REASON strings, re-evaluated daily. | Reminder/status surfaces always carry the reason, never a bare state |
+| R9 | Their "My documents … one spot" hub framing is the right front door. | LC home page reads as that hub: everything SAPS needs, one place |
+| R10 | Privacy anti-pattern seen live: home address typed into activity free-text, printed into shareable PDFs. | Free-text location fields get a "no addresses" hint + the neutral-SMS rule stands |
+
+**Strategic line drawn**: SAHGCA owns the ASSOCIATION side — statuses, endorsements,
+letters of good standing are legally theirs to issue, and we never imitate them. We own
+the APPLICANT side — the actual documents, the expiry clock across ALL associations
+(SAHGCA, NHSA, CHASA, …), and the motivation nobody over there writes. A member keeps
+their association; their association's letter lives in our vault. The parked
+multi-association neutrality wedge gets stronger, not weaker.
+
 ### Build phases (each dark behind `licence_centre_enabled`, OFF = INERT)
 
 - **LC0 — vault**: schema + migration, CRUD, upload → extract → CONFIRM flow, expiry
