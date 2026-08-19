@@ -2,15 +2,7 @@
 
 import { DETECT_WIDTH, Gray, detectQuad, inkiness, toLuma } from './detect';
 import { EnhanceReport, enhance, inspect } from './enhance';
-import { refineAimQuad } from './refine';
-import {
-  Quad,
-  Rect,
-  frameQuad,
-  outputSize,
-  quadBounds,
-  scaleQuad,
-} from './geometry';
+import { Quad, Rect, frameQuad, outputSize, scaleQuad } from './geometry';
 import { Raster, rectify } from './warp';
 
 // ────────────────────────────────────────────────────────────────────
@@ -126,60 +118,6 @@ export async function grabVisible(
   return blob ? { blob, width: w, height: h } : null;
 }
 
-/**
- * Does a detection agree with where the member said the document is?
- *
- * ⚠️ NOT INTERSECTION-OVER-UNION, and that was measured rather than assumed.
- * The operator's carpet strip — a tall rectangle holding his licence card and
- * a foot of blue blanket — scores 0.35 IoU against the card box, comfortably
- * above any threshold loose enough to tolerate a handheld shot. IoU cannot
- * separate them because it mixes two different failures into one number.
- *
- * Split apart, they are obvious:
- *
- *   COVERAGE — how much of the box the detection fills. A fragment sitting
- *   inside the card (one printed table, say) covers almost none of it.
- *
- *   SPILL — how much of the detection hangs outside the box. The carpet strip
- *   covers 72% of the box, which sounds fine, but 60% of the strip is
- *   somewhere else entirely. A card lined up in the corners spills nothing.
- *
- * A handheld shot that is 30px adrift passes both comfortably, which is the
- * point: this rejects "you found the carpet", not "your corners are a few
- * pixels out".
- *
- * ⚠️ TIGHTENED AFTER THE FIRST NIGHT IN THE FIELD, from measurements off the
- * operator's own review screenshots. At cover 0.5 / spill 0.35 two bad
- * detections got through: a strip covering 53% of the ID-book box (the crop
- * lost the right half of the book), and the licence card plus a carpet strip.
- * The member had lined both up dead centre — so when they have done their
- * half, a detection has to essentially COINCIDE with the box to outrank it,
- * because losing to the box costs a few millimetres of margin while beating
- * it wrongly costs half the document. A 30px handheld slip still measures
- * cover 0.93 / spill 0.07 and passes with room.
- */
-const AIM_MIN_COVER = 0.8;
-const AIM_MAX_SPILL = 0.12;
-
-export function detectionAgreesWithAim(detected: Quad, box: Rect): boolean {
-  const b = quadBounds(detected);
-  const ix = Math.max(
-    0,
-    Math.min(b.x + b.width, box.x + box.width) - Math.max(b.x, box.x),
-  );
-  const iy = Math.max(
-    0,
-    Math.min(b.y + b.height, box.y + box.height) - Math.max(b.y, box.y),
-  );
-  const inter = ix * iy;
-  const qa = b.width * b.height;
-  const ba = box.width * box.height;
-  if (qa <= 0 || ba <= 0) return false;
-  const cover = inter / ba;
-  const spill = 1 - inter / qa;
-  return cover >= AIM_MIN_COVER && spill <= AIM_MAX_SPILL;
-}
-
 /** The aim box as a quad, corners in the same order the warp expects. */
 function rectToQuad(r: Rect): Quad {
   return [
@@ -190,44 +128,6 @@ function rectToQuad(r: Rect): Quad {
   ];
 }
 
-/**
- * The box, snapped onto the document's real edges — or the box itself when
- * the picture offers nothing better.
- *
- * ⚠️ THE BOX ALONE IS NOT A CROP, and the operator's corner-editor
- * screenshots are why: card, ID book and A4 form each lay a few degrees
- * rotated on the carpet, and the axis-aligned box clipped a title on one and
- * a serial row on another while its corners rested in carpet wedges. Nobody
- * lays a document down at exactly zero degrees. refineAimQuad searches a
- * narrow band around each box edge for the document's actual edge — it can
- * tilt, the box cannot — and its band is too short to reach anything the
- * member did not aim at.
- *
- * Refinement runs on a working copy around 900px wide: at full resolution the
- * band would be hundreds of offsets deep, and corner accuracy is limited by
- * the warp's interpolation anyway, not by this.
- */
-function refineOrBox(raster: Raster, aim: Rect): Quad {
-  const k = Math.min(1, REFINE_WIDTH / raster.width);
-  const w = Math.max(1, Math.round(raster.width * k));
-  const h = Math.max(1, Math.round(raster.height * k));
-  // paint() writes pixels 1:1, so scale via an intermediate canvas.
-  const full = ctx2d(raster.width, raster.height);
-  paint(full, raster);
-  const g = ctx2d(w, h);
-  g.drawImage(full.canvas, 0, 0, w, h);
-  const small = toLuma(g.getImageData(0, 0, w, h).data, w, h);
-  const refined = refineAimQuad(small, {
-    x: aim.x * k,
-    y: aim.y * k,
-    width: aim.width * k,
-    height: aim.height * k,
-  });
-  if (!refined) return rectToQuad(aim);
-  return refined.map((pt) => ({ x: pt.x / k, y: pt.y / k })) as Quad;
-}
-
-const REFINE_WIDTH = 900;
 
 /** Decode a blob or file into raw pixels, capped so a 108MP phone cannot OOM us. */
 export async function decode(
@@ -368,36 +268,39 @@ export async function processCapture(
     : null;
 
   if (!quad) {
-    // Detect on a small copy, then scale the corners back up.
-    const small = shrinkForDetect(raster);
-    const found = detectQuad(small.gray, { expectAspect: opts.expectAspect });
-    if (found) {
-      const scaled = found.quad.map((p) => ({
-        x: p.x / small.scale,
-        y: p.y / small.scale,
-      })) as Quad;
-      // ⚠️ DOES IT AGREE WITH WHERE THEY PUT IT? A detection that has nothing
-      // to do with the aim box is a detection of the desk, and cropping to it
-      // throws the document away. The threshold is loose — this rejects "you
-      // found the carpet", not "your corners are a few pixels out".
-      const agree = !aim || detectionAgreesWithAim(scaled, aim);
-      if (agree) {
-        quad = scaled;
-        from = 'detected';
-      } else {
-        quad = refineOrBox(raster, aim!);
-        from = 'aim';
-      }
-    } else if (aim) {
-      // ⚠️ THE BOX BEATS THE WHOLE FRAME. Falling back to a 5%-inset frame
-      // quad means cropping to everything the camera could see, which on a
-      // desk is a photograph of the desk. If they lined it up and we simply
-      // could not find an edge, the box is still the best answer we have.
-      quad = refineOrBox(raster, aim);
+    if (aim) {
+      // ⚠️ THE BOX. EXACTLY THE BOX. NOTHING ELSE.
+      //
+      // This branch used to be a ladder: detect, check the detection against
+      // the box, refine the box onto nearby edges, fall back. Every rung was
+      // built to fix the rung before it, and every rung put the editor's
+      // starting corners somewhere the member had to STUDY before they could
+      // trust — because a guess that is nearly right still has to be checked
+      // on all four sides, and checking costs more than dragging.
+      //
+      // The operator ended the argument: the flow is manual capture into the
+      // corner editor, and the corners must open exactly on the aim box's
+      // margins, every time. A starting position that never moves is one the
+      // member stops having to check at all — they lined the document up
+      // against those very corners a second ago, so the drag distance is
+      // already close to zero and, more to the point, it is PREDICTABLE.
+      // Detection still runs live for the green corners; it has no say here.
+      quad = rectToQuad(aim);
       from = 'aim';
     } else {
-      quad = frameQuad(raster.width, raster.height, 0.05);
-      from = 'frame';
+      // No box means a caller outside the scanner. Detect, or use the frame.
+      const small = shrinkForDetect(raster);
+      const found = detectQuad(small.gray, { expectAspect: opts.expectAspect });
+      if (found) {
+        quad = found.quad.map((p) => ({
+          x: p.x / small.scale,
+          y: p.y / small.scale,
+        })) as Quad;
+        from = 'detected';
+      } else {
+        quad = frameQuad(raster.width, raster.height, 0.05);
+        from = 'frame';
+      }
     }
   }
 

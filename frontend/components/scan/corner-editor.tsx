@@ -33,6 +33,8 @@ const LOUPE = { width: 148, height: 148 };
 const ZOOM = 3.5;
 /** Finger-sized. The visible dot is smaller; this is what you can grab. */
 const GRAB = 44;
+/** Radius of the crosshair's clear centre window, in loupe pixels. */
+const GAP = 9;
 
 export interface CornerEditorProps {
   /** The uncropped capture. */
@@ -318,37 +320,73 @@ export default function CornerEditor({
             />
             {/* THE CROSSHAIR. Follows the dot rather than sitting at the
                 middle, because the window clamps at the edges of the photo —
-                and edges are where corners are. */}
+                and edges are where corners are.
+
+                ⚠️ EVERY STROKE HAS A DARK HALO UNDER IT, the same trick the
+                red aim corners use, and for the same reason: this draws over
+                a magnified photograph, which is by definition a busy, high-
+                contrast, unpredictable background. The first version was two
+                half-opacity hairlines and, in the operator's words, hard to
+                spot — a hairline over 3.5x-magnified paper grain simply
+                disappears. The lines also stop short of the centre so the
+                exact pixel being placed stays VISIBLE: a crosshair that
+                covers the corner it is pointing at defeats the loupe. */}
             <svg
               width={LOUPE.width}
               height={LOUPE.height}
               style={{ position: 'absolute', inset: 0 }}
             >
-              <line
-                x1={cross.x}
-                y1={0}
-                x2={cross.x}
-                y2={LOUPE.height}
-                stroke="rgba(255,255,255,0.55)"
-                strokeWidth={1}
-              />
-              <line
-                x1={0}
-                y1={cross.y}
-                x2={LOUPE.width}
-                y2={cross.y}
-                stroke="rgba(255,255,255,0.55)"
-                strokeWidth={1}
+              {[
+                { c: 'rgba(0,0,0,0.7)', w: 4.5 },
+                { c: '#fff', w: 2 },
+              ].map((pass, pi) => (
+                <g
+                  key={pi}
+                  stroke={pass.c}
+                  strokeWidth={pass.w}
+                  strokeLinecap="round"
+                >
+                  {/* Four arms with a clear window around the centre. */}
+                  <line x1={cross.x} y1={0} x2={cross.x} y2={cross.y - GAP} />
+                  <line
+                    x1={cross.x}
+                    y1={cross.y + GAP}
+                    x2={cross.x}
+                    y2={LOUPE.height}
+                  />
+                  <line x1={0} y1={cross.y} x2={cross.x - GAP} y2={cross.y} />
+                  <line
+                    x1={cross.x + GAP}
+                    y1={cross.y}
+                    x2={LOUPE.width}
+                    y2={cross.y}
+                  />
+                </g>
+              ))}
+              <circle
+                cx={cross.x}
+                cy={cross.y}
+                r={GAP}
+                fill="none"
+                stroke="rgba(0,0,0,0.7)"
+                strokeWidth={4.5}
               />
               <circle
                 cx={cross.x}
                 cy={cross.y}
-                r={9}
+                r={GAP}
                 fill="none"
                 stroke={BLUE}
                 strokeWidth={2}
               />
-              <circle cx={cross.x} cy={cross.y} r={1.5} fill={BLUE} />
+              <circle
+                cx={cross.x}
+                cy={cross.y}
+                r={2.2}
+                fill="#fff"
+                stroke="rgba(0,0,0,0.7)"
+                strokeWidth={1}
+              />
             </svg>
           </div>
         )}
