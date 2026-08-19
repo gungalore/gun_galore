@@ -2,6 +2,7 @@
 
 import { DETECT_WIDTH, Gray, detectQuad, inkiness, toLuma } from './detect';
 import { EnhanceReport, enhance, inspect } from './enhance';
+import { refineAimQuad } from './refine';
 import {
   Quad,
   Rect,
@@ -189,6 +190,45 @@ function rectToQuad(r: Rect): Quad {
   ];
 }
 
+/**
+ * The box, snapped onto the document's real edges — or the box itself when
+ * the picture offers nothing better.
+ *
+ * ⚠️ THE BOX ALONE IS NOT A CROP, and the operator's corner-editor
+ * screenshots are why: card, ID book and A4 form each lay a few degrees
+ * rotated on the carpet, and the axis-aligned box clipped a title on one and
+ * a serial row on another while its corners rested in carpet wedges. Nobody
+ * lays a document down at exactly zero degrees. refineAimQuad searches a
+ * narrow band around each box edge for the document's actual edge — it can
+ * tilt, the box cannot — and its band is too short to reach anything the
+ * member did not aim at.
+ *
+ * Refinement runs on a working copy around 900px wide: at full resolution the
+ * band would be hundreds of offsets deep, and corner accuracy is limited by
+ * the warp's interpolation anyway, not by this.
+ */
+function refineOrBox(raster: Raster, aim: Rect): Quad {
+  const k = Math.min(1, REFINE_WIDTH / raster.width);
+  const w = Math.max(1, Math.round(raster.width * k));
+  const h = Math.max(1, Math.round(raster.height * k));
+  // paint() writes pixels 1:1, so scale via an intermediate canvas.
+  const full = ctx2d(raster.width, raster.height);
+  paint(full, raster);
+  const g = ctx2d(w, h);
+  g.drawImage(full.canvas, 0, 0, w, h);
+  const small = toLuma(g.getImageData(0, 0, w, h).data, w, h);
+  const refined = refineAimQuad(small, {
+    x: aim.x * k,
+    y: aim.y * k,
+    width: aim.width * k,
+    height: aim.height * k,
+  });
+  if (!refined) return rectToQuad(aim);
+  return refined.map((pt) => ({ x: pt.x / k, y: pt.y / k })) as Quad;
+}
+
+const REFINE_WIDTH = 900;
+
 /** Decode a blob or file into raw pixels, capped so a 108MP phone cannot OOM us. */
 export async function decode(
   source: Blob,
@@ -345,7 +385,7 @@ export async function processCapture(
         quad = scaled;
         from = 'detected';
       } else {
-        quad = rectToQuad(aim!);
+        quad = refineOrBox(raster, aim!);
         from = 'aim';
       }
     } else if (aim) {
@@ -353,7 +393,7 @@ export async function processCapture(
       // quad means cropping to everything the camera could see, which on a
       // desk is a photograph of the desk. If they lined it up and we simply
       // could not find an edge, the box is still the best answer we have.
-      quad = rectToQuad(aim);
+      quad = refineOrBox(raster, aim);
       from = 'aim';
     } else {
       quad = frameQuad(raster.width, raster.height, 0.05);
