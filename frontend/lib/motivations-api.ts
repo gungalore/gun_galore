@@ -150,6 +150,22 @@ export interface UploadRow {
   available: boolean;
 }
 
+export interface DocumentNeed {
+  kind: string;
+  label: string;
+  tier: 'required' | 'strengthens' | 'extra';
+  why: string;
+  have: boolean;
+}
+
+export interface DocumentStatus {
+  needs: DocumentNeed[];
+  missingRequired: string[];
+  extras: string[];
+  requiredTotal: number;
+  requiredHave: number;
+}
+
 export interface FollowUp {
   id: string;
   role: 'assistant' | 'user';
@@ -200,7 +216,21 @@ export const motivationsApi = {
     ),
 
   uploads: (t: TokenGetter, id: string) =>
-    request<UploadRow[]>(t, `/${id}/uploads`, {}, []),
+    request<{ files: UploadRow[]; documents: DocumentStatus }>(
+      t,
+      `/${id}/uploads`,
+      {},
+      {
+        files: [],
+        documents: {
+          needs: [],
+          missingRequired: [],
+          extras: [],
+          requiredTotal: 0,
+          requiredHave: 0,
+        },
+      },
+    ),
 
   addUpload: async (t: TokenGetter, id: string, kind: string, file: File) => {
     const form = new FormData();
@@ -234,6 +264,15 @@ export const motivationsApi = {
       `/${id}/uploads/${uploadId}`,
       { method: 'DELETE' },
       { removed: true },
+    ),
+
+  /** POPIA erasure — deletes the application AND its encrypted documents. */
+  erase: (t: TokenGetter, id: string) =>
+    request<{ erased: boolean; filesRemoved: number }>(
+      t,
+      `/${id}`,
+      { method: 'DELETE' },
+      { erased: true, filesRemoved: 0 },
     ),
 
   messages: (t: TokenGetter, id: string) =>

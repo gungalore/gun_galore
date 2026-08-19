@@ -64,6 +64,7 @@ import {
 import { readSaId } from './sa-id';
 import { Saps271Service } from './saps271.service';
 import { overlapFromAnswers } from './motivation-overlap';
+import { documentStatus } from './motivation-documents';
 import {
   ProfileSource,
   profileCoverageNote,
@@ -251,10 +252,34 @@ export class MotivationsService {
 
     const referenceNumber = await this.refs.allocate('MO');
 
+    // WHAT WE ALREADY KNOW GOES IN NOW, not behind a consent screen.
+    //
+    // Operator, 2026-08-19: the personal section has to arrive already filled.
+    // It is the member's own profile, on their own account, being used for
+    // their own application — asking permission to show someone their own name
+    // was ceremony, and it put a click between them and a form that should
+    // already have been complete. The wizard says plainly where each value came
+    // from and every one of them is editable.
+    //
+    // profileConsentAt is still stamped: "when did their profile data get used"
+    // remains a question worth being able to answer.
+    const prefill = profileOffer(
+      licenceType,
+      await this.profileFor(user.id),
+      {},
+    );
+    const { answers: seeded } = sanitiseAnswers(licenceType, prefill.values);
+
     try {
       return await this.prisma.motivation.create({
         data: {
           referenceNumber,
+          ...(Object.keys(seeded).length
+            ? {
+                answersEncrypted: encryptJson(seeded),
+                profileConsentAt: new Date(),
+              }
+            : {}),
           userId: user.id,
           licenceType,
           applicationRef: (applicationRef ?? '').trim(),
@@ -265,7 +290,12 @@ export class MotivationsService {
           variantSeed: crypto.randomInt(0, 2 ** 31 - 1),
           answersSchemaVersion: FIELD_REGISTRY_VERSION,
         },
-        select: { id: true, referenceNumber: true, status: true },
+        select: {
+          id: true,
+          referenceNumber: true,
+          status: true,
+          licenceType: true,
+        },
       });
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') {
@@ -841,6 +871,7 @@ export class MotivationsService {
       where: { id, userId: user.id },
       select: {
         id: true,
+        licenceType: true,
         uploads: {
           orderBy: { createdAt: 'asc' },
           select: {
@@ -862,7 +893,7 @@ export class MotivationsService {
     const annexures = buildAnnexures(row.uploads.map((u) => u.kind));
     const letterFor = new Map(annexures.map((a) => [a.kind, a.letter]));
 
-    return row.uploads.map((u) => ({
+    const files = row.uploads.map((u) => ({
       id: u.id,
       kind: u.kind,
       label: UPLOAD_KIND_LABELS[u.kind],
@@ -876,6 +907,17 @@ export class MotivationsService {
       extractionOk: u.extractionOk,
       extractedFields: u.extractedFields,
     }));
+
+    // What the APPLICATION still needs, weighed against what is attached.
+    // Named specifically rather than "some documents are missing", because the
+    // alternative to naming them is a wasted trip to a police station.
+    return {
+      files,
+      documents: documentStatus(
+        row.licenceType,
+        row.uploads.map((u) => u.kind),
+      ),
+    };
   }
 
   /**

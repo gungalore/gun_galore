@@ -9,6 +9,7 @@ import {
   MotivationApiError,
   MotivationDetail,
   MotivationField,
+  DocumentStatus,
   ProfileOffer,
   Suggestion,
   UploadRow,
@@ -69,6 +70,8 @@ export default function MotivationWizardPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [offer, setOffer] = useState<ProfileOffer | null>(null);
   const [uploads, setUploads] = useState<UploadRow[]>([]);
+  const [documents, setDocuments] = useState<DocumentStatus | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [messages, setMessages] = useState<FollowUp[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +118,9 @@ export default function MotivationWizardPage() {
         setDetail(d);
         setFields(fs.fields);
         setAnswers(merged);
-        setUploads(await motivationsApi.uploads(token, id));
+        const up = await motivationsApi.uploads(token, id);
+        setUploads(up.files);
+        setDocuments(up.documents);
         setMessages(await motivationsApi.messages(token, id));
         try {
           setOffer(await motivationsApi.profileOffer(token, id));
@@ -258,7 +263,17 @@ export default function MotivationWizardPage() {
   ): StepStatus => {
     if (answered > 0 && missing === 0) return 'complete';
     if (n === expanded) return 'active';
-    return n <= furthest ? 'idle' : 'locked';
+    // NOTHING IS EVER LOCKED.
+    //
+    // It used to lock any step past `furthest`, which froze the whole form on
+    // return: the profile step does not render for an application that already
+    // has one, so `expanded` pointed at a step that was not there, nothing was
+    // active, and every remaining section sat locked and unclickable.
+    //
+    // Locking was wrong anyway. This is not a checkout — people fill a licence
+    // application in the order their paperwork comes to hand, and a step they
+    // cannot open is indistinguishable from a broken page.
+    return 'idle';
   };
 
   /**
@@ -272,6 +287,18 @@ export default function MotivationWizardPage() {
     setExpanded((cur) => (cur === n ? 0 : n));
     setFurthest((f) => Math.max(f, n));
   };
+
+  // Open the first section that still has something outstanding, rather than
+  // assuming step 1 exists. A returning applicant lands on the work left to do.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current || loading || !sections.length) return;
+    opened.current = true;
+    const firstIncomplete = sections.findIndex((sec) =>
+      sec.fields.some((f) => outstanding.includes(f.key)),
+    );
+    setExpanded(firstIncomplete >= 0 ? firstIncomplete + 2 : 0);
+  }, [loading, sections, outstanding]);
 
   if (loading) {
     return <main className="mx-auto max-w-3xl p-6">Loading your application…</main>;
@@ -317,11 +344,71 @@ export default function MotivationWizardPage() {
           on the form. They are stored encrypted on our own server, are never
           public, and each becomes a lettered annexure.
         </p>
+        {documents && documents.needs.length > 0 && (
+          <div className="mt-3 rounded border">
+            <div className="flex items-center justify-between gap-3 border-b bg-neutral-50 px-3 py-2">
+              <span className="text-sm font-medium">
+                {documents.missingRequired.length === 0
+                  ? 'You have everything SAPS asks for'
+                  : `${documents.requiredHave} of ${documents.requiredTotal} required documents`}
+              </span>
+              {documents.extras.length > 0 && (
+                <span className="text-xs text-neutral-500">
+                  + {documents.extras.length} extra attached
+                </span>
+              )}
+            </div>
+            <ul className="divide-y">
+              {documents.needs.map((n) => (
+                <li key={n.kind} className="flex gap-3 p-3 text-sm">
+                  <span aria-hidden className="pt-0.5">
+                    {n.have ? '✓' : n.tier === 'required' ? '•' : '○'}
+                  </span>
+                  <span className="flex-1">
+                    <span className={n.have ? 'text-neutral-500 line-through' : ''}>
+                      {n.label}
+                    </span>
+                    {/* "Required" means SAPS requires it — never that we
+                        refuse to proceed. Someone whose competency is still
+                        being processed should be drafting a motivation now. */}
+                    {!n.have && n.tier === 'required' && (
+                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs">
+                        SAPS needs this
+                      </span>
+                    )}
+                    {!n.have && n.tier === 'strengthens' && (
+                      <span className="ml-2 text-xs text-neutral-500">
+                        optional — but it helps
+                      </span>
+                    )}
+                    {!n.have && n.why && (
+                      <span className="mt-0.5 block text-xs text-neutral-500">
+                        {n.why}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="border-t px-3 py-2 text-xs text-neutral-500">
+              Anything else you want to attach as supporting evidence is
+              welcome — choose &ldquo;Something else&rdquo; below. We will
+              letter it as an annexure like the rest.
+            </p>
+          </div>
+        )}
+
         <UploadPanel
           uploads={uploads}
           onAdd={async (kind, file) => {
             const row = await motivationsApi.addUpload(token, id, kind, file);
             setUploads((u) => [...u, row]);
+            // Re-read what is still needed: this upload may have satisfied a
+            // requirement, and the list must stop asking for it.
+            motivationsApi
+              .uploads(token, id)
+              .then((up) => setDocuments(up.documents))
+              .catch(() => undefined);
             if (row.suggestions?.length) {
               // Only offer values for fields that are still empty — anything
               // already answered stays exactly as they typed it.
@@ -338,6 +425,10 @@ export default function MotivationWizardPage() {
           onRemove={async (uploadId) => {
             await motivationsApi.removeUpload(token, id, uploadId);
             setUploads((u) => u.filter((x) => x.id !== uploadId));
+            motivationsApi
+              .uploads(token, id)
+              .then((up) => setDocuments(up.documents))
+              .catch(() => undefined);
           }}
         />
 
@@ -630,6 +721,43 @@ export default function MotivationWizardPage() {
           </div>
         )}
         {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+      </section>
+
+      {/* Deleting was possible on the API from the start and had no way in
+          from the wizard. It is a real erasure — the encrypted documents go
+          with it — so it asks first and says what it is about to do. */}
+      <section className="mt-8 border-t pt-4">
+        <button
+          type="button"
+          disabled={deleting}
+          className="text-sm text-red-700 underline disabled:opacity-50"
+          onClick={async () => {
+            const ok = window.confirm(
+              `Delete this application (${detail.referenceNumber})?\n\nThis removes your answers, your uploaded documents and the finished motivation. It cannot be undone.`,
+            );
+            if (!ok) return;
+            setDeleting(true);
+            try {
+              await motivationsApi.erase(token, id);
+              // The local draft would otherwise resurrect the answers on a
+              // new application with the same id — belt and braces.
+              localStorage.removeItem(DRAFT_KEY(id));
+              router.push('/motivations');
+            } catch (e) {
+              setError(
+                e instanceof MotivationApiError
+                  ? e.message
+                  : 'We could not delete it just now.',
+              );
+              setDeleting(false);
+            }
+          }}
+        >
+          {deleting ? 'Deleting…' : 'Delete this application'}
+        </button>
+        <p className="mt-1 text-xs text-neutral-500">
+          Removes everything, including the documents you uploaded.
+        </p>
       </section>
     </main>
   );
