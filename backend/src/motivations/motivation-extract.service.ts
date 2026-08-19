@@ -196,9 +196,17 @@ export class MotivationExtractService {
       const res = await this.client.messages.create({
         model: MODEL,
         max_tokens: 1200,
-        // Zero: this is transcription, not writing. The same card must read the
-        // same way twice, and a "creative" ID number is worthless.
-        temperature: 0,
+        // ⚠️ NO `temperature` HERE, AND NEVER ADD ONE.
+        //
+        // temperature / top_p / top_k were REMOVED from the API on Opus 4.7 and
+        // later, and on Sonnet 5 — which is what ANTHROPIC_MODEL_JUDGE points at
+        // on the live box. Sending one is a 400:
+        //   "`temperature` is deprecated for this model."
+        //
+        // It cost us two days of silence: every call site below fails soft, so
+        // the 400 was caught, logged at warn, and the feature simply did
+        // nothing. Deterministic transcription is the DEFAULT now — there is no
+        // parameter to ask for it.
         system: this.systemPrompt(),
         messages: [
           {

@@ -262,7 +262,21 @@ export class MotivationClaudeService {
         {
           model: MODEL_GATE,
           max_tokens: 1200,
-          temperature: 0,
+        // ⚠️ NO `temperature` HERE, AND NEVER ADD ONE.
+        //
+        // temperature / top_p / top_k were REMOVED from the API on Opus 4.7 and
+        // later, and on Sonnet 5 — which is what ANTHROPIC_MODEL_JUDGE points at
+        // on the live box. Sending one is a 400:
+        //   "`temperature` is deprecated for this model."
+        //
+        // It cost us two days of silence: every call site below fails soft, so
+        // the 400 was caught, logged at warn, and the feature simply did
+        // nothing. Deterministic transcription is the DEFAULT now — there is no
+        // parameter to ask for it.
+          //
+          // ⚠️ THIS ONE FAILS CLOSED. A gate that cannot be reached returns
+          // failedVerdict, so while this was 400ing NO motivation could pass
+          // review at all.
           system: gateSystemPrompt(),
           messages: [
             { role: 'user', content: gateUserPrompt(pack, documentText) },
@@ -415,7 +429,17 @@ export class MotivationClaudeService {
       const res = await client.messages.create({
         model: MODEL_FOLLOWUP,
         max_tokens: 900,
-        temperature: 0.7,
+        // ⚠️ `temperature: 0.7` WAS HERE, and it was deliberate — variation
+        // between documents is what keeps a CFR reviewer from seeing the same
+        // motivation twice. It still had to go: the parameter is removed on
+        // this model family and was 400ing the call.
+        //
+        // The variation does not depend on it. It is engineered structurally —
+        // Motivation.variantSeed, the structure plans in motivation-structure.ts,
+        // the 3,120 visual combinations in motivation-style.ts, and the sameness
+        // check against the recent corpus. Sampling temperature was the least of
+        // it. If documents ever do start reading alike, the lever is another
+        // structure plan, not a parameter that no longer exists.
         system: followUpBatchSystemPrompt(),
         messages: [
           {

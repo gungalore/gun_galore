@@ -374,7 +374,20 @@ export class ClaudeKycService {
       // were nothing but variance. Identity decisions must be reproducible —
       // the same evidence has to give the same verdict every time, including
       // when we re-run a scan to explain a decision afterwards.
-      temperature: 0,
+      // ⚠️ NO `temperature` HERE, AND NEVER ADD ONE.
+      //
+      // temperature / top_p / top_k were REMOVED from the API on Opus 4.7 and
+      // later, and on Sonnet 5 — which is what ANTHROPIC_MODEL_JUDGE points at
+      // on the live box. Sending one is a 400:
+      //   "`temperature` is deprecated for this model."
+      //
+      // It cost us two days of silence: every call site below fails soft, so
+      // the 400 was caught, logged at warn, and the feature simply did
+      // nothing. Deterministic transcription is the DEFAULT now — there is no
+      // parameter to ask for it.
+      //
+      // ⚠️ This one had been failing since 2026-08-17 — every Claude KYC scan
+      // 400ing and falling through to the catch.
       system: SYSTEM_PROMPT + LENS_INSTRUCTION[lens],
       messages: [{ role: 'user', content: userContent as never }],
     });

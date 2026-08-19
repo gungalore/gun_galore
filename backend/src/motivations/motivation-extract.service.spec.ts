@@ -178,9 +178,24 @@ describe('failing softly', () => {
     expect(await run(svc)).toEqual([]);
   });
 
-  it('transcribes at temperature 0 — the same card must read the same way twice', async () => {
+  it('sends NO sampling parameters — they are a 400 on our models', async () => {
+    // This test used to assert `temperature: 0`, and that assertion is what
+    // made the outage look fine from in here.
+    //
+    // temperature / top_p / top_k were removed from the API on Opus 4.7 and
+    // later, and on Sonnet 5 — the model this service actually runs on in
+    // production. Every call 400'd with "`temperature` is deprecated for this
+    // model", the fail-soft catch swallowed it, and extraction silently
+    // returned nothing for two days while the suite stayed green.
+    //
+    // Deterministic transcription is the default now; there is no parameter
+    // to ask for it.
     const { svc, create } = build({ fields: [] });
     await run(svc);
-    expect((create.mock.calls[0]?.[0] as any).temperature).toBe(0);
+    const body = create.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(body).toBeDefined();
+    for (const param of ['temperature', 'top_p', 'top_k']) {
+      expect(body[param]).toBeUndefined();
+    }
   });
 });
