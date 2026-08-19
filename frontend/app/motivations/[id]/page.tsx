@@ -317,6 +317,40 @@ export default function MotivationWizardPage() {
     setUploadKinds(up.kinds ?? []);
   }, [token, id]);
 
+  /**
+   * Photograph the document a field comes off, and fill the field from it.
+   *
+   * ⚠️ IT APPLIES THE READ VALUES DIRECTLY rather than dropping them into the
+   * suggestions list further down the page. Somebody who has just pressed
+   * "Photograph your competency certificate" while looking at the competency
+   * box has said what they want as plainly as it can be said — asking them to
+   * scroll and confirm is a second question nobody asked for. The general
+   * upload path still routes through suggestions, because there the member
+   * has not told us which box they had in mind.
+   *
+   * The file is filed as a real annexure at the same time, so it prints into
+   * the pack with everything else.
+   */
+  const fillFromPhoto = useCallback(
+    async (kind: string, file: File) => {
+      const row = await motivationsApi.addUpload(token, id, kind, file);
+      setUploads((u) => [...u, row]);
+      for (const sg of row.suggestions ?? []) {
+        setAnswer(sg.key, sg.value);
+        setUnlocked((u) => new Set(u).add(sg.key));
+      }
+      await refreshUploads().catch(() => undefined);
+      if (!row.suggestions?.length) {
+        setUploadErr(
+          'We saved that, but could not read a number off it. Type it in and check the photograph in the checklist below.',
+        );
+      }
+    },
+    // setAnswer is re-created every render by design (see its own note).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [token, id, refreshUploads],
+  );
+
   const removeOneUpload = async (uploadId: string) => {
     await motivationsApi.removeUpload(token, id, uploadId);
     setUploads((u) => u.filter((x) => x.id !== uploadId));
@@ -987,19 +1021,25 @@ export default function MotivationWizardPage() {
                     button; this is the answer to "I have two of those, which
                     one?" — and the only place that question makes sense is
                     beside the box it is about. */}
-                {f.key === 'competency_number' && offerChoices && (
+                {f.key === 'competency_number' && (
                   <CredentialPicker
-                    choices={offerChoices.competency}
+                    choices={offerChoices?.competency ?? []}
                     label="Or take it off a competency certificate in your Licence Centre"
-                    emptyHint="Photographed your competency certificate?"
+                    photographLabel="Photograph your competency certificate"
+                    uploadKind="COMPETENCY_CERTIFICATE"
+                    motivationId={id}
+                    onUpload={fillFromPhoto}
                     onPick={(vals) => applyPicked(vals)}
                   />
                 )}
-                {f.key === 'association_number' && offerChoices && (
+                {f.key === 'association_number' && (
                   <CredentialPicker
-                    choices={offerChoices.dedicated}
+                    choices={offerChoices?.dedicated ?? []}
                     label="Or take it off a dedicated-status card in your Licence Centre"
-                    emptyHint="Photographed your association card?"
+                    photographLabel="Photograph your association card"
+                    uploadKind="ASSOCIATION_CARD"
+                    motivationId={id}
+                    onUpload={fillFromPhoto}
                     onPick={(vals) => applyPicked(vals)}
                   />
                 )}

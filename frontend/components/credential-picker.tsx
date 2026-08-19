@@ -3,6 +3,9 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import type { CredentialChoice } from '@/lib/motivations-api';
+import ScanButton from '@/components/scan/scan-button';
+import FilePickerButton from '@/components/file-picker-button';
+import { shapeForKind } from '@/lib/scan/shapes';
 
 // ────────────────────────────────────────────────────────────────────
 // "OR TAKE IT OFF ONE OF MY DOCUMENTS."
@@ -25,32 +28,102 @@ import type { CredentialChoice } from '@/lib/motivations-api';
 export default function CredentialPicker({
   choices,
   label,
-  emptyHint,
+  photographLabel,
+  uploadKind,
+  motivationId,
+  onUpload,
   onPick,
 }: {
   choices: CredentialChoice[];
   /** What the member is choosing, in their words. */
   label: string;
-  /** Shown instead when the vault holds nothing of this kind. */
-  emptyHint: string;
+  /** The button that photographs the document this field comes off. */
+  photographLabel: string;
+  /** Which upload kind a photograph taken here should be filed as. */
+  uploadKind: string;
+  motivationId: string;
+  /** Files the photograph and reads the value off it. */
+  onUpload: (kind: string, file: File) => Promise<void>;
   onPick: (values: Record<string, string>) => void | Promise<void>;
 }) {
   const [picked, setPicked] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // ⚠️ PHOTOGRAPH IT RIGHT HERE. The dropdown only helps somebody who has
+  // already put the certificate in their Licence Centre — and the operator,
+  // looking at this field with an empty vault, saw a sentence telling him to
+  // go and do that somewhere else. That is not an answer to "fill this in
+  // from the picture taken"; it is a redirect. The certificate is in his hand
+  // NOW, so the camera belongs on this field, and what it reads off the
+  // photograph fills the box. It lands in the pack as an annexure at the same
+  // time, which he needed anyway.
+  const camera = (
+    <div className="mt-2">
+      <ScanButton
+        shape={shapeForKind(uploadKind)}
+        title={photographLabel}
+        kind={uploadKind}
+        label={busy ? 'Reading…' : photographLabel}
+        disabled={busy}
+        handoff={{ dest: 'motivation', motivationId }}
+        onFiles={async (files) => {
+          const file = files[0];
+          if (!file) return;
+          setBusy(true);
+          setErr(null);
+          try {
+            await onUpload(uploadKind, file);
+          } catch {
+            setErr('That upload did not work.');
+          } finally {
+            setBusy(false);
+          }
+        }}
+        fallback={
+          <FilePickerButton
+            accept="image/jpeg,image/png,image/webp,application/pdf"
+            disabled={busy}
+            onFiles={async (files) => {
+              const file = files[0];
+              if (!file) return;
+              setBusy(true);
+              setErr(null);
+              try {
+                await onUpload(uploadKind, file);
+              } catch {
+                setErr('That upload did not work.');
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? 'Reading…' : 'Upload'}
+          </FilePickerButton>
+        }
+      />
+      {err && <p className="mt-1 text-xs text-[var(--red)]">{err}</p>}
+    </div>
+  );
 
   if (choices.length === 0) {
     return (
-      <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
-        {emptyHint}{' '}
-        <Link href="/licence-centre" className="underline">
-          Keep it in your Licence Centre
-        </Link>{' '}
-        and it will fill this in for you.
-      </p>
+      <>
+        {camera}
+        <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
+          We read the number off the photograph. Anything you keep in your{' '}
+          <Link href="/licence-centre" className="underline">
+            Licence Centre
+          </Link>{' '}
+          shows up here as a choice too.
+        </p>
+      </>
     );
   }
 
   return (
     <div className="mt-2">
+      {camera}
       <label className="block text-xs text-[var(--text-secondary)]">
         {label}
         <select
