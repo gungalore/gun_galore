@@ -67,6 +67,14 @@ export interface DocumentScannerProps {
    * expect would be refusing a real document.
    */
   shape?: DocShape;
+  /**
+   * Start with "more than one" already ticked.
+   *
+   * For the bulk-upload surfaces — the Motivation Centre's upload-all in
+   * particular — where somebody arrives holding a whole pack and the single
+   * -document flow is the unusual case, not the default.
+   */
+  multiDefault?: boolean;
   title: string;
   onDone: (files: File[]) => void | Promise<void>;
   onClose: () => void;
@@ -91,6 +99,7 @@ type Phase =
 
 export default function DocumentScanner({
   shape: initialShape = 'any',
+  multiDefault = false,
   title,
   onDone,
   onClose,
@@ -111,7 +120,7 @@ export default function DocumentScanner({
    * time. Somebody who has not said so is never asked about pages they do not
    * have.
    */
-  const [multi, setMulti] = useState(false);
+  const [multi, setMulti] = useState(multiDefault);
   const [err, setErr] = useState<string | null>(null);
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
@@ -181,6 +190,8 @@ export default function DocumentScanner({
    */
   const aimedRef = useRef(false);
   const aimShownRef = useRef(false);
+  /** Consecutive frames the quad has been outside the box. */
+  const aimMissRef = useRef(3);
   const [aimed, setAimed] = useState(false);
   const captureRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -403,10 +414,28 @@ export default function DocumentScanner({
           // a tenth of that, and a card sitting off in one corner of the
           // frame scores nothing at all.
           const ok = aimAgreement(bounds, box) >= 0.35;
-          aimedRef.current = ok;
-          if (ok !== aimShownRef.current) {
-            aimShownRef.current = ok;
-            setAimed(ok);
+
+          // ⚠️ HYSTERESIS, FOR THE SAME REASON THE LOCK HAS IT. In the
+          // operator's card recording the corners flipped red-green-red about
+          // once a second while the card sat perfectly still on the desk —
+          // the quad wobbles by a few pixels frame to frame and the
+          // threshold happened to run through the middle of that wobble.
+          //
+          // That is not just ugly. Auto-capture needs the phone held steady
+          // for 1.1 seconds, and every flicker restarted the count, so the
+          // hold could never complete. One bad frame must not undo a second
+          // of good ones: it takes three consecutive misses to give up, and
+          // a single hit to come back.
+          if (ok) {
+            aimMissRef.current = 0;
+          } else {
+            aimMissRef.current += 1;
+          }
+          const held = ok || aimMissRef.current < 3;
+          aimedRef.current = held;
+          if (held !== aimShownRef.current) {
+            aimShownRef.current = held;
+            setAimed(held);
           }
         } else {
           // ⚠️ NEVER BLINK OFF. A single frame where a hand shadowed an edge
@@ -417,6 +446,7 @@ export default function DocumentScanner({
             quadRef.current = null;
             confidentRef.current = false;
             aimedRef.current = false;
+            aimMissRef.current = 3;
             if (aimShownRef.current) {
               aimShownRef.current = false;
               setAimed(false);
@@ -806,6 +836,11 @@ export default function DocumentScanner({
             }}
             onUse={() => finish([...pages, shot.file])}
             multi={multi}
+            onNextDocument={() => {
+              setPages((p) => [...p, shot.file]);
+              backToChooser();
+              say('Saved. What is the next one?');
+            }}
             onAddAnother={() => {
               setPages((p) => [...p, shot.file]);
               setShot(null);
@@ -835,8 +870,24 @@ export default function DocumentScanner({
             }
           }}
           onShutter={() => {
-            // Reaching for the shutter says the automatic one is not helping.
-            setAuto(false);
+            // ⚠️ TAKE THE PHOTO. THAT IS ALL.
+            //
+            // This used to also turn automatic capture OFF, on the theory
+            // that reaching for the shutter meant the automatic one was not
+            // helping. Two screen recordings killed that theory: on an A4
+            // certificate the corners sat locked and green for eleven
+            // seconds straight — detection was perfect — and the scanner
+            // never fired, because one manual press early in the session had
+            // silently switched auto off and nothing switched it back.
+            //
+            // It is a doom loop. Auto feels slow, so you press the shutter,
+            // which disables auto, so every document after it needs a press,
+            // which confirms that auto never works. The operator's report was
+            // "every time I have to manual capture", and he was right.
+            //
+            // The toggle beside the shutter is how somebody turns it off.
+            // That one is deliberate, visible and reversible; this one was
+            // none of the three.
             void capture();
           }}
           auto={auto}
@@ -1417,6 +1468,7 @@ function Review({
   onRetake,
   onUse,
   onAddAnother,
+  onNextDocument,
   multi,
 }: {
   shot: ScanResult;
@@ -1427,7 +1479,9 @@ function Review({
   onRetake: () => void;
   onUse: () => void;
   onAddAnother: () => void;
-  /** Did the member say up front that there is more than one page? */
+  /** Keep the page, but go back and say what the next one is. */
+  onNextDocument: () => void;
+  /** Did the member say up front that there is more than one? */
   multi: boolean;
 }) {
   const notes = verdicts(shot);
@@ -1520,6 +1574,15 @@ function Review({
             <>
               <button type="button" onClick={onUse} style={secondaryBtn}>
                 That is all
+              </button>
+              {/* ⚠️ THE NEXT THING IS OFTEN A DIFFERENT SHAPE. Somebody
+                  working through a motivation pack photographs an A4
+                  competency certificate, then a licence card, then the page
+                  of an ID book. Sending them straight back to the camera with
+                  the previous document's aim box means the corners are wrong
+                  for everything after the first one. */}
+              <button type="button" onClick={onNextDocument} style={secondaryBtn}>
+                Different document
               </button>
               <button
                 type="button"

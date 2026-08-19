@@ -40,7 +40,14 @@ export interface ShapeSpec {
   portrait: boolean;
   /** Can there sensibly be more than one page or side? */
   multi: boolean;
-  /** What "more than one" means for this document. */
+  /**
+   * What "more than one" means for this document.
+   *
+   * ⚠️ IT MEANS OTHER DOCUMENTS TOO, not just more pages of this one. A
+   * motivation pack is a competency certificate AND a licence card AND a
+   * page of an ID book, and the operator asked for one session to cover the
+   * lot. Wording it as "pages" made it read like a per-document setting.
+   */
   multiLabel: string;
 }
 
@@ -56,7 +63,7 @@ export const SHAPES: Record<DocShape, ShapeSpec> = {
     shortMm: 54,
     portrait: false,
     multi: true,
-    multiLabel: 'Front and back',
+    multiLabel: 'More than one — front and back, or other documents',
   },
   a4: {
     key: 'a4',
@@ -66,7 +73,7 @@ export const SHAPES: Record<DocShape, ShapeSpec> = {
     shortMm: 210,
     portrait: true,
     multi: true,
-    multiLabel: 'More than one page',
+    multiLabel: 'More than one — more pages, or other documents',
   },
   'id-book': {
     key: 'id-book',
@@ -82,7 +89,7 @@ export const SHAPES: Record<DocShape, ShapeSpec> = {
     shortMm: 88,
     portrait: true,
     multi: true,
-    multiLabel: 'More than one page',
+    multiLabel: 'More than one — more pages, or other documents',
   },
   any: {
     key: 'any',
@@ -92,7 +99,7 @@ export const SHAPES: Record<DocShape, ShapeSpec> = {
     shortMm: null,
     portrait: true,
     multi: true,
-    multiLabel: 'More than one photo',
+    multiLabel: 'More than one — more photos, or other documents',
   },
 };
 

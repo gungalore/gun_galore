@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MotivationsController } from './motivations.controller';
+import { MotivationsScanController } from './motivations-scan.controller';
+import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationsService } from './motivations.service';
 import { MotivationPdfService } from './motivation-pdf.service';
@@ -32,8 +34,13 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
  * writing user files into the encrypted store without a deliberate decision.
  */
 @Module({
-  controllers: [MotivationsController],
+  controllers: [MotivationsController, MotivationsScanController],
   providers: [
+    // ⚠️ THE GUARD IS PROVIDED, NOT JUST IMPORTED. A controller decorated
+    // with a guard whose dependencies this module cannot resolve crash-loops
+    // Nest at boot while tsc passes clean — the same trap AdminJwtGuard sets
+    // and which is documented above.
+    ScanHandoffGuard,
     MotivationsService,
     MotivationQuotaService,
     MotivationPdfService,

@@ -40,6 +40,7 @@ type ResolvedPayload =
   | KycVerifyPayload
   | TransactionAcceptPayload
   | SwapDecisionPayload
+  | ScanHandoffPayload
   | RunnerUpPayload;
 
 interface CheckoutPayload {
@@ -63,6 +64,14 @@ interface KycVerifyPayload {
   kind: 'KYC_VERIFY';
   expiresAt: string;
   greeting: string;
+  redirectTo: string;
+}
+
+// SCAN_HANDOFF carries no entity and, deliberately, no greeting — see the
+// note on the redirect below.
+interface ScanHandoffPayload {
+  kind: 'SCAN_HANDOFF';
+  expiresAt: string;
   redirectTo: string;
 }
 
@@ -105,7 +114,16 @@ export default async function ActionTokenPage({
   // Keeps the SMS URL short (always /a/<token>) while reusing the
   // checkout form / KYC verify page we already have. The ?t=<token>
   // carried on the redirect authorises those pages' API calls.
-  if (payload.kind === 'CHECKOUT' || payload.kind === 'KYC_VERIFY') {
+  if (
+    payload.kind === 'CHECKOUT' ||
+    payload.kind === 'KYC_VERIFY' ||
+    // SCAN_HANDOFF is the desktop-to-phone QR link: the phone lands here,
+    // gets punted to the scanner, and uploads with the same ?t= authorising
+    // it. Nothing about the member is rendered on the way through — the link
+    // was opened by pointing a camera at a screen, and whoever was standing
+    // in the room could have done that.
+    payload.kind === 'SCAN_HANDOFF'
+  ) {
     redirect(payload.redirectTo);
   }
 

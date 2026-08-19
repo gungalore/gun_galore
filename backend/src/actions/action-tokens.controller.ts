@@ -104,6 +104,8 @@ export class ActionTokensController {
         return this.buildCheckoutPayload(resolved, user);
       case 'KYC_VERIFY':
         return this.buildKycVerifyPayload(resolved, user);
+      case 'SCAN_HANDOFF':
+        return this.buildScanHandoffPayload(resolved);
       case 'DISPATCH':
         return this.buildDispatchPayload(resolved, user);
       case 'TRANSACTION_ACCEPT':
@@ -883,6 +885,33 @@ export class ActionTokensController {
     };
   }
 
+  /**
+   * The desktop-to-phone scan link.
+   *
+   * ⚠️ NO GREETING, unlike every other payload here. This one is opened by
+   * pointing a camera at a QR code, which means it can be opened by whoever
+   * is standing in the room — so it says nothing about who the member is
+   * until the page behind it has done its own work.
+   */
+  private buildScanHandoffPayload(resolved: ResolvedToken) {
+    // ⚠️ THE SERVER DECIDES WHERE THE FILES GO, and carries it on the URL so
+    // the phone page needs no second round trip before it can open a camera.
+    // A tampered query string can only redirect the upload to another of the
+    // SAME member's destinations — every upload endpoint scopes by the
+    // authorising user and would 404 on anybody else's — so this is a
+    // convenience, not a trust boundary.
+    const meta = resolved.metadata ?? {};
+    const q = new URLSearchParams({ t: resolved.token });
+    if (typeof meta.dest === 'string') q.set('dest', meta.dest);
+    if (typeof meta.motivationId === 'string') q.set('m', meta.motivationId);
+    if (typeof meta.kind === 'string') q.set('kind', meta.kind);
+    return {
+      kind: 'SCAN_HANDOFF' as const,
+      expiresAt: resolved.expiresAt.toISOString(),
+      redirectTo: `/scan/handoff?${q.toString()}`,
+    };
+  }
+
   private buildKycVerifyPayload(
     resolved: ResolvedToken,
     user: { username: string | null; firstName: string | null },
@@ -897,6 +926,49 @@ export class ActionTokensController {
       greeting: user.firstName ?? user.username ?? 'there',
       redirectTo: `/kyc/verify?t=${resolved.token}`,
     };
+  }
+
+  // ─── Scan handoff (desktop → phone) ──────────────────────────────
+
+  /**
+   * The phone announcing that it has arrived.
+   *
+   * ⚠️ IT DOES NOT CONSUME. This is how the desktop's QR dialog learns it was
+   * scanned, and it fires while the member is still holding the phone up —
+   * consuming here would kill the token before a single photograph was taken.
+   */
+  @Post(':token/scan-handoff/open')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async scanHandoffOpen(@Param('token') token: string) {
+    const resolved = await this.tokens.resolve(token);
+    if (resolved.purpose !== 'SCAN_HANDOFF') {
+      await this.tokens.markInvalid(token);
+      throw new BadRequestException('This link is not a scanning link.');
+    }
+    await this.tokens.patchMetadata(token, {
+      openedAt: new Date().toISOString(),
+    });
+    return { ok: true };
+  }
+
+  /**
+   * The member saying they are finished on the phone.
+   *
+   * ⚠️ THE ONLY PATH THAT CONSUMES, and it must stay that way. It is called
+   * from a deliberate button press, never from an unload handler or a
+   * beacon — a token consumed by the phone locking its screen mid-session
+   * would 410 the rest of the pack with nothing to show for it.
+   */
+  @Post(':token/scan-handoff/done')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async scanHandoffDone(@Param('token') token: string, @Req() req: Request) {
+    const resolved = await this.tokens.resolve(token);
+    if (resolved.purpose !== 'SCAN_HANDOFF') {
+      await this.tokens.markInvalid(token);
+      throw new BadRequestException('This link is not a scanning link.');
+    }
+    await this.tokens.consume(token, reqIp(req), reqUa(req));
+    return { ok: true };
   }
 }
 

@@ -375,6 +375,12 @@ function AddPanel({
           title="Photograph the document"
           onFiles={uploadFiles}
           disabled={busy}
+          // ⚠️ ON A DESKTOP THE WEBCAM IS NOT THE ANSWER. It focuses at half a
+          // metre and cannot resolve a licence serial, so the phone already in
+          // their pocket is offered first and the webcam is demoted.
+          handoff={{ dest: 'licence-centre' }}
+          kind={kind}
+          onHandoffArrived={() => void onAdded()}
           fallback={
             <FilePickerButton
               accept="image/jpeg,image/png,image/webp,application/pdf"

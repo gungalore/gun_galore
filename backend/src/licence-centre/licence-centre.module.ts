@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { LicenceCentreController } from './licence-centre.controller';
+import { LicenceCentreScanController } from './licence-centre-scan.controller';
+import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import { LicenceCentreAdminController } from './licence-centre-admin.controller';
 import { LicenceCentreService } from './licence-centre.service';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
@@ -28,8 +30,14 @@ import { MotivationsModule } from '../motivations/motivations.module';
   // motivations/ reaches back here, so there is no cycle — and a spec asserts
   // it stays that way.
   imports: [JwtModule.register({}), MotivationsModule],
-  controllers: [LicenceCentreController, LicenceCentreAdminController],
+  controllers: [
+    LicenceCentreController,
+    LicenceCentreScanController,
+    LicenceCentreAdminController,
+  ],
   providers: [
+    // Provided, not merely referenced — see the note in motivations.module.ts.
+    ScanHandoffGuard,
     LicenceCentreService,
     LicenceCentreQuotaService,
     LicenceCentreExtractService,

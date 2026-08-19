@@ -2,6 +2,10 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
 const isPublicRoute = createRouteMatcher([
+  // The phone's half of the desktop QR handoff. ⚠️ IT MUST BE PUBLIC: the
+  // whole point is that the phone is NOT signed in, and the ?t= token is what
+  // authorises it. See app/scan/handoff/page.tsx.
+  '/scan/handoff(.*)',
   '/',
   '/sign-in(.*)',
   '/sign-up(.*)',
@@ -139,7 +143,12 @@ export default clerkMiddleware(async (auth, request) => {
     const isTokenAuthedPage =
       url.pathname === '/checkout/complete' ||
       ((url.pathname.startsWith('/checkout/') ||
-        url.pathname === '/kyc/verify') &&
+        url.pathname === '/kyc/verify' ||
+        // ⚠️ THE HANDOFF NEEDS BOTH LISTS. Public-route alone gets the phone
+        // past Clerk and then straight into a rewrite to /coming-soon, which
+        // reads as the QR code being broken. Same trap the KYC verify page
+        // sat in.
+        url.pathname === '/scan/handoff') &&
         url.searchParams.has('t'));
     const cookieVal = request.cookies.get(COMING_SOON_COOKIE)?.value;
     const hasBypassCookie =

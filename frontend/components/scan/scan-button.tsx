@@ -25,12 +25,29 @@ const DocumentScanner = dynamic(() => import('./document-scanner'), {
   ssr: false,
 });
 
+// The QR is only ever drawn on a desktop, so its library stays out of the
+// bundle every phone downloads.
+const PhoneHandoffDialog = dynamic(() => import('./phone-handoff-dialog'), {
+  ssr: false,
+});
+
 export interface ScanButtonProps {
   /**
    * What the member is most likely holding — usually `shapeForKind(kind)`.
    * Sets the starting guide only; they can change it on screen.
    */
   shape?: DocShape;
+  /** Start the scanner with "more than one" already ticked. */
+  multiDefault?: boolean;
+  /**
+   * Where a phone-handed-off scan should send its files. Omit to leave the
+   * "Use my phone camera" option out entirely.
+   */
+  handoff?: { dest: 'licence-centre' | 'motivation'; motivationId?: string };
+  /** The document kind currently selected, carried to the phone. */
+  kind?: string;
+  /** Re-read the list after the phone has sent something. */
+  onHandoffArrived?: (count: number) => void;
   /** Names the scanner to a screen reader. */
   title: string;
   onFiles: (files: File[]) => void | Promise<void>;
@@ -42,6 +59,10 @@ export interface ScanButtonProps {
 
 export default function ScanButton({
   shape = 'any',
+  multiDefault = false,
+  handoff,
+  kind,
+  onHandoffArrived,
   title,
   onFiles,
   fallback,
@@ -49,6 +70,23 @@ export default function ScanButton({
   label = 'Take a photo',
 }: ScanButtonProps) {
   const [open, setOpen] = useState(false);
+  const [phone, setPhone] = useState(false);
+  /**
+   * Is this a device somebody actually holds?
+   *
+   * ⚠️ THE CAMERA PROBE CANNOT ANSWER THIS. enumerateDevices reports a
+   * videoinput for a laptop's built-in webcam before any permission is
+   * granted, so "a camera exists" has never meant "this is a phone" — and a
+   * webcam pointed at a licence card produces a photograph nobody can read,
+   * after spending a permission prompt to get it.
+   *
+   * Both signals are required together: pointer:coarse alone fires on
+   * touch-screen laptops, and maxTouchPoints alone fires on anything with a
+   * trackpad that reports touch. No user-agent sniffing and no viewport
+   * width — an external monitor on a tablet and a narrow desktop window both
+   * lie about what they are.
+   */
+  const [handheld, setHandheld] = useState<boolean | null>(null);
   // null while we do not know yet. Rendering the button and then removing it
   // would be a control vanishing under a thumb.
   const [usable, setUsable] = useState<boolean | null>(null);
@@ -66,6 +104,12 @@ export default function ScanButton({
         }
         const devices = await navigator.mediaDevices.enumerateDevices();
         if (alive) setUsable(devices.some((d) => d.kind === 'videoinput'));
+        if (alive) {
+          setHandheld(
+            window.matchMedia?.('(pointer: coarse)').matches === true &&
+              navigator.maxTouchPoints > 0,
+          );
+        }
       } catch {
         if (alive) setUsable(false);
       }
@@ -77,7 +121,27 @@ export default function ScanButton({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {usable && (
+      {/* ⚠️ THE PHONE IS THE PRIMARY OFFER ON A DESKTOP, and the webcam is
+          demoted rather than removed — USB document cameras are real, and so
+          is a member whose phone is flat. */}
+      {handoff && handheld === false && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setPhone(true)}
+          className="gg-datecell inline-flex min-h-[44px] items-center gap-2 rounded border px-3 py-2 text-sm disabled:opacity-50"
+          style={{
+            borderColor: 'var(--red)',
+            background: 'var(--bg-inset)',
+            color: 'var(--text-primary)',
+          }}
+        >
+          <PhoneIcon />
+          Use my phone camera
+        </button>
+      )}
+
+      {usable && handheld !== null && (
         <button
           type="button"
           disabled={disabled}
@@ -90,7 +154,7 @@ export default function ScanButton({
           }}
         >
           <CameraIcon />
-          {label}
+          {handheld === false ? "Use this computer's camera" : label}
         </button>
       )}
 
@@ -98,15 +162,45 @@ export default function ScanButton({
           cannot see the screen reaches the path that does not need sight. */}
       {fallback}
 
+      {phone && handoff && (
+        <PhoneHandoffDialog
+          dest={handoff.dest}
+          motivationId={handoff.motivationId}
+          kind={kind}
+          onClose={() => setPhone(false)}
+          onArrived={(n) => onHandoffArrived?.(n)}
+        />
+      )}
+
       {open && (
         <DocumentScanner
           shape={shape}
+          multiDefault={multiDefault}
           title={title}
           onDone={onFiles}
           onClose={() => setOpen(false)}
         />
       )}
     </div>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="7" y="2" width="10" height="20" rx="2" />
+      <path d="M11 18h2" />
+    </svg>
   );
 }
 

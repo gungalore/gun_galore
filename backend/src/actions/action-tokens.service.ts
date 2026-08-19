@@ -67,7 +67,23 @@ export type ActionTokenPurpose =
   // SWAP_DISPATCH — a swap party's one-tap dispatch link for THEIR leg
   // (S4). targetType = 'transaction' (the leg). Added now so the union
   // is stable; wired in S4.
-  | 'SWAP_DISPATCH';
+  | 'SWAP_DISPATCH'
+  // SCAN_HANDOFF — the DESKTOP user's link to their own phone, delivered as a
+  // QR code on screen rather than by SMS. A laptop webcam cannot photograph a
+  // licence card usefully, so instead of opening it we hand the job to the
+  // camera already in their pocket.
+  //
+  // ⚠️ IT IS A WRITE CREDENTIAL TO THEIR OWN VAULT, and unlike every other
+  // purpose here it is NOT consumed on first use — a scanning session is
+  // several files, and consuming on file one would 410 the rest. What bounds
+  // it is time: 15 minutes, not the 7 days KYC_VERIFY runs on. Anyone who
+  // photographs the QR over the member's shoulder can upload until it
+  // expires, so the window has to be short enough that they would have to do
+  // it while standing there.
+  //
+  // targetType = 'user', targetId = authorisedUserId = the member. Metadata
+  // carries where the files are going.
+  | 'SCAN_HANDOFF';
 
 export type ActionTokenTargetType =
   | 'offer'
@@ -220,6 +236,40 @@ export class ActionTokensService {
         'This link has already been used or is no longer valid.',
       );
     }
+  }
+
+  // ─── Patch metadata ──────────────────────────────────────────────
+
+  /**
+   * Merge a patch into the token's metadata, leaving what is already there.
+   *
+   * Used by SCAN_HANDOFF to stamp `openedAt` when the phone actually opens
+   * the link, which is how the desktop learns its QR was scanned. ⚠️ IT MERGES
+   * RATHER THAN REPLACES: the metadata also carries where the files are
+   * going, and a phone stamping its arrival must not wipe the destination out
+   * from under the upload it is about to make.
+   */
+  async patchMetadata(
+    token: string,
+    patch: Record<string, unknown>,
+  ): Promise<void> {
+    const row = await this.prisma.actionToken.findUnique({
+      where: { token },
+      select: { metadataJson: true },
+    });
+    if (!row) return;
+    let current: Record<string, unknown> = {};
+    if (row.metadataJson) {
+      try {
+        current = JSON.parse(row.metadataJson) as Record<string, unknown>;
+      } catch {
+        // Unparseable metadata is not a reason to lose the patch.
+      }
+    }
+    await this.prisma.actionToken.update({
+      where: { token },
+      data: { metadataJson: JSON.stringify({ ...current, ...patch }) },
+    });
   }
 
   // ─── Mark invalid (brute-force protection) ───────────────────────

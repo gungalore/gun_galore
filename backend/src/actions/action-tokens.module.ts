@@ -2,6 +2,7 @@ import { Module, Global, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ActionTokensService } from './action-tokens.service';
 import { ActionTokensController } from './action-tokens.controller';
+import { ScanHandoffController } from './scan-handoff.controller';
 import { OffersModule } from '../offers/offers.module';
 import { SwapsModule } from '../swaps/swaps.module';
 import { AuctionsModule } from '../auctions/auctions.module';
@@ -38,7 +39,7 @@ import { PaymentsModule } from '../payments/payments.module';
     forwardRef(() => PaymentsModule),
   ],
   providers: [ActionTokensService],
-  controllers: [ActionTokensController],
+  controllers: [ActionTokensController, ScanHandoffController],
   exports: [ActionTokensService],
 })
 export class ActionTokensModule {}

@@ -581,6 +581,15 @@ export default function MotivationWizardPage() {
         <UploadPanel
           uploads={uploads}
           kinds={uploadKinds}
+          motivationId={id}
+          onHandoffArrived={async () => {
+            // The phone posted straight to the server, so nothing in this tab
+            // knows about it — re-read the pack rather than guessing.
+            const up = await motivationsApi.uploads(token, id);
+            setUploads(up.files);
+            setDocuments(up.documents);
+            setUploadKinds(up.kinds ?? []);
+          }}
           onRefile={async (uploadId, nextKind) => {
             await motivationsApi.refileUpload(token, id, uploadId, nextKind);
             const up = await motivationsApi.uploads(token, id);
@@ -1380,15 +1389,20 @@ function AttachedTo({
 function UploadPanel({
   uploads,
   kinds,
+  motivationId,
   onAdd,
   onRefile,
   onRemove,
+  onHandoffArrived,
 }: {
   uploads: UploadRow[];
   kinds: PickableKind[];
+  motivationId: string;
   onAdd: (kind: string, file: File) => Promise<AddedUpload | undefined>;
   onRefile: (uploadId: string, kind: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
+  /** Re-read the pack after a phone sent something straight to the server. */
+  onHandoffArrived: () => Promise<void>;
 }) {
   // Empty string until the list arrives, and the file input stays disabled
   // until then — posting an empty kind would 400 with nothing useful to show.
@@ -1487,10 +1501,19 @@ function UploadPanel({
           // Follows the picker above; A4 while nothing is chosen, because a
           // motivation pack is mostly paper.
           shape={kind ? shapeForKind(kind) : 'a4'}
+          // ⚠️ THIS IS THE UPLOAD-ALL. Somebody opening it is holding a pack —
+          // a competency certificate, a licence card, a page of an ID book —
+          // and scanning exactly one thing is the unusual case here, not the
+          // default. "Different document" between shots lets the aim box
+          // change with each one.
+          multiDefault
           title="Photograph a document"
           onFiles={uploadFiles}
           disabled={busy}
           label="Photograph documents"
+          handoff={{ dest: 'motivation', motivationId }}
+          kind={kind || undefined}
+          onHandoffArrived={() => void onHandoffArrived()}
           fallback={
             <FilePickerButton
               accept="image/jpeg,image/png,image/webp,application/pdf"

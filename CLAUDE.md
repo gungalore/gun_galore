@@ -1453,6 +1453,23 @@ the quad, `warp` rectifies, `enhance` cleans, `aim` sizes the box,
   are the only failures no processing recovers. `exposure.ts` is the
   single source for both the warning and the auto-capture gate, so the
   scanner can never warn and then fire anyway.
+- **Auto-capture must never be switched off silently.** It once was, by the
+  manual shutter ("you reached for it, so auto isn't helping"). That is a doom
+  loop: auto feels slow → you press → auto is off for the rest of the session
+  → every document needs a press. Two screen recordings showed the corners
+  locked green for eleven seconds with the scanner sitting there. The toggle
+  beside the shutter is the only thing that may change it.
+- **Desktop opens no camera.** A laptop webcam focuses at half a metre and
+  cannot resolve a licence serial. `pointer:coarse && maxTouchPoints > 0` is
+  the handheld test (`enumerateDevices` reports a webcam, so it cannot answer
+  this); on a desktop the primary action is a QR code — `SCAN_HANDOFF`
+  ActionToken, 15-minute TTL, `/scan/handoff?t=`, phone uploads through
+  `ScanHandoffGuard` AS the authorising member. ⚠️ That token is a write
+  credential to their vault and is NOT consumed until the phone says it is
+  finished (a scan session is several files), so the short TTL is the only
+  thing bounding it. Both the licence and motivation scan controllers are
+  SEPARATE from their parents — a method guard runs in addition to the
+  class-level ClerkGuard, never instead, so the phone would 401.
 - `scripts/scan-diag.cjs` and `scripts/aim-check.cjs` run the REAL
   compiled detector over a folder of photographs. ⚠️ Those photographs
   carry a name, an ID number and serials — they live in `scan-fixtures/`,
