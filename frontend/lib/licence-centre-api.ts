@@ -146,6 +146,20 @@ export const licenceCentreApi = {
     ),
 
   /**
+   * Start a section 24 renewal pack from this document.
+   *
+   * Returns the new motivation, which the caller navigates to. The backend
+   * refuses by name — wrong document type, unconfirmed date, no licence
+   * number — and those messages are shown as-is.
+   */
+  renew: (t: TokenGetter, id: string) =>
+    request<{ motivationId: string; referenceNumber: string; seeded: number }>(
+      t,
+      `/${id}/renew`,
+      { method: 'POST' },
+    ),
+
+  /**
    * The file endpoint needs an Authorization header, so <img src> and <a href>
    * cannot reach it. Fetch the bytes and hand back an object URL.
    *

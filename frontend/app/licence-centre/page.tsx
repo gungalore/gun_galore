@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import {
   CredentialKind,
@@ -405,6 +406,7 @@ function CredentialCard({
   onError: (m: string | null) => void;
 }) {
   const tone = STATE_TONE[row.state];
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
 
   return (
@@ -433,6 +435,49 @@ function CredentialCard({
           </span>
         )}
       </p>
+
+      {/* THE LOOP. Offered only where it makes sense: a firearm licence whose
+          date has been confirmed and which is close enough to matter. On
+          anything else the button would be a dead end the backend refuses. */}
+      {row.kind === 'FIREARM_LICENCE' &&
+        row.confirmed &&
+        (row.state === 'expiring' || row.state === 'expired') && (
+          <div className="mt-3 rounded border border-[var(--border)] bg-[var(--bg-card)] p-3">
+            <p className="text-sm font-medium">
+              {row.state === 'expired'
+                ? 'This one has expired'
+                : 'Time to start the renewal'}
+            </p>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">
+              We will open a section 24 renewal already carrying the licence
+              number, the expiry and the firearm&rsquo;s details from this
+              document. You write the part only you can — what you have
+              actually done with it.
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              className="mt-2 rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
+              onClick={async () => {
+                setBusy(true);
+                onError(null);
+                try {
+                  const started = await licenceCentreApi.renew(token, row.id);
+                  router.push(`/motivations/${started.motivationId}`);
+                } catch (ex) {
+                  onError(
+                    ex instanceof LicenceApiError
+                      ? ex.message
+                      : 'We could not start that renewal just now.',
+                  );
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy ? 'Starting…' : 'Start the renewal'}
+            </button>
+          </div>
+        )}
 
       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
         {row.available && (

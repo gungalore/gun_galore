@@ -9,6 +9,7 @@ import { LicenceCentreRemindersService } from './licence-centre-reminders.servic
 import { LicenceCentreRetentionService } from './licence-centre-retention.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
+import { MotivationsModule } from '../motivations/motivations.module';
 
 // ⚠️ JwtModule.register({}) + AdminJwtGuard in providers are BOTH required
 // because this module hosts an AdminJwtGuard controller. Omit either and the
@@ -23,7 +24,10 @@ import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 // ScheduleModule is NOT imported: forRoot() is registered once, in
 // tasks.module.ts, and registers the scheduler globally.
 @Module({
-  imports: [JwtModule.register({})],
+  // MotivationsModule for the renewal one-tap. One-way: nothing in
+  // motivations/ reaches back here, so there is no cycle — and a spec asserts
+  // it stays that way.
+  imports: [JwtModule.register({}), MotivationsModule],
   controllers: [LicenceCentreController, LicenceCentreAdminController],
   providers: [
     LicenceCentreService,

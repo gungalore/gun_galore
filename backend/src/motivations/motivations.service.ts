@@ -231,6 +231,16 @@ export class MotivationsService {
     clerkId: string,
     licenceType: MotivationLicenceType,
     applicationRef = '',
+    /**
+     * Answers to open with, on top of the profile prefill.
+     *
+     * Used by the Licence Centre's renewal one-tap: the vault already holds
+     * the licence number, the expiry and the firearm's details, so a renewal
+     * should not start by asking for them again. Sanitised through the same
+     * registry as anything the applicant types — a seed is data, not a
+     * shortcut past validation.
+     */
+    seed: Record<string, string> = {},
   ) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
@@ -270,9 +280,14 @@ export class MotivationsService {
     const prefill = profileOffer(
       licenceType,
       await this.profileFor(user.id),
-      {},
+      // Anything the caller already knows wins over the profile: a renewal's
+      // licence number came off the document itself.
+      seed,
     );
-    const { answers: seeded } = sanitiseAnswers(licenceType, prefill.values);
+    const { answers: seeded } = sanitiseAnswers(licenceType, {
+      ...prefill.values,
+      ...seed,
+    });
 
     try {
       return await this.prisma.motivation.create({
@@ -694,6 +709,14 @@ export class MotivationsService {
     id: string,
     kind: MotivationUploadKind,
     file: { buffer: Buffer; mimetype: string },
+    /**
+     * Skip the vision read.
+     *
+     * Set by the Licence Centre's renewal one-tap, which is copying a document
+     * it has ALREADY read and whose values it has already seeded. Reading it a
+     * second time would spend a model call to learn what we just wrote.
+     */
+    opts: { skipExtraction?: boolean } = {},
   ) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
@@ -767,7 +790,7 @@ export class MotivationsService {
       // returned for confirmation: a misread digit in an ID number would
       // otherwise become a false statement on a form they sign.
       let suggestions: ExtractedField[] = [];
-      if (MotivationExtractService.canExtract(kind)) {
+      if (!opts.skipExtraction && MotivationExtractService.canExtract(kind)) {
         try {
           suggestions = await this.extract.extract({
             kind,

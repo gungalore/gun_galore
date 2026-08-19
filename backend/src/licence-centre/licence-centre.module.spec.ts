@@ -8,6 +8,7 @@ import { LicenceCentreAdminController } from './licence-centre-admin.controller'
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { UsersModule } from '../users/users.module';
+import { MotivationsModule } from '../motivations/motivations.module';
 
 // Nest resolves modules at RUNTIME. A provider that is used but not exported,
 // or a guard whose JwtService has no JwtModule behind it, type-checks perfectly
@@ -72,6 +73,19 @@ describe('module wiring', () => {
 
   it('is imported by UsersModule, which injects from it', () => {
     expect(meta(UsersModule, 'imports')).toContain(LicenceCentreModule);
+  });
+
+  it('imports MotivationsModule for the renewal one-tap', () => {
+    // startRenewal hands off to MotivationsService rather than writing a
+    // second creation path: the writer owns the MO reference number, the beta
+    // seat check, the profile prefill and the variant seed.
+    expect(meta(LicenceCentreModule, 'imports')).toContain(MotivationsModule);
+  });
+
+  it('is not imported BY motivations, so the dependency stays one-way', () => {
+    expect(meta(MotivationsModule, 'imports')).not.toContain(
+      LicenceCentreModule,
+    );
   });
 
   it('does not depend on UsersModule, so there is no cycle', () => {

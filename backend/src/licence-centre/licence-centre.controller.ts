@@ -109,6 +109,19 @@ export class LicenceCentreController {
     return this.svc.mute(clerkId, id, muted === true);
   }
 
+  /**
+   * Start a section 24 renewal from this document.
+   *
+   * Throttled: each call allocates an MO reference number and may attach a
+   * copy of the document, so a stuck button must not be able to spend either
+   * in a loop.
+   */
+  @Post(':id/renew')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  renew(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.svc.startRenewal(clerkId, id);
+  }
+
   @Get(':id/file')
   async readFile(
     @CurrentUser() clerkId: string,

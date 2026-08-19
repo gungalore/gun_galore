@@ -15,6 +15,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { decryptJson, encryptJson } from '../common/blob-crypto';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
 import { LicenceCentreExtractService } from './licence-centre-extract.service';
+import { MotivationsService } from '../motivations/motivations.service';
+import { REFUSAL_COPY, renewalPlan, renewalRefusal } from './licence-renewal';
 import { expiryState, parseIsoDate, toIsoDate } from './licence-dates';
 
 // ────────────────────────────────────────────────────────────────────
@@ -44,6 +46,9 @@ export class LicenceCentreService {
     private readonly notifications: NotificationsService,
     private readonly quota: LicenceCentreQuotaService,
     private readonly extract: LicenceCentreExtractService,
+    // The renewal one-tap. One-way dependency: nothing in motivations/ reaches
+    // back into the Centre.
+    private readonly motivations: MotivationsService,
   ) {}
 
   /** @CurrentUser() gives the CLERK id; everything here keys on our own. */
@@ -392,6 +397,103 @@ export class LicenceCentreService {
       .resolveByEntity('credential', id, { userId: user.id })
       .catch(() => undefined);
     return { removed: true };
+  }
+
+  /**
+   * START A RENEWAL FROM A DOCUMENT IN THE VAULT.
+   *
+   * THE LOOP THE CENTRE EXISTS FOR. A licence expires on a statutory clock, so
+   * the demand recurs forever; the reminder lands, and this turns it into a
+   * section 24 motivation that already knows the licence number, the expiry
+   * and the firearm — priced by the existing table.
+   *
+   * ⚠️ IT DOES NOT PRE-WRITE THE ARGUMENT. `continued_use` — what they have
+   * actually done with the firearm since it was issued — is left empty on
+   * purpose. It is the only part of a renewal that argues anything, and
+   * putting words in an applicant's mouth on a document they sign as their own
+   * is not a convenience.
+   */
+  async startRenewal(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+
+    const row = await this.prisma.credential.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        kind: true,
+        title: true,
+        expiresOn: true,
+        confirmedAt: true,
+        detailsEncrypted: true,
+        storageKey: true,
+        purgedAt: true,
+        mimeType: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Document not found');
+
+    const src = {
+      kind: row.kind,
+      title: row.title,
+      expiresOn: row.expiresOn,
+      confirmedAt: row.confirmedAt,
+      details: this.readDetails(row.detailsEncrypted),
+    };
+
+    // Refuse by NAME and early. A renewal that opens empty with no explanation
+    // reads as the button being broken.
+    const refusal = renewalRefusal(src);
+    if (refusal) throw new BadRequestException(REFUSAL_COPY[refusal]);
+
+    const plan = renewalPlan(src);
+
+    // ⚠️ THE MOTIVATION IS CREATED BY THE WRITER, not written here. It owns the
+    // MO reference number, the beta seat check, the profile prefill and the
+    // variant seed — a second creation path would drift from all four.
+    // applicationRef carries the licence number so a member with three
+    // licences can renew all three: the constraint is
+    // @@unique([userId, licenceType, applicationRef]).
+    const motivation = await this.motivations.create(
+      clerkId,
+      'S24_RENEWAL',
+      plan.applicationRef,
+      plan.seed,
+    );
+
+    // Carry the document itself across, so the pack is complete without asking
+    // for a photograph they have already given us.
+    //
+    // ⚠️ THE BYTES ARE COPIED, NOT SHARED. The two rows have different
+    // retention lives — a motivation upload purges on the writer's clock, a
+    // vault document lives as long as the account — and one must never be able
+    // to delete the other's file.
+    if (row.storageKey && !row.purgedAt) {
+      try {
+        const bytes = await this.files.read(row.storageKey);
+        await this.motivations.addUpload(
+          clerkId,
+          motivation.id,
+          'CURRENT_LICENCE',
+          { buffer: bytes, mimetype: row.mimeType },
+          // Already read once, on the way into the vault. A second vision call
+          // would spend money to learn what we have just seeded.
+          { skipExtraction: true },
+        );
+      } catch (err) {
+        // The renewal itself is fine without the attachment — they can upload
+        // it in the wizard. Losing the motivation over a copy would not be.
+        this.logger.warn(
+          `Renewal ${motivation.id}: could not carry across credential ${id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    return {
+      motivationId: motivation.id,
+      referenceNumber: motivation.referenceNumber,
+      seeded: Object.keys(plan.seed).length,
+    };
   }
 
   /** Counts and health only — never a blob, never a decrypted detail. */
