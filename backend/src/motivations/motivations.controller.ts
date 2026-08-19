@@ -267,7 +267,10 @@ export class MotivationsController {
    * trigger an extraction, so it costs more than an ordinary request.
    */
   @Post(':id/uploads')
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  // A pack is a dozen files sent back to back, so the ceiling has to clear a
+  // legitimate batch with room to spare — 20 was a limit an honest applicant
+  // could hit halfway through uploading their own documents.
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -288,10 +291,22 @@ export class MotivationsController {
     )
     file: Express.Multer.File,
   ) {
+    // NO KIND MEANS "SORT IT FOR ME" — the batch path, where a member picks a
+    // whole pack at once and cannot label files that do not exist yet. The
+    // service names the document from its contents.
+    const wanted = (kind ?? '').trim();
+    if (!wanted) {
+      return this.motivations.addUpload(clerkId, id, null, file);
+    }
+
     // Validated HERE, by hand. The global ValidationPipe has no
     // forbidNonWhitelisted and a bare @Body('kind') is not a DTO, so an
     // arbitrary string would sail through and surface as a Prisma 500.
-    if (!Object.values(MotivationUploadKind).includes(kind as MotivationUploadKind)) {
+    if (
+      !Object.values(MotivationUploadKind).includes(
+        wanted as MotivationUploadKind,
+      )
+    ) {
       throw new BadRequestException('Unknown document type.');
     }
     // A RETIRED kind is a valid enum value that nothing may write any more.
@@ -304,7 +319,7 @@ export class MotivationsController {
     // "Photograph of your safe". Accepting it would file the photograph as
     // extra evidence and go on showing all three shots as missing, which reads
     // as the upload having failed silently.
-    if (RETIRED.includes(kind as MotivationUploadKind)) {
+    if (RETIRED.includes(wanted as MotivationUploadKind)) {
       throw new BadRequestException(
         'That document type has been replaced by three separate safe photographs. Please refresh the page and choose from the updated list.',
       );
@@ -312,7 +327,7 @@ export class MotivationsController {
     return this.motivations.addUpload(
       clerkId,
       id,
-      kind as MotivationUploadKind,
+      wanted as MotivationUploadKind,
       file,
     );
   }
@@ -335,6 +350,39 @@ export class MotivationsController {
   }
 
   /** The annexure list — metadata only, never bytes. */
+  /**
+   * Refile a document under a different type.
+   *
+   * The required-documents list counts the TYPE, so this is the difference
+   * between a pack that looks complete and one that is.
+   */
+  @Patch(':id/uploads/:uploadId')
+  refileUpload(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Param('uploadId') uploadId: string,
+    @Body('kind') kind: string,
+  ) {
+    if (
+      !Object.values(MotivationUploadKind).includes(
+        kind as MotivationUploadKind,
+      )
+    ) {
+      throw new BadRequestException('Unknown document type.');
+    }
+    if (RETIRED.includes(kind as MotivationUploadKind)) {
+      throw new BadRequestException(
+        'That document type has been replaced. Please refresh and choose from the updated list.',
+      );
+    }
+    return this.motivations.changeUploadKind(
+      clerkId,
+      id,
+      uploadId,
+      kind as MotivationUploadKind,
+    );
+  }
+
   @Get(':id/uploads')
   listUploads(@CurrentUser() clerkId: string, @Param('id') id: string) {
     return this.motivations.listUploads(clerkId, id);

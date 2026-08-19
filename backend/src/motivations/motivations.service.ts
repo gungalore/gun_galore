@@ -707,7 +707,14 @@ export class MotivationsService {
   async addUpload(
     clerkId: string,
     id: string,
-    kind: MotivationUploadKind,
+    /**
+     * NULL MEANS "SORT IT FOR ME".
+     *
+     * A member uploading a whole pack at once cannot pick a type per file
+     * before the files exist, so the batch path sends no kind and the document
+     * is named from its contents. A kind they DID choose is never overruled.
+     */
+    kind: MotivationUploadKind | null,
     file: { buffer: Buffer; mimetype: string },
     /**
      * Skip the vision read.
@@ -1777,6 +1784,34 @@ export class MotivationsService {
    * not decrypt is not, but returning {} lets the applicant see their form and
    * start again rather than meeting a 500 with no way forward.
    */
+  /**
+   * REFILE A DOCUMENT UNDER A DIFFERENT TYPE.
+   *
+   * Needed the moment anything files documents automatically, and needed
+   * anyway: the type is what the required-documents checklist counts, so a
+   * mislabelled upload silently satisfies a requirement the pack does not meet.
+   * Before this there was no way to correct one short of deleting the file and
+   * uploading it again.
+   */
+  async changeUploadKind(
+    clerkId: string,
+    id: string,
+    uploadId: string,
+    kind: MotivationUploadKind,
+  ) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+
+    // Ownership through the parent, in the WHERE clause — never a post-fetch
+    // check.
+    const claim = await this.prisma.motivationUpload.updateMany({
+      where: { id: uploadId, motivation: { id, userId: user.id } },
+      data: { kind },
+    });
+    if (claim.count === 0) throw new NotFoundException('Document not found');
+    return { kind };
+  }
+
   private readAnswers(encrypted: string | null): Record<string, string> {
     if (!encrypted) return {};
     try {
