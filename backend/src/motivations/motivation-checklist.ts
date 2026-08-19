@@ -76,7 +76,12 @@ export const UPLOAD_KIND_LABELS: Record<MotivationUploadKind, string> = {
   ASSOCIATION_CARD: 'Association membership proof',
   ADDRESS_CONFIRMATION: 'Proof of residential address',
   EMPLOYMENT_CONFIRMATION: 'Confirmation of employment',
-  SAFE_PHOTO: 'Photographs of your safe',
+  SAFE_PHOTO_CLOSED: 'Safe closed',
+  SAFE_PHOTO_AJAR: 'Safe half open, key in the door',
+  SAFE_PHOTO_BOLTS: 'Safe fully open, roll bolts visible',
+  // Retired 2026-08-19. Present so a row written before the split still
+  // labels in the annexure index and in the file list.
+  SAFE_PHOTO: 'Photographs of your safe (earlier upload)',
   SAFE_INSTALLATION: 'Photograph of the safe bolted to the wall',
   CHARACTER_REFERENCE: 'Character reference(s)',
   INCIDENT_REPORT: 'Incident report / SAPS case number',
@@ -84,28 +89,15 @@ export const UPLOAD_KIND_LABELS: Record<MotivationUploadKind, string> = {
   OTHER: 'Supporting document',
 };
 
-/**
- * THE THREE SAFE PHOTOGRAPHS, verbatim from the operator's list.
- *
- * Not "a photo of your safe" — three specific shots, because that is what the
- * DFO is actually looking for: that it locks, that the key is not left in it,
- * and that it is physically anchored. Guessing at this would have produced one
- * vague instruction and a rejected application.
- */
-export const SAFE_PHOTO_SHOTS = [
-  {
-    key: 'safe_locked',
-    label: 'The safe closed and locked, with no key in it',
-  },
-  {
-    key: 'safe_open',
-    label: 'The safe door half open with the key in the lock',
-  },
-  {
-    key: 'safe_bolts',
-    label: 'Inside the safe, showing the bolts fixing it to the wall',
-  },
-] as const;
+// SAFE_PHOTO_SHOTS lived here: the three shots as SUB-ITEMS hanging off one
+// checklist row. It was deleted on 2026-08-19 rather than tripled, because it
+// never reached a single applicant and could not have enforced anything —
+// its `done` flag was never assigned, so the sub-items rendered permanently
+// unticked while the parent row ticked green on the first photograph, and the
+// only endpoint that served it has no caller in the frontend.
+//
+// The three shots are now three MotivationUploadKind values, which the
+// requirement engine already knows how to count.
 
 /** Annexure lettering order — reading order, not upload order. */
 const ANNEXURE_ORDER: MotivationUploadKind[] = [
@@ -115,6 +107,11 @@ const ANNEXURE_ORDER: MotivationUploadKind[] = [
   'ADDRESS_CONFIRMATION',
   'EMPLOYMENT_CONFIRMATION',
   'ASSOCIATION_CARD',
+  'SAFE_PHOTO_CLOSED',
+  'SAFE_PHOTO_AJAR',
+  'SAFE_PHOTO_BOLTS',
+  // Retired, but still lettered — a row written before the split must not
+  // fall out of the printed index.
   'SAFE_PHOTO',
   'SAFE_INSTALLATION',
   'CURRENT_LICENCE',
@@ -134,9 +131,12 @@ export interface AnnexureEntry {
 /**
  * Assign annexure letters to what was actually uploaded.
  *
- * Letters go to KINDS, not files: three photographs of one safe are all
- * "Annexure G", which is how the real samples do it and how a reviewer expects
- * to find them.
+ * Letters go to KINDS, not files, so two copies of one ID share a letter.
+ *
+ * The safe is the exception, and deliberately so since 2026-08-19: its three
+ * shots are three kinds, so they take three consecutive letters. A reviewer
+ * looking for the roll bolts can now be sent to a letter instead of to "one of
+ * the photographs in Annexure G".
  */
 export function buildAnnexures(kinds: MotivationUploadKind[]): AnnexureEntry[] {
   const counts = new Map<MotivationUploadKind, number>();
@@ -164,7 +164,9 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO',
+    'SAFE_PHOTO_CLOSED',
+    'SAFE_PHOTO_AJAR',
+    'SAFE_PHOTO_BOLTS',
     'SAFE_INSTALLATION',
     'INCIDENT_REPORT',
   ],
@@ -173,7 +175,9 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'COMPETENCY_CERTIFICATE',
     'PROFICIENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO',
+    'SAFE_PHOTO_CLOSED',
+    'SAFE_PHOTO_AJAR',
+    'SAFE_PHOTO_BOLTS',
     'SAFE_INSTALLATION',
     'CURRENT_LICENCE',
   ],
@@ -183,7 +187,9 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'PROFICIENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
     'ASSOCIATION_CARD',
-    'SAFE_PHOTO',
+    'SAFE_PHOTO_CLOSED',
+    'SAFE_PHOTO_AJAR',
+    'SAFE_PHOTO_BOLTS',
     'SAFE_INSTALLATION',
     'CURRENT_LICENCE',
   ],
@@ -193,7 +199,9 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'PROFICIENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
     'ASSOCIATION_CARD',
-    'SAFE_PHOTO',
+    'SAFE_PHOTO_CLOSED',
+    'SAFE_PHOTO_AJAR',
+    'SAFE_PHOTO_BOLTS',
     'SAFE_INSTALLATION',
     'CURRENT_LICENCE',
   ],
@@ -201,7 +209,9 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO',
+    'SAFE_PHOTO_CLOSED',
+    'SAFE_PHOTO_AJAR',
+    'SAFE_PHOTO_BOLTS',
     'CURRENT_LICENCE',
   ],
 };
@@ -325,9 +335,9 @@ export function buildChecklist(
       done: have.has(kind),
       annexure: entry?.letter,
     };
-    if (kind === 'SAFE_PHOTO') {
-      item.subItems = SAFE_PHOTO_SHOTS.map((sh) => ({ ...sh }));
-      item.note = 'Three photographs — a DFO looks for all three.';
+    if (kind === 'SAFE_PHOTO_CLOSED') {
+      item.note =
+        'Three photographs of the safe, each its own line below — a DFO looks for all three.';
     }
     if (kind === 'INCIDENT_REPORT') {
       item.note =

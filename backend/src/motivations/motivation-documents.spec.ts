@@ -1,5 +1,5 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
-import { documentStatus } from './motivation-documents';
+import { documentStatus, pickableKinds } from './motivation-documents';
 
 // The point of this module is to name what is missing instead of saying
 // "some documents are missing", because the alternative to naming them is a
@@ -16,10 +16,12 @@ describe('what SAPS will not process without', () => {
     expect(s.missingRequired).toEqual([
       K.COMPETENCY_CERTIFICATE,
       K.ADDRESS_CONFIRMATION,
-      K.SAFE_PHOTO,
+      K.SAFE_PHOTO_CLOSED,
+      K.SAFE_PHOTO_AJAR,
+      K.SAFE_PHOTO_BOLTS,
     ]);
     expect(s.requiredHave).toBe(1);
-    expect(s.requiredTotal).toBe(4);
+    expect(s.requiredTotal).toBe(6);
   });
 
   it('is satisfied once they are all there', () => {
@@ -27,23 +29,64 @@ describe('what SAPS will not process without', () => {
       K.IDENTITY_DOCUMENT,
       K.COMPETENCY_CERTIFICATE,
       K.ADDRESS_CONFIRMATION,
-      K.SAFE_PHOTO,
+      K.SAFE_PHOTO_CLOSED,
+      K.SAFE_PHOTO_AJAR,
+      K.SAFE_PHOTO_BOLTS,
     ]);
     expect(s.missingRequired).toEqual([]);
     expect(s.requiredHave).toBe(s.requiredTotal);
   });
 
-  it('demands the safe photographs on every licence type', () => {
-    // Operator, 2026-08-19: three photographs of the safe, not optional.
+  it('demands all THREE safe photographs on every licence type', () => {
+    // Operator, 2026-08-19: "enforce three photos. closed safe, half open with
+    // key in door, full open showing roll bolts."
     for (const t of Object.values(MotivationLicenceType)) {
-      expect(documentStatus(t, []).missingRequired).toContain(K.SAFE_PHOTO);
+      const missing = documentStatus(t, []).missingRequired;
+      expect(missing).toContain(K.SAFE_PHOTO_CLOSED);
+      expect(missing).toContain(K.SAFE_PHOTO_AJAR);
+      expect(missing).toContain(K.SAFE_PHOTO_BOLTS);
     }
   });
 
-  it('counts KINDS, not files — three safe photographs are one need', () => {
-    const s = documentStatus(S13, [K.SAFE_PHOTO, K.SAFE_PHOTO, K.SAFE_PHOTO]);
-    const safe = s.needs.find((n) => n.kind === K.SAFE_PHOTO)!;
-    expect(safe.have).toBe(true);
+  it('is NOT satisfied by three copies of the same shot', () => {
+    // The reason the three shots are three kinds. Counting files could never
+    // have enforced this: nothing on MotivationUpload records WHICH shot a
+    // file is, so three photographs of one closed door would have counted as
+    // three photographs of a safe.
+    const s = documentStatus(S13, [
+      K.SAFE_PHOTO_CLOSED,
+      K.SAFE_PHOTO_CLOSED,
+      K.SAFE_PHOTO_CLOSED,
+    ]);
+    expect(s.needs.find((n) => n.kind === K.SAFE_PHOTO_CLOSED)!.have).toBe(true);
+    expect(s.missingRequired).toContain(K.SAFE_PHOTO_AJAR);
+    expect(s.missingRequired).toContain(K.SAFE_PHOTO_BOLTS);
+  });
+
+  it('names each shot so the applicant knows which one is missing', () => {
+    const s = documentStatus(S13, [K.SAFE_PHOTO_CLOSED]);
+    const need = (k: MotivationUploadKind) => s.needs.find((n) => n.kind === k)!;
+    expect(need(K.SAFE_PHOTO_CLOSED).label.toLowerCase()).toMatch(/closed/);
+    expect(need(K.SAFE_PHOTO_AJAR).label.toLowerCase()).toMatch(
+      /half open.*key in the door/,
+    );
+    expect(need(K.SAFE_PHOTO_BOLTS).label.toLowerCase()).toMatch(/roll bolts/);
+    // Each explains itself; a bare label is not enough to photograph from.
+    for (const k of [
+      K.SAFE_PHOTO_CLOSED,
+      K.SAFE_PHOTO_AJAR,
+      K.SAFE_PHOTO_BOLTS,
+    ]) {
+      expect(need(k).why.length).toBeGreaterThan(40);
+    }
+  });
+
+  it('treats a photograph uploaded before the split as extra evidence', () => {
+    // SAFE_PHOTO is retired, not removed. It could be any of the three shots,
+    // so claiming it satisfies one of them would assert what we do not know.
+    const s = documentStatus(S13, [K.SAFE_PHOTO]);
+    expect(s.extras).toEqual([K.SAFE_PHOTO]);
+    expect(s.missingRequired).toContain(K.SAFE_PHOTO_CLOSED);
   });
 
   it('requires association proof for a dedicated application, not for s13', () => {
@@ -74,8 +117,6 @@ describe('the things that strengthen it', () => {
 
   it('explain themselves in the applicant\'s terms', () => {
     const s = documentStatus(S13, []);
-    const safe = s.needs.find((n) => n.kind === K.SAFE_PHOTO)!;
-    expect(safe.why).toMatch(/three photographs/i);
     const incident = s.needs.find((n) => n.kind === K.INCIDENT_REPORT)!;
     expect(incident.why).toMatch(/more weight than general crime figures/i);
   });
@@ -153,13 +194,70 @@ describe('documents nobody asked for', () => {
   });
 
   it('does not report an asked-for document as an extra', () => {
-    const s = documentStatus(S13, [K.IDENTITY_DOCUMENT, K.SAFE_PHOTO]);
+    const s = documentStatus(S13, [K.IDENTITY_DOCUMENT, K.SAFE_PHOTO_AJAR]);
     expect(s.extras).toEqual([]);
   });
 
   it('reports each extra kind once, however many files were attached', () => {
     const s = documentStatus(S13, [K.OTHER, K.OTHER, K.OTHER]);
     expect(s.extras).toEqual([K.OTHER]);
+  });
+});
+
+// The wizard's "document type" menu is served from here rather than kept in
+// the frontend, because the two lists had already drifted: the client omitted
+// two kinds outright and described the safe photograph in the singular.
+describe('the upload picker', () => {
+  it('leads with what is required, in the order it is asked for', () => {
+    const picks = pickableKinds(S13);
+    expect(picks.slice(0, 6).map((p) => p.kind)).toEqual([
+      K.IDENTITY_DOCUMENT,
+      K.COMPETENCY_CERTIFICATE,
+      K.ADDRESS_CONFIRMATION,
+      K.SAFE_PHOTO_CLOSED,
+      K.SAFE_PHOTO_AJAR,
+      K.SAFE_PHOTO_BOLTS,
+    ]);
+  });
+
+  it('offers every kind exactly once', () => {
+    for (const t of Object.values(MotivationLicenceType)) {
+      const kinds = pickableKinds(t).map((p) => p.kind);
+      expect(new Set(kinds).size).toBe(kinds.length);
+    }
+  });
+
+  it('never offers a retired kind, so no new row can carry one', () => {
+    for (const t of Object.values(MotivationLicenceType)) {
+      const kinds = pickableKinds(t).map((p) => p.kind);
+      expect(kinds).not.toContain(K.SAFE_PHOTO);
+      expect(kinds).not.toContain(K.SAFE_INSTALLATION);
+    }
+  });
+
+  it('still offers the ones nobody is required to bring', () => {
+    const kinds = pickableKinds(S13).map((p) => p.kind);
+    // These two were the ones the hand-maintained frontend list had lost.
+    expect(kinds).toContain(K.EMPLOYMENT_CONFIRMATION);
+    expect(kinds).toContain(K.PREVIOUS_MOTIVATION);
+    expect(kinds).toContain(K.OTHER);
+  });
+
+  it('promotes the existing licence only once it is asked for', () => {
+    expect(
+      pickableKinds(S13).find((p) => p.kind === K.CURRENT_LICENCE)!.tier,
+    ).toBe('extra');
+    expect(
+      pickableKinds(S13, { existing_firearm_1_calibre: '.308 Winchester' }).find(
+        (p) => p.kind === K.CURRENT_LICENCE,
+      )!.tier,
+    ).toBe('required');
+  });
+
+  it('gives every option a label', () => {
+    for (const t of Object.values(MotivationLicenceType)) {
+      for (const p of pickableKinds(t)) expect(p.label).toBeTruthy();
+    }
   });
 });
 

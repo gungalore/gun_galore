@@ -56,13 +56,17 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO',
+    'SAFE_PHOTO_CLOSED',
+    'SAFE_PHOTO_AJAR',
+    'SAFE_PHOTO_BOLTS',
   ],
   S15_OCCASIONAL_HUNTER: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO',
+    'SAFE_PHOTO_CLOSED',
+    'SAFE_PHOTO_AJAR',
+    'SAFE_PHOTO_BOLTS',
   ],
   // Dedicated status IS the basis of a section 16 application, so proof of
   // membership stops being a nicety and becomes part of the case.
@@ -70,14 +74,18 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO',
+    'SAFE_PHOTO_CLOSED',
+    'SAFE_PHOTO_AJAR',
+    'SAFE_PHOTO_BOLTS',
     'ASSOCIATION_CARD',
   ],
   S16_DEDICATED_SPORT: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO',
+    'SAFE_PHOTO_CLOSED',
+    'SAFE_PHOTO_AJAR',
+    'SAFE_PHOTO_BOLTS',
     'ASSOCIATION_CARD',
   ],
   // A renewal is a different form (SAPS 518a) and a different pack; the one
@@ -86,7 +94,9 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'CURRENT_LICENCE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO',
+    'SAFE_PHOTO_CLOSED',
+    'SAFE_PHOTO_AJAR',
+    'SAFE_PHOTO_BOLTS',
   ],
 };
 
@@ -107,7 +117,11 @@ const LABELS: Record<MotivationUploadKind, string> = {
   ASSOCIATION_CARD: 'Proof of your association membership',
   ADDRESS_CONFIRMATION: 'Proof of your address',
   EMPLOYMENT_CONFIRMATION: 'Confirmation of employment',
-  SAFE_PHOTO: 'Three photographs of your safe',
+  SAFE_PHOTO_CLOSED: 'Your safe, closed',
+  SAFE_PHOTO_AJAR: 'Your safe, half open with the key in the door',
+  SAFE_PHOTO_BOLTS: 'Your safe, fully open showing the roll bolts',
+  // Retired. Kept so a row written before the split still has a name.
+  SAFE_PHOTO: 'Photographs of your safe (added before the split)',
   SAFE_INSTALLATION: 'The safe bolted to the wall or floor',
   CHARACTER_REFERENCE: 'A character reference',
   INCIDENT_REPORT: 'An incident report or SAPS case number',
@@ -126,9 +140,20 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
     'Dedicated status is the basis of a section 16 application, so this is part of the case rather than an extra.',
   CURRENT_LICENCE:
     'A licence for every firearm you already own. We read the make, calibre and serial off it — which is also what tells us whether this application overlaps something you already hold.',
+  // THREE SEPARATE SHOTS, each its own line, because each shows something the
+  // others cannot. Written as three needs rather than one instruction: an
+  // applicant who reads "three photographs" and sends one has satisfied the
+  // sentence, and the pack is short two photographs nobody noticed.
+  SAFE_PHOTO_CLOSED:
+    'The safe as it stands in the room, shut, with the key out of it. This is the shot that shows the unit itself.',
+  SAFE_PHOTO_AJAR:
+    'Half open with the key in the door. It shows the lock belongs to this safe and that the key turns it — a closed door on its own shows neither.',
+  SAFE_PHOTO_BOLTS:
+    'Door fully open so the roll bolts are visible. The bolts are what make it a safe rather than a cupboard, and a DFO looks for them.',
   SAFE_PHOTO:
-    'THREE photographs: locked with no key in it, half open with the key in the lock, and inside showing the bolts fixing it to the wall. A DFO looks for all three — one photograph of a safe is not enough.',
-  SAFE_INSTALLATION: 'Shows the safe is actually anchored, not just present.',
+    'Added before we split this into three separate shots. It stays in your pack as supporting evidence.',
+  SAFE_INSTALLATION:
+    'How the safe is anchored to the wall or floor. Not one of the three shots, but worth attaching if you have it.',
   INCIDENT_REPORT:
     'Something that actually happened to you carries far more weight than general crime figures.',
   PROFICIENCY_CERTIFICATE:
@@ -150,8 +175,12 @@ export interface DocumentStatus {
 /**
  * Weigh what has been uploaded against what the application needs.
  *
- * `have` counts KINDS, not files — three photographs of one safe are one
- * satisfied need, which is also how the annexure lettering treats them.
+ * `have` is a set-membership test on the KIND, so one file satisfies one need.
+ * That is exactly why the three safe photographs are three separate kinds: as
+ * a single SAFE_PHOTO kind, one shot of a closed door ticked the whole
+ * requirement, and counting files instead would not have helped — nothing on
+ * MotivationUpload records WHICH shot a file is, so three photographs of the
+ * same closed door would have counted as three.
  */
 export function documentStatus(
   licenceType: MotivationLicenceType,
@@ -213,4 +242,50 @@ export function documentStatus(
 /** Human label for any kind, including the ones nobody asked for. */
 export function documentLabel(kind: MotivationUploadKind): string {
   return LABELS[kind] ?? 'Supporting document';
+}
+
+/**
+ * Kinds RETIRED from the picker: they exist only so rows written before
+ * 2026-08-19 keep a label and an annexure letter. Postgres cannot drop an enum
+ * value, so "retired" has to mean "never offered" rather than "gone".
+ */
+const RETIRED: MotivationUploadKind[] = ['SAFE_PHOTO', 'SAFE_INSTALLATION'];
+
+/**
+ * What the upload picker should offer, in the order it should offer it.
+ *
+ * SERVER-DRIVEN ON PURPOSE. The wizard used to carry its own hard-coded list
+ * of kinds and labels, and it had already drifted: it omitted two kinds
+ * entirely and described the safe photograph in the singular while the backend
+ * described three. A list maintained in two places is a list maintained in
+ * neither.
+ *
+ * Required first, in the order they are asked for, so the next thing to
+ * photograph is the next thing in the menu.
+ */
+export function pickableKinds(
+  licenceType: MotivationLicenceType,
+  answers: Record<string, string> = {},
+): { kind: MotivationUploadKind; label: string; tier: DocumentTier }[] {
+  const status = documentStatus(licenceType, [], answers);
+  const ranked = new Map<MotivationUploadKind, DocumentTier>(
+    status.needs.map((n) => [n.kind, n.tier]),
+  );
+
+  const rest = (Object.keys(LABELS) as MotivationUploadKind[]).filter(
+    (k) => !ranked.has(k) && !RETIRED.includes(k),
+  );
+
+  return [
+    ...status.needs.map((n) => ({
+      kind: n.kind,
+      label: n.label,
+      tier: n.tier,
+    })),
+    ...rest.map((kind) => ({
+      kind,
+      label: LABELS[kind],
+      tier: 'extra' as DocumentTier,
+    })),
+  ];
 }

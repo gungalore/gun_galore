@@ -4020,11 +4020,20 @@ enum MotivationStatus {
 // pack and is cross-referenced from the body of the motivation — which is what
 // turns an assertion into evidence.
 //
-// SAFE_PHOTO / SAFE_INSTALLATION are operator additions (2026-08-18): a
-// motivation asserts where the firearm will be kept, and a photograph of the
-// safe and of how it is anchored is the only thing that shows it. Safe storage
-// is one of the few grounds a DFO inspects in person, so evidence of it is
-// disproportionately valuable.
+// A motivation asserts where the firearm will be kept, and a photograph of the
+// safe is the only thing that shows it. Safe storage is one of the few grounds
+// a DFO inspects in person, so evidence of it is disproportionately valuable.
+//
+// THREE SHOTS, THREE KINDS (operator, 2026-08-19). They are separate enum
+// values rather than three files of one kind because there is nowhere on this
+// model to record WHICH shot a file is — no caption, no ordering column — so
+// three files of one kind cannot be told apart, and a pack holding the closed
+// door three times would report itself complete.
+//
+// SAFE_PHOTO and SAFE_INSTALLATION are RETIRED, not removed: Postgres has no
+// ALTER TYPE ... DROP VALUE, and rows written before 2026-08-19 carry them.
+// They keep a label and an annexure letter; they are off the required lists
+// and out of the upload picker, so no new row can be written with either.
 enum MotivationUploadKind {
   IDENTITY_DOCUMENT
   COMPETENCY_CERTIFICATE
@@ -4033,6 +4042,13 @@ enum MotivationUploadKind {
   ASSOCIATION_CARD
   ADDRESS_CONFIRMATION
   EMPLOYMENT_CONFIRMATION
+  // The safe, closed.
+  SAFE_PHOTO_CLOSED
+  // The safe, half open with the key in the door.
+  SAFE_PHOTO_AJAR
+  // The safe, fully open with the roll bolts visible.
+  SAFE_PHOTO_BOLTS
+  // Retired 2026-08-19 — superseded by the three shots above.
   SAFE_PHOTO
   SAFE_INSTALLATION
   CHARACTER_REFERENCE

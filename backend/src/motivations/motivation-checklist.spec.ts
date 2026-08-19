@@ -1,9 +1,5 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
-import {
-  buildAnnexures,
-  buildChecklist,
-  SAFE_PHOTO_SHOTS,
-} from './motivation-checklist';
+import { buildAnnexures, buildChecklist } from './motivation-checklist';
 
 // The checklist is a LIVE surface on the platform and in the PWA, not a PDF
 // page — the pack stays digital until it is printed. So what matters here is
@@ -16,14 +12,14 @@ const ALL = Object.values(MotivationLicenceType);
 describe('annexure lettering', () => {
   it('letters in reading order, not upload order', () => {
     const a = buildAnnexures([
-      MotivationUploadKind.SAFE_PHOTO,
+      MotivationUploadKind.SAFE_PHOTO_CLOSED,
       MotivationUploadKind.IDENTITY_DOCUMENT,
       MotivationUploadKind.COMPETENCY_CERTIFICATE,
     ]);
     expect(a.map((x) => x.kind)).toEqual([
       MotivationUploadKind.IDENTITY_DOCUMENT,
       MotivationUploadKind.COMPETENCY_CERTIFICATE,
-      MotivationUploadKind.SAFE_PHOTO,
+      MotivationUploadKind.SAFE_PHOTO_CLOSED,
     ]);
     expect(a.map((x) => x.letter)).toEqual(['A', 'B', 'C']);
   });
@@ -31,12 +27,40 @@ describe('annexure lettering', () => {
   it('groups several files of one kind under one letter', () => {
     const a = buildAnnexures([
       MotivationUploadKind.IDENTITY_DOCUMENT,
-      MotivationUploadKind.SAFE_PHOTO,
-      MotivationUploadKind.SAFE_PHOTO,
-      MotivationUploadKind.SAFE_PHOTO,
+      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      MotivationUploadKind.SAFE_PHOTO_CLOSED,
     ]);
     expect(a).toHaveLength(2);
-    expect(a.find((x) => x.kind === MotivationUploadKind.SAFE_PHOTO)!.count).toBe(3);
+    expect(
+      a.find((x) => x.kind === MotivationUploadKind.SAFE_PHOTO_CLOSED)!.count,
+    ).toBe(3);
+  });
+
+  it('gives the three safe shots three consecutive letters', () => {
+    // Deliberate, and a change from the old single SAFE_PHOTO annexure: a
+    // reviewer looking for the roll bolts can be sent to a letter instead of
+    // to "one of the photographs in Annexure B".
+    const a = buildAnnexures([
+      MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.SAFE_PHOTO_BOLTS,
+      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      MotivationUploadKind.SAFE_PHOTO_AJAR,
+    ]);
+    expect(a.map((x) => [x.letter, x.kind])).toEqual([
+      ['A', MotivationUploadKind.IDENTITY_DOCUMENT],
+      ['B', MotivationUploadKind.SAFE_PHOTO_CLOSED],
+      ['C', MotivationUploadKind.SAFE_PHOTO_AJAR],
+      ['D', MotivationUploadKind.SAFE_PHOTO_BOLTS],
+    ]);
+  });
+
+  it('still letters a photograph uploaded before the split', () => {
+    // SAFE_PHOTO is retired, not removed. A row written before 2026-08-19 must
+    // not fall out of the printed index.
+    const a = buildAnnexures([MotivationUploadKind.SAFE_PHOTO]);
+    expect(a).toHaveLength(1);
+    expect(a[0].label).toMatch(/safe/i);
   });
 
   it('returns nothing when nothing was uploaded', () => {
@@ -80,17 +104,38 @@ describe('the live checklist', () => {
     expect(c.theirsTotal).toBeGreaterThan(0);
   });
 
-  it('carries the THREE specific safe photographs, not a vague instruction', () => {
-    // Straight from the operator's own list. Guessing at this would have
-    // produced "a photo of your safe" and a rejected application.
+  it('carries the THREE specific safe photographs as three separate rows', () => {
+    // Straight from the operator's own list, and three ROWS rather than three
+    // sub-items under one row: sub-items had no `done` flag, so they rendered
+    // permanently unticked while the parent went green on the first photo.
     const c = buildChecklist(MotivationLicenceType.S13_SELF_DEFENCE, []);
-    const safe = c.sections[0].items.find((i) => i.key === 'upload_safe_photo')!;
-    expect(safe.subItems).toHaveLength(3);
-    const labels = safe.subItems!.map((s) => s.label.toLowerCase());
-    expect(labels[0]).toMatch(/locked.*no key/);
-    expect(labels[1]).toMatch(/half open.*key in the lock/);
-    expect(labels[2]).toMatch(/bolts.*wall/);
-    expect(SAFE_PHOTO_SHOTS).toHaveLength(3);
+    const keys = c.sections[0].items.map((i) => i.key);
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        'upload_safe_photo_closed',
+        'upload_safe_photo_ajar',
+        'upload_safe_photo_bolts',
+      ]),
+    );
+    const labels = c.sections[0].items
+      .filter((i) => i.key.startsWith('upload_safe_photo'))
+      .map((i) => i.label.toLowerCase());
+    expect(labels).toHaveLength(3);
+    expect(labels[0]).toMatch(/closed/);
+    expect(labels[1]).toMatch(/half open.*key in the door/);
+    expect(labels[2]).toMatch(/roll bolts/);
+  });
+
+  it('ticks each safe shot on its own, not all three on the first photo', () => {
+    // The whole point of the split. Under the old single kind, one photograph
+    // of a closed door satisfied the entire safe requirement.
+    const c = buildChecklist(MotivationLicenceType.S13_SELF_DEFENCE, [
+      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+    ]);
+    const byKey = new Map(c.sections[0].items.map((i) => [i.key, i.done]));
+    expect(byKey.get('upload_safe_photo_closed')).toBe(true);
+    expect(byKey.get('upload_safe_photo_ajar')).toBe(false);
+    expect(byKey.get('upload_safe_photo_bolts')).toBe(false);
   });
 
   it('warns not to sign the SAPS form in advance', () => {

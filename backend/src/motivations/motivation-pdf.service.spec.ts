@@ -189,8 +189,10 @@ describe('the annexure index', () => {
     // platform and in the PWA, because the pack stays digital until printed.
     const kinds = [
       MotivationUploadKind.IDENTITY_DOCUMENT,
-      MotivationUploadKind.SAFE_PHOTO,
-      MotivationUploadKind.SAFE_PHOTO,
+      MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      MotivationUploadKind.SAFE_PHOTO_AJAR,
+      MotivationUploadKind.SAFE_PHOTO_BOLTS,
     ];
     const { pdf } = await svc.render({
       ...makeInput(),
@@ -199,7 +201,14 @@ describe('the annexure index', () => {
     const t = flat(readPdf(pdf).text);
     expect(t).toContain('ANNEXURES');
     expect(t).toContain('Annexure A');
-    expect(t).toMatch(/Photographs of your safe \(2 items\)/i);
+    // Several files of one kind still fold under one letter with a count.
+    expect(t).toMatch(/Copy of your ID \(2 items\)/i);
+    // The three safe shots do NOT fold: each takes its own letter, so a
+    // reviewer looking for the roll bolts can be sent to a letter rather than
+    // to "one of the photographs in Annexure B".
+    expect(t).toMatch(/Annexure B\s*Safe closed/i);
+    expect(t).toMatch(/Annexure C\s*Safe half open/i);
+    expect(t).toMatch(/Annexure D\s*Safe fully open/i);
     // And no checklist page.
     expect(t).not.toContain('SUBMISSION CHECKLIST');
   });

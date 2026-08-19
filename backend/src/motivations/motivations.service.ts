@@ -64,7 +64,7 @@ import {
 import { readSaId } from './sa-id';
 import { Saps271Service } from './saps271.service';
 import { overlapFromAnswers } from './motivation-overlap';
-import { documentStatus } from './motivation-documents';
+import { documentStatus, pickableKinds } from './motivation-documents';
 import {
   ProfileSource,
   profileCoverageNote,
@@ -107,11 +107,15 @@ const DISCLAIMER_TEXT =
  * 413, which is not something an applicant can act on, so the size is checked
  * again here where a readable message can be returned.
  *
- * Twelve documents is generous — the recommended set for any licence type is
- * eight — and it exists so a runaway client cannot fill the encrypted store.
+ * The document cap exists so a runaway client cannot fill the encrypted store,
+ * and it has to clear the largest legitimate pack with room to spare. Splitting
+ * the safe photograph into three shots (2026-08-19) took the recommended set
+ * for a dedicated licence from eight to ten, which left the old cap of twelve
+ * with room for two extra documents — so sixteen, not twelve. A cap that a
+ * thorough applicant can hit is a bug that only shows up in the field.
  */
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-const MAX_UPLOADS = 12;
+const MAX_UPLOADS = 16;
 
 const SIMILARITY_CORPUS = 200;
 
@@ -802,8 +806,14 @@ export class MotivationsService {
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
       ) {
+        // The uniqueness constraint is on (motivationId, sha256) — the BYTES,
+        // not the kind. So this also fires when someone tries to file one
+        // photograph under two of the three safe shots, which is a different
+        // mistake and needs saying, or the wizard reads as broken: it goes on
+        // showing the shot as missing right after telling them it is a
+        // duplicate.
         throw new ConflictException(
-          'You have already added that exact document to this application.',
+          'That exact file is already attached to this application. If you are adding the safe photographs, each of the three needs to be its own picture.',
         );
       }
       throw err;
@@ -912,6 +922,8 @@ export class MotivationsService {
     // What the APPLICATION still needs, weighed against what is attached.
     // Named specifically rather than "some documents are missing", because the
     // alternative to naming them is a wasted trip to a police station.
+    const answers = this.readAnswers(row.answersEncrypted);
+
     return {
       files,
       documents: documentStatus(
@@ -919,8 +931,14 @@ export class MotivationsService {
         row.uploads.map((u) => u.kind),
         // Their answers decide one of the requirements: a licence is needed
         // for every firearm they have told us they already own.
-        this.readAnswers(row.answersEncrypted),
+        answers,
       ),
+      // The choices in the wizard's "document type" menu, ordered so the next
+      // thing to photograph is the next thing in the list. Served rather than
+      // hard-coded in the frontend: the two lists had already drifted apart,
+      // the client's omitting two kinds and describing the safe in the
+      // singular while this side described three.
+      kinds: pickableKinds(row.licenceType, answers),
     };
   }
 

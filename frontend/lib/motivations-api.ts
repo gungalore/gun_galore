@@ -158,6 +158,21 @@ export interface DocumentNeed {
   have: boolean;
 }
 
+/**
+ * One choice in the "document type" menu.
+ *
+ * SERVED, NOT HARD-CODED. This list used to live in the wizard as a literal
+ * array and it had already drifted from the backend: it omitted two kinds
+ * outright and described the safe photograph in the singular while the server
+ * asked for three separate shots. A list maintained in two places is a list
+ * maintained in neither.
+ */
+export interface PickableKind {
+  kind: string;
+  label: string;
+  tier: 'required' | 'strengthens' | 'extra';
+}
+
 export interface DocumentStatus {
   needs: DocumentNeed[];
   missingRequired: string[];
@@ -216,7 +231,11 @@ export const motivationsApi = {
     ),
 
   uploads: (t: TokenGetter, id: string) =>
-    request<{ files: UploadRow[]; documents: DocumentStatus }>(
+    request<{
+      files: UploadRow[];
+      documents: DocumentStatus;
+      kinds: PickableKind[];
+    }>(
       t,
       `/${id}/uploads`,
       {},
@@ -229,6 +248,7 @@ export const motivationsApi = {
           requiredTotal: 0,
           requiredHave: 0,
         },
+        kinds: [],
       },
     ),
 

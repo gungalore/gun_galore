@@ -10,6 +10,7 @@ import {
   MotivationDetail,
   MotivationField,
   DocumentStatus,
+  PickableKind,
   ProfileOffer,
   Suggestion,
   UploadRow,
@@ -45,19 +46,9 @@ import {
 const AUTOSAVE_MS = 1200;
 const DRAFT_KEY = (id: string) => `motivation-draft:${id}`;
 
-const UPLOAD_KINDS = [
-  { value: 'IDENTITY_DOCUMENT', label: 'Copy of your ID' },
-  { value: 'COMPETENCY_CERTIFICATE', label: 'Competency certificate' },
-  { value: 'PROFICIENCY_CERTIFICATE', label: 'Proficiency / training certificate' },
-  { value: 'CURRENT_LICENCE', label: 'Existing firearm licence' },
-  { value: 'ASSOCIATION_CARD', label: 'Association membership proof' },
-  { value: 'ADDRESS_CONFIRMATION', label: 'Proof of address' },
-  { value: 'SAFE_PHOTO', label: 'Photograph of your safe' },
-  { value: 'SAFE_INSTALLATION', label: 'Safe bolted to the wall' },
-  { value: 'INCIDENT_REPORT', label: 'Incident report / SAPS case number' },
-  { value: 'CHARACTER_REFERENCE', label: 'Character reference' },
-  { value: 'OTHER', label: 'Something else' },
-];
+// The "document type" menu is SERVED, not hard-coded here — see PickableKind
+// in lib/motivations-api.ts for why. The server orders it so the next thing to
+// photograph is the next thing in the list.
 
 export default function MotivationWizardPage() {
   const { getToken } = useAuth();
@@ -71,6 +62,7 @@ export default function MotivationWizardPage() {
   const [offer, setOffer] = useState<ProfileOffer | null>(null);
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [documents, setDocuments] = useState<DocumentStatus | null>(null);
+  const [uploadKinds, setUploadKinds] = useState<PickableKind[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [messages, setMessages] = useState<FollowUp[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,6 +113,7 @@ export default function MotivationWizardPage() {
         const up = await motivationsApi.uploads(token, id);
         setUploads(up.files);
         setDocuments(up.documents);
+        setUploadKinds(up.kinds);
         setMessages(await motivationsApi.messages(token, id));
         try {
           setOffer(await motivationsApi.profileOffer(token, id));
@@ -400,6 +393,7 @@ export default function MotivationWizardPage() {
 
         <UploadPanel
           uploads={uploads}
+          kinds={uploadKinds}
           onAdd={async (kind, file) => {
             const row = await motivationsApi.addUpload(token, id, kind, file);
             setUploads((u) => [...u, row]);
@@ -407,7 +401,10 @@ export default function MotivationWizardPage() {
             // requirement, and the list must stop asking for it.
             motivationsApi
               .uploads(token, id)
-              .then((up) => setDocuments(up.documents))
+              .then((up) => {
+                setDocuments(up.documents);
+                setUploadKinds(up.kinds);
+              })
               .catch(() => undefined);
             if (row.suggestions?.length) {
               // Only offer values for fields that are still empty — anything
@@ -427,7 +424,10 @@ export default function MotivationWizardPage() {
             setUploads((u) => u.filter((x) => x.id !== uploadId));
             motivationsApi
               .uploads(token, id)
-              .then((up) => setDocuments(up.documents))
+              .then((up) => {
+                setDocuments(up.documents);
+                setUploadKinds(up.kinds);
+              })
               .catch(() => undefined);
           }}
         />
@@ -917,16 +917,27 @@ function FollowUpAnswer({ onSubmit }: { onSubmit: (t: string) => Promise<void> }
 
 function UploadPanel({
   uploads,
+  kinds,
   onAdd,
   onRemove,
 }: {
   uploads: UploadRow[];
+  kinds: PickableKind[];
   onAdd: (kind: string, file: File) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 }) {
-  const [kind, setKind] = useState(UPLOAD_KINDS[0].value);
+  // Empty string until the list arrives, and the file input stays disabled
+  // until then — posting an empty kind would 400 with nothing useful to show.
+  const [kind, setKind] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Follow the server's first choice, which is the first thing still needed.
+  // Only while nothing has been picked: re-selecting under the applicant after
+  // they chose would be the wizard arguing with them.
+  useEffect(() => {
+    if (!kind && kinds.length) setKind(kinds[0].kind);
+  }, [kind, kinds]);
 
   return (
     <div className="mt-3">
@@ -937,9 +948,10 @@ function UploadPanel({
           onChange={(e) => setKind(e.target.value)}
           aria-label="Document type"
         >
-          {UPLOAD_KINDS.map((k) => (
-            <option key={k.value} value={k.value}>
+          {kinds.map((k) => (
+            <option key={k.kind} value={k.kind}>
               {k.label}
+              {k.tier === 'required' ? ' — needed' : ''}
             </option>
           ))}
         </select>
@@ -947,7 +959,7 @@ function UploadPanel({
           type="file"
           className="text-sm"
           accept="image/jpeg,image/png,image/webp,application/pdf"
-          disabled={busy}
+          disabled={busy || !kind}
           onChange={async (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
