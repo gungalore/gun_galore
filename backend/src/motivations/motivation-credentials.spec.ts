@@ -1,0 +1,264 @@
+import {
+  CredentialSource,
+  credentialOffer,
+  toIsoDay,
+} from './motivation-credentials';
+import { normaliseFirearmType } from './saps-vocabulary';
+
+// What the vault fills into a licence application. Getting a serial into the
+// wrong row, or overwriting something the applicant typed, puts a wrong claim
+// on a form they sign — so the rules below are the point of the module, not
+// incidental behaviour.
+
+const licence = (
+  over: Partial<CredentialSource> & { details?: Record<string, string> } = {},
+): CredentialSource => ({
+  id: 'c1',
+  kind: 'FIREARM_LICENCE',
+  title: 'My .308',
+  expiresOn: '2030-01-01',
+  confirmed: true,
+  details: {
+    make: 'Tikka',
+    calibre: '.308 Win',
+    frame_serial: 'F12345',
+    barrel_serial: 'B67890',
+    licence_number: 'LIC-001',
+    firearm_type: 'Bolt Action Rifle',
+  },
+  ...over,
+});
+
+const competency = (
+  over: Partial<CredentialSource> = {},
+): CredentialSource => ({
+  id: 'k1',
+  kind: 'COMPETENCY_CERTIFICATE',
+  title: 'My competency',
+  expiresOn: '2029-06-30',
+  confirmed: true,
+  details: { competency_number: 'COMP-999', holder_name: 'A Person' },
+  ...over,
+});
+
+const TYPE = 'S16_DEDICATED_SPORT' as never;
+
+describe('what the Licence Centre offers a motivation', () => {
+  it('fills the competency number off the certificate', () => {
+    const o = credentialOffer(TYPE, [competency()], {});
+    expect(o.values.competency_number).toBe('COMP-999');
+    expect(o.items[0].from).toBe('My competency');
+  });
+
+  it('fills a firearm into the first row, normalising the type', () => {
+    const o = credentialOffer(TYPE, [licence()], {});
+    expect(o.values.existing_firearm_1_make).toBe('Tikka');
+    expect(o.values.existing_firearm_1_calibre).toBe('.308 Win');
+    expect(o.values.existing_firearm_1_frame_serial).toBe('F12345');
+    expect(o.values.existing_firearm_1_barrel_serial).toBe('B67890');
+    expect(o.values.existing_firearm_1_licence_no).toBe('LIC-001');
+    // "Bolt Action Rifle" is not one of the form's four words.
+    expect(o.values.existing_firearm_1_type).toBe('Rifle');
+  });
+
+  it('NEVER overwrites something the applicant typed', () => {
+    const answered = {
+      competency_number: 'WHAT-I-TYPED',
+      existing_firearm_1_make: 'Sako',
+    };
+    const o = credentialOffer(TYPE, [competency(), licence()], answered);
+    expect(o.values.competency_number).toBeUndefined();
+    // Row 1 is theirs now, so the licence must go somewhere else entirely —
+    // never half into a row that already describes a different firearm.
+    expect(o.values.existing_firearm_1_calibre).toBeUndefined();
+    expect(o.values.existing_firearm_2_make).toBe('Tikka');
+  });
+
+  it('treats a row as taken if ANY of its six columns is filled', () => {
+    // The dangerous case: only the serial is typed. Filling make and calibre
+    // around it would produce a form describing a firearm that does not exist.
+    for (const col of [
+      'type',
+      'calibre',
+      'make',
+      'barrel_serial',
+      'frame_serial',
+      'licence_no',
+    ]) {
+      const o = credentialOffer(TYPE, [licence()], {
+        [`existing_firearm_1_${col}`]: 'something',
+      });
+      expect(o.values.existing_firearm_1_make).toBeUndefined();
+      expect(o.values.existing_firearm_2_make).toBe('Tikka');
+    }
+  });
+
+  it('gives each firearm its own row, in vault order', () => {
+    const two = [
+      licence({ id: 'a', title: 'Rifle' }),
+      licence({
+        id: 'b',
+        title: 'Pistol',
+        details: {
+          make: 'Glock',
+          calibre: '9mm',
+          frame_serial: 'G1',
+          licence_number: 'LIC-002',
+          firearm_type: 'Semi-Auto Pistol',
+        },
+      }),
+    ];
+    const o = credentialOffer(TYPE, two, {});
+    expect(o.values.existing_firearm_1_make).toBe('Tikka');
+    expect(o.values.existing_firearm_2_make).toBe('Glock');
+    expect(o.values.existing_firearm_2_type).toBe('Handgun');
+    // No serial may ever appear against two different firearms.
+    expect(o.values.existing_firearm_2_frame_serial).toBe('G1');
+    expect(o.values.existing_firearm_1_frame_serial).toBe('F12345');
+  });
+
+  it('says which documents it could take nothing from, and why', () => {
+    const blank = licence({ id: 'z', title: 'A blurry photo', details: {} });
+    const o = credentialOffer(TYPE, [blank], {});
+    expect(o.values.existing_firearm_1_make).toBeUndefined();
+    expect(o.skipped).toHaveLength(1);
+    expect(o.skipped[0].title).toBe('A blurry photo');
+    expect(o.skipped[0].why).toMatch(/make, calibre or serial/);
+  });
+
+  it('stops at the six rows the form has, and says so', () => {
+    const seven = Array.from({ length: 7 }, (_, i) =>
+      licence({
+        id: `c${i}`,
+        title: `Gun ${i + 1}`,
+        details: { make: `Make${i}`, licence_number: `L${i}` },
+      }),
+    );
+    const o = credentialOffer(TYPE, seven, {});
+    expect(o.values.existing_firearm_6_make).toBe('Make5');
+    expect(o.values.existing_firearm_7_make).toBeUndefined();
+    expect(o.skipped.some((s) => /room for 6/.test(s.why))).toBe(true);
+  });
+
+  it('never offers a key the licence type does not have', () => {
+    // S13 has no dedicated-status fields. Offering association_name there
+    // would write an answer the form cannot show and nobody can correct.
+    const o = credentialOffer(
+      'S13_SELF_DEFENCE' as never,
+      [
+        {
+          id: 'd1',
+          kind: 'DEDICATED_HUNTER',
+          title: 'Dedicated hunter',
+          expiresOn: null,
+          confirmed: true,
+          details: { association: 'SAHGCA', status_number: 'DH-1' },
+        },
+      ],
+      {},
+    );
+    expect(o.values.association_name).toBeUndefined();
+  });
+
+  it('takes association details off a dedicated hunter certificate', () => {
+    const o = credentialOffer(
+      'S16_DEDICATED_HUNTER' as never,
+      [
+        {
+          id: 'd1',
+          kind: 'DEDICATED_HUNTER',
+          title: 'My dedicated hunter status',
+          expiresOn: '2028-03-01',
+          confirmed: true,
+          details: { association: 'SAHGCA', status_number: 'DH-1' },
+        },
+      ],
+      {},
+    );
+    expect(o.values.association_name).toBe('SAHGCA');
+    expect(o.values.association_number).toBe('DH-1');
+  });
+
+  it('⚠️ NEVER treats a professional hunter registration as dedicated status', () => {
+    // A PH registration is a provincial occupational licence to hunt for a
+    // client. It evidences nothing under section 16, and filing it as
+    // association membership would put a false claim in an application.
+    const o = credentialOffer(
+      'S16_DEDICATED_HUNTER' as never,
+      [
+        {
+          id: 'p1',
+          kind: 'PROFESSIONAL_HUNTER',
+          title: 'My PH registration',
+          expiresOn: '2027-01-01',
+          confirmed: true,
+          details: {
+            registration_number: 'PH-42',
+            province: 'Limpopo',
+            association: 'Limpopo Nature Conservation',
+          },
+        },
+      ],
+      {},
+    );
+    expect(o.values.association_name).toBeUndefined();
+    expect(o.values.association_number).toBeUndefined();
+    expect(o.items).toHaveLength(0);
+  });
+
+  it('reports an empty vault as empty rather than silently offering nothing', () => {
+    const o = credentialOffer(TYPE, [], {});
+    expect(o.empty).toBe(true);
+    expect(o.items).toHaveLength(0);
+  });
+
+  it('ignores blank and whitespace-only readings', () => {
+    const o = credentialOffer(
+      TYPE,
+      [competency({ details: { competency_number: '   ' } })],
+      {},
+    );
+    expect(o.values.competency_number).toBeUndefined();
+    expect(o.skipped).toHaveLength(1);
+  });
+});
+
+describe('normaliseFirearmType', () => {
+  // The SAPS 271 offers exactly four types, and both the dropdown holding the
+  // answer and the printed form accept only those four.
+  it('maps what a certificate says onto the form’s four words', () => {
+    expect(normaliseFirearmType('Semi-Auto Pistol')).toBe('Handgun');
+    expect(normaliseFirearmType('Revolver')).toBe('Handgun');
+    expect(normaliseFirearmType('BOLT ACTION RIFLE')).toBe('Rifle');
+    expect(normaliseFirearmType('.22 Carbine')).toBe('Rifle');
+    expect(normaliseFirearmType('Double Barrel Shotgun')).toBe('Shotgun');
+    expect(normaliseFirearmType('Combination gun')).toBe('Combination');
+  });
+
+  it('⚠️ reads a combination gun as a combination, not a shotgun', () => {
+    // A combination gun IS a rifle and a shotgun in one frame, so its
+    // description contains both words. Testing "shotgun" first filed every
+    // one of them as a shotgun — which both copies of this function used to
+    // do, on a form the applicant signs.
+    expect(normaliseFirearmType('rifle/shotgun combination')).toBe(
+      'Combination',
+    );
+    expect(normaliseFirearmType('Combo shotgun/rifle')).toBe('Combination');
+  });
+
+  it('returns nothing rather than guessing', () => {
+    // A blank the applicant fills in is recoverable. A confident wrong type
+    // on a form describing a firearm they own is not.
+    expect(normaliseFirearmType('Blunderbuss')).toBe('');
+    expect(normaliseFirearmType('')).toBe('');
+    expect(normaliseFirearmType(undefined)).toBe('');
+  });
+});
+
+describe('toIsoDay', () => {
+  it('reads the UTC day, matching how the vault stores expiries', () => {
+    expect(toIsoDay(new Date('2026-08-19T00:00:00Z'))).toBe('2026-08-19');
+    expect(toIsoDay(new Date('2026-08-19T23:59:59Z'))).toBe('2026-08-19');
+    expect(toIsoDay(new Date('2026-01-05T00:00:00Z'))).toBe('2026-01-05');
+  });
+});

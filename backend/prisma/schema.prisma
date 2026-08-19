@@ -4290,7 +4290,17 @@ model MotivationUpload {
 enum CredentialKind {
   FIREARM_LICENCE
   COMPETENCY_CERTIFICATE
+  /// Dedicated SPORT SHOOTER status, from an accredited association.
   DEDICATED_STATUS
+  /// Dedicated HUNTER status. A separate certificate from a separate
+  /// accreditation, even where the same association issues both.
+  DEDICATED_HUNTER
+  /// Professional Hunter registration. ⚠️ NOT dedicated status: it is a
+  /// provincial nature-conservation qualification to hunt for a client,
+  /// issued by a different authority, and it evidences nothing under
+  /// section 16. Kept in the vault because it expires and members want it
+  /// tracked — never offered as association membership.
+  PROFESSIONAL_HUNTER
   PROFICIENCY
   // Association membership, a letter of good standing, anything else the
   // member wants kept with the rest. Never chased, always accepted.

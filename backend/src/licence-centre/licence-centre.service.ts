@@ -596,6 +596,8 @@ export class LicenceCentreService {
 const DEFAULT_TITLE: Record<CredentialKind, string> = {
   FIREARM_LICENCE: 'Firearm licence',
   COMPETENCY_CERTIFICATE: 'Competency certificate',
+  DEDICATED_HUNTER: 'Dedicated hunter status',
+  PROFESSIONAL_HUNTER: 'Professional hunter registration',
   DEDICATED_STATUS: 'Dedicated status',
   PROFICIENCY: 'Proficiency certificate',
   OTHER: 'Supporting document',

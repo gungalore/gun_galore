@@ -70,6 +70,12 @@ import {
   profileCoverageNote,
   profileOffer,
 } from './motivation-profile';
+import {
+  CREDENTIAL_TO_UPLOAD,
+  CredentialSource,
+  credentialOffer,
+  toIsoDay,
+} from './motivation-credentials';
 
 // ────────────────────────────────────────────────────────────────────
 // The motivation lifecycle. Generation, the quality gate and the interview
@@ -595,6 +601,145 @@ export class MotivationsService {
    * Read-only and safe to call before any decision — showing the applicant the
    * list is the whole point. Nothing is written until useProfile().
    */
+  // ── the Licence Centre, read-only ─────────────────────────────────
+  //
+  // ⚠️ WHY THIS READS THE TABLE INSTEAD OF CALLING THE VAULT'S SERVICE.
+  // LicenceCentreModule already imports MotivationsModule (it owns the renewal
+  // one-tap), so importing it back would be a module cycle. The seam already
+  // works this way in the other direction — licence-centre.service.ts reads
+  // the Motivation table directly for its idempotency check while calling the
+  // service for the write. The rule across this seam is: call the service to
+  // WRITE, read the table to READ. Nothing here ever writes a Credential; the
+  // confirmedAt invariant keeps its single owner.
+
+  /**
+   * Load the member's vault rows, decrypted, in a shape the pure offer can use.
+   *
+   * confirmedAt IS NOT NULL is not a nicety. An unconfirmed row holds an expiry
+   * date nobody has checked, read off a photograph — the same reason the
+   * reminder sweep will not look at one.
+   */
+  private async credentialsFor(userId: string): Promise<CredentialSource[]> {
+    const rows = await this.prisma.credential.findMany({
+      where: { userId, confirmedAt: { not: null }, purgedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        kind: true,
+        title: true,
+        expiresOn: true,
+        confirmedAt: true,
+        extractionEncrypted: true,
+        extractionOk: true,
+      },
+    });
+
+    return rows.map((r) => {
+      let details: Record<string, string> = {};
+      if (r.extractionOk && r.extractionEncrypted) {
+        try {
+          const read = decryptJson<{ details?: Record<string, string> }>(
+            r.extractionEncrypted,
+          );
+          details = read?.details ?? {};
+        } catch {
+          // A row we cannot decrypt is a row we offer nothing from. It is not
+          // an error the applicant can act on, and it must not stop the rest.
+          details = {};
+        }
+      }
+      return {
+        id: r.id,
+        kind: r.kind as string,
+        title: r.title,
+        expiresOn: r.expiresOn ? toIsoDay(r.expiresOn) : null,
+        details,
+        confirmed: r.confirmedAt !== null,
+      };
+    });
+  }
+
+  /** What we WOULD fill from the vault, and which document each value is from. */
+  async licenceCentreOffer(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, licenceType: true, answersEncrypted: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const answers = this.readAnswers(row.answersEncrypted);
+    const credentials = await this.credentialsFor(user.id);
+    const offer = credentialOffer(row.licenceType, credentials, answers);
+
+    return {
+      empty: offer.empty,
+      items: offer.items,
+      skipped: offer.skipped,
+      /** Vault documents that also satisfy a required upload on this pack. */
+      documents: credentials
+        .filter((c) => CREDENTIAL_TO_UPLOAD[c.kind])
+        .map((c) => ({
+          credentialId: c.id,
+          title: c.title,
+          kind: c.kind,
+          satisfies: CREDENTIAL_TO_UPLOAD[c.kind],
+          expiresOn: c.expiresOn,
+        })),
+    };
+  }
+
+  /** They agree, and we copy. Same write path as every other answer. */
+  async useLicenceCentre(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        licenceType: true,
+        status: true,
+        answersEncrypted: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (!EDITABLE.includes(row.status)) {
+      throw new ConflictException('This application can no longer be edited.');
+    }
+
+    const answers = this.readAnswers(row.answersEncrypted);
+    const offer = credentialOffer(
+      row.licenceType,
+      await this.credentialsFor(user.id),
+      answers,
+    );
+
+    // Through sanitiseAnswers like every other write. The vault's contents are
+    // the member's own, but they were read off a photograph by a model and
+    // they still have to satisfy the registry.
+    const { answers: clean } = sanitiseAnswers(row.licenceType, offer.values);
+    const merged = { ...answers, ...clean };
+
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: {
+        answersEncrypted: encryptJson(merged),
+        answersSchemaVersion: FIELD_REGISTRY_VERSION,
+      },
+    });
+
+    this.logger.log(
+      `Motivation ${row.id}: prefilled ${Object.keys(clean).length} field(s) from the Licence Centre`,
+    );
+
+    return {
+      filled: Object.keys(clean).length,
+      answers: merged,
+      missingRequired: missingRequired(row.licenceType, merged),
+    };
+  }
+
   async profilePrefillOffer(clerkId: string, id: string) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);

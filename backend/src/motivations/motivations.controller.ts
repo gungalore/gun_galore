@@ -260,6 +260,24 @@ export class MotivationsController {
     return this.motivations.useProfile(clerkId, id);
   }
 
+  // ── the Licence Centre ────────────────────────────────────────────
+
+  /**
+   * What their own vault could fill in here, and which document each value
+   * comes from. Read-only: showing the list before asking is the point, and
+   * it is the same shape as the profile offer above.
+   */
+  @Get(':id/licence-centre-offer')
+  licenceCentreOffer(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.licenceCentreOffer(clerkId, id);
+  }
+
+  /** They agree, and we copy. Never overwrites an answer they typed. */
+  @Post(':id/use-licence-centre')
+  useLicenceCentre(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.useLicenceCentre(clerkId, id);
+  }
+
   // ── uploads ───────────────────────────────────────────────────────
 
   /**

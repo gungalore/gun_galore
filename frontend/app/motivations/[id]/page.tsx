@@ -3,6 +3,7 @@
 import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
 import FilePickerButton from '@/components/file-picker-button';
+import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -274,6 +275,9 @@ export default function MotivationWizardPage() {
   // Unlocked by the pen. Once open it STAYS open — re-locking a field someone
   // is editing is the same interruption in a different costume.
   const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
+  // The "add a firearm licence" uploader in the owned-firearms section.
+  const [licenceBusy, setLicenceBusy] = useState(false);
+  const [licenceErr, setLicenceErr] = useState<string | null>(null);
   const ownedRows = Math.max(1, ownedRowsFilled, ownedRowsShown);
 
   const { sections } = useMemo(() => {
@@ -652,6 +656,44 @@ export default function MotivationWizardPage() {
             onContinue={() => go(n + 1)}
           >
             <div className="space-y-4">
+              {/* WHAT THEY HAVE ALREADY TOLD US. Only in the two sections the
+                  vault can actually answer: the competency number lives in
+                  "About you", and the firearms already licensed to them live
+                  in their own section. Anywhere else it would be noise. */}
+              {(isOwned || sec.section === 'About you') && (
+                <LicenceCentreOfferPanel
+                  token={token}
+                  motivationId={id}
+                  keyPrefixes={
+                    isOwned
+                      ? ['existing_firearm_']
+                      : ['competency_number', 'association_']
+                  }
+                  onApplied={(filled, missing) => {
+                    // The applicant's own edits win over what arrives, the
+                    // same way the profile prefill does above.
+                    setAnswers((cur) => ({ ...filled, ...cur }));
+                    setDetail((d) =>
+                      d ? { ...d, missingRequired: missing } : d,
+                    );
+                    // A vault row that filled row 2 has to be visible, or the
+                    // answer is saved into a box nobody can see.
+                    const rows = [1, 2, 3, 4, 5, 6].filter((r) =>
+                      Object.keys(filled).some(
+                        (k) =>
+                          k.startsWith(`existing_firearm_${r}_`) &&
+                          (filled[k] ?? '').trim(),
+                      ),
+                    );
+                    if (rows.length) {
+                      setOwnedRowsShown((cur) =>
+                        Math.max(cur, Math.max(...rows)),
+                      );
+                    }
+                  }}
+                />
+              )}
+
               {isOwned && detail.overlap?.needsJustification && (
                 <div className="rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm">
                   {/* Shown while they are still filling the form. Someone who
@@ -715,6 +757,65 @@ export default function MotivationWizardPage() {
                 />
                 </div>
               ))}
+
+              {/* ADD A LICENCE FROM HERE. The applicant is looking at six
+                  empty boxes per firearm; the licence card in their hand
+                  answers all six. It goes up as a CURRENT_LICENCE, which the
+                  extraction already knows how to read into these fields, and
+                  it lands in the pack as an annexure at the same time. */}
+              {isOwned && (
+                <div className="rounded border border-[var(--border)] bg-[var(--bg-inset)] p-3">
+                  <p className="text-sm font-medium">
+                    Photograph a licence instead of typing it
+                  </p>
+                  <p className="mb-2 mt-1 text-xs text-[var(--text-secondary)]">
+                    We read the make, calibre and serials off it and fill the
+                    boxes in. It is attached to your pack as well.
+                  </p>
+                  <FilePickerButton
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    multiple
+                    disabled={licenceBusy}
+                    onFiles={async (files) => {
+                      setLicenceBusy(true);
+                      setLicenceErr(null);
+                      let added = 0;
+                      for (const file of files) {
+                        try {
+                          await motivationsApi.addUpload(
+                            token,
+                            id,
+                            'CURRENT_LICENCE',
+                            file,
+                          );
+                          added++;
+                        } catch (ex) {
+                          setLicenceErr(
+                            ex instanceof MotivationApiError
+                              ? ex.message
+                              : 'That upload did not work.',
+                          );
+                        }
+                      }
+                      if (added) {
+                        // Re-read rather than merge by hand: the suggestions
+                        // the extraction produced live on the application.
+                        const d = await motivationsApi.get(token, id);
+                        setAnswers((cur) => ({ ...d.answers, ...cur }));
+                        setDetail(d);
+                      }
+                      setLicenceBusy(false);
+                    }}
+                  >
+                    {licenceBusy ? 'Reading…' : 'Add a firearm licence'}
+                  </FilePickerButton>
+                  {licenceErr && (
+                    <p className="mt-2 text-sm text-[var(--red)]">
+                      {licenceErr}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {isOwned && ownedRows < 6 && (
                 <label className="flex items-center gap-2 pt-2 text-sm">

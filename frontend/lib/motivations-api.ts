@@ -162,6 +162,30 @@ export interface MotivationDetail extends MotivationSummary {
   overlap?: { needsJustification: boolean; prompt: string | null };
 }
 
+/** What the member's own Licence Centre could fill in here. */
+export interface LicenceCentreOffer {
+  /** Nothing in the vault at all. */
+  empty: boolean;
+  items: {
+    key: string;
+    label: string;
+    value: string;
+    /** The vault document it came from, in the member's own words. */
+    from: string;
+    credentialId: string;
+  }[];
+  /** Looked at, took nothing from, and why. */
+  skipped: { title: string; why: string }[];
+  /** Vault documents that also answer a required upload on this pack. */
+  documents: {
+    credentialId: string;
+    title: string;
+    kind: string;
+    satisfies: string;
+    expiresOn: string | null;
+  }[];
+}
+
 export interface ProfileOffer {
   alreadyConsented: boolean;
   fields: { key: string; label: string; value: string; from: string }[];
@@ -269,6 +293,26 @@ export const motivationsApi = {
 
   profileOffer: (t: TokenGetter, id: string) =>
     request<ProfileOffer>(t, `/${id}/profile-offer`),
+
+  /**
+   * What their vault would fill in, and where each value comes from.
+   * Read-only: showing the list before asking is the point.
+   */
+  licenceCentreOffer: (t: TokenGetter, id: string) =>
+    request<LicenceCentreOffer>(
+      t,
+      `/${id}/licence-centre-offer`,
+      {},
+      { empty: true, items: [], skipped: [], documents: [] },
+    ),
+
+  /** They agree, and we copy. Never overwrites an answer they typed. */
+  useLicenceCentre: (t: TokenGetter, id: string) =>
+    request<{
+      filled: number;
+      answers: Record<string, string>;
+      missingRequired: string[];
+    }>(t, `/${id}/use-licence-centre`, { method: 'POST' }),
 
   useProfile: (t: TokenGetter, id: string) =>
     request<{ filled: number; missingRequired: string[] }>(

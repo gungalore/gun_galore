@@ -1,5 +1,7 @@
 import { CredentialKind } from '@prisma/client';
 import { toIsoDate } from './licence-dates';
+// The form's own vocabulary, owned by the module that owns the form.
+import { normaliseFirearmType } from '../motivations/saps-vocabulary';
 
 // ────────────────────────────────────────────────────────────────────
 // THE RENEWAL LOOP.
@@ -139,27 +141,3 @@ function licenceNumber(d: Record<string, string>): string {
   return (d.licence_number ?? d.reference_number ?? '').trim();
 }
 
-/**
- * Map what is printed on the card onto what the registry accepts.
- *
- * The extraction prompt orders verbatim transcription, so a licence yields
- * "RIFLE", "Self-loading rifle" or "PISTOL" — none of which match the
- * registry's four choices. sanitiseAnswers would drop the key silently, so
- * the seed looked applied and was not. Returns '' when it cannot map
- * confidently: a seed should be right or absent, never a guess.
- */
-export function normaliseFirearmType(raw: string | undefined): string {
-  const v = (raw ?? '').trim().toLowerCase();
-  if (!v) return '';
-  if (v.includes('shotgun')) return 'Shotgun';
-  if (v.includes('combination')) return 'Combination';
-  if (v.includes('rifle') || v.includes('carbine')) return 'Rifle';
-  if (
-    v.includes('pistol') ||
-    v.includes('revolver') ||
-    v.includes('handgun')
-  ) {
-    return 'Handgun';
-  }
-  return '';
-}

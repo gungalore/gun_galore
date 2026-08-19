@@ -70,7 +70,24 @@ const WANTED: Record<CredentialKind, string[]> = {
     'holder_name',
     'covers',
   ],
-  DEDICATED_STATUS: ['status_number', 'holder_name', 'association', 'status_type'],
+  DEDICATED_STATUS: [
+    'status_number',
+    'holder_name',
+    'association',
+    'status_type',
+  ],
+  DEDICATED_HUNTER: [
+    'status_number',
+    'holder_name',
+    'association',
+    'status_type',
+  ],
+  PROFESSIONAL_HUNTER: [
+    'registration_number',
+    'holder_name',
+    'province',
+    'category',
+  ],
   PROFICIENCY: ['certificate_number', 'holder_name', 'unit_standard'],
   OTHER: ['reference_number', 'holder_name', 'issuer'],
 };
@@ -283,8 +300,10 @@ function userPrompt(kind: CredentialKind): string {
   const label: Record<CredentialKind, string> = {
     FIREARM_LICENCE: 'a South African firearm licence card or certificate',
     COMPETENCY_CERTIFICATE: 'a SAPS competency certificate',
-    DEDICATED_STATUS:
-      'a dedicated hunter or dedicated sport shooter status certificate',
+    DEDICATED_STATUS: 'a dedicated sport shooter status certificate',
+    DEDICATED_HUNTER: 'a dedicated hunter status certificate',
+    PROFESSIONAL_HUNTER:
+      'a professional hunter (PH) registration certificate, issued by a provincial nature conservation authority',
     PROFICIENCY: 'a firearm proficiency or training certificate',
     OTHER: 'a supporting document',
   };
@@ -345,8 +364,14 @@ const CLASSIFY_USER = [
   'FIREARM_LICENCE - a South African firearm licence card or certificate,',
   '  naming a firearm and usually a section of the Firearms Control Act',
   'COMPETENCY_CERTIFICATE - a SAPS competency certificate',
-  'DEDICATED_STATUS - a dedicated hunter or dedicated sport shooter status',
-  '  certificate, issued by a hunting or sport-shooting association',
+  'DEDICATED_STATUS - a DEDICATED SPORT SHOOTER status certificate, issued by',
+  '  an accredited sport-shooting association',
+  'DEDICATED_HUNTER - a DEDICATED HUNTER status certificate, issued by an',
+  '  accredited hunting association. Says "hunter", not "sport shooter".',
+  'PROFESSIONAL_HUNTER - a professional hunter (PH) registration, issued by a',
+  '  PROVINCIAL NATURE CONSERVATION department rather than an association.',
+  '  Names a province and a hunting category. This is an occupational licence',
+  '  to hunt for a client and is NOT dedicated status - do not confuse them.',
   'PROFICIENCY - a firearm proficiency or unit-standard training certificate',
   'OTHER - anything else, or you cannot tell',
   '',

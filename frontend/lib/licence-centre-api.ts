@@ -27,6 +27,8 @@ export type CredentialKind =
   | 'FIREARM_LICENCE'
   | 'COMPETENCY_CERTIFICATE'
   | 'DEDICATED_STATUS'
+  | 'DEDICATED_HUNTER'
+  | 'PROFESSIONAL_HUNTER'
   | 'PROFICIENCY'
   | 'OTHER';
 
@@ -206,7 +208,16 @@ export const licenceCentreApi = {
 export const KIND_LABELS: Record<CredentialKind, string> = {
   FIREARM_LICENCE: 'Firearm licence',
   COMPETENCY_CERTIFICATE: 'Competency certificate',
-  DEDICATED_STATUS: 'Dedicated status',
+  // The two dedicated statuses are separate accreditations with separate
+  // certificates and separate expiry dates, even where one association
+  // issues both.
+  DEDICATED_STATUS: 'Dedicated sport shooter',
+  DEDICATED_HUNTER: 'Dedicated hunter',
+  // ⚠️ NOT dedicated status. A PH registration is a provincial nature
+  // conservation qualification to hunt for a client. It is kept here because
+  // it expires and members want it tracked — never because it evidences
+  // anything under section 16.
+  PROFESSIONAL_HUNTER: 'Professional hunter (PH)',
   PROFICIENCY: 'Proficiency certificate',
   OTHER: 'Something else',
 };
