@@ -172,7 +172,21 @@ This cuts across two things already built, and both needed changing:
   to the existing base, word of mouth. **No public pages** (operator decision — the public
   site stays firearm-clean).
 
-### Phase 1 — DEPLOYED INERT (2026-08-19)
+### Phase 1 — LIVE, SOFT LAUNCH (2026-08-19)
+
+`motivation_writer_enabled` = **true**, `motivation_beta_free_cap` = **3**.
+
+⚠️ **The cap is 3, not 100, on purpose.** The attorney has NOT reviewed the
+templates — the operator's own recorded gate — and nobody has completed the flow
+against a real Clerk login. Three seats is enough to walk it end to end while the
+exposure stays small. **Raise to 100 only after both.**
+
+The cap was set BEFORE the flag was flipped. The other order leaves a window at
+100 seats.
+
+Verified after switching on: `/motivations` still 307s signed-out, the homepage
+and `/raffle` still carry zero motivation or firearm wording, the sitemap has not
+gained a single URL, no seats claimed, no rows, zero errors.
 
 **On the live box** at `5d5882c`, three migrations applied, both services
 reloaded, health checked twice. `motivation_writer_enabled` is unset and
