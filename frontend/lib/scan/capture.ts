@@ -2,7 +2,14 @@
 
 import { DETECT_WIDTH, Gray, detectQuad, inkiness, toLuma } from './detect';
 import { EnhanceReport, enhance, inspect } from './enhance';
-import { Quad, frameQuad, outputSize, scaleQuad } from './geometry';
+import {
+  Quad,
+  Rect,
+  frameQuad,
+  outputSize,
+  quadBounds,
+  scaleQuad,
+} from './geometry';
 import { Raster, rectify } from './warp';
 
 // ────────────────────────────────────────────────────────────────────
@@ -118,6 +125,60 @@ export async function grabVisible(
   return blob ? { blob, width: w, height: h } : null;
 }
 
+/**
+ * Does a detection agree with where the member said the document is?
+ *
+ * ⚠️ NOT INTERSECTION-OVER-UNION, and that was measured rather than assumed.
+ * The operator's carpet strip — a tall rectangle holding his licence card and
+ * a foot of blue blanket — scores 0.35 IoU against the card box, comfortably
+ * above any threshold loose enough to tolerate a handheld shot. IoU cannot
+ * separate them because it mixes two different failures into one number.
+ *
+ * Split apart, they are obvious:
+ *
+ *   COVERAGE — how much of the box the detection fills. A fragment sitting
+ *   inside the card (one printed table, say) covers almost none of it.
+ *
+ *   SPILL — how much of the detection hangs outside the box. The carpet strip
+ *   covers 72% of the box, which sounds fine, but 60% of the strip is
+ *   somewhere else entirely. A card lined up in the corners spills nothing.
+ *
+ * A handheld shot that is 30px adrift passes both comfortably, which is the
+ * point: this rejects "you found the carpet", not "your corners are a few
+ * pixels out".
+ */
+const AIM_MIN_COVER = 0.5;
+const AIM_MAX_SPILL = 0.35;
+
+export function detectionAgreesWithAim(detected: Quad, box: Rect): boolean {
+  const b = quadBounds(detected);
+  const ix = Math.max(
+    0,
+    Math.min(b.x + b.width, box.x + box.width) - Math.max(b.x, box.x),
+  );
+  const iy = Math.max(
+    0,
+    Math.min(b.y + b.height, box.y + box.height) - Math.max(b.y, box.y),
+  );
+  const inter = ix * iy;
+  const qa = b.width * b.height;
+  const ba = box.width * box.height;
+  if (qa <= 0 || ba <= 0) return false;
+  const cover = inter / ba;
+  const spill = 1 - inter / qa;
+  return cover >= AIM_MIN_COVER && spill <= AIM_MAX_SPILL;
+}
+
+/** The aim box as a quad, corners in the same order the warp expects. */
+function rectToQuad(r: Rect): Quad {
+  return [
+    { x: r.x, y: r.y },
+    { x: r.x + r.width, y: r.y },
+    { x: r.x + r.width, y: r.y + r.height },
+    { x: r.x, y: r.y + r.height },
+  ];
+}
+
 /** Decode a blob or file into raw pixels, capped so a 108MP phone cannot OOM us. */
 export async function decode(
   source: Blob,
@@ -176,7 +237,11 @@ export interface ScanResult {
   preview: string;
   quad: Quad;
   /** Did we find the edges, or fall back to the frame? */
-  source: 'detected' | 'frame' | 'manual';
+  /**
+   * 'aim' means the member's own box was used because detection disagreed
+   * with it — see the note in processCapture.
+   */
+  source: 'detected' | 'frame' | 'manual' | 'aim';
   report: EnhanceReport;
   snapped: string | null;
   /** Long edge of the frame this came from, in pixels. */
@@ -212,7 +277,23 @@ export interface ScanResult {
  */
 export async function processCapture(
   source: Blob,
-  opts: { manualQuad?: Quad; name?: string; expectAspect?: number } = {},
+  opts: {
+    manualQuad?: Quad;
+    name?: string;
+    expectAspect?: number;
+    /**
+     * Where the member was asked to put the document, in THIS image's pixels.
+     *
+     * ⚠️ IT OVERRULES A DISAGREEING DETECTION. The operator lined a licence
+     * card up inside the corners, pressed the shutter, and got back a tall
+     * strip containing the card and a foot of blue blanket — because the
+     * detector found a tall rectangle on the carpet and processCapture
+     * trusted it without asking. Nothing in the image says which rectangle is
+     * the licence. The member does, by putting it in the box, and pressing
+     * the shutter while it is there is them saying so out loud.
+     */
+    aimBox?: Rect;
+  } = {},
 ): Promise<ScanResult> {
   const raster = await decode(source);
 
@@ -224,11 +305,30 @@ export async function processCapture(
     const small = shrinkForDetect(raster);
     const found = detectQuad(small.gray, { expectAspect: opts.expectAspect });
     if (found) {
-      quad = found.quad.map((p) => ({
+      const scaled = found.quad.map((p) => ({
         x: p.x / small.scale,
         y: p.y / small.scale,
       })) as Quad;
-      from = 'detected';
+      // ⚠️ DOES IT AGREE WITH WHERE THEY PUT IT? A detection that has nothing
+      // to do with the aim box is a detection of the desk, and cropping to it
+      // throws the document away. The threshold is loose — this rejects "you
+      // found the carpet", not "your corners are a few pixels out".
+      const agree =
+        !opts.aimBox || detectionAgreesWithAim(scaled, opts.aimBox);
+      if (agree) {
+        quad = scaled;
+        from = 'detected';
+      } else {
+        quad = rectToQuad(opts.aimBox!);
+        from = 'aim';
+      }
+    } else if (opts.aimBox) {
+      // ⚠️ THE BOX BEATS THE WHOLE FRAME. Falling back to a 5%-inset frame
+      // quad means cropping to everything the camera could see, which on a
+      // desk is a photograph of the desk. If they lined it up and we simply
+      // could not find an edge, the box is still the best answer we have.
+      quad = rectToQuad(opts.aimBox);
+      from = 'aim';
     } else {
       quad = frameQuad(raster.width, raster.height, 0.05);
       from = 'frame';
@@ -244,6 +344,7 @@ export async function processCapture(
   // line of text costs it the field. Skipped for a manual quad: if somebody
   // has dragged the corners themselves, those are the corners they meant.
   const cropQuad = opts.manualQuad ? quad : scaleQuad(quad, 1.02);
+
 
   const { w, h, snapped } = outputSize(cropQuad, OUTPUT_MAX_EDGE);
   const flat = rectify(raster, cropQuad, w, h);

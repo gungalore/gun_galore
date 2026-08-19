@@ -474,10 +474,21 @@ export default function DocumentScanner({
         autoRef.current &&
         q &&
         lockRef.current >= 3 &&
-        confidentRef.current &&
-        // ⚠️ AND IN THE BOX. Confidence says "this is a document-shaped
-        // thing"; it cannot say "this is YOUR document". Only the member
-        // knows that, and putting it inside the corners is how they say so.
+        // ⚠️ THE AIM BOX REPLACED THE CONFIDENCE SCORE HERE, it does not
+        // stack on top of it.
+        //
+        // `confident` is an inference — score, ink density, interior angles —
+        // invented to guess whether a locked quad was really a document, back
+        // when nothing else could say. The aim box is not a guess: the member
+        // put the document inside the corners and it stayed there for three
+        // frames. Requiring both meant a licence card on a patterned carpet
+        // could sit locked, green and steady while ink density quietly held
+        // the shutter shut, and the member had no way to find out why.
+        //
+        // The remaining gates are the ones with visible causes: corners that
+        // agree, corners in the box, a frame that is not blown out, and a
+        // phone that has stopped moving. If any of those is missing the
+        // member can see which.
         aimedRef.current &&
         // ⚠️ THE SAME CALL THE ALERT MAKES. Two copies of these thresholds
         // would eventually disagree, and a scanner that shows a warning and
@@ -575,15 +586,38 @@ export default function DocumentScanner({
       if (!grabbed) throw new Error('We could not take that photo.');
       const blob = grabbed.blob;
       rawBlobRef.current = blob;
+
+      // ⚠️ THE AIM BOX GOES WITH THE PHOTOGRAPH. The corners the member lined
+      // the document up against are the single most reliable thing we know
+      // about where it is, and until now the still was re-detected in
+      // isolation with no idea any of that had happened. That is how a
+      // perfectly-aligned licence card came back as a tall strip of blue
+      // blanket: the detector found a rectangle in the carpet and nothing
+      // asked whether it was anywhere near the box.
+      //
+      // Mapped from CSS pixels into the captured image's own pixels — the
+      // capture is the VISIBLE region at full resolution, which is the same
+      // region the box was drawn over, so it is one uniform scale.
+      const el = video.getBoundingClientRect();
+      const k = el.width > 0 ? grabbed.width / el.width : 1;
+      const box = aimBox(shape, { width: el.width, height: el.height });
       const res = await processCapture(blob, {
         expectAspect: expectAspectFor(shape),
+        aimBox: {
+          x: box.x * k,
+          y: box.y * k,
+          width: box.width * k,
+          height: box.height * k,
+        },
       });
       setShot(res);
       setPhase('review');
       say(
         res.source === 'detected'
           ? 'Ready to check. We found the edges.'
-          : 'Ready to check. We could not find the edges, so we used the frame.',
+          : res.source === 'aim'
+            ? 'Ready to check. We used the corners you lined it up with.'
+            : 'Ready to check. We could not find the edges, so we used the frame.',
       );
     } catch (e) {
       setErr((e as Error).message || 'That did not work. Try again.');

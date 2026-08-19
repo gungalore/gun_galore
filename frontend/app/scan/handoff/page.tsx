@@ -24,7 +24,9 @@ const DocumentScanner = dynamic(
   { ssr: false },
 );
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? '/api';
+// Same fallback every other caller uses — see the note in
+// components/scan/phone-handoff-dialog.tsx.
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 type Phase = 'ready' | 'sending' | 'sent' | 'error';
 

@@ -217,6 +217,19 @@ export default function MotivationWizardPage() {
     return row;
   };
 
+  /**
+   * Re-read the pack from the server.
+   *
+   * The phone uploads straight to the API over a handoff token, so nothing in
+   * this tab hears about it — the list has to be asked rather than patched.
+   */
+  const refreshUploads = useCallback(async () => {
+    const up = await motivationsApi.uploads(token, id);
+    setUploads(up.files);
+    setDocuments(up.documents);
+    setUploadKinds(up.kinds ?? []);
+  }, [token, id]);
+
   const removeOneUpload = async (uploadId: string) => {
     await motivationsApi.removeUpload(token, id, uploadId);
     setUploads((u) => u.filter((x) => x.id !== uploadId));
@@ -536,9 +549,24 @@ export default function MotivationWizardPage() {
                           onRemove={removeOneUpload}
                         />
                       ) : (
-                        <FilePickerButton
-                          accept="image/jpeg,image/png,image/webp,application/pdf"
+                        /* ⚠️ EVERY WAY IN, ON EVERY LINE. The bulk panel at
+                           the bottom had the camera and the phone handoff and
+                           these rows had only a file picker — so the member
+                           who is working down the checklist, which is the
+                           whole point of the checklist, was the one member
+                           who could not use a camera. Same three routes as
+                           the panel: phone (desktop), camera (handheld),
+                           picker (always). */
+                        <ScanButton
+                          shape={shapeForKind(n.kind)}
+                          title={n.label}
+                          kind={n.kind}
+                          handoff={{ dest: 'motivation', motivationId: id }}
+                          onHandoffArrived={() => void refreshUploads()}
                           disabled={busyKind === n.kind}
+                          label={
+                            busyKind === n.kind ? 'Reading…' : 'Photograph it'
+                          }
                           onFiles={async (files) => {
                             const file = files[0];
                             if (!file) return;
@@ -556,9 +584,32 @@ export default function MotivationWizardPage() {
                               setBusyKind(null);
                             }
                           }}
-                        >
-                          {busyKind === n.kind ? 'Reading…' : 'Add this one'}
-                        </FilePickerButton>
+                          fallback={
+                            <FilePickerButton
+                              accept="image/jpeg,image/png,image/webp,application/pdf"
+                              disabled={busyKind === n.kind}
+                              onFiles={async (files) => {
+                                const file = files[0];
+                                if (!file) return;
+                                setBusyKind(n.kind);
+                                setUploadErr(null);
+                                try {
+                                  await addOneUpload(n.kind, file);
+                                } catch (ex) {
+                                  setUploadErr(
+                                    ex instanceof MotivationApiError
+                                      ? ex.message
+                                      : 'That upload did not work.',
+                                  );
+                                } finally {
+                                  setBusyKind(null);
+                                }
+                              }}
+                            >
+                              {busyKind === n.kind ? 'Reading…' : 'Add this one'}
+                            </FilePickerButton>
+                          }
+                        />
                       )}
                     </span>
                   </span>
@@ -582,14 +633,7 @@ export default function MotivationWizardPage() {
           uploads={uploads}
           kinds={uploadKinds}
           motivationId={id}
-          onHandoffArrived={async () => {
-            // The phone posted straight to the server, so nothing in this tab
-            // knows about it — re-read the pack rather than guessing.
-            const up = await motivationsApi.uploads(token, id);
-            setUploads(up.files);
-            setDocuments(up.documents);
-            setUploadKinds(up.kinds ?? []);
-          }}
+          onHandoffArrived={refreshUploads}
           onRefile={async (uploadId, nextKind) => {
             await motivationsApi.refileUpload(token, id, uploadId, nextKind);
             const up = await motivationsApi.uploads(token, id);

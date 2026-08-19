@@ -23,6 +23,16 @@ import { useViewerFetch } from '@/lib/use-viewer-fetch';
 // straight through this dialog — the nav is z-50 but sits in its own stacking
 // context, so the arithmetic that says 80 wins is not the arithmetic the
 // browser does. 130 is the number that is already proven to cover everything.
+/**
+ * ⚠️ viewerFetch DOES NOT PREFIX ANYTHING. It attaches the Clerk token and
+ * forces no-store, and passes the URL through verbatim — so a bare
+ * `/scan-handoff` hits the Next app, gets the HTML shell back, and fails as
+ * "We could not make a phone link" with nothing in the backend log, because
+ * the backend never saw it. Every other caller in the codebase spells the
+ * base out; so does this one.
+ */
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
 const Z = 130;
 /** Big enough to scan from a normal seat, not so big it needs the whole screen. */
 const QR_PX = 260;
@@ -67,7 +77,7 @@ export default function PhoneHandoffDialog({
     let alive = true;
     (async () => {
       try {
-        const res = await viewerFetch(`/scan-handoff`, {
+        const res = await viewerFetch(`${API_URL}/scan-handoff`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dest, motivationId, kind, title }),
@@ -100,7 +110,7 @@ export default function PhoneHandoffDialog({
     let alive = true;
     const tick = async () => {
       try {
-        const res = await viewerFetch(`/scan-handoff/${handoffId}`);
+        const res = await viewerFetch(`${API_URL}/scan-handoff/${handoffId}`);
         if (!res?.ok || !alive) return;
         const s = (await res.json()) as { state: State; added: number };
         if (!alive) return;
