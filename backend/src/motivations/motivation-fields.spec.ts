@@ -212,6 +212,12 @@ describe('the six history questions', () => {
 
 describe('what reaches the writer', () => {
   it('withholds contact details and a spouse ID from the fact pack', () => {
+    // ⚠️ firearm_serial USED TO BE ON THIS LIST and its removal reverses a
+    // deliberate decision. The serial identifies a FIREARM, not a person, it
+    // is the subject of the application, every professional motivation
+    // introduces the firearm with it, and the mechanical verifier requires an
+    // answered serial to appear in the document — withholding it handed the
+    // writer an impossible instruction that blocked four live generations.
     const packKeys = factPackFields(T).map((f) => f.key);
     for (const pii of [
       'home_telephone',
@@ -219,7 +225,6 @@ describe('what reaches the writer', () => {
       'postal_address',
       'spouse_name',
       'spouse_id_number',
-      'firearm_serial',
     ]) {
       expect(packKeys).not.toContain(pii);
     }
@@ -657,5 +662,31 @@ describe('what never reaches a model', () => {
     expect(keys).toContain('existing_firearm_1_calibre');
     expect(keys).toContain('existing_firearm_1_make');
     expect(keys).toContain('existing_firearm_1_type');
+  });
+});
+
+describe('what the writer must see despite formOnly', () => {
+  // ⚠️ THE SERIAL IS THE SUBJECT OF THE APPLICATION. It is formOnly for
+  // wizard visibility, but the mechanical verifier requires an answered
+  // serial to appear in the document — so withholding it from the prompt
+  // hands the writer an impossible instruction. Four consecutive live
+  // generations were blocked exactly that way.
+  it('gives the writer firearm_serial', () => {
+    for (const t of ALL) {
+      const keys = factPackFields(t).map((f) => f.key);
+      if (fieldsFor(t).some((f) => f.key === 'firearm_serial')) {
+        expect(keys).toContain('firearm_serial');
+      }
+    }
+  });
+
+  it('still withholds the rest of the form-only block', () => {
+    // The carve-out is one key, not a hole: the spouse's ID and the postal
+    // codes stay out of the prompt.
+    const keys = factPackFields(
+      MotivationLicenceType.S16_DEDICATED_SPORT,
+    ).map((f) => f.key);
+    expect(keys).not.toContain('spouse_id_number');
+    expect(keys).not.toContain('residential_postal_code');
   });
 });

@@ -1874,11 +1874,28 @@ export function requiredKeys(
 const NEVER_PROMPTED =
   /^existing_firearm_\d+_(frame_serial|barrel_serial|licence_no)$/;
 
+/**
+ * formOnly fields the writer MUST see anyway.
+ *
+ * ⚠️ firearm_serial IS THE SUBJECT OF THE APPLICATION. It is formOnly for
+ * WIZARD visibility — on the dealer path the applicant may not know it yet —
+ * but every professional motivation introduces the firearm with its serial,
+ * and the mechanical verifier requires an answered serial to appear in the
+ * document. Withholding it handed the writer an impossible instruction:
+ * four consecutive live generations were blocked for omitting a number the
+ * prompt never contained. A serial identifies a firearm, not a person; the
+ * privacy reasoning that keeps phone numbers and a spouse's ID out of the
+ * prompt does not apply to it.
+ */
+const PROMPTED_DESPITE_FORM_ONLY = new Set(['firearm_serial']);
+
 export function factPackFields(
   type: MotivationLicenceType,
 ): readonly MotivationField[] {
   return fieldsFor(type).filter(
-    (f) => !f.formOnly && !NEVER_PROMPTED.test(f.key),
+    (f) =>
+      (!f.formOnly || PROMPTED_DESPITE_FORM_ONLY.has(f.key)) &&
+      !NEVER_PROMPTED.test(f.key),
   );
 }
 
