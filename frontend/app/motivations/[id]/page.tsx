@@ -397,6 +397,47 @@ export default function MotivationWizardPage() {
   }, [token, id]);
 
   /**
+   * KEEP THE DOCUMENTS IN STEP ACROSS DEVICES.
+   *
+   * ⚠️ THE SAME APPLICATION IS OPEN IN THREE PLACES. Somebody works on the
+   * desktop, photographs their ID on the phone, and looks back at the laptop
+   * — which is still showing the state it fetched when the page loaded. The
+   * phone-handoff path already refreshed, because the desktop was watching
+   * that particular session; a plain upload from the PWA had nothing watching
+   * it at all, so the desktop sat there claiming the ID was still missing.
+   *
+   * Polled rather than pushed: a websocket for this would be a connection,
+   * a reconnect policy and a server-side fan-out, to keep a checklist honest.
+   *
+   * ⚠️ ONLY WHILE THE TAB IS VISIBLE, and immediately on becoming visible —
+   * which is the moment that actually matters, because it is when somebody
+   * puts the phone down and looks back at the laptop. A background tab polling
+   * every ten seconds is a battery and a bill for nothing.
+   */
+  useEffect(() => {
+    let alive = true;
+    const sync = () => {
+      if (document.visibilityState !== 'visible') return;
+      void refreshUploads().catch(() => undefined);
+      void loadLibrary().catch(() => undefined);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sync();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    const timer = window.setInterval(() => {
+      if (alive) sync();
+    }, 10_000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [refreshUploads, loadLibrary]);
+
+  /**
    * Photograph the document a field comes off, and fill the field from it.
    *
    * ⚠️ IT APPLIES THE READ VALUES DIRECTLY rather than dropping them into the
@@ -1750,7 +1791,6 @@ function UploadPanel({
 }) {
   // Empty string until the list arrives, and the file input stays disabled
   // until then — posting an empty kind would 400 with nothing useful to show.
-  const [kind, setKind] = useState('');
   /**
    * THE UPLOAD PATH, lifted out of the file input.
    *
@@ -1772,10 +1812,12 @@ function UploadPanel({
     const failed: string[] = [];
     for (const [i, file] of files.entries()) {
       try {
-        // ONE file keeps the type they picked. SEVERAL are a pack, so
-        // each is named from its contents — nobody labels eight files
-        // in a dropdown before uploading them.
-        const added = await onAdd(files.length === 1 ? kind : '', file);
+        // ⚠️ ALWAYS AUTO-NAMED HERE, one file or eight. This panel no longer
+        // asks which document anything is — that question moved to the
+        // checklist above, where the member answers it by choosing a line.
+        // Anything arriving through this path is by definition unlabelled,
+        // and the correction dropdown below catches what we get wrong.
+        const added = await onAdd('', file);
         if (added?.autoFiled) {
           named.push({
             id: added.id,
@@ -1814,37 +1856,19 @@ function UploadPanel({
     { id: string; name: string; kind: string; confident: boolean }[]
   >([]);
 
-  // Follow the server's first choice, which is the first thing still needed.
-  // Only while nothing has been picked: re-selecting under the applicant after
-  // they chose would be the wizard arguing with them.
-  useEffect(() => {
-    if (!kind && kinds.length) setKind(kinds[0].kind);
-  }, [kind, kinds]);
-
   return (
     <div className="mt-3">
+      {/* ⚠️ THE DOCUMENT-TYPE SELECT IS GONE FROM HERE. The checklist above is
+          now a radio list of exactly these kinds — so this was a second
+          control answering a question the member had already answered, three
+          inches higher, and the two could disagree. This panel does one
+          thing: take the whole pack and work out what each file is. */}
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          className="rounded border border-[var(--border)] px-3 py-2 text-sm"
-          value={kind}
-          onChange={(e) => setKind(e.target.value)}
-          aria-label="Document type"
-          title="Used when you add one file. A pack is sorted automatically."
-        >
-          {kinds.map((k) => (
-            <option key={k.kind} value={k.kind}>
-              {k.label}
-              {/* "needed" means STILL OUTSTANDING, not "is on the required
-                  list" — a tag that stays put after the photograph is attached
-                  is a tag nobody reads. */}
-              {k.tier === 'required' && !k.have ? ' — needed' : ''}
-            </option>
-          ))}
-        </select>
         <ScanButton
           // Follows the picker above; A4 while nothing is chosen, because a
           // motivation pack is mostly paper.
-          shape={kind ? shapeForKind(kind) : 'a4'}
+          // A pack is mostly paper, and this panel never names one document.
+          shape="a4"
           // ⚠️ THIS IS THE UPLOAD-ALL. Somebody opening it is holding a pack —
           // a competency certificate, a licence card, a page of an ID book —
           // and scanning exactly one thing is the unusual case here, not the
@@ -1856,7 +1880,6 @@ function UploadPanel({
           disabled={busy}
           label="Photograph documents"
           handoff={{ dest: 'motivation', motivationId }}
-          kind={kind || undefined}
           onHandoffArrived={() => void onHandoffArrived()}
           fallback={
             <FilePickerButton

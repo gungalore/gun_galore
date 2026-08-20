@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import type { DocumentNeed, LibraryItem, UploadRow } from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
@@ -26,6 +25,21 @@ import type { DocumentNeed, LibraryItem, UploadRow } from '@/lib/motivations-api
 // ────────────────────────────────────────────────────────────────────
 
 export type Tier = 'required' | 'expected' | 'strengthens' | 'extra';
+
+/**
+ * The groups, in the order they are shown.
+ *
+ * ⚠️ THE WORDING CARRIES THE DISTINCTION THE BADGES USED TO. "SAPS will not
+ * process without these" is a statement about the Act; "your DFO will ask for
+ * these" is a statement about practice, and the endorsement lives there
+ * precisely because it has no statute behind it.
+ */
+const GROUPS: { tier: Tier; title: string }[] = [
+  { tier: 'required', title: 'SAPS will not process the application without these' },
+  { tier: 'expected', title: 'Your DFO will ask for these' },
+  { tier: 'strengthens', title: 'Not asked for — but they make the case' },
+  { tier: 'extra', title: 'Anything else' },
+];
 
 export interface ChecklistRow extends DocumentNeed {
   /** Attached files that answer this line. */
@@ -56,18 +70,33 @@ export default function DocumentChecklist({
       aria-label="Which document are you adding?"
       className="rounded border border-[var(--border)]"
     >
-      <ul className="divide-y divide-[var(--border-divider)]">
-        {rows.map((r) => (
-          <Row
-            key={r.kind}
-            row={r}
-            checked={selected === r.kind}
-            onSelect={() => onSelect(r.kind)}
-            onView={onView}
-            onRemove={onRemove}
-          />
-        ))}
-      </ul>
+      {/* ⚠️ ONE HEADING PER GROUP, INSTEAD OF A BADGE PER ROW. Five of seven
+          rows carried "SAPS needs this", which is a label that has stopped
+          labelling anything. The same fact stated once over the group it
+          applies to is shorter AND clearer. */}
+      {GROUPS.map((g) => {
+        const mine = rows.filter((r) => r.tier === g.tier);
+        if (mine.length === 0) return null;
+        return (
+          <div key={g.tier}>
+            <p className="border-b border-[var(--border-divider)] bg-[var(--bg-inset)] px-3 py-1.5 text-xs text-[var(--text-secondary)]">
+              {g.title}
+            </p>
+            <ul className="divide-y divide-[var(--border-divider)]">
+              {mine.map((r) => (
+                <Row
+                  key={r.kind}
+                  row={r}
+                  checked={selected === r.kind}
+                  onSelect={() => onSelect(r.kind)}
+                  onView={onView}
+                  onRemove={onRemove}
+                />
+              ))}
+            </ul>
+          </div>
+        );
+      })}
       <div className="border-t border-[var(--border-divider)] bg-[var(--bg-inset)] p-3">
         {children}
       </div>
@@ -88,8 +117,6 @@ function Row({
   onView: (id: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
-
   // ⚠️ AMBER IS NOT "BROKEN", IT IS "CHECK THIS". The document is attached and
   // will go in the pack either way; what we are saying is that nothing we
   // expected to find on it was there, which usually means the wrong line was
@@ -144,24 +171,11 @@ function Row({
             >
               {row.label}
             </span>
-            {!row.have && row.tier === 'required' && (
-              <span className="rounded bg-[var(--gold-wash)] px-1.5 py-0.5 text-xs">
-                SAPS needs this
-              </span>
-            )}
-            {/* ⚠️ NOT "OPTIONAL". The endorsement has no statute behind it and
-                a DFO will still turn somebody away without it — see
-                DocumentTier in motivation-documents.ts. */}
-            {!row.have && row.tier === 'expected' && (
-              <span className="rounded bg-[var(--gold-wash)] px-1.5 py-0.5 text-xs">
-                Your DFO will ask for this
-              </span>
-            )}
-            {!row.have && row.tier === 'strengthens' && (
-              <span className="text-xs text-[var(--text-tertiary-on-card)]">
-                optional — but it helps
-              </span>
-            )}
+            {/* ⚠️ NO PER-ROW BADGES. "SAPS needs this" hung off five of seven
+                rows, which is a label that has stopped labelling anything —
+                and the operator's word for the result was clutter. Order
+                carries it instead: required first, then what the DFO expects,
+                then the optional ones, under one heading each. */}
           </span>
 
           {/* THE SAFE, PART BY PART. Only while it is incomplete: once all
@@ -181,19 +195,11 @@ function Row({
             </span>
           )}
 
-          {!row.have && (
-            <button
-              type="button"
-              className="mt-1 text-xs underline"
-              onClick={(e) => {
-                e.preventDefault();
-                setOpen((o) => !o);
-              }}
-            >
-              {open ? 'Hide' : 'Why this one?'}
-            </button>
-          )}
-          {open && !row.have && (
+          {/* ⚠️ THE EXPLANATION MOVED TO THE SELECTED ROW ONLY. A toggle on
+              every line was a control per row that mostly said "not now" —
+              and the reason is worth reading exactly once, about the document
+              you are actually adding. */}
+          {checked && row.why && (
             <span className="mt-1 block text-xs text-[var(--text-secondary)]">
               {row.why}
             </span>

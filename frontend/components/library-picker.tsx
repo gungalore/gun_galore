@@ -36,7 +36,32 @@ export default function LibraryPicker({
   // member to attach the same page twice — which is the duplicate problem
   // this control exists to remove, arriving through the control itself.
   const usable = items.filter((i) => !i.alreadyHere);
-  if (usable.length === 0) return null;
+
+  // ⚠️ IT RENDERS EVEN WITH NOTHING IN IT, disabled and saying so.
+  //
+  // It used to return null when the library was empty, which is invisible —
+  // and invisible is indistinguishable from never built. The operator asked
+  // for this control three times while looking straight at the place it was
+  // supposed to be, because on his account there was nothing to put in it.
+  // A disabled select that says "nothing saved yet" answers the question the
+  // absence could not.
+  if (usable.length === 0) {
+    return (
+      <select
+        className="gg-datecell min-h-[44px] rounded border px-2 py-2 text-sm"
+        style={{
+          borderColor: 'var(--border)',
+          background: 'var(--bg-inset)',
+          color: 'var(--text-tertiary-on-card)',
+        }}
+        disabled
+        value=""
+        aria-label="Use a document you already have — nothing saved yet"
+      >
+        <option value="">Nothing saved to reuse yet</option>
+      </select>
+    );
+  }
 
   return (
     <span className="inline-flex flex-col">

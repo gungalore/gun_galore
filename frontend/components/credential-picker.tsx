@@ -106,26 +106,32 @@ export default function CredentialPicker({
     </div>
   );
 
-  if (choices.length === 0) {
-    return (
-      <>
-        {camera}
-        <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
-          We read the number off the photograph. Anything you keep in your{' '}
-          <Link href="/licence-centre" className="underline">
-            Licence Centre
-          </Link>{' '}
-          shows up here as a choice too.
-        </p>
-      </>
-    );
-  }
-
   return (
     <div className="mt-2">
       {camera}
-      <label className="block text-xs text-[var(--text-secondary)]">
+      {/* ⚠️ THE SELECT IS ALWAYS HERE, disabled when there is nothing in it.
+          It used to disappear on an empty list — and an absent control is
+          indistinguishable from one that was never built. The operator asked
+          for this dropdown three times while looking straight at the spot it
+          should occupy, because his vault happened to hold no competency
+          certificate. Saying "nothing saved yet" answers that; rendering
+          nothing does not. */}
+      <label className="mt-2 block text-xs text-[var(--text-secondary)]">
         {label}
+        {choices.length === 0 ? (
+          <select
+            className="gg-datecell mt-1 block w-full rounded border px-2 py-2 text-sm"
+            style={{
+              borderColor: 'var(--border)',
+              background: 'var(--bg-inset)',
+              color: 'var(--text-tertiary-on-card)',
+            }}
+            disabled
+            value=""
+          >
+            <option value="">Nothing saved yet — photograph one above</option>
+          </select>
+        ) : (
         <select
           className="gg-datecell mt-1 block w-full rounded border px-2 py-2 text-sm"
           style={{
@@ -152,10 +158,20 @@ export default function CredentialPicker({
             </option>
           ))}
         </select>
+        )}
       </label>
       <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
-        We read these off a photograph — check the value against the document
-        itself.
+        {choices.length === 0 ? (
+          <>
+            Photograph it above, or keep it in your{' '}
+            <Link href="/licence-centre" className="underline">
+              Licence Centre
+            </Link>{' '}
+            and it appears here on every application.
+          </>
+        ) : (
+          'We read these off a photograph — check the value against the document itself.'
+        )}
       </p>
     </div>
   );

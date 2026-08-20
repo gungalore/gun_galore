@@ -84,6 +84,7 @@ import {
 } from './motivation-profile';
 import {
   CREDENTIAL_TO_UPLOAD,
+  CredentialChoices,
   S16_AUTO_ATTACH,
   credentialChoices,
   validLongEnough,
@@ -982,8 +983,17 @@ export class MotivationsService {
        * Everything they could pick from, per group — as opposed to `items`,
        * which is what we would fill if they said "just do it". Somebody
        * holding two competency certificates has to be asked which.
+       *
+       * ⚠️ IT INCLUDES WHAT THEY PHOTOGRAPHED ONTO A MOTIVATION, not only the
+       * vault. The operator asked for this dropdown three times and it kept
+       * coming back empty, because it only ever looked at Licence Centre
+       * credentials — and the competency certificate somebody photographs
+       * while filling in the form lands as a motivation upload, not a vault
+       * row. A member who has just taken a photograph of the document and
+       * still cannot pick it from the list is being told the feature does not
+       * work, and they are right.
        */
-      choices: credentialChoices(credentials),
+      choices: await this.choicesFor(user.id, credentials),
       /** Vault documents that also satisfy a required upload on this pack. */
       documents: credentials
         .filter((c) => CREDENTIAL_TO_UPLOAD[c.kind])
@@ -995,6 +1005,93 @@ export class MotivationsService {
           expiresOn: c.expiresOn,
         })),
     };
+  }
+
+  /**
+   * Pickable documents, from BOTH stores.
+   *
+   * The vault half is pure (`credentialChoices`). The upload half has to
+   * decrypt, so it lives here: a motivation upload of the right kind whose
+   * extraction actually yielded the field becomes a choice named after the
+   * document it fills.
+   */
+  private async choicesFor(
+    userId: string,
+    credentials: CredentialSource[],
+  ): Promise<CredentialChoices> {
+    const base = credentialChoices(credentials);
+
+    const rows = await this.prisma.motivationUpload.findMany({
+      where: {
+        motivation: { userId },
+        kind: {
+          in: [
+            'COMPETENCY_CERTIFICATE',
+            'ASSOCIATION_CARD',
+            'GOOD_STANDING_LETTER',
+          ],
+        },
+        extractionOk: true,
+        purgedAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        kind: true,
+        createdAt: true,
+        extractionEncrypted: true,
+      },
+    });
+
+    // ⚠️ DEDUPED ON THE VALUE, NOT THE ROW. The same certificate photographed
+    // onto two motivations, or held in the vault AND photographed, would
+    // otherwise appear two and three times — and a list of identical entries
+    // is not a choice.
+    const seen = new Set<string>();
+    for (const c of base.competency) seen.add(c.values.competency_number ?? '');
+    for (const c of base.dedicated) seen.add(c.values.association_number ?? '');
+
+    for (const r of rows) {
+      if (!r.extractionEncrypted) continue;
+      let read: Record<string, string> = {};
+      try {
+        read = decryptJson<Record<string, string>>(r.extractionEncrypted) ?? {};
+      } catch {
+        continue;
+      }
+      const when = toIsoDay(r.createdAt);
+      if (r.kind === 'COMPETENCY_CERTIFICATE') {
+        const number = (read.competency_number ?? '').trim();
+        if (!number || seen.has(number)) continue;
+        seen.add(number);
+        base.competency.push({
+          credentialId: `upload:${r.id}`,
+          title: `Competency certificate you photographed (${when})`,
+          expiresOn: (read.competency_expiry ?? '').trim() || null,
+          values: { competency_number: number },
+        });
+        continue;
+      }
+      const name = (read.association_name ?? '').trim();
+      const number = (read.association_number ?? '').trim();
+      if (!name && !number) continue;
+      if (number && seen.has(number)) continue;
+      if (number) seen.add(number);
+      const values: Record<string, string> = {};
+      if (name) values.association_name = name;
+      if (number) values.association_number = number;
+      base.dedicated.push({
+        credentialId: `upload:${r.id}`,
+        title:
+          r.kind === 'GOOD_STANDING_LETTER'
+            ? `Letter of good standing you photographed (${when})`
+            : `Dedicated status you photographed (${when})`,
+        expiresOn: null,
+        values,
+      });
+    }
+
+    return base;
   }
 
   /** They agree, and we copy. Same write path as every other answer. */
