@@ -364,6 +364,9 @@ export class MotivationClaudeService {
         {
           model: MODEL_GATE,
           max_tokens: 1500,
+          // Same reason as the gate: a JSON verdict call must spend its budget
+          // on text, not on adaptive thinking the input provokes.
+          thinking: { type: 'disabled' } as never,
           system: [
             'You are the final check on a firearm licence motivation before it',
             'is filed. Read it the way a suspicious reviewing officer would.',
@@ -470,6 +473,14 @@ export class MotivationClaudeService {
           // verdict" — a gate that fails closed, so nothing could ever pass.
           // Output tokens bill as used, so the headroom is close to free.
           max_tokens: 4000,
+          // ⚠️ THINKING OFF, EXPLICITLY. Sonnet 5's adaptive thinking engages
+          // on its own when the input looks hard — and the research block made
+          // it look hard: a live gate call burned all 4000 output tokens on
+          // reasoning and emitted 255 characters of truncated JSON, which the
+          // fail-closed parse correctly scored as "no usable verdict", 0. A
+          // verdict is transcription of a judgement into a fixed shape; the
+          // budget must be text. Probed on the live key before relying on it.
+          thinking: { type: 'disabled' } as never,
         // ⚠️ NO `temperature` HERE, AND NEVER ADD ONE.
         //
         // temperature / top_p / top_k were REMOVED from the API on Opus 4.7 and
