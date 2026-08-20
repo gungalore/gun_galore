@@ -160,16 +160,17 @@ export async function appendPdfAnnexures(
       const suffix = take > 1 ? `  ·  page ${i + 1} of ${take}` : '';
 
       try {
-        page.drawText(`${caption}${suffix}`, {
-          x: 36,
-          y: height - 18,
-          size: 8,
-          font,
-          color: grey,
-        });
+        // ⚠️ ONE STAMP, IN THE TOP MARGIN, AND NOT A FOOTER TOO. The first
+        // version also stamped our "page N of M" along the bottom, which on
+        // the operator's own bank statement landed straight on top of the
+        // issuer's own footer line — two strings of grey text over each
+        // other, both unreadable. A document we did not lay out has no
+        // reserved space we can count on, so everything we add goes on ONE
+        // line in the one band that has proved clear, and the page number
+        // rides with the caption rather than hunting for its own gap.
         page.drawText(
-          `${opts.referenceNumber} · page ${pageNo} of ${total} · prepared with All Outdoor (${opts.templateVersion})`,
-          { x: 36, y: 16, size: 7.5, font, color: grey },
+          `${caption}${suffix}  ·  ${opts.referenceNumber} page ${pageNo} of ${total}`,
+          { x: 36, y: height - 18, size: 8, font, color: grey },
         );
       } catch {
         // A page whose content stream will not take a stamp is still worth
