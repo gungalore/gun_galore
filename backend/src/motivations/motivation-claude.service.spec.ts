@@ -1,5 +1,5 @@
 import { MotivationLicenceType } from '@prisma/client';
-import {
+import { redactToArea,
   MotivationClaudeService,
   QUALITY_FLOOR,
   GROUNDEDNESS_FLOOR,
@@ -370,5 +370,54 @@ describe('the overlap direction in the generation prompt', () => {
     // one that stays quiet.
     const p = generationUserPrompt(withNote(undefined), planFor(PACK.licenceType, 7));
     expect(p).not.toContain('SOMETHING THIS DOCUMENT MUST ADDRESS');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// WHAT MAY LEAVE FOR A SEARCH ENGINE.
+//
+// Research queries travel beyond Anthropic to a web search provider, so the
+// street must be stripped IN CODE before the model sees anything — a prompt
+// instruction alone is a hope, not a control. The first comma-separated
+// component is the house; it never survives, and digits are removed from the
+// rest against unit numbers and postal codes riding along.
+// ────────────────────────────────────────────────────────────────────
+describe('redactToArea', () => {
+  it('drops the street and keeps the area', () => {
+    expect(
+      redactToArea('36 Sterappel Crescent, Langeberg Glen, Cape Town, Western Cape'),
+    ).toBe('Langeberg Glen, Cape Town, Western Cape');
+  });
+
+  it('drops a unit line AND its street stays out of the first slot only', () => {
+    // "Unit 5, 12 Main Rd, Vorna Valley, Midrand" — the unit is slot one and
+    // the street becomes slot two. The digits go; "Main Rd" survives as part
+    // of the area, which names a road but not a household. Acceptable, and
+    // pinned so a change here is a decision rather than an accident.
+    expect(redactToArea('Unit 5, 12 Main Rd, Vorna Valley, Midrand')).toBe(
+      'Main Rd, Vorna Valley, Midrand',
+    );
+  });
+
+  it('refuses to return anything for an address with no separators', () => {
+    // No commas means no way to tell street from suburb — return nothing
+    // rather than search a full address.
+    expect(redactToArea('18 Andre Brink Street Vorna Valley Midrand')).toBe('');
+  });
+
+  it('strips every digit from what survives', () => {
+    expect(redactToArea('12 Farm Rd, Plot 44 Rietfontein, Midrand, 1685')).toBe(
+      'Plot Rietfontein, Midrand',
+    );
+  });
+
+  it('handles newline-separated addresses the same way', () => {
+    expect(redactToArea('18 Andre Brink Street\nVorna Valley\nMidrand')).toBe(
+      'Vorna Valley, Midrand',
+    );
+  });
+
+  it('returns empty for empty', () => {
+    expect(redactToArea('')).toBe('');
   });
 });

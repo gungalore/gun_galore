@@ -236,23 +236,70 @@ export function credentialOffer(
     row++;
   }
 
-  // ── dedicated status ─────────────────────────────────────────────
-  for (const c of credentials) {
-    if (!DEDICATED_KINDS.has(c.kind)) continue;
-    offer(
-      'association_name',
-      'Your association',
-      first(c.details, 'association', 'issuer'),
-      c.title,
-      c.id,
+  // ── dedicated status — one SLOT per association ──────────────────
+  //
+  // ⚠️ SEVERAL ASSOCIATIONS IS THE NORMAL CASE. The professional motivations
+  // list three, each with its own membership number and joined date, and a
+  // member's vault can hold a discipline document from each body. One slot
+  // meant the first document claimed association_name and every other body
+  // the member belonged to silently fell off their application — the exact
+  // understatement a section 16 reviewer would count against them.
+  //
+  // Deduped on the association's NAME, not the document: two papers from the
+  // same body (a certificate and last year's) are one membership, and listing
+  // it twice on a signed form is a false claim of two.
+  {
+    const slots: [string, string, string][] = [
+      ['association_name', 'association_number', 'dedicated_since'],
+      ['association_2_name', 'association_2_number', 'association_2_joined'],
+      ['association_3_name', 'association_3_number', 'association_3_joined'],
+    ];
+    const seenBodies = new Set(
+      slots
+        .map(([nameKey]) => (answered[nameKey] ?? '').trim().toUpperCase())
+        .filter(Boolean),
     );
-    offer(
-      'association_number',
-      'Membership number',
-      first(c.details, 'status_number', 'membership_number', 'reference_number'),
-      c.title,
-      c.id,
-    );
+    let slot = 0;
+    for (const c of credentials) {
+      if (!DEDICATED_KINDS.has(c.kind)) continue;
+      const body = first(c.details, 'association', 'issuer').trim();
+      if (body && seenBodies.has(body.toUpperCase())) continue;
+      // Advance past slots the applicant has already filled by hand.
+      while (
+        slot < slots.length &&
+        ((answered[slots[slot][0]] ?? '').trim() || values[slots[slot][0]])
+      ) {
+        slot++;
+      }
+      if (slot >= slots.length) {
+        skipped.push({
+          title: c.title,
+          why: 'the form has room for three associations and they are all filled',
+        });
+        continue;
+      }
+      const [nameKey, numberKey, sinceKey] = slots[slot];
+      offer(nameKey, 'Your association', body, c.title, c.id);
+      offer(
+        numberKey,
+        'Membership number',
+        // The label says MEMBERSHIP number, so the membership number wins
+        // where the document carries both — the status number is a different
+        // reference and putting it in this box mislabels it on a signed form.
+        first(c.details, 'membership_number', 'status_number', 'reference_number'),
+        c.title,
+        c.id,
+      );
+      offer(
+        sinceKey,
+        'Member since',
+        first(c.details, 'joined_on'),
+        c.title,
+        c.id,
+      );
+      if (body) seenBodies.add(body.toUpperCase());
+      slot++;
+    }
   }
 
   return {

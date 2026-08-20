@@ -37,6 +37,10 @@ import type { StructurePlan } from './motivation-structure';
 // outlives those returns a gateway error the user cannot act on.
 const GENERATE_TIMEOUT_MS = 85_000;
 const GRADE_TIMEOUT_MS = 60_000;
+// Research runs a handful of web searches before writing. It only ever runs
+// OFF the request (generation is async now), so the proxy ceilings that cap
+// the others do not apply — the cap here is just "do not hang forever".
+const RESEARCH_TIMEOUT_MS = 180_000;
 
 // MODEL CHOICE — operator: "whatever produces the best possible document."
 //
@@ -220,6 +224,203 @@ export class MotivationClaudeService {
       throw new Error(
         'We could not draft the document just now. Please try again in a minute.',
       );
+    }
+  }
+
+  /**
+   * Research the case before writing it.
+   *
+   * The professional motivations we studied are not templates: the
+   * self-defence one annexes the precinct's own police-station crime figures,
+   * and every section 16 carries pages on the firearm's design and the
+   * cartridge's history. That material is PUBLISHED — it is not something to
+   * ask the applicant for, and not something a writer should recall from
+   * training data and hope. So a cheaper model with web search gathers it
+   * once per motivation, and the writer is handed the brief.
+   *
+   * ⚠️ PRIVACY IS THE HARD CONSTRAINT HERE. Search queries leave Anthropic
+   * for a search engine, so nothing identifying may appear in one: the
+   * street address is stripped in CODE before the model sees anything (only
+   * suburb/town/province survive), and the prompt forbids searching any
+   * name or number besides. The applicant's answers do NOT travel here —
+   * only the firearm's make and model, the calibre, the discipline and the
+   * redacted area, which is the whole reason this is a separate call rather
+   * than a tool on the writer.
+   *
+   * FAIL-SOFT: research is seasoning. A null return costs colour, never the
+   * document.
+   */
+  async research(args: {
+    licenceType: MotivationLicenceType;
+    answers: Record<string, string>;
+  }): Promise<{ text: string; usage: ClaudeUsage } | null> {
+    if (!this.client) return null;
+    const a = args.answers;
+    const firearm = ['firearm_type', 'firearm_action', 'firearm_make', 'firearm_model', 'firearm_calibre']
+      .map((k) => (a[k] ?? '').trim())
+      .filter(Boolean)
+      .join(' ');
+    const area = redactToArea(a.residential_address ?? '');
+    const discipline = (a.discipline_other || a.discipline || '').trim();
+    if (!firearm && !area) return null;
+
+    const wantArea = args.licenceType === 'S13_SELF_DEFENCE';
+    const brief = [
+      'Prepare a short research brief for a South African firearm licence',
+      'motivation. Search the web for what you do not reliably know. Cite the',
+      'source (publication and URL) after each cluster of facts.',
+      '',
+      "⚠️ PRIVACY, ABSOLUTE: never put a person's name, an ID number, a",
+      'street or a serial number into any search query. Search only the',
+      'firearm, the cartridge, the discipline, and the AREA below as given.',
+      '',
+      firearm ? `THE FIREARM: ${firearm}.` : '',
+      firearm
+        ? 'Find: the manufacturer and model background, its design features,' +
+          ' action and configuration, and what the model is built and used' +
+          ' for. Then the CARTRIDGE: its origin, character (recoil, typical' +
+          ' loads, effective use), and what it is commonly used for in South' +
+          ' Africa.'
+        : '',
+      discipline ? `THE DISCIPLINE: ${discipline}. Find what it involves and what it asks of the firearm.` : '',
+      wantArea && area
+        ? `THE AREA: ${area}. Find the recent crime picture for this area and` +
+          ' its policing precinct — categories like house robbery, home' +
+          ' invasion, hijacking — from SAPS statistics or reputable press.' +
+          ' Figures with periods attached, never vibes.'
+        : '',
+      '',
+      'Write the brief as titled plain-text sections. Facts only, no advice,',
+      'no opinion on the application. If a search finds nothing solid, say',
+      'nothing on that point — an empty section beats a guessed one.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      const msg = await this.client.messages.create(
+        {
+          model: MODEL_GATE,
+          max_tokens: 4000,
+          tools: [
+            {
+              type: 'web_search_20260209' as never,
+              name: 'web_search',
+              max_uses: 8,
+            } as never,
+          ],
+          messages: [{ role: 'user', content: brief }],
+        },
+        { timeout: RESEARCH_TIMEOUT_MS },
+      );
+      // Search-tool turns interleave text blocks with results; the brief is
+      // the concatenation of every text block, not just the first.
+      const text = msg.content
+        .filter((b) => b.type === 'text')
+        .map((b) => (b as { text: string }).text)
+        .join('\n')
+        .trim();
+      if (text.length < 100) return null;
+      return { text, usage: this.usageOf(msg, MODEL_GATE) };
+    } catch (err) {
+      // A model without the tool, an org with search disabled, a timeout —
+      // all cost colour, never the document.
+      this.logger.warn(`Motivation research failed: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
+   * THE SECOND VERIFIER — a fresh pair of eyes on the BUILT document.
+   *
+   * The pipeline verifies every document twice and not more (operator's cap):
+   * grade() scores the writing against the facts, and THIS reads the finished
+   * document the way a suspicious DFO would — do the numbers agree with each
+   * other, does every annexure citation point at a real tab, is anything
+   * promised or implied that the pack cannot back. It runs once, after the
+   * gate has passed, on the text that will actually be filed.
+   *
+   * Deterministic identity checks (serial, ID, annexure letters) are NOT its
+   * job — motivation-verify.ts does those in code, for free. This catches
+   * what regexes cannot: a joined date that contradicts a "member since"
+   * sentence, an annexure cited for the wrong kind of fact, a paragraph that
+   * quietly promises an outcome.
+   *
+   * ADVISORY BY DESIGN: the gate has already passed this text, so a broken
+   * verifier must not un-pass it. Findings are stored with the quality
+   * verdict for the applicant and the operator to read.
+   */
+  async verifyDocument(args: {
+    pack: FactPack;
+    documentText: string;
+    annexures: { letter: string; label: string }[];
+  }): Promise<{ issues: string[]; usage: ClaudeUsage } | null> {
+    if (!this.client) return null;
+    const list = args.annexures
+      .map((a) => `${a.letter}: ${a.label}`)
+      .join('\n');
+    try {
+      const msg = await this.client.messages.create(
+        {
+          model: MODEL_GATE,
+          max_tokens: 1500,
+          system: [
+            'You are the final check on a firearm licence motivation before it',
+            'is filed. Read it the way a suspicious reviewing officer would.',
+            '',
+            'Report ONLY concrete defects, each in one plain sentence:',
+            '- internal contradictions: dates, numbers or names that disagree',
+            '  with each other or with the applicant facts',
+            '- an annexure cited for a fact that annexure could not evidence',
+            '- any promise or prediction about the outcome of the application',
+            '- any fact about the APPLICANT that the supplied facts do not',
+            '  contain',
+            'Do NOT comment on style, persuasiveness, or whether the',
+            'application should succeed. An empty list is a good answer.',
+            '',
+            'Return STRICT JSON: {"issues":["..."]}',
+          ].join('\n'),
+          messages: [
+            {
+              role: 'user',
+              content: [
+                `Licence type: ${args.pack.licenceType}`,
+                '',
+                '<applicant-facts>',
+                Object.entries(args.pack.answers)
+                  .filter(([, v]) => (v ?? '').trim())
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join('\n'),
+                '</applicant-facts>',
+                '',
+                'Annexures actually in the pack:',
+                list || '(none)',
+                '',
+                '<final-document>',
+                args.documentText,
+                '</final-document>',
+                '',
+                'Verify. Return only the JSON object.',
+              ].join('\n'),
+            },
+          ],
+        },
+        { timeout: GRADE_TIMEOUT_MS },
+      );
+      const block = msg.content.find((b) => b.type === 'text');
+      const raw = (block as { text?: string } | undefined)?.text ?? '';
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (!m) return null;
+      const parsed = JSON.parse(m[0]) as { issues?: unknown };
+      const issues = Array.isArray(parsed.issues)
+        ? parsed.issues.map((i) => String(i)).filter(Boolean).slice(0, 12)
+        : [];
+      return { issues, usage: this.usageOf(msg, MODEL_GATE) };
+    } catch (err) {
+      this.logger.warn(
+        `Motivation verify failed (advisory): ${(err as Error).message}`,
+      );
+      return null;
     }
   }
 
@@ -542,4 +743,22 @@ export class MotivationClaudeService {
       return { question: null, usage };
     }
   }
+}
+
+
+/**
+ * Strip a residential address down to what may appear in a WEB SEARCH.
+ *
+ * ⚠️ THE FIRST LINE IS THE HOUSE. Everything before the first separator — the
+ * number and street — is dropped in code, so no prompt mistake can leak it:
+ * the model never receives it at all. Digits are removed from what survives,
+ * against unit numbers and postal codes riding along in the tail.
+ */
+export function redactToArea(address: string): string {
+  const parts = address
+    .split(/[,\n]/)
+    .map((p) => p.replace(/\d+/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  if (parts.length <= 1) return '';
+  return parts.slice(1).join(', ').slice(0, 120);
 }

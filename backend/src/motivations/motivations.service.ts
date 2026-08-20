@@ -49,6 +49,7 @@ import {
   buildChecklist,
   UPLOAD_KIND_LABELS,
 } from './motivation-checklist';
+import { packConsistency } from './motivation-verify';
 import {
   FIELD_REGISTRY_VERSION,
   LICENCE_TYPE_LABELS,
@@ -2054,6 +2055,9 @@ export class MotivationsService {
         userId: true,
         promptTokens: true,
         completionTokens: true,
+        // Reused across gate cycles — the suburb and the firearm do not
+        // change between attempts, so the searches are paid for once.
+        researchEncrypted: true,
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
@@ -2154,6 +2158,54 @@ export class MotivationsService {
       // follow-up ranking if the gate sends this back.
       const overlap = overlapFromAnswers(row.licenceType, answers);
 
+      // ── background research, once per motivation ───────────────────
+      //
+      // The professional motivations are not templates: precinct crime
+      // figures behind a self-defence application, pages on the cartridge in
+      // a section 16. That material is published, not something to ask the
+      // applicant for — so it is gathered here, by a cheaper model with web
+      // search, and handed to the writer AND the gate (or the gate would
+      // fail every researched sentence as ungrounded).
+      //
+      // Fail-soft and cached: a research failure costs colour, never the
+      // document, and a retry re-reads the stored brief instead of paying
+      // for the searches again.
+      let researchIn = 0;
+      let researchOut = 0;
+      let research = row.researchEncrypted
+        ? (tryDecryptText(row.researchEncrypted) ?? undefined)
+        : undefined;
+      if (!research) {
+        const r = await this.claude
+          .research({ licenceType: row.licenceType, answers })
+          .catch(() => null);
+        if (r) {
+          research = r.text;
+          researchIn = r.usage.promptTokens;
+          researchOut = r.usage.completionTokens;
+          await this.prisma.motivation
+            .update({
+              where: { id: row.id },
+              data: { researchEncrypted: encryptText(r.text) },
+            })
+            .catch(() => undefined);
+        }
+      }
+
+      // The lettered annexure list — from the SAME function that letters the
+      // printed pack, so a citation the writer makes can never point at a tab
+      // that will not exist.
+      const uploadKinds = (
+        await this.prisma.motivationUpload.findMany({
+          where: { motivationId: row.id },
+          select: { kind: true, coversKinds: true },
+        })
+      ).map((u) => u.kind);
+      const annexures = buildAnnexures(uploadKinds).map((a) => ({
+        letter: a.letter,
+        label: a.label,
+      }));
+
       const pack: FactPack = {
         licenceType: row.licenceType,
         answers,
@@ -2161,6 +2213,8 @@ export class MotivationsService {
         // Only when there is genuinely an overlap. Passing a note otherwise
         // would have the document argue against a problem it does not have.
         overlapNote: overlap.writerNote ?? undefined,
+        research,
+        annexures,
       };
 
       // Draft, verify the plan landed, and check it does not look like
@@ -2170,8 +2224,8 @@ export class MotivationsService {
       let seed = row.variantSeed;
       let plan = planFor(row.licenceType, seed);
       let attempt = await this.claude.generate(pack, plan);
-      let tokensIn = attempt.usage.promptTokens;
-      let tokensOut = attempt.usage.completionTokens;
+      let tokensIn = attempt.usage.promptTokens + researchIn;
+      let tokensOut = attempt.usage.completionTokens + researchOut;
 
       const previous = await this.recentFingerprints(
         row.licenceType,
@@ -2180,10 +2234,18 @@ export class MotivationsService {
       );
       let structureOk = followsPlan(attempt.text, plan).ok;
       let sameness = maxSimilarity(fingerprint(attempt.text), previous);
+      // The FIRST verifier, in code and for free: serial, ID, calibre and
+      // annexure citations checked deterministically. A failure here rides
+      // the same single retry as a broken structure — same cost, same cap.
+      let mechanics = packConsistency(attempt.text, answers, annexures);
 
-      if (!structureOk || sameness > SIMILARITY_REGENERATE_THRESHOLD) {
+      if (
+        !structureOk ||
+        sameness > SIMILARITY_REGENERATE_THRESHOLD ||
+        mechanics.length
+      ) {
         this.logger.warn(
-          `Motivation ${row.id}: regenerating (structureOk=${structureOk}, sameness=${sameness.toFixed(2)})`,
+          `Motivation ${row.id}: regenerating (structureOk=${structureOk}, sameness=${sameness.toFixed(2)}, mechanics=${mechanics.length})`,
         );
         seed = crypto.randomInt(0, 2 ** 31 - 1);
         plan = planFor(row.licenceType, seed);
@@ -2192,6 +2254,32 @@ export class MotivationsService {
         tokensOut += attempt.usage.completionTokens;
         structureOk = followsPlan(attempt.text, plan).ok;
         sameness = maxSimilarity(fingerprint(attempt.text), previous);
+        mechanics = packConsistency(attempt.text, answers, annexures);
+      }
+
+      // ⚠️ A DOCUMENT THAT FAILS THE MECHANICAL CHECKS TWICE IS NEVER FILED.
+      // A wrong serial or a citation to a tab that does not exist is not a
+      // quality problem the applicant can fix with a better answer — it is
+      // the writer corrupting identity data, our defect, an admin's problem.
+      if (mechanics.length) {
+        await this.prisma.motivation.update({
+          where: { id: row.id },
+          data: {
+            status: MotivationStatus.FAILED,
+            failedAt: new Date(),
+            failureReason: mechanics.slice(0, 3).join('; ').slice(0, 500),
+          },
+        });
+        void this.prisma.adminAlert
+          .create({
+            data: {
+              type: 'motivation-verify-failed',
+              urgent: true,
+              context: `Motivation ${row.id} failed mechanical verification twice: ${mechanics[0]}`,
+            },
+          })
+          .catch(() => undefined);
+        return { status: MotivationStatus.FAILED, score: 0 };
       }
 
       const graded = await this.claude.grade(pack, attempt.text);
@@ -2236,11 +2324,38 @@ export class MotivationsService {
         FLAGS.motivationRetentionDays,
       );
 
+      // THE SECOND VERIFIER — a fresh model reading the finished document the
+      // way a suspicious DFO would, once, only on text that passed the gate.
+      // Advisory: its findings are stored beside the verdict for the operator
+      // and the applicant, but a broken verifier must not un-pass a passed
+      // document. Two verifiers per document — this and the mechanical checks
+      // above — and not more, per the operator.
+      let verification: string[] | undefined;
+      if (graded.verdict.passed) {
+        const v = await this.claude
+          .verifyDocument({ pack, documentText: attempt.text, annexures })
+          .catch(() => null);
+        if (v) {
+          verification = v.issues;
+          tokensIn += v.usage.promptTokens;
+          tokensOut += v.usage.completionTokens;
+          if (v.issues.length) {
+            this.logger.warn(
+              `Motivation ${row.id}: verifier noted ${v.issues.length} issue(s) — stored with the verdict`,
+            );
+          }
+        }
+      }
+
       if (graded.verdict.passed) {
         await this.prisma.motivation.update({
           where: { id: row.id },
           data: {
             ...common,
+            qualityFindings: {
+              ...(graded.verdict as unknown as Record<string, unknown>),
+              ...(verification ? { verification } : {}),
+            } as unknown as object,
             status: MotivationStatus.COMPLETED,
             // (the text itself comes from `common` now — see the note there)
             documentVersion: { increment: 1 },
@@ -2776,10 +2891,31 @@ export class MotivationsService {
     // WHAT to ask is worked out in code, for nothing — it is arithmetic over
     // the field registry. Claude is asked only to WORD the questions, which is
     // the one part it is genuinely better at.
+    // ⚠️ NEVER ASK A QUESTION THAT IS ALREADY ON SCREEN UNANSWERED. Every
+    // gate cycle used to queue its follow-ups blind, so three attempts put
+    // THREE copies of "could you tell me a bit more about your competition
+    // record" in front of the applicant — who read it, reasonably, as the
+    // system falling apart. A question counts as open until a user message
+    // with the same fieldKey arrives after it, which is the same rule the
+    // wizard renders by.
+    const history = await this.prisma.motivationMessage.findMany({
+      where: { motivationId },
+      orderBy: { createdAt: 'asc' },
+      select: { role: true, fieldKey: true },
+    });
+    const open = new Set<string>();
+    for (const m of history) {
+      if (!m.fieldKey) continue;
+      if (m.role === 'assistant') open.add(m.fieldKey);
+      else open.delete(m.fieldKey);
+    }
+
     const gaps = findGaps(licenceType, answers, {
       thinFields,
       overlapNeedsJustification,
-    }).slice(0, FOLLOW_UP_BATCH);
+    })
+      .filter((g) => !open.has(g.key))
+      .slice(0, FOLLOW_UP_BATCH);
     if (!gaps.length) return;
 
     // ONE request for the batch. This used to be one per field, which meant a

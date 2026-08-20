@@ -765,6 +765,23 @@ export default function MotivationWizardPage() {
   const [ownedRowsShown, setOwnedRowsShown] = useState(1);
 
   /**
+   * Same shape for associations. Several is the normal case — the
+   * professional motivations list three — but the SINGLE-body applicant must
+   * never see two empty blocks demanding names and numbers they do not have.
+   * Rows appear when filled (a returning applicant, a vault fill) or when
+   * asked for; a row counts as started once its name is in.
+   */
+  const assocRowsFilled = useMemo(() => {
+    let n = 1;
+    for (let i = 2; i <= 3; i++) {
+      if ((answers[`association_${i}_name`] ?? '').trim()) n = i;
+    }
+    return n;
+  }, [answers]);
+  const [assocRowsShown, setAssocRowsShown] = useState(1);
+  const assocRows = Math.max(assocRowsFilled, assocRowsShown);
+
+  /**
    * Fields that ALREADY had a value when this application loaded — read off a
    * document or carried from the All Outdoor profile.
    *
@@ -806,10 +823,12 @@ export default function MotivationWizardPage() {
         return detail?.overlap?.needsJustification === true;
       }
       const m = /^existing_firearm_(\d+)_/.exec(f.key);
-      return !m || Number(m[1]) <= ownedRows;
+      if (m) return Number(m[1]) <= ownedRows;
+      const a = /^association_(\d)_/.exec(f.key);
+      return !a || Number(a[1]) <= assocRows;
     });
     return { sections: groupBySection(visible) };
-  }, [shown, ownedRows, detail?.overlap?.needsJustification]);
+  }, [shown, ownedRows, assocRows, detail?.overlap?.needsJustification]);
   /**
    * What is still unanswered, RIGHT NOW.
    *
@@ -1464,6 +1483,16 @@ export default function MotivationWizardPage() {
                     onChange={() => setOwnedRowsShown(ownedRows + 1)}
                   />
                   <span>I own another firearm as well</span>
+                </label>
+              )}
+              {sec.section === 'Dedicated status' && assocRows < 3 && (
+                <label className="flex items-center gap-2 pt-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    onChange={() => setAssocRowsShown(assocRows + 1)}
+                  />
+                  <span>I belong to another association as well</span>
                 </label>
               )}
               {isOwned && ownedRows >= 6 && (

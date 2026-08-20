@@ -1485,6 +1485,76 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       focusOffsetYears: -10,
       reach: 'far',
     },
+    // ── association 2 ─────────────────────────────────────────────
+    //
+    // ⚠️ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
+    // professional motivations we studied list three, each "a member in good
+    // standing with X since DATE, membership number Y", and the trade's own
+    // intake questionnaire has columns for five. One association made a
+    // multi-body shooter's motivation understate the very thing a section 16
+    // reviewer weighs. Optional, and the wizard hides the empty rows behind
+    // "add another association" — operator, 2026-08-20 — so the single-body
+    // applicant never sees them.
+    {
+      key: 'association_2_name',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Another association you belong to',
+      kind: 'short',
+      section: 'Dedicated status',
+      maxLength: 160,
+    },
+    {
+      key: 'association_2_number',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Membership number there',
+      kind: 'short',
+      section: 'Dedicated status',
+      maxLength: 60,
+    },
+    {
+      key: 'association_2_joined',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Member there since',
+      kind: 'date',
+      section: 'Dedicated status',
+      focusOffsetYears: -10,
+      reach: 'far',
+    },
+    // ── association 3 ─────────────────────────────────────────────
+    //
+    // ⚠️ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
+    // professional motivations we studied list three, each "a member in good
+    // standing with X since DATE, membership number Y", and the trade's own
+    // intake questionnaire has columns for five. One association made a
+    // multi-body shooter's motivation understate the very thing a section 16
+    // reviewer weighs. Optional, and the wizard hides the empty rows behind
+    // "add another association" — operator, 2026-08-20 — so the single-body
+    // applicant never sees them.
+    {
+      key: 'association_3_name',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Another association you belong to',
+      kind: 'short',
+      section: 'Dedicated status',
+      maxLength: 160,
+    },
+    {
+      key: 'association_3_number',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Membership number there',
+      kind: 'short',
+      section: 'Dedicated status',
+      maxLength: 60,
+    },
+    {
+      key: 'association_3_joined',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Member there since',
+      kind: 'date',
+      section: 'Dedicated status',
+      focusOffsetYears: -10,
+      reach: 'far',
+    },
     {
       key: 'hunting_history',
       label: 'Your hunting record',
@@ -1564,6 +1634,76 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       required: true,
       // A long-standing SAHGCA or NARFO member may have been dedicated since
       // the nineties, so this one gets the decade strip.
+      focusOffsetYears: -10,
+      reach: 'far',
+    },
+    // ── association 2 ─────────────────────────────────────────────
+    //
+    // ⚠️ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
+    // professional motivations we studied list three, each "a member in good
+    // standing with X since DATE, membership number Y", and the trade's own
+    // intake questionnaire has columns for five. One association made a
+    // multi-body shooter's motivation understate the very thing a section 16
+    // reviewer weighs. Optional, and the wizard hides the empty rows behind
+    // "add another association" — operator, 2026-08-20 — so the single-body
+    // applicant never sees them.
+    {
+      key: 'association_2_name',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Another association you belong to',
+      kind: 'short',
+      section: 'Dedicated status',
+      maxLength: 160,
+    },
+    {
+      key: 'association_2_number',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Membership number there',
+      kind: 'short',
+      section: 'Dedicated status',
+      maxLength: 60,
+    },
+    {
+      key: 'association_2_joined',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Member there since',
+      kind: 'date',
+      section: 'Dedicated status',
+      focusOffsetYears: -10,
+      reach: 'far',
+    },
+    // ── association 3 ─────────────────────────────────────────────
+    //
+    // ⚠️ SEVERAL ASSOCIATIONS IS THE NORMAL CASE, NOT AN EDGE CASE. The
+    // professional motivations we studied list three, each "a member in good
+    // standing with X since DATE, membership number Y", and the trade's own
+    // intake questionnaire has columns for five. One association made a
+    // multi-body shooter's motivation understate the very thing a section 16
+    // reviewer weighs. Optional, and the wizard hides the empty rows behind
+    // "add another association" — operator, 2026-08-20 — so the single-body
+    // applicant never sees them.
+    {
+      key: 'association_3_name',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Another association you belong to',
+      kind: 'short',
+      section: 'Dedicated status',
+      maxLength: 160,
+    },
+    {
+      key: 'association_3_number',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Membership number there',
+      kind: 'short',
+      section: 'Dedicated status',
+      maxLength: 60,
+    },
+    {
+      key: 'association_3_joined',
+      docSourced: 'ASSOCIATION_CARD',
+      label: 'Member there since',
+      kind: 'date',
+      section: 'Dedicated status',
       focusOffsetYears: -10,
       reach: 'far',
     },

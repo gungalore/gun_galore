@@ -44,8 +44,16 @@ function build(
       updateMany: jest.fn(async (_a?: any): Promise<any> => ({ count: 1 })),
       delete: jest.fn(async (_a?: any): Promise<any> => ({})),
     },
+    motivationUpload: {
+      // No uploads by default: the annexure list is empty and the writer is
+      // simply not asked to cite.
+      findMany: jest.fn(async (_a?: any): Promise<any[]> => []),
+    },
     motivationMessage: {
       create: jest.fn(async (_a?: any): Promise<any> => ({})),
+      // Empty history: no question is open, so every gap may be asked. The
+      // dedupe test overrides this per case.
+      findMany: jest.fn(async (_a?: any): Promise<any[]> => []),
     },
     adminAlert: { create: jest.fn(async (_a?: any): Promise<any> => ({})) },
   };
@@ -68,14 +76,26 @@ function build(
   const files = { remove: jest.fn(async (_a?: any): Promise<any> => undefined) };
 
   const claude = {
+    // Research is fail-soft and OFF by default in tests: null means "no brief",
+    // which is exactly what a search failure produces in production.
+    research: jest.fn(async (): Promise<any> => null),
+    // Advisory verifier: null is exactly what a failed call produces.
+    verifyDocument: jest.fn(async (): Promise<any> => null),
     // A COMPLIANT model: it writes the headings it was told to, in order.
     // The first draft of this mock used generic headings and the pipeline
     // correctly regenerated (structureOk=false) — proving followsPlan() works,
     // but making the default path cost two generations.
-    generate: jest.fn(async (_p?: any, plan?: any): Promise<any> => ({
-      text: (plan?.sections ?? [])
-        .map((sec: any) => sec.heading + '\n\nA paragraph of body text here.')
-        .join('\n\n'),
+    generate: jest.fn(async (p?: any, plan?: any): Promise<any> => ({
+      // The identity line matters: packConsistency requires the serial and
+      // calibre the applicant answered to appear in the document, exactly as
+      // it will in production, so the compliant mock writes them.
+      text:
+        (plan?.sections ?? [])
+          .map((sec: any) => sec.heading + '\n\nA paragraph of body text here.')
+          .join('\n\n') +
+        `\n\nI apply for the firearm in ${p?.answers?.firearm_calibre ?? ''}, ` +
+        `serial ${p?.answers?.firearm_serial ?? ''}, and my identity number is ` +
+        `${p?.answers?.id_number ?? ''}.`,
       usage: { model: 'claude-opus-5', promptTokens: 900, completionTokens: 700 },
     })),
     grade: jest.fn(async (_p?: any, _t?: any): Promise<any> => ({
@@ -508,6 +528,66 @@ describe('MotivationsService.generate', () => {
     expect(data.promptTokens).toBe(900 + 400);
   });
 
+  it('⚠️ NEVER RE-ASKS A QUESTION ALREADY OPEN ON SCREEN', async () => {
+    // Every gate cycle used to queue its follow-ups blind, so three attempts
+    // put THREE copies of the same three questions in front of the applicant
+    // — who read it, reasonably, as the system falling apart. Live report,
+    // verbatim: "why the fuck are there so many questions from Boet?"
+    const { svc, prisma, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    claude.grade.mockResolvedValueOnce({
+      verdict: {
+        completeness: 40, specificity: 30, consistency: 60, groundedness: 80,
+        overall: 52, thinFields: ['hunting_history'], issues: ['Too general'],
+        passed: false,
+      },
+      usage: { model: 'g', promptTokens: 1, completionTokens: 1 },
+      parsed: true,
+    });
+    // Round one already asked about everything this fixture can ask about.
+    // An assistant message with NO later user reply is an open question.
+    // The exact three this fixture asks about first, established by running
+    // it once with an empty history — not guessed.
+    const alreadyOpen = [
+      'residential_address',
+      'firearm_fit_reason',
+      'safe_storage_detail',
+      'hunting_history',
+    ];
+    prisma.motivationMessage.findMany.mockResolvedValueOnce(
+      alreadyOpen.map((fieldKey) => ({ role: 'assistant', fieldKey })),
+    );
+    await svc.generate('c1', 'mo-1');
+    // Backfilling with the NEXT gaps in priority order is right — the batch
+    // still asks three things. What must never happen is the same question
+    // landing twice.
+    for (const call of prisma.motivationMessage.create.mock.calls) {
+      expect(alreadyOpen).not.toContain(call[0].data.fieldKey);
+    }
+  });
+
+  it('DOES re-ask once the applicant has replied', async () => {
+    // A user message with the same fieldKey CLOSES the question; if the gate
+    // still finds the field thin after that, asking again is right.
+    const { svc, prisma, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    claude.grade.mockResolvedValueOnce({
+      verdict: {
+        completeness: 40, specificity: 30, consistency: 60, groundedness: 80,
+        overall: 52, thinFields: ['hunting_history'], issues: ['Still thin'],
+        passed: false,
+      },
+      usage: { model: 'g', promptTokens: 1, completionTokens: 1 },
+      parsed: true,
+    });
+    prisma.motivationMessage.findMany.mockResolvedValueOnce([
+      { role: 'assistant', fieldKey: 'hunting_history' },
+      { role: 'user', fieldKey: 'hunting_history' },
+    ]);
+    await svc.generate('c1', 'mo-1');
+    expect(prisma.motivationMessage.create).toHaveBeenCalled();
+  });
+
   it('sends it back for more detail when the gate fails, and asks questions', async () => {
     const { svc, prisma, claude } = build();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
@@ -615,6 +695,48 @@ describe('MotivationsService.generate', () => {
     const data = prisma.motivation.update.mock.calls.at(-1)![0].data;
     expect(data.status).toBe(MotivationStatus.FAILED);
     expect(data.documentTextEncrypted).toBeTruthy();
+  });
+
+  it('⚠️ NEVER FILES A DOCUMENT THAT FAILS MECHANICAL VERIFICATION TWICE', async () => {
+    // A writer that drops the serial number is corrupting identity data on a
+    // legal submission. That is our defect, not the applicant's — so it goes
+    // to FAILED with an urgent admin alert, never to COMPLETED and never
+    // round the ask-the-applicant loop.
+    const { svc, prisma, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    claude.generate.mockImplementation(async (_p?: any, plan?: any) => ({
+      text: (plan?.sections ?? [])
+        .map(
+          (sec: any) =>
+            sec.heading + '\n\nBody text, but no firearm details at all.',
+        )
+        .join('\n\n'),
+      usage: { model: 'm', promptTokens: 10, completionTokens: 10 },
+    }));
+    const res = await svc.generate('c1', 'mo-1');
+    expect(res.status).toBe(MotivationStatus.FAILED);
+    expect(prisma.adminAlert.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: 'motivation-verify-failed' }),
+      }),
+    );
+    // And the gate was never paid for a document that could not be filed.
+    expect(claude.grade).not.toHaveBeenCalled();
+  });
+
+  it('stores the second verifier findings beside the verdict', async () => {
+    const { svc, prisma, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    claude.verifyDocument.mockResolvedValueOnce({
+      issues: ['The joined date contradicts the member-since sentence.'],
+      usage: { model: 'v', promptTokens: 5, completionTokens: 5 },
+    });
+    const res = await svc.generate('c1', 'mo-1');
+    // Advisory: the document still completes...
+    expect(res.status).toBe(MotivationStatus.COMPLETED);
+    // ...and the finding is stored where the operator will see it.
+    const data = prisma.motivation.update.mock.calls.at(-1)![0].data;
+    expect(JSON.stringify(data.qualityFindings)).toContain('joined date');
   });
 
   it('regenerates with a fresh seed when the model ignored the plan', async () => {

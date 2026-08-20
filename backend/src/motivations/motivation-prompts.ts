@@ -97,6 +97,62 @@ export interface FactPack {
    * told to treat as untrusted data is how an instruction gets ignored.
    */
   overlapNote?: string;
+  /**
+   * Background research WE gathered from published sources — the area's
+   * crime context, the firearm's specifications and role, the calibre's
+   * history. See MotivationClaudeService.research().
+   *
+   * ⚠️ NOT APPLICANT MATERIAL AND NOT UNTRUSTED INPUT: we wrote it, from
+   * sources we chose, which is why it renders in its own block rather than
+   * inside <applicant-facts>. The professional motivations we studied all do
+   * this — precinct crime figures annexed to a self-defence application, two
+   * pages on the cartridge in a section 16 — and it is the difference between
+   * a template and a case.
+   */
+  research?: string;
+  /**
+   * The lettered annexures the printed pack will actually contain, so the
+   * writer can cite them the way the professional motivations do — "(Refer to
+   * Annexure D: Address Confirmation)" after the claim each one evidences.
+   * The letters come from buildAnnexures(), the same function that letters
+   * the printed pack, so a citation can never point at a tab that will not
+   * exist.
+   */
+  annexures?: { letter: string; label: string }[];
+}
+
+/** The annexure list, rendered as citation instructions. */
+function renderAnnexures(annexures?: { letter: string; label: string }[]): string {
+  if (!annexures?.length) return '';
+  return `
+THE PACK'S ANNEXURES. The printed submission will attach these documents,
+lettered exactly as follows:
+${annexures.map((a) => `  Annexure ${a.letter}: ${a.label}`).join('\n')}
+Cite them the way a professional motivation does: after a claim an annexure
+evidences, add "(Refer to Annexure ${annexures[0].letter}: ${annexures[0].label})" —
+with the right letter and title for that claim. Cite a letter ONLY from this
+list, only where the document genuinely evidences the sentence it follows,
+and never invent an annexure that is not listed.`.trim();
+}
+
+/** The research block, rendered only when there is any. */
+function renderResearch(research?: string): string {
+  if (!research?.trim()) return '';
+  return `
+BACKGROUND RESEARCH. The block below was prepared by us from published
+sources — it is not the applicant's text and not untrusted input. Use it
+where it genuinely strengthens THIS case: the area's crime context belongs in
+a self-defence motivation, the firearm's design and role belong where the
+choice of firearm needs explaining, the calibre's character where the
+discipline or quarry calls for it. Weave it in as prose, in the applicant's
+voice, the way somebody who knows their firearm would talk about it.
+Never let it contradict the applicant's own facts, never import a fact about
+the APPLICANT from it, and drop anything that does not serve the argument —
+research is seasoning, not filler.
+
+<background-research>
+${research.trim()}
+</background-research>`.trim();
 }
 
 /**
@@ -309,6 +365,8 @@ ${CLOSING_GUIDE[plan.closing]}
 ${CADENCE_GUIDE[plan.cadence]}
 
 ${renderOverlap(pack.overlapNote)}
+${renderResearch(pack.research)}
+${renderAnnexures(pack.annexures)}
 ${UNTRUSTED_NOTICE}
 
 <applicant-facts>
@@ -390,11 +448,25 @@ ${UNTRUSTED_NOTICE}
 ${renderFacts(pack)}
 </applicant-facts>
 
+${
+  // ⚠️ THE GATE MUST SEE WHAT THE WRITER SAW. Groundedness is scored against
+  // the supplied material, and the writer is now HANDED published research to
+  // weave in — area crime context, the firearm's specifications, the
+  // calibre's history. Grade that research as supplied material too, or every
+  // researched sentence reads as fabrication and the score punishes the
+  // document for doing exactly what it was told to do. Claims about the
+  // APPLICANT still have to trace to the applicant's own facts.
+  pack.research?.trim()
+    ? `<background-research>\n${pack.research.trim()}\n</background-research>\n`
+    : ''
+}
 <draft-document>
 ${documentText}
 </draft-document>
 
-Grade the draft against the facts. Return only the JSON object.`.trim();
+Grade the draft against the facts. Claims traceable to the background
+research count as grounded; claims about the applicant themselves must trace
+to the applicant's facts. Return only the JSON object.`.trim();
 }
 
 /**

@@ -4122,6 +4122,11 @@ model Motivation {
   // itself is NOT stored — it is re-rendered deterministically from this text
   // on every download, the same posture as ReceiptService.
   documentTextEncrypted String? @db.Text
+  /// Background research gathered by web search before writing — the area's
+  /// crime context, the firearm and cartridge background. Encrypted because it
+  /// names the applicant's suburb. Written once and reused across gate cycles:
+  /// the area and the firearm do not change between attempts.
+  researchEncrypted String? @db.Text
   documentVersion       Int     @default(0)
   // Versions of the attorney-reviewed PDF skeleton and disclaimer, stamped at
   // generation so documents produced under a reviewed version can be told

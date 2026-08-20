@@ -495,3 +495,84 @@ describe('a firearm already on the form', () => {
     expect(o.values.existing_firearm_2_licence_no).toBe('LIC-003');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// ONE SLOT PER ASSOCIATION.
+//
+// The professional motivations list three associations, each with its own
+// membership number and joined date. One slot meant the first vault document
+// claimed association_name and every other body silently fell off the
+// application. And two documents from the SAME body are one membership —
+// listing it twice on a signed form is a false claim of two.
+// ────────────────────────────────────────────────────────────────────
+describe('several associations', () => {
+  const T = 'S16_DEDICATED_SPORT' as never;
+  const body = (
+    id: string,
+    association: string,
+    membership: string,
+  ): CredentialSource => ({
+    id,
+    kind: 'DEDICATED_DISCIPLINE' as never,
+    title: association,
+    expiresOn: '2027-06-30',
+    confirmed: true,
+    details: {
+      association,
+      membership_number: membership,
+      status_number: `SS-${membership}`,
+      joined_on: '2019-08-17',
+    },
+  });
+
+  it('fills each association into its own slot', () => {
+    const o = credentialOffer(
+      T,
+      [body('c1', 'NHSA', '111'), body('c2', 'KSSC', '222')],
+      {},
+    );
+    expect(o.values.association_name).toBe('NHSA');
+    expect(o.values.association_2_name).toBe('KSSC');
+    expect(o.values.association_2_number).toBe('222');
+    expect(o.values.association_2_joined).toBe('2019-08-17');
+  });
+
+  it('prefers the MEMBERSHIP number for the membership box', () => {
+    // The status number is a different reference; putting it in a box
+    // labelled "Membership number" mislabels it on a signed form.
+    const o = credentialOffer(T, [body('c1', 'NHSA', '111')], {});
+    expect(o.values.association_number).toBe('111');
+  });
+
+  it('two documents from one body are ONE membership', () => {
+    const o = credentialOffer(
+      T,
+      [body('c1', 'SA Hunters', '108828'), body('c2', 'sa hunters', '108828')],
+      {},
+    );
+    expect(o.values.association_name).toBe('SA Hunters');
+    expect(o.values.association_2_name).toBeUndefined();
+  });
+
+  it('skips a body the applicant already listed by hand', () => {
+    const o = credentialOffer(T, [body('c1', 'NHSA', '111')], {
+      association_name: 'NHSA',
+    });
+    expect(o.values.association_2_name).toBeUndefined();
+  });
+
+  it('reports a fourth association as out of room, not silently', () => {
+    const o = credentialOffer(
+      T,
+      [
+        body('c1', 'A1', '1'),
+        body('c2', 'A2', '2'),
+        body('c3', 'A3', '3'),
+        body('c4', 'A4', '4'),
+      ],
+      {},
+    );
+    expect(o.values.association_3_name).toBe('A3');
+    expect(o.skipped.some((k) => /room for three/.test(k.why))).toBe(true);
+  });
+});
