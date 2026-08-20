@@ -530,6 +530,59 @@ describe('the form and the validator agree on what a choice may be', () => {
     }
   });
 
+  it('accepts SEVERAL disciplines at once, comma-joined', () => {
+    // ⚠️ THE SAME BUG, ONE LAYER ALONG. The single-select failure was
+    // `field.choices ?? YES_NO` in the choice branch; the multi branch had
+    // `field.choices ?? []`, which is the identical mistake with an identical
+    // symptom — every discipline silently discarded — and making the field
+    // multi-select would have walked straight back into it.
+    const t = MotivationLicenceType.S16_DEDICATED_SPORT;
+    const offered = expandFields(fieldsFor(t))
+      .find((f) => f.key === 'discipline')!
+      .optionGroups!.flatMap((g) => g.options.map((o) => o.value));
+    const three = offered.slice(0, 3);
+
+    const { answers, refused } = sanitiseAnswers(t, {
+      discipline: three.join(', '),
+    });
+    expect(refused).toEqual([]);
+    expect(answers.discipline!.split(',').map((x) => x.trim()).sort()).toEqual(
+      [...three].sort(),
+    );
+  });
+
+  it('normalises the order, so the same three compare equal either way', () => {
+    // Two applicants who picked the same disciplines in a different order have
+    // given the same answer, and the stored value has to say so — otherwise
+    // the sameness detector reads them as different documents.
+    const t = MotivationLicenceType.S16_DEDICATED_SPORT;
+    const offered = expandFields(fieldsFor(t))
+      .find((f) => f.key === 'discipline')!
+      .optionGroups!.flatMap((g) => g.options.map((o) => o.value));
+    const three = offered.slice(0, 3);
+
+    const forward = sanitiseAnswers(t, { discipline: three.join(', ') });
+    const backward = sanitiseAnswers(t, {
+      discipline: [...three].reverse().join(', '),
+    });
+    expect(forward.answers.discipline).toBe(backward.answers.discipline);
+  });
+
+  it('refuses the whole set if ONE discipline is not real', () => {
+    // Half-accepting would store a subset of what they picked and show a form
+    // that quietly lost one of their answers.
+    const t = MotivationLicenceType.S16_DEDICATED_SPORT;
+    const offered = expandFields(fieldsFor(t))
+      .find((f) => f.key === 'discipline')!
+      .optionGroups!.flatMap((g) => g.options.map((o) => o.value));
+
+    const { answers, refused } = sanitiseAnswers(t, {
+      discipline: `${offered[0]}, competitive napping`,
+    });
+    expect(refused).toEqual(['discipline']);
+    expect(answers.discipline).toBeUndefined();
+  });
+
   it('still refuses a value that is NOT on the list', () => {
     // The check above would pass trivially if validation had simply been
     // switched off, so the other half is pinned too.

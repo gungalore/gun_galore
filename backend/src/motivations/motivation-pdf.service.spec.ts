@@ -1,9 +1,10 @@
 import * as zlib from 'node:zlib';
 import {
+  DEFAULT_SCHEME,
   FORMAT_FEATURES,
   MotivationPdfService,
-  asColourway,
   asFormat,
+  asScheme,
 } from './motivation-pdf.service';
 import { buildAnnexures } from './motivation-checklist';
 import { MotivationUploadKind } from '@prisma/client';
@@ -302,55 +303,48 @@ describe('template choice', () => {
     // migration — which means they can hold a typo, or a colourway we later
     // withdrew. Neither may take a download down: somebody clicking "get my
     // PDF" gets a PDF.
-    expect(asFormat('burgundy')).toBe('standard');
-    expect(asFormat(null)).toBe('standard');
-    expect(asFormat(undefined)).toBe('standard');
-    expect(asFormat('comprehensive')).toBe('comprehensive');
+    // \u26a0\ufe0f EVERY format value normalises to the one we render, including the
+    // two that were withdrawn on 2026-08-21. Rows written before that still
+    // hold 'concise' and 'standard', and they have to open.
+    expect(asFormat('burgundy')).toBe('comprehensive');
+    expect(asFormat('concise')).toBe('comprehensive');
+    expect(asFormat('standard')).toBe('comprehensive');
+    expect(asFormat(null)).toBe('comprehensive');
+    expect(asFormat(undefined)).toBe('comprehensive');
 
-    expect(asColourway('chartreuse')).toBe('slate');
-    expect(asColourway(null)).toBe('slate');
-    expect(asColourway('oxblood')).toBe('oxblood');
+    expect(asScheme('chartreuse')).toBe(DEFAULT_SCHEME);
+    expect(asScheme(null)).toBe(DEFAULT_SCHEME);
+    // A withdrawn colourway name is not a scheme, so it falls back too.
+    expect(asScheme('oxblood')).toBe(DEFAULT_SCHEME);
+    expect(asScheme('mauve')).toBe('mauve');
   });
 
-  it('gives the three formats three different section sets', () => {
-    // The contract the renderer reads. Stated here so a future edit that makes
-    // all three identical fails loudly rather than shipping one document under
-    // three names.
-    expect(FORMAT_FEATURES.concise).toEqual({
-      contents: false,
-      ownedTable: false,
-      specBlock: false,
-    });
+  it('carries every block, because there is only one format left', () => {
     expect(FORMAT_FEATURES.comprehensive).toEqual({
       contents: true,
       ownedTable: true,
       specBlock: true,
     });
-    expect(FORMAT_FEATURES.standard.ownedTable).toBe(true);
-    expect(FORMAT_FEATURES.standard.specBlock).toBe(false);
+    expect(Object.keys(FORMAT_FEATURES)).toEqual(['comprehensive']);
   });
 
-  it('concise omits the contents, the owned table and the spec block', async () => {
-    const { pdf } = await svc.render(
-      withTables({ format: 'concise', colourway: 'ochre' }) as never,
-    );
-    const t = squash(readPdf(pdf).text);
-    expect(t).not.toContain(squash('CONTENTS'));
-    expect(t).not.toContain(squash('FIREARMS ALREADY LICENSED'));
-    expect(t).not.toContain(squash('SPECIFICATION OF THE FIREARM'));
-    // The argument itself is untouched — a shorter pack is not a weaker one.
-    expect(t).toContain(squash('INTRODUCTION'));
-  });
-
-  it('standard adds the contents and the owned table but not the spec sheet', async () => {
-    const { pdf } = await svc.render(
-      withTables({ format: 'standard', colourway: 'navy' }) as never,
-    );
-    const t = squash(readPdf(pdf).text);
-    expect(t).toContain(squash('CONTENTS'));
-    expect(t).toContain(squash('FIREARMS ALREADY LICENSED'));
-    expect(t).toContain(squash('CZ 452'));
-    expect(t).not.toContain(squash('SPECIFICATION OF THE FIREARM'));
+  it('renders every block, whatever format value arrives', async () => {
+    // \u26a0\ufe0f REPLACED TWO TESTS THAT ASSERTED THE OPPOSITE. Until 2026-08-21
+    // there were three formats and these pinned that 'concise' omitted the
+    // contents and 'standard' omitted the spec sheet. The operator withdrew
+    // both ("only comprehensive stays"), so those assertions now describe a
+    // product that does not exist \u2014 and the property worth pinning is the
+    // reverse one: a stored 'concise' from before the change must still open,
+    // and it must open as the full document rather than as a stub.
+    for (const stored of ['concise', 'standard', 'comprehensive', 'nonsense']) {
+      const { pdf } = await svc.render(
+        withTables({ format: stored, colourway: 'sand' }) as never,
+      );
+      const t = squash(readPdf(pdf).text);
+      expect(t).toContain(squash('CONTENTS'));
+      expect(t).toContain(squash('SPECIFICATION OF THE FIREARM APPLIED FOR'));
+      expect(t).toContain(squash('FIREARMS ALREADY LICENSED TO THE APPLICANT'));
+    }
   });
 
   it('comprehensive adds the researched specification sheet', async () => {

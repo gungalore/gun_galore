@@ -1581,9 +1581,13 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // motivation stands on the hunting record; a shooting discipline is
       // supporting evidence where they shoot one, and a new required field
       // would block applications that were complete yesterday.
+      //
+      // MULTI-SELECT since 2026-08-21 (operator): plenty of people shoot more
+      // than one, and a form that makes them pick their favourite loses the
+      // rest of the argument.
       key: 'discipline',
-      label: 'A shooting discipline you compete in',
-      kind: 'choice',
+      label: 'Shooting disciplines you compete in',
+      kind: 'multi',
       section: 'Experience',
       optionSource: 'shooting-disciplines',
       optionScope: 'hunting',
@@ -1724,16 +1728,23 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // rifle, and so on." — which asked the applicant to summarise, from
       // memory, the one thing a section 16 motivation turns on. The list is
       // now the real one, and picking from it seeds the equipment rules.
+      // ⚠️ MULTI-SELECT SINCE 2026-08-21, AND THE OLD HELP TEXT WAS THE TELL.
+      // It read "If you shoot several, pick the one this application is about
+      // — the others belong in your competition record", which is a form
+      // apologising for its own shape. Operator: let them pick as many as they
+      // shoot. The motivation is stronger for naming all of them, because a
+      // firearm that serves three disciplines has three reasons to exist.
       key: 'discipline',
-      label: 'The discipline you shoot',
-      kind: 'choice',
+      label: 'The disciplines you shoot',
+      kind: 'multi',
       section: 'Experience',
       optionSource: 'shooting-disciplines',
       allowOther: true,
       prefills: 'discipline_requirement',
-      help: 'Pick the one this firearm is for. If you shoot several, pick the one this application is about — the others belong in your competition record.',
+      help: 'Pick every discipline this firearm is for. What each one requires of the firearm is filled in below.',
       required: true,
-      maxLength: 160,
+      // Several disciplines, comma-joined — the old 160 fitted exactly one.
+      maxLength: 600,
     },
     {
       key: 'discipline_other',
@@ -1979,7 +1990,14 @@ export function sanitiseAnswers(
     if (field.kind === 'multi') {
       // Stored comma-joined. Every part must be a real choice, and the order is
       // normalised to the offered order so two identical answers compare equal.
-      const allowed = field.choices ?? [];
+      //
+      // ⚠️ allowedValues, NOT field.choices — AND THIS EXACT BUG HAS BITTEN
+      // ONCE BEFORE. A field whose options come from optionSource has no
+      // `choices` array at all, so `field.choices ?? []` rejects every value
+      // the applicant picks and the answer is silently dropped. That is what
+      // happened to the single-select discipline field, and making it
+      // multi-select would have reintroduced it verbatim.
+      const allowed = allowedValues(field);
       const parts = trimmed
         ? trimmed.split(',').map((x) => x.trim()).filter(Boolean)
         : [];

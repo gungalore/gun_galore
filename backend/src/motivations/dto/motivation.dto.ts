@@ -10,9 +10,9 @@ import {
 } from 'class-validator';
 import { MotivationLicenceType } from '@prisma/client';
 import {
-  COLOURWAY_KEYS,
+  SCHEME_KEYS,
   FORMAT_KEYS,
-  type Colourway,
+  type Scheme,
   type TemplateFormat,
 } from '../motivation-pdf.service';
 
@@ -95,6 +95,6 @@ export class SetTemplateDto {
   format?: TemplateFormat;
 
   @IsOptional()
-  @IsIn(COLOURWAY_KEYS, { message: 'That is not one of our colours.' })
-  colourway?: Colourway;
+  @IsIn(SCHEME_KEYS, { message: 'That is not one of our schemes.' })
+  colourway?: Scheme;
 }

@@ -202,8 +202,25 @@ export interface MotivationDetail extends MotivationSummary {
   watermarked?: boolean;
 }
 
-export type TemplateFormat = 'concise' | 'standard' | 'comprehensive';
-export type Colourway = 'ochre' | 'navy' | 'forest' | 'oxblood' | 'slate';
+/**
+ * One format since 2026-08-21 — the operator withdrew Concise and Standard.
+ * Kept as a named type because the field is still on the wire and still
+ * stored, and older rows hold the withdrawn values.
+ */
+export type TemplateFormat = 'comprehensive';
+
+/** The ten schemes from the design handoff. */
+export type Colourway =
+  | 'eucalyptus'
+  | 'slate'
+  | 'stone'
+  | 'sage'
+  | 'fogblue'
+  | 'clay'
+  | 'olive'
+  | 'sand'
+  | 'graphite'
+  | 'mauve';
 
 export interface TemplateFormatOption {
   key: TemplateFormat;
@@ -215,15 +232,37 @@ export interface TemplateFormatOption {
   features: { contents: boolean; ownedTable: boolean; specBlock: boolean };
 }
 
+/**
+ * A scheme, with all eight variables the document is drawn from.
+ *
+ * \u26a0\ufe0f THIS TYPE UNDER-DECLARED THE RESPONSE ONCE ALREADY, in exactly the
+ * way motivationsApi.status did: it named ink/tint/rule while the server sent
+ * eight variables. A client type that lists fewer fields than arrive does not
+ * merely lose them \u2014 it hides them from the next person to look, and the
+ * preview silently drew `undefined` for two of its colours.
+ *
+ * Names and meanings are the handoff's own, so a value can be checked against
+ * the reference without translating.
+ */
 export interface TemplateColourOption {
   key: Colourway;
   name: string;
-  /** Heading bands, rules, the cover band. */
+  /** Banner gradient start, section node, annexure cross-references. */
+  deep: string;
+  /** Banner gradient end, and the text colour of a highlight band. */
+  deep2: string;
+  /** Body text. */
   ink: string;
-  /** The wash behind a heading. */
-  tint: string;
-  /** Hairlines in tables. */
-  rule: string;
+  /** Secondary prose. */
+  sub: string;
+  /** Labels, footer strip, small caps. */
+  mut: string;
+  /** The highlight band behind a section title. */
+  band: string;
+  /** Hairlines, table rules, panel borders. */
+  hair: string;
+  /** Panel and footer backgrounds. */
+  wash: string;
 }
 
 /**
@@ -564,7 +603,7 @@ export const motivationsApi = {
     request<TemplateCatalogue>(t, '/templates', {}, {
       formats: [],
       colours: [],
-      defaults: { format: 'standard', colourway: 'slate' },
+      defaults: { format: 'comprehensive', colourway: 'eucalyptus' },
     }),
 
   /**
@@ -583,7 +622,7 @@ export const motivationsApi = {
       t,
       `/${id}/template`,
       { method: 'PATCH', body: JSON.stringify(choice) },
-      { format: 'standard', colourway: 'slate' },
+      { format: 'comprehensive', colourway: 'eucalyptus' },
     ),
 
   /** Write the suggestions the applicant accepted. */

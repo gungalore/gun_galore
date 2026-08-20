@@ -1,11 +1,12 @@
 import { templateCatalogue } from './motivation-templates';
 import {
-  COLOURWAYS,
-  COLOURWAY_KEYS,
+  DEFAULT_SCHEME,
   FORMAT_FEATURES,
   FORMAT_KEYS,
-  asColourway,
+  SCHEMES,
+  SCHEME_KEYS,
   asFormat,
+  asScheme,
 } from './motivation-pdf.service';
 
 // ────────────────────────────────────────────────────────────────────
@@ -21,11 +22,15 @@ import {
 describe('the template catalogue', () => {
   const cat = templateCatalogue();
 
-  it('offers exactly the fifteen the renderer can draw', () => {
-    // 5 colourways x 3 formats. Operator, 2026-08-19.
+  it('offers exactly what the renderer can draw', () => {
+    // \u26a0\ufe0f ONE FORMAT, TEN SCHEMES since 2026-08-21. It was five colourways
+    // x three formats; the operator withdrew the two shorter formats
+    // ("only comprehensive stays") and the palette became the ten schemes
+    // from the design handoff.
     expect(cat.formats.map((f) => f.key)).toEqual(FORMAT_KEYS);
-    expect(cat.colours.map((c) => c.key)).toEqual(COLOURWAY_KEYS);
-    expect(cat.formats.length * cat.colours.length).toBe(15);
+    expect(cat.formats).toHaveLength(1);
+    expect(cat.colours.map((c) => c.key)).toEqual(SCHEME_KEYS);
+    expect(cat.colours).toHaveLength(10);
   });
 
   it('serves the renderer’s own hex values, not a copy of them', () => {
@@ -33,7 +38,9 @@ describe('the template catalogue', () => {
     // motivation-pdf.service.ts, the picker goes on showing the old one, and
     // a member pays for a colour they were shown and did not get.
     for (const c of cat.colours) {
-      expect({ ink: c.ink, tint: c.tint, rule: c.rule }).toEqual(COLOURWAYS[c.key]);
+      const { key, name, ...colours } = c;
+      expect(colours).toEqual(SCHEMES[key]);
+      expect(name).toBeTruthy();
     }
   });
 
@@ -51,7 +58,8 @@ describe('the template catalogue', () => {
     // selection their document does not actually have — on every pack written
     // before they touched the picker.
     expect(cat.defaults.format).toBe(asFormat(undefined));
-    expect(cat.defaults.colourway).toBe(asColourway(undefined));
+    expect(cat.defaults.colourway).toBe(asScheme(undefined));
+    expect(cat.defaults.colourway).toBe(DEFAULT_SCHEME);
   });
 
   it('describes structure and never strength', () => {
@@ -85,13 +93,18 @@ describe('the template catalogue', () => {
     for (const c of cat.colours) expect(c.name).toBeTruthy();
   });
 
-  it('orders the formats shortest to longest', () => {
-    // The rail is scanned left to right as "how much", so the order has to
-    // agree with that reading. Counted by how many optional blocks each set
-    // switches on.
-    const weight = (f: (typeof cat.formats)[number]) =>
-      Object.values(f.features).filter(Boolean).length;
-    const weights = cat.formats.map(weight);
-    expect([...weights].sort((a, b) => a - b)).toEqual(weights);
+  it('opens the scheme list on the handoff default', () => {
+    // The picker shows these in order, so the one it opens on has to be first.
+    expect(cat.colours[0].key).toBe(DEFAULT_SCHEME);
+  });
+
+  it('carries all eight scheme variables, none of them blank', () => {
+    // The preview draws a gradient banner, a footer strip and wash panels from
+    // these. A missing one renders as transparent rather than as an error.
+    for (const c of cat.colours) {
+      for (const k of ['deep','deep2','ink','sub','mut','band','hair','wash'] as const) {
+        expect(c[k]).toMatch(/^#[0-9a-f]{6}$/i);
+      }
+    }
   });
 });

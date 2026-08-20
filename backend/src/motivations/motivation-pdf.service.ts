@@ -135,80 +135,117 @@ const HEADING_BELOW = 25;
 const QUOTE_INDENT = 28;
 
 /**
- * THE FIVE COLOURWAYS.
+ * THE TEN COLOUR SCHEMES, from the operator's design handoff (2026-08-21).
  *
- * One family, not five picks: same lightness and chroma, only the hue moves.
- * So none of them shouts louder than another in print and a reviewing officer
- * cannot read one applicant as flashier than the next — which matters on a
- * document handed across a counter beside a hundred others.
+ * Eight variables each, in the handoff's own order and under its own names,
+ * so a value can be checked against the reference without translating:
  *
- * `ink` is the accent (heading bands, rules, cover band), `tint` the wash
- * behind a heading, `rule` the hairline in tables.
+ *   deep   banner gradient start, section node ring, annexure cross-refs
+ *   deep2  banner gradient end, and the text colour of a highlight band
+ *   ink    body text
+ *   sub    secondary prose (the "To: the Registrar" block)
+ *   mut    labels, footer strip, small caps
+ *   band   the highlight band behind a section title
+ *   hair   hairlines, table rules, panel borders
+ *   wash   panel and footer backgrounds
+ *
+ * \u26a0\ufe0f THIS REPLACED FIVE COLOURWAYS THAT CARRIED THREE VALUES. ink/tint/rule
+ * could describe a heading band and nothing else; this document has a
+ * gradient banner, a footer strip, wash panels and two weights of body text,
+ * and three variables cannot express that. The old names are gone rather than
+ * aliased \u2014 an alias would have let half the renderer keep drawing the old
+ * design while the other half drew the new one.
  */
-export type Colourway = 'ochre' | 'navy' | 'forest' | 'oxblood' | 'slate';
+export type Scheme =
+  | 'eucalyptus'
+  | 'slate'
+  | 'stone'
+  | 'sage'
+  | 'fogblue'
+  | 'clay'
+  | 'olive'
+  | 'sand'
+  | 'graphite'
+  | 'mauve';
 
-export const COLOURWAYS: Record<
-  Colourway,
-  { ink: string; tint: string; rule: string }
-> = {
-  ochre:   { ink: '#7A5A18', tint: '#FAF4E8', rule: '#C9A961' },
-  navy:    { ink: '#1E3A5F', tint: '#EDF1F7', rule: '#8FA6C4' },
-  forest:  { ink: '#2A4A32', tint: '#EDF3EE', rule: '#8FB39A' },
-  oxblood: { ink: '#5E1F26', tint: '#F9EDEE', rule: '#C08F94' },
-  slate:   { ink: '#37474F', tint: '#EFF1F2', rule: '#9AA7AD' },
+export interface SchemeColours {
+  deep: string;
+  deep2: string;
+  ink: string;
+  sub: string;
+  mut: string;
+  band: string;
+  hair: string;
+  wash: string;
+}
+
+export const SCHEMES: Record<Scheme, SchemeColours> = {
+  eucalyptus: { deep: '#587068', deep2: '#40524c', ink: '#29342f', sub: '#475650', mut: '#869590', band: '#dfe9e5', hair: '#dbe4e0', wash: '#f2f7f5' },
+  slate:      { deep: '#565e6e', deep2: '#3f4654', ink: '#2a2f38', sub: '#4c5460', mut: '#8a8f99', band: '#e3e2ec', hair: '#e2e0da', wash: '#f6f5f2' },
+  stone:      { deep: '#6b645c', deep2: '#4e4841', ink: '#33302b', sub: '#57524b', mut: '#948e85', band: '#e9e4dc', hair: '#e4dfd7', wash: '#f7f5f1' },
+  sage:       { deep: '#5f6b5e', deep2: '#454f45', ink: '#2c332c', sub: '#4d574d', mut: '#8a938a', band: '#e2e8df', hair: '#dfe3da', wash: '#f4f6f2' },
+  fogblue:    { deep: '#58687a', deep2: '#3f4c5b', ink: '#29323c', sub: '#485664', mut: '#8795a3', band: '#e0e7ed', hair: '#dde3e8', wash: '#f3f6f8' },
+  clay:       { deep: '#7a615a', deep2: '#594641', ink: '#362c29', sub: '#5c4f4a', mut: '#998a81', band: '#ece2dd', hair: '#e6ddd6', wash: '#f8f4f1' },
+  olive:      { deep: '#6a6a52', deep2: '#4d4d3b', ink: '#30302a', sub: '#55554a', mut: '#90907f', band: '#e7e7d9', hair: '#e2e2d5', wash: '#f6f6ef' },
+  sand:       { deep: '#8a7c62', deep2: '#665b47', ink: '#38332a', sub: '#5d5648', mut: '#9c9484', band: '#eee7d8', hair: '#e8e1d2', wash: '#f9f6ee' },
+  graphite:   { deep: '#4a4a4e', deep2: '#333336', ink: '#26262a', sub: '#46464b', mut: '#8b8b90', band: '#e4e4e7', hair: '#e0e0e2', wash: '#f4f4f5' },
+  mauve:      { deep: '#6e5f6a', deep2: '#50454d', ink: '#322c31', sub: '#544a51', mut: '#93878f', band: '#e9e1e7', hair: '#e3dce1', wash: '#f7f3f6' },
 };
 
-/**
- * HOW MUCH DOCUMENT.
- *
- * Not three skins — three SECTION SETS. Every format makes the same argument
- * from the same answers; they differ in how much is set out.
- *
- * ⚠️ DEPTH IS NOT LICENCE TO SAY MORE ABOUT THE APPLICANT. A comprehensive
- * pack adds sections and researched context — the cartridge, the platform,
- * the statutory request — never more claims about the person. What they told
- * us bounds what can be written about them whichever format they pick.
- */
-export type TemplateFormat = 'concise' | 'standard' | 'comprehensive';
-
-export const COLOURWAY_KEYS: Colourway[] = [
-  'ochre',
-  'navy',
-  'forest',
-  'oxblood',
-  'slate',
-];
-export const FORMAT_KEYS: TemplateFormat[] = [
-  'concise',
-  'standard',
-  'comprehensive',
+/** Eucalyptus first \u2014 the handoff's default, and the picker opens on it. */
+export const SCHEME_KEYS: Scheme[] = [
+  'eucalyptus', 'slate', 'stone', 'sage', 'fogblue',
+  'clay', 'olive', 'sand', 'graphite', 'mauve',
 ];
 
+export const DEFAULT_SCHEME: Scheme = 'eucalyptus';
+
 /**
- * ⚠️ VALIDATE ON READ, NEVER TRUST THE COLUMN. templateFormat and
- * templateColourway are plain VARCHARs so that adding a template costs no
- * migration — which means the database will happily hold 'burgundy' from a
- * typo in an API call, or a value from a colourway we later removed. Neither
- * may fail a download: somebody clicking "get my PDF" gets a PDF.
+ * \u26a0\ufe0f THE REQUIRED-RED IS FIXED ACROSS ALL TEN SCHEMES. It marks the one
+ * certification the Regulations actually impose (reg 13(4)(b)); a warning
+ * colour that changes with the decorative palette is not a warning colour.
  */
-export function asFormat(v: string | null | undefined): TemplateFormat {
-  return FORMAT_KEYS.includes(v as TemplateFormat)
-    ? (v as TemplateFormat)
-    : 'standard';
+export const REQUIRED_RED = '#8b3a3a';
+export const REQUIRED_RED_BORDER = '#cfa9a9';
+
+/**
+ * ONE FORMAT. Operator, 2026-08-21: "get rid of the concise and standard
+ * templates. Only comprehensive stays."
+ *
+ * \u26a0\ufe0f A ONE-MEMBER UNION, NOT A DELETED TYPE. Rows written before today
+ * hold 'concise' or 'standard' in templateFormat, the API still accepts a
+ * `format` field and the picker still sends one \u2014 so the value has to arrive,
+ * validate and normalise. asFormat() maps everything to the one format we
+ * render, which is what lets those older rows open instead of erroring.
+ */
+export type TemplateFormat = 'comprehensive';
+
+export const FORMAT_KEYS: TemplateFormat[] = ['comprehensive'];
+
+/**
+ * \u26a0\ufe0f VALIDATE ON READ, NEVER TRUST THE COLUMN. templateFormat and
+ * templateColourway are plain VARCHARs so that adding a scheme costs no
+ * migration \u2014 which also means the database will happily hold 'burgundy' from
+ * a typo, or a scheme we later withdrew. Neither may fail a download:
+ * somebody clicking "get my PDF" gets a PDF.
+ */
+export function asFormat(_v: string | null | undefined): TemplateFormat {
+  return 'comprehensive';
 }
 
-export function asColourway(v: string | null | undefined): Colourway {
-  return COLOURWAY_KEYS.includes(v as Colourway) ? (v as Colourway) : 'slate';
+export function asScheme(v: string | null | undefined): Scheme {
+  return SCHEME_KEYS.includes(v as Scheme) ? (v as Scheme) : DEFAULT_SCHEME;
 }
 
-/** Which optional furniture each format carries. */
+/**
+ * Kept so the one remaining format still declares what it carries, and so a
+ * future second format has somewhere to differ.
+ */
 export const FORMAT_FEATURES: Record<
   TemplateFormat,
   { contents: boolean; ownedTable: boolean; specBlock: boolean }
 > = {
-  concise:       { contents: false, ownedTable: false, specBlock: false },
-  standard:      { contents: true,  ownedTable: true,  specBlock: false },
-  comprehensive: { contents: true,  ownedTable: true,  specBlock: true },
+  comprehensive: { contents: true, ownedTable: true, specBlock: true },
 };
 
 export interface MotivationPdfInput {
@@ -229,10 +266,16 @@ export interface MotivationPdfInput {
   disclaimer: string;
   /** Stamped in the footer so reviewed versions are traceable. */
   templateVersion: string;
-  /** Which of the three section sets to render. Defaults to standard. */
+  /** Only one format remains; accepted so older callers still type-check. */
   format?: TemplateFormat;
-  /** Which accent. Defaults to slate — the one that reads as least branded. */
-  colourway?: Colourway;
+  /**
+   * Which of the ten schemes. Defaults to eucalyptus, the handoff's own.
+   *
+   * Still called `colourway` because that is the column name, the API field
+   * and what the picker sends. Renaming the wire format to match the internal
+   * rename would have been a migration and a client change for no gain.
+   */
+  colourway?: Scheme;
   /** The applicant's ID number, printed on the cover as the DFO expects. */
   idNumber?: string;
   /** Firearms already held, for the comparison table. */
@@ -383,9 +426,10 @@ export class MotivationPdfService {
 
     const contentWidth = PAGE_WIDTH - MARGIN - MARGIN_RIGHT;
 
-    const fmt = input.format ?? 'standard';
-    const feat = FORMAT_FEATURES[fmt];
-    const C = COLOURWAYS[input.colourway ?? 'slate'];
+    // Normalised rather than defaulted: a row still holding 'concise' from
+    // before the formats were consolidated renders as comprehensive.
+    const feat = FORMAT_FEATURES[asFormat(input.format)];
+    const C = SCHEMES[asScheme(input.colourway)];
 
     // ── Cover ─────────────────────────────────────────────────────────
     //
@@ -491,7 +535,7 @@ export class MotivationPdfService {
 
       const top = doc.y - 5;
       const h = BODY_SIZE + 11;
-      doc.rect(MARGIN, top, contentWidth, h).fill(C.tint);
+      doc.rect(MARGIN, top, contentWidth, h).fill(C.band);
       doc
         .moveTo(MARGIN, top)
         .lineTo(MARGIN + contentWidth, top)
@@ -592,7 +636,7 @@ export class MotivationPdfService {
           .moveTo(MARGIN, rowBottom)
           .lineTo(MARGIN + contentWidth, rowBottom)
           .lineWidth(0.5)
-          .strokeColor(C.rule)
+          .strokeColor(C.hair)
           .stroke();
         doc.y = rowBottom + 5;
       }
@@ -637,7 +681,7 @@ export class MotivationPdfService {
         ];
 
         const headTop = doc.y;
-        doc.rect(MARGIN, headTop, contentWidth, 20).fill(C.tint);
+        doc.rect(MARGIN, headTop, contentWidth, 20).fill(C.band);
         let x = MARGIN + 6;
         for (const col of cols) {
           doc
@@ -672,7 +716,7 @@ export class MotivationPdfService {
             .moveTo(MARGIN, ruleY)
             .lineTo(MARGIN + contentWidth, ruleY)
             .lineWidth(0.5)
-            .strokeColor(C.rule)
+            .strokeColor(C.hair)
             .stroke();
           doc.y = ruleY;
         }
@@ -1120,7 +1164,7 @@ export class MotivationPdfService {
               .rect(bx, place.stampY, bw, bh)
               .lineWidth(0.7)
               .dash(3, { space: 2.5 })
-              .strokeColor(C.rule)
+              .strokeColor(C.hair)
               .stroke()
               .undash();
 

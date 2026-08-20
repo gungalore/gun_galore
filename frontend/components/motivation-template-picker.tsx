@@ -161,7 +161,7 @@ export default function MotivationTemplatePicker({
               style={{
                 background: active ? 'var(--bg-inset)' : 'var(--bg-card)',
                 border: `${active ? '1.5px' : '0.5px'} solid ${
-                  active ? chosenColour.rule : 'var(--border)'
+                  active ? chosenColour.mut : 'var(--border)'
                 }`,
               }}
             >
@@ -183,7 +183,7 @@ export default function MotivationTemplatePicker({
                   <span
                     aria-hidden
                     className="inline-block h-2 w-2 rounded-full"
-                    style={{ background: chosenColour.rule }}
+                    style={{ background: chosenColour.mut }}
                   />
                 )}
               </p>
@@ -217,7 +217,7 @@ export default function MotivationTemplatePicker({
               style={{
                 background: active ? 'var(--bg-inset)' : 'transparent',
                 border: `${active ? '1.5px' : '0.5px'} solid ${
-                  active ? c.rule : 'var(--border)'
+                  active ? c.mut : 'var(--border)'
                 }`,
               }}
             >
@@ -229,7 +229,7 @@ export default function MotivationTemplatePicker({
                 // as its ring, which is what makes a dark ink legible against
                 // a dark card.
                 className="inline-block h-5 w-5 rounded-full"
-                style={{ background: c.ink, border: `1.5px solid ${c.rule}` }}
+                style={{ background: c.deep, border: `1.5px solid ${c.mut}` }}
               />
               {c.name}
             </button>

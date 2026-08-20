@@ -29,7 +29,7 @@ import { MotivationClaudeService } from './motivation-claude.service';
 import {
   AnnexureImagePage,
   MotivationPdfService,
-  asColourway,
+  asScheme,
   asFormat,
 } from './motivation-pdf.service';
 import {
@@ -505,10 +505,10 @@ export class MotivationsService {
       hasDocument: !!row.documentTextEncrypted,
       documentVersion: row.documentVersion,
       // Which of the fifteen templates this pack is set in. Validated on read
-      // because the columns are plain VARCHARs — see asFormat/asColourway.
+      // because the columns are plain VARCHARs — see asFormat/asScheme.
       template: {
         format: asFormat(row.templateFormat),
-        colourway: asColourway(row.templateColourway),
+        colourway: asScheme(row.templateColourway),
       },
       // ⚠️ WATERMARK UNTIL IT IS PAID FOR — OR EARNED. Operator, 2026-08-19:
       // "Be sure to watermark any item that has not been paid for or have the
@@ -2820,7 +2820,7 @@ export class MotivationsService {
           ? { templateFormat: asFormat(choice.format) }
           : {}),
         ...(choice.colourway !== undefined
-          ? { templateColourway: asColourway(choice.colourway) }
+          ? { templateColourway: asScheme(choice.colourway) }
           : {}),
       },
       select: { templateFormat: true, templateColourway: true },
@@ -2828,7 +2828,7 @@ export class MotivationsService {
 
     return {
       format: asFormat(updated.templateFormat),
-      colourway: asColourway(updated.templateColourway),
+      colourway: asScheme(updated.templateColourway),
     };
   }
 
@@ -2930,7 +2930,7 @@ export class MotivationsService {
       // costs no migration, which also means they can hold anything. An
       // unrecognised value falls back rather than failing the download.
       format: asFormat(row.templateFormat),
-      colourway: asColourway(row.templateColourway),
+      colourway: asScheme(row.templateColourway),
       // See isSettled. Payments are not live, so today this stamps almost
       // every download — which is the right way round.
       watermark: !isSettled(row),

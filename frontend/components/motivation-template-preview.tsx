@@ -88,7 +88,7 @@ function Band({ colour, width = 62 }: { colour: TemplateColourOption; width?: nu
       <div style={{ height: 1, background: colour.ink }} />
       <div
         style={{
-          background: colour.tint,
+          background: colour.band,
           height: '2.2em',
           display: 'flex',
           alignItems: 'center',
@@ -282,7 +282,7 @@ export default function TemplatePreview({
                   gap: '1em',
                   alignItems: 'center',
                   padding: '0.55em 0',
-                  borderBottom: `1px solid ${colour.rule}`,
+                  borderBottom: `1px solid ${colour.hair}`,
                 }}
               >
                 <div
@@ -299,7 +299,7 @@ export default function TemplatePreview({
             <>
               <Band colour={colour} width={74} />
               {/* The owned-firearms table: a tinted header, then rows. */}
-              <div style={{ background: colour.tint, display: 'flex', gap: '1em', padding: '0.5em 0.6em' }}>
+              <div style={{ background: colour.band, display: 'flex', gap: '1em', padding: '0.5em 0.6em' }}>
                 {[30, 18, 22, 22].map((w, i) => (
                   <div
                     key={i}
@@ -314,7 +314,7 @@ export default function TemplatePreview({
                     display: 'flex',
                     gap: '1em',
                     padding: '0.62em 0.6em',
-                    borderBottom: `1px solid ${colour.rule}`,
+                    borderBottom: `1px solid ${colour.hair}`,
                   }}
                 >
                   {[30, 18, 22, 22].map((w, i) => (

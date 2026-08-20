@@ -188,7 +188,7 @@ export default function MotivationWizardPage() {
   const [template, setTemplate] = useState<{
     format: TemplateFormat;
     colourway: Colourway;
-  }>({ format: 'standard', colourway: 'slate' });
+  }>({ format: 'comprehensive', colourway: 'eucalyptus' });
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
 
@@ -793,6 +793,53 @@ export default function MotivationWizardPage() {
     }
     // They have written their own. Offer, do not take.
     setPrefillOffer({ key: target, label, text });
+  };
+
+  /**
+   * The same, for a field where several options can be chosen at once.
+   *
+   * ⚠️ THE PREFILL IS THE WHOLE POINT OF MULTI-SELECT HERE. A section 16
+   * motivation argues that the firearm suits the discipline, so an applicant
+   * who shoots three has three arguments to make — and what each body's rules
+   * require of the firearm is exactly the part they cannot write from memory.
+   * Composing one paragraph per discipline, each under its own name, is worth
+   * more than the list of names on its own.
+   */
+  const pickMulti = (field: MotivationField, values: string[]) => {
+    const joined = values.join(', ');
+    setAnswer(field.key, joined);
+
+    const target = field.prefills;
+    if (!target) return;
+
+    const labelFor = (v: string) =>
+      field.optionGroups?.flatMap((g) => g.options).find((o) => o.value === v)
+        ?.label ?? v;
+
+    const text = values
+      .map((v) => {
+        const body = (field.prefillText?.[v] ?? '').trim();
+        return body ? `${labelFor(v)}: ${body}` : '';
+      })
+      .filter(Boolean)
+      .join('\n\n');
+    if (!text) return;
+
+    const current = (answers[target] ?? '').trim();
+    const ours = (seeded.current[target] ?? '').trim();
+
+    // Untouched, or still exactly what we last seeded — safe to rewrite as the
+    // selection changes. Once they have edited it, it is theirs.
+    if (current === '' || current === ours) {
+      seeded.current[target] = text;
+      setAnswer(target, text);
+      return;
+    }
+    setPrefillOffer({
+      key: target,
+      label: values.map(labelFor).join(' + '),
+      text,
+    });
   };
 
 
@@ -1499,6 +1546,7 @@ export default function MotivationWizardPage() {
                   }
                   onChange={(v) => setAnswer(f.key, v)}
                   onPick={pickOption}
+                  onPickMulti={pickMulti}
                 />
                 {/* ⚠️ THE PICKER SITS UNDER THE FIELD IT FILLS, not up in the
                     offer panel. The panel is a single "fill everything"
@@ -1915,6 +1963,7 @@ function FieldInput({
   locked = false,
   onUnlock,
   onPick,
+  onPickMulti,
   onChange,
 }: {
   field: MotivationField;
@@ -1925,6 +1974,7 @@ function FieldInput({
   onUnlock?: () => void;
   /** Choice fields that seed another field route through here instead. */
   onPick?: (field: MotivationField, value: string) => void;
+  onPickMulti?: (field: MotivationField, values: string[]) => void;
   onChange: (v: string) => void;
 }) {
   // EXPLICIT background and colour on every control.
@@ -2064,7 +2114,7 @@ function FieldInput({
           A stored value we do not recognise is shown as its own option
           rather than silently reset: before this was a dropdown it was a
           text box, and somebody's typed answer is still their answer. */}
-      {field.optionGroups && (
+      {field.optionGroups && field.kind !== 'multi' && (
         <select
           id={field.key}
           className={base}
@@ -2090,7 +2140,13 @@ function FieldInput({
         </select>
       )}
 
-      {field.kind === 'multi' && (
+      {/* ⚠️ A GROUPED MULTI IS NOT A ROW OF CHECKBOXES. This renderer draws
+          one box per `choices` entry, which is right for the three competency
+          types and hopeless for fifty-nine disciplines in eleven groups — and
+          would have drawn NOTHING at all, because an optionSource field has no
+          `choices` array. Grouped multi-selects get chips-plus-a-picker
+          below. */}
+      {field.kind === 'multi' && !field.optionGroups && (
         <div className="mt-1 flex flex-wrap gap-3">
           {(field.choices ?? []).map((c) => {
             const picked = value
@@ -2121,8 +2177,103 @@ function FieldInput({
           })}
         </div>
       )}
+      {/* A GROUPED MULTI — the shooting disciplines.
+          Chips for what is chosen, a picker to add the next one. The same
+          shape the operator asked for on associations: the list you have is
+          visible and removable, and adding another is one deliberate act
+          rather than a wall of fifty-nine checkboxes. */}
+      {field.kind === 'multi' && field.optionGroups && (
+        <MultiPicker field={field} value={value} onPickMulti={onPickMulti} />
+      )}
+
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * Chips plus a picker, for a multi-select whose options are grouped.
+ *
+ * Values are stored comma-joined, which is what the server validates and
+ * normalises — see the `multi` branch of saveAnswers.
+ */
+function MultiPicker({
+  field,
+  value,
+  onPickMulti,
+}: {
+  field: MotivationField;
+  value: string;
+  onPickMulti?: (field: MotivationField, values: string[]) => void;
+}) {
+  const chosen = value
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const all = field.optionGroups?.flatMap((g) => g.options) ?? [];
+  const labelFor = (v: string) =>
+    all.find((o) => o.value === v)?.label ?? v;
+
+  const set = (next: string[]) => {
+    // Normalised to the offered order, so our ordering and the server's agree
+    // and two identical answers compare equal.
+    const order = all.map((o) => o.value);
+    const known = order.filter((v) => next.includes(v));
+    // Anything we do not recognise is still their answer — keep it, at the end.
+    const unknown = next.filter((v) => !order.includes(v));
+    onPickMulti?.(field, [...known, ...unknown]);
+  };
+
+  return (
+    <div className="mt-1">
+      {chosen.length > 0 && (
+        <ul className="mb-2 flex flex-wrap gap-2">
+          {chosen.map((v) => (
+            <li key={v}>
+              <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--bg-inset)] py-1 pl-3 pr-1 text-sm">
+                {labelFor(v)}
+                <button
+                  type="button"
+                  aria-label={`Remove ${labelFor(v)}`}
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]"
+                  onClick={() => set(chosen.filter((x) => x !== v))}
+                >
+                  &times;
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <select
+        id={field.key}
+        className="w-full rounded border border-[var(--border)] bg-[var(--bg-card)] p-2 text-sm"
+        value=""
+        onChange={(e) => {
+          if (!e.target.value) return;
+          set([...chosen, e.target.value]);
+        }}
+      >
+        <option value="">
+          {chosen.length ? 'Add another discipline…' : 'Choose a discipline…'}
+        </option>
+        {field.optionGroups?.map((g) => {
+          const left = g.options.filter((o) => !chosen.includes(o.value));
+          if (!left.length) return null;
+          return (
+            <optgroup key={g.group} label={g.group}>
+              {left.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
+          );
+        })}
+      </select>
     </div>
   );
 }
