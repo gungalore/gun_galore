@@ -120,11 +120,27 @@ import {
 const TEMPLATE_VERSION = 'tpl-2026-08-a';
 const DISCLAIMER_VERSION = 'dis-2026-08-a';
 
+/**
+ * ⚠️ FIRST PERSON, LIKE EVERY OTHER WORD ON THE PAGE. Operator, 2026-08-21:
+ * "do not refer to the applicant in the third person anywhere in the doc.
+ * First person perspective as if it the applicant typing the document
+ * always."
+ *
+ * This is the applicant's own motivation, signed by them and handed to the
+ * Registrar by them. A disclaimer that switches to "the applicant confirms"
+ * halfway down the last page announces that somebody else wrote the document
+ * — which is both true and exactly the thing a reviewer should not be
+ * thinking about while reading it.
+ *
+ * The legal content is unchanged: it still says the facts are mine, that it
+ * is not legal advice, and that the decision is not ours to make. It says it
+ * in the voice of the person signing.
+ */
 const DISCLAIMER_TEXT =
-  'This document was prepared from information supplied by the applicant and ' +
-  'is submitted by the applicant as their own motivation. It is not legal ' +
-  'advice. The applicant confirms that the facts stated are true and correct ' +
-  'to the best of their knowledge.';
+  'I prepared this motivation with assistance from All Outdoor, from ' +
+  'information I supplied, and I submit it as my own. It is not legal ' +
+  'advice. I confirm that the facts stated in it are true and correct to the ' +
+  'best of my knowledge.';
 
 /** How many same-type documents to compare against for sameness. */
 /**

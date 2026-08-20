@@ -371,19 +371,38 @@ export interface MotivationPdfInput {
   takeWithYou?: { label: string; note?: string }[];
 }
 
-/** "THE FIREARM APPLIED FOR" -> "The firearm applied for", for the contents. */
+/**
+ * A heading as it should read in the contents.
+ *
+ * ⚠️ IT USED TO LOWERCASE EVERYTHING AND RECAPITALISE THE FIRST LETTER, which
+ * was right while every heading was ALL CAPS and became wrong the moment the
+ * document moved to first person and sentence case: "The firearm I am
+ * applying for" came out as "The firearm i am applying for". A lone lowercase
+ * "i" in the contents of a document somebody is handing to the Registrar is
+ * exactly the kind of detail that makes a pack look homemade.
+ *
+ * So it only folds a heading that is SHOUTING. Anything already in sentence
+ * case is left alone, because it was written the way it should read.
+ */
 function titleCase(heading: string): string {
-  const t = heading.toLowerCase();
-  return t.charAt(0).toUpperCase() + t.slice(1);
+  const trimmed = heading.trim();
+  const isShouting = trimmed === trimmed.toUpperCase();
+  if (!isShouting) return trimmed;
+  const lower = trimmed.toLowerCase();
+  // Restore a standalone "i" — the one word that must never be lowercase.
+  const restored = lower.replace(/i/g, 'I');
+  return restored.charAt(0).toUpperCase() + restored.slice(1);
 }
+
+/** Millimetres, for the section spacing. Same unit the handoff is written in. */
+const mmGap = (n: number): number => K.mm(n);
 
 /**
  * "Gerhard Johan Petrus Fourie" -> "Gerhard J P Fourie".
  *
- * First name in full, middle names as initials, surname in full — which is
- * how the handoff sets the banner and the footer, and how a South African
- * legal document conventionally shortens a name without losing which person
- * it is.
+ * First name in full, middle names as initials, surname in full — how the
+ * handoff sets the banner and the footer, and how a South African legal
+ * document conventionally shortens a name without losing which person it is.
  */
 function shortenName(full: string): string {
   const parts = full.trim().split(/\s+/).filter(Boolean);
@@ -392,9 +411,6 @@ function shortenName(full: string): string {
   const surname = rest.pop() as string;
   return [first, ...rest.map((n) => n[0].toUpperCase()), surname].join(' ');
 }
-
-/** Millimetres, for the section spacing. Same unit the handoff is written in. */
-const mmGap = (n: number): number => K.mm(n);
 
 /** A short line ending in a colon reads as a section heading. */
 function isHeading(line: string): boolean {
@@ -666,7 +682,7 @@ export class MotivationPdfService {
     // catalogue.
     if (feat.specBlock && input.firearmSpec?.length) {
       if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 170) doc.addPage();
-      renderHeading('SPECIFICATION OF THE FIREARM APPLIED FOR');
+      renderHeading('The firearm I am applying for');
 
       const labelW = 190;
       for (const spec of input.firearmSpec) {
@@ -711,7 +727,7 @@ export class MotivationPdfService {
     // section out because there is nothing to list would read as an omission.
     if (feat.ownedTable) {
       if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 140) doc.addPage();
-      renderHeading('FIREARMS ALREADY LICENSED TO THE APPLICANT');
+      renderHeading('Firearms already licensed to me');
 
       const owned = input.ownedFirearms ?? [];
       if (!owned.length) {
@@ -720,7 +736,7 @@ export class MotivationPdfService {
           .fontSize(BODY_SIZE)
           .fillColor(BLACK)
           .text(
-            'No firearm is currently licensed to the applicant. This is a first application.',
+            'No firearm is currently licensed to me. This is a first application.',
             { width: contentWidth, lineGap: BODY_LEADING },
           );
         doc.y += PARA_GAP;
@@ -821,74 +837,6 @@ export class MotivationPdfService {
     //
     // Last page but one, before the annexures, because it is the page the
     // applicant reads on the morning they go.
-    if (input.takeWithYou?.length) {
-      doc.addPage();
-      // Back matter goes in the contents too. A reviewer who wants the
-      // annexure index should not have to thumb to the end to find out where
-      // it starts, and an applicant checking their own pack is complete uses
-      // this page as the manifest.
-      toc.push({ heading: 'TAKE THESE WITH YOU', page: doc.bufferedPageRange().count });
-      doc.x = MARGIN;
-      doc
-        .font(FONT_BOLD)
-        .fontSize(13)
-        .fillColor(C.ink)
-        .text('TAKE THESE WITH YOU', MARGIN, doc.y, { width: contentWidth });
-      doc.moveDown(0.4);
-      doc
-        .font(FONT)
-        .fontSize(9.5)
-        .fillColor(GREY)
-        .text(
-          // ⚠️ WHICH DFO, AND WHO HANDS IT IN — neither was on this page, and
-          // this is the page the applicant reads on the morning they go.
-          // Reg 13(4)(a) requires the application to be submitted BY THE
-          // APPLICANT IN PERSON to the relevant DFO, and reg 1(xix) defines
-          // "relevant" as the officer for the area where they ordinarily
-          // reside. Reg 13(9)(a) and 13(10) need them in the flesh anyway:
-          // the DFO takes their fingerprints at the counter.
-          //
-          // Hedged as "normally", because reg 13(4)(a) opens "unless
-          // otherwise specifically stated".
-          'This motivation and its annexures are only part of the application. ' +
-            'It goes to the Designated Firearms Officer for the area where you ' +
-            'ordinarily live, and you normally have to hand it in yourself — the ' +
-            'DFO takes your fingerprints at the counter and checks them against ' +
-            'your identity, so somebody else cannot lodge it for you. ' +
-            'A Designated Firearms Officer does not have to accept an incomplete ' +
-            'application and will not issue the acknowledgement of receipt until it ' +
-            'is complete, so it is worth checking every line before you travel. ' +
-            'Requirements differ between stations and this list is not exhaustive — ' +
-            'confirm it with your own DFO.',
-          { width: contentWidth, lineGap: 1.5 },
-        );
-      doc.moveDown(0.8);
-
-      for (const item of input.takeWithYou) {
-        // An empty box to tick with a pen. The applicant is standing at a
-        // kitchen table with a pile of paper, not looking at a screen.
-        const y = doc.y;
-        doc
-          .rect(MARGIN + 1, y + 1.5, 8, 8)
-          .lineWidth(0.7)
-          .strokeColor(GREY)
-          .stroke();
-        doc
-          .font(FONT)
-          .fontSize(BODY_SIZE)
-          .fillColor(BLACK)
-          .text(item.label, MARGIN + 16, y, { width: contentWidth - 16 });
-        if (item.note) {
-          doc
-            .font(FONT_ITALIC)
-            .fontSize(8.5)
-            .fillColor(GREY)
-            .text(item.note, MARGIN + 16, doc.y, { width: contentWidth - 16 });
-        }
-        doc.moveDown(0.45);
-      }
-    }
-
     // ── Request for prior notice ─────────────────────────────────
     if (input.priorNotice) {
       // Its own page and its own signature block. This is a separate request
@@ -1301,6 +1249,86 @@ export class MotivationPdfService {
         }
       }
     }
+
+    // ── Take these with you ────────────────────────────────────
+    //
+    // ⚠️ THE LAST PAGES, AND DELIBERATELY NOT IN THE CONTENTS. Operator,
+    // 2026-08-21: "The TAKE THESE WITH YOU two documents should be the last
+    // two pages of the document and not part of the index."
+    //
+    // The reasoning holds up: everything above this point is the SUBMISSION —
+    // the motivation, the request, the annexures a DFO reads. This is a note
+    // to the applicant about their own morning, and it is the one part of the
+    // pack that is not addressed to the Registrar at all. Listing it in the
+    // contents invites a reviewer to turn to it; putting it at the back means
+    // the applicant can tear it off and leave it in the car.
+    if (input.takeWithYou?.length) {
+      doc.addPage();
+      // Back matter goes in the contents too. A reviewer who wants the
+      // annexure index should not have to thumb to the end to find out where
+      // it starts, and an applicant checking their own pack is complete uses
+      // this page as the manifest.
+      doc.x = MARGIN;
+      doc
+        .font(FONT_BOLD)
+        .fontSize(13)
+        .fillColor(C.ink)
+        .text('TAKE THESE WITH YOU', MARGIN, doc.y, { width: contentWidth });
+      doc.moveDown(0.4);
+      doc
+        .font(FONT)
+        .fontSize(9.5)
+        .fillColor(GREY)
+        .text(
+          // ⚠️ WHICH DFO, AND WHO HANDS IT IN — neither was on this page, and
+          // this is the page the applicant reads on the morning they go.
+          // Reg 13(4)(a) requires the application to be submitted BY THE
+          // APPLICANT IN PERSON to the relevant DFO, and reg 1(xix) defines
+          // "relevant" as the officer for the area where they ordinarily
+          // reside. Reg 13(9)(a) and 13(10) need them in the flesh anyway:
+          // the DFO takes their fingerprints at the counter.
+          //
+          // Hedged as "normally", because reg 13(4)(a) opens "unless
+          // otherwise specifically stated".
+          'This motivation and its annexures are only part of the application. ' +
+            'It goes to the Designated Firearms Officer for the area where you ' +
+            'ordinarily live, and you normally have to hand it in yourself — the ' +
+            'DFO takes your fingerprints at the counter and checks them against ' +
+            'your identity, so somebody else cannot lodge it for you. ' +
+            'A Designated Firearms Officer does not have to accept an incomplete ' +
+            'application and will not issue the acknowledgement of receipt until it ' +
+            'is complete, so it is worth checking every line before you travel. ' +
+            'Requirements differ between stations and this list is not exhaustive — ' +
+            'confirm it with your own DFO.',
+          { width: contentWidth, lineGap: 1.5 },
+        );
+      doc.moveDown(0.8);
+
+      for (const item of input.takeWithYou) {
+        // An empty box to tick with a pen. The applicant is standing at a
+        // kitchen table with a pile of paper, not looking at a screen.
+        const y = doc.y;
+        doc
+          .rect(MARGIN + 1, y + 1.5, 8, 8)
+          .lineWidth(0.7)
+          .strokeColor(GREY)
+          .stroke();
+        doc
+          .font(FONT)
+          .fontSize(BODY_SIZE)
+          .fillColor(BLACK)
+          .text(item.label, MARGIN + 16, y, { width: contentWidth - 16 });
+        if (item.note) {
+          doc
+            .font(FONT_ITALIC)
+            .fontSize(8.5)
+            .fillColor(GREY)
+            .text(item.note, MARGIN + 16, doc.y, { width: contentWidth - 16 });
+        }
+        doc.moveDown(0.45);
+      }
+    }
+
 
     // ── Contents, written now that the pages are known ────────────────
     if (tocPageIndex !== null && toc.length) {

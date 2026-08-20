@@ -510,8 +510,8 @@ describe('template choice', () => {
       const t = squash(readPdf(pdf).text);
       // Each block is proven by content only it carries — see the reader note
       // above. The contents page lists all three, and it is set in the serif.
-      expect(t).toContain(squash('Specification of the firearm applied for'));
-      expect(t).toContain(squash('Firearms already licensed to the applicant'));
+      expect(t).toContain(squash('The firearm I am applying for'));
+      expect(t).toContain(squash('Firearms already licensed to me'));
       // The spec sheet's values and the table's row.
       expect(t).toContain(squash('6.5 Creedmoor'));
       expect(t).toContain(squash('CZ 452'));
@@ -535,7 +535,7 @@ describe('template choice', () => {
     expect(t).toContain(squash('6.5 Creedmoor'));
     expect(t).toContain(squash('609 mm'));
     // And it is listed in the contents, which is set in the serif face.
-    expect(t).toContain(squash('Specification of the firearm applied for'));
+    expect(t).toContain(squash('The firearm I am applying for'));
   });
 
   it('prints the first-application line rather than dropping the section', async () => {
@@ -550,7 +550,7 @@ describe('template choice', () => {
     const t = squash(readPdf(pdf).text);
     // The section's own line, which is serif — the band title is Archivo and
     // this reader cannot decode it. See the note above.
-    expect(t).toContain(squash('Firearms already licensed to the applicant'));
+    expect(t).toContain(squash('Firearms already licensed to me'));
     expect(t).toContain(squash('This is a first application'));
   });
 
@@ -575,7 +575,18 @@ describe('template choice', () => {
     );
     const t = squash(readPdf(pdf).text);
     expect(t).toContain(squash('Annexures'));
-    expect(t).toContain(squash('Take these with you'));
+
+    // ⚠️ AND "TAKE THESE WITH YOU" IS *NOT* LISTED, which is the point.
+    // Operator, 2026-08-21: it belongs on the last two pages "and not part of
+    // the index". Everything the contents lists is the SUBMISSION — what a
+    // DFO reads. The checklist is a note to the applicant about their own
+    // morning, the one part of the pack not addressed to the Registrar, and
+    // listing it invites a reviewer to turn to it.
+    //
+    // Asserted on the contents entry specifically (serif, and the only place
+    // that phrase would appear in title case) rather than on the page itself,
+    // whose heading is Archivo and unreadable here.
+    expect(t).not.toContain(squash('Take these with you'));
   });
 });
 
