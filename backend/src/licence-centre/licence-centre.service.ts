@@ -107,10 +107,37 @@ export class LicenceCentreService {
       },
     });
 
+    // ── naming repair, once per row ──────────────────────────────────
+    //
+    // Documents uploaded before we named them from their contents still read
+    // "Firearm licence", and six rows all called "Firearm licence" is a
+    // filing cabinet with no labels. Renamed in place the first time they are
+    // listed; the guard is exact equality with OUR placeholder, so a name the
+    // member typed is never touched. Failures are swallowed — a rename is a
+    // convenience and must not take the Centre down with it.
+    const renamed = new Map<string, string>();
+    for (const r of rows) {
+      if (r.title !== DEFAULT_TITLE[r.kind]) continue;
+      const better = derivedCredentialTitle(
+        r.kind,
+        this.readDetails(r.detailsEncrypted),
+      );
+      if (better) renamed.set(r.id, better);
+    }
+    if (renamed.size) {
+      await Promise.all(
+        [...renamed].map(([id, title]) =>
+          this.prisma.credential
+            .update({ where: { id }, data: { title } })
+            .catch(() => undefined),
+        ),
+      );
+    }
+
     return rows.map((r) => ({
       id: r.id,
       kind: r.kind,
-      title: r.title,
+      title: renamed.get(r.id) ?? r.title,
       issuedOn: r.issuedOn ? toIsoDate(r.issuedOn) : null,
       expiresOn: r.expiresOn ? toIsoDate(r.expiresOn) : null,
       confirmed: r.confirmedAt !== null,
@@ -237,11 +264,18 @@ export class LicenceCentreService {
       .read({ kind: resolved, bytes: file.buffer, mimeType: file.mimetype })
       .catch(() => null);
 
+    // Named from what we just read, unless the member named it themselves.
+    // `clean` is their words; only OUR placeholder gets replaced.
+    const derived = clean
+      ? null
+      : derivedCredentialTitle(resolved, reading?.details ?? {});
+
     if (reading) {
       await this.prisma.credential
         .update({
           where: { id: created.id },
           data: {
+            ...(derived ? { title: derived } : {}),
             issuedOn: parseIsoDate(reading.issuedOn),
             // ⚠️ PROPOSED, NOT CONFIRMED. expiresOn is written so the member
             // sees a filled-in date to check, and confirmedAt stays null, so
@@ -268,7 +302,7 @@ export class LicenceCentreService {
     return {
       id: created.id,
       kind: resolved,
-      title: clean || DEFAULT_TITLE[resolved],
+      title: clean || derived || DEFAULT_TITLE[resolved],
       // Tells the confirm step which documents WE named, so it can ask.
       autoFiled,
       confident,
@@ -374,6 +408,32 @@ export class LicenceCentreService {
       .catch(() => undefined);
 
     return { confirmed: true, expiresOn: toIsoDate(expiry) };
+  }
+
+  /**
+   * Rename a document.
+   *
+   * Separate from confirm(), which also takes a title: confirming is a
+   * statement that the DATES are right, and making somebody re-confirm an
+   * expiry to correct a spelling is how a wrong date gets confirmed by
+   * reflex. An empty name falls back to the plain kind rather than leaving a
+   * blank row — there is no way to have no name at all.
+   */
+  async rename(clerkId: string, id: string, title: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const clean = (title ?? '').trim().replace(/\s+/g, ' ').slice(0, MAX_TITLE);
+    const row = await this.prisma.credential.findFirst({
+      where: { id, userId: user.id },
+      select: { kind: true },
+    });
+    if (!row) throw new NotFoundException('Document not found');
+    const next = clean || DEFAULT_TITLE[row.kind];
+    await this.prisma.credential.update({
+      where: { id },
+      data: { title: next },
+    });
+    return { title: next };
   }
 
   /** Their call. We remind; we never insist. */
@@ -642,6 +702,39 @@ function derivedExpiryFor(
     on: toIsoDate(competencyLapses(issued)),
     why: 'A competency certificate lapses five years after it is issued (section 10(2) of the Firearms Control Act). Check it against your certificate.',
   };
+}
+
+/**
+ * A name the owner will recognise, built from what we read off the document.
+ *
+ * ⚠️ "Firearm licence", six times, is a filing cabinet with no labels. Somebody
+ * with four rifles and two handguns cannot tell which row is which without
+ * opening each one, and every picker that offers them — the motivation's
+ * owned-firearms fill especially — offers six identical choices.
+ *
+ * Make and calibre is what a shooter actually calls a firearm: "Howa 6.5
+ * Creedmoor", not "licence 3088". Anything else keeps its plain kind name,
+ * because a competency certificate has nothing to distinguish it BY.
+ *
+ * Returns null when there is nothing better to say, so the caller can leave
+ * the existing title alone rather than overwrite it with a worse one.
+ */
+export function derivedCredentialTitle(
+  kind: CredentialKind,
+  details: Record<string, string>,
+): string | null {
+  if (kind !== 'FIREARM_LICENCE') return null;
+  const tidy = (v: string | undefined) =>
+    (v ?? '')
+      .trim()
+      // Licences are typed in block capitals; "NORDISKE PRECISION 223 REM"
+      // shouted across a list is harder to read than the same words are.
+      .replace(/\s+/g, ' ')
+      .slice(0, 40);
+  const make = tidy(details.make);
+  const calibre = tidy(details.calibre);
+  const name = [make, calibre].filter(Boolean).join(' ').trim();
+  return name.length >= 3 ? name.slice(0, MAX_TITLE) : null;
 }
 
 const DEFAULT_TITLE: Record<CredentialKind, string> = {

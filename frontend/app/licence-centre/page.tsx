@@ -832,14 +832,86 @@ function CredentialCard({
   // appeared to do nothing at all.
   const [renewErr, setRenewErr] = useState<string | null>(null);
 
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState(row.title);
+  const saveName = async () => {
+    const next = draftName.trim();
+    setRenaming(false);
+    // Unchanged, or emptied down to nothing — leave the row alone rather than
+    // spend a request and a list refresh saying so.
+    if (!next || next === row.title) {
+      setDraftName(row.title);
+      return;
+    }
+    try {
+      await licenceCentreApi.rename(token, row.id, next);
+      await onChanged();
+    } catch {
+      setDraftName(row.title);
+      onError('We could not rename that document just now.');
+    }
+  };
+
   return (
     <li
       className="rounded border p-3"
       style={{ borderColor: tone.line, background: tone.wash }}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <p className="font-medium">{row.title}</p>
+        <div className="min-w-0">
+          {/* ⚠️ WE NAME IT, THEY OWN THE NAME. A firearm licence is titled
+              make + calibre off the document — "Howa 6.5 Creedmoor" — because
+              six rows reading "Firearm licence" cannot be told apart. But
+              what somebody calls their own rifle is theirs to decide, and our
+              reading is only as good as the photograph. The pen edits in
+              place; it never moves the row or opens a dialog. */}
+          {renaming ? (
+            <input
+              autoFocus
+              className="w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1 text-sm font-medium"
+              value={draftName}
+              maxLength={120}
+              onChange={(e) => setDraftName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void saveName();
+                if (e.key === 'Escape') {
+                  setDraftName(row.title);
+                  setRenaming(false);
+                }
+              }}
+              onBlur={() => void saveName()}
+              aria-label="Name for this document"
+            />
+          ) : (
+            <p className="flex items-center gap-1.5 font-medium">
+              <span className="truncate">{row.title}</span>
+              <button
+                type="button"
+                className="shrink-0 rounded p-1 text-[var(--text-tertiary-on-card)] hover:text-[var(--text-primary)]"
+                aria-label={`Rename ${row.title}`}
+                title="Rename"
+                onClick={() => {
+                  setDraftName(row.title);
+                  setRenaming(true);
+                }}
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
+                </svg>
+              </button>
+            </p>
+          )}
           <p className="text-xs text-[var(--text-tertiary-on-card)]">
             {KIND_LABELS[row.kind]}
           </p>

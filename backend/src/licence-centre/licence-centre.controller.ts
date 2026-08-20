@@ -131,6 +131,16 @@ export class LicenceCentreController {
     );
   }
 
+  @Patch(':id/title')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  rename(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body('title') title: string,
+  ) {
+    return this.svc.rename(clerkId, id, title ?? '');
+  }
+
   @Patch(':id/mute')
   mute(
     @CurrentUser() clerkId: string,

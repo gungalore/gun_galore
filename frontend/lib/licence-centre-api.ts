@@ -175,6 +175,20 @@ export const licenceCentreApi = {
       { muted },
     ),
 
+  /**
+   * Rename a document. Deliberately NOT part of confirm(), which also accepts
+   * a title: confirming says the DATES are right, and making somebody
+   * re-confirm an expiry to fix a spelling is how a wrong date gets confirmed
+   * by reflex.
+   */
+  rename: (t: TokenGetter, id: string, title: string) =>
+    request<{ title: string }>(
+      t,
+      `/${id}/title`,
+      { method: 'PATCH', body: JSON.stringify({ title }) },
+      { title },
+    ),
+
   remove: (t: TokenGetter, id: string) =>
     request<{ removed: boolean }>(
       t,
