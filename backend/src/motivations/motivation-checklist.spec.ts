@@ -1,5 +1,9 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
-import { buildAnnexures, buildChecklist } from './motivation-checklist';
+import {
+  annexureByKind,
+  buildAnnexures,
+  buildChecklist,
+} from './motivation-checklist';
 
 // The checklist is a LIVE surface on the platform and in the PWA, not a PDF
 // page — the pack stays digital until it is printed. So what matters here is
@@ -381,5 +385,108 @@ describe('the renewal deadline', () => {
     for (const common of ['passport_photos', 'fee', 'acknowledgement', 'originals']) {
       expect(keys).toContain(common);
     }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// RESOLVING AN UPLOAD TO ITS ANNEXURE.
+//
+// Both bugs these tests cover shipped to production and were found by opening
+// a real 21-page pack — not by any of the 520 tests that were passing at the
+// time. The blind spot was the same in both cases: everything was tested
+// through buildAnnexures' RETURN VALUE, and nothing tested what a caller does
+// with it.
+// ────────────────────────────────────────────────────────────────────
+
+describe('resolving an upload to its annexure', () => {
+  const KINDS = [
+    MotivationUploadKind.IDENTITY_DOCUMENT,
+    MotivationUploadKind.SAFE_PHOTO_CLOSED,
+    MotivationUploadKind.SAFE_PHOTO_AJAR,
+    MotivationUploadKind.SAFE_PHOTO_BOLTS,
+    MotivationUploadKind.ASSOCIATION_CARD,
+    MotivationUploadKind.GOOD_STANDING_LETTER,
+    MotivationUploadKind.CURRENT_LICENCE,
+  ];
+
+  it('resolves EVERY member of a letter group, not just the first', () => {
+    // ⚠️ THE BUG THIS EXISTS FOR. buildAnnexures collapses the safe onto one
+    // letter, so its entry is keyed by SAFE_PHOTO_CLOSED. A map built as
+    // `new Map(entries.map(e => [e.kind, e]))` therefore has no key for the
+    // ajar shot — and the pack printed "Annexure ? — SAFE_PHOTO_AJAR" as the
+    // caption on a real applicant's copy, raw enum name and all.
+    const entries = buildAnnexures(KINDS, ['PRIOR_NOTICE_REQUEST']);
+    const byKind = annexureByKind(entries);
+
+    for (const kind of KINDS) {
+      const entry = byKind.get(kind);
+      expect(entry).toBeDefined();
+      expect(entry!.letter).toMatch(/^[A-Z]$/);
+      // Never the raw enum name — that is what a missing lookup produces.
+      expect(entry!.label).not.toBe(kind);
+      expect(entry!.label).not.toMatch(/^[A-Z_]+$/);
+    }
+  });
+
+  it('gives every member of a group the same letter', () => {
+    const byKind = annexureByKind(
+      buildAnnexures(KINDS, ['PRIOR_NOTICE_REQUEST']),
+    );
+    const safe = [
+      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      MotivationUploadKind.SAFE_PHOTO_AJAR,
+      MotivationUploadKind.SAFE_PHOTO_BOLTS,
+    ].map((k) => byKind.get(k)!.letter);
+    expect(new Set(safe).size).toBe(1);
+
+    const assoc = [
+      MotivationUploadKind.ASSOCIATION_CARD,
+      MotivationUploadKind.GOOD_STANDING_LETTER,
+    ].map((k) => byKind.get(k)!.letter);
+    expect(new Set(assoc).size).toBe(1);
+    // …and the two groups are not the same letter as each other.
+    expect(safe[0]).not.toBe(assoc[0]);
+  });
+
+  it('agrees with the index it is indexed by', () => {
+    // ⚠️ THE SECOND BUG. The copies used to be lettered from
+    // buildAnnexures(kinds) while the INDEX was built from
+    // buildAnnexures(kinds, ['PRIOR_NOTICE_REQUEST']). The generated document
+    // takes a letter, so every annexure after it shifted by one: the index
+    // read "Annexure F — Existing firearm licence(s)" and the licence pages
+    // were captioned "Annexure E".
+    //
+    // Resolving through the SAME entry list is what makes that impossible,
+    // and this asserts the property rather than the mechanism.
+    const index = buildAnnexures(KINDS, ['PRIOR_NOTICE_REQUEST']);
+    const byKind = annexureByKind(index);
+
+    for (const kind of KINDS) {
+      const fromCopies = byKind.get(kind)!;
+      const fromIndex = index.find((e) => e.letter === fromCopies.letter)!;
+      expect(fromIndex.label).toBe(fromCopies.label);
+    }
+
+    // And the generated document still holds a letter of its own that no
+    // upload can claim.
+    const pn = index.find((e) => e.kind === 'PRIOR_NOTICE_REQUEST')!;
+    expect([...byKind.values()].map((e) => e.letter)).not.toContain(pn.letter);
+  });
+
+  it('never maps the generated document to an upload kind', () => {
+    const byKind = annexureByKind(
+      buildAnnexures([MotivationUploadKind.IDENTITY_DOCUMENT], [
+        'PRIOR_NOTICE_REQUEST',
+      ]),
+    );
+    for (const entry of byKind.values()) {
+      expect(entry.generated).toBeUndefined();
+    }
+  });
+
+  it('is empty when nothing was uploaded', () => {
+    expect(annexureByKind(buildAnnexures([], ['PRIOR_NOTICE_REQUEST'])).size).toBe(
+      0,
+    );
   });
 });

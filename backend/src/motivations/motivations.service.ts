@@ -50,6 +50,8 @@ import {
   buildAnnexures,
   buildChecklist,
   UPLOAD_KIND_LABELS,
+  annexureByKind,
+  type AnnexureEntry,
 } from './motivation-checklist';
 import { buildPriorNoticeRequest } from './motivation-prior-notice';
 import { packConsistency } from './motivation-verify';
@@ -2631,6 +2633,19 @@ export class MotivationsService {
    * back as a named line on the index telling the applicant to bring that one
    * themselves.
    */
+  /**
+   * ⚠️ THE LETTERING IS PASSED IN, NOT RECOMPUTED. This method used to call
+   * buildAnnexures itself, with the uploads only — while renderPdf called it
+   * again WITH the generated prior-notice request. Two lists, two different
+   * letterings, and the copies came out disagreeing with the index they are
+   * indexed by: the pack's index said "Annexure F — Existing firearm
+   * licence(s)" while the licence pages themselves were captioned
+   * "Annexure E", because the copies' lettering never reserved a letter for
+   * the document we generate.
+   *
+   * An annexure index that does not match its own annexures is worse than no
+   * index. One list, computed once, handed to both.
+   */
   private async annexureImages(
     uploads: {
       id: string;
@@ -2639,6 +2654,7 @@ export class MotivationsService {
       mimeType: string | null;
       purgedAt: Date | null;
     }[],
+    annexures: AnnexureEntry[],
   ): Promise<{
     images: AnnexureImagePage[];
     notPrinted: { letter: string; label: string; why: string }[];
@@ -2651,12 +2667,12 @@ export class MotivationsService {
       bytes: Buffer;
     }[];
   }> {
-    const letters = buildAnnexures(uploads.map((u) => u.kind));
-    const letterFor = new Map(letters.map((a) => [a.kind, a.letter]));
-    const labelFor = new Map(letters.map((a) => [a.kind, a.label]));
-    // Whether a commissioner has to stamp this copy. Drives the reserved
-    // stamp block the renderer prints beneath it — see CERTIFICATION.
-    const certFor = new Map(letters.map((a) => [a.kind, a.certification]));
+    // ⚠️ RESOLVED THROUGH annexureByKind, WHICH KNOWS ABOUT THE GROUPS. A
+    // map built straight off the entry list is keyed by each group's
+    // REPRESENTATIVE kind, so an ajar-safe photograph or a good-standing
+    // letter finds nothing and prints "Annexure ?" with the raw enum name as
+    // its caption. That shipped.
+    const byKind = annexureByKind(annexures);
     // How many copies share each letter, so a caption can say "1 of 2".
     const totals = new Map<string, number>();
     for (const u of uploads) {
@@ -2675,8 +2691,9 @@ export class MotivationsService {
     }[] = [];
 
     for (const u of uploads) {
-      const letter = letterFor.get(u.kind) ?? '?';
-      const label = labelFor.get(u.kind) ?? u.kind;
+      const entry = byKind.get(u.kind);
+      const letter = entry?.letter ?? '?';
+      const label = entry?.label ?? UPLOAD_KIND_LABELS[u.kind] ?? u.kind;
       const index = (seen.get(u.kind) ?? 0) + 1;
       seen.set(u.kind, index);
       const total = totals.get(u.kind) ?? 1;
@@ -2718,7 +2735,7 @@ export class MotivationsService {
         index,
         total,
         bytes,
-        certification: certFor.get(u.kind) ?? 'none',
+        certification: entry?.certification ?? 'none',
         ...size,
       });
     }
@@ -2877,7 +2894,6 @@ export class MotivationsService {
     // boxes to tick with a pen, and the "your pack" half is not — that half is
     // what they are already holding.
     const kinds = (row.uploads ?? []).map((u) => u.kind);
-    const printable = await this.annexureImages(row.uploads ?? []);
 
     // ⚠️ THE CHECKLIST HAS PROMISED THIS SINCE THE MODULE SHIPPED AND NOTHING
     // PRODUCED IT. "Request for prior notice before refusal (PAJA)" sits under
@@ -2895,7 +2911,10 @@ export class MotivationsService {
       licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
       firearmLine: firearmLine(answers),
     });
+    // ONE lettering, built once, used by the index AND by the captions on the
+    // reprinted copies. See annexureImages.
     const annexures = buildAnnexures(kinds, ['PRIOR_NOTICE_REQUEST']);
+    const printable = await this.annexureImages(row.uploads ?? [], annexures);
 
     return this.pdf.render({
       referenceNumber: row.referenceNumber,

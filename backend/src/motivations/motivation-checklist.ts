@@ -319,6 +319,43 @@ export const CERTIFICATION: Record<AnnexureKind, CertificationLevel> = {
   OTHER: 'none',
 };
 
+/**
+ * Every upload kind, mapped to the annexure entry that letters it.
+ *
+ * ⚠️ A GROUPED KIND IS NOT ITS OWN ENTRY, AND LOOKING IT UP DIRECTLY RETURNS
+ * NOTHING. buildAnnexures collapses the four safe shots onto one letter and
+ * the two association documents onto another, so the returned list is keyed
+ * by each group's REPRESENTATIVE kind. A caller that does
+ * `entries.find(e => e.kind === upload.kind)` therefore finds the closed-safe
+ * shot and misses the ajar one.
+ *
+ * That is not hypothetical: it shipped. A live pack printed
+ * "Annexure ? — SAFE_PHOTO_AJAR" and "Annexure ? — GOOD_STANDING_LETTER" as
+ * captions on the reprinted copies, with the raw enum name showing, because
+ * the map was built from the entry list and read by member kind.
+ *
+ * Use this rather than building a map by hand.
+ */
+export function annexureByKind(
+  entries: AnnexureEntry[],
+): Map<MotivationUploadKind, AnnexureEntry> {
+  const out = new Map<MotivationUploadKind, AnnexureEntry>();
+  for (const entry of entries) {
+    if (entry.generated) continue;
+    const kind = entry.kind as MotivationUploadKind;
+    const group = LETTER_GROUPS[kind];
+    if (!group) {
+      out.set(kind, entry);
+      continue;
+    }
+    // Every member of the group answers to the group's entry.
+    for (const k of Object.keys(LETTER_GROUPS) as MotivationUploadKind[]) {
+      if (LETTER_GROUPS[k]?.id === group.id) out.set(k, entry);
+    }
+  }
+  return out;
+}
+
 export interface AnnexureEntry {
   letter: string;
   kind: AnnexureKind;
