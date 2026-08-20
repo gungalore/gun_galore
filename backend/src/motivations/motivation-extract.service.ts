@@ -234,6 +234,32 @@ export class MotivationExtractService {
           },
         };
 
+    // ⚠️ TWO ATTEMPTS, BECAUSE ONE IS NOT ENOUGH ON A MARGINAL DOCUMENT.
+    //
+    // Measured on a live proof of address: the same bytes, the same code and
+    // the same model returned the address on roughly one attempt in three and
+    // nothing on the others. A single shot therefore marked a perfectly good
+    // document "we could not read anything on this", permanently, about
+    // two-thirds of the time.
+    //
+    // The retry costs a call ONLY where the alternative is a wrong amber, and
+    // it is bounded at two: a document that genuinely carries none of these
+    // fields must not be paid for over and over. A second empty answer is
+    // taken at its word.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const found = await this.attemptRead(block, asked, args.kind);
+      if (found.length) return found;
+    }
+    return [];
+  }
+
+  /** One read. Returns [] on any failure — the caller decides about retrying. */
+  private async attemptRead(
+    block: unknown,
+    asked: { key: string; label: string; choices?: readonly string[] }[],
+    kind: MotivationUploadKind,
+  ): Promise<ExtractedField[]> {
+    if (!this.client) return [];
     let text = '';
     try {
       const res = await this.client.messages.create({
@@ -255,7 +281,7 @@ export class MotivationExtractService {
           {
             role: 'user',
             content: [
-              block,
+              block as never,
               {
                 type: 'text',
                 text: this.userPrompt(asked),
@@ -269,12 +295,12 @@ export class MotivationExtractService {
     } catch (err) {
       // FAIL-SOFT. The bytes are stored; the applicant is not blocked.
       this.logger.warn(
-        `Extraction failed for ${args.kind}: ${(err as Error).message}`,
+        `Extraction failed for ${kind}: ${(err as Error).message}`,
       );
       return [];
     }
 
-    return this.parse(text, asked, args.kind);
+    return this.parse(text, asked, kind);
   }
 
   /**
