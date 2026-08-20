@@ -275,21 +275,20 @@ export const CERTIFICATION: Record<AnnexureKind, CertificationLevel> = {
   COMPETENCY_CERTIFICATE: 'expected',
   PROFICIENCY_CERTIFICATE: 'expected',
 
-  // ⚠️ ADDRESS CONFIRMATION MOVED OUT AND THEN BACK IN, WITHIN THE HOUR.
-  // I first marked it 'expected' by inference, then dropped it to 'none'
-  // because the operator's filed reference pack marks only the ID, the
-  // proficiency certificate and the competency certificate "(Certified)".
-  // Then SAPS's LIVE application page turned out to list "Certified proof of
-  // residence" in terms — the page I had originally read was an orphaned
-  // older copy, which is also why our fee figures were R70/R140 instead of
-  // R88/R175.
-  //
-  // It sits at 'expected' because the asymmetry is one-sided: certification
-  // is free, at the same station they are already going to, and being
-  // certified when it was not needed costs nothing.
-  ADDRESS_CONFIRMATION: 'expected',
-
   // Filed as they are. Copies, but not ones anybody certifies in practice.
+  //
+  // ⚠️ ADDRESS CONFIRMATION WENT OUT, BACK IN, AND OUT AGAIN — and the last
+  // move is the one with first-hand evidence behind it. I marked it
+  // 'expected' by inference; dropped it because the operator's filed pack
+  // marks only the ID and the two certificates "(Certified)"; put it back
+  // when SAPS's live page turned out to say "Certified proof of residence".
+  // Operator, 2026-08-21, asked directly: it needs a name, an address and a
+  // date inside three months — certification did not come into it.
+  //
+  // Practice at the counter beats a line on a page. A stamp block printed
+  // under a document nobody stamps is a box the applicant will go and try to
+  // fill.
+  ADDRESS_CONFIRMATION: 'none',
   CURRENT_LICENCE: 'none',
   ASSOCIATION_CARD: 'none',
 
@@ -527,17 +526,23 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
     note: 'This is the one copy the regulations require to be certified. Any police station or Commissioner of Oaths does it free. Bring the original as well — most DFOs certify the rest of your copies against the originals at the counter.',
   },
   {
-    // ⚠️ TWO SOURCES DISAGREE HERE, AND THE ASYMMETRY DECIDES IT. SAPS's
-    // live application page lists "Certified proof of residence"; the
-    // operator's actually-filed reference pack files this one uncertified.
-    // Certification is free and happens at the same police station the
-    // applicant is already travelling to, so being certified when it was not
-    // needed costs nothing, and being uncertified when the list says
-    // certified costs a second trip. Flagged for the DFO to settle.
+    // ⚠️ SETTLED BY THE OPERATOR, AGAINST THE SAPS PAGE. I moved this row to
+    // "get it certified" because SAPS's live list reads "Certified proof of
+    // residence". Operator, 2026-08-21: "The proof of address just needs to
+    // have your name on it, not older than three months and obviously your
+    // address."
+    //
+    // That is two pieces of first-hand evidence — what they are told at the
+    // counter, and their own filed pack, which carries this one uncertified —
+    // against one line on a web page. The three THINGS IT MUST CONTAIN are
+    // what actually gets people sent home, and they were not stated anywhere
+    // before: a bill in a spouse's name is the common failure.
+    //
+    // The SAPS wording is left in the note rather than deleted, because it is
+    // still what their page says and a station that follows it is not wrong.
     key: 'proof_of_residence',
     label: 'Proof of your residential address, not older than 3 months',
-    note: 'A municipal bill, bank statement or lease from the last three months. SAPS’s own list asks for CERTIFIED proof of residence, so bring the original and have a copy certified — any police station does it free, and most DFOs do it at the counter. It also settles which DFO your application goes to: the one for the area where you ordinarily live. Practice varies by station, so ask yours.',
-    verifyBeforeUse: true,
+    note: 'It has to carry your NAME, your ADDRESS, and a date inside the last three months — a municipal bill, bank statement or lease. A bill in your spouse’s or your landlord’s name does not prove your address. No certification needed. (SAPS’s website does say "certified proof of residence"; certifying is free at any police station if your DFO asks for it.) This is also what settles which DFO your application goes to: the one for the area where you ordinarily live.',
   },
   {
     // ⚠️ "TWO" WAS OURS, NOT SAPS'S, AND SO WAS THE TWO-YEAR RULE. Neither
@@ -641,10 +646,11 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
     // queue. Reg 13(6) requires documentary proof of payment to be attached
     // where the fee was paid at a police station under reg 96.
     //
-    // ⚠️ "PER FIREARM, NOT PER APPLICATION" HAS NO SOURCE. It is not in the
-    // Act, not in the Regulations and not on any SAPS page — it comes from
-    // the operator. Kept because it came from someone who has lodged these,
-    // but it is the first question for the DFO.
+    // "Per firearm, not per application" appears in neither instrument and on
+    // no SAPS page. It is the operator's, and they confirmed it directly on
+    // 2026-08-21 when asked: R175 is per firearm. Stated plainly on that
+    // basis; the AMOUNT still carries verifyBeforeUse, because published fees
+    // are the thing on this list most likely to go quietly out of date.
     note: 'Per firearm, not per application. SAPS currently publishes R175 for a firearm licence and R88 for a competency certificate. The DFO gives you a remittance advice (SAPS 523a), you pay at the station’s own finance office — cash or a bank-guaranteed cheque, not every station takes cards — and the Z263 receipt goes back to the DFO to be attached. Confirm the amount before you go.',
     verifyBeforeUse: true,
   },
@@ -665,18 +671,19 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
   },
   {
     key: 'acknowledgement',
-    // Not a document they bring — the one they must not leave without.
-    label: 'Before you leave: the acknowledgement of receipt (SAPS 523)',
-    // Named, because asking for the right sheet by name is the difference
-    // between walking out with proof and walking out with a payment slip: the
-    // SAPS 523(a) is the REMITTANCE ADVICE telling you what to pay, and the
-    // two are one character apart.
+    // ⚠️ "DO NOT LEAVE THE STATION WITHOUT IT" WAS BAD ADVICE, and it came
+    // from reading regulation 13(10) without knowing what the counter does.
+    // Operator, 2026-08-21, from having lodged these: "the SAPS 523 is filled
+    // in by the DFO so we won't get it."
     //
-    // Annexure "A" item 32 prescribes the 523 via reg 13(2). That annexure is
-    // 2004 and states on its face that form numbers have changed since, which
-    // is why the number is given as a hint plus a confirm-with-your-DFO
-    // rather than as flat fact.
-    note: 'The DFO issues this once the application is accepted. It is your proof of the date you lodged and your reference for any follow-up, so do not leave the station without it. Ask for the acknowledgement of receipt by name — the SAPS 523(a) is the remittance advice telling you what to pay, which is a different sheet. Confirm the current number with your DFO.',
+    // So the sheet is theirs, not the applicant's, and an applicant told to
+    // refuse to leave without a document the officer keeps is an applicant
+    // sent to argue with the person deciding their application. The need
+    // underneath it is real — proof of WHEN you lodged, which regulation
+    // 13(13) makes matter on a renewal — so the row now asks for the thing
+    // rather than for the form.
+    label: 'Before you leave: proof of the date you lodged',
+    note: 'The acknowledgement of receipt (SAPS 523) is completed by the DFO and usually stays with them, so do not expect to walk out holding it. What you want is the record: ask for your reference number and the date your application was received, and write down which officer took it. On a renewal that date is the one that matters.',
     verifyBeforeUse: true,
   },
   {
@@ -747,9 +754,13 @@ const S24_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
     verifyBeforeUse: true,
   },
   {
+    // Same correction as the acknowledgement row above: the applicant does not
+    // get to keep the 523, so "keep it somewhere safe" was advice about a
+    // document they will never hold. Regulation 13(13) still makes the date
+    // the thing that matters — so record it.
     key: 's24_keep_acknowledgement',
-    label: 'Keep the acknowledgement of receipt somewhere safe',
-    note: 'On a renewal it is worth more than a filing note: regulation 13(13) makes it, on production in court, sufficient proof that you complied with section 24.',
+    label: 'Write down the date your renewal was received',
+    note: 'Regulation 13(13) makes the acknowledgement of receipt, on production in court, sufficient proof that you complied with section 24 — but the DFO completes and keeps that sheet. Ask for your reference number and the date it was received, and keep your own note of both.',
     verifyBeforeUse: true,
   },
 ];

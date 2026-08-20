@@ -235,15 +235,13 @@ describe('the live checklist', () => {
     // they lodged, but the form number and exactly what the counter hands
     // over are the kind of detail that changes.
     //
-    // proof_of_residence joined on 2026-08-20 because two sources disagree:
-    // SAPS's live page lists "Certified proof of residence" and the
-    // operator's actually-filed pack files it uncertified. Our copy follows
-    // SAPS (certifying is free) but the disagreement is real, so it is
-    // flagged rather than settled in code.
+    // proof_of_residence was flagged on 2026-08-20 and unflagged on
+    // 2026-08-21: the operator settled it directly. It needs a name, an
+    // address and a date inside three months; certification did not come into
+    // it. Nothing left to verify, so nothing left to flag.
     expect(flagged.map((i) => i.key).sort()).toEqual([
       'acknowledgement',
       'fee',
-      'proof_of_residence',
       'safe_inspection',
       'saps_form',
     ]);

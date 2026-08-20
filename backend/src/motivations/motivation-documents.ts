@@ -80,37 +80,45 @@ export interface DocumentNeed {
  * anything we are unsure of belongs in `strengthens` instead — being wrong
  * about a requirement sends someone to a counter to be turned away.
  */
+/** The three shots, in one place, because five lists want the same three. */
+const SAFE_SHOTS: MotivationUploadKind[] = [
+  'SAFE_PHOTO_CLOSED',
+  'SAFE_PHOTO_AJAR',
+  'SAFE_PHOTO_BOLTS',
+];
+
 const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
-  // ⚠️ THE SAFE PHOTOGRAPHS CAME OUT OF THIS LIST ON 2026-08-20, and the
-  // reason is a sequencing fact rather than a nicety.
+  // ⚠️ THE SAFE PHOTOGRAPHS LEFT THIS LIST ON 2026-08-20 AND CAME BACK ON
+  // 2026-08-21. Worth reading before moving them again.
   //
-  // This tier renders under the heading "SAPS will not process the
-  // application without these". No SAPS document list, at either stage,
-  // mentions a photograph of a safe. Regulation 13 does not list a safe
-  // document among what accompanies an application; regulation 13(12)
-  // conditions the ISSUE of the licence, not the lodging of the application.
-  // The only photograph either instrument prescribes is the applicant's own
-  // portrait, reg 13(16)(a)-(c), 32 x 40 mm.
+  // They were removed on documentary reasoning, and the reasoning was sound
+  // as far as it went: no SAPS document list at either stage mentions a
+  // photograph of a safe; regulation 13 does not list one among what
+  // accompanies an application; regulation 13(12) conditions the ISSUE of the
+  // licence rather than the lodging of it; and SAPS's own published sequence
+  // is lodge first, install a safe within 14 days, then a premises
+  // inspection. On that reading, telling somebody they cannot apply until
+  // they have photographed a safe delays them for nothing.
   //
-  // SAPS's published sequence is in fact the REVERSE of ours: you lodge, the
-  // DFO then asks you to install a safe within 14 days, and then inspects
-  // your premises. Telling an applicant they cannot apply until they have
-  // photographed a safe they have not bought is telling them to delay lodging
-  // — which on a renewal is the one thing that costs them a protection.
+  // Operator, 2026-08-21, asked directly: "We do need the Safe pictures."
   //
-  // They move to EXPECTED, where the wording is "not demanded by the Act, and
-  // the DFO will want it anyway". Most stations do want the photographs up
-  // front, so nothing about the advice changes; only the claim that SAPS will
-  // refuse the pack without them.
+  // That is somebody who has lodged these applications, and it beats an
+  // inference drawn from what a web page does not mention — an absence is
+  // weak evidence, and a DFO handing a pack back is not. What the documentary
+  // work still buys is the 14-day window and the inspection, which are true
+  // and which the SAFE_WHY text now explains: take the photographs, and know
+  // the safe is also inspected later.
   S13_SELF_DEFENCE: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
+    ...SAFE_SHOTS,
   ],
   S15_OCCASIONAL_HUNTER: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
+    ...SAFE_SHOTS,
   ],
   // Dedicated status IS the basis of a section 16 application, so proof of
   // membership stops being a nicety and becomes part of the case.
@@ -118,6 +126,7 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
+    ...SAFE_SHOTS,
     // THREE SEPARATE PIECES OF PAPER, and the association issues them
     // separately: the status certificate, the sworn letter of good standing,
     // and an endorsement naming the firearm. One slot for all three meant an
@@ -130,6 +139,7 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
+    ...SAFE_SHOTS,
     // THREE SEPARATE PIECES OF PAPER, and the association issues them
     // separately: the status certificate, the sworn letter of good standing,
     // and an endorsement naming the firearm. One slot for all three meant an
@@ -151,6 +161,7 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'COMPETENCY_CERTIFICATE',
     'CURRENT_LICENCE',
     'ADDRESS_CONFIRMATION',
+    ...SAFE_SHOTS,
   ],
 };
 
@@ -161,13 +172,6 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
  * something the Act demands, and apart from STRENGTHENS so nothing here is
  * described as optional. See DocumentTier.
  */
-/** The three shots, in one place, because five lists want the same three. */
-const SAFE_SHOTS: MotivationUploadKind[] = [
-  'SAFE_PHOTO_CLOSED',
-  'SAFE_PHOTO_AJAR',
-  'SAFE_PHOTO_BOLTS',
-];
-
 const EXPECTED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   // ⚠️ WHERE THE FIREARM IS COMING FROM, ON EVERY APPLICATION BUT A RENEWAL.
   // Annexure M in a professional pack, and it was reaching the picker only as
@@ -180,21 +184,12 @@ const EXPECTED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   // EXPECTED and not REQUIRED, deliberately: this list is the one that must
   // never be described to a member as something the Act demands. The Act does
   // not name this document. Stations do.
-  S13_SELF_DEFENCE: [...SAFE_SHOTS, 'FIREARM_SOURCE_PROOF'],
-  S15_OCCASIONAL_HUNTER: [...SAFE_SHOTS, 'FIREARM_SOURCE_PROOF'],
-  S16_DEDICATED_HUNTER: [
-    ...SAFE_SHOTS,
-    'ASSOCIATION_ENDORSEMENT',
-    'FIREARM_SOURCE_PROOF',
-  ],
-  S16_DEDICATED_SPORT: [
-    ...SAFE_SHOTS,
-    'ASSOCIATION_ENDORSEMENT',
-    'FIREARM_SOURCE_PROOF',
-  ],
-  // A renewal transfers nothing — the applicant already holds the firearm —
-  // but the safe is still inspected.
-  S24_RENEWAL: [...SAFE_SHOTS],
+  S13_SELF_DEFENCE: ['FIREARM_SOURCE_PROOF'],
+  S15_OCCASIONAL_HUNTER: ['FIREARM_SOURCE_PROOF'],
+  S16_DEDICATED_HUNTER: ['ASSOCIATION_ENDORSEMENT', 'FIREARM_SOURCE_PROOF'],
+  S16_DEDICATED_SPORT: ['ASSOCIATION_ENDORSEMENT', 'FIREARM_SOURCE_PROOF'],
+  // A renewal transfers nothing — the applicant already holds the firearm.
+  S24_RENEWAL: [],
 };
 
 /** Not demanded, but this is what makes a motivation land. */
@@ -257,7 +252,7 @@ const LABELS: Record<MotivationUploadKind, string> = {
  * not.
  */
 const SAFE_WHY =
-  'Three photographs, and a DFO looks for all three: the safe closed with the key out of it, half open with the key in the door, and fully open so the roll bolts are visible. The closed shot shows the unit, the half-open shot shows the lock belongs to it, and the bolts are what make it a safe rather than a cupboard. The safe is a condition of your licence being ISSUED, not of your application being accepted — regulation 13(12) — and SAPS gives you 14 days after you apply to install one before the DFO inspects your premises. Most stations still want the photographs up front, so take them; but do not delay lodging over a safe you have not bought yet.';
+  'Three photographs, and a DFO looks for all three: the safe closed with the key out of it, half open with the key in the door, and fully open so the roll bolts are visible. The closed shot shows the unit, the half-open shot shows the lock belongs to it, and the bolts are what make it a safe rather than a cupboard. Take all three: your DFO wants them with the application. The safe is checked twice over — the photographs go in the pack, and regulation 13(12) makes compliant storage a condition of the licence being ISSUED, so the DFO also inspects your premises before it comes through.';
 
 const WHY: Partial<Record<MotivationUploadKind, string>> = {
   SHOOTING_ACTIVITY_LOG:
