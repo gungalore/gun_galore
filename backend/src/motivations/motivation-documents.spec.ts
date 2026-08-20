@@ -21,7 +21,11 @@ describe('what SAPS will not process without', () => {
       K.SAFE_PHOTO_BOLTS,
     ]);
     expect(s.requiredHave).toBe(1);
-    expect(s.requiredTotal).toBe(6);
+    // ⚠️ FOUR, NOT SIX — the three safe shots are ONE row on screen now, and
+    // the counter has to match the rows the member can see or "1 of 6" reads
+    // as a miscount beside four lines. missingRequired above still names all
+    // three shots, because that is what is actually missing.
+    expect(s.requiredTotal).toBe(4);
   });
 
   it('is satisfied once they are all there', () => {
@@ -58,27 +62,33 @@ describe('what SAPS will not process without', () => {
       K.SAFE_PHOTO_CLOSED,
       K.SAFE_PHOTO_CLOSED,
     ]);
-    expect(s.needs.find((n) => n.kind === K.SAFE_PHOTO_CLOSED)!.have).toBe(true);
+    // ⚠️ THE ONE SAFE ROW STAYS UNTICKED. It stands for all three shots, so
+    // going green on the closed one would tell somebody their safe evidence
+    // is complete when a DFO will send them back for the other two.
+    const safe = s.needs.find((n) => n.kind === K.SAFE_PHOTO_CLOSED)!;
+    expect(safe.have).toBe(false);
+    expect(safe.parts!.map((p) => p.have)).toEqual([true, false, false]);
     expect(s.missingRequired).toContain(K.SAFE_PHOTO_AJAR);
     expect(s.missingRequired).toContain(K.SAFE_PHOTO_BOLTS);
   });
 
-  it('names each shot so the applicant knows which one is missing', () => {
+  it('⚠️ STILL NAMES ALL THREE SHOTS, on the one collapsed row', () => {
+    // The row collapses; the instruction must not. An applicant who reads
+    // "photographs of your safe" and sends one has satisfied the phrase while
+    // the pack is short two photographs nobody noticed — so every shot is
+    // named in the why, and each is a separately ticked part.
     const s = documentStatus(S13, [K.SAFE_PHOTO_CLOSED]);
-    const need = (k: MotivationUploadKind) => s.needs.find((n) => n.kind === k)!;
-    expect(need(K.SAFE_PHOTO_CLOSED).label.toLowerCase()).toMatch(/closed/);
-    expect(need(K.SAFE_PHOTO_AJAR).label.toLowerCase()).toMatch(
-      /half open.*key in the door/,
-    );
-    expect(need(K.SAFE_PHOTO_BOLTS).label.toLowerCase()).toMatch(/roll bolts/);
-    // Each explains itself; a bare label is not enough to photograph from.
-    for (const k of [
-      K.SAFE_PHOTO_CLOSED,
-      K.SAFE_PHOTO_AJAR,
-      K.SAFE_PHOTO_BOLTS,
-    ]) {
-      expect(need(k).why.length).toBeGreaterThan(40);
-    }
+    const safe = s.needs.find((n) => n.kind === K.SAFE_PHOTO_CLOSED)!;
+    const why = safe.why.toLowerCase();
+    expect(why).toMatch(/closed/);
+    expect(why).toMatch(/half open/);
+    expect(why).toMatch(/roll bolts/);
+    expect(why).toMatch(/three/);
+
+    const parts = safe.parts!.map((p) => p.label.toLowerCase());
+    expect(parts[0]).toMatch(/closed/);
+    expect(parts[1]).toMatch(/half open.*key in the door/);
+    expect(parts[2]).toMatch(/roll bolts/);
   });
 
   it('treats a photograph uploaded before the split as extra evidence', () => {

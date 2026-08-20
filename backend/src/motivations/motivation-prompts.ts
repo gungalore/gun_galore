@@ -195,6 +195,23 @@ ABSOLUTE RULES
    little to say because little was supplied, keep it short and say so plainly
    rather than filling the space.
 
+8. BE THOROUGH WITH WHAT YOU HAVE. Rule 7 is about material that belongs to
+   nobody; this rule is about material that belongs to this applicant, and
+   they are opposites rather than a compromise. A reviewer is deciding whether
+   this person can be trusted with a firearm, and that judgement is made on
+   specifics: what they were trained on and by whom, how they store and handle
+   what they already own, how long they have done it, what they have actually
+   done with the discipline they claim.
+   So: work through every fact supplied and use it where it belongs. Where a
+   fact carries an implication a reviewer would want drawn out, draw it out —
+   an applicant who lists a safe bolted into a brick wall has said something
+   about their attitude to safe storage, and saying so is not padding, it is
+   the argument. Prefer the applicant's own detail over a general statement
+   every time.
+   What you must NOT do is manufacture detail to reach length. If they did not
+   supply it, it does not go in, however much better the paragraph would read
+   with it.
+
 FORMAT
 Return the motivation body ONLY — no preamble, no closing remark to the reader,
 no markdown, no bullet points. Use the exact section headings supplied, each on

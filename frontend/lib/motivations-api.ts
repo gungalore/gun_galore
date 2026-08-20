@@ -254,14 +254,26 @@ export interface UploadRow {
   annexure: string | null;
   byteSize: number;
   available: boolean;
+  /**
+   * Filed as something it does not look like.
+   *
+   * Inferred from the extraction that already ran: a document filed as a
+   * competency certificate that yielded none of the fields a competency
+   * certificate carries is probably on the wrong line. Only set for kinds we
+   * can actually read — a photograph of a safe extracts nothing by design.
+   */
+  suspect?: boolean;
 }
 
 export interface DocumentNeed {
   kind: string;
   label: string;
-  tier: 'required' | 'strengthens' | 'extra';
+  /** 'expected' = no statute behind it, and the DFO will insist anyway. */
+  tier: 'required' | 'expected' | 'strengthens' | 'extra';
   why: string;
   have: boolean;
+  /** The shots this one line stands for — the safe, and only the safe. */
+  parts?: { kind: string; label: string; have: boolean }[];
 }
 
 /**

@@ -279,6 +279,25 @@ describe('prompts', () => {
   });
 });
 
+describe('thoroughness, without padding', () => {
+  // ⚠️ THE TWO RULES HAVE TO COEXIST, and the pairing is the point. Rule 7
+  // forbids material that belongs to nobody; rule 8 demands the applicant's
+  // own detail be used fully. Drop either and the document goes wrong in
+  // opposite directions — a padded essay, or a thin assertion that this
+  // person can be trusted with a firearm.
+  it('asks for the applicant own specifics, in every licence type', () => {
+    for (const t of Object.values(MotivationLicenceType)) {
+      const s = generationSystemPrompt(t);
+      expect(s).toMatch(/BE THOROUGH WITH WHAT YOU HAVE/);
+      expect(s).toMatch(/trained on/i);
+      expect(s).toMatch(/store and handle/i);
+      // And still refuses to invent any of it, in the same breath.
+      expect(s).toMatch(/must NOT do is manufacture detail/i);
+      expect(s).toMatch(/DO NOT PAD/);
+    }
+  });
+});
+
 describe('the anti-padding rule', () => {
   it('forbids generic filler in every licence type', () => {
     // Operator decision 2026-08-18. Real samples pad with potted histories of

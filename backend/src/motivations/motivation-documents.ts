@@ -39,7 +39,19 @@ import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 // PURE — no Nest, no Prisma, no clock.
 // ────────────────────────────────────────────────────────────────────
 
-export type DocumentTier = 'required' | 'strengthens' | 'extra';
+/**
+ * How hard a document is to do without.
+ *
+ * ⚠️ 'expected' EXISTS BECAUSE TWO TIERS COULD NOT TELL THE TRUTH about the
+ * association's endorsement. It is not in the Firearms Control Act — the
+ * document itself cites the Hunters Forum guidelines of 2 September 2005 —
+ * so calling it 'required' would tell somebody the law demands it, which is
+ * false. But a DFO will insist on it, so calling it 'strengthens' ("optional
+ * — but it helps") sends them to a counter to be turned away. The honest
+ * answer is a third thing: no statute behind it, and you are not getting in
+ * without it.
+ */
+export type DocumentTier = 'required' | 'expected' | 'strengthens' | 'extra';
 
 export interface DocumentNeed {
   kind: MotivationUploadKind;
@@ -49,6 +61,16 @@ export interface DocumentNeed {
   why: string;
   /** True once at least one file of this kind is attached. */
   have: boolean;
+  /**
+   * Kinds this one line stands for, when it stands for several.
+   *
+   * ⚠️ THE SAFE IS ONE THING AND THREE PHOTOGRAPHS. Splitting it into three
+   * checklist lines was right about the evidence and wrong about the list —
+   * three of the seven required rows were the same object, which is most of
+   * why the operator called the list long. One line now, and it does not go
+   * green until all three shots are in.
+   */
+  parts?: { kind: MotivationUploadKind; label: string; have: boolean }[];
 }
 
 /**
@@ -91,7 +113,6 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     // the declaration section 16(2) actually asks for.
     'ASSOCIATION_CARD',
     'GOOD_STANDING_LETTER',
-    'ASSOCIATION_ENDORSEMENT',
   ],
   S16_DEDICATED_SPORT: [
     'IDENTITY_DOCUMENT',
@@ -107,7 +128,6 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     // the declaration section 16(2) actually asks for.
     'ASSOCIATION_CARD',
     'GOOD_STANDING_LETTER',
-    'ASSOCIATION_ENDORSEMENT',
   ],
   // A renewal is a different form (SAPS 518a) and a different pack; the one
   // thing it always needs is the licence being renewed.
@@ -119,6 +139,21 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'SAFE_PHOTO_AJAR',
     'SAFE_PHOTO_BOLTS',
   ],
+};
+
+/**
+ * No statute behind it, and the DFO will insist anyway.
+ *
+ * Kept apart from REQUIRED so nothing here can be described to a member as
+ * something the Act demands, and apart from STRENGTHENS so nothing here is
+ * described as optional. See DocumentTier.
+ */
+const EXPECTED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
+  S13_SELF_DEFENCE: [],
+  S15_OCCASIONAL_HUNTER: [],
+  S16_DEDICATED_HUNTER: ['ASSOCIATION_ENDORSEMENT'],
+  S16_DEDICATED_SPORT: ['ASSOCIATION_ENDORSEMENT'],
+  S24_RENEWAL: [],
 };
 
 /** Not demanded, but this is what makes a motivation land. */
@@ -152,6 +187,18 @@ const LABELS: Record<MotivationUploadKind, string> = {
   OTHER: 'Something else you would like to attach',
 };
 
+/**
+ * The safe, as one requirement.
+ *
+ * ⚠️ IT STILL NAMES ALL THREE SHOTS. The three kinds exist because each shows
+ * something the others cannot, and an applicant who reads "photographs of
+ * your safe" and sends one has satisfied the phrase while the pack is short
+ * two photographs nobody noticed. The line collapses; the instruction does
+ * not.
+ */
+const SAFE_WHY =
+  'Three photographs, and a DFO looks for all three: the safe closed with the key out of it, half open with the key in the door, and fully open so the roll bolts are visible. The closed shot shows the unit, the half-open shot shows the lock belongs to it, and the bolts are what make it a safe rather than a cupboard.';
+
 const WHY: Partial<Record<MotivationUploadKind, string>> = {
   IDENTITY_DOCUMENT:
     'A photograph or scan of the page with your photo on it is fine here — what you upload to us does not need certifying. We read your name and ID number off it so you do not have to type them. (The copy you hand the DFO is the one that must be certified.)',
@@ -173,7 +220,7 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
   // endorsement comes from the Hunters Forum guidelines of 2 September 2005;
   // associations issue it and DFOs expect it, which is why we collect it.
   ASSOCIATION_ENDORSEMENT:
-    'Your association confirms that this particular firearm — its type, calibre, make, action and serial — suits the discipline you are dedicated in. Ask them for it once you know which firearm you are applying for. It is what your association and the DFO will expect, though the endorsement does not replace your own motivation.',
+    'Your association confirms that this particular firearm — its type, calibre, make, action and serial — suits the discipline you are dedicated in. The Act does not list it, but a DFO will insist on it, so treat it as part of the pack. Ask your association for it once you know which firearm you are applying for. It does not replace your own motivation.',
   CURRENT_LICENCE:
     'A licence for every firearm you already own. We read the make, calibre and serial off it — which is also what tells us whether this application overlaps something you already hold.',
   // THREE SEPARATE SHOTS, each its own line, because each shows something the
@@ -225,6 +272,7 @@ export function documentStatus(
 ): DocumentStatus {
   const have = new Set(uploaded);
   const required = [...(REQUIRED[licenceType] ?? [])];
+  const expected = [...(EXPECTED[licenceType] ?? [])];
   const strengthens = [...(STRENGTHENS[licenceType] ?? [])];
 
   // THE LICENCES FOR FIREARMS THEY ALREADY OWN.
@@ -243,35 +291,88 @@ export function documentStatus(
     required.push('CURRENT_LICENCE');
   }
 
+  // ── the safe: one line, three photographs ────────────────────────
+  const SAFE_SHOTS: MotivationUploadKind[] = [
+    'SAFE_PHOTO_CLOSED',
+    'SAFE_PHOTO_AJAR',
+    'SAFE_PHOTO_BOLTS',
+  ];
+  const safeParts = SAFE_SHOTS.map((kind) => ({
+    kind,
+    label: LABELS[kind],
+    have: have.has(kind),
+  }));
+  const collapse = (kinds: MotivationUploadKind[]): MotivationUploadKind[] => {
+    const out: MotivationUploadKind[] = [];
+    let placed = false;
+    for (const k of kinds) {
+      if (SAFE_SHOTS.includes(k)) {
+        if (!placed) {
+          placed = true;
+          out.push('SAFE_PHOTO_CLOSED');
+        }
+        continue;
+      }
+      out.push(k);
+    }
+    return out;
+  };
+  const needOf = (kind: MotivationUploadKind, tier: DocumentTier) => {
+    if (kind === 'SAFE_PHOTO_CLOSED') {
+      return {
+        kind,
+        label: 'Photographs of your safe',
+        tier,
+        why: SAFE_WHY,
+        // ⚠️ ALL THREE, OR IT IS NOT DONE. One photograph of a closed door
+        // shows neither the lock nor the bolts, and a line that went green on
+        // it would be telling somebody their pack is complete when a DFO will
+        // send them back for the other two.
+        have: safeParts.every((p) => p.have),
+        parts: safeParts,
+      };
+    }
+    return {
+      kind,
+      label: LABELS[kind],
+      tier,
+      why: WHY[kind] ?? '',
+      have: have.has(kind),
+    };
+  };
+
   const needs: DocumentNeed[] = [
-    ...required.map((kind) => ({
-      kind,
-      label: LABELS[kind],
-      tier: 'required' as const,
-      why: WHY[kind] ?? '',
-      have: have.has(kind),
-    })),
-    ...strengthens.map((kind) => ({
-      kind,
-      label: LABELS[kind],
-      tier: 'strengthens' as const,
-      why: WHY[kind] ?? '',
-      have: have.has(kind),
-    })),
+    ...collapse(required).map((k) => needOf(k, 'required')),
+    ...collapse(expected).map((k) => needOf(k, 'expected')),
+    ...collapse(strengthens).map((k) => needOf(k, 'strengthens')),
   ];
 
   // Anything uploaded that we never asked for. Accepted and lettered like the
   // rest — an applicant who wants to attach a range record or a letter from
   // their farm manager should never be told it does not belong.
-  const asked = new Set<MotivationUploadKind>([...required, ...strengthens]);
+  const asked = new Set<MotivationUploadKind>([
+    ...SAFE_SHOTS,
+    ...required,
+    ...expected,
+    ...strengthens,
+  ]);
   const extras = uploaded.filter((k) => !asked.has(k));
 
   return {
     needs,
     missingRequired: required.filter((k) => !have.has(k)),
     extras: [...new Set(extras)],
-    requiredTotal: required.length,
-    requiredHave: required.filter((k) => have.has(k)).length,
+    // ⚠️ THE COUNTER STAYS ABOUT REQUIRED ONLY. "6 of 7" has to mean the
+    // things SAPS will not process without — folding the endorsement in would
+    // make a complete pack read as incomplete, and folding it in silently
+    // would make the number mean something different from what it says.
+    // ⚠️ COUNTED OFF THE COLLAPSED LIST, so the number matches the rows the
+    // member can see. Counting the three safe shots separately while showing
+    // one line for them would read as "5 of 7" beside five visible rows.
+    requiredTotal: collapse(required).length,
+    requiredHave: collapse(required)
+      .map((k) => needOf(k, 'required'))
+      .filter((n) => n.have).length,
   };
 }
 
@@ -322,8 +423,20 @@ export function pickableKinds(
   // have meant the tag never cleared: the applicant photographs all three
   // shots and the menu goes on calling every one of them needed.
   const status = documentStatus(licenceType, uploaded, answers);
+
+  // ⚠️ THE CHECKLIST COLLAPSES THE SAFE; THE PICKER MUST NOT. The checklist
+  // shows one row because the safe is one object — but a file still has to be
+  // filed as the closed shot, the half-open shot or the bolts shot
+  // SPECIFICALLY, because nothing on the stored row records which is which.
+  // Collapsing here would leave two of the three unfileable, and the member
+  // holding a photograph of open roll bolts with nowhere to put it.
+  const expand = status.needs.flatMap((n) =>
+    n.parts
+      ? n.parts.map((p) => ({ kind: p.kind, label: p.label, tier: n.tier, have: p.have }))
+      : [{ kind: n.kind, label: n.label, tier: n.tier, have: n.have }],
+  );
   const ranked = new Map<MotivationUploadKind, DocumentTier>(
-    status.needs.map((n) => [n.kind, n.tier]),
+    expand.map((n) => [n.kind, n.tier]),
   );
 
   const rest = (Object.keys(LABELS) as MotivationUploadKind[]).filter(
@@ -333,7 +446,7 @@ export function pickableKinds(
   const have = new Set(uploaded);
 
   return [
-    ...status.needs.map((n) => ({
+    ...expand.map((n) => ({
       kind: n.kind,
       label: n.label,
       tier: n.tier,

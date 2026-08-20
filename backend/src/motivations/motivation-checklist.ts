@@ -314,6 +314,39 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
 ];
 
 /**
+ * What a section 16 applicant must bring ON TOP of the common list.
+ *
+ * Section 16 is the one type where a third party — the accredited association
+ * — has to have signed something, and the pack is not a pack without it.
+ */
+const S16_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
+  {
+    key: 's16_good_standing',
+    label: "Your association's letter of good standing",
+    // ⚠️ THE ONE THE ACT ACTUALLY NAMES. Section 16(2) requires a sworn
+    // statement or solemn declaration from the chairperson of the accredited
+    // association, or their written delegate, that the applicant is a
+    // registered member.
+    note: 'Section 16 asks for a sworn declaration from your association that you are a registered member in good standing. Check the validity dates before you go — an expired letter sends you home.',
+  },
+  {
+    key: 's16_status',
+    label: 'Your dedicated hunter or dedicated sport shooter certificate',
+    note: 'The certificate with your dedicated number on it. Bring the original as well as the copy.',
+  },
+  {
+    key: 's16_endorsement',
+    label: "Your association's endorsement for this firearm",
+    // ⚠️ NOT IN THE ACT — it comes from the Hunters Forum guidelines of
+    // 2 September 2005. It is on this list because a DFO will ask for it, and
+    // that is a different reason from the law requiring it. The note says
+    // which, because a member who is told the law demands something will
+    // repeat that to the DFO.
+    note: 'It names the exact firearm — type, calibre, make, action and serial. The Act does not list it, but a DFO will ask for it, so do not travel without it.',
+  },
+];
+
+/**
  * Build the live checklist.
  *
  * `haveKinds` is what has actually been uploaded and `documentReady` whether the
@@ -368,7 +401,17 @@ export function buildChecklist(
     ours.push(item);
   }
 
-  const theirs: ChecklistItem[] = APPLICANT_MUST_BRING.map((i) => ({
+  // ⚠️ THE COMMON LIST WAS THE WHOLE LIST for every licence type, so a
+  // section 16 applicant walked to the counter with no mention of the three
+  // association documents their application rests on.
+  const bring = [
+    ...APPLICANT_MUST_BRING,
+    ...(licenceType === 'S16_DEDICATED_HUNTER' ||
+    licenceType === 'S16_DEDICATED_SPORT'
+      ? S16_MUST_BRING
+      : []),
+  ];
+  const theirs: ChecklistItem[] = bring.map((i) => ({
     ...i,
     owner: 'applicant' as const,
     done: false,

@@ -208,10 +208,22 @@ export function planFor(
     id,
     heading: pick(rng, HEADING_ALTERNATES[id]),
     // Introduction and conclusion stay short; the body carries the argument.
+    //
+    // ⚠️ BODY SECTIONS RUN 2-4, RAISED FROM 1-3. Operator, 2026-08-20: the
+    // motivation has to show the applicant knows what they are doing with a
+    // firearm, and a section allotted a single paragraph cannot demonstrate
+    // competence — it can only assert it. The floor of 2 is the change that
+    // matters; the ceiling moved with it so the range stays three wide.
+    //
+    // ⚠️ THIS IS ROOM, NOT AN INSTRUCTION TO FILL IT. The anti-padding rule
+    // in the system prompt is untouched and still forbids potted histories
+    // and general essays, and the prompt now says plainly where the extra
+    // paragraph is meant to come from: the applicant's own training, storage
+    // and handling, in their own detail.
     paragraphs:
       id === 'introduction' || id === 'conclusion'
         ? 1
-        : 1 + Math.floor(rng() * 3), // 1-3
+        : 2 + Math.floor(rng() * 3), // 2-4
   }));
 
   return {

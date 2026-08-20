@@ -6,6 +6,9 @@ import FilePickerButton from '@/components/file-picker-button';
 import ScanButton from '@/components/scan/scan-button';
 import CredentialPicker from '@/components/credential-picker';
 import LibraryPicker from '@/components/library-picker';
+import DocumentChecklist, {
+  ChecklistRow,
+} from '@/components/document-checklist';
 import { shapeForKind } from '@/lib/scan/shapes';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
@@ -61,6 +64,21 @@ const DRAFT_KEY = (id: string) => `motivation-draft:${id}`;
 // The "document type" menu is SERVED, not hard-coded here — see PickableKind
 // in lib/motivations-api.ts for why. The server orders it so the next thing to
 // photograph is the next thing in the list.
+
+/**
+ * Which KIND a file picked on this row should be filed as.
+ *
+ * ⚠️ THE SAFE ROW IS THREE KINDS, and a file has to be one of them — nothing
+ * on the stored row records which shot a photograph is. So the row hands over
+ * the first of its parts that is still missing: press the button three times
+ * and you fill closed, then half-open, then bolts, in the order a DFO reads
+ * them. Every other row is simply its own kind.
+ */
+function uploadKindFor(row: ChecklistRow | null): string {
+  if (!row) return '';
+  if (!row.parts?.length) return row.kind;
+  return (row.parts.find((p) => !p.have) ?? row.parts[0]).kind;
+}
 
 export default function MotivationWizardPage() {
   const { getToken } = useAuth();
@@ -336,6 +354,40 @@ export default function MotivationWizardPage() {
   useEffect(() => {
     void loadLibrary();
   }, [loadLibrary]);
+
+  /**
+   * Which line the single upload control is pointed at.
+   *
+   * ⚠️ IT DEFAULTS TO THE FIRST THING STILL MISSING, so the common case —
+   * open the page, press the button — files the next document correctly
+   * without a decision. It only moves when the member moves it.
+   */
+  const [pickedKind, setPickedKind] = useState('');
+
+  const checklistRows: ChecklistRow[] = useMemo(() => {
+    const needs = documents?.needs ?? [];
+    return needs.map((n) => ({
+      ...n,
+      // ⚠️ THE SAFE ROW GATHERS ALL THREE SHOTS' FILES, not just its own kind.
+      // One line stands for three kinds, so a photograph filed as the bolts
+      // shot has to appear under it or the member sees an empty row and
+      // uploads it again.
+      files: uploads.filter((u) =>
+        n.parts ? n.parts.some((p) => p.kind === u.kind) : u.kind === n.kind,
+      ),
+      reusable: library.filter((l) =>
+        n.parts ? n.parts.some((p) => p.kind === l.kind) : l.kind === n.kind,
+      ),
+    }));
+  }, [documents, uploads, library]);
+
+  const selectedRow = checklistRows.find((r) => r.kind === pickedKind) ?? null;
+
+  useEffect(() => {
+    if (pickedKind) return;
+    const next = checklistRows.find((r) => !r.have) ?? checklistRows[0];
+    if (next) setPickedKind(next.kind);
+  }, [checklistRows, pickedKind]);
 
   const refreshUploads = useCallback(async () => {
     const up = await motivationsApi.uploads(token, id);
@@ -719,8 +771,8 @@ export default function MotivationWizardPage() {
         )}
 
         {documents && documents.needs.length > 0 && (
-          <div className="mt-3 rounded border border-[var(--border)]">
-            <div className="flex items-center justify-between gap-3 border-b border-[var(--border-divider)] bg-[var(--bg-inset)] px-3 py-2">
+          <div className="mt-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
               <span className="text-sm font-medium">
                 {documents.missingRequired.length === 0
                   ? 'You have everything SAPS asks for'
@@ -732,144 +784,87 @@ export default function MotivationWizardPage() {
                 </span>
               )}
             </div>
-            <ul className="divide-y divide-[var(--border-divider)]">
-              {documents.needs.map((n) => (
-                <li key={n.kind} className="flex gap-3 p-3 text-sm">
-                  <span
-                    aria-hidden
-                    className="pt-0.5"
-                    style={{
-                      color: n.have
-                        ? 'var(--success)'
-                        : n.tier === 'required'
-                          ? 'var(--warning)'
-                          : 'var(--text-tertiary-on-card)',
-                    }}
-                  >
-                    {n.have ? '✓' : n.tier === 'required' ? '•' : '○'}
-                  </span>
-                  <span className="flex-1">
-                    <span className={n.have ? 'text-[var(--text-tertiary-on-card)] line-through' : ''}>
-                      {n.label}
-                    </span>
-                    {/* "Required" means SAPS requires it — never that we
-                        refuse to proceed. Someone whose competency is still
-                        being processed should be drafting a motivation now. */}
-                    {!n.have && n.tier === 'required' && (
-                      <span className="ml-2 rounded bg-[var(--gold-wash)] px-1.5 py-0.5 text-xs">
-                        SAPS needs this
-                      </span>
-                    )}
-                    {!n.have && n.tier === 'strengthens' && (
-                      <span className="ml-2 text-xs text-[var(--text-tertiary-on-card)]">
-                        optional — but it helps
-                      </span>
-                    )}
-                    {!n.have && n.why && (
-                      <span className="mt-0.5 block text-xs text-[var(--text-tertiary-on-card)]">
-                        {n.why}
-                      </span>
-                    )}
 
-                    {/* ONE UPLOAD PER REQUIREMENT, and the confirmation right
-                        beside it. Operator, 2026-08-19. A single bulk picker
-                        made the member hold the mapping in their head — which
-                        of the eight files answered which line — and the only
-                        way to check was to count. Now the line either shows
-                        what is attached to it, or offers the button that
-                        attaches one. */}
-                    <span className="mt-1.5 block">
-                      {n.have ? (
-                        <AttachedTo
-                          kind={n.kind}
-                          uploads={uploads}
-                          onRemove={removeOneUpload}
-                          onView={viewUpload}
-                        />
-                      ) : (
-                        <>
-                        /* ⚠️ EVERY WAY IN, ON EVERY LINE. The bulk panel at
-                           the bottom had the camera and the phone handoff and
-                           these rows had only a file picker — so the member
-                           who is working down the checklist, which is the
-                           whole point of the checklist, was the one member
-                           who could not use a camera. Same three routes as
-                           the panel: phone (desktop), camera (handheld),
-                           picker (always). */
-                        <LibraryPicker
-                          items={library.filter((l) => l.kind === n.kind)}
-                          onPick={attachFromLibrary}
-                        />
-                        <ScanButton
-                          shape={shapeForKind(n.kind)}
-                          title={n.label}
-                          kind={n.kind}
-                          handoff={{ dest: 'motivation', motivationId: id }}
-                          onHandoffArrived={() => void refreshUploads()}
-                          disabled={busyKind === n.kind}
-                          label={
-                            busyKind === n.kind ? 'Reading…' : 'Photograph it'
-                          }
-                          onFiles={async (files) => {
-                            const file = files[0];
-                            if (!file) return;
-                            setBusyKind(n.kind);
-                            setUploadErr(null);
-                            try {
-                              await addOneUpload(n.kind, file);
-                            } catch (ex) {
-                              setUploadErr(
-                                ex instanceof MotivationApiError
-                                  ? ex.message
-                                  : 'That upload did not work.',
-                              );
-                            } finally {
-                              setBusyKind(null);
-                            }
-                          }}
-                          fallback={
-                            <FilePickerButton
-                              accept="image/jpeg,image/png,image/webp,application/pdf"
-                              disabled={busyKind === n.kind}
-                              onFiles={async (files) => {
-                                const file = files[0];
-                                if (!file) return;
-                                setBusyKind(n.kind);
-                                setUploadErr(null);
-                                try {
-                                  await addOneUpload(n.kind, file);
-                                } catch (ex) {
-                                  setUploadErr(
-                                    ex instanceof MotivationApiError
-                                      ? ex.message
-                                      : 'That upload did not work.',
-                                  );
-                                } finally {
-                                  setBusyKind(null);
-                                }
-                              }}
-                            >
-                              {busyKind === n.kind ? 'Reading…' : 'Upload'}
-                            </FilePickerButton>
-                          }
-                        />
-                        </>
-                      )}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {uploadErr && (
-              <p className="border-t border-[var(--border-divider)] px-3 py-2 text-sm text-[var(--red)]">
-                {uploadErr}
+            <DocumentChecklist
+              rows={checklistRows}
+              selected={pickedKind}
+              onSelect={setPickedKind}
+              onView={viewUpload}
+              onRemove={removeOneUpload}
+            >
+              {/* ONE CONTROL, pointed at whichever line is selected. */}
+              <p className="mb-2 text-xs text-[var(--text-secondary)]">
+                {selectedRow
+                  ? `Adding: ${selectedRow.label}`
+                  : 'Choose a document above.'}
               </p>
-            )}
-            <p className="border-t border-[var(--border-divider)] px-3 py-2 text-xs text-[var(--text-tertiary-on-card)]">
-              Anything else you want to attach as supporting evidence is
-              welcome — choose &ldquo;Something else&rdquo; below. We will
-              letter it as an annexure like the rest.
-            </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <LibraryPicker
+                  items={
+                    selectedRow
+                      ? library.filter((l) => l.kind === uploadKindFor(selectedRow))
+                      : []
+                  }
+                  onPick={attachFromLibrary}
+                />
+                <ScanButton
+                  shape={shapeForKind(pickedKind)}
+                  title={selectedRow?.label ?? 'Photograph a document'}
+                  kind={uploadKindFor(selectedRow)}
+                  handoff={{ dest: 'motivation', motivationId: id }}
+                  onHandoffArrived={() => void refreshUploads()}
+                  disabled={!selectedRow || busyKind !== null}
+                  label={busyKind ? 'Reading…' : 'Photograph it'}
+                  onFiles={async (files) => {
+                    const file = files[0];
+                    if (!file || !selectedRow) return;
+                    const k = uploadKindFor(selectedRow);
+                    setBusyKind(k);
+                    setUploadErr(null);
+                    try {
+                      await addOneUpload(k, file);
+                    } catch (ex) {
+                      setUploadErr(
+                        ex instanceof MotivationApiError
+                          ? ex.message
+                          : 'That upload did not work.',
+                      );
+                    } finally {
+                      setBusyKind(null);
+                    }
+                  }}
+                  fallback={
+                    <FilePickerButton
+                      accept="image/jpeg,image/png,image/webp,application/pdf"
+                      disabled={!selectedRow || busyKind !== null}
+                      onFiles={async (files) => {
+                        const file = files[0];
+                        if (!file || !selectedRow) return;
+                        const k = uploadKindFor(selectedRow);
+                        setBusyKind(k);
+                        setUploadErr(null);
+                        try {
+                          await addOneUpload(k, file);
+                        } catch (ex) {
+                          setUploadErr(
+                            ex instanceof MotivationApiError
+                              ? ex.message
+                              : 'That upload did not work.',
+                          );
+                        } finally {
+                          setBusyKind(null);
+                        }
+                      }}
+                    >
+                      {busyKind ? 'Reading…' : 'Upload'}
+                    </FilePickerButton>
+                  }
+                />
+              </div>
+              {uploadErr && (
+                <p className="mt-2 text-sm text-[var(--red)]">{uploadErr}</p>
+              )}
+            </DocumentChecklist>
           </div>
         )}
 
@@ -1874,15 +1869,17 @@ function UploadPanel({
               variant="primary"
               onFiles={uploadFiles}
             >
-              Upload all my documents at once
+              Upload all my documents — we will identify each one
             </FilePickerButton>
           }
         />
       </div>
       <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]">
-        JPG, PNG, WebP or PDF, up to 10 MB each. Pick several at once if you
-        have a pack ready — we will work out what each one is. On an iPhone,
-        choose the photos from your library rather than from Files.
+        Send the whole pack in one go and we read each document to work out
+        what it is — no need to say which is which. We show you what we made of
+        them afterwards, and one dropdown fixes anything we got wrong. JPG,
+        PNG, WebP or PDF, up to 10 MB each. On an iPhone, choose the photos
+        from your library rather than from Files.
       </p>
 
       {progress && (

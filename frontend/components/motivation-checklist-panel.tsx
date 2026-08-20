@@ -94,7 +94,6 @@ export default function MotivationChecklistPanel({
   if (failed || !list) return null;
 
   const theirs = list.sections.find((s) => s.key === 'theirs');
-  const ours = list.sections.find((s) => s.key === 'ours');
   const handDone = theirs
     ? theirs.items.filter((i) => ticked.has(i.key)).length
     : 0;
@@ -103,61 +102,19 @@ export default function MotivationChecklistPanel({
     <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
       <h2 className="font-medium">Taking it to the police station</h2>
       <p className="mt-1 text-sm text-[var(--text-secondary)]">
-        Your motivation and its annexures are only part of the application. This
-        is the whole pack, so you can check it before you travel.
+        Your motivation and its annexures are only part of the application.
+        These are the things you carry to the counter yourself — tick them off
+        before you travel.
       </p>
 
-      {ours && (
-        <div className="mt-4">
-          <p className="text-sm font-medium">{ours.title}</p>
-          {ours.intro && (
-            <p className="mt-1 text-xs text-[var(--text-secondary)]">
-              {ours.intro}
-            </p>
-          )}
-          <ul className="mt-2 space-y-1.5">
-            {ours.items.map((i) => (
-              <li key={i.key} className="flex gap-2 text-sm">
-                {/* NOT a checkbox: these are not the member's to tick. They
-                    report what we hold, and a control that looked clickable
-                    but was not would be worse than a mark. */}
-                <span
-                  aria-hidden
-                  style={{
-                    color: i.done
-                      ? 'var(--success)'
-                      : 'var(--text-tertiary-on-card)',
-                  }}
-                >
-                  {i.done ? '✓' : '○'}
-                </span>
-                <span className="flex-1">
-                  <span
-                    className={
-                      i.done ? 'text-[var(--text-tertiary-on-card)]' : ''
-                    }
-                  >
-                    {i.label}
-                  </span>
-                  {i.annexure && (
-                    <span className="ml-2 text-xs text-[var(--text-tertiary-on-card)]">
-                      Annexure {i.annexure}
-                    </span>
-                  )}
-                  {i.note && (
-                    <span className="mt-0.5 block text-xs text-[var(--text-tertiary-on-card)]">
-                      {i.note}
-                    </span>
-                  )}
-                </span>
-                <span className="sr-only">
-                  {i.done ? 'attached' : 'not attached yet'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* ⚠️ "YOUR PACK" IS GONE FROM HERE, deliberately. It listed the same
+          uploads the requirements list above already shows, with the same
+          ticks — the member read their own progress twice and the page got
+          longer for it. The upload panel is the live surface; this section is
+          only about what they carry out of the door.
+
+          It is still computed and still on the PDF: on paper there is no
+          upload panel to look at. */}
 
       {theirs && (
         <div className="mt-5">

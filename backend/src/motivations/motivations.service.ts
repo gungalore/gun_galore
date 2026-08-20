@@ -1422,6 +1422,22 @@ export class MotivationsService {
       available: u.storageKey !== null && u.purgedAt === null,
       extractionOk: u.extractionOk,
       extractedFields: u.extractedFields,
+      /**
+       * Filed as something it does not look like.
+       *
+       * ⚠️ INFERRED FROM THE EXTRACTION WE ALREADY RAN, not from a second
+       * vision call. When somebody names the document type, we skip
+       * classification and go straight to reading the fields that type
+       * carries — so a competency certificate filed as proof of address comes
+       * back having yielded none of the things an address document carries.
+       * That silence is the signal, and it costs nothing.
+       *
+       * ⚠️ ONLY FOR KINDS WE CAN ACTUALLY READ. A photograph of a safe
+       * extracts nothing by design; flagging it would be crying wolf at every
+       * pack.
+       */
+      suspect:
+        MotivationExtractService.canExtract(u.kind) && !u.extractionOk,
     }));
 
     // What the APPLICATION still needs, weighed against what is attached.
