@@ -1,5 +1,6 @@
 import {
   REMINDER_STAGES,
+  competencyLapses,
   daysUntil,
   dueStage,
   expiryState,
@@ -171,5 +172,32 @@ describe('the stage table itself', () => {
   it('gives every stage its own claim column', () => {
     const cols = REMINDER_STAGES.map((s) => s.column);
     expect(new Set(cols).size).toBe(cols.length);
+  });
+});
+
+describe('competencyLapses', () => {
+  // ⚠️ SECTION 10(2): "A competency certificate lapses after five years from
+  // its date of issue." Read from the Act, not recalled — and offered to the
+  // member as a suggestion to check, never written as a confirmed date.
+  it('adds five years to the issue date', () => {
+    expect(toIsoDate(competencyLapses(new Date('2025-06-06T00:00:00Z')))).toBe(
+      '2030-06-06',
+    );
+  });
+
+  it('⚠️ HANDLES 29 FEBRUARY without inventing a day', () => {
+    // 2024-02-29 + 5 years has no 29 February to land on. JavaScript rolls it
+    // to 1 March, which is a real date and one day later than a strict reading
+    // — close enough for a suggestion the member confirms, and worth knowing
+    // rather than discovering.
+    expect(toIsoDate(competencyLapses(new Date('2024-02-29T00:00:00Z')))).toBe(
+      '2029-03-01',
+    );
+  });
+
+  it('does not mutate what it is given', () => {
+    const issued = new Date('2025-06-06T00:00:00Z');
+    competencyLapses(issued);
+    expect(toIsoDate(issued)).toBe('2025-06-06');
   });
 });

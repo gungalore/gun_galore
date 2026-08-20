@@ -464,7 +464,12 @@ function ConfirmPanel({
   uncertain?: boolean;
   defaultTitle?: string;
 }) {
-  const [expiresOn, setExpiresOn] = useState(proposed.expiresOn ?? '');
+  // ⚠️ THE DERIVED DATE PREFILLS THE BOX, and the panel says where it came
+  // from. It is still unconfirmed like everything else here, so nothing drives
+  // a reminder until the member has looked at it.
+  const [expiresOn, setExpiresOn] = useState(
+    proposed.expiresOn ?? proposed.derivedExpiry?.on ?? '',
+  );
   const [issuedOn, setIssuedOn] = useState(proposed.issuedOn ?? '');
   const [kind, setKind] = useState<CredentialKind | ''>(currentKind ?? '');
   const [title, setTitle] = useState(defaultTitle ?? '');
@@ -480,10 +485,19 @@ function ConfirmPanel({
       <p className="text-sm font-medium">
         {showKind ? 'Check this document' : 'Check the expiry date'}
       </p>
+      {/* ⚠️ SAY WHAT WE ACTUALLY READ. This used to talk only about the
+          expiry, so a competency certificate whose issue date, number, holder
+          and coverage all read perfectly — and which simply does not print an
+          expiry — was greeted with "we could not read a date off that one".
+          True about the one field it meant, and wrong about the document. */}
       <p className="mt-1 text-xs text-[var(--text-secondary)]">
         {proposed.expiresOn
           ? 'We read this off your document. Check it against the document itself — a photograph can be misread, and every reminder is worked out from this date.'
-          : 'We could not read a date off that one. Type it as it is printed on the document.'}
+          : proposed.derivedExpiry
+            ? proposed.derivedExpiry.why
+            : proposed.issuedOn || Object.keys(proposed.details).length > 0
+              ? 'We read what is below off your document, but it does not print an expiry date we could find. Type it if it has one — every reminder is worked out from it.'
+              : 'We could not read anything off that one. Fill it in as it is printed on the document.'}
       </p>
 
       {/* WHAT WE MADE OF IT. The type is not cosmetic: a licence filed as

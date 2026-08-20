@@ -4356,9 +4356,14 @@ model Credential {
   /// people may legitimately hold copies of the same document.
   sha256     String
 
+  /// ⚠️ NEVER WRITTEN FOR A CREDENTIAL. The Licence Centre puts what vision
+  /// read into `detailsEncrypted` above. This column exists because the model
+  /// mirrors MotivationUpload, where it IS used — and a reader that trusted
+  /// the mirror decrypted null on every row for months, which is how the
+  /// vault silently failed to fill anything on a motivation.
   extractionEncrypted String?
   extractionOk        Boolean  @default(false)
-  /// Field KEYS in the clear; the values are in extractionEncrypted.
+  /// Field KEYS in the clear; the values are in `detailsEncrypted`.
   extractedFields     String[]
 
   /// One nullable stamp per reminder stage, CAS-claimed before sending.

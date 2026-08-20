@@ -149,3 +149,30 @@ export function dueStage(
   }
   return null;
 }
+
+/**
+ * How long a competency certificate lasts, when the certificate does not say.
+ *
+ * ⚠️ SECTION 10(2) OF THE FIREARMS CONTROL ACT 60 OF 2000, read from the text
+ * rather than recalled: "A competency certificate lapses after five years from
+ * its date of issue." Most competency certificates print only an issue date,
+ * so a member who has just photographed one is looking at a document with no
+ * expiry on it and a form asking for one.
+ *
+ * ⚠️ IT IS A SUGGESTION, NOT A FINDING, and the confirm step is what makes
+ * that safe: nothing here arms the reminder sweep until the member has looked
+ * at the date and said it is right. We are doing the arithmetic they would
+ * otherwise do in their head, and showing our reasoning.
+ *
+ * ⚠️ NOT APPLIED TO ANY OTHER KIND. Licence validity runs off section 27 and
+ * varies by section — two, five or ten years — and dedicated status expiries
+ * are set by the association, not by statute. Guessing either would be
+ * inventing a deadline.
+ */
+export const COMPETENCY_YEARS = 5;
+
+export function competencyLapses(issuedOn: Date): Date {
+  const d = new Date(issuedOn.getTime());
+  d.setUTCFullYear(d.getUTCFullYear() + COMPETENCY_YEARS);
+  return d;
+}

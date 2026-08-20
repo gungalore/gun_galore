@@ -17,7 +17,12 @@ import { LicenceCentreQuotaService } from './licence-centre-quota.service';
 import { LicenceCentreExtractService } from './licence-centre-extract.service';
 import { MotivationsService } from '../motivations/motivations.service';
 import { REFUSAL_COPY, renewalPlan, renewalRefusal } from './licence-renewal';
-import { expiryState, parseIsoDate, toIsoDate } from './licence-dates';
+import {
+  competencyLapses,
+  expiryState,
+  parseIsoDate,
+  toIsoDate,
+} from './licence-dates';
 
 // ────────────────────────────────────────────────────────────────────
 // THE MEMBER'S OWN DOCUMENTS.
@@ -263,6 +268,21 @@ export class LicenceCentreService {
         issuedOn: reading?.issuedOn ?? null,
         details: reading?.details ?? {},
         lowConfidence: reading?.lowConfidence ?? [],
+        /**
+         * An expiry we worked out rather than read.
+         *
+         * ⚠️ ONLY WHERE A STATUTE SETS IT. A competency certificate normally
+         * prints an issue date and nothing else — the operator photographed
+         * one whose issue date read perfectly and whose expiry box we then
+         * told him we could not read, which is true and useless. Section
+         * 10(2) says a competency certificate lapses five years from issue,
+         * so the arithmetic is worth doing for him.
+         *
+         * Never for a licence (section 27 sets two, five or ten years by
+         * section) and never for dedicated status (the association sets it).
+         * Guessing either would be inventing a deadline.
+         */
+        derivedExpiry: derivedExpiryFor(resolved, reading?.expiresOn ?? null, reading?.issuedOn ?? null),
       },
     };
   }
@@ -591,6 +611,28 @@ export class LicenceCentreService {
       muted,
     };
   }
+}
+
+/**
+ * The expiry a statute implies, when the document does not print one.
+ *
+ * Returns null unless we can say WHY, because a date with no reason behind it
+ * is indistinguishable to the member from one we read off the page — and this
+ * one they are being asked to confirm.
+ */
+function derivedExpiryFor(
+  kind: CredentialKind,
+  readExpiry: string | null,
+  readIssued: string | null,
+): { on: string; why: string } | null {
+  if (readExpiry || !readIssued) return null;
+  if (kind !== 'COMPETENCY_CERTIFICATE') return null;
+  const issued = parseIsoDate(readIssued);
+  if (!issued) return null;
+  return {
+    on: toIsoDate(competencyLapses(issued)),
+    why: 'A competency certificate lapses five years after it is issued (section 10(2) of the Firearms Control Act). Check it against your certificate.',
+  };
 }
 
 const DEFAULT_TITLE: Record<CredentialKind, string> = {

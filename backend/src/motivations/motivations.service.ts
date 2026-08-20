@@ -645,19 +645,34 @@ export class MotivationsService {
         title: true,
         expiresOn: true,
         confirmedAt: true,
-        extractionEncrypted: true,
+        // ⚠️ detailsEncrypted, NOT extractionEncrypted. This read was wrong in
+        // two ways at once, and together they meant the vault could never fill
+        // anything on a motivation, whatever the member uploaded.
+        //
+        // The Licence Centre puts what vision read into `detailsEncrypted` and
+        // names its keys in `extractedFields`. It has never written
+        // `extractionEncrypted` at all — that column is written only on
+        // MotivationUpload, and on Credential it has always been null. So this
+        // decrypted nothing, every time, silently.
+        //
+        // The schema's own comment on extractedFields said the values live in
+        // extractionEncrypted, which is how the mistake looked correct while
+        // being read. The comment is now fixed to match what the writer does.
+        detailsEncrypted: true,
         extractionOk: true,
       },
     });
 
     return rows.map((r) => {
       let details: Record<string, string> = {};
-      if (r.extractionOk && r.extractionEncrypted) {
+      if (r.extractionOk && r.detailsEncrypted) {
         try {
-          const read = decryptJson<{ details?: Record<string, string> }>(
-            r.extractionEncrypted,
-          );
-          details = read?.details ?? {};
+          // ⚠️ AND THE SHAPE IS FLAT. The blob is the details object itself —
+          // `encryptJson(reading.details)` — not `{ details: … }` wrapped. So
+          // even against the right column the old `read?.details` would have
+          // come back undefined and fallen through to {}.
+          details =
+            decryptJson<Record<string, string>>(r.detailsEncrypted) ?? {};
         } catch {
           // A row we cannot decrypt is a row we offer nothing from. It is not
           // an error the applicant can act on, and it must not stop the rest.

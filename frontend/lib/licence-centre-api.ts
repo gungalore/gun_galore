@@ -69,6 +69,14 @@ export interface CredentialProposal {
   issuedOn: string | null;
   details: Record<string, string>;
   lowConfidence: string[];
+  /**
+   * An expiry worked out from a statute rather than read off the page.
+   *
+   * Only where the law fixes it — a competency certificate lapses five years
+   * after issue — and always with the reason, because a date with no reason
+   * behind it is indistinguishable from one we claim to have read.
+   */
+  derivedExpiry?: { on: string; why: string } | null;
 }
 
 async function request<T>(
