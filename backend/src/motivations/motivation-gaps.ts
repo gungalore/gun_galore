@@ -138,11 +138,28 @@ export function findGaps(
 function reasonFor(
   f: MotivationField,
   current: string,
-  thin: Set<string>,
+  _thin: Set<string>,
 ): GapReason | null {
-  if (!current) return f.required ? 'missing_required' : 'missing_optional';
-  if (thin.has(f.key)) return 'thin';
-  if (f.kind === 'long' && current.length < THIN_CHARS) return 'thin';
+  // ⚠️ ONLY WHAT BLOCKS THE DOCUMENT IS WORTH A QUESTION. This used to also
+  // ask about thin answers and empty optional fields, and every failed gate
+  // cycle backfilled three more — the operator opened his application to an
+  // interrogation about his employer's address and the barrel length, seven
+  // near-identical "could you tell me a bit more about X" cards deep.
+  //
+  // Nobody who PAYS for a motivation answers technical questionnaires: the
+  // writer supplies the standard rationale for the use case, and the
+  // applicant supplies identity, paperwork and record. So Boet asks only for
+  // a required answer that is MISSING — the thing without which the document
+  // cannot be written at all. A thin answer is the writer's craft to carry,
+  // not the applicant's homework.
+  if (!current && f.required) return 'missing_required';
+  // The ONE exception: the overlap justification. It is optional in the
+  // registry because most applicants never need it, but when the overlap
+  // check fires the application is refusable without it — and why somebody
+  // wants a second firearm in the same class is knowledge only they hold, not
+  // something a writer can supply. The caller promotes it when the overlap is
+  // real and deletes it when it is not.
+  if (!current && f.key === 'overlap_justification') return 'missing_optional';
   return null;
 }
 

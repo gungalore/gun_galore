@@ -54,33 +54,40 @@ describe('finding the gaps', () => {
     }
   });
 
-  it('flags a long answer that is barely there', () => {
+  it('⚠️ NEVER FLAGS A THIN ANSWER — that is the writer to carry now', () => {
+    // THIS REVERSES THE ORIGINAL DESIGN, deliberately. Thin answers and empty
+    // optional fields used to become questions, and every failed gate cycle
+    // backfilled three more — the operator opened his application to an
+    // interrogation about his employer's address and the barrel length.
+    // Nobody who pays for a motivation answers technical questionnaires: the
+    // writer supplies the standard rationale; the applicant supplies
+    // identity, paperwork and record. Only a MISSING REQUIRED answer — the
+    // thing without which the document cannot be written — earns a question.
     const gaps = findGaps(T, { threat_circumstances: 'I feel unsafe.' });
-    const g = gaps.find((x) => x.key === 'threat_circumstances')!;
-    expect(g.reason).toBe('thin');
+    expect(gaps.find((x) => x.key === 'threat_circumstances')).toBeUndefined();
   });
 
-  it('leaves a substantial answer alone', () => {
-    const keys = findGaps(T, { threat_circumstances: LONG }).map((g) => g.key);
-    expect(keys).not.toContain('threat_circumstances');
-  });
-
-  it("respects the gate's own thin-field list even on a long answer", () => {
-    // The gate weighs quality with a model; the character floor is only the
-    // cheap catch. A gate finding must outrank the floor's opinion.
+  it('ignores even the gate own thin-field list', () => {
+    // The gate may still USE thinFields for its verdict; Boet no longer turns
+    // them into homework.
     const gaps = findGaps(T, { threat_circumstances: LONG }, {
       thinFields: ['threat_circumstances'],
     });
-    expect(gaps.find((g) => g.key === 'threat_circumstances')?.reason).toBe('thin');
+    expect(gaps.find((g) => g.key === 'threat_circumstances')).toBeUndefined();
+  });
+
+  it('never asks about an empty OPTIONAL field', () => {
+    const keys = findGaps(T, {}).map((g) => g.key);
+    expect(keys).not.toContain('employer_name');
+    expect(keys).not.toContain('barrel_length');
   });
 });
 
 describe('the order questions are asked in', () => {
-  it('puts what blocks generation before what merely improves it', () => {
+  it('asks ONLY for what blocks generation', () => {
     const gaps = findGaps(T, {});
-    const ranks = gaps.map((g) => g.rank);
-    expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
-    expect(gaps[0].reason).toBe('missing_required');
+    expect(gaps.length).toBeGreaterThan(0);
+    for (const g of gaps) expect(g.reason).toBe('missing_required');
   });
 
   it('promotes the overlap justification only when there is an overlap', () => {
@@ -93,9 +100,12 @@ describe('the order questions are asked in', () => {
     const withOverlap = findGaps(T, {}, { overlapNeedsJustification: true });
     const g = withOverlap.find((x) => x.key === 'overlap_justification')!;
     expect(g.reason).toBe('overlap');
-    // Ahead of the merely-nice-to-have fields.
-    const optional = withOverlap.filter((x) => x.reason === 'missing_optional');
-    for (const o of optional) expect(g.rank).toBeLessThan(o.rank);
+    // And it is the ONLY optional field that can ever become a question:
+    // why somebody wants a second firearm in the same class is knowledge
+    // only they hold — a writer cannot supply it.
+    expect(
+      withOverlap.filter((x) => x.reason === 'missing_optional'),
+    ).toHaveLength(0);
   });
 
   it('asks three at a time', () => {
@@ -110,17 +120,17 @@ describe('the brief handed to Claude', () => {
     // The follow-up prompt exists to WORD a question. It has no business
     // seeing someone's security circumstances to do that, and the cheapest way
     // to keep them out of it is to never send them.
+    // threat_circumstances is REQUIRED for a s13 pack, so leaving it out
+    // entirely keeps it a gap — with prose in a sibling answer proving the
+    // brief never carries what an applicant wrote anywhere.
     const secret = 'I was robbed at gunpoint outside 12 Kerk Street on 3 March.';
-    const gaps = findGaps(T, { threat_circumstances: secret });
+    const gaps = findGaps(T, { daily_movements: secret });
     const brief = gapBrief(gaps);
     const serialised = JSON.stringify(brief);
 
     expect(serialised).not.toContain('Kerk Street');
     expect(serialised).not.toContain('robbed');
     expect(serialised).toContain('threat_circumstances');
-    // Length is summarised instead.
-    const entry = brief.find((b) => b.key === 'threat_circumstances')!;
-    expect(entry.wordsSoFar).toBeGreaterThan(0);
   });
 
   it('reports zero words for a field never answered', () => {
@@ -146,10 +156,12 @@ describe('the free fallback', () => {
     }
   });
 
-  it('asks for MORE when the answer was thin, rather than starting over', () => {
-    const gaps = findGaps(T, { threat_circumstances: 'Unsafe area.' });
-    const g = gaps.find((x) => x.key === 'threat_circumstances')!;
-    expect(fallbackQuestion(g)).toMatch(/a bit more/i);
+  it('phrases a missing required answer as a plain ask', () => {
+    // Thin answers no longer produce questions at all — the writer carries
+    // them — so the fallback only ever words a MISSING required field.
+    const gaps = findGaps(T, {});
+    expect(gaps.length).toBeGreaterThan(0);
+    expect(fallbackQuestion(gaps[0])).toBeTruthy();
   });
 
   it('never promises an outcome', () => {

@@ -291,8 +291,12 @@ describe('thoroughness, without padding', () => {
       expect(s).toMatch(/BE THOROUGH WITH WHAT YOU HAVE/);
       expect(s).toMatch(/trained on/i);
       expect(s).toMatch(/store and handle/i);
-      // And still refuses to invent any of it, in the same breath.
-      expect(s).toMatch(/must NOT do is manufacture detail/i);
+      // And the facts/rationale line holds in the same breath: verifiable
+      // facts must be supplied; the purposive rationale is the writer's
+      // craft, as in every professionally written motivation.
+      expect(s).toMatch(/VERIFIABLE FACT/);
+      expect(s).toMatch(/RATIONALE is the case for the application/);
+      expect(s).toMatch(/it does not go in/i);
       expect(s).toMatch(/DO NOT PAD/);
     }
   });
