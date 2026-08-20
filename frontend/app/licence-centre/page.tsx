@@ -154,17 +154,18 @@ export default function LicenceCentrePage() {
             above.
           </p>
         ) : (
-          <ul className="mt-2 space-y-3">
-            {rows.map((r) => (
-              <CredentialCard
-                key={r.id}
-                row={r}
+          <div className="mt-2 space-y-2">
+            {KINDS.filter((k) => rows.some((r) => r.kind === k)).map((k) => (
+              <KindGroup
+                key={k}
+                kind={k}
+                rows={rows.filter((r) => r.kind === k)}
                 token={token}
                 onChanged={refresh}
                 onError={setError}
               />
             ))}
-          </ul>
+          </div>
         )}
         {error && <p className="mt-3 text-sm text-[var(--red)]">{error}</p>}
       </section>
@@ -691,6 +692,114 @@ function ConfirmPanel({
   );
 }
 
+// ── one kind, collapsed ─────────────────────────────────────────────
+
+/**
+ * All the documents of one type, behind a header that can be folded away.
+ *
+ * ⚠️ IT OPENS ON WHAT NEEDS SOMETHING. A member with eight documents wants
+ * the two that are expiring, not a tidy filing cabinet — so a group holding
+ * anything unconfirmed, expiring or expired starts open and says so on its
+ * header, and the settled ones start closed. Collapsing everything by default
+ * would be neater and would hide the only rows that matter.
+ */
+function KindGroup({
+  kind,
+  rows,
+  token,
+  onChanged,
+  onError,
+}: {
+  kind: CredentialKind;
+  rows: CredentialRow[];
+  token: () => Promise<string | null>;
+  onChanged: () => Promise<void>;
+  onError: (m: string | null) => void;
+}) {
+  const needsEye = rows.filter(
+    (r) => !r.confirmed || r.state === 'expiring' || r.state === 'expired',
+  );
+  const [open, setOpen] = useState(needsEye.length > 0);
+
+  // The worst thing in the group decides the header's colour — one glance at
+  // a folded list has to be able to say "something in here is wrong".
+  const worst: CredentialRow['state'] = rows.some((r) => r.state === 'expired')
+    ? 'expired'
+    : rows.some((r) => r.state === 'expiring')
+      ? 'expiring'
+      : // ⚠️ 'unknown' COVERS TWO DIFFERENT THINGS and both belong here: a
+        // date nobody has checked, and a document that carries no expiry at
+        // all — a dedicated status certificate prints an issue date and
+        // nothing else. Either way the group cannot claim to be in date.
+        rows.some((r) => r.state === 'unknown')
+        ? 'unknown'
+        : 'valid';
+  const tone = STATE_TONE[worst];
+
+  const toCheck = rows.filter((r) => !r.confirmed).length;
+  const summary =
+    toCheck > 0
+      ? `${toCheck} to check`
+      : worst === 'expired'
+        ? 'One has expired'
+        : worst === 'expiring'
+          ? 'Renewal coming up'
+          : // ⚠️ NOT "all in date" WHEN NOTHING HAS A DATE. Saying a folder of
+            // documents is in date when none of them carries an expiry is the
+            // kind of quiet reassurance this module must never give.
+            worst === 'unknown'
+            ? 'No expiry date'
+            : 'All in date';
+
+  return (
+    <div
+      className="rounded border"
+      style={{ borderColor: tone.line, background: tone.wash }}
+    >
+      <button
+        type="button"
+        className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span
+          aria-hidden
+          className="text-xs"
+          style={{
+            display: 'inline-block',
+            transition: 'transform 120ms',
+            transform: open ? 'rotate(90deg)' : 'none',
+            color: 'var(--text-tertiary-on-card)',
+          }}
+        >
+          ▶
+        </span>
+        <span className="flex-1 text-sm font-medium">{KIND_LABELS[kind]}</span>
+        <span className="text-xs" style={{ color: tone.colour }}>
+          {summary}
+        </span>
+        <span className="text-xs text-[var(--text-tertiary-on-card)]">
+          {rows.length}
+        </span>
+      </button>
+
+      {open && (
+        <ul className="space-y-3 border-t border-[var(--border-divider)] p-3">
+          {rows.map((r) => (
+            <CredentialCard
+              key={r.id}
+              row={r}
+              token={token}
+              onChanged={onChanged}
+              onError={onError}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ── one stored document ─────────────────────────────────────────────
 
 function CredentialCard({
@@ -750,28 +859,41 @@ function CredentialCard({
         )}
       </p>
 
-      {/* THE LOOP. Offered only where it makes sense: a firearm licence whose
-          date has been confirmed and which is close enough to matter. On
-          anything else the button would be a dead end the backend refuses. */}
-      {/* Offered for ANY confirmed firearm licence, not only one already
-          inside the reminder window. SA licences run five or ten years, so
-          gating on "expiring" meant that for a real licence uploaded today
-          the module's headline feature — and where the R199 sits — was simply
-          not on screen, with nothing saying why. The urgency belongs in the
-          words, not in whether the button exists. */}
-      {row.kind === 'FIREARM_LICENCE' && row.confirmed && (
+      {/* THE LOOP. A firearm licence whose date is confirmed and whose expiry
+          is close enough to act on.
+
+          ⚠️ THIS REVERSES A DELIBERATE EARLIER DECISION, and the reasoning
+          then was not wrong — it was that an SA licence runs five or ten
+          years, so gating on the reminder window kept the module's headline
+          feature off screen for a licence uploaded today, and that the
+          urgency belonged in the words rather than in whether the button
+          existed. The operator has overruled it: a renewal offered the day
+          somebody files a ten-year licence is noise on every card, every
+          visit, for nine and a half years.
+
+          'expiring' already means 180 days — expiryState flips there, which
+          is the six months he asked for — so this needs no threshold of its
+          own, and it cannot drift away from the reminder schedule that shares
+          it. Section 24(1) requires the application at least 90 days before
+          expiry, so six months leaves three clear months of lead. */}
+      {row.kind === 'FIREARM_LICENCE' &&
+        row.confirmed &&
+        (row.state === 'expiring' || row.state === 'expired') && (
           <div className="mt-3 rounded border border-[var(--border)] bg-[var(--bg-card)] p-3">
             <p className="text-sm font-medium">
               {row.state === 'expired'
                 ? 'This one has expired'
-                : row.state === 'expiring'
-                  ? 'Time to start the renewal'
-                  : 'Renewing this one later?'}
+                : 'Time to start the renewal'}
             </p>
             <p className="mt-1 text-xs text-[var(--text-secondary)]">
-              {row.state === 'valid'
-                ? 'We will remind you closer to the time. You can start it now if you would rather — '
-                : ''}
+              {/* ⚠️ THE 90-DAY DEADLINE IS THE USEFUL FACT HERE. Section 24(1)
+                  requires the renewal application at least 90 days before
+                  expiry, and section 24(4) keeps the licence valid until the
+                  application is decided IF it was lodged in time. Somebody
+                  who leaves it to the last month has lost that protection. */}
+              {row.state === 'expired'
+                ? 'Renewal must be applied for before a licence expires. Speak to your DFO about where this leaves you — we can still prepare the paperwork. '
+                : 'SAPS asks for the application at least 90 days before the expiry date, and a licence lodged in time stays valid until the application is decided. '}
               We will open a section 24 renewal already carrying the licence
               number, the expiry and the firearm&rsquo;s details from this
               document. You write the part only you can — what you have
