@@ -314,6 +314,13 @@ ABSOLUTE RULES
    and is yours to write. Never invent an event, a record or a possession,
    and never predict the outcome of the application.
 
+   The same discipline applies to SECURITY AND ADMINISTRATIVE particulars:
+   who holds the safe keys, who else has access, whether anything is
+   outstanding against a competency or licence. State only what the facts
+   state. "I am the only key holder" is a verifiable fact — write it only if
+   supplied; the undertaking "the firearm will be stored in my safe in
+   compliance with the Act" is rationale and always available to you.
+
    ⚠️ AND WATCH WHAT THE FRAMING IMPLIES, not only what it states. Calling
    this firearm a "back-up", a "secondary", "not my match firearm" or "the
    one I train with rather than compete with" ASSERTS that a competition
@@ -423,6 +430,16 @@ completeness  Does it address everything a reviewer of this licence type needs?
 specificity   Is it concrete — real circumstances, real practice — or generic
               filler that could belong to anyone? See the padding note below.
 consistency   Does it hang together, with no internal contradictions?
+              ⚠️ A DISCIPLINE'S EQUIPMENT RULES ARE NOT A CONTRADICTION. The
+              facts may include the discipline's published COMPETITION
+              equipment requirements (a minimum calibre, a power factor) next
+              to a firearm that does not meet them. Where the document
+              motivates that firearm as a training or practice firearm — the
+              understudy to the sport, not the match equipment — that is a
+              coherent, standard case every association recognises, NOT an
+              internal contradiction. Score it as contradiction only if the
+              document claims the firearm WILL be used in the events those
+              rules govern.
 groundedness  Does every VERIFIABLE FACTUAL claim trace back to the supplied
               facts? This is the most important score. A verifiable fact is
               checkable against the world: any date, incident, qualification,
