@@ -152,6 +152,8 @@ export default function MotivationWizardPage() {
   const [messages, setMessages] = useState<FollowUp[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Registered fields the server would not store. See the autosave effect. */
+  const [refused, setRefused] = useState<string[]>([]);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>(
     'idle',
   );
@@ -233,6 +235,17 @@ export default function MotivationWizardPage() {
       try {
         const res = await motivationsApi.saveAnswers(token, id, answers);
         setDetail((d) => (d ? { ...d, missingRequired: res.missingRequired } : d));
+        // ⚠️ A 200 IS NOT A SAVE. The server returns the registered fields
+        // whose value it would not store, and saying "Saved" over that is how
+        // an applicant loses an answer without ever being told: the box keeps
+        // the text until the page reloads, then quietly comes back empty.
+        // Reported by name, and the local draft is deliberately NOT cleared.
+        if (res.refused?.length) {
+          setRefused(res.refused);
+          setSaving('error');
+          return;
+        }
+        setRefused([]);
         // The overlap check is computed server-side from the calibres, so a
         // change to any of them can turn the question on or off. Re-read it
         // rather than leave a stale answer on screen.
@@ -651,6 +664,18 @@ export default function MotivationWizardPage() {
   const shown = useMemo(() => visibleFields(fields, answers), [fields, answers]);
 
   /**
+   * A field key as the applicant knows it.
+   *
+   * Falling back to the raw key is deliberate: "discipline" on screen is
+   * unhelpful but recognisable, whereas dropping the name entirely leaves an
+   * error that names nothing at all.
+   */
+  const labelFor = useCallback(
+    (k: string) => fields.find((f) => f.key === k)?.label ?? k,
+    [fields],
+  );
+
+  /**
    * How many firearms-you-already-own rows to show.
    *
    * The SAPS 271 has room for fourteen and the registry carries six, but
@@ -859,8 +884,26 @@ export default function MotivationWizardPage() {
           {saving === 'saving' && 'Saving…'}
           {saving === 'saved' && 'Saved'}
           {saving === 'error' &&
+            refused.length === 0 &&
             'We could not save just now — your answers are kept on this device and will save again shortly.'}
         </p>
+        {refused.length > 0 && (
+          // Louder than the status line, because this one does not fix itself
+          // by waiting: the answer will not save until we ship a change.
+          <p
+            className="mt-2 rounded border p-2 text-xs"
+            style={{
+              borderColor: 'var(--red)',
+              color: 'var(--red)',
+            }}
+            role="alert"
+          >
+            We could not store your answer to{' '}
+            {refused.map((k) => labelFor(k)).join(', ')}. This is a fault on
+            our side, not something you typed wrong — please tell support and
+            quote reference {detail.referenceNumber}.
+          </p>
+        )}
       </header>
 
       {/* Documents FIRST.
@@ -1441,9 +1484,7 @@ export default function MotivationWizardPage() {
                     e instanceof MotivationApiError &&
                     e.missing?.length
                   ) {
-                    const labels = e.missing.map(
-                      (k) => fields.find((f) => f.key === k)?.label ?? k,
-                    );
+                    const labels = e.missing.map(labelFor);
                     setError(
                       `Still needed before we can write it: ${labels.join(', ')}.`,
                     );

@@ -1,4 +1,8 @@
 import { MotivationLicenceType } from '@prisma/client';
+import {
+  DISCIPLINE_OTHER,
+  disciplinesInScope,
+} from './shooting-disciplines';
 
 // ────────────────────────────────────────────────────────────────────
 // What we ask an applicant, per licence type.
@@ -1758,9 +1762,17 @@ export function factPackFields(
 export function sanitiseAnswers(
   type: MotivationLicenceType,
   patch: Record<string, unknown>,
-): { answers: Record<string, string>; rejected: string[] } {
+): { answers: Record<string, string>; rejected: string[]; refused: string[] } {
   const answers: Record<string, string> = {};
   const rejected: string[] = [];
+  // ⚠️ A SUBSET OF `rejected`, AND THE HALF THAT MATTERS. Dropping a key we
+  // no longer have is housekeeping; dropping a REGISTERED field because its
+  // value did not pass is the applicant's answer going in the bin. Both used
+  // to land in one list under one "ignored unregistered answer keys" warning,
+  // so the discipline bug read as routine noise in the log for as long as it
+  // existed. Kept separate so it can be logged loudly and shown to the person
+  // who typed it.
+  const refused: string[] = [];
 
   for (const [key, raw] of Object.entries(patch ?? {})) {
     const field = fieldByKey(type, key);
@@ -1802,6 +1814,7 @@ export function sanitiseAnswers(
         : [];
       if (parts.some((x) => !allowed.includes(x))) {
         rejected.push(key);
+        refused.push(key);
         continue;
       }
       answers[key] = allowed.filter((c) => parts.includes(c)).join(', ');
@@ -1809,9 +1822,10 @@ export function sanitiseAnswers(
     }
 
     if (field.kind === 'choice' || field.kind === 'yesno') {
-      const allowed = field.choices ?? YES_NO;
+      const allowed = allowedValues(field);
       if (trimmed && !allowed.includes(trimmed)) {
         rejected.push(key);
+        refused.push(key);
         continue;
       }
       answers[key] = trimmed;
@@ -1822,7 +1836,37 @@ export function sanitiseAnswers(
     answers[key] = trimmed.length > cap ? trimmed.slice(0, cap) : trimmed;
   }
 
-  return { answers, rejected };
+  return { answers, rejected, refused };
+}
+
+/**
+ * What a choice field will actually accept.
+ *
+ * ⚠️ `field.choices ?? YES_NO` WAS A SILENT DATA-LOSS BUG. A field whose
+ * options come from an optionSource carries no `choices` — the list is
+ * attached on the way out to the wizard — so the fallback made the only legal
+ * answers "Yes" and "No". `discipline` is such a field, with fifty-nine real
+ * options, so EVERY value the dropdown offered was rejected on save.
+ *
+ * It failed silently in both directions, which is why it survived: the PATCH
+ * returned 200 with the key listed under `ignored`, and the wizard did not
+ * read that, so the select simply reverted to "Choose…" on the next load. The
+ * applicant saw a section that would not stay filled in and a Generate that
+ * refused for a question they had answered — the live report was "the
+ * Experience keeps resetting".
+ *
+ * So the allowed set is derived from the same place the dropdown is built
+ * from. Anything with an optionSource MUST be resolved here; a new one that
+ * is not will inherit exactly this bug.
+ */
+export function allowedValues(field: MotivationField): readonly string[] {
+  if (field.optionSource === 'shooting-disciplines') {
+    const values = disciplinesInScope(field.optionScope).map((d) => d.value);
+    // "Something else" is a real stored value, and the field that describes it
+    // hangs off it via showIf — so it has to be accepted, not just offered.
+    return field.allowOther ? [...values, DISCIPLINE_OTHER] : values;
+  }
+  return field.choices ?? YES_NO;
 }
 
 /**

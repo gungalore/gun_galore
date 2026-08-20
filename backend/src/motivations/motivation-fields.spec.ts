@@ -11,6 +11,7 @@ import {
   YES_NO,
 } from './motivation-fields';
 import { expandFields } from './motivation-field-options';
+import { SHOOTING_DISCIPLINES } from './shooting-disciplines';
 
 // The registry is the contract between the wizard, the SAPS 271, the prompt and
 // the quality gate. Everything here guards a way that contract can be broken
@@ -481,5 +482,101 @@ describe('requirements that appear only once something is answered', () => {
     });
     expect(keys).not.toContain('spouse_name');
     expect(keys).not.toContain('marital_status');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// EVERY OPTION THE FORM OFFERS MUST SURVIVE THE SAVE.
+//
+// `discipline` draws its fifty-nine options from an optionSource, so it
+// carries no `choices` — and the sanitiser's `field.choices ?? YES_NO`
+// fallback therefore accepted exactly two values, "Yes" and "No", for a
+// shooting-discipline dropdown. Every real answer was discarded.
+//
+// It failed silently at both ends. The PATCH returned 200 with the key under
+// `ignored`, which nothing read, so the wizard said "Saved" and the select
+// came back empty on the next load. The applicant saw a section that would
+// not stay filled in, and a Generate that refused over a question they had
+// answered. Live report: "the Experience keeps resetting".
+//
+// The general property — the offered set and the accepted set are the same
+// set — is what is pinned here. A second optionSource added later inherits
+// this test rather than the bug.
+// ────────────────────────────────────────────────────────────────────
+describe('the form and the validator agree on what a choice may be', () => {
+  it('accepts EVERY option offered, for every option-sourced field', () => {
+    for (const t of ALL) {
+      for (const f of expandFields(fieldsFor(t))) {
+        if (!f.optionGroups) continue;
+        const offered = f.optionGroups.flatMap((g) =>
+          g.options.map((o) => o.value),
+        );
+        expect(offered.length).toBeGreaterThan(1);
+        for (const value of offered) {
+          const { answers, refused } = sanitiseAnswers(t, { [f.key]: value });
+          expect({ key: f.key, value, refused }).toEqual({
+            key: f.key,
+            value,
+            refused: [],
+          });
+          expect(answers[f.key]).toBe(value);
+        }
+      }
+    }
+  });
+
+  it('still refuses a value that is NOT on the list', () => {
+    // The check above would pass trivially if validation had simply been
+    // switched off, so the other half is pinned too.
+    const t = MotivationLicenceType.S16_DEDICATED_SPORT;
+    const { answers, refused } = sanitiseAnswers(t, {
+      discipline: 'competitive napping',
+    });
+    expect(refused).toEqual(['discipline']);
+    expect(answers.discipline).toBeUndefined();
+  });
+
+  it('accepts the "something else" sentinel, which a field hangs off', () => {
+    // discipline_other is revealed by showIf discipline === 'other', so
+    // refusing the sentinel would make that question permanently unreachable.
+    const t = MotivationLicenceType.S16_DEDICATED_SPORT;
+    const { answers, refused } = sanitiseAnswers(t, { discipline: 'other' });
+    expect(refused).toEqual([]);
+    expect(answers.discipline).toBe('other');
+    expect(requiredKeys(t, answers)).toContain('discipline_other');
+  });
+
+  it('a HUNTER is not offered, and cannot store, a pure sport discipline', () => {
+    // The scope filter feeds the dropdown and the validator from one
+    // function; this is the check that they are still the same one.
+    const t = MotivationLicenceType.S16_DEDICATED_HUNTER;
+    const f = expandFields(fieldsFor(t)).find((x) => x.key === 'discipline');
+    if (!f?.optionGroups) return; // hunter pack may not carry the field
+    const offered = new Set(
+      f.optionGroups.flatMap((g) => g.options.map((o) => o.value)),
+    );
+    const sportOnly = SHOOTING_DISCIPLINES.filter((d) => d.kind === 'sport');
+    expect(sportOnly.length).toBeGreaterThan(0);
+    for (const d of sportOnly) {
+      expect(offered.has(d.value)).toBe(false);
+      expect(sanitiseAnswers(t, { discipline: d.value }).refused).toEqual([
+        'discipline',
+      ]);
+    }
+  });
+
+  it('separates a refused VALUE from an unknown KEY', () => {
+    // They shared one list and one "ignored unregistered answer keys"
+    // warning, so the discipline fault read as routine noise for as long as
+    // it existed.
+    const t = MotivationLicenceType.S16_DEDICATED_SPORT;
+    const res = sanitiseAnswers(t, {
+      no_such_field_at_all: 'x',
+      discipline: 'competitive napping',
+    });
+    expect(res.rejected.sort()).toEqual(
+      ['discipline', 'no_such_field_at_all'].sort(),
+    );
+    expect(res.refused).toEqual(['discipline']);
   });
 });

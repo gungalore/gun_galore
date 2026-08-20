@@ -1,8 +1,8 @@
 import { MotivationField } from './motivation-fields';
 import {
   DISCIPLINE_OTHER,
-  SHOOTING_DISCIPLINES,
   disciplineByValue,
+  disciplinesInScope,
 } from './shooting-disciplines';
 
 // ────────────────────────────────────────────────────────────────────
@@ -56,13 +56,9 @@ export function expandFields(fields: readonly MotivationField[]): ServedField[] 
   return fields.map((f) => {
     if (f.optionSource !== 'shooting-disciplines') return { ...f };
 
-    // A dedicated HUNTER's list is the hunting-relevant half. A dedicated
-    // sport shooter sees everything, because plenty of them also shoot the
-    // hunting-based disciplines competitively.
-    const wanted =
-      f.optionScope === 'hunting'
-        ? SHOOTING_DISCIPLINES.filter((d) => d.kind !== 'sport')
-        : SHOOTING_DISCIPLINES;
+    // Scope comes from disciplinesInScope so the dropdown and the save-time
+    // validation cannot drift apart — see allowedValues() in motivation-fields.
+    const wanted = disciplinesInScope(f.optionScope);
 
     const groups: FieldOptionGroup[] = [];
     for (const d of wanted) {

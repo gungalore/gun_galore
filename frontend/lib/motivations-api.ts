@@ -342,8 +342,19 @@ export const motivationsApi = {
 
   get: (t: TokenGetter, id: string) => request<MotivationDetail>(t, `/${id}`),
 
+  /**
+   * ⚠️ `refused` IS NOT COSMETIC. It names registered fields whose value the
+   * server would not store — the answer is gone, and until this was read the
+   * wizard still said "Saved". (The old declaration here said `rejected`,
+   * which the server has never sent; it sends `ignored`. A key nothing could
+   * ever match is indistinguishable from a check nobody wrote.)
+   */
   saveAnswers: (t: TokenGetter, id: string, answers: Record<string, string>) =>
-    request<{ missingRequired: string[]; rejected?: string[] }>(
+    request<{
+      missingRequired: string[];
+      ignored?: string[];
+      refused?: string[];
+    }>(
       t,
       `/${id}/answers`,
       { method: 'PATCH', body: JSON.stringify({ answers }) },

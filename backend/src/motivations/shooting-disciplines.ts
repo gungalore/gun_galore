@@ -42,6 +42,26 @@ export interface ShootingDiscipline {
 /** The value stored when the discipline is not on the list. */
 export const DISCIPLINE_OTHER = 'other';
 
+/**
+ * The disciplines a field with `optionScope` may offer.
+ *
+ * ⚠️ ONE DEFINITION, USED BY BOTH SIDES. The wizard's dropdown is built from
+ * this, and so is the set the answer is validated against on save. They were
+ * separate once and did not have to disagree by much: an applicant could pick
+ * an option the form offered and have the server drop it on the way in.
+ *
+ * A dedicated HUNTER sees the hunting-relevant half. A dedicated sport shooter
+ * sees everything, because plenty of them also shoot the hunting-based
+ * disciplines competitively.
+ */
+export function disciplinesInScope(
+  scope?: 'hunting' | 'all',
+): ShootingDiscipline[] {
+  return scope === 'hunting'
+    ? SHOOTING_DISCIPLINES.filter((d) => d.kind !== 'sport')
+    : SHOOTING_DISCIPLINES;
+}
+
 export const SHOOTING_DISCIPLINES: ShootingDiscipline[] = [
   {
     "value": "ipsc-practical-pistol-handgun",

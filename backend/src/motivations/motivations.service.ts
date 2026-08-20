@@ -463,7 +463,10 @@ export class MotivationsService {
       );
     }
 
-    const { answers: clean, rejected } = sanitiseAnswers(row.licenceType, patch);
+    const { answers: clean, rejected, refused } = sanitiseAnswers(
+      row.licenceType,
+      patch,
+    );
     const merged = { ...this.readAnswers(row.answersEncrypted), ...clean };
 
     await this.prisma.motivation.update({
@@ -474,17 +477,28 @@ export class MotivationsService {
       },
     });
 
-    if (rejected.length) {
+    const unknown = rejected.filter((k) => !refused.includes(k));
+    if (unknown.length) {
       // Not an error — a stale client can legitimately send a key we have
       // since removed. Logged as KEYS ONLY; the values are the sensitive part.
       this.logger.warn(
-        `Motivation ${row.id}: ignored unregistered answer keys ${rejected.join(', ')}`,
+        `Motivation ${row.id}: ignored unregistered answer keys ${unknown.join(', ')}`,
+      );
+    }
+    if (refused.length) {
+      // ⚠️ THIS ONE IS A DEFECT UNTIL PROVEN OTHERWISE. The wizard only offers
+      // values the registry defines, so a registered field refusing its own
+      // value means the two have drifted — which is exactly how `discipline`
+      // silently discarded every one of its fifty-nine options. Keys only.
+      this.logger.error(
+        `Motivation ${row.id}: REFUSED values for registered fields ${refused.join(', ')} — the form and the validator disagree`,
       );
     }
 
     return {
       saved: Object.keys(clean).length,
       ignored: rejected,
+      refused,
       missingRequired: missingRequired(row.licenceType, merged),
     };
   }
