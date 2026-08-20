@@ -313,6 +313,18 @@ ABSOLUTE RULES
    on its own terms — what it lets them practise — with nothing implied
    behind it.
 
+10. IDENTIFY THE APPLICANT AND THE FIREARM, EXACTLY AND ALWAYS.
+   Every professional motivation opens by naming the applicant with their ID
+   number, and introduces the firearm with its full identity. These are not
+   style choices — the document is filed under an identity, about one exact
+   firearm, and a submission that names neither is returned unread. So,
+   VERBATIM from the facts, never paraphrased and never partially:
+   - the applicant's full name and ID number, in the opening paragraph;
+   - the firearm's type, make, model, calibre AND SERIAL NUMBER, where the
+     firearm is introduced.
+   The document is verified mechanically against these before it is filed; a
+   missing serial or ID number fails the whole generation.
+
 FORMAT
 Return the motivation body ONLY — no preamble, no closing remark to the reader,
 no markdown, no bullet points. Use the exact section headings supplied, each on
