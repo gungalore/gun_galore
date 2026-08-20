@@ -2026,6 +2026,19 @@ export class MotivationsService {
         const cap = await this.settings.get(FLAGS.motivationBetaFreeCap);
         seat = await this.quota.claimBetaSeat(cap);
         claimedSeatHere = seat !== null;
+        // ⚠️ WRITE THE SEAT TO THE ROW THE MOMENT IT IS TAKEN, not at the end
+        // of the run. The counter has already been incremented; if the process
+        // dies before the terminal update — a deploy, an OOM kill, and the
+        // generation now runs detached where that is likelier — the seat is
+        // spent with nothing on the row to show for it, and no sweep can tell
+        // whose it was. Persisted here, the row owns it: the retry reads
+        // row.betaSeatNo above and reuses it, which is also what makes "one
+        // seat per motivation, not per attempt" survive a restart.
+        if (seat !== null) {
+          await this.prisma.motivation
+            .update({ where: { id: row.id }, data: { betaSeatNo: seat } })
+            .catch(() => undefined);
+        }
         if (seat === null) {
           await this.prisma.motivation.update({
             where: { id: row.id },

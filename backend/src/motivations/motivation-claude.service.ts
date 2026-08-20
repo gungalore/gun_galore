@@ -261,7 +261,14 @@ export class MotivationClaudeService {
       const msg = await this.client.messages.create(
         {
           model: MODEL_GATE,
-          max_tokens: 1200,
+          // ⚠️ THE VERDICT IS SMALL BUT NOT BOUNDED. It carries thin_fields and
+          // a free-text issues list, and a strict reviewer given a long draft
+          // writes a lot of issues. At 1200 the reply was truncated mid-JSON;
+          // the brace match below needs a CLOSING brace, found none, and every
+          // document was failed with "the reviewer did not return a usable
+          // verdict" — a gate that fails closed, so nothing could ever pass.
+          // Output tokens bill as used, so the headroom is close to free.
+          max_tokens: 4000,
         // ⚠️ NO `temperature` HERE, AND NEVER ADD ONE.
         //
         // temperature / top_p / top_k were REMOVED from the API on Opus 4.7 and
@@ -287,6 +294,14 @@ export class MotivationClaudeService {
       const block = msg.content.find((b) => b.type === 'text');
       raw = (block as { text?: string } | undefined)?.text ?? '';
       usage = this.usageOf(msg, MODEL_GATE);
+      // ⚠️ A TRUNCATED VERDICT IS INDISTINGUISHABLE FROM A BAD DOCUMENT unless
+      // we say so here. Logged at error because it is our fault, not the
+      // applicant's, and it fails their document either way.
+      if (msg.stop_reason === 'max_tokens') {
+        this.logger.error(
+          `Motivation quality gate hit max_tokens (${usage.completionTokens} out) — the verdict is truncated and will not parse. Raise max_tokens.`,
+        );
+      }
     } catch (err) {
       const detail = (err as Error).message;
       this.logger.error(`Motivation quality gate failed: ${detail}`);
@@ -300,6 +315,15 @@ export class MotivationClaudeService {
 
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) {
+      // SHAPE ONLY, NEVER CONTENT. The verdict quotes the draft, and the draft
+      // is somebody's address, ID number and safe. Length and which brace is
+      // missing is enough to tell truncation from a refusal from an empty
+      // reply, which is all this needs to distinguish.
+      this.logger.error(
+        `Motivation quality gate returned no JSON object: ${raw.length} chars, ` +
+          `startsWithBrace=${raw.trimStart().startsWith('{')}, ` +
+          `endsWithBrace=${raw.trimEnd().endsWith('}')}`,
+      );
       return {
         verdict: this.failedVerdict('The reviewer did not return a usable verdict.'),
         usage,
