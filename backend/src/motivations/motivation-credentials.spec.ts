@@ -407,3 +407,91 @@ describe('the confirmed contract, enforced', () => {
     expect(offer.items).toHaveLength(0);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE SAME FIREARM MUST NOT BE OFFERED TWICE.
+//
+// Rows are claimed from the first free slot, so once a licence has been
+// filled into row 1, the very same credential was offered again as "Firearm
+// 2" — and then 3, and 4, for as long as there were empty rows. Accepting
+// that puts six entries on a SAPS 271 describing one rifle, on a form the
+// applicant signs.
+//
+// Live on MO000017: one .223 NORDISKE PRECISION in row 1, and the offer
+// proposing the identical make, calibre and serial as Firearm 2.
+// ────────────────────────────────────────────────────────────────────
+describe('a firearm already on the form', () => {
+  const TYPE2 = 'S16_DEDICATED_SPORT' as never;
+
+  const rowOne = {
+    existing_firearm_1_type: 'Rifle',
+    existing_firearm_1_calibre: '.308 Win',
+    existing_firearm_1_make: 'Tikka',
+    existing_firearm_1_frame_serial: 'F12345',
+    existing_firearm_1_barrel_serial: 'B67890',
+    existing_firearm_1_licence_no: 'LIC-001',
+  };
+
+  it('is not offered again for the next free row', () => {
+    const o = credentialOffer(TYPE2, [licence()], rowOne);
+    const proposed = Object.keys(o.values).filter((k) =>
+      k.startsWith('existing_firearm_'),
+    );
+    expect(proposed).toEqual([]);
+  });
+
+  it('matches on the licence number even if the serials were retyped', () => {
+    const o = credentialOffer(TYPE2, [licence()], {
+      ...rowOne,
+      existing_firearm_1_frame_serial: 'typed it differently',
+      existing_firearm_1_barrel_serial: '',
+    });
+    expect(
+      Object.keys(o.values).filter((k) => k.startsWith('existing_firearm_')),
+    ).toEqual([]);
+  });
+
+  it('STILL offers a genuinely different firearm', () => {
+    // The guard must not swallow the second rifle somebody actually owns.
+    const other = licence({
+      id: 'c2',
+      title: 'My .22',
+      details: {
+        make: 'CZ',
+        calibre: '.22 LR',
+        frame_serial: 'F99999',
+        barrel_serial: 'B99999',
+        licence_number: 'LIC-002',
+        firearm_type: 'Bolt Action Rifle',
+      },
+    });
+    const o = credentialOffer(TYPE2, [other], rowOne);
+    expect(o.values.existing_firearm_2_make).toBe('CZ');
+    expect(o.values.existing_firearm_2_licence_no).toBe('LIC-002');
+  });
+
+  it('⚠️ does NOT treat a blank frame serial as a match', () => {
+    // A licence that reads NONE for the frame number is common — plenty of
+    // rifles have no frame serial. Matching on it would make every such
+    // firearm a duplicate of every other, and the applicant would be unable
+    // to list their second rifle at all.
+    const noFrame = (id: string, lic: string, barrel: string) =>
+      licence({
+        id,
+        details: {
+          make: 'Musgrave',
+          calibre: '.30-06',
+          frame_serial: 'NONE',
+          barrel_serial: barrel,
+          licence_number: lic,
+          firearm_type: 'Bolt Action Rifle',
+        },
+      });
+    const o = credentialOffer(TYPE2, [noFrame('c3', 'LIC-003', 'B333')], {
+      existing_firearm_1_frame_serial: 'NONE',
+      existing_firearm_1_licence_no: 'LIC-999',
+      existing_firearm_1_barrel_serial: 'B111',
+    });
+    expect(o.values.existing_firearm_2_licence_no).toBe('LIC-003');
+  });
+});

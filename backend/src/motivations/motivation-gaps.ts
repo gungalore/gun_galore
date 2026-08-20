@@ -91,6 +91,14 @@ export function findGaps(
     // Form-only fields are boxes on the SAPS 271, not things to interview about
     // — nobody needs a warmly-phrased question about their postal code.
     if (f.formOnly) continue;
+    // ⚠️ NOR IS THE OWNED-FIREARMS TABLE, which used to be excluded by being
+    // formOnly and no longer is: motivation-overlap reads it and the writer
+    // argues from it, so it has to be asked on the dealer path too. But it is
+    // still six columns TRANSCRIBED off a licence, and "tell me more about
+    // Firearm 5 — barrel serial no" is not a question anyone should be asked
+    // in words. Wrong values here come from a misread document, not from an
+    // applicant who needs drawing out.
+    if (/^existing_firearm_\d+_/.test(f.key)) continue;
 
     const current = (answers[f.key] ?? '').trim();
     const reason = reasonFor(f, current, thin);

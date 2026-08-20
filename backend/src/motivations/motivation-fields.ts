@@ -941,6 +941,19 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   // Six rows. The form has fourteen; almost nobody holds six, and an applicant
   // with more can write the remainder in by hand rather than have us guess at
   // a limit and silently drop the seventh.
+  //
+  // ⚠️ THESE ARE NOT formOnly, THOUGH THEY LOOK LIKE IT — and they were.
+  // They do fill boxes on the SAPS 271, but motivation-overlap.ts reads the
+  // calibre, make and type off them and its verdict is rendered straight into
+  // the writer's prompt. "Does this applicant already hold something that
+  // does this job" is the question that gets a second medium-game rifle
+  // refused, and the Registrar asks it whether or not we filled the form in.
+  //
+  // Marked formOnly, the whole section vanished on the dealer path: an
+  // applicant whose dealer completes the 271 was never asked what he already
+  // owns, the overlap note came out empty, and the document could not answer
+  // the objection. The quality gate then marked it down for that very gap.
+  // Seen live on MO000017.
   {
     key: 'existing_firearm_1_type',
     docSourced: 'CURRENT_LICENCE',
@@ -949,7 +962,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'Firearms you already own',
     choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
     sensitive: true,
-    formOnly: true,
   },
   {
     key: 'existing_firearm_1_calibre',
@@ -959,7 +971,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'Firearms you already own',
     help: 'Exactly as it appears on the licence.',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -969,7 +980,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -979,7 +989,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -989,7 +998,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -999,7 +1007,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1010,7 +1017,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'Firearms you already own',
     choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
     sensitive: true,
-    formOnly: true,
   },
   {
     key: 'existing_firearm_2_calibre',
@@ -1019,7 +1025,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1029,7 +1034,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1039,7 +1043,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1049,7 +1052,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1059,7 +1061,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1070,7 +1071,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'Firearms you already own',
     choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
     sensitive: true,
-    formOnly: true,
   },
   {
     key: 'existing_firearm_3_calibre',
@@ -1079,7 +1079,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1089,7 +1088,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1099,7 +1097,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1109,7 +1106,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1119,7 +1115,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1130,7 +1125,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'Firearms you already own',
     choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
     sensitive: true,
-    formOnly: true,
   },
   {
     key: 'existing_firearm_4_calibre',
@@ -1139,7 +1133,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1149,7 +1142,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1159,7 +1151,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1169,7 +1160,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1179,7 +1169,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1190,7 +1179,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'Firearms you already own',
     choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
     sensitive: true,
-    formOnly: true,
   },
   {
     key: 'existing_firearm_5_calibre',
@@ -1199,7 +1187,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1209,7 +1196,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1219,7 +1205,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1229,7 +1214,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1239,7 +1223,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1250,7 +1233,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'Firearms you already own',
     choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
     sensitive: true,
-    formOnly: true,
   },
   {
     key: 'existing_firearm_6_calibre',
@@ -1259,7 +1241,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1269,7 +1250,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1279,7 +1259,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1289,7 +1268,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {
@@ -1299,7 +1277,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'Firearms you already own',
     sensitive: true,
-    formOnly: true,
     maxLength: 60,
   },
   {

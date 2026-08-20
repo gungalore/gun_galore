@@ -580,3 +580,55 @@ describe('the form and the validator agree on what a choice may be', () => {
     expect(res.refused).toEqual(['discipline']);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// WHAT THE APPLICANT ALREADY OWNS IS ASKED ON BOTH PATHS.
+//
+// These six columns look like SAPS 271 boxes and were marked formOnly, so on
+// the dealer path — where the dealer completes the form — the whole section
+// disappeared. But motivation-overlap.ts reads the calibre, make and type off
+// them, and its verdict goes into the writer's prompt: "does this applicant
+// already hold something that does this job" is the objection the Registrar
+// raises whether or not we filled in the form. Hidden, the overlap note came
+// out empty and the document could not answer it.
+// ────────────────────────────────────────────────────────────────────
+describe('firearms the applicant already owns', () => {
+  const dealerPath = { [SAPS271_OPT_KEY]: 'My dealer will fill it in' };
+  const owned = (t: MotivationLicenceType) =>
+    fieldsFor(t).filter((f) => /^existing_firearm_\d+_/.test(f.key));
+
+  it('is visible when the dealer is filling the form in', () => {
+    for (const t of ALL) {
+      const rows = owned(t);
+      if (!rows.length) continue;
+      for (const f of rows) {
+        expect({ key: f.key, visible: isVisible(f, dealerPath) }).toEqual({
+          key: f.key,
+          visible: true,
+        });
+      }
+    }
+  });
+
+  it('is visible when we are filling the form in', () => {
+    const both = { [SAPS271_OPT_KEY]: SAPS271_FILL };
+    for (const t of ALL) {
+      for (const f of owned(t)) {
+        expect(isVisible(f, both)).toBe(true);
+      }
+    }
+  });
+
+  it('is never REQUIRED — plenty of applicants own nothing yet', () => {
+    // A first-time applicant must not be blocked by a table of firearms they
+    // do not have.
+    for (const t of ALL) {
+      for (const f of owned(t)) {
+        expect({ key: f.key, required: !!f.required }).toEqual({
+          key: f.key,
+          required: false,
+        });
+      }
+    }
+  });
+});

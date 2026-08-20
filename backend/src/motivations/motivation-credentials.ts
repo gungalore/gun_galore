@@ -159,6 +159,42 @@ export function credentialOffer(
       (col) => (answered[`existing_firearm_${n}_${col}`] ?? '').trim() !== '',
     );
 
+  /**
+   * Is this firearm ALREADY on the form?
+   *
+   * ⚠️ WITHOUT THIS THE VAULT OFFERS A DUPLICATE FOREVER. Rows are claimed
+   * from the first free slot, so once a licence has been filled into row 1 the
+   * same credential is offered again for row 2, then row 3 — the applicant is
+   * invited to list one rifle six times, and a form claiming six firearms that
+   * are one firearm is a false declaration. Seen live on MO000017: one .223
+   * in row 1, and the offer proposing the identical make, calibre and serial
+   * as "Firearm 2".
+   *
+   * Matched on the identifiers that belong to exactly one firearm. A frame
+   * serial reading NONE is NOT one of them — plenty of rifles carry no frame
+   * number and the licence says so, which would make every such firearm a
+   * duplicate of every other.
+   */
+  const norm = (v: string) => v.trim().toUpperCase();
+  const NOT_A_SERIAL = new Set(['', 'NONE', 'N/A', 'NA', '-']);
+  const alreadyOnForm = (licence: string, frame: string, barrel: string) => {
+    for (let n = 1; n <= OWNED_ROWS; n++) {
+      const has = (col: string) =>
+        norm(answered[`existing_firearm_${n}_${col}`] ?? '');
+      const l = has('licence_no');
+      const b = has('barrel_serial');
+      const f = has('frame_serial');
+      if (licence && l && l === norm(licence)) return true;
+      if (barrel && !NOT_A_SERIAL.has(norm(barrel)) && b === norm(barrel)) {
+        return true;
+      }
+      if (frame && !NOT_A_SERIAL.has(norm(frame)) && f === norm(frame)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   let row = 1;
   for (const c of credentials) {
     if (!LICENCE_KINDS.has(c.kind)) continue;
@@ -185,6 +221,10 @@ export function credentialOffer(
       });
       continue;
     }
+
+    // Already listed. Not "skipped" — nothing is missing and nothing needs
+    // saying; the firearm is on the form, which is the whole point.
+    if (alreadyOnForm(licence, frame, barrel)) continue;
 
     const p = `existing_firearm_${row}_`;
     offer(`${p}type`, `Firearm ${row} — type`, type, c.title, c.id);

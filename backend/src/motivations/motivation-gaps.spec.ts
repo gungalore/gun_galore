@@ -40,7 +40,7 @@ describe('finding the gaps', () => {
     expect(keys).not.toContain('history_conviction_detail');
   });
 
-  it('never asks an interview question about a form-only box', () => {
+  it('never asks an interview question about a form-only or transcribed box', () => {
     // Nobody needs a warmly-phrased question about their postal code.
     const keys = findGaps(T, {}).map((g) => g.key);
     for (const k of [
