@@ -76,9 +76,22 @@ const PAGE_HEIGHT = 841.89;
 // no embedded font file (see the note above about pdfkit and .afm metrics).
 // ────────────────────────────────────────────────────────────────────
 
-/** L72 R66 T72 B61, measured from their text bbox. */
+/**
+ * ⚠️ SYMMETRIC 72, AND THE FIRST MEASUREMENT OF THIS WAS WRONG.
+ *
+ * Their LEFT margin is exactly 72.0 on every body line of all three packs —
+ * a hard cluster, no spread. The right is not so clean: justified line
+ * right-edges cluster at 526.2-526.5, which would read as a 69pt margin, and
+ * taking the single furthest glyph (529.5) gives 66 — the number this file
+ * shipped with, described as "measured", from one outlier.
+ *
+ * The 3pt is glyph overshoot: PyMuPDF reports the glyph bbox, which runs past
+ * the advance width the justification engine actually aligned to. Word sets
+ * margins symmetrically and the left proves 72, so the page setup is 72/72.
+ * Measure the ink, infer the box.
+ */
 const MARGIN = 72;
-const MARGIN_RIGHT = 66;
+const MARGIN_RIGHT = 72;
 /**
  * Room for the footer block, which is TWO lines and sits low.
  *
@@ -87,11 +100,15 @@ const MARGIN_RIGHT = 66;
  * where the body does — using it left eight points of clearance and the body
  * would eventually have collided with the running title.
  */
-const MARGIN_BOTTOM = 95;
+const MARGIN_BOTTOM = 92;
 /** The footer's first baseline: 89pt from the bottom edge, as theirs is. */
 const FOOTER_FROM_BOTTOM = 89;
 
-const BLACK = '#111111';
+// ⚠️ PURE BLACK, NOT A SOFT BLACK. Every one of the 62,295 coloured body
+// characters in their Barrett pack is (0,0,0). #111111 is a screen habit; on
+// a printed submission handed across a counter it reads as a photocopy of
+// something, rather than as the document itself.
+const BLACK = '#000000';
 const GREY = '#555555';
 const RULE = '#999999';
 
@@ -621,11 +638,22 @@ export class MotivationPdfService {
       // that names its own application cannot be filed against the wrong one.
       // Ours carried a single centred line with our own name in it, which
       // told the reviewer nothing they needed.
+      // A 0.5pt rule separates the footer from the body — measured at y752.5
+      // in theirs, spanning the full column. Without it the running title
+      // reads as a stray paragraph that wandered to the bottom of the page.
+      const ruleAt = PAGE_HEIGHT - FOOTER_FROM_BOTTOM - 7;
+      doc
+        .moveTo(MARGIN, ruleAt)
+        .lineTo(PAGE_WIDTH - MARGIN_RIGHT, ruleAt)
+        .lineWidth(0.5)
+        .strokeColor(BLACK)
+        .stroke();
+
       const footerY = PAGE_HEIGHT - FOOTER_FROM_BOTTOM;
       doc
         .font(FONT_ITALIC)
         .fontSize(8)
-        .fillColor(GREY)
+        .fillColor(BLACK)
         .text(`Page ${i + 1} of ${totalPages}`, MARGIN, footerY, {
           width: contentWidth,
           align: 'left',
