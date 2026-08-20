@@ -65,6 +65,62 @@ const DRAFT_KEY = (id: string) => `motivation-draft:${id}`;
 // photograph is the next thing in the list.
 
 /**
+ * The pack checklist, behind "I have read it".
+ *
+ * ⚠️ THE ACKNOWLEDGEMENT IS LOCAL AND MEANS NOTHING TO THE SERVER, which is
+ * the honest shape for it: it decides when a member is ready to look at a
+ * list, and nothing else. Kept in localStorage beside the tick state the
+ * panel itself already stores there, so it survives a reload on the machine
+ * where the work is happening — and if it does not survive, the cost is one
+ * more press of a button.
+ */
+function PackChecklistGate({
+  motivationId,
+  token,
+}: {
+  motivationId: string;
+  token: () => Promise<string | null>;
+}) {
+  const key = `gg-motivation-pack-ready:${motivationId}`;
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    try {
+      setReady(window.localStorage.getItem(key) === '1');
+    } catch {
+      // Private mode, or storage disabled. The button simply asks again.
+    }
+  }, [key]);
+
+  if (!ready) {
+    return (
+      <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
+        <h2 className="font-medium">Ready to take it in?</h2>
+        <p className="mt-1 text-sm text-[var(--text-secondary)]">
+          Read your motivation first. When you are happy with it, we will show
+          you everything to take to the police station with it.
+        </p>
+        <button
+          type="button"
+          className="mt-3 rounded bg-[var(--red)] px-4 py-2 text-sm text-white hover:bg-[var(--red-hover)]"
+          onClick={() => {
+            setReady(true);
+            try {
+              window.localStorage.setItem(key, '1');
+            } catch {
+              // See above — the list still opens for this visit.
+            }
+          }}
+        >
+          I have read it — show me the list
+        </button>
+      </section>
+    );
+  }
+
+  return <MotivationChecklistPanel token={token} motivationId={motivationId} />;
+}
+
+/**
  * Which KIND a file picked on this row should be filed as.
  *
  * ⚠️ THE SAFE ROW IS THREE KINDS, and a file has to be one of them — nothing
@@ -642,7 +698,26 @@ export default function MotivationWizardPage() {
     });
     return { sections: groupBySection(visible) };
   }, [shown, ownedRows, detail?.overlap?.needsJustification]);
-  const outstanding = detail?.missingRequired ?? [];
+  /**
+   * What is still unanswered, RIGHT NOW.
+   *
+   * ⚠️ THE SERVER'S LIST IS A SNAPSHOT, and it is only as fresh as the last
+   * round trip. `detail.missingRequired` was computed when the page loaded,
+   * so a section the member had just filled in went on counting those fields
+   * as outstanding and sat amber with everything in it answered — MO000017,
+   * "the experience stays amber after filling it in". Answers typed since
+   * then are the newer fact, so a field counts as outstanding only if the
+   * server said so AND it is still empty on screen.
+   *
+   * The server list stays the source of WHICH fields are required — that is
+   * registry logic and depends on answers this component does not evaluate.
+   * All that happens here is crossing off the ones already filled.
+   */
+  const serverOutstanding = detail?.missingRequired ?? [];
+  const outstanding = useMemo(
+    () => serverOutstanding.filter((k) => !(answers[k] ?? '').trim()),
+    [serverOutstanding, answers],
+  );
   // A question stays open until the applicant has REPLIED to it — a user
   // message with the same fieldKey later in the thread. The old check hid any
   // question whose field had text, but the gate asks about THIN fields, which
@@ -1360,7 +1435,20 @@ export default function MotivationWizardPage() {
       {/* THE PACK, not just the motivation. The list already existed on the
           server and nothing rendered it, while /motivations promised "a
           checklist of everything to take to the police station". */}
-      <MotivationChecklistPanel token={token} motivationId={id} />
+      {/* ⚠️ NOT WHILE THE FORM IS A DRAFT. Fourteen tickboxes about walking
+          into a police station, sitting under a half-filled application, are
+          a list of things to do about a document that does not exist yet —
+          and they were rendered unconditionally from the day they were
+          added.
+
+          Two gates, because the operator asked for two: the motivation has to
+          have been GENERATED, and he has to have said he has read it. The
+          second is deliberately a plain acknowledgement rather than a status
+          — nothing about the pack changes when he presses it, and pretending
+          otherwise would put a fake approval step into an application. */}
+      {detail.status === 'COMPLETED' && (
+        <PackChecklistGate motivationId={id} token={token} />
+      )}
 
       <section className="mt-8 border-t border-[var(--border-divider)] pt-4">
         <button
