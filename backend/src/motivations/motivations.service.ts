@@ -33,6 +33,7 @@ import {
   imageSize,
   isEmbeddable,
 } from './motivation-annexure-layout';
+import { buildLibrary } from './motivation-library';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import {
   planFor,
@@ -71,7 +72,11 @@ import {
 import { readSaId } from './sa-id';
 import { Saps271Service } from './saps271.service';
 import { overlapFromAnswers } from './motivation-overlap';
-import { documentStatus, pickableKinds } from './motivation-documents';
+import {
+  documentLabel,
+  documentStatus,
+  pickableKinds,
+} from './motivation-documents';
 import {
   ProfileSource,
   profileCoverageNote,
@@ -665,6 +670,253 @@ export class MotivationsService {
         confirmed: r.confirmedAt !== null,
       };
     });
+  }
+
+  // ── the document library ──────────────────────────────────────────
+
+  /**
+   * Everything the member could reuse on this motivation.
+   *
+   * ⚠️ IT READS BOTH STORES, because neither is the library on its own — the
+   * vault chases expiry and has no concept of an ID copy or a photograph of a
+   * safe; those exist only as uploads. See motivation-library.ts.
+   *
+   * ⚠️ EVERY UPLOAD THE MEMBER OWNS, NOT JUST THIS PACK'S. That is the whole
+   * point: the second application should not ask for the ID again. Scoped by
+   * `motivation: { userId: user.id }`, which is the only thing standing
+   * between one member's library and another's.
+   */
+  async library(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const [credentials, uploads] = await Promise.all([
+      this.prisma.credential.findMany({
+        where: { userId: user.id },
+        select: {
+          id: true,
+          kind: true,
+          title: true,
+          createdAt: true,
+          storageKey: true,
+          purgedAt: true,
+          sha256: true,
+        },
+      }),
+      this.prisma.motivationUpload.findMany({
+        where: { motivation: { userId: user.id } },
+        select: {
+          id: true,
+          motivationId: true,
+          kind: true,
+          createdAt: true,
+          storageKey: true,
+          purgedAt: true,
+          sha256: true,
+        },
+      }),
+    ]);
+
+    return {
+      items: buildLibrary(credentials, uploads, row.id, documentLabel),
+    };
+  }
+
+  /**
+   * Attach a document the member already has, without asking for it again.
+   *
+   * ⚠️ THE BYTES ARE COPIED, NOT THE STORAGE KEY. Sharing one encrypted blob
+   * between two motivations would mean the retention sweep purging one
+   * application silently blanking a document in another — and the row that
+   * lost its file would look, to its owner, exactly like a bug. A licence
+   * card is under a megabyte; correctness is worth the disk.
+   *
+   * ⚠️ THE EXTRACTION IS COPIED TOO, when the source has one. Same file, same
+   * kind, same answer — re-running vision would spend money to arrive back
+   * where we started.
+   */
+  async addFromLibrary(
+    clerkId: string,
+    id: string,
+    source: 'credential' | 'upload',
+    sourceId: string,
+  ) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, status: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (!EDITABLE.includes(row.status)) {
+      throw new ConflictException('This application can no longer be changed.');
+    }
+
+    const count = await this.prisma.motivationUpload.count({
+      where: { motivationId: row.id },
+    });
+    if (count >= MAX_UPLOADS) {
+      throw new ConflictException(
+        `An application can carry ${MAX_UPLOADS} documents. Remove one before adding another.`,
+      );
+    }
+
+    // ⚠️ OWNERSHIP IS A WHERE CLAUSE, in both branches. A sourceId is a
+    // client-supplied id: the only thing stopping it naming another member's
+    // document is that the query cannot find one.
+    let kind: MotivationUploadKind;
+    let storageKey: string | null;
+    let mimeType: string | null;
+    let purgedAt: Date | null;
+    let extraction: { ok: boolean; fields: string[]; blob: string | null } = {
+      ok: false,
+      fields: [],
+      blob: null,
+    };
+
+    if (source === 'credential') {
+      const c = await this.prisma.credential.findFirst({
+        where: { id: sourceId, userId: user.id },
+        select: {
+          kind: true,
+          storageKey: true,
+          mimeType: true,
+          purgedAt: true,
+        },
+      });
+      if (!c) throw new NotFoundException('Document not found');
+      const mapped = CREDENTIAL_TO_UPLOAD[c.kind];
+      if (!mapped) {
+        throw new BadRequestException(
+          'That document does not answer anything on this application.',
+        );
+      }
+      kind = mapped as MotivationUploadKind;
+      storageKey = c.storageKey;
+      mimeType = c.mimeType;
+      purgedAt = c.purgedAt;
+    } else {
+      const u = await this.prisma.motivationUpload.findFirst({
+        where: { id: sourceId, motivation: { userId: user.id } },
+        select: {
+          kind: true,
+          storageKey: true,
+          mimeType: true,
+          purgedAt: true,
+          extractionOk: true,
+          extractedFields: true,
+          extractionEncrypted: true,
+        },
+      });
+      if (!u) throw new NotFoundException('Document not found');
+      kind = u.kind;
+      storageKey = u.storageKey;
+      mimeType = u.mimeType;
+      purgedAt = u.purgedAt;
+      extraction = {
+        ok: u.extractionOk,
+        fields: u.extractedFields,
+        blob: u.extractionEncrypted,
+      };
+    }
+
+    if (!storageKey || purgedAt) {
+      throw new GoneException(
+        'That document is no longer stored, so it cannot be reused.',
+      );
+    }
+
+    let bytes: Buffer;
+    try {
+      bytes = await this.files.read(storageKey);
+    } catch (err) {
+      this.logger.error(
+        `Motivation ${row.id}: could not read library source ${sourceId}: ${(err as Error).message}`,
+      );
+      throw new ServiceUnavailableException(
+        'We could not open that document just now. Please try again.',
+      );
+    }
+
+    let stored: { storageKey: string; sha256: string; byteSize: number };
+    try {
+      stored = await this.files.write('motivations', bytes, new Date());
+    } catch (err) {
+      this.logger.error(
+        `Motivation ${row.id}: could not store library copy: ${(err as Error).message}`,
+      );
+      throw new ServiceUnavailableException(
+        'We could not store that document just now. Please try again.',
+      );
+    }
+
+    // Already on this pack? The unique index says so — and the honest answer
+    // is the row they already have, not an error about a mistake they did not
+    // make.
+    const existing = await this.prisma.motivationUpload.findFirst({
+      where: { motivationId: row.id, sha256: stored.sha256 },
+      select: { id: true, kind: true, byteSize: true, createdAt: true },
+    });
+    if (existing) {
+      await this.files.remove(stored.storageKey).catch(() => undefined);
+      return {
+        id: existing.id,
+        kind: existing.kind,
+        label: documentLabel(existing.kind),
+        byteSize: existing.byteSize,
+        available: true,
+        annexure: null,
+        suggestions: [],
+        alreadyHad: true,
+      };
+    }
+
+    const created = await this.prisma.motivationUpload.create({
+      data: {
+        motivationId: row.id,
+        kind,
+        storageKey: stored.storageKey,
+        mimeType: mimeType ?? 'image/jpeg',
+        byteSize: stored.byteSize,
+        sha256: stored.sha256,
+        extractionOk: extraction.ok,
+        extractedFields: extraction.fields,
+        extractionEncrypted: extraction.blob,
+      },
+      select: { id: true, kind: true, byteSize: true },
+    });
+
+    // The values the source had already been read for, so picking a document
+    // from the library fills the same boxes photographing it would have.
+    let suggestions: { key: string; value: string; label: string }[] = [];
+    if (extraction.ok && extraction.blob) {
+      try {
+        const read = decryptJson<Record<string, string>>(extraction.blob);
+        suggestions = Object.entries(read ?? {}).map(([key, value]) => ({
+          key,
+          value,
+          label: key,
+        }));
+      } catch {
+        // A blob we cannot read costs a convenience, not the attachment.
+      }
+    }
+
+    return {
+      id: created.id,
+      kind: created.kind,
+      label: documentLabel(created.kind),
+      byteSize: created.byteSize,
+      available: true,
+      annexure: null,
+      suggestions,
+      alreadyHad: false,
+    };
   }
 
   /** What we WOULD fill from the vault, and which document each value is from. */

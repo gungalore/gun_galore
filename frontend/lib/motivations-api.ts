@@ -172,6 +172,24 @@ export interface CredentialChoice {
   values: Record<string, string>;
 }
 
+/**
+ * One document the member already has, offered for reuse.
+ *
+ * ⚠️ ONE ENTRY PER DOCUMENT, not per stored copy. The same photograph reused
+ * onto a second motivation is a second row in the database; the server dedupes
+ * on content so the member is never asked to choose between two identical
+ * lines.
+ */
+export interface LibraryItem {
+  source: 'credential' | 'upload';
+  sourceId: string;
+  kind: string;
+  title: string;
+  addedOn: string;
+  /** Already attached to the motivation being filled in. */
+  alreadyHere: boolean;
+}
+
 export interface LicenceCentreOffer {
   /** Nothing in the vault at all. */
   empty: boolean;
@@ -328,6 +346,26 @@ export const motivationsApi = {
         documents: [],
         choices: { competency: [], dedicated: [] },
       },
+    ),
+
+  /**
+   * Everything this member could reuse instead of photographing it again —
+   * their vault plus every document on their other motivations.
+   */
+  library: (t: TokenGetter, id: string) =>
+    request<{ items: LibraryItem[] }>(t, `/${id}/library`, {}, { items: [] }),
+
+  /** Attach one, without asking for the file again. */
+  addFromLibrary: (
+    t: TokenGetter,
+    id: string,
+    source: 'credential' | 'upload',
+    sourceId: string,
+  ) =>
+    request<AddedUpload & { alreadyHad: boolean }>(
+      t,
+      `/${id}/uploads/from-library`,
+      { method: 'POST', body: JSON.stringify({ source, sourceId }) },
     ),
 
   /** They agree, and we copy. Never overwrites an answer they typed. */

@@ -404,6 +404,37 @@ export class MotivationsController {
     );
   }
 
+  /**
+   * Everything this member could reuse instead of photographing it again.
+   *
+   * ⚠️ DECLARED ABOVE `@Get(':id/uploads')`? No — a literal segment and a
+   * param segment at the same depth do not collide in Nest, but `library` and
+   * `uploads` are both literals so order is irrelevant here. Kept next to the
+   * uploads routes because that is what it is about.
+   */
+  @Get(':id/library')
+  library(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.library(clerkId, id);
+  }
+
+  /** Attach one of them, without asking for the file again. */
+  @Post(':id/uploads/from-library')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  addFromLibrary(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body('source') source: string,
+    @Body('sourceId') sourceId: string,
+  ) {
+    if (source !== 'credential' && source !== 'upload') {
+      throw new BadRequestException('Unknown document source.');
+    }
+    if (!sourceId?.trim()) {
+      throw new BadRequestException('Which document?');
+    }
+    return this.motivations.addFromLibrary(clerkId, id, source, sourceId.trim());
+  }
+
   @Get(':id/uploads')
   listUploads(@CurrentUser() clerkId: string, @Param('id') id: string) {
     return this.motivations.listUploads(clerkId, id);

@@ -5,6 +5,7 @@ import DateField from '@/components/date-field';
 import FilePickerButton from '@/components/file-picker-button';
 import ScanButton from '@/components/scan/scan-button';
 import CredentialPicker from '@/components/credential-picker';
+import LibraryPicker from '@/components/library-picker';
 import { shapeForKind } from '@/lib/scan/shapes';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
@@ -18,6 +19,7 @@ import {
   MotivationDetail,
   MotivationField,
   DocumentStatus,
+  LibraryItem,
   LicenceCentreOffer,
   PickableKind,
   ProfileOffer,
@@ -310,6 +312,20 @@ export default function MotivationWizardPage() {
     [],
   );
 
+  /** Documents this member already has, for the "use one I have" pickers. */
+  const [library, setLibrary] = useState<LibraryItem[]>([]);
+  const loadLibrary = useCallback(async () => {
+    try {
+      const r = await motivationsApi.library(token, id);
+      setLibrary(r.items);
+    } catch {
+      // A library we cannot read costs a shortcut, not the ability to upload.
+    }
+  }, [token, id]);
+  useEffect(() => {
+    void loadLibrary();
+  }, [loadLibrary]);
+
   const refreshUploads = useCallback(async () => {
     const up = await motivationsApi.uploads(token, id);
     setUploads(up.files);
@@ -331,6 +347,41 @@ export default function MotivationWizardPage() {
    * The file is filed as a real annexure at the same time, so it prints into
    * the pack with everything else.
    */
+  /**
+   * Attach a document the member already has.
+   *
+   * ⚠️ THE SERVER COPIES THE BYTES — nothing is uploaded from here. That is
+   * the whole point: the second application should not ask for the ID again.
+   * Any values the source had already been read for come back as suggestions
+   * and are applied, exactly as if it had just been photographed.
+   */
+  const attachFromLibrary = useCallback(
+    async (item: LibraryItem) => {
+      const row = await motivationsApi.addFromLibrary(
+        token,
+        id,
+        item.source,
+        item.sourceId,
+      );
+      setUploads((u) => [...u, row]);
+      // ⚠️ NEVER OVER AN ANSWER THEY TYPED. Unlike the per-field camera —
+      // where pressing "photograph my competency certificate" IS the request
+      // to replace what is in that box — this attaches a whole document and
+      // may carry half a dozen values with it. Overwriting on that basis
+      // would quietly undo work they did by hand.
+      for (const sg of row.suggestions ?? []) {
+        setAnswer(sg.key, sg.value, { onlyIfEmpty: true });
+      }
+      await Promise.all([
+        refreshUploads().catch(() => undefined),
+        loadLibrary().catch(() => undefined),
+      ]);
+    },
+    // setAnswer is re-created every render by design (see its own note).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [token, id, refreshUploads, loadLibrary],
+  );
+
   const fillFromPhoto = useCallback(
     async (kind: string, file: File) => {
       const row = await motivationsApi.addUpload(token, id, kind, file);
@@ -363,12 +414,23 @@ export default function MotivationWizardPage() {
       .catch(() => undefined);
   };
 
-  const setAnswer = (key: string, value: string) => {
+  const setAnswer = (
+    key: string,
+    value: string,
+    opts: { onlyIfEmpty?: boolean } = {},
+  ) => {
     dirty.current = true;
     if (key === 'firearm_calibre' || /^existing_firearm_\d+_calibre$/.test(key)) {
       overlapDirty.current = true;
     }
-    setAnswers((a) => ({ ...a, [key]: value }));
+    setAnswers((a) => {
+      // ⚠️ CHECKED INSIDE THE UPDATER, against the state React is actually
+      // holding. Reading `answers` from the enclosing render and deciding out
+      // here would race a document that fills several boxes at once: each
+      // call would see the same stale snapshot.
+      if (opts.onlyIfEmpty && (a[key] ?? '').trim()) return a;
+      return { ...a, [key]: value };
+    });
   };
 
   /**
@@ -671,6 +733,7 @@ export default function MotivationWizardPage() {
                           onView={viewUpload}
                         />
                       ) : (
+                        <>
                         /* ⚠️ EVERY WAY IN, ON EVERY LINE. The bulk panel at
                            the bottom had the camera and the phone handoff and
                            these rows had only a file picker — so the member
@@ -679,6 +742,10 @@ export default function MotivationWizardPage() {
                            who could not use a camera. Same three routes as
                            the panel: phone (desktop), camera (handheld),
                            picker (always). */
+                        <LibraryPicker
+                          items={library.filter((l) => l.kind === n.kind)}
+                          onPick={attachFromLibrary}
+                        />
                         <ScanButton
                           shape={shapeForKind(n.kind)}
                           title={n.label}
@@ -732,6 +799,7 @@ export default function MotivationWizardPage() {
                             </FilePickerButton>
                           }
                         />
+                        </>
                       )}
                     </span>
                   </span>
