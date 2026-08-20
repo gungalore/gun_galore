@@ -554,6 +554,16 @@ export const motivationsApi = {
       { accepted: true },
     ),
 
+  /**
+   * START the document. Returns 202 as soon as the work is claimed — the
+   * document does NOT exist yet, and `status` will be GENERATING.
+   *
+   * ⚠️ DO NOT WAIT ON THIS REQUEST FOR THE RESULT. A real run takes about a
+   * minute and a half; nginx allows an upstream sixty seconds and Cloudflare
+   * cuts the origin at a hundred, so the old awaited call returned a 504 —
+   * with no JSON body, hence the generic "Something went wrong" below — for a
+   * document that had been written and paid for. Poll the row instead.
+   */
   generate: (t: TokenGetter, id: string) =>
     request<{ status: string; score?: number }>(t, `/${id}/generate`, {
       method: 'POST',

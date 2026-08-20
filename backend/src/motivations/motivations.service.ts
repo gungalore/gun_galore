@@ -7,6 +7,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import * as crypto from 'node:crypto';
 import {
   MotivationLicenceType,
@@ -1934,7 +1935,13 @@ export class MotivationsService {
    *   6. check sameness against previous documents of this type
    *   7. grade; a thin document never becomes a PDF
    */
-  async generate(clerkId: string, id: string) {
+  /**
+   * The cheap half: everything that can refuse, plus the claim on the row.
+   *
+   * Split out so the expensive half can run OFF the request. Nothing in here
+   * calls a model or costs money, so it is safe to run on every attempt.
+   */
+  private async prepareGeneration(clerkId: string, id: string) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
 
@@ -1986,6 +1993,26 @@ export class MotivationsService {
         'This document is already being prepared. Give it a moment.',
       );
     }
+
+    return { row, answers };
+  }
+
+  /**
+   * The expensive half: two flagship calls and a grading pass.
+   *
+   * ⚠️ THIS MUST NOT RUN INSIDE AN HTTP REQUEST. Measured on a live section 16
+   * pack: 88 seconds, 14k prompt and 12k completion tokens over two gate
+   * cycles. nginx gives an upstream 60 seconds and Cloudflare cuts the origin
+   * at 100 whatever nginx is told, so the applicant got a 504 for a document
+   * that had been written and paid for — and clicking again spent it twice.
+   *
+   * The row is already claimed (GENERATING) before this is called, so a second
+   * click cannot start a second run; the caller decides whether to await.
+   */
+  private async runGeneration(
+    prepared: Awaited<ReturnType<MotivationsService['prepareGeneration']>>,
+  ) {
+    const { row, answers } = prepared;
 
     // Whether THIS call took a seat. If generation then fails, the seat has to
     // go back — see the catch block.
@@ -2190,6 +2217,73 @@ export class MotivationsService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Generate and wait for the outcome.
+   *
+   * Kept for callers that genuinely want the result in hand — the tests, and
+   * anything server-side that is not answering an HTTP request. NOT the route:
+   * see startGeneration and the timing note on runGeneration.
+   */
+  async generate(clerkId: string, id: string) {
+    const prepared = await this.prepareGeneration(clerkId, id);
+    return this.runGeneration(prepared);
+  }
+
+  /**
+   * Start generating and return at once. What the route calls.
+   *
+   * Every refusal the applicant can act on — not found, declaration not
+   * accepted, answers missing, already running — still happens before this
+   * returns, so the wizard gets a real error rather than a hopeful "started"
+   * followed by silence. Only the part that cannot fail fast runs detached.
+   *
+   * ⚠️ THE PROMISE IS DELIBERATELY NOT AWAITED, and its rejection is swallowed
+   * here rather than left to crash the process. runGeneration's own catch has
+   * already restored the row and returned the beta seat by the time it
+   * rethrows; there is no caller left to tell, and the applicant learns the
+   * outcome from the row's status.
+   */
+  async startGeneration(clerkId: string, id: string) {
+    const prepared = await this.prepareGeneration(clerkId, id);
+    void this.runGeneration(prepared).catch((err) => {
+      this.logger.error(
+        `Motivation ${prepared.row.id}: background generation failed — ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    });
+    return { status: MotivationStatus.GENERATING };
+  }
+
+  /**
+   * Free rows left claimed by a process that died mid-generation.
+   *
+   * ⚠️ THE ONE FAILURE runGeneration's catch CANNOT COVER. It restores the row
+   * on a thrown error, but a deploy, an OOM kill or a pm2 restart takes the
+   * process with the promise still in flight — and GENERATING is not editable
+   * and not re-generable, so the applicant is stranded on a document that
+   * looks permanently busy with nothing to click.
+   *
+   * Fifteen minutes is well past the ~90 seconds a real run takes, so this
+   * cannot cut off work that is still going; and it moves the row to
+   * NEEDS_MORE_INFO rather than an editable draft, because tokens may well
+   * have been spent and the applicant should see the state as it is.
+   */
+  @Cron('*/5 * * * *')
+  async sweepStuckGenerations() {
+    const cutoff = new Date(Date.now() - 15 * 60 * 1000);
+    const stuck = await this.prisma.motivation.updateMany({
+      where: { status: MotivationStatus.GENERATING, updatedAt: { lt: cutoff } },
+      data: { status: MotivationStatus.NEEDS_MORE_INFO },
+    });
+    if (stuck.count > 0) {
+      this.logger.error(
+        `Released ${stuck.count} motivation(s) stuck in GENERATING — a generation was interrupted, most likely by a restart.`,
+      );
+    }
+    return { released: stuck.count };
   }
 
   /**

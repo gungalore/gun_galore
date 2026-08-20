@@ -605,6 +605,123 @@ describe('MotivationsService.generate', () => {
     await svc.generate('c1', 'mo-1');
     expect(quota.claimBetaSeat).not.toHaveBeenCalled();
   });
+
+  // ────────────────────────────────────────────────────────────────────
+  // STARTING A GENERATION WITHOUT HOLDING THE REQUEST OPEN.
+  //
+  // A real section 16 run measured 88 seconds — two flagship calls and a
+  // grading pass, 14k prompt and 12k completion tokens over two gate cycles.
+  // nginx allows an upstream 60 seconds and Cloudflare cuts the origin at 100
+  // whatever nginx is told, so the applicant received a 504 for a document that
+  // had been written, graded and paid for. Clicking again spent it twice.
+  //
+  // So the route starts the work and returns. What must NOT be lost in that
+  // move is the refusals: an applicant who has not accepted the declaration, or
+  // still has an answer missing, has to be told NOW, not left watching a
+  // spinner for a run that was never going to happen.
+  // ────────────────────────────────────────────────────────────────────
+  describe('startGeneration', () => {
+    const flush = () => new Promise((r) => setImmediate(r));
+
+    it('returns GENERATING without waiting for the model', async () => {
+      const { svc, prisma, claude } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+
+      // A generation that never settles. If startGeneration awaited the
+      // pipeline, this test would time out — which is precisely the production
+      // failure, expressed as a test.
+      claude.generate.mockImplementation(() => new Promise(() => {}));
+
+      const res = await svc.startGeneration('c1', 'mo-1');
+      expect(res.status).toBe(MotivationStatus.GENERATING);
+    });
+
+    it('still claims the row before returning, so a second click is refused', async () => {
+      const { svc, prisma, claude } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+      claude.generate.mockImplementation(() => new Promise(() => {}));
+      await svc.startGeneration('c1', 'mo-1');
+      // The compare-and-swap is what stops two runs, and it has to have
+      // happened by the time the caller gets its 202 — otherwise two clicks a
+      // moment apart both pass the check and both spend money.
+      expect(prisma.motivation.updateMany).toHaveBeenCalled();
+    });
+
+    it('REFUSES SYNCHRONOUSLY when answers are missing — no false start', async () => {
+      const { svc, prisma, claude } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce({
+        ...READY,
+        answersEncrypted: encryptJson({ occupation: 'Farmer' }),
+      });
+      await expect(svc.startGeneration('c1', 'mo-1')).rejects.toMatchObject({
+        response: { code: 'motivation-incomplete' },
+      });
+      expect(claude.generate).not.toHaveBeenCalled();
+    });
+
+    it('REFUSES SYNCHRONOUSLY without the declaration', async () => {
+      const { svc, prisma, claude } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(
+        readyRow({ declarationAcceptedAt: null }),
+      );
+      await expect(svc.startGeneration('c1', 'mo-1')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(claude.generate).not.toHaveBeenCalled();
+    });
+
+    it('does not reject the caller when the background run fails', async () => {
+      // The applicant already has their 202. A rejection with nobody left to
+      // catch it is an unhandled rejection, which on some Node configurations
+      // takes the whole process down — every other user's request with it.
+      const { svc, prisma, claude } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+      claude.generate.mockRejectedValue(new Error('overloaded'));
+
+      const res = await svc.startGeneration('c1', 'mo-1');
+      expect(res.status).toBe(MotivationStatus.GENERATING);
+      await flush();
+      await flush();
+
+      // And the row is handed back, exactly as it is on the awaited path.
+      expect(prisma.motivation.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: MotivationStatus.GENERATING,
+          }),
+          data: { status: MotivationStatus.NEEDS_MORE_INFO },
+        }),
+      );
+    });
+  });
+
+  describe('sweepStuckGenerations', () => {
+    // The one failure the pipeline's own catch cannot reach: a restart takes
+    // the process with the promise still in flight, and GENERATING is neither
+    // editable nor re-generable. Without this the applicant is stranded on a
+    // document that looks permanently busy, with nothing on screen to click.
+    it('releases rows claimed longer ago than any real run takes', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.updateMany.mockResolvedValueOnce({ count: 2 });
+      const res = await svc.sweepStuckGenerations();
+      expect(res.released).toBe(2);
+
+      const where = prisma.motivation.updateMany.mock.calls.at(-1)![0].where;
+      expect(where.status).toBe(MotivationStatus.GENERATING);
+      // Strictly older than the cutoff, and the cutoff must be comfortably past
+      // the ~90 seconds a real generation takes or this would kill live work.
+      const cutoff: Date = where.updatedAt.lt;
+      const ageMs = Date.now() - cutoff.getTime();
+      expect(ageMs).toBeGreaterThanOrEqual(10 * 60 * 1000);
+    });
+
+    it('reports nothing when there is nothing stuck', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.updateMany.mockResolvedValueOnce({ count: 0 });
+      expect((await svc.sweepStuckGenerations()).released).toBe(0);
+    });
+  });
+
 });
 
 describe('MotivationsService.renderPdf', () => {

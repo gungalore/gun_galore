@@ -661,6 +661,41 @@ export default function MotivationWizardPage() {
   };
 
 
+  /**
+   * Pick a generation back up after the page has gone away.
+   *
+   * ⚠️ THE WORK NOW OUTLIVES THE REQUEST THAT STARTED IT, which is the whole
+   * point — but it also means an applicant can reload, lose their phone
+   * signal, or simply come back later and find a row that says GENERATING
+   * with nothing watching it. Without this they would sit on a stale page
+   * indefinitely while the finished document sat in the database.
+   */
+  useEffect(() => {
+    if (detail?.status !== 'GENERATING') return;
+    let alive = true;
+    const deadline = Date.now() + 6 * 60 * 1000;
+    void (async () => {
+      while (alive && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 3000));
+        if (!alive) return;
+        try {
+          const d = await motivationsApi.get(token, id);
+          if (!alive) return;
+          if (d.status !== 'GENERATING') {
+            setDetail(d);
+            setMessages(await motivationsApi.messages(token, id));
+            return;
+          }
+        } catch {
+          // A dropped poll is not a failed generation. Keep watching.
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [detail?.status, token, id]);
+
   const shown = useMemo(() => visibleFields(fields, answers), [fields, answers]);
 
   /**
@@ -1435,7 +1470,14 @@ export default function MotivationWizardPage() {
       {/* 5 — declaration and generate */}
       <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
         <h2 className="font-medium">Before we prepare it</h2>
-        {outstanding.length > 0 ? (
+        {detail.status === 'GENERATING' ? (
+          // Offering "Prepare my motivation" here would earn a 409 from the
+          // compare-and-swap and read as a broken button.
+          <p className="mt-2 text-sm" role="status">
+            We are writing it now — this takes about a minute. You can leave
+            this page; it will be here when you come back.
+          </p>
+        ) : outstanding.length > 0 ? (
           <p className="mt-2 text-sm text-[var(--text-secondary)]">
             {outstanding.length} answer{outstanding.length === 1 ? '' : 's'}{' '}
             still to give. The sections above show which.
@@ -1470,11 +1512,34 @@ export default function MotivationWizardPage() {
                     id,
                     testimonialConsent,
                   );
+                  // Returns as soon as the work is CLAIMED, not finished.
                   await motivationsApi.generate(token, id);
-                  const d = await motivationsApi.get(token, id);
+
+                  // ⚠️ THE DOCUMENT IS WRITTEN AFTER THE RESPONSE, so the row
+                  // is what to watch. Waiting on the request itself is what
+                  // produced "Something went wrong" for a generation that had
+                  // completed: about ninety seconds of work behind a sixty
+                  // second proxy timeout, under a Cloudflare edge that gives
+                  // up at a hundred regardless.
+                  //
+                  // Six minutes is far longer than a real run and exists only
+                  // so this cannot spin forever. Nothing is lost by giving up
+                  // early anyway — the work continues on the server, and the
+                  // status is on the page whenever they come back to it.
+                  const deadline = Date.now() + 6 * 60 * 1000;
+                  let d = await motivationsApi.get(token, id);
+                  while (d.status === 'GENERATING' && Date.now() < deadline) {
+                    await new Promise((r) => setTimeout(r, 3000));
+                    d = await motivationsApi.get(token, id);
+                  }
                   setDetail(d);
                   setMessages(await motivationsApi.messages(token, id));
                   if (d.status === 'COMPLETED') router.refresh();
+                  if (d.status === 'GENERATING') {
+                    setError(
+                      'This is taking longer than usual. It is still being written — leave this page open, or come back shortly and it will be here.',
+                    );
+                  }
                 } catch (e) {
                   // ⚠️ NAME THE FIELDS, AND GO TO THEM. "Some required answers
                   // are still missing" on its own is a dead end — the member
@@ -1511,7 +1576,9 @@ export default function MotivationWizardPage() {
                 }
               }}
             >
-              {generating ? 'Preparing…' : 'Prepare my motivation'}
+              {generating
+                ? 'Writing it — about a minute…'
+                : 'Prepare my motivation'}
             </button>
           </>
         )}

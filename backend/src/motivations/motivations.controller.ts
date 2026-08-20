@@ -5,6 +5,7 @@ import {
   Delete,
   FileTypeValidator,
   Get,
+  HttpCode,
   MaxFileSizeValidator,
   Param,
   ParseFilePipe,
@@ -193,9 +194,20 @@ export class MotivationsController {
    * CAS) and the beta seat cap.
    */
   @Post(':id/generate')
+  @HttpCode(202)
   @Throttle({ default: { limit: 10, ttl: 3_600_000 } })
   generate(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.generate(clerkId, id);
+    // ⚠️ 202, AND IT RETURNS BEFORE THE DOCUMENT EXISTS. Holding the request
+    // open for the ~90 seconds a real generation takes does not work: nginx
+    // gives an upstream 60 seconds and Cloudflare cuts the origin at 100
+    // regardless, so the applicant saw a 504 for work that had completed and
+    // been paid for. The wizard polls the row's status instead.
+    //
+    // Everything the applicant can act on is still refused synchronously —
+    // startGeneration does the whole preflight and the claim before it
+    // returns — so a 202 means "running", never "we will find out later
+    // whether this was even valid".
+    return this.motivations.startGeneration(clerkId, id);
   }
 
   /**
