@@ -346,6 +346,42 @@ export default function MotivationWizardPage() {
    * inside the click's own call stack — opening it after an await is a
    * blocked popup and, to the member, a View button that does nothing.
    */
+  /**
+   * Open an authenticated PDF in a new tab.
+   *
+   * Same shape as viewUpload below, for the same reasons: the tab is opened
+   * SYNCHRONOUSLY (Safari blocks one opened after an await), without
+   * 'noopener' (which by spec returns null and was the original blank-tab
+   * bug), and a popup-blocked fall-through becomes a download rather than
+   * replacing the page someone is working in.
+   */
+  const openAuthedPdf = useCallback(
+    async (mint: () => Promise<string>, filename: string) => {
+      const tab = window.open('', '_blank');
+      if (tab) tab.opener = null;
+      try {
+        const url = await mint();
+        if (tab) {
+          tab.location.href = url;
+        } else {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.click();
+        }
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch (e) {
+        tab?.close();
+        setError(
+          e instanceof MotivationApiError
+            ? e.message
+            : 'We could not open the document just now.',
+        );
+      }
+    },
+    [],
+  );
+
   const viewUpload = useCallback(
     async (uploadId: string) => {
       // ⚠️ NO 'noopener' HERE, AND THAT IS THE WHOLE BUG. Per spec,
@@ -1687,25 +1723,38 @@ export default function MotivationWizardPage() {
           </div>
         )}
 
+        {/* ⚠️ BUTTONS, NOT ANCHORS. These endpoints sit behind the Clerk
+            guard, and an <a href> carries no Authorization header — "Open
+            your motivation" was a guaranteed 401, found the first time a
+            finished document existed. Same synchronous-tab + authed-blob
+            pattern viewUpload uses, popup-blocked fallback included. */}
         {detail.status === 'COMPLETED' && (
           <div className="mt-4 flex flex-wrap gap-2">
-            <a
+            <button
+              type="button"
               className="rounded border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
-              href={motivationsApi.pdfUrl(id)}
-              target="_blank"
-              rel="noreferrer"
+              onClick={() =>
+                openAuthedPdf(
+                  () => motivationsApi.pdfBlobUrl(token, id),
+                  `${detail.referenceNumber}-motivation.pdf`,
+                )
+              }
             >
               Open your motivation
-            </a>
+            </button>
             {(answers[SAPS271_OPT_KEY] ?? '') === SAPS271_FILL && (
-              <a
+              <button
+                type="button"
                 className="rounded border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
-                href={motivationsApi.saps271Url(id)}
-                target="_blank"
-                rel="noreferrer"
+                onClick={() =>
+                  openAuthedPdf(
+                    () => motivationsApi.saps271BlobUrl(token, id),
+                    `${detail.referenceNumber}-saps271.pdf`,
+                  )
+                }
               >
                 Open your pre-filled SAPS 271
-              </a>
+              </button>
             )}
           </div>
         )}

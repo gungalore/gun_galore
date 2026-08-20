@@ -628,6 +628,36 @@ export const motivationsApi = {
 
   /** The pre-filled SAPS 271 — only answers for applicants who opted in. */
   saps271Url: (id: string) => `${API_URL}/motivations/${id}/saps271`,
+
+  /**
+   * ⚠️ THE URLS ABOVE CANNOT BE PUT IN AN <a href>. Every motivation endpoint
+   * sits behind the Clerk guard, and a plain anchor carries no Authorization
+   * header — so "Open your motivation" was a guaranteed 401, found the first
+   * time a finished document existed to open. Fetch with the token, mint a
+   * blob: URL, and point a tab at that instead — the same pattern
+   * uploadBlobUrl already uses for viewing attachments.
+   */
+  pdfBlobUrl: async (t: TokenGetter, id: string): Promise<string> => {
+    const token = await t();
+    const r = await fetch(`${API_URL}/motivations/${id}/pdf`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!r.ok) {
+      throw new MotivationApiError('We could not open the document.', r.status);
+    }
+    return URL.createObjectURL(await r.blob());
+  },
+
+  saps271BlobUrl: async (t: TokenGetter, id: string): Promise<string> => {
+    const token = await t();
+    const r = await fetch(`${API_URL}/motivations/${id}/saps271`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!r.ok) {
+      throw new MotivationApiError('We could not open the form.', r.status);
+    }
+    return URL.createObjectURL(await r.blob());
+  },
 };
 
 /**
