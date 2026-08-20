@@ -635,9 +635,26 @@ export class MotivationsService {
    * date nobody has checked, read off a photograph — the same reason the
    * reminder sweep will not look at one.
    */
-  private async credentialsFor(userId: string): Promise<CredentialSource[]> {
+  private async credentialsFor(
+    userId: string,
+    opts: { includeUnconfirmed?: boolean } = {},
+  ): Promise<CredentialSource[]> {
     const rows = await this.prisma.credential.findMany({
-      where: { userId, confirmedAt: { not: null }, purgedAt: null },
+      // ⚠️ THE CONFIRMATION GATE PROTECTS DATES, NOT NUMBERS. confirmedAt
+      // exists so the reminder sweep never acts on an expiry nobody has
+      // checked — that stays absolute. But the operator's phone-photographed
+      // competency certificate sat here fully read and INVISIBLE to the
+      // wizard's dropdown, because uploads from the phone arrive unconfirmed
+      // and the confirm prompt only ever ran on the desktop's own upload
+      // path. A member picking a certificate NUMBER from a dropdown is
+      // looking at the value with the panel telling them to check it — that
+      // needs no date ceremony first. Callers that fill things silently keep
+      // the default.
+      where: {
+        userId,
+        ...(opts.includeUnconfirmed ? {} : { confirmedAt: { not: null } }),
+        purgedAt: null,
+      },
       orderBy: { createdAt: 'asc' },
       select: {
         id: true,
@@ -987,8 +1004,16 @@ export class MotivationsService {
     if (!row) throw new NotFoundException('Motivation not found');
 
     const answers = this.readAnswers(row.answersEncrypted);
-    const credentials = await this.credentialsFor(user.id);
-    const offer = credentialOffer(row.licenceType, credentials, answers);
+    const credentials = await this.credentialsFor(user.id, {
+      includeUnconfirmed: true,
+    });
+    // ⚠️ THE ONE-BUTTON FILL STAYS CONFIRMED-ONLY. It writes values without
+    // the member looking at each; the dropdown shows them what they picked.
+    const offer = credentialOffer(
+      row.licenceType,
+      credentials.filter((c) => c.confirmed),
+      answers,
+    );
 
     return {
       empty: offer.empty,
@@ -1008,7 +1033,14 @@ export class MotivationsService {
        * still cannot pick it from the list is being told the feature does not
        * work, and they are right.
        */
-      choices: await this.choicesFor(user.id, credentials),
+      choices: await this.choicesFor(
+        user.id,
+        // An unconfirmed date shown as authoritative would be a small lie in
+        // a dropdown label — say so instead.
+        credentials.map((c) =>
+          c.confirmed ? c : { ...c, title: `${c.title} — date not checked yet` },
+        ),
+      ),
       /** Vault documents that also satisfy a required upload on this pack. */
       documents: credentials
         .filter((c) => CREDENTIAL_TO_UPLOAD[c.kind])

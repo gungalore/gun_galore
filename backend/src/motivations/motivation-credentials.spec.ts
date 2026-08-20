@@ -380,3 +380,30 @@ describe('validLongEnough', () => {
     expect(validLongEnough('not a date', today)).toBe(false);
   });
 });
+
+describe('the confirmed contract, enforced', () => {
+  it('⚠️ NEVER OFFERS A VALUE OFF AN UNCONFIRMED DOCUMENT', () => {
+    // "FALSE MEANS DO NOT OFFER IT" was documented on CredentialSource and
+    // never checked — safe only while every caller pre-filtered. The offer is
+    // the ONE-BUTTON fill: values written without the member looking at each,
+    // onto a document they sign. The choices dropdown may show unconfirmed
+    // documents, because there the member is looking at the value; this path
+    // must not.
+    const offer = credentialOffer(
+      'S16_DEDICATED_SPORT',
+      [
+        {
+          id: 'a',
+          kind: 'COMPETENCY_CERTIFICATE',
+          title: 'Fresh off the phone',
+          expiresOn: null,
+          details: { competency_number: 'C-999' },
+          confirmed: false,
+        },
+      ],
+      {},
+    );
+    expect(offer.values.competency_number).toBeUndefined();
+    expect(offer.items).toHaveLength(0);
+  });
+});

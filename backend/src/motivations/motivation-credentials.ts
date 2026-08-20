@@ -100,6 +100,14 @@ export function credentialOffer(
   credentials: CredentialSource[],
   answered: Record<string, string>,
 ): CredentialOffer {
+  // ⚠️ THE CONTRACT ON CredentialSource.confirmed, ENFORCED. It was
+  // documented as "FALSE MEANS DO NOT OFFER IT" and never checked — safe only
+  // while every caller happened to pre-filter. The moment unconfirmed rows
+  // started flowing to the sibling choices path, one refactor away from here,
+  // this became a silent way to fill a signed application with values nobody
+  // ever looked at. The pure function now keeps its own promise.
+  credentials = credentials.filter((c) => c.confirmed);
+
   const keys = new Set(fieldsFor(licenceType).map((f) => f.key));
   const values: Record<string, string> = {};
   const items: CredentialOfferItem[] = [];

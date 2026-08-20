@@ -290,21 +290,18 @@ export default function MotivationWizardPage() {
   const [offerChoices, setOfferChoices] = useState<
     LicenceCentreOffer['choices'] | null
   >(null);
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const o = await motivationsApi.licenceCentreOffer(token, id);
-        if (alive) setOfferChoices(o.choices);
-      } catch {
-        // A vault we cannot read must not stop anybody typing the answer by
-        // hand. The pickers simply do not appear.
-      }
-    })();
-    return () => {
-      alive = false;
-    };
+  const loadOffer = useCallback(async () => {
+    try {
+      const o = await motivationsApi.licenceCentreOffer(token, id);
+      setOfferChoices(o.choices);
+    } catch {
+      // A vault we cannot read must not stop anybody typing the answer by
+      // hand. The pickers simply do not appear.
+    }
   }, [token, id]);
+  useEffect(() => {
+    void loadOffer();
+  }, [loadOffer]);
 
   /**
    * Write a picked document's values into the answers.
@@ -420,6 +417,12 @@ export default function MotivationWizardPage() {
       if (document.visibilityState !== 'visible') return;
       void refreshUploads().catch(() => undefined);
       void loadLibrary().catch(() => undefined);
+      // ⚠️ THE DROPDOWNS TOO. The operator photographed a competency
+      // certificate on his phone with the wizard open on the desktop, and the
+      // dropdown stayed empty because the offer was fetched once at mount and
+      // never again — the sync kept the checklist honest and left the pickers
+      // frozen at page-load.
+      void loadOffer().catch(() => undefined);
     };
     const onVisible = () => {
       if (document.visibilityState === 'visible') sync();
@@ -435,7 +438,7 @@ export default function MotivationWizardPage() {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [refreshUploads, loadLibrary]);
+  }, [refreshUploads, loadLibrary, loadOffer]);
 
   /**
    * Photograph the document a field comes off, and fill the field from it.
