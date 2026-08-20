@@ -5,6 +5,12 @@ import {
   captionFor,
   planAnnexurePages,
 } from './motivation-annexure-layout';
+import {
+  appendPdfAnnexures,
+  extraPageCount,
+  loadPdfAnnexures,
+  type PdfAnnexure,
+} from './motivation-pdf-merge';
 import type { AnnexureEntry } from './motivation-checklist';
 
 // ────────────────────────────────────────────────────────────────────
@@ -111,6 +117,13 @@ export interface MotivationPdfInput {
   annexureImages?: AnnexureImagePage[];
   /** Uploads that could not be reprinted, named so the gap is visible. */
   annexuresNotPrinted?: { letter: string; label: string; why: string }[];
+  /**
+   * Annexures that arrived as PDFs. pdfkit cannot embed one, so these are
+   * merged into the finished document by pdf-lib afterwards — see
+   * motivation-pdf-merge.ts. They still occupy pages, so their count is added
+   * to the footer total BEFORE the body is stamped.
+   */
+  annexurePdfs?: PdfAnnexure[];
   /**
    * What the applicant physically carries to the DFO.
    *
@@ -388,10 +401,16 @@ export class MotivationPdfService {
         doc.moveDown(0.45);
       }
 
-      // ⚠️ NAME WHAT IS NOT IN THE PACK. A member who uploaded a PDF of their
-      // proficiency certificate must not discover at the DFO's counter that
-      // the pack is one document short — the gap goes on the index, where
-      // they will read it while assembling the folder.
+      // ⚠️ NAME WHAT IS NOT IN THE PACK. A member whose upload could not be
+      // reprinted must not discover at the DFO's counter that the pack is one
+      // document short — the gap goes on the index, where they will read it
+      // while assembling the folder.
+      //
+      // A PDF IS NO LONGER SUCH A GAP: pdf-lib merges those pages in after
+      // this document is closed. What reaches this list now is genuinely
+      // unprintable — bytes we cannot read back, a file that will not open,
+      // an image we cannot measure. That is a much shorter list, and every
+      // line on it is now true.
       if (input.annexuresNotPrinted?.length) {
         doc.moveDown(0.6);
         doc
@@ -509,7 +528,14 @@ export class MotivationPdfService {
     // nothing here counts pages and a trailing blank page reads as a quirk of
     // the printer rather than a bug — it only surfaced when annexure images
     // doubled a five-page pack into ten.
+    // ⚠️ COUNT THE MERGED PAGES BEFORE NUMBERING ANYTHING. The PDF annexures
+    // are appended after this document is closed, but they are part of the
+    // same submission — stamping the body first would number a fifteen-page
+    // pack "page 5 of 12", and a DFO counting sheets would think three were
+    // missing.
+    const merged = await loadPdfAnnexures(input.annexurePdfs ?? []);
     const range = doc.bufferedPageRange();
+    const totalPages = range.count + extraPageCount(merged.loaded);
     for (let i = 0; i < range.count; i++) {
       doc.switchToPage(range.start + i);
       const keep = doc.page.margins.bottom;
@@ -520,7 +546,7 @@ export class MotivationPdfService {
         .fontSize(7.5)
         .fillColor(GREY)
         .text(
-          `${input.referenceNumber} · page ${i + 1} of ${range.count} · prepared with All Outdoor (${input.templateVersion})`,
+          `${input.referenceNumber} · page ${i + 1} of ${totalPages} · prepared with All Outdoor (${input.templateVersion})`,
           MARGIN,
           footerY,
           { width: contentWidth, align: 'center', lineBreak: false },
@@ -529,7 +555,14 @@ export class MotivationPdfService {
     }
 
     doc.end();
-    const pdf = await done;
+    const body = await done;
+
+    // The PDF annexures, printed into the pack rather than listed as missing.
+    const pdf = await appendPdfAnnexures(body, merged.loaded, {
+      referenceNumber: input.referenceNumber,
+      templateVersion: input.templateVersion,
+      bodyPageCount: range.count,
+    });
     return { pdf, filename: `motivation-${input.referenceNumber}.pdf` };
   }
 }

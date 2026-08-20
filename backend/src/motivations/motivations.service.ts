@@ -2550,6 +2550,14 @@ export class MotivationsService {
   ): Promise<{
     images: AnnexureImagePage[];
     notPrinted: { letter: string; label: string; why: string }[];
+    /** Annexures that arrived as PDFs — merged into the pack, not skipped. */
+    pdfs: {
+      letter: string;
+      label: string;
+      index: number;
+      total: number;
+      bytes: Buffer;
+    }[];
   }> {
     const letters = buildAnnexures(uploads.map((u) => u.kind));
     const letterFor = new Map(letters.map((a) => [a.kind, a.letter]));
@@ -2563,6 +2571,13 @@ export class MotivationsService {
 
     const images: AnnexureImagePage[] = [];
     const notPrinted: { letter: string; label: string; why: string }[] = [];
+    const pdfs: {
+      letter: string;
+      label: string;
+      index: number;
+      total: number;
+      bytes: Buffer;
+    }[] = [];
 
     for (const u of uploads) {
       const letter = letterFor.get(u.kind) ?? '?';
@@ -2575,12 +2590,13 @@ export class MotivationsService {
         notPrinted.push({ letter, label, why: 'no longer stored' });
         continue;
       }
-      if (!isEmbeddable(u.mimeType ?? '')) {
-        notPrinted.push({
-          letter,
-          label,
-          why: u.mimeType === 'application/pdf' ? 'a PDF' : 'not a JPG or PNG',
-        });
+      // ⚠️ A PDF IS NO LONGER A REASON TO LEAVE A DOCUMENT OUT. pdfkit cannot
+      // embed one, but pdf-lib can copy its pages into the finished pack —
+      // see motivation-pdf-merge.ts. Read the bytes first, because both paths
+      // need them.
+      const isPdf = (u.mimeType ?? '') === 'application/pdf';
+      if (!isPdf && !isEmbeddable(u.mimeType ?? '')) {
+        notPrinted.push({ letter, label, why: 'not a JPG, PNG or PDF' });
         continue;
       }
       let bytes: Buffer;
@@ -2588,6 +2604,10 @@ export class MotivationsService {
         bytes = await this.files.read(u.storageKey);
       } catch {
         notPrinted.push({ letter, label, why: 'we could not read it back' });
+        continue;
+      }
+      if (isPdf) {
+        pdfs.push({ letter, label, index, total, bytes });
         continue;
       }
       const size = imageSize(bytes);
@@ -2600,7 +2620,7 @@ export class MotivationsService {
       images.push({ letter, label, index, total, bytes, ...size });
     }
 
-    return { images, notPrinted };
+    return { images, notPrinted, pdfs };
   }
 
   /**
@@ -2721,6 +2741,9 @@ export class MotivationsService {
       annexures: buildAnnexures(kinds),
       annexureImages: printable.images,
       annexuresNotPrinted: printable.notPrinted,
+      // Merged into the finished pack by pdf-lib after pdfkit has drawn the
+      // body — these used to be listed as "bring your own copy".
+      annexurePdfs: printable.pdfs,
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
       takeWithYou: buildChecklist(row.licenceType, kinds)
