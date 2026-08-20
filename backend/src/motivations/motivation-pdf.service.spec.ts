@@ -9,237 +9,39 @@ import {
 import { buildAnnexures } from './motivation-checklist';
 import { MotivationUploadKind } from '@prisma/client';
 
-// pdfkit compresses its content streams (FlateDecode), so grepping the raw
-// bytes for text finds nothing — the first draft of this spec failed for
-// exactly that reason.
+// ────────────────────────────────────────────────────────────────────
+// READING THE PDF BACK.
 //
-// We inflate the streams and pull the text-showing operators out ourselves.
-// pdf-parse (a dependency, used by the reloading importer) would be the
-// obvious tool, but its v2 pulls in pdfjs-dist as an ES module and Jest needs
-// --experimental-vm-modules to load it; that is a repo-wide test-config change
-// for one spec, so we do the small thing instead. This also keeps the
-// assertions honest: we read what the renderer actually EMITTED under its real
-// production settings, with no compression flag flipped for the test's benefit.
+// ⚠️ THIS WAS A HOMEGROWN EXTRACTOR AND IT SHOULD NOT HAVE BEEN. The original
+// note here said pdf-parse v2 pulls in pdfjs-dist as an ES module and would
+// need --experimental-vm-modules, "a repo-wide test-config change for one
+// spec", so it inflated the content streams and read the TJ arrays by hand.
 //
-// It returns TEXT ONLY. An earlier version also reported a page count taken
-// from `/Type /Page` (and later `/Count`) in the raw bytes; both over-counted,
-// reading a 6-page document as 12, because pdfkit rewrites the page tree when
-// bufferPages stamps the footers. The footers themselves are the authoritative
-// record, so the pagination test reads those instead of trusting a number this
-// helper cannot derive honestly.
-function readPdf(pdf: Buffer): { text: string } {
-  const raw = pdf.toString('latin1');
-
-  // ⚠️ THE DOCUMENT EMBEDS REAL FONTS, AND THAT CHANGES WHAT IS IN THE STREAM.
-  // With the standard-14 faces the bytes inside a TJ array were WinAnsi codes
-  // and could be read as latin1. With an embedded TrueType SUBSET they are
-  // glyph ids — numbers that mean nothing without that subset's own mapping —
-  // so the naive reader returns noise.
-  //
-  // pdfkit writes a /ToUnicode CMap per font for exactly this reason: it is
-  // what lets any reader copy text out. Parsing it is also the honest thing to
-  // assert against, because it proves the document is machine-readable, which
-  // a DFO's own tooling and any screen reader depend on.
-  //
-  // ⚠️ RESOURCE NAMES ARE PER PAGE. /F1 on page one and /F1 on page three are
-  // usually DIFFERENT font objects. A single global name->cmap map is
-  // last-write-wins, and the symptom is maddening: some pages decode perfectly
-  // and others come out as noise, with no pattern to it. Fonts are therefore
-  // resolved per content stream, through that page's own /Resources.
-  const objects = splitObjects(raw);
-  const cmaps = parseCMaps(objects);
-
-  let text = '';
-  for (const page of pageStreams(raw, objects)) {
-    const fonts = page.fonts;
-    let cmap: Map<number, string> | null = null;
-    for (const chunk of page.content.split(/(?<=Tf|TJ|Tj)/)) {
-      const sel = chunk.match(/[/]([A-Za-z0-9]+)[ ]+[\d.]+[ ]+Tf[\s]*$/);
-      if (sel) {
-        const objNum = fonts.get(sel[1]);
-        cmap = objNum !== undefined ? (cmaps.get(objNum) ?? null) : cmap;
-      }
-      for (const tj of chunk.matchAll(/[[]([^\]]*)[\]][\s]*TJ/g)) {
-        for (const hex of tj[1].matchAll(/<([0-9A-Fa-f]+)>/g)) {
-          text += decodeRun(hex[1], cmap);
-        }
-        text += String.fromCharCode(10);
-      }
-      for (const one of chunk.matchAll(/<([0-9A-Fa-f]+)>[\s]*Tj/g)) {
-        text += decodeRun(one[1], cmap) + String.fromCharCode(10);
-      }
-    }
-  }
-  return { text: decodeWinAnsi(text) };
-}
-
-/** Object number -> its raw body, split so no match can span an `endobj`. */
-function splitObjects(raw: string): Map<number, string> {
-  const out = new Map<number, string>();
-  for (const chunk of raw.split(/endobj/)) {
-    const head = chunk.match(/(\d+)[ ]0[ ]obj/);
-    if (head) out.set(Number(head[1]), chunk);
-  }
-  return out;
-}
-
-/** Every page's decoded content stream, with that page's font resources. */
-function pageStreams(
-  raw: string,
-  objects: Map<number, string>,
-): { content: string; fonts: Map<string, number> }[] {
-  const pages: { content: string; fonts: Map<string, number> }[] = [];
-  for (const [, body] of objects) {
-    if (!/[/]Type[\s]*[/]Page[^s]/.test(body)) continue;
-
-    // ⚠️ /Resources IS AN INDIRECT REFERENCE, so the font dictionary is NOT
-    // in the page object. Looking for it there finds nothing, every font falls
-    // back to latin1, and the pages come out as noise — which is exactly what
-    // happened. Follow the reference; fall back to an inline dict for a
-    // writer that emits one.
-    const fonts = new Map<string, number>();
-    const resRef = body.match(/[/]Resources[ ]+(\d+)[ ]0[ ]R/);
-    const resBody = resRef ? (objects.get(Number(resRef[1])) ?? '') : body;
-    const fontDict = resBody.match(/[/]Font[\s]*<<([\s\S]*?)>>/);
-    if (fontDict) {
-      for (const f of fontDict[1].matchAll(/[/]([A-Za-z0-9]+)[ ]+(\d+)[ ]0[ ]R/g)) {
-        fonts.set(f[1], Number(f[2]));
-      }
-    }
-
-    const contentsRef = body.match(/[/]Contents[ ]+(\d+)[ ]0[ ]R/);
-    if (!contentsRef) continue;
-    const stream = objects.get(Number(contentsRef[1]));
-    if (!stream) continue;
-    const sm = stream.match(/stream[\r]?[\n]([\s\S]*?)[\r]?[\n]endstream/);
-    if (!sm) continue;
-    let content: string;
-    try {
-      content = zlib.inflateSync(Buffer.from(sm[1], 'latin1')).toString('latin1');
-    } catch {
-      content = sm[1];
-    }
-    pages.push({ content, fonts });
-  }
-  return pages;
-}
-
-/** Object number -> its ToUnicode map, for every font that declares one. */
-function parseCMaps(objects: Map<number, string>): Map<number, Map<number, string>> {
-  // First: every CMap stream, by its own object number.
-  const streams = new Map<number, Map<number, string>>();
-  for (const [num, body] of objects) {
-    const sm = body.match(/stream[\r]?[\n]([\s\S]*?)[\r]?[\n]endstream/);
-    if (!sm) continue;
-    let text: string;
-    try {
-      text = zlib.inflateSync(Buffer.from(sm[1], 'latin1')).toString('latin1');
-    } catch {
-      text = sm[1];
-    }
-    if (!text.includes('beginbfchar') && !text.includes('beginbfrange')) continue;
-
-    const map = new Map<number, string>();
-    for (const sect of text.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
-      for (const pair of sect[1].matchAll(/<([0-9A-Fa-f]+)>[\s]*<([0-9A-Fa-f]+)>/g)) {
-        map.set(parseInt(pair[1], 16), utf16beToString(pair[2]));
-      }
-    }
-    for (const sect of text.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
-      for (const trip of sect[1].matchAll(
-        /<([0-9A-Fa-f]+)>[\s]*<([0-9A-Fa-f]+)>[\s]*<([0-9A-Fa-f]+)>/g,
-      )) {
-        const lo = parseInt(trip[1], 16);
-        const hi = parseInt(trip[2], 16);
-        const dst = parseInt(trip[3], 16);
-        for (let c = lo; c <= hi && c - lo < 65535; c++) {
-          map.set(c, String.fromCodePoint(dst + (c - lo)));
-        }
-      }
-    }
-    streams.set(num, map);
-  }
-
-  // Then: each FONT object, mapped to the CMap it points at.
-  const out = new Map<number, Map<number, string>>();
-  for (const [num, body] of objects) {
-    if (!/[/]Type[\s]*[/]Font/.test(body)) continue;
-    const tu = body.match(/[/]ToUnicode[ ]+(\d+)[ ]0[ ]R/);
-    if (!tu) continue;
-    const map = streams.get(Number(tu[1]));
-    if (map) out.set(num, map);
-  }
-  return out;
-}
-
-/**
- * One hex run to text. Two-byte codes with a CMap (pdfkit writes Identity-H
- * style subsets); single WinAnsi bytes without one, which is the standard-14
- * fallback.
- */
-function decodeRun(hex: string, cmap: Map<number, string> | null): string {
-  if (!cmap) return Buffer.from(hex, 'hex').toString('latin1');
-  let out = '';
-  for (let i = 0; i + 4 <= hex.length; i += 4) {
-    const code = parseInt(hex.slice(i, i + 4), 16);
-    if (!Number.isNaN(code)) out += cmap.get(code) ?? '';
-  }
-  return out;
-}
-
-/** "0041 0042" style UTF-16BE hex to a string. */
-function utf16beToString(hex: string): string {
-  let out = '';
-  for (let i = 0; i + 4 <= hex.length; i += 4) {
-    const cu = parseInt(hex.slice(i, i + 4), 16);
-    if (!Number.isNaN(cu)) out += String.fromCharCode(cu);
-  }
-  return out;
-}
-
-/**
- * WinAnsi bytes 0x80-0x9F, decoded back to the characters they mean.
- *
- * ⚠️ WITHOUT THIS, AN ASSERTION ON AN EM-DASH FAILS AGAINST A DOCUMENT THAT
- * IS CORRECT, and the failure is unreadable. pdfkit writes the standard-14
- * fonts in WinAnsiEncoding, where an em-dash is the single byte 0x97. The
- * loop above reassembles runs as latin1, and in latin1 0x97 is a C1 control
- * character: invisible in a terminal, not whitespace, so squash leaves it
- * sitting between the words. Jest then reports "expected CERTIFY — REQUIRED,
- * received ..." against a string that looks character-for-character identical
- * when printed, and the real difference only shows up in charCodeAt.
- *
- * That cost a real debugging session. Only the punctuation our own copy
- * actually emits is mapped; anything else in the range is left alone, so a
- * future surprise stays visible rather than being silently rewritten.
- */
-const WIN_ANSI: Record<number, string> = {
-  0x85: '\u2026',
-  0x91: '\u2018',
-  0x92: '\u2019',
-  0x93: '\u201C',
-  0x94: '\u201D',
-  0x96: '\u2013',
-  0x97: '\u2014',
-};
-const decodeWinAnsi = (s: string) =>
-  s.replace(/[\u0080-\u009F]/g, (c) => WIN_ANSI[c.charCodeAt(0)] ?? c);
-
-// ⚠️ WHAT THIS READER CAN AND CANNOT DECODE, stated once because three
-// assertions below depend on it.
+// That was true and cheap while the document used the standard-14 faces,
+// whose bytes are WinAnsi and readable as latin1. It stopped being either the
+// moment the document embedded Archivo and Source Serif 4: an embedded SUBSET
+// addresses glyphs by id, so every assertion in this file started failing at
+// once and the fix needed a ToUnicode CMap parser. Three faults deep —
+// object splitting across `endobj`, per-page /Resources, /Resources being an
+// indirect reference — it STILL returned noise, because pdfkit writes the
+// ARRAY form of bfrange and the parser only handled the contiguous form.
 //
-// It resolves /ToUnicode per page and reads the SERIF body, the contents and
-// the tables correctly. It does NOT decode the Archivo faces — the banner, the
-// footer strip and the section-band titles come back as glyph ids. Several
-// hours went into it: object splitting, per-page /Resources, the indirect
-// reference. The remaining gap is in how pdfkit encodes those particular
-// subsets, and chasing it further was costing more than it returned.
+// pdf-parse 2.4.5 ships a CommonJS build (dist/pdf-parse/cjs/index.cjs) that
+// requires no config change at all. It reads this document completely:
+// reference, identity number, "Česká zbrojovka", and the Archivo section
+// headings the hand-rolled reader never managed. The premise the old note
+// rested on was simply out of date.
 //
-// So: assert section CONTENT, not section TITLES. The titles, the banner and
-// the footer are verified by looking at the rendered pages (PyMuPDF reads them
-// perfectly), which is the right tool for elements whose entire job is to be
-// looked at. An assertion that fails because the harness cannot read a font is
-// a test of the harness, not of the document.
+// Hours went into the version this replaced. Reading a PDF properly is a real
+// piece of work, and it was already installed.
+// ────────────────────────────────────────────────────────────────────
+async function readPdfAsync(pdf: Buffer): Promise<{ text: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { PDFParse } = require('pdf-parse');
+  const parser = new PDFParse({ data: new Uint8Array(pdf) });
+  const out = await parser.getText();
+  return { text: (out?.text as string) ?? '' };
+}
 
 // Collapse whitespace before asserting on phrases.
 const flat = (s: string) => s.replace(/\s+/g, ' ');
@@ -309,7 +111,7 @@ describe('MotivationPdfService', () => {
         'I have hunted this property for several seasons and know the terrain well. '.repeat(6),
     ).join('\n\n');
     const { pdf } = await svc.render(makeInput(long));
-    const { text } = readPdf(pdf);
+    const { text } = await readPdfAsync(pdf);
 
     // The LAST paragraph survived — it flowed onto later pages instead of
     // being truncated with an ellipsis the way the pdf-lib generators do.
@@ -319,17 +121,25 @@ describe('MotivationPdfService', () => {
     // title and sets it in Archivo, which this reader cannot decode. The
     // sentence after it is body serif and reads fine — and it is the better
     // check anyway, because truncation would take the words, not the label.
-    // Proven by PAGE COUNT rather than by finding the last paragraph. Forty
-    // substantial paragraphs cannot fit on one sheet, so a multi-page document
-    // IS the proof that the prose flowed instead of being truncated with an
-    // ellipsis the way the pdf-lib generators in this repo do. It also does
-    // not depend on the reader — see the note above.
-    const pages = Number(
-      pdf
-        .toString('latin1')
-        .match(/[/]Type[\s]*[/]Pages[\s\S]{0,200}?[/]Count[\s]+(\d+)/)?.[1] ?? 0,
+    // The LAST paragraph survived — it flowed onto later pages rather than
+    // being truncated with an ellipsis the way the pdf-lib generators here do.
+    expect(squash(text)).toContain(squash('Paragraph 40:'));
+
+    // And the footer strip numbers every sheet, agreeing on the total. This is
+    // a stronger check than counting page objects, and it proves bufferPages
+    // resolved the total before any strip was written.
+    //
+    // ⚠️ THE RUN STARTS AT 1: the handoff numbers every sheet including the
+    // cover, which carries its own strip.
+    const footers = [...squash(text).matchAll(/PAGE(\d+)OF(\d+)/gi)];
+    expect(footers.length).toBeGreaterThan(2);
+    const totals = new Set(footers.map((f) => f[2]));
+    expect(totals.size).toBe(1);
+    const total = Number([...totals][0]);
+    expect(footers.length).toBe(total);
+    expect(footers.map((f) => Number(f[1]))).toEqual(
+      Array.from({ length: total }, (_, i) => i + 1),
     );
-    expect(pages).toBeGreaterThan(3);
 
     // Pagination is proven from the page tree, which is authoritative and needs
     // no font decoding: /Type /Pages carries a /Count.
@@ -363,7 +173,7 @@ describe('MotivationPdfService', () => {
 
   it('carries the disclaimer and the document reference', async () => {
     const { pdf } = await svc.render(makeInput());
-    const { text } = readPdf(pdf);
+    const { text } = await readPdfAsync(pdf);
     expect(flat(text)).toContain('MO000123');
     expect(flat(text)).toMatch(/not legal advice/i);
   });
@@ -372,7 +182,7 @@ describe('MotivationPdfService', () => {
     // Guards the two hard copy rules. If someone later "improves" the
     // template with a confidence line or a Boet flourish, this fails.
     const { pdf } = await svc.render(makeInput());
-    const { text: raw } = readPdf(pdf);
+    const { text: raw } = await readPdfAsync(pdf);
     const text = flat(raw).toLowerCase();
     for (const banned of [
       'boet',
@@ -387,7 +197,7 @@ describe('MotivationPdfService', () => {
 
   it('renders the applicant real name (documented exception to username-only)', async () => {
     const { pdf } = await svc.render(makeInput());
-    const { text } = readPdf(pdf);
+    const { text } = await readPdfAsync(pdf);
     expect(flat(text)).toContain('Gerhard Johan Petrus Fourie');
   });
 });
@@ -410,7 +220,7 @@ describe('the annexure index', () => {
       ...makeInput(),
       annexures: buildAnnexures(kinds),
     });
-    const t = flat(readPdf(pdf).text);
+    const t = flat((await readPdfAsync(pdf)).text);
     expect(t).toContain('ANNEXURES');
     expect(t).toContain('Annexure A');
     // Several files of one kind still fold under one letter with a count.
@@ -429,7 +239,7 @@ describe('the annexure index', () => {
 
   it('renders a bare document when there are no annexures', async () => {
     const { pdf } = await svc.render(makeInput());
-    expect(flat(readPdf(pdf).text)).not.toContain('ANNEXURES');
+    expect(flat((await readPdfAsync(pdf)).text)).not.toContain('ANNEXURES');
   });
 });
 
@@ -507,7 +317,7 @@ describe('template choice', () => {
       const { pdf } = await svc.render(
         withTables({ format: stored, colourway: 'sand' }) as never,
       );
-      const t = squash(readPdf(pdf).text);
+      const t = squash((await readPdfAsync(pdf)).text);
       // Each block is proven by content only it carries — see the reader note
       // above. The contents page lists all three, and it is set in the serif.
       expect(t).toContain(squash('The firearm I am applying for'));
@@ -531,7 +341,7 @@ describe('template choice', () => {
     const { pdf } = await svc.render(
       withTables({ format: 'comprehensive', colourway: 'sage' }) as never,
     );
-    const t = squash(readPdf(pdf).text);
+    const t = squash((await readPdfAsync(pdf)).text);
     expect(t).toContain(squash('6.5 Creedmoor'));
     expect(t).toContain(squash('609 mm'));
     // And it is listed in the contents, which is set in the serif face.
@@ -547,7 +357,7 @@ describe('template choice', () => {
     const { pdf } = await svc.render(
       withTables({ format: 'standard', ownedFirearms: [] }) as never,
     );
-    const t = squash(readPdf(pdf).text);
+    const t = squash((await readPdfAsync(pdf)).text);
     // The section's own line, which is serif — the band title is Archivo and
     // this reader cannot decode it. See the note above.
     expect(t).toContain(squash('Firearms already licensed to me'));
@@ -558,7 +368,7 @@ describe('template choice', () => {
     const { pdf } = await svc.render(
       withTables({ format: 'comprehensive' }) as never,
     );
-    const t = squash(readPdf(pdf).text);
+    const t = squash((await readPdfAsync(pdf)).text);
     expect(t).toContain(squash('8203155041083'));
     expect(t).toContain(squash('MOTIVATION'));
   });
@@ -573,7 +383,7 @@ describe('template choice', () => {
         takeWithYou: [{ label: 'Two passport photographs' }],
       }) as never,
     );
-    const t = squash(readPdf(pdf).text);
+    const t = squash((await readPdfAsync(pdf)).text);
     expect(t).toContain(squash('Annexures'));
 
     // ⚠️ AND "TAKE THESE WITH YOU" IS *NOT* LISTED, which is the point.
@@ -608,7 +418,7 @@ describe('the certification column on the annexure index', () => {
         MotivationUploadKind.SAFE_PHOTO_CLOSED,
       ]),
     } as never);
-    const t = squash(readPdf(pdf).text);
+    const t = squash((await readPdfAsync(pdf)).text);
 
     expect(t).toContain(squash('CERTIFY — REQUIRED'));
     expect(t).toContain(squash('Certify — usually asked'));

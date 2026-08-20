@@ -8,6 +8,7 @@ import { shapeForKind } from '@/lib/scan/shapes';
 import { todayYmd, toIso } from '@/lib/date-picker-model';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
+import LicenceCentreMotivations from '@/components/licence-centre-motivations';
 import {
   AddedCredential,
   CredentialKind,
@@ -187,6 +188,12 @@ export default function LicenceCentrePage() {
         )}
         {error && <p className="mt-3 text-sm text-[var(--red)]">{error}</p>}
       </section>
+
+      {/* Motivations, retrievable from the same place the member keeps
+          everything else. Its own section rather than a CredentialKind — see
+          the module for why that distinction is load-bearing. Renders nothing
+          at all when the module is off or the member has none. */}
+      <LicenceCentreMotivations token={token} />
 
       <p className="mt-8 text-xs text-[var(--text-tertiary-on-card)]">
         We send reminders as a courtesy. Renewing on time remains your

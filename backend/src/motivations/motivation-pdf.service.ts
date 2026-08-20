@@ -336,6 +336,14 @@ export interface MotivationPdfInput {
    * appeal, and regulation 91(1)(a) runs the 90-day clock from the DECISION
    * rather than from the day the applicant heard about it.
    */
+  /**
+   * Absolute path to a stored photograph of the firearm, for the cover.
+   *
+   * A PATH, NOT A URL. See motivation-firearm-image: the pack is re-rendered
+   * on every download, so a hotlink would silently drop the photograph from
+   * every future copy the day somebody else renames a file.
+   */
+  firearmPhoto?: string;
   priorNotice?: { title: string; body: string; version: string };
   /**
    * Stamp every page as a preview.
@@ -504,49 +512,196 @@ export class MotivationPdfService {
     // that does nothing but identify the application: who, what firearm,
     // under which section. A DFO picking one folder off a pile of forty
     // decides what it is without opening it.
-    const bandH = 16;
-    doc.rect(0, 0, PAGE_WIDTH, bandH).fill(C.ink);
-    doc.y = MARGIN + 34;
+    // The 80 mm gradient block, as the handoff opens: reference, the spaced
+    // MOTIVATION wordmark, a boxed subtitle, a rule and the section line.
+    {
+      const g = doc.linearGradient(0, 0, K.PAGE_W, K.COVER_BANNER_H);
+      g.stop(0, C.deep).stop(0.6, C.deep2).stop(1, C.deep2);
+      doc.rect(0, 0, K.PAGE_W, K.COVER_BANNER_H).fill(g);
 
+      let cy = K.mm(18);
+      doc
+        .font(F.sans)
+        .fontSize(K.px(10))
+        .fillColor('#ffffff')
+        .fillOpacity(0.75)
+        .text(`REFERENCE ${input.referenceNumber}`.toUpperCase(), 0, cy, {
+          width: K.PAGE_W,
+          align: 'center',
+          characterSpacing: K.px(10) * 0.4,
+          lineBreak: false,
+        })
+        .fillOpacity(1);
+
+      cy += K.mm(9);
+      doc
+        .font(F.sans)
+        .fontSize(K.px(38))
+        .fillColor('#ffffff')
+        // The handoff letter-spaces the wordmark itself: "M O T I V A T I O N".
+        .text('MOTIVATION'.split('').join(' '), 0, cy, {
+          width: K.PAGE_W,
+          align: 'center',
+          characterSpacing: K.px(38) * 0.2,
+          lineBreak: false,
+        });
+
+      cy += K.mm(14);
+      const boxLabel = 'APPLICATION FOR A FIREARM LICENCE';
+      doc.font(F.sans).fontSize(K.px(12));
+      const boxW =
+        doc.widthOfString(boxLabel, { characterSpacing: K.px(12) * 0.32 }) +
+        K.px(52);
+      const boxH = K.px(12) * 1.2 + K.px(20);
+      doc
+        .rect((K.PAGE_W - boxW) / 2, cy, boxW, boxH)
+        .lineWidth(0.8)
+        .strokeOpacity(0.65)
+        .strokeColor('#ffffff')
+        .stroke()
+        .strokeOpacity(1);
+      doc
+        .fillColor('#ffffff')
+        .text(boxLabel, 0, cy + K.px(10), {
+          width: K.PAGE_W,
+          align: 'center',
+          characterSpacing: K.px(12) * 0.32,
+          lineBreak: false,
+        });
+
+      cy += boxH + K.mm(6);
+      doc
+        .moveTo(K.PAGE_W / 2 - K.px(32), cy)
+        .lineTo(K.PAGE_W / 2 + K.px(32), cy)
+        .lineWidth(2)
+        .strokeOpacity(0.8)
+        .strokeColor('#ffffff')
+        .stroke()
+        .strokeOpacity(1);
+
+      cy += K.mm(5);
+      doc
+        .font(F.sans)
+        .fontSize(K.px(10))
+        .fillColor('#ffffff')
+        .fillOpacity(0.8)
+        .text(input.licenceTypeLabel.toUpperCase(), 0, cy, {
+          width: K.PAGE_W,
+          align: 'center',
+          characterSpacing: K.px(10) * 0.3,
+          lineBreak: false,
+        })
+        .fillOpacity(1);
+    }
+
+    // ── The framed photograph of the firearm ──────────────────────────
+    //
+    // ⚠️ THE CAPTION NAMES THE APPLICANT'S OWN FIREARM; THE PICTURE MAY BE OF
+    // THE MODEL. We hold one photograph per make-and-model, and where even
+    // that misses we fall back to the make (see motivation-firearm-image).
+    // So the frame says what the applicant told us, and the picture illustrates
+    // it — the page never claims to show their specific firearm, which would
+    // be a false statement on a document they sign.
+    let coverY = K.COVER_BANNER_H + K.mm(12);
+    if (input.firearmPhoto) {
+      const frameW = K.mm(62);
+      const frameH = K.mm(46);
+      doc
+        .rect(MARGIN, coverY, frameW, frameH)
+        .lineWidth(0.7)
+        .fillAndStroke(C.wash, C.hair);
+      try {
+        doc.image(input.firearmPhoto, MARGIN + K.mm(4), coverY + K.mm(4), {
+          fit: [frameW - K.mm(8), frameH - K.mm(8)],
+          align: 'center',
+          valign: 'center',
+        });
+      } catch {
+        // A stored file pdfkit will not embed must not take the cover down.
+      }
+      if (input.firearmLine) {
+        K.label(
+          chrome,
+          input.firearmLine,
+          MARGIN,
+          coverY + frameH + K.mm(2.5),
+          frameW,
+        );
+      }
+      coverY += frameH + K.mm(12);
+    }
+    // ── The dossier ───────────────────────────────────────────────────
+    //
+    // ⚠️ THE BIG "APPLICATION FOR A FIREARM LICENCE" TITLE IS GONE FROM HERE.
+    // The 80 mm banner above already says it, in a box, at 38 pt. Printing it
+    // again in 34 pt black immediately underneath was the old cover showing
+    // through the new one — two titles, one page.
+    //
+    // ⚠️ AND EVERY ROW IS SET IN THE EMBEDDED FACES. They were still in
+    // Helvetica, which is WinAnsi: "Česká zbrojovka" came out as "ÆW6¾ ¦'
+    // ojovka" in the Firearm row of a document naming the applicant's own
+    // firearm. The caption under the photograph, already in Archivo, rendered
+    // it correctly two centimetres above — which is how the fault was
+    // visible at all.
+    doc.x = MARGIN;
+    doc.y = coverY;
+
+    // Right of the photograph: who it is addressed to.
+    const dossierX = input.firearmPhoto ? MARGIN : MARGIN;
     doc
-      .font(FONT_BOLD)
-      .fontSize(8)
+      .font(F.serif)
+      .fontSize(K.px(13.5))
+      .fillColor(C.sub)
+      .text('To:', dossierX, doc.y, { width: contentWidth, lineBreak: false });
+    doc.y += K.px(13.5) * 1.5;
+    doc
+      .font(F.serifSemi)
       .fillColor(C.ink)
-      .text('MOTIVATION', MARGIN, doc.y, {
+      .text('The Registrar of Firearms', dossierX, doc.y, {
         width: contentWidth,
-        characterSpacing: 2.4,
+        lineBreak: false,
       });
-    doc.moveDown(0.7);
+    doc.y += K.px(13.5) * 1.5;
     doc
-      .font(FONT_BOLD)
-      .fontSize(34)
-      .fillColor(BLACK)
-      .text('Application\nfor a firearm\nlicence', MARGIN, doc.y, {
-        width: contentWidth,
-        lineGap: -4,
-      });
-    doc.moveDown(0.5);
-    doc
-      .font(FONT)
-      .fontSize(12)
-      .fillColor('#333333')
-      .text(input.licenceTypeLabel, MARGIN, doc.y, { width: contentWidth });
+      .font(F.serif)
+      .fillColor(C.sub)
+      .text(
+        'through the Designated Firearms Officer, South African Police Service',
+        dossierX,
+        doc.y,
+        { width: contentWidth },
+      );
 
-    const cvRuleY = doc.y + 18;
-    doc
-      .moveTo(MARGIN, cvRuleY)
-      .lineTo(MARGIN + 92, cvRuleY)
-      .lineWidth(2.4)
-      .strokeColor(C.ink)
-      .stroke();
-    doc.y = cvRuleY + 26;
+    doc.y += K.mm(7);
+    // The band label, as the handoff heads the dossier grid.
+    {
+      const label = 'APPLICANT AND FIREARM';
+      const size = K.px(11);
+      doc.font(F.sansBold).fontSize(size);
+      const w =
+        doc.widthOfString(label, { characterSpacing: size * 0.22 }) + K.px(30);
+      const h = size * 1.2 + K.px(14);
+      doc.rect(MARGIN, doc.y, w, h).fill(C.band);
+      doc
+        .fillColor(C.deep2)
+        .text(label, MARGIN + K.px(15), doc.y + K.px(7), {
+          characterSpacing: size * 0.22,
+          lineBreak: false,
+        });
+      doc.y += h + K.mm(5);
+      doc.x = MARGIN;
+    }
 
-    // The identification block. Every line a DFO needs to file the folder.
+    // The grid: a 42 mm label column, hairline between rows.
     const rows: [string, string][] = [
       ['Applicant', input.applicantName],
-      ...(input.idNumber ? ([['Identity number', input.idNumber]] as [string, string][]) : []),
+      ...(input.idNumber
+        ? ([['Identity number', input.idNumber]] as [string, string][])
+        : []),
       ['Reference', input.referenceNumber],
-      ...(input.firearmLine ? ([['Firearm', input.firearmLine]] as [string, string][]) : []),
+      ...(input.firearmLine
+        ? ([['Firearm', input.firearmLine]] as [string, string][])
+        : []),
       [
         'Prepared',
         input.generatedAt.toLocaleDateString('en-ZA', {
@@ -556,18 +711,38 @@ export class MotivationPdfService {
         }),
       ],
       ...(input.annexures?.length
-        ? ([['Annexures', `${input.annexures.length} attached`]] as [string, string][])
+        ? ([
+            ['Annexures', `${input.annexures.length} attached`],
+          ] as [string, string][])
         : []),
     ];
+
+    doc
+      .moveTo(MARGIN, doc.y)
+      .lineTo(MARGIN + contentWidth, doc.y)
+      .lineWidth(0.8)
+      .strokeColor(C.ink)
+      .stroke();
+    doc.y += K.mm(3);
+
+    const labelW = K.mm(42);
     for (const [k, v] of rows) {
       const y = doc.y;
-      doc.font(FONT).fontSize(10).fillColor('#666666').text(k, MARGIN, y, { width: 118 });
+      K.label(chrome, k, MARGIN, y + 1, labelW - K.mm(3));
       doc
-        .font(FONT_BOLD)
-        .fontSize(10)
-        .fillColor(BLACK)
-        .text(v, MARGIN + 118, y, { width: contentWidth - 118 });
-      doc.y = Math.max(doc.y, y) + 7;
+        .font(F.serif)
+        .fontSize(K.px(13))
+        .fillColor(C.ink)
+        .text(v, MARGIN + labelW, y, { width: contentWidth - labelW });
+      const bottom = Math.max(doc.y, y + K.px(13) * 1.2) + K.mm(2.4);
+      doc
+        .moveTo(MARGIN, bottom)
+        .lineTo(MARGIN + contentWidth, bottom)
+        .lineWidth(0.5)
+        .strokeColor(C.hair)
+        .stroke();
+      doc.x = MARGIN;
+      doc.y = bottom + K.mm(2.4);
     }
 
     // ── Contents ──────────────────────────────────────────────────────
