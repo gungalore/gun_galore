@@ -472,13 +472,35 @@ ${
     ? `<background-research>\n${pack.research.trim()}\n</background-research>\n`
     : ''
 }
+${
+  // The gate must know what the writer was told, or it grades the design as
+  // deception. Without this list a citation to a real annexure reads as
+  // "fabricated evidence" — the first live verdict said exactly that about a
+  // pack that genuinely contained the endorsement.
+  pack.annexures?.length
+    ? `The pack ATTACHES these annexures — the writer was instructed to cite\nthem, so citations to these letters are grounded:\n${pack.annexures
+        .map((a) => `  Annexure ${a.letter}: ${a.label}`)
+        .join('\n')}\n`
+    : ''
+}
 <draft-document>
 ${documentText}
 </draft-document>
 
-Grade the draft against the facts. Claims traceable to the background
-research count as grounded; claims about the applicant themselves must trace
-to the applicant's facts. Return only the JSON object.`.trim();
+Grade the draft against the facts, knowing what the writer was given:
+- Claims traceable to the background research count as GROUNDED. Technical
+  specifications of the firearm and the cartridge drawn from that research
+  are legitimate content in a motivation and need no in-text source.
+- Citations to the listed annexures are grounded; only a letter NOT on the
+  list is an invention.
+- The writer is under instruction NOT to recite the discipline's equipment
+  specifications or argue the firearm against them — that is the reviewer's
+  job, not the advocate's. Do not mark the document down for honouring that
+  instruction.
+- Claims about the APPLICANT themselves — their history, practice, purposes —
+  must trace to the applicant's facts, and polishing a thin answer into a
+  rationale the applicant never gave is still ungrounded.
+Return only the JSON object.`.trim();
 }
 
 /**
