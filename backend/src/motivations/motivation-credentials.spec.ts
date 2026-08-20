@@ -575,4 +575,16 @@ describe('several associations', () => {
     expect(o.values.association_3_name).toBe('A3');
     expect(o.skipped.some((k) => /room for three/.test(k.why))).toBe(true);
   });
+
+  it('⚠️ a document with no readable association fills NO slot', () => {
+    // It would offer a membership number with nothing to attribute it to —
+    // an unattributed number on a signed form — and burn a slot doing it.
+    const nameless = body('c9', '', '999');
+    delete (nameless.details as Record<string, string>).association;
+    const o = credentialOffer('S16_DEDICATED_SPORT' as never, [nameless], {});
+    expect(
+      Object.keys(o.values).filter((k) => k.startsWith('association')),
+    ).toEqual([]);
+    expect(o.skipped.some((s) => /which association/.test(s.why))).toBe(true);
+  });
 });

@@ -263,7 +263,17 @@ export function credentialOffer(
     for (const c of credentials) {
       if (!DEDICATED_KINDS.has(c.kind)) continue;
       const body = first(c.details, 'association', 'issuer').trim();
-      if (body && seenBodies.has(body.toUpperCase())) continue;
+      // ⚠️ NO NAME, NO SLOT. A document whose association we could not read
+      // would offer a membership number with nothing to attribute it to — an
+      // unattributed number on a signed form — and burn a slot doing it.
+      if (!body) {
+        skipped.push({
+          title: c.title,
+          why: 'we could not read which association issued it',
+        });
+        continue;
+      }
+      if (seenBodies.has(body.toUpperCase())) continue;
       // Advance past slots the applicant has already filled by hand.
       while (
         slot < slots.length &&
