@@ -1,4 +1,6 @@
+import { CredentialKind } from '@prisma/client';
 import { derivedCredentialTitle } from './licence-centre.service';
+import { cleanAlsoCovers } from './licence-centre-extract.service';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT A SHOOTER CALLS A FIREARM.
@@ -68,5 +70,59 @@ describe('naming a licence from what we read off it', () => {
   it('does not let a long field run away with the row', () => {
     const long = fa({ make: 'M'.repeat(200), calibre: 'C'.repeat(200) })!;
     expect(long.length).toBeLessThanOrEqual(120);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// ONE DOCUMENT, SEVERAL ROLES.
+//
+// A SA Hunters membership certificate declares the member "in good standing",
+// prints the dedicated sport-shooter number, and gives ONE validity date
+// governing both. Filed under a single kind, two of those three roles are
+// lost and the member is asked to upload papers they have already given us.
+//
+// The classifier now returns also_covers. What is pinned here is the
+// FILTERING of that answer, because it lands in an enum array column: an
+// unknown string would be a database error, and self or OTHER would double
+// every checklist match.
+// ────────────────────────────────────────────────────────────────────
+describe('the roles a document also covers', () => {
+  // THE REAL FILTER, not a copy of it. A test that reimplements the thing it
+  // is testing passes whatever the production code happens to do.
+  const clean = (kind: string, raw: unknown) =>
+    cleanAlsoCovers(kind as CredentialKind, raw) as string[];
+
+  it('keeps the real extra roles on the operator’s certificate', () => {
+    expect(
+      clean('DEDICATED_STATUS', ['GOOD_STANDING']),
+    ).toEqual(['GOOD_STANDING']);
+  });
+
+  it('drops a category that is not a category', () => {
+    // Straight into an enum[] column otherwise.
+    expect(clean('DEDICATED_STATUS', ['MEMBERSHIP_CERTIFICATE'])).toEqual([]);
+    expect(clean('DEDICATED_STATUS', ['', null, 42])).toEqual([]);
+  });
+
+  it('drops the document’s own kind', () => {
+    // Covering what you already are would match the same checklist row twice.
+    expect(clean('GOOD_STANDING', ['GOOD_STANDING', 'DEDICATED_STATUS'])).toEqual(
+      ['DEDICATED_STATUS'],
+    );
+  });
+
+  it('drops OTHER, which is not a role anything is satisfied by', () => {
+    expect(clean('DEDICATED_STATUS', ['OTHER'])).toEqual([]);
+  });
+
+  it('dedupes', () => {
+    expect(
+      clean('DEDICATED_STATUS', ['GOOD_STANDING', 'GOOD_STANDING']),
+    ).toEqual(['GOOD_STANDING']);
+  });
+
+  it('treats a missing or malformed answer as no extra roles', () => {
+    expect(clean('DEDICATED_STATUS', undefined)).toEqual([]);
+    expect(clean('DEDICATED_STATUS', 'GOOD_STANDING')).toEqual([]);
   });
 });

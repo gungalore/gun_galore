@@ -43,6 +43,13 @@ export interface CredentialRow {
   expiresOn: string | null;
   /** The member has checked the date. Nothing is reminded on until they have. */
   confirmed: boolean;
+  /**
+   * Other roles this ONE document also fills — a membership certificate that
+   * is also the letter of good standing and the dedicated status proof.
+   * Usually empty. One row, several roles: never a second row for the same
+   * file, which would print the same page twice as two annexures.
+   */
+  coversKinds: CredentialKind[];
   remindersMuted: boolean;
   state: ExpiryState;
   /**

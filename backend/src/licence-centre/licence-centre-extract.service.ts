@@ -53,6 +53,34 @@ const EMPTY: CredentialReading = {
   lowConfidence: [],
 };
 
+/**
+ * The extra roles a classify answer may claim, filtered to what is storable.
+ *
+ * ⚠️ THIS LANDS IN AN ENUM ARRAY COLUMN, so an unknown string is a database
+ * error rather than a bad guess. OTHER is dropped because it is not a role
+ * anything can be SATISFIED by, and the document's own kind is dropped because
+ * covering what you already are would match the same checklist row twice.
+ *
+ * Exported so the tests exercise this and not a copy of it.
+ */
+export function cleanAlsoCovers(
+  kind: CredentialKind,
+  raw: unknown,
+): CredentialKind[] {
+  if (!Array.isArray(raw)) return [];
+  const known = Object.values(CredentialKind) as string[];
+  return [
+    ...new Set(
+      raw
+        .map((k) => String(k ?? '').trim())
+        .filter(
+          (k): k is CredentialKind =>
+            known.includes(k) && k !== kind && k !== 'OTHER',
+        ),
+    ),
+  ];
+}
+
 /** What each kind of document plausibly carries. Nothing else is accepted. */
 const WANTED: Record<CredentialKind, string[]> = {
   FIREARM_LICENCE: [
@@ -129,7 +157,12 @@ export class LicenceCentreExtractService {
   async classify(args: {
     bytes: Buffer;
     mimeType: string;
-  }): Promise<{ kind: CredentialKind; confident: boolean } | null> {
+  }): Promise<{
+    kind: CredentialKind;
+    confident: boolean;
+    /** Other roles this same document satisfies. Usually empty. */
+    alsoCovers: CredentialKind[];
+  } | null> {
     if (!this.client) return null;
 
     let text = '';
@@ -158,11 +191,19 @@ export class LicenceCentreExtractService {
     try {
       const m = text.match(/\{[\s\S]*\}/);
       if (!m) return null;
-      const parsed = JSON.parse(m[0]) as { kind?: string; confidence?: string };
+      const parsed = JSON.parse(m[0]) as {
+        kind?: string;
+        confidence?: string;
+        also_covers?: unknown;
+      };
       const kind = (parsed.kind ?? '').trim() as CredentialKind;
       const known = Object.values(CredentialKind) as string[];
       if (!known.includes(kind)) return null;
-      return { kind, confident: (parsed.confidence ?? '') === 'high' };
+      return {
+        kind,
+        confident: (parsed.confidence ?? '') === 'high',
+        alsoCovers: cleanAlsoCovers(kind, parsed.also_covers),
+      };
     } catch {
       return null;
     }
@@ -172,6 +213,17 @@ export class LicenceCentreExtractService {
     kind: CredentialKind;
     bytes: Buffer;
     mimeType: string;
+    /**
+     * Other roles this document also fills, from classify().
+     *
+     * ⚠️ WANTED IS BOTH THE QUESTION AND THE FILTER — userPrompt builds the
+     * ask from it, and parse drops anything not on it, silently. So a
+     * membership certificate read as DEDICATED_STATUS alone is never ASKED
+     * for the good-standing reference, and would have it thrown away if the
+     * model volunteered it. The allow-list has to be the union of every role
+     * the document fills, or the extra roles are worthless.
+     */
+    alsoCovers?: CredentialKind[];
   }): Promise<CredentialReading> {
     if (!this.client) return EMPTY;
 
@@ -207,7 +259,13 @@ export class LicenceCentreExtractService {
         messages: [
           {
             role: 'user',
-            content: [block, { type: 'text', text: userPrompt(args.kind) }],
+            content: [
+              block,
+              {
+                type: 'text',
+                text: userPrompt(args.kind, args.alsoCovers ?? []),
+              },
+            ],
           },
         ],
       });
@@ -220,10 +278,14 @@ export class LicenceCentreExtractService {
       return EMPTY;
     }
 
-    return this.parse(text, args.kind);
+    return this.parse(text, args.kind, args.alsoCovers ?? []);
   }
 
-  private parse(text: string, kind: CredentialKind): CredentialReading {
+  private parse(
+    text: string,
+    kind: CredentialKind,
+    alsoCovers: readonly CredentialKind[] = [],
+  ): CredentialReading {
     let parsed: {
       fields?: { key?: string; value?: string; confidence?: string }[];
     };
@@ -238,7 +300,11 @@ export class LicenceCentreExtractService {
       return EMPTY;
     }
 
-    const allowed = new Set([...WANTED[kind], 'expires_on', 'issued_on']);
+    const allowed = new Set([
+      ...wantedFor(kind, alsoCovers),
+      'expires_on',
+      'issued_on',
+    ]);
     const out: CredentialReading = {
       expiresOn: null,
       issuedOn: null,
@@ -309,7 +375,20 @@ Use "low" whenever you are not certain. A low-confidence value is shown to the
 member with a warning, which is far better than a confident wrong one.
 `.trim();
 
-function userPrompt(kind: CredentialKind): string {
+/** Every field any of this document's roles could carry, deduped. */
+function wantedFor(
+  kind: CredentialKind,
+  alsoCovers: readonly CredentialKind[],
+): string[] {
+  return [
+    ...new Set([kind, ...alsoCovers].flatMap((k) => WANTED[k] ?? [])),
+  ];
+}
+
+function userPrompt(
+  kind: CredentialKind,
+  alsoCovers: readonly CredentialKind[] = [],
+): string {
   const label: Record<CredentialKind, string> = {
     FIREARM_LICENCE: 'a South African firearm licence card or certificate',
     COMPETENCY_CERTIFICATE: 'a SAPS competency certificate',
@@ -322,9 +401,18 @@ function userPrompt(kind: CredentialKind): string {
       'a section 16 letter of good standing from a hunting association or sports-shooting organisation. It is a sworn declaration that the member is registered and in good standing, and it usually shows a good-standing reference, the member number, the dedicated status number, the date the status was issued and the date it is valid until',
     OTHER: 'a supporting document',
   };
-  const keys = [...WANTED[kind], 'issued_on', 'expires_on'];
+  const keys = [...wantedFor(kind, alsoCovers), 'issued_on', 'expires_on'];
   return [
     `This document should be ${label[kind]}.`,
+    ...(alsoCovers.length
+      ? [
+          '',
+          `It ALSO serves as ${alsoCovers.map((k) => label[k]).join(', and ')}.`,
+          'One document, several roles: transcribe the fields for all of them.',
+          'There is ONE validity date and it governs every role - do not invent',
+          'a separate date per role.',
+        ]
+      : []),
     '',
     'Transcribe these keys where they appear:',
     ...keys.map((k) => `- ${k}`),
@@ -362,15 +450,29 @@ function blockFor(bytes: Buffer, mimeType: string) {
 }
 
 const CLASSIFY_SYSTEM = `
-You sort a photographed or scanned South African document into exactly one
-category. You are sorting, not reading: you do not need to transcribe anything.
+You sort a photographed or scanned South African document. You are sorting, not
+reading: you do not need to transcribe anything.
 
 Answer with the category you can actually see evidence for. "OTHER" is a real
 answer and a useful one - a document filed as "something else" is visibly
 unsorted, and the member is asked to confirm it either way.
 
+SOME DOCUMENTS DO MORE THAN ONE JOB, and this is the common case with
+association paperwork rather than an edge case. A membership certificate that
+also declares the member "in good standing" and also prints a dedicated
+sport-shooter number is all three things at once, under one validity date -
+and if you name only one, the other roles are lost and the member is asked to
+upload papers they have already given us.
+
+So "kind" is what the document primarily IS, by its own title, and
+"also_covers" lists every OTHER category it additionally SATISFIES. Put a
+category in also_covers only where the document itself carries the evidence
+for it - the words "in good standing" for GOOD_STANDING, a dedicated status
+number for DEDICATED_STATUS. Never guess a role from the letterhead alone.
+Leave also_covers empty for the ordinary single-purpose document.
+
 Return STRICT JSON and nothing else:
-{"kind":"<one category>","confidence":"high"|"low"}
+{"kind":"<one category>","also_covers":["<category>"],"confidence":"high"|"low"}
 `.trim();
 
 export const CLASSIFY_USER = [
@@ -397,6 +499,21 @@ export const CLASSIFY_USER = [
   '  of oaths, declaring the member is registered and in good standing. It',
   '  normally shows a status issued date and a status valid until date.',
   'OTHER - anything else, or you cannot tell',
+  '',
+  // ⚠️ THE TIE-BREAK BELOW USED TO FORCE A CHOICE, and the operator's own
+  // SA Hunters certificate is precisely the document it got wrong: a
+  // CERTIFICATE by its title, carrying the good-standing declaration in its
+  // body and the dedicated status number below it, all under one date.
+  'A MEMBERSHIP CERTIFICATE IS OFTEN SEVERAL DOCUMENTS AT ONCE. Where a',
+  'certificate from an association ALSO carries any of the following, name',
+  'them in also_covers rather than choosing between them:',
+  '  - the words "is a member in good standing", or the Afrikaans "'
+    + 'n gerespekteerde lid" - that is GOOD_STANDING;',
+  '  - a dedicated SPORT SHOOTER number, often labelled "Toegewyde',
+  '    Sportskut" - that is DEDICATED_STATUS;',
+  '  - a dedicated HUNTER number, "Toegewyde Jagter" - DEDICATED_HUNTER.',
+  'The single validity date on such a certificate governs every role it',
+  'fills; there is not a separate date per role.',
   '',
   'THE ASSOCIATION ISSUES SEVERAL DOCUMENTS ON THE SAME LETTERHEAD, and',
   'telling them apart is the hardest call on this list:',

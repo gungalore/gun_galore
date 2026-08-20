@@ -4333,6 +4333,26 @@ model Credential {
   user   User           @relation("UserCredentials", fields: [userId], references: [id], onDelete: Cascade)
   kind   CredentialKind
 
+  /// OTHER ROLES THIS ONE DOCUMENT ALSO FILLS.
+  ///
+  /// ⚠️ ONE DOCUMENT, ONE ROW, SEVERAL ROLES — never a second row for the same
+  /// file. A SA Hunters membership certificate declares the member "in good
+  /// standing", carries the dedicated sport-shooter number, and gives ONE
+  /// validity window covering both; filing it twice would satisfy two
+  /// checklist rows and then print the same page twice, under two annexure
+  /// letters, because annexureImages iterates upload rows. It would also
+  /// collide with @@unique([userId, sha256]).
+  ///
+  /// `kind` stays the document's primary identity — what it IS, and what
+  /// decides its default title and how it is grouped. This lists what it also
+  /// COUNTS AS. Empty for the ordinary single-purpose document.
+  ///
+  /// Note the enum comment above: GOOD_STANDING was split out of
+  /// DEDICATED_STATUS precisely because some associations issue two papers
+  /// with two different windows. That case is unchanged and still correct —
+  /// this is for the associations that issue one.
+  coversKinds CredentialKind[] @default([])
+
   /// The member's own name for it — "My .308". In the clear so the list can
   /// be rendered and the reminder addressed; the UI warns against serials.
   title            String

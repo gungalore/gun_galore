@@ -832,6 +832,32 @@ function CredentialCard({
   // appeared to do nothing at all.
   const [renewErr, setRenewErr] = useState<string | null>(null);
 
+  /**
+   * Exactly what is standing between this document and green.
+   *
+   * ⚠️ GREEN IS TWO FACTS AND A THRESHOLD: an expiry date, the member's
+   * confirmation of it, and more than 90 days left. A row that just says
+   * "Needs checking" tells somebody nothing about which of those is missing,
+   * so they open the panel, see a date already filled in, and close it again.
+   *
+   * Deliberately silent for a document that is genuinely expired or expiring —
+   * nothing is missing there, the news is simply bad, and "to turn this green,
+   * renew it" would be glib.
+   */
+  const missingForGreen = (() => {
+    if (row.state !== 'unknown') return [];
+    const wants: string[] = [];
+    if (!row.expiresOn) {
+      wants.push(
+        row.derivedExpiry
+          ? 'check the expiry date we worked out'
+          : 'add the expiry date printed on it',
+      );
+    }
+    if (!row.confirmed) wants.push('confirm it is right');
+    return wants;
+  })();
+
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(row.title);
   const saveName = async () => {
@@ -914,7 +940,23 @@ function CredentialCard({
           )}
           <p className="text-xs text-[var(--text-tertiary-on-card)]">
             {KIND_LABELS[row.kind]}
+            {row.coversKinds.length > 0 && (
+              // ⚠️ SAYING SO IS THE POINT. Without it a member looking for
+              // their letter of good standing sees no such row, and uploads a
+              // second copy of the certificate they have already given us.
+              <>
+                {' · also counts as '}
+                {row.coversKinds.map((k) => KIND_LABELS[k]).join(' and ')}
+              </>
+            )}
           </p>
+          {missingForGreen.length > 0 && (
+            // What is actually standing between this row and green, named.
+            // "Needs checking" tells somebody nothing about what to do next.
+            <p className="mt-1 text-xs" style={{ color: STATE_TONE.unknown.colour }}>
+              To turn this green: {missingForGreen.join(', then ')}.
+            </p>
+          )}
         </div>
         <span className="text-xs font-medium" style={{ color: tone.colour }}>
           {tone.label}

@@ -92,6 +92,7 @@ export class LicenceCentreService {
       select: {
         id: true,
         kind: true,
+        coversKinds: true,
         title: true,
         issuedOn: true,
         expiresOn: true,
@@ -138,6 +139,7 @@ export class LicenceCentreService {
     return rows.map((r) => ({
       id: r.id,
       kind: r.kind,
+      coversKinds: r.coversKinds,
       title: renamed.get(r.id) ?? r.title,
       issuedOn: r.issuedOn ? toIsoDate(r.issuedOn) : null,
       expiresOn: r.expiresOn ? toIsoDate(r.expiresOn) : null,
@@ -206,6 +208,10 @@ export class LicenceCentreService {
     let resolved: CredentialKind = kind ?? 'OTHER';
     let autoFiled = false;
     let confident = false;
+    // Other roles this same document fills. An association membership
+    // certificate routinely IS the letter of good standing and the dedicated
+    // status proof as well, under one date — see coversKinds on the model.
+    let alsoCovers: CredentialKind[] = [];
     if (!kind) {
       const guess = await this.extract
         .classify({ bytes: file.buffer, mimeType: file.mimetype })
@@ -214,6 +220,7 @@ export class LicenceCentreService {
       if (guess) {
         resolved = guess.kind;
         confident = guess.confident;
+        alsoCovers = guess.alsoCovers;
       }
     }
 
@@ -242,6 +249,7 @@ export class LicenceCentreService {
           userId: user.id,
           kind: resolved,
           title: clean || DEFAULT_TITLE[resolved],
+          coversKinds: alsoCovers,
           storageKey: stored.storageKey,
           mimeType: file.mimetype,
           byteSize: stored.byteSize,
@@ -268,7 +276,12 @@ export class LicenceCentreService {
     // compensating delete, so a vision outage costs a convenience rather than
     // the upload itself.
     const reading = await this.extract
-      .read({ kind: resolved, bytes: file.buffer, mimeType: file.mimetype })
+      .read({
+        kind: resolved,
+        bytes: file.buffer,
+        mimeType: file.mimetype,
+        alsoCovers,
+      })
       .catch(() => null);
 
     // Named from what we just read, unless the member named it themselves.
@@ -309,6 +322,7 @@ export class LicenceCentreService {
     return {
       id: created.id,
       kind: resolved,
+      coversKinds: alsoCovers,
       title: clean || derived || DEFAULT_TITLE[resolved],
       // Tells the confirm step which documents WE named, so it can ask.
       autoFiled,
