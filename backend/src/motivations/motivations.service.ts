@@ -861,6 +861,8 @@ export class MotivationsService {
           storageKey: true,
           mimeType: true,
           purgedAt: true,
+          detailsEncrypted: true,
+          extractionOk: true,
         },
       });
       if (!c) throw new NotFoundException('Document not found');
@@ -874,6 +876,53 @@ export class MotivationsService {
       storageKey = c.storageKey;
       mimeType = c.mimeType;
       purgedAt = c.purgedAt;
+
+      // ⚠️ THE VAULT'S READING COMES ACROSS TOO, and without it the copy
+      // looked BROKEN. A motivation upload with no extraction is flagged
+      // "suspect" — the amber "we could not read anything this document
+      // carries" state — because for a photograph that means the wrong line
+      // was picked. A document copied out of the vault had never been read
+      // as a motivation upload at all, so every single library pick came back
+      // amber, telling the member something was wrong with a certificate they
+      // had chosen by name off a list.
+      //
+      // Nothing needs re-reading: the vault already ran vision over this
+      // exact file and kept what it found. Copying it also means picking a
+      // competency certificate from the list fills the number, the same as
+      // photographing one.
+      if (c.detailsEncrypted) {
+        try {
+          const details =
+            decryptJson<Record<string, string>>(c.detailsEncrypted) ?? {};
+          // ⚠️ ONLY KEYS THIS UPLOAD KIND ACTUALLY ANSWERS. A vault reading
+          // carries things the motivation registry has no field for — a
+          // holder name, what a competency covers — and offering those as
+          // suggestions would propose values for boxes that do not exist.
+          // ⚠️ NO ALIASING, DELIBERATELY. The vault reads `covers` off a
+          // competency certificate and the registry has `competency_for`,
+          // which look like the same thing and are not interchangeable:
+          // competency_for is a MULTI field constrained to Handgun / Rifle /
+          // Shotgun, and the vault's value is free text off a photograph
+          // ("handgun and rifle", "H, R"). Mapping one to the other would put
+          // an unmatchable value into a constrained box on a form somebody
+          // signs. Only keys that match exactly cross over — which for a
+          // competency certificate means the number, and the number is the
+          // one that matters.
+          const wanted = new Set(MotivationExtractService.wantedFor(kind));
+          const kept = Object.fromEntries(
+            Object.entries(details).filter(([k, v]) => wanted.has(k) && v),
+          );
+          if (Object.keys(kept).length > 0) {
+            extraction = {
+              ok: true,
+              fields: Object.keys(kept),
+              blob: encryptJson(kept),
+            };
+          }
+        } catch {
+          // An unreadable blob costs the autofill, not the attachment.
+        }
+      }
     } else {
       const u = await this.prisma.motivationUpload.findFirst({
         where: { id: sourceId, motivation: { userId: user.id } },

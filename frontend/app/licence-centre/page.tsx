@@ -974,13 +974,33 @@ function CredentialCard({
             className="underline"
             onClick={async () => {
               onError(null);
+              // ⚠️ THE TAB OPENS FIRST, INSIDE THE CLICK. Safari judges a
+              // popup by whether window.open happened in the click's own call
+              // stack, and this one used to run after an await on a fetch —
+              // so on Safari the View button did nothing at all, silently.
+              //
+              // ⚠️ AND NOT 'noopener', because that returns null by spec and
+              // there would be no tab to fill. `opener` is nulled instead,
+              // which is the protection the flag actually provides — and this
+              // is a same-origin blob: URL of our own making regardless.
+              const tab = window.open('', '_blank');
+              if (tab) tab.opener = null;
               try {
                 const url = await licenceCentreApi.fileBlobUrl(token, row.id);
-                window.open(url, '_blank', 'noopener');
+                if (tab) {
+                  tab.location.href = url;
+                } else {
+                  // Genuinely blocked. Hand the file over rather than lose it.
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'document';
+                  a.click();
+                }
                 // The tab holds its own copy; ours would otherwise be pinned
                 // for the life of this page.
                 setTimeout(() => URL.revokeObjectURL(url), 60_000);
               } catch {
+                tab?.close();
                 onError('We could not open that document.');
               }
             }}

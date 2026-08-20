@@ -170,6 +170,19 @@ export class MotivationExtractService {
   }
 
   /**
+   * The answer keys this kind of document can legitimately fill.
+   *
+   * Exposed so a reading copied from somewhere else — the Licence Centre
+   * vault, which read the same file already — can be filtered to what this
+   * registry actually has boxes for. A vault reading carries a holder name
+   * and what a competency covers; proposing those as answers would offer
+   * values for fields that do not exist.
+   */
+  static wantedFor(kind: MotivationUploadKind): string[] {
+    return EXTRACTABLE[kind] ?? [];
+  }
+
+  /**
    * Read one uploaded document.
    *
    * Returns [] on every failure path — an unreadable photograph, a model

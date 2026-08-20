@@ -274,15 +274,30 @@ export default function MotivationWizardPage() {
    */
   const viewUpload = useCallback(
     async (uploadId: string) => {
-      const tab = window.open('', '_blank', 'noopener');
+      // ⚠️ NO 'noopener' HERE, AND THAT IS THE WHOLE BUG. Per spec,
+      // window.open with noopener returns NULL — the flag exists precisely to
+      // sever the handle. So `tab` was always null: the blank tab opened and
+      // was never filled, and the fallback then navigated the CURRENT window,
+      // which is exactly what the operator saw.
+      //
+      // Dropping the flag is safe here in a way it would not be for a foreign
+      // URL: this is a same-origin blob: URL we minted ourselves a line later,
+      // so there is no cross-origin document to be handed a window reference.
+      // `opener` is nulled anyway, which gets the flag's actual protection
+      // without giving up the handle we need.
+      const tab = window.open('', '_blank');
+      if (tab) tab.opener = null;
       try {
         const url = await motivationsApi.uploadBlobUrl(token, id, uploadId);
         if (tab) {
           tab.location.href = url;
         } else {
-          // Blocked anyway (or opened from a context that forbids it) — the
-          // member still gets their document.
-          window.location.href = url;
+          // Genuinely blocked. Hand it over rather than lose it — a download
+          // beats replacing the page they are working in.
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'document';
+          a.click();
         }
         // Long enough for the tab to have loaded it; the blob is pinned until
         // then and leaked for the life of the tab if we never let go.
