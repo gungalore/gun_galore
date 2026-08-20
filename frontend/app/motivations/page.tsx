@@ -68,6 +68,13 @@ export default function MotivationsPage() {
 
   const [rows, setRows] = useState<MotivationSummary[] | null>(null);
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  /**
+   * ⚠️ THE PAGE ALREADY FETCHED THIS AND THREW IT AWAY. status() returns
+   * canStart, cap, used and freeRemaining; only `enabled` was kept. So the
+   * page knew perfectly well that no new motivation could be started and
+   * still rendered five enabled buttons that could not work.
+   */
+  const [canStart, setCanStart] = useState(true);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,6 +85,7 @@ export default function MotivationsPage() {
         const s = await motivationsApi.status(token);
         if (!alive) return;
         setEnabled(s.enabled);
+        setCanStart(s.canStart);
         // With the flag off every other call 404s, so do not make them.
         if (s.enabled) setRows(await motivationsApi.list(token));
       } catch {
@@ -143,13 +151,39 @@ export default function MotivationsPage() {
         <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--text-tertiary-on-card)]">
           Start a new one
         </h2>
+
+        {/* ⚠️ SAY IT BEFORE THEY CLICK, NOT AFTER. The server refuses with a
+            perfectly clear 409 — "The free beta is full for now" — and the
+            page rendered that message BELOW five cards, 83px under the fold
+            on a 855px viewport. Clicking the top card therefore looked like
+            nothing happening at all, and the explanation was somewhere the
+            member never scrolled to.
+            Stated up front, and the buttons that cannot work are disabled. */}
+        {!canStart && (
+          <p
+            role="status"
+            className="mt-2 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm"
+          >
+            The free beta is full, and paid motivations are not open yet. You
+            can still finish and download any application already listed above.
+          </p>
+        )}
+
+        {/* The error lives ABOVE the list. Wherever they clicked, it is the
+            next thing they see rather than the last. */}
+        {error && (
+          <p role="alert" className="mt-2 text-sm text-[var(--red)]">
+            {error}
+          </p>
+        )}
+
         <ul className="mt-2 space-y-2">
           {LICENCE_TYPES.map((t) => (
             <li key={t.value}>
               <button
                 type="button"
-                disabled={starting}
-                className="w-full rounded border border-[var(--border)] bg-[var(--bg-card)] p-3 text-left hover:bg-[var(--bg-card-hover)] disabled:opacity-50"
+                disabled={starting || !canStart}
+                className="w-full rounded border border-[var(--border)] bg-[var(--bg-card)] p-3 text-left hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={async () => {
                   setStarting(true);
                   setError(null);
@@ -175,7 +209,6 @@ export default function MotivationsPage() {
             </li>
           ))}
         </ul>
-        {error && <p className="mt-3 text-sm text-[var(--red)]">{error}</p>}
       </section>
 
       <p className="mt-8 text-xs text-[var(--text-tertiary-on-card)]">

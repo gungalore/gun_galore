@@ -151,6 +151,18 @@ export interface FieldSet {
   fields: MotivationField[];
 }
 
+/** What /status actually returns. Mirrors MotivationQuotaStatus on the server. */
+export interface MotivationQuotaStatus {
+  enabled: boolean;
+  /** Free-beta seats left. */
+  freeRemaining: number;
+  cap: number;
+  used: number;
+  priceCents: number;
+  /** False while payments are off AND the free cap is exhausted. */
+  canStart: boolean;
+}
+
 export interface MotivationSummary {
   id: string;
   referenceNumber: string;
@@ -379,9 +391,29 @@ export interface FollowUp {
 // ── calls ───────────────────────────────────────────────────────────
 
 export const motivationsApi = {
+  /**
+   * Whether the module is open, and whether a new one can be started.
+   *
+   * ⚠️ THE TYPE USED TO DECLARE ONLY { enabled, priceCents? } WHILE THE
+   * SERVER SENT SIX FIELDS. That is not a cosmetic omission: `canStart` was
+   * invisible to anyone writing against this client, so the motivations page
+   * rendered five enabled "start a new one" buttons that the server refused
+   * with a 409 — and the member saw nothing happen at all.
+   *
+   * A client type that under-declares its response does not just lose
+   * information, it hides the information from the next person to look.
+   */
   status: (t: TokenGetter) =>
-    request<{ enabled: boolean; priceCents?: number }>(t, '/status', {}, {
+    request<MotivationQuotaStatus>(t, '/status', {}, {
       enabled: false,
+      freeRemaining: 0,
+      cap: 0,
+      used: 0,
+      priceCents: 0,
+      // ⚠️ FALSE ON A FAILED READ. If we cannot tell whether a motivation
+      // may be started, offering the buttons is the wrong guess: the click
+      // 409s and the member is back where they started.
+      canStart: false,
     }),
 
   fields: (t: TokenGetter, licenceType: string) =>
