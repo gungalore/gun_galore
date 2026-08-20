@@ -30,6 +30,16 @@ export class MotivationApiError extends Error {
     message: string,
     readonly status: number,
     readonly code?: string,
+    /**
+     * The field keys the server is holding out for.
+     *
+     * ⚠️ THE SERVER HAS ALWAYS SENT THESE and nothing ever read them. "Some
+     * required answers are still missing" with no list is a dead end: the
+     * member is looking at a form where everything they can see is filled in,
+     * and the one thing that would let them act — WHICH answers — was in the
+     * response body being thrown away.
+     */
+    readonly missing?: string[],
   ) {
     super(message);
   }
@@ -62,15 +72,16 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    const body = await safeJson<{ message?: string | string[]; code?: string }>(
-      res,
-      {},
-    );
+    const body = await safeJson<{
+      message?: string | string[];
+      code?: string;
+      missing?: string[];
+    }>(res, {});
     const message = Array.isArray(body.message)
       ? body.message.join(' ')
       : (body.message ??
         'Something went wrong. Please try again in a moment.');
-    throw new MotivationApiError(message, res.status, body.code);
+    throw new MotivationApiError(message, res.status, body.code, body.missing);
   }
 
   return safeJson<T>(res, (fallback ?? null) as T);
@@ -595,11 +606,69 @@ export function visibleFields(
 export function groupBySection(
   fields: MotivationField[],
 ): { section: string; fields: MotivationField[] }[] {
+  // ⚠️ BY NAME, NOT BY CONSECUTIVE RUN — and the difference blocked an
+  // application from being generated at all.
+  //
+  // The registry visits "About you" three times: the main block, a later run
+  // of postal codes and dialling codes, and a third holding spouse_id_type.
+  // Grouping consecutive runs turned that into THREE steps all titled "About
+  // you", all keyed on that title, so React had duplicate sibling keys and
+  // the later ones rendered unreliably.
+  //
+  // The consequence was not cosmetic. spouse_id_type is REQUIRED for a
+  // married applicant and lives in the third run; spouse_id_number sits in
+  // the FIRST run and only appears once spouse_id_type is answered. So a
+  // married member could not reach the question, could not answer it, and hit
+  // "Some required answers are still missing" on generate with nothing on
+  // screen to fix — every field they could see was filled in.
+  //
+  // One step per section name now, in first-appearance order.
   const out: { section: string; fields: MotivationField[] }[] = [];
+  const bySection = new Map<string, MotivationField[]>();
   for (const f of fields) {
-    const last = out[out.length - 1];
-    if (last && last.section === f.section) last.fields.push(f);
-    else out.push({ section: f.section, fields: [f] });
+    let bucket = bySection.get(f.section);
+    if (!bucket) {
+      bucket = [];
+      bySection.set(f.section, bucket);
+      out.push({ section: f.section, fields: bucket });
+    }
+    bucket.push(f);
   }
+  return out.map((s) => ({ ...s, fields: orderByDependency(s.fields) }));
+}
+
+/**
+ * Put a field that others hang off BEFORE the fields that hang off it.
+ *
+ * ⚠️ MERGING THE RUNS EXPOSES AN ORDER THE REGISTRY NEVER HAD TO GET RIGHT.
+ * While "About you" was three separate steps, nobody noticed that
+ * spouse_id_number is declared before the spouse_id_type it depends on —
+ * they were pages apart. In one step it means answering a question near the
+ * bottom makes a new field appear near the top, above where the member is
+ * looking, which is its own way of being invisible.
+ *
+ * A stable single pass: each field is emitted after anything its showIf names
+ * within the same section. Cycles are impossible to express in the registry
+ * (showIf takes one key, not a chain), and a dependency in another section is
+ * left alone — it is already on an earlier step.
+ */
+export function orderByDependency(
+  fields: MotivationField[],
+): MotivationField[] {
+  const here = new Map(fields.map((f) => [f.key, f]));
+  const out: MotivationField[] = [];
+  const placed = new Set<string>();
+
+  const place = (f: MotivationField, seen: Set<string>) => {
+    if (placed.has(f.key) || seen.has(f.key)) return;
+    seen.add(f.key);
+    const dep = f.showIf?.key ? here.get(f.showIf.key) : undefined;
+    if (dep) place(dep, seen);
+    if (placed.has(f.key)) return;
+    placed.add(f.key);
+    out.push(f);
+  };
+
+  for (const f of fields) place(f, new Set());
   return out;
 }

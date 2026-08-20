@@ -1389,11 +1389,38 @@ export default function MotivationWizardPage() {
                   setMessages(await motivationsApi.messages(token, id));
                   if (d.status === 'COMPLETED') router.refresh();
                 } catch (e) {
-                  setError(
-                    e instanceof MotivationApiError
-                      ? e.message
-                      : 'We could not prepare the document just now.',
-                  );
+                  // ⚠️ NAME THE FIELDS, AND GO TO THEM. "Some required answers
+                  // are still missing" on its own is a dead end — the member
+                  // is looking at a form where everything visible is filled
+                  // in. The server has always sent the list; nothing read it.
+                  if (
+                    e instanceof MotivationApiError &&
+                    e.missing?.length
+                  ) {
+                    const labels = e.missing.map(
+                      (k) => fields.find((f) => f.key === k)?.label ?? k,
+                    );
+                    setError(
+                      `Still needed before we can write it: ${labels.join(', ')}.`,
+                    );
+                    // Re-read first: a required field can be missing BECAUSE
+                    // the server sees an answer this page does not, and the
+                    // fresh detail is what makes the step count honest.
+                    await motivationsApi
+                      .get(token, id)
+                      .then(setDetail)
+                      .catch(() => undefined);
+                    const first = sections.findIndex((sec) =>
+                      sec.fields.some((f) => e.missing!.includes(f.key)),
+                    );
+                    if (first >= 0) go(first + 2);
+                  } else {
+                    setError(
+                      e instanceof MotivationApiError
+                        ? e.message
+                        : 'We could not prepare the document just now.',
+                    );
+                  }
                 } finally {
                   setGenerating(false);
                 }
