@@ -227,6 +227,53 @@ function AddPanel({
    * able to produce a File feeds one code path — today the themed picker,
    * and next the camera.
    */
+  /**
+   * Walk a phone-scanned document through the same confirm step a desktop
+   * upload gets.
+   *
+   * ⚠️ THIS WAS THE "RECOGNITION IS BROKEN" REPORT, three documents running.
+   * Every one of them read perfectly — kind, dates, serials, the lot — and
+   * the member never saw any of it, because the reveal screen was only ever
+   * fed by the desktop's own upload path. A phone upload refreshed the list,
+   * added one quiet row with a small "Check the date" button, and showed
+   * nothing it had read. Recognition that never shows its work is
+   * indistinguishable from recognition that does not work, and he reported
+   * exactly that, accurately, three times.
+   *
+   * Every unconfirmed document is queued, not only the newest: the queue IS
+   * the "these still need checking" flow, and the banner that merely counted
+   * them never walked anybody anywhere.
+   */
+  async function queueHandoffArrivals() {
+    await onAdded().catch(() => undefined);
+    try {
+      const rows = await licenceCentreApi.list(token);
+      const need = rows.filter((r) => !r.confirmed);
+      if (!need.length) return;
+      setQueue(
+        need.map((r) => ({
+          id: r.id,
+          kind: r.kind,
+          title: r.title,
+          // The phone path never asked them the type, so the confirm step
+          // must — same as a batch-sorted desktop upload.
+          autoFiled: true,
+          confident: false,
+          proposed: {
+            expiresOn: r.expiresOn,
+            issuedOn: r.issuedOn,
+            details: r.details,
+            lowConfidence: [],
+            derivedExpiry: r.derivedExpiry,
+          },
+        })),
+      );
+    } catch {
+      // The refresh above already ran; worst case the member is where they
+      // were before this existed — row in the list, button on the row.
+    }
+  }
+
   async function uploadFiles(picked: File[]) {
     if (!picked.length) return;
 
@@ -768,6 +815,7 @@ function CredentialCard({
               issuedOn: row.issuedOn,
               details: row.details,
               lowConfidence: [],
+              derivedExpiry: row.derivedExpiry,
             }}
             cancelLabel="Cancel"
             /* THE WAY BACK. Somebody who tapped "I will do this later" on a

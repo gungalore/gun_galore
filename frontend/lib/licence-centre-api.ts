@@ -46,6 +46,8 @@ export interface CredentialRow {
   remindersMuted: boolean;
   state: ExpiryState;
   details: Record<string, string>;
+  /** Statute-derived expiry when the document prints none. See the proposal. */
+  derivedExpiry?: { on: string; why: string } | null;
   available: boolean;
   mimeType: string;
   byteSize: number;

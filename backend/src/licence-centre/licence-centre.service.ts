@@ -117,6 +117,15 @@ export class LicenceCentreService {
       remindersMuted: r.remindersMuted,
       state: expiryState(r.expiresOn, r.confirmedAt, now),
       details: this.readDetails(r.detailsEncrypted),
+      // Same statutory arithmetic the upload path offers, so a document that
+      // reaches the confirm step FROM THE LIST — which is how every
+      // phone-scanned document reaches it — gets the same prefilled date and
+      // the same explanation as one uploaded at the desk.
+      derivedExpiry: derivedExpiryFor(
+        r.kind,
+        r.expiresOn ? toIsoDate(r.expiresOn) : null,
+        r.issuedOn ? toIsoDate(r.issuedOn) : null,
+      ),
       // The row can outlive its bytes after an erasure. Say so rather than
       // let a download fail with something puzzling.
       available: r.storageKey !== null && r.purgedAt === null,
