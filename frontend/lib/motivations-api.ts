@@ -493,6 +493,20 @@ export const motivationsApi = {
       { kind },
     ),
 
+  /**
+   * Read an attached document again after a failed read.
+   *
+   * `readable: false` means the kind yields nothing by design — a photograph
+   * of a safe — rather than that the attempt failed.
+   */
+  rereadUpload: (t: TokenGetter, id: string, uploadId: string) =>
+    request<{ ok: boolean; fields: string[]; readable: boolean }>(
+      t,
+      `/${id}/uploads/${uploadId}/reread`,
+      { method: 'POST' },
+      { ok: false, fields: [], readable: true },
+    ),
+
   removeUpload: (t: TokenGetter, id: string, uploadId: string) =>
     request<{ removed: boolean }>(
       t,

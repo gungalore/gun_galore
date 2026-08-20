@@ -591,6 +591,35 @@ export default function MotivationWizardPage() {
     [token, id, refreshUploads, loadLibrary],
   );
 
+  /**
+   * Ask for a document to be read again.
+   *
+   * ⚠️ WORTH A BUTTON BECAUSE THE READ IS FAIL-SOFT. A timeout or a busy model
+   * returns nothing and the row goes amber saying we could not read the
+   * document — indistinguishable, to the person who took the photograph, from
+   * "your photograph is no good". A live proof of address read perfectly on
+   * the second attempt.
+   */
+  const rereadOneUpload = async (uploadId: string) => {
+    try {
+      const res = await motivationsApi.rereadUpload(token, id, uploadId);
+      await refreshUploads();
+      if (!res.ok && res.readable) {
+        setUploadErr(
+          'Still nothing readable on that one. Check the whole page is in shot, or replace it.',
+        );
+      } else {
+        setUploadErr(null);
+      }
+    } catch (e) {
+      setUploadErr(
+        e instanceof MotivationApiError
+          ? e.message
+          : 'We could not read that again just now.',
+      );
+    }
+  };
+
   const removeOneUpload = async (uploadId: string) => {
     await motivationsApi.removeUpload(token, id, uploadId);
     setUploads((u) => u.filter((x) => x.id !== uploadId));
@@ -1027,6 +1056,7 @@ export default function MotivationWizardPage() {
               onSelect={setPickedKind}
               onView={viewUpload}
               onRemove={removeOneUpload}
+              onReread={rereadOneUpload}
               renderControls={(r) => {
                 const k = uploadKindFor(r);
                 const take = async (files: File[]) => {

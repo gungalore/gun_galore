@@ -506,6 +506,22 @@ export class MotivationsController {
     return new StreamableFile(bytes);
   }
 
+  /**
+   * Read an attached document again after a failed read.
+   *
+   * Throttled per handler: each call is a vision request on bytes we already
+   * hold, so a stuck button must not be able to spend them in a loop.
+   */
+  @Post(':id/uploads/:uploadId/reread')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  rereadUpload(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Param('uploadId') uploadId: string,
+  ) {
+    return this.motivations.rereadUpload(clerkId, id, uploadId);
+  }
+
   @Delete(':id/uploads/:uploadId')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   removeUpload(

@@ -55,6 +55,7 @@ export default function DocumentChecklist({
   renderControls,
   onView,
   onRemove,
+  onReread,
 }: {
   rows: ChecklistRow[];
   selected: string;
@@ -71,6 +72,8 @@ export default function DocumentChecklist({
   renderControls: (row: ChecklistRow) => React.ReactNode;
   onView: (id: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
+  /** Read an attached document again after a failed read. */
+  onReread: (id: string) => Promise<void>;
 }) {
   return (
     <div
@@ -100,6 +103,7 @@ export default function DocumentChecklist({
                   controls={selected === r.kind ? renderControls(r) : null}
                   onView={onView}
                   onRemove={onRemove}
+                  onReread={onReread}
                 />
               ))}
             </ul>
@@ -117,6 +121,7 @@ function Row({
   controls,
   onView,
   onRemove,
+  onReread,
 }: {
   row: ChecklistRow;
   checked: boolean;
@@ -125,6 +130,8 @@ function Row({
   controls: React.ReactNode;
   onView: (id: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
+  /** Read an attached document again after a failed read. */
+  onReread: (id: string) => Promise<void>;
 }) {
   // ⚠️ AMBER IS NOT "BROKEN", IT IS "CHECK THIS". The document is attached and
   // will go in the pack either way; what we are saying is that nothing we
@@ -197,10 +204,29 @@ function Row({
           )}
 
           {state === 'suspect' && (
+            // ⚠️ THIS USED TO BLAME THE DOCUMENT, and it was often wrong. The
+            // read is fail-soft: a timeout or a busy model returns nothing at
+            // all, indistinguishable here from a genuinely unreadable
+            // photograph — and nothing ever tried again, so a perfectly good
+            // proof of address sat amber telling its owner to re-photograph
+            // it. Say what we know, offer the cheap thing first.
             <span className="mt-1 block text-xs" style={{ color: 'var(--text-secondary)' }}>
-              Attached — but nothing we expected on this document was readable.
-              Check you picked the right line, and that the photograph shows
-              the whole page. It stays in your pack either way.
+              Attached, but we could not read anything off it. That is often
+              just us — try again first. If it keeps failing, check you picked
+              the right line and that the photograph shows the whole page. It
+              stays in your pack either way.{' '}
+              <button
+                type="button"
+                className="underline"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const f = row.files.find((x) => x.suspect);
+                  if (f) await onReread(f.id);
+                }}
+              >
+                Try reading it again
+              </button>
             </span>
           )}
 

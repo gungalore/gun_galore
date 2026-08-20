@@ -1054,7 +1054,84 @@ export class MotivationsService {
       annexure: null,
       suggestions,
       alreadyHad: false,
+      // ⚠️ THE SAME VERDICT THE LIST WILL GIVE, SENT NOW. Without it the
+      // checklist has no `suspect` to read, renders the row green, and then
+      // flips it amber a second later when the next refresh arrives — which
+      // is exactly what the operator saw with a proof of address that was
+      // perfectly good. A row that changes its mind in front of somebody is
+      // worse than one that was amber from the start.
+      suspect:
+        MotivationExtractService.canExtract(created.kind) && !extraction.ok,
     };
+  }
+
+  /**
+   * Read an attached document again.
+   *
+   * ⚠️ ONE SHOT WAS NOT ENOUGH. extract() is fail-soft by design — a timeout,
+   * a 529, any error at all returns [] and the upload survives, which is the
+   * right trade. But nothing ever tried again, so a transient failure marked a
+   * good document "we could not read anything on this" permanently, and the
+   * copy blamed the photograph. Seen live: an address document that reads
+   * perfectly on a second attempt, stored with extractionOk false.
+   *
+   * The bytes are already ours and the read is cheap. Offering it costs a
+   * button; not offering it costs the applicant a document they cannot fix.
+   */
+  async rereadUpload(clerkId: string, id: string, uploadId: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, licenceType: true, answersEncrypted: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const up = await this.prisma.motivationUpload.findFirst({
+      where: { id: uploadId, motivationId: row.id },
+      select: {
+        id: true,
+        kind: true,
+        storageKey: true,
+        mimeType: true,
+        purgedAt: true,
+      },
+    });
+    if (!up) throw new NotFoundException('Document not found');
+    if (!up.storageKey || up.purgedAt) {
+      throw new GoneException('That document is no longer stored.');
+    }
+    if (!MotivationExtractService.canExtract(up.kind)) {
+      // A photograph of a safe yields nothing by design; re-reading it would
+      // spend a call to confirm that.
+      return { ok: false, fields: [] as string[], readable: false };
+    }
+
+    const bytes = await this.files.read(up.storageKey);
+    const found = await this.extract.extract({
+      kind: up.kind,
+      licenceType: row.licenceType,
+      bytes,
+      mimeType: up.mimeType ?? 'image/jpeg',
+      answers: this.readAnswers(row.answersEncrypted),
+    });
+
+    // ⚠️ NEVER WORSE THAN BEFORE. A second failure must not wipe a reading
+    // that succeeded earlier, so an empty result leaves the row untouched.
+    if (!found.length) {
+      return { ok: false, fields: [], readable: true };
+    }
+
+    const values = Object.fromEntries(found.map((f) => [f.key, f.value]));
+    await this.prisma.motivationUpload.update({
+      where: { id: up.id },
+      data: {
+        extractionOk: true,
+        extractedFields: found.map((f) => f.key),
+        extractionEncrypted: encryptJson(values),
+      },
+    });
+    return { ok: true, fields: found.map((f) => f.key), readable: true };
   }
 
   /** What we WOULD fill from the vault, and which document each value is from. */
